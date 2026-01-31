@@ -17,11 +17,13 @@
     "db:migrate-due": "tsx scripts/migrate-due.ts"
   },
   "dependencies": {
+    "@use-gesture/react": "^10.3.1",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
     "luxon": "^3.7.2",
     "next": "16.1.6",
     "next-auth": "5.0.0-beta.30",
+    "node-cron": "^4.2.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "rrule": "^2.8.1",
@@ -35,6 +37,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",

@@ -1,5 +1,8 @@
 export { Header } from './Header'
 export { TaskList } from './TaskList'
+export type { GroupingMode } from './TaskList'
 export { TaskRow } from './TaskRow'
+export { TaskDetail } from './TaskDetail'
+export { QuickAdd } from './QuickAdd'
 export { SnoozeSheet } from './SnoozeSheet'
 export { Toast } from './Toast'
