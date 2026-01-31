@@ -1,0 +1,199 @@
+// Core domain types for OpenTask
+
+export interface User {
+  id: number
+  email: string
+  name: string
+  password_hash: string
+  timezone: string
+  created_at: string
+}
+
+export interface Project {
+  id: number
+  name: string
+  owner_id: number
+  shared: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface Task {
+  id: number
+  user_id: number
+  project_id: number
+  title: string
+  done: boolean
+  done_at: string | null
+  priority: number // 0=unset, 1=low, 2=medium, 3=high, 4=urgent
+  due_at: string | null
+
+  // Recurrence
+  rrule: string | null
+  recurrence_mode: 'from_due' | 'from_completion'
+  anchor_time: string | null // HH:MM in user's local timezone
+  anchor_dow: number | null // 0=Mon..6=Sun
+  anchor_dom: number | null // 1-31
+
+  // Snooze
+  snoozed_from: string | null
+
+  // Soft delete and archive
+  deleted_at: string | null
+  archived_at: string | null
+
+  // Labels
+  labels: string[]
+
+  created_at: string
+  updated_at: string
+}
+
+export interface Note {
+  id: number
+  task_id: number
+  content: string
+  created_at: string
+}
+
+export interface Completion {
+  id: number
+  task_id: number
+  user_id: number
+  completed_at: string
+  due_at_was: string | null
+  due_at_next: string | null
+}
+
+export interface ApiToken {
+  id: number
+  user_id: number
+  token: string
+  name: string
+  created_at: string
+}
+
+export interface UndoLogEntry {
+  id: number
+  user_id: number
+  action: UndoAction
+  description: string | null
+  fields_changed: string[] // JSON array of field names
+  snapshot: UndoSnapshot[] // JSON array
+  created_at: string
+  undone: boolean
+}
+
+export type UndoAction =
+  | 'done'
+  | 'undone'
+  | 'snooze'
+  | 'edit'
+  | 'delete'
+  | 'create'
+  | 'restore'
+  | 'bulk_done'
+  | 'bulk_snooze'
+  | 'bulk_edit'
+  | 'bulk_delete'
+
+export interface UndoSnapshot {
+  task_id: number
+  before_state: Partial<Task>
+  after_state: Partial<Task>
+  completion_id?: number // For recurring task done - tracks the completion record to delete on undo
+}
+
+// API types
+export interface TaskCreateInput {
+  title: string
+  due_at?: string | null
+  rrule?: string | null
+  recurrence_mode?: 'from_due' | 'from_completion'
+  project_id?: number
+  priority?: number
+  labels?: string[]
+}
+
+export interface TaskUpdateInput {
+  title?: string
+  due_at?: string | null
+  rrule?: string | null
+  recurrence_mode?: 'from_due' | 'from_completion'
+  project_id?: number
+  priority?: number
+  labels?: string[]
+}
+
+export interface SnoozeInput {
+  until: string // ISO 8601 datetime
+}
+
+export interface BulkDoneInput {
+  ids: number[]
+}
+
+export interface BulkSnoozeInput {
+  ids: number[]
+  until: string
+}
+
+export interface BulkEditInput {
+  ids: number[]
+  changes: TaskUpdateInput
+}
+
+export interface BulkDeleteInput {
+  ids: number[]
+}
+
+// API response types
+export interface ApiResponse<T> {
+  data?: T
+  error?: string
+  code?: ErrorCode
+  details?: Record<string, unknown>
+}
+
+export type ErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'CONFLICT'
+  | 'INTERNAL_ERROR'
+
+export interface UndoResult {
+  undone_action: UndoAction
+  description: string | null
+  tasks_affected: number
+}
+
+export interface RedoResult {
+  redone_action: UndoAction
+  description: string | null
+  tasks_affected: number
+}
+
+// Task list filters
+export interface TaskFilters {
+  project?: number
+  done?: boolean
+  overdue?: boolean
+  recurring?: boolean
+  one_off?: boolean
+  search?: string
+  label?: string
+  trashed?: boolean
+  archived?: boolean
+  limit?: number
+  offset?: number
+}
+
+// Auth types
+export interface AuthUser {
+  id: number
+  email: string
+  name: string
+  timezone: string
+}
