@@ -7,12 +7,25 @@ interface SidebarProps {
   projects?: { id: number; name: string }[]
 }
 
+function linkClasses(isActive: boolean): string {
+  return `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+    isActive
+      ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'
+  }`
+}
+
 export function Sidebar({ projects = [] }: SidebarProps) {
   const pathname = usePathname()
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: '□' },
     { href: '/history', label: 'History', icon: '◷' },
+  ]
+
+  const bottomNavItems = [
+    { href: '/archive', label: 'Archive', icon: '▣' },
+    { href: '/trash', label: 'Trash', icon: '▤' },
     { href: '/settings', label: 'Settings', icon: '⚙' },
   ]
 
@@ -23,7 +36,7 @@ export function Sidebar({ projects = [] }: SidebarProps) {
         <h1 className="text-lg font-semibold">OpenTask</h1>
       </div>
 
-      {/* Navigation */}
+      {/* Scrollable navigation */}
       <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = item.href === '/'
@@ -31,15 +44,7 @@ export function Sidebar({ projects = [] }: SidebarProps) {
             : pathname.startsWith(item.href)
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-              }`}
-            >
+            <Link key={item.href} href={item.href} className={linkClasses(isActive)}>
               <span className="text-base">{item.icon}</span>
               {item.label}
             </Link>
@@ -57,15 +62,7 @@ export function Sidebar({ projects = [] }: SidebarProps) {
               const isActive = pathname === href
 
               return (
-                <Link
-                  key={project.id}
-                  href={href}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive
-                      ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-                  }`}
-                >
+                <Link key={project.id} href={href} className={linkClasses(isActive)}>
                   <span className="text-base">○</span>
                   {project.name}
                 </Link>
@@ -74,6 +71,20 @@ export function Sidebar({ projects = [] }: SidebarProps) {
           </div>
         )}
       </nav>
+
+      {/* Pinned bottom nav — outside scrollable area */}
+      <div className="px-2 py-3 space-y-1 border-t border-zinc-200 dark:border-zinc-800">
+        {bottomNavItems.map((item) => {
+          const isActive = pathname.startsWith(item.href)
+
+          return (
+            <Link key={item.href} href={item.href} className={linkClasses(isActive)}>
+              <span className="text-base">{item.icon}</span>
+              {item.label}
+            </Link>
+          )
+        })}
+      </div>
     </aside>
   )
 }

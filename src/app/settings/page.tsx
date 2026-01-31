@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
@@ -41,6 +42,27 @@ export default function SettingsPage() {
               <span className="text-zinc-500">Email</span>
               <span>{session?.user?.email || '-'}</span>
             </div>
+          </div>
+        </section>
+
+        {/* Navigation links (mobile access to Archive & Trash) */}
+        <section className="p-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">More</h2>
+          <div className="space-y-1">
+            <Link
+              href="/archive"
+              className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <span className="text-sm">Archive</span>
+              <span className="text-zinc-400 text-xs">&rsaquo;</span>
+            </Link>
+            <Link
+              href="/trash"
+              className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <span className="text-sm">Trash</span>
+              <span className="text-zinc-400 text-xs">&rsaquo;</span>
+            </Link>
           </div>
         </section>
 
