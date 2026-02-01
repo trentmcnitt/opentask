@@ -28,7 +28,7 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError('Invalid email or password')
+        setError('Invalid username or password')
       } else {
         router.push('/')
         router.refresh()
@@ -63,14 +63,14 @@ export default function LoginPage() {
               htmlFor="email"
               className="block text-sm font-medium mb-1.5"
             >
-              Email
+              Username
             </label>
             <Input
               id="email"
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="Enter your username"
               required
               autoFocus
             />

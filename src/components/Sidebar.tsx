@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -26,19 +25,7 @@ export function Sidebar({ projects = [] }: SidebarProps) {
 
   return (
     <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r bg-muted/50 h-screen sticky top-0">
-      {/* Brand */}
-      <div className="px-4 py-4 border-b">
-        <Image
-          src="/opentask-text-logo-abbr.png"
-          alt="OpenTask"
-          width={120}
-          height={32}
-          className="dark:invert"
-          priority
-        />
-      </div>
-
-      {/* Scrollable navigation */}
+      {/* Navigation */}
       <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = item.href === '/'

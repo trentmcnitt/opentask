@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { signOut } from 'next-auth/react'
 import { FolderOpen, Clock, Undo2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,14 @@ export function Header({ taskCount, overdueCount = 0, grouping = 'time', onGroup
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold">OpenTask</h1>
+            <Image
+              src="/opentask-logo.png"
+              alt="OpenTask"
+              width={120}
+              height={28}
+              className="dark:invert"
+              priority
+            />
             <span className="text-sm text-muted-foreground">
               {taskCount} tasks
             </span>

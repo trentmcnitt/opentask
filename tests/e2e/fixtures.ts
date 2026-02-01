@@ -17,7 +17,7 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     await page.goto('/login')
 
     // Fill in login form
-    await page.getByLabel('Email').fill(TEST_EMAIL)
+    await page.getByLabel('Username').fill(TEST_EMAIL)
     await page.getByLabel('Password').fill(TEST_PASSWORD)
     await page.getByRole('button', { name: /sign in/i }).click()
 
