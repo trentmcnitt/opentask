@@ -7,6 +7,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { formatTaskResponse } from '@/lib/format-task'
 import { restoreTask } from '@/core/tasks'
 import type { RouteContext } from '@/types/api'
 
@@ -30,9 +31,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     })
 
     return success({
-      ...task,
-      is_recurring: task.rrule !== null,
-      is_snoozed: task.snoozed_from !== null,
+      ...formatTaskResponse(task),
       message: 'Task restored from trash',
     })
   } catch (err) {

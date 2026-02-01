@@ -8,9 +8,10 @@ import type { GroupingMode } from '@/components/TaskList'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
-import { Toast } from '@/components/Toast'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { FloatingActionBar } from '@/components/FloatingActionBar'
+import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
+import { showToast } from '@/lib/toast'
 import type { Task, Project } from '@/types'
 
 export default function Home() {
@@ -30,7 +31,8 @@ function HomeContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
-  const [toast, setToast] = useState<{ message: string; action?: () => void } | null>(null)
+  const [bulkSnoozeCustom, setBulkSnoozeCustom] = useState(false)
+  const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [grouping, setGrouping] = useState<GroupingMode>('time')
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
@@ -114,7 +116,7 @@ function HomeContent() {
       if (data.data?.task?.rrule) {
         setTasks(prev => prev.map(t => (t.id === taskId ? data.data.task : t)))
       }
-      setToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: handleUndo })
+      showToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: { label: 'Undo', onClick: handleUndo } })
     } catch {
       fetchTasks()
     }
@@ -135,7 +137,7 @@ function HomeContent() {
       })
       if (!res.ok) throw new Error('Failed to snooze')
       fetchTasks()
-      setToast({ message: 'Task snoozed', action: handleUndo })
+      showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
     } catch {
       fetchTasks()
     }
@@ -145,10 +147,9 @@ function HomeContent() {
     try {
       const res = await fetch('/api/undo', { method: 'POST' })
       if (!res.ok) throw new Error('Failed to undo')
-      setToast(null)
       fetchTasks()
     } catch {
-      setToast({ message: 'Undo failed' })
+      showToast({ message: 'Undo failed' })
     }
   }
 
@@ -178,14 +179,15 @@ function HomeContent() {
       })
       if (!res.ok) throw new Error('Failed to create task')
       fetchTasks()
-      setToast({ message: 'Task added' })
+      showToast({ message: 'Task added' })
     } catch {
-      setToast({ message: 'Failed to add task' })
+      showToast({ message: 'Failed to add task' })
     }
   }
 
   // Bulk action helpers
   const bulkAction = async (endpoint: string, body: Record<string, unknown>) => {
+    const count = selection.selectedIds.size
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -195,9 +197,9 @@ function HomeContent() {
       if (!res.ok) throw new Error('Bulk action failed')
       selection.clear()
       fetchTasks()
-      setToast({ message: `${selection.selectedIds.size} tasks updated`, action: handleUndo })
+      showToast({ message: `${count} tasks updated`, action: { label: 'Undo', onClick: handleUndo } })
     } catch {
-      setToast({ message: 'Action failed' })
+      showToast({ message: 'Action failed' })
     }
   }
 
@@ -211,9 +213,45 @@ function HomeContent() {
       if (!res.ok) throw new Error('Delete failed')
       selection.clear()
       fetchTasks()
-      setToast({ message: 'Tasks deleted', action: handleUndo })
+      showToast({ message: 'Tasks deleted', action: { label: 'Undo', onClick: handleUndo } })
     } catch {
-      setToast({ message: 'Delete failed' })
+      showToast({ message: 'Delete failed' })
+    }
+  }
+
+  const handleBulkMoveToProject = async (projectId: number) => {
+    const count = selection.selectedIds.size
+    setShowProjectPicker(false)
+    try {
+      const res = await fetch('/api/tasks/bulk/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selection.selectedIds], changes: { project_id: projectId } }),
+      })
+      if (!res.ok) throw new Error('Move failed')
+      selection.clear()
+      fetchTasks()
+      showToast({ message: `${count} tasks moved`, action: { label: 'Undo', onClick: handleUndo } })
+    } catch {
+      showToast({ message: 'Move failed' })
+    }
+  }
+
+  const handleBulkCustomSnooze = async (until: string) => {
+    const count = selection.selectedIds.size
+    setBulkSnoozeCustom(false)
+    try {
+      const res = await fetch('/api/tasks/bulk/snooze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selection.selectedIds], until }),
+      })
+      if (!res.ok) throw new Error('Snooze failed')
+      selection.clear()
+      fetchTasks()
+      showToast({ message: `${count} tasks snoozed`, action: { label: 'Undo', onClick: handleUndo } })
+    } catch {
+      showToast({ message: 'Snooze failed' })
     }
   }
 
@@ -305,6 +343,8 @@ function HomeContent() {
         onPriorityHigh={() => bulkAction('/api/tasks/bulk/edit', { ids: [...selection.selectedIds], changes: { priority: 3 } })}
         onPriorityLow={() => bulkAction('/api/tasks/bulk/edit', { ids: [...selection.selectedIds], changes: { priority: 1 } })}
         onClear={selection.clear}
+        onMoveToProject={() => setShowProjectPicker(true)}
+        onCustomSnooze={() => setBulkSnoozeCustom(true)}
       />
 
       {snoozeTask && (
@@ -315,11 +355,20 @@ function HomeContent() {
         />
       )}
 
-      {toast && (
-        <Toast
-          message={toast.message}
-          action={toast.action ? { label: 'Undo', onClick: toast.action } : undefined}
-          onDismiss={() => setToast(null)}
+      {showProjectPicker && (
+        <ProjectPickerSheet
+          projects={projects}
+          onSelect={handleBulkMoveToProject}
+          onClose={() => setShowProjectPicker(false)}
+        />
+      )}
+
+      {bulkSnoozeCustom && (
+        <SnoozeSheet
+          task={{ id: 0, title: `${selection.selectedIds.size} selected tasks` } as Task}
+          onSnooze={handleBulkCustomSnooze}
+          onClose={() => setBulkSnoozeCustom(false)}
+          customOnly
         />
       )}
     </div>

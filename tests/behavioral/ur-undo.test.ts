@@ -77,7 +77,7 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
 }
 
 function getTask(db: ReturnType<typeof getDb>, taskId: number) {
-  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as {
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as {
     id: number
     due_at: string | null
     snoozed_from: string | null
@@ -86,6 +86,10 @@ function getTask(db: ReturnType<typeof getDb>, taskId: number) {
     archived_at: string | null
     title: string
     priority: number
+  }
+  return {
+    ...row,
+    done: row.done === 1,
   }
 }
 
@@ -161,7 +165,7 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
     })
 
     const beforeTask = getTask(db, taskId)
-    expect(beforeTask.done).toBe(0)
+    expect(beforeTask.done).toBe(false)
     expect(beforeTask.done_at).toBeNull()
     expect(beforeTask.archived_at).toBeNull()
 
@@ -177,11 +181,7 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
 
     // Log the action
     logAction(1, 'done', 'Marked task done', ['done', 'done_at', 'archived_at'], [
-      createTaskSnapshot(
-        { ...beforeTask, done: beforeTask.done === 1 },
-        { ...afterTask, done: afterTask.done === 1 },
-        ['done', 'done_at', 'archived_at']
-      ),
+      createTaskSnapshot(beforeTask, afterTask, ['done', 'done_at', 'archived_at']),
     ])
 
     // Execute undo
@@ -191,7 +191,7 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
 
     // Verify task is restored
     const taskAfterUndo = getTask(db, taskId)
-    expect(taskAfterUndo.done).toBe(0)
+    expect(taskAfterUndo.done).toBe(false)
     expect(taskAfterUndo.done_at).toBeNull()
     expect(taskAfterUndo.archived_at).toBeNull()
   })

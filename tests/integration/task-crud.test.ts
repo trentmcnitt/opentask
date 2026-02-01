@@ -87,7 +87,9 @@ describe('Task CRUD integration', () => {
     // In trashed list
     const trashRes = await apiFetch('/api/tasks?trashed=true')
     const trashed = (await trashRes.json()).data.tasks
-    expect(trashed.find((t: { id: number }) => t.id === task.id)).toBeDefined()
+    const trashedTask = trashed.find((t: { id: number }) => t.id === task.id)
+    expect(trashedTask).not.toBeUndefined()
+    expect(trashedTask.id).toBe(task.id)
   })
 
   test('POST restore brings task back to default list', async () => {
@@ -107,6 +109,8 @@ describe('Task CRUD integration', () => {
     // Back in default list
     const listRes = await apiFetch('/api/tasks')
     const list = (await listRes.json()).data.tasks
-    expect(list.find((t: { id: number }) => t.id === task.id)).toBeDefined()
+    const restoredTask = list.find((t: { id: number }) => t.id === task.id)
+    expect(restoredTask).not.toBeUndefined()
+    expect(restoredTask.id).toBe(task.id)
   })
 })

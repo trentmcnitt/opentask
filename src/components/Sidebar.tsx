@@ -1,39 +1,41 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
+import { LayoutDashboard, History, Archive, Trash2, Settings, Circle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface SidebarProps {
   projects?: { id: number; name: string }[]
-}
-
-function linkClasses(isActive: boolean): string {
-  return `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-    isActive
-      ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
-      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-  }`
 }
 
 export function Sidebar({ projects = [] }: SidebarProps) {
   const pathname = usePathname()
 
   const navItems = [
-    { href: '/', label: 'Dashboard', icon: '□' },
-    { href: '/history', label: 'History', icon: '◷' },
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/history', label: 'History', icon: History },
   ]
 
   const bottomNavItems = [
-    { href: '/archive', label: 'Archive', icon: '▣' },
-    { href: '/trash', label: 'Trash', icon: '▤' },
-    { href: '/settings', label: 'Settings', icon: '⚙' },
+    { href: '/archive', label: 'Archive', icon: Archive },
+    { href: '/trash', label: 'Trash', icon: Trash2 },
+    { href: '/settings', label: 'Settings', icon: Settings },
   ]
 
   return (
-    <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 h-screen sticky top-0">
+    <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r bg-muted/50 h-screen sticky top-0">
       {/* Brand */}
-      <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800">
-        <h1 className="text-lg font-semibold">OpenTask</h1>
+      <div className="px-4 py-4 border-b">
+        <Image
+          src="/opentask-text-logo-abbr.png"
+          alt="OpenTask"
+          width={120}
+          height={32}
+          className="dark:invert"
+          priority
+        />
       </div>
 
       {/* Scrollable navigation */}
@@ -42,10 +44,20 @@ export function Sidebar({ projects = [] }: SidebarProps) {
           const isActive = item.href === '/'
             ? pathname === '/'
             : pathname.startsWith(item.href)
+          const Icon = item.icon
 
           return (
-            <Link key={item.href} href={item.href} className={linkClasses(isActive)}>
-              <span className="text-base">{item.icon}</span>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                isActive
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              <Icon className="size-4" />
               {item.label}
             </Link>
           )
@@ -54,7 +66,7 @@ export function Sidebar({ projects = [] }: SidebarProps) {
         {/* Projects section */}
         {projects.length > 0 && (
           <div className="pt-4">
-            <h3 className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            <h3 className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Projects
             </h3>
             {projects.map((project) => {
@@ -62,8 +74,17 @@ export function Sidebar({ projects = [] }: SidebarProps) {
               const isActive = pathname === href
 
               return (
-                <Link key={project.id} href={href} className={linkClasses(isActive)}>
-                  <span className="text-base">○</span>
+                <Link
+                  key={project.id}
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                    isActive
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  <Circle className="size-4" />
                   {project.name}
                 </Link>
               )
@@ -73,13 +94,23 @@ export function Sidebar({ projects = [] }: SidebarProps) {
       </nav>
 
       {/* Pinned bottom nav — outside scrollable area */}
-      <div className="px-2 py-3 space-y-1 border-t border-zinc-200 dark:border-zinc-800">
+      <div className="px-2 py-3 space-y-1 border-t">
         {bottomNavItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
+          const Icon = item.icon
 
           return (
-            <Link key={item.href} href={item.href} className={linkClasses(isActive)}>
-              <span className="text-base">{item.icon}</span>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                isActive
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              <Icon className="size-4" />
               {item.label}
             </Link>
           )

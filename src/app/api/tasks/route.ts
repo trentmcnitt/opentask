@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
+import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
 import { getTasks, createTask } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
 import { ZodError } from 'zod'
@@ -62,12 +63,7 @@ export async function GET(request: NextRequest) {
       offset,
     })
 
-    // Add computed fields for API response
-    const formattedTasks = tasks.map((t) => ({
-      ...t,
-      is_recurring: t.rrule !== null,
-      is_snoozed: t.snoozed_from !== null,
-    }))
+    const formattedTasks = formatTasksResponse(tasks)
 
     return success({
       tasks: formattedTasks,
@@ -98,14 +94,7 @@ export async function POST(request: NextRequest) {
       input,
     })
 
-    return success(
-      {
-        ...task,
-        is_recurring: task.rrule !== null,
-        is_snoozed: task.snoozed_from !== null,
-      },
-      201
-    )
+    return success(formatTaskResponse(task), 201)
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)

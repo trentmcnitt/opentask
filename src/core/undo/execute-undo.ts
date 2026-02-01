@@ -48,19 +48,31 @@ export function executeUndo(userId: number): UndoResult | null {
   const fieldsChanged: string[] = JSON.parse(entry.fields_changed)
   const snapshots: UndoSnapshot[] = JSON.parse(entry.snapshot)
 
-  return withTransaction((db) => {
-    // Restore each task to its before_state for the changed fields only
-    for (const snapshot of snapshots) {
-      restoreTaskFields(snapshot.task_id, snapshot.before_state, fieldsChanged)
+  return withTransaction((tx) => {
+    // Handle special case: undoing a 'create' means soft-deleting the task
+    if (entry.action === 'create') {
+      const now = nowUtc()
+      for (const snapshot of snapshots) {
+        tx.prepare('UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
+          now,
+          now,
+          snapshot.task_id
+        )
+      }
+    } else {
+      // Restore each task to its before_state for the changed fields only
+      for (const snapshot of snapshots) {
+        restoreTaskFields(snapshot.task_id, snapshot.before_state, fieldsChanged)
 
-      // If this was a recurring task completion, delete the completion record
-      if (snapshot.completion_id) {
-        db.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
+        // If this was a recurring task completion, delete the completion record
+        if (snapshot.completion_id) {
+          tx.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
+        }
       }
     }
 
     // Mark the action as undone
-    db.prepare('UPDATE undo_log SET undone = 1 WHERE id = ?').run(entry.id)
+    tx.prepare('UPDATE undo_log SET undone = 1 WHERE id = ?').run(entry.id)
 
     return {
       undone_action: entry.action as UndoResult['undone_action'],

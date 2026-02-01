@@ -1,5 +1,9 @@
 /**
  * Critical alerts - sends Pushover emergency priority for tasks with 'critical' label
+ *
+ * Features:
+ * - 30-minute per-task cooldown to prevent alert fatigue
+ * - Uses same last_notified_at column as regular overdue notifications
  */
 
 import { getDb } from '@/core/db'
@@ -8,6 +12,7 @@ const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN || ''
 const PUSHOVER_USER = process.env.PUSHOVER_USER || ''
 const NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
 const NTFY_CRITICAL_TOPIC = process.env.NTFY_CRITICAL_TOPIC || 'opentask-critical'
+const NOTIFICATION_COOLDOWN_MINUTES = 30
 
 interface CriticalTask {
   id: number
@@ -18,6 +23,8 @@ interface CriticalTask {
 export async function checkCriticalTasks(): Promise<void> {
   try {
     const db = getDb()
+    const now = new Date()
+    const cooldownCutoff = new Date(now.getTime() - NOTIFICATION_COOLDOWN_MINUTES * 60 * 1000)
 
     const criticalTasks = db
       .prepare(
@@ -30,11 +37,12 @@ export async function checkCriticalTasks(): Promise<void> {
           AND due_at IS NOT NULL
           AND due_at < datetime('now')
           AND labels LIKE '%"critical"%'
+          AND (last_notified_at IS NULL OR last_notified_at < ?)
         ORDER BY due_at ASC
         LIMIT 5
       `
       )
-      .all() as CriticalTask[]
+      .all(cooldownCutoff.toISOString()) as CriticalTask[]
 
     if (criticalTasks.length === 0) return
 
@@ -46,6 +54,12 @@ export async function checkCriticalTasks(): Promise<void> {
       if (PUSHOVER_TOKEN && PUSHOVER_USER) {
         await sendPushoverAlert(task)
       }
+
+      // Update last_notified_at for cooldown
+      db.prepare('UPDATE tasks SET last_notified_at = ? WHERE id = ?').run(
+        now.toISOString(),
+        task.id
+      )
     }
   } catch (err) {
     console.error('Critical alerts error:', err)

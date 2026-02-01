@@ -22,7 +22,7 @@ describe('Bulk operations integration', () => {
     for (const id of [1, 5, 7, 8]) {
       const res = await apiFetch(`/api/tasks/${id}`)
       const task = (await res.json()).data
-      expect(task.done).toBeTruthy()
+      expect(task.done).toBe(true)
     }
   })
 
@@ -67,7 +67,7 @@ describe('Bulk operations integration', () => {
     // Verify restored
     const after7 = (await (await apiFetch('/api/tasks/7')).json()).data
     const after8 = (await (await apiFetch('/api/tasks/8')).json()).data
-    expect(after7.done).toBeFalsy()
-    expect(after8.done).toBeFalsy()
+    expect(after7.done).toBe(false)
+    expect(after8.done).toBe(false)
   })
 })

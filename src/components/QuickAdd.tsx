@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { Plus } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
 interface QuickAddProps {
   onAdd: (title: string) => void
@@ -27,23 +30,13 @@ export function QuickAdd({ onAdd }: QuickAddProps) {
 
   return (
     <div className="mb-6">
-      <div className="flex items-center gap-2 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 focus-within:border-blue-500 dark:focus-within:border-blue-500 transition-colors">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-zinc-400 flex-shrink-0"
-        >
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        <input
+      <div className={cn(
+        "flex items-center gap-2 p-3 rounded-lg border bg-card",
+        "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
+        "transition-all"
+      )}>
+        <Plus className="size-5 text-muted-foreground flex-shrink-0" />
+        <Input
           ref={inputRef}
           type="text"
           value={title}
@@ -55,7 +48,7 @@ export function QuickAdd({ onAdd }: QuickAddProps) {
             }
           }}
           placeholder="Add a task..."
-          className="flex-1 bg-transparent outline-none text-sm placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
+          className="flex-1 border-0 shadow-none focus-visible:ring-0 p-0 h-auto"
           aria-label="Quick add task"
           disabled={submitting}
         />

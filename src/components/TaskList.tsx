@@ -1,9 +1,19 @@
 'use client'
 
 // Selection integration via context
+import { useCallback } from 'react'
+import { ArrowUpDown } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { Task, Project } from '@/types'
+import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 
 export type GroupingMode = 'time' | 'project'
 
@@ -43,7 +53,56 @@ interface TaskListProps {
   onSwipeSnooze?: (taskId: number, until: string) => void
 }
 
+// Sort tasks within a group
+function sortTasks(tasks: Task[], sortOption: SortOption): Task[] {
+  const sorted = [...tasks]
+  switch (sortOption) {
+    case 'priority':
+      // Higher priority first (4=urgent, 0=unset), then by due date
+      sorted.sort((a, b) => {
+        const priorityDiff = (b.priority || 0) - (a.priority || 0)
+        if (priorityDiff !== 0) return priorityDiff
+        const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
+        const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
+        return aDue - bDue
+      })
+      break
+    case 'title':
+      sorted.sort((a, b) => a.title.localeCompare(b.title))
+      break
+    case 'age':
+      // Oldest first (by created_at)
+      sorted.sort((a, b) => {
+        const aCreated = a.created_at ? new Date(a.created_at).getTime() : Infinity
+        const bCreated = b.created_at ? new Date(b.created_at).getTime() : Infinity
+        return aCreated - bCreated
+      })
+      break
+  }
+  return sorted
+}
+
+const SORT_LABELS: Record<SortOption, string> = {
+  priority: 'Priority',
+  title: 'A-Z',
+  age: 'Oldest',
+}
+
 export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSnooze, onSwipeSnooze }: TaskListProps) {
+  const { getSortOption, setSortOption } = useGroupSort()
+  const selection = useSafeSelection()
+
+  // Snooze +1h helper for swipe (must be before early return for hooks rules)
+  const handleSwipeSnooze = useCallback((task: Task) => {
+    const snoozeTime = new Date(Date.now() + 60 * 60 * 1000)
+    snoozeTime.setMinutes(0, 0, 0)
+    if (onSwipeSnooze) {
+      onSwipeSnooze(task.id, snoozeTime.toISOString())
+    } else {
+      onSnooze(task)
+    }
+  }, [onSwipeSnooze, onSnooze])
+
   if (tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -62,8 +121,6 @@ export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSn
     ? groupByProject(tasks, projects)
     : groupByTime(tasks)
 
-  const selection = useSafeSelection()
-
   // Build ordered ID list for range-select
   const orderedIds = groups.flatMap((g) => g.tasks.map((t) => t.id))
 
@@ -71,34 +128,52 @@ export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSn
   const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
   const hasUpcoming = grouping === 'time' && groups.some((g) => g.label !== 'Overdue')
 
-  // Snooze +1h helper for swipe
-  const handleSwipeSnooze = (task: Task) => {
-    const snoozeTime = new Date(Date.now() + 60 * 60 * 1000)
-    snoozeTime.setMinutes(0, 0, 0)
-    if (onSwipeSnooze) {
-      onSwipeSnooze(task.id, snoozeTime.toISOString())
-    } else {
-      onSnooze(task)
-    }
-  }
-
   return (
     <div className="space-y-6">
-      {groups.map((group, groupIdx) => (
+      {groups.map((group, groupIdx) => {
+        const sortOption = getSortOption(group.label)
+        const sortedTasks = sortTasks(group.tasks, sortOption)
+
+        return (
         <section key={group.label}>
           {/* "Now" separator between Overdue and the next group */}
           {hasOverdue && hasUpcoming && groupIdx === 1 && (
             <NowSeparator />
           )}
 
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2 px-1">
-            {group.label}
-            <span className="ml-2 text-zinc-400 dark:text-zinc-500">
-              {group.tasks.length}
-            </span>
-          </h2>
+          <div className="flex items-center justify-between mb-2 px-1">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              {group.label}
+              <span className="ml-2 text-zinc-400 dark:text-zinc-500">
+                {group.tasks.length}
+              </span>
+            </h2>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                >
+                  <ArrowUpDown className="size-3 mr-1" />
+                  {SORT_LABELS[sortOption]}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setSortOption(group.label, 'priority')}>
+                  Priority
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOption(group.label, 'title')}>
+                  Title (A-Z)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOption(group.label, 'age')}>
+                  Age (oldest first)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <div className="space-y-1">
-            {group.tasks.map((task) => (
+            {sortedTasks.map((task) => (
               <SwipeableRow
                 key={task.id}
                 onSwipeRight={() => onDone(task.id)}
@@ -118,7 +193,8 @@ export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSn
             ))}
           </div>
         </section>
-      ))}
+        )
+      })}
     </div>
   )
 }

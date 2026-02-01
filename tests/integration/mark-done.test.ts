@@ -20,7 +20,7 @@ describe('Mark done integration', () => {
     // Verify the task still exists (not archived) with a new due_at
     const afterRes = await apiFetch('/api/tasks/2')
     const after = (await afterRes.json()).data
-    expect(after.done).toBeFalsy()
+    expect(after.done).toBe(false)
     expect(after.due_at).not.toBe(before.due_at)
   })
 
@@ -39,9 +39,10 @@ describe('Mark done integration', () => {
     const archivedRes = await apiFetch('/api/tasks?archived=true&done=true')
     const archived = (await archivedRes.json()).data.tasks
     const archivedTask = archived.find((t: { id: number }) => t.id === 1)
-    expect(archivedTask).toBeDefined()
-    expect(archivedTask.done).toBeTruthy()
-    expect(archivedTask.archived_at).toBeTruthy()
+    expect(archivedTask).not.toBeUndefined()
+    expect(archivedTask.id).toBe(1)
+    expect(archivedTask.done).toBe(true)
+    expect(archivedTask.archived_at).not.toBeNull()
   })
 
   test('POST done then POST undo restores original state', async () => {

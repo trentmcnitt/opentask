@@ -108,7 +108,8 @@ describe('Undo/Redo integration', () => {
     const trashRes = await apiFetch('/api/trash')
     const trashData = (await trashRes.json()).data
     const inTrash = trashData.tasks.find((t: { id: number }) => t.id === 7)
-    expect(inTrash).toBeDefined()
+    expect(inTrash).not.toBeUndefined()
+    expect(inTrash.id).toBe(7)
 
     // Undo
     const undoRes = await undo()
@@ -119,7 +120,7 @@ describe('Undo/Redo integration', () => {
     // Task should be back in active list
     const after = await getTask(7)
     expect(after.title).toBe('Clean desk')
-    expect(after.deleted_at).toBeFalsy()
+    expect(after.deleted_at).toBeNull()
   })
 
   test('undo snooze restores original due_at', async () => {
@@ -131,7 +132,7 @@ describe('Undo/Redo integration', () => {
     await snoozeTask(1, snoozeUntil)
 
     const snoozed = await getTask(1)
-    expect(snoozed.snoozed_from).toBeTruthy()
+    expect(snoozed.snoozed_from).not.toBeNull()
     expect(snoozed.due_at).not.toBe(originalDueAt)
 
     // Undo
@@ -143,7 +144,7 @@ describe('Undo/Redo integration', () => {
     // Verify restored
     const after = await getTask(1)
     expect(after.due_at).toBe(originalDueAt)
-    expect(after.snoozed_from).toBeFalsy()
+    expect(after.snoozed_from).toBeNull()
   })
 
   // ─── Basic redo ─────────────────────────────────────────────────
@@ -275,7 +276,7 @@ describe('Undo/Redo integration', () => {
     await undo() // undo snooze
     const afterUndoSnooze = await getTask(5)
     expect(afterUndoSnooze.due_at).toBe(orig5.due_at)
-    expect(afterUndoSnooze.snoozed_from).toBeFalsy()
+    expect(afterUndoSnooze.snoozed_from).toBeNull()
 
     await undo() // undo edit
     expect((await getTask(1)).title).toBe(orig1.title)
@@ -293,7 +294,7 @@ describe('Undo/Redo integration', () => {
     // Snooze should still be undone
     const task5 = await getTask(5)
     expect(task5.due_at).toBe(orig5.due_at)
-    expect(task5.snoozed_from).toBeFalsy()
+    expect(task5.snoozed_from).toBeNull()
   })
 
   // ─── Redo invalidation ─────────────────────────────────────────
@@ -383,20 +384,20 @@ describe('Undo/Redo integration', () => {
     expect(bulkRes.status).toBe(200)
 
     // Both should be done
-    expect((await getTask(7)).done).toBeTruthy()
-    expect((await getTask(8)).done).toBeTruthy()
+    expect((await getTask(7)).done).toBe(true)
+    expect((await getTask(8)).done).toBe(true)
 
     // Undo — both revert
     const undoRes = await undo()
     expect(undoRes.status).toBe(200)
-    expect((await getTask(7)).done).toBeFalsy()
-    expect((await getTask(8)).done).toBeFalsy()
+    expect((await getTask(7)).done).toBe(false)
+    expect((await getTask(8)).done).toBe(false)
 
     // Redo — both re-complete
     const redoRes = await redo()
     expect(redoRes.status).toBe(200)
-    expect((await getTask(7)).done).toBeTruthy()
-    expect((await getTask(8)).done).toBeTruthy()
+    expect((await getTask(7)).done).toBe(true)
+    expect((await getTask(8)).done).toBe(true)
   })
 
   test('undo is isolated between users', async () => {

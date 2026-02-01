@@ -10,6 +10,7 @@ import { test as base, type Page } from '@playwright/test'
 export const TEST_EMAIL = 'test@opentask.local'
 export const TEST_PASSWORD = 'testpass123'
 
+/* eslint-disable react-hooks/rules-of-hooks -- Playwright fixtures use `use` which is not a React hook */
 export const test = base.extend<{ authenticatedPage: Page }>({
   authenticatedPage: async ({ page }, use) => {
     // Navigate to login page
@@ -36,5 +37,6 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     await use(page)
   },
 })
+/* eslint-enable react-hooks/rules-of-hooks */
 
 export { expect } from '@playwright/test'

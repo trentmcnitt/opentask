@@ -9,6 +9,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
+import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById, updateTask, deleteTask, canUserAccessTask } from '@/core/tasks'
 import { validateTaskUpdate } from '@/core/validation'
 import { ZodError } from 'zod'
@@ -38,11 +39,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return notFound('Task not found', { task_id: taskId })
     }
 
-    return success({
-      ...task,
-      is_recurring: task.rrule !== null,
-      is_snoozed: task.snoozed_from !== null,
-    })
+    return success(formatTaskResponse(task))
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
@@ -77,9 +74,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     })
 
     return success({
-      ...task,
-      is_recurring: task.rrule !== null,
-      is_snoozed: task.snoozed_from !== null,
+      ...formatTaskResponse(task),
       fields_changed: fieldsChanged,
     })
   } catch (err) {

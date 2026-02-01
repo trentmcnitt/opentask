@@ -7,24 +7,21 @@
  * Returns 404 if not in test mode (invisible in production).
  */
 
-import { NextResponse } from 'next/server'
 import { resetDb } from '@/core/db'
 import { seedTestData } from '../../../../../scripts/seed-test'
+import { notFound, internalError, success } from '@/lib/api-response'
 
 export async function POST() {
   if (process.env.OPENTASK_TEST_MODE !== '1') {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return notFound('Not found')
   }
 
   try {
     resetDb()
     await seedTestData()
-    return NextResponse.json({ ok: true })
+    return success({ ok: true })
   } catch (err) {
     console.error('Test reset failed:', err)
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    )
+    return internalError(String(err))
   }
 }

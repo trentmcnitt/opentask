@@ -22,7 +22,7 @@ const testEnv = {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __TEST_SERVER__: ChildProcess | undefined
 }
 

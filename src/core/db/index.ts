@@ -52,6 +52,30 @@ function initSchema(database: Database.Database): void {
 
   // Execute schema (CREATE IF NOT EXISTS is idempotent)
   database.exec(schema)
+
+  // Run migrations for columns that may not exist in older databases
+  runMigrations(database)
+}
+
+function runMigrations(database: Database.Database): void {
+  // Helper to check if a column exists
+  const hasColumn = (table: string, column: string): boolean => {
+    const columns = database.pragma(`table_info(${table})`) as { name: string }[]
+    return columns.some((c) => c.name === column)
+  }
+
+  // Migration: Add last_notified_at to tasks
+  if (!hasColumn('tasks', 'last_notified_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN last_notified_at TEXT')
+  }
+
+  // Migration: Add ntfy settings to users
+  if (!hasColumn('users', 'ntfy_topic')) {
+    database.exec('ALTER TABLE users ADD COLUMN ntfy_topic TEXT')
+  }
+  if (!hasColumn('users', 'ntfy_server')) {
+    database.exec('ALTER TABLE users ADD COLUMN ntfy_server TEXT')
+  }
 }
 
 export function closeDb(): void {

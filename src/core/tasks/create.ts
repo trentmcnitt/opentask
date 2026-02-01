@@ -2,7 +2,7 @@
  * Task creation
  */
 
-import { getDb } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
@@ -68,52 +68,55 @@ export function createTask(options: CreateTaskOptions): Task {
   const now = nowUtc()
   const labelsJson = JSON.stringify(input.labels ?? [])
 
-  // Insert the task
-  const result = db
-    .prepare(
-      `
-    INSERT INTO tasks (
-      user_id, project_id, title, done, priority, due_at,
-      rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-      labels, created_at, updated_at
-    ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `
+  // Execute insert and undo log in a transaction
+  return withTransaction((tx) => {
+    // Insert the task
+    const result = tx
+      .prepare(
+        `
+      INSERT INTO tasks (
+        user_id, project_id, title, done, priority, due_at,
+        rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
+        labels, created_at, updated_at
+      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+      )
+      .run(
+        userId,
+        projectId,
+        input.title,
+        input.priority ?? 0,
+        dueAt,
+        input.rrule ?? null,
+        input.recurrence_mode ?? 'from_due',
+        anchorTime,
+        anchorDow,
+        anchorDom,
+        labelsJson,
+        now,
+        now
+      )
+
+    const taskId = Number(result.lastInsertRowid)
+
+    // Fetch the created task
+    const task = getTaskById(taskId)
+    if (!task) {
+      throw new Error('Failed to retrieve created task')
+    }
+
+    // Log to undo - for create, before_state is empty, after_state is the task
+    // On undo, we'll soft-delete the task
+    const snapshot = createTaskSnapshot(
+      { id: taskId }, // before_state is essentially empty
+      task,
+      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels']
     )
-    .run(
-      userId,
-      projectId,
-      input.title,
-      input.priority ?? 0,
-      dueAt,
-      input.rrule ?? null,
-      input.recurrence_mode ?? 'from_due',
-      anchorTime,
-      anchorDow,
-      anchorDom,
-      labelsJson,
-      now,
-      now
-    )
 
-  const taskId = Number(result.lastInsertRowid)
+    logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])
 
-  // Fetch the created task
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new Error('Failed to retrieve created task')
-  }
-
-  // Log to undo - for create, before_state is empty, after_state is the task
-  // On undo, we'll soft-delete the task
-  const snapshot = createTaskSnapshot(
-    { id: taskId }, // before_state is essentially empty
-    task,
-    ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels']
-  )
-
-  logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])
-
-  return task
+    return task
+  })
 }
 
 /**

@@ -123,7 +123,7 @@ describe('Snooze Behavioral Tests', () => {
     })
 
     // Verify state after first snooze
-    let snoozedTask = getTaskById(task.id)!
+    const snoozedTask = getTaskById(task.id)!
     expect(snoozedTask.due_at).toBe(firstSnoozeTime)
     expect(snoozedTask.snoozed_from).toBe(originalDueAt)
 
@@ -175,7 +175,7 @@ describe('Snooze Behavioral Tests', () => {
     })
 
     // Verify task is snoozed
-    let snoozedTask = getTaskById(task.id)!
+    const snoozedTask = getTaskById(task.id)!
     expect(snoozedTask.due_at).toBe(snoozeTo)
     expect(snoozedTask.snoozed_from).toBe(originalDueAt)
 

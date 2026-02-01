@@ -155,35 +155,35 @@ function markRecurringDone(
  * Mark a one-off task done - set done=1 and archive
  */
 function markOneOffDone(task: Task, userId: number, nowStr: string): MarkDoneResult {
-  const db = getDb()
-
-  // Update task: set done=1, done_at, archived_at
-  db.prepare(
+  return withTransaction((tx) => {
+    // Update task: set done=1, done_at, archived_at
+    tx.prepare(
+      `
+      UPDATE tasks
+      SET done = 1, done_at = ?, archived_at = ?, updated_at = ?
+      WHERE id = ?
     `
-    UPDATE tasks
-    SET done = 1, done_at = ?, archived_at = ?, updated_at = ?
-    WHERE id = ?
-  `
-  ).run(nowStr, nowStr, nowStr, task.id)
+    ).run(nowStr, nowStr, nowStr, task.id)
 
-  // Log to undo
-  const snapshot = createTaskSnapshot(
-    { id: task.id, done: false, done_at: null, archived_at: null },
-    { id: task.id, done: true, done_at: nowStr, archived_at: nowStr },
-    ['done', 'done_at', 'archived_at']
-  )
-  logAction(userId, 'done', `Marked "${task.title}" done`, ['done', 'done_at', 'archived_at'], [snapshot])
+    // Log to undo
+    const snapshot = createTaskSnapshot(
+      { id: task.id, done: false, done_at: null, archived_at: null },
+      { id: task.id, done: true, done_at: nowStr, archived_at: nowStr },
+      ['done', 'done_at', 'archived_at']
+    )
+    logAction(userId, 'done', `Marked "${task.title}" done`, ['done', 'done_at', 'archived_at'], [snapshot])
 
-  // Return updated task
-  const updatedTask = getTaskById(task.id)
-  if (!updatedTask) {
-    throw new Error('Failed to retrieve updated task')
-  }
+    // Return updated task
+    const updatedTask = getTaskById(task.id)
+    if (!updatedTask) {
+      throw new Error('Failed to retrieve updated task')
+    }
 
-  return {
-    task: updatedTask,
-    wasRecurring: false,
-  }
+    return {
+      task: updatedTask,
+      wasRecurring: false,
+    }
+  })
 }
 
 /**
@@ -194,7 +194,6 @@ function markOneOffDone(task: Task, userId: number, nowStr: string): MarkDoneRes
  */
 export function markUndone(options: MarkDoneOptions): Task {
   const { userId, taskId } = options
-  const db = getDb()
 
   // Get current task state
   const task = getTaskById(taskId)
@@ -219,28 +218,31 @@ export function markUndone(options: MarkDoneOptions): Task {
 
   const nowStr = nowUtc()
 
-  // Update task: clear done, done_at, archived_at
-  db.prepare(
+  // Execute update and undo log in a transaction
+  return withTransaction((tx) => {
+    // Update task: clear done, done_at, archived_at
+    tx.prepare(
+      `
+      UPDATE tasks
+      SET done = 0, done_at = NULL, archived_at = NULL, updated_at = ?
+      WHERE id = ?
     `
-    UPDATE tasks
-    SET done = 0, done_at = NULL, archived_at = NULL, updated_at = ?
-    WHERE id = ?
-  `
-  ).run(nowStr, taskId)
+    ).run(nowStr, taskId)
 
-  // Log to undo
-  const snapshot = createTaskSnapshot(
-    { id: taskId, done: true, done_at: task.done_at, archived_at: task.archived_at },
-    { id: taskId, done: false, done_at: null, archived_at: null },
-    ['done', 'done_at', 'archived_at']
-  )
-  logAction(userId, 'undone', `Reopened "${task.title}"`, ['done', 'done_at', 'archived_at'], [snapshot])
+    // Log to undo
+    const snapshot = createTaskSnapshot(
+      { id: taskId, done: true, done_at: task.done_at, archived_at: task.archived_at },
+      { id: taskId, done: false, done_at: null, archived_at: null },
+      ['done', 'done_at', 'archived_at']
+    )
+    logAction(userId, 'undone', `Reopened "${task.title}"`, ['done', 'done_at', 'archived_at'], [snapshot])
 
-  // Return updated task
-  const updatedTask = getTaskById(taskId)
-  if (!updatedTask) {
-    throw new Error('Failed to retrieve updated task')
-  }
+    // Return updated task
+    const updatedTask = getTaskById(taskId)
+    if (!updatedTask) {
+      throw new Error('Failed to retrieve updated task')
+    }
 
-  return updatedTask
+    return updatedTask
+  })
 }

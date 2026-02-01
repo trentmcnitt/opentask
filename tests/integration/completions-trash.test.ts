@@ -18,7 +18,7 @@ describe('Completions and trash integration', () => {
     expect(data.completions.length).toBeGreaterThan(0)
 
     const entry = data.completions.find((c: { task_id: number }) => c.task_id === 2)
-    expect(entry).toBeDefined()
+    expect(entry).not.toBeUndefined()
     expect(entry.task_id).toBe(2)
   })
 
@@ -31,7 +31,8 @@ describe('Completions and trash integration', () => {
     expect(trashRes.status).toBe(200)
     const trashData = (await trashRes.json()).data
     const trashed = trashData.tasks.find((t: { id: number }) => t.id === 7)
-    expect(trashed).toBeDefined()
+    expect(trashed).not.toBeUndefined()
+    expect(trashed.id).toBe(7)
 
     // Empty trash
     const emptyRes = await apiFetch('/api/trash', { method: 'DELETE' })

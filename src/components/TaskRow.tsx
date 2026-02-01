@@ -2,6 +2,11 @@
 
 import { useRef, useCallback } from 'react'
 import Link from 'next/link'
+import { Check, Clock, Repeat } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
 interface TaskRowProps {
@@ -85,48 +90,31 @@ export function TaskRow({
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      className={`
-        group flex items-center gap-3 p-3 rounded-lg
-        bg-white dark:bg-zinc-900
-        border border-zinc-200 dark:border-zinc-800
-        hover:border-zinc-300 dark:hover:border-zinc-700
-        transition-colors
-        ${isOverdue ? 'border-l-4 border-l-red-500' : ''}
-        ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950/30' : ''}
-        ${isSelectionMode ? 'cursor-pointer' : ''}
-      `}
+      className={cn(
+        "group flex items-center gap-3 p-3 rounded-lg",
+        "bg-card border",
+        "hover:border-border/80 transition-colors",
+        isOverdue && "border-l-4 border-l-destructive",
+        isSelected && "ring-2 ring-ring bg-accent",
+        isSelectionMode && "cursor-pointer"
+      )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}
       {isSelectionMode ? (
-        <div
-          className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-            isSelected
-              ? 'bg-blue-500 border-blue-500'
-              : 'border-zinc-300 dark:border-zinc-600'
-          }`}
-        >
-          {isSelected && (
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </div>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onSelect?.()}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select "${task.title}"`}
+        />
       ) : (
         <button
           onClick={(e) => { e.stopPropagation(); onDone() }}
           aria-label={task.rrule ? `Advance "${task.title}" to next occurrence` : `Mark "${task.title}" as done`}
-          className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-zinc-300 dark:border-zinc-600 hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center justify-center"
+          className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-muted-foreground/30 hover:border-green-500 hover:bg-green-500/10 transition-colors flex items-center justify-center"
           title={task.rrule ? 'Advance to next occurrence' : 'Mark as done'}
         >
-          <svg
-            className="w-4 h-4 text-transparent group-hover:text-green-500 transition-colors"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={3}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
+          <Check className="size-4 text-transparent group-hover:text-green-500 transition-colors" strokeWidth={3} />
         </button>
       )}
 
@@ -134,7 +122,7 @@ export function TaskRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {priorityIndicator && (
-            <span className={`flex-shrink-0 text-sm font-bold ${priorityIndicator.color}`} title={priorityIndicator.title}>
+            <span className={cn("flex-shrink-0 text-sm font-bold", priorityIndicator.color)} title={priorityIndicator.title}>
               {priorityIndicator.icon}
             </span>
           )}
@@ -152,26 +140,24 @@ export function TaskRow({
           )}
 
           {task.rrule && (
-            <span className="flex-shrink-0 text-zinc-400 dark:text-zinc-500" title="Recurring">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M16 16h5v5" />
-              </svg>
+            <span className="flex-shrink-0 text-muted-foreground" title="Recurring">
+              <Repeat className="size-3.5" />
             </span>
           )}
 
           {task.snoozed_from && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               snoozed
-            </span>
+            </Badge>
           )}
         </div>
 
         <div className="flex items-center gap-2 mt-0.5">
           {task.due_at && (
-            <span className={`text-sm ${isOverdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <span className={cn(
+              "text-sm",
+              isOverdue ? "text-destructive font-medium" : "text-muted-foreground"
+            )}>
               {formatDueTime(task.due_at)}
             </span>
           )}
@@ -179,12 +165,12 @@ export function TaskRow({
           {task.labels.length > 0 && (
             <div className="flex gap-1">
               {task.labels.slice(0, 2).map((label) => (
-                <span key={label} className="px-1.5 py-0.5 text-xs rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                <Badge key={label} variant="secondary" className="text-xs px-1.5 py-0">
                   {label}
-                </span>
+                </Badge>
               ))}
               {task.labels.length > 2 && (
-                <span className="text-xs text-zinc-400">+{task.labels.length - 2}</span>
+                <span className="text-xs text-muted-foreground">+{task.labels.length - 2}</span>
               )}
             </div>
           )}
@@ -193,17 +179,16 @@ export function TaskRow({
 
       {/* Snooze button (hidden in selection mode) */}
       {!isSelectionMode && (
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={(e) => { e.stopPropagation(); onSnooze() }}
           aria-label={`Snooze "${task.title}"`}
-          className="flex-shrink-0 p-2 rounded-lg text-zinc-400 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-all"
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
           title="Snooze"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-        </button>
+          <Clock className="size-4" />
+        </Button>
       )}
     </div>
   )

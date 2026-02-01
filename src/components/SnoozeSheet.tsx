@@ -1,12 +1,22 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
+import { Calendar } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import type { Task } from '@/types'
 
 interface SnoozeSheetProps {
   task: Task
   onSnooze: (until: string) => void
   onClose: () => void
+  customOnly?: boolean
 }
 
 /**
@@ -22,45 +32,9 @@ function roundToHour(date: Date): Date {
   return result
 }
 
-export function SnoozeSheet({ task, onSnooze, onClose }: SnoozeSheetProps) {
-  const sheetRef = useRef<HTMLDivElement>(null)
-  const firstOptionRef = useRef<HTMLButtonElement>(null)
-  const [showPicker, setShowPicker] = useState(false)
+export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: SnoozeSheetProps) {
+  const [showPicker, setShowPicker] = useState(customOnly)
   const [customDateTime, setCustomDateTime] = useState('')
-
-  // Close on escape key and handle focus trap
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-        return
-      }
-
-      // Focus trap: keep focus within the modal
-      if (e.key === 'Tab' && sheetRef.current) {
-        const focusableElements = sheetRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        const firstElement = focusableElements[0]
-        const lastElement = focusableElements[focusableElements.length - 1]
-
-        if (e.shiftKey && document.activeElement === firstElement) {
-          e.preventDefault()
-          lastElement?.focus()
-        } else if (!e.shiftKey && document.activeElement === lastElement) {
-          e.preventDefault()
-          firstElement?.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  // Auto-focus first option on mount
-  useEffect(() => {
-    firstOptionRef.current?.focus()
-  }, [])
 
   const getSnoozeTime = (option: string): string => {
     const now = new Date()
@@ -124,100 +98,70 @@ export function SnoozeSheet({ task, onSnooze, onClose }: SnoozeSheetProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Sheet */}
-      <div
-        ref={sheetRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="snooze-sheet-title"
-        className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slide-up"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 id="snooze-sheet-title" className="text-lg font-semibold">Snooze</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close snooze options"
-            className="p-1 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={true}>
+        <SheetHeader>
+          <SheetTitle>Snooze</SheetTitle>
+        </SheetHeader>
 
         {/* Task preview */}
-        <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
+        <div className="px-4 py-3 -mx-4 bg-muted">
+          <p className="text-sm text-muted-foreground truncate">
             {task.title}
           </p>
         </div>
 
         {/* Options */}
-        <div className="p-4 grid grid-cols-2 gap-2">
-          {options.map((option, index) => (
-            <button
-              key={option.id}
-              ref={index === 0 ? firstOptionRef : undefined}
-              onClick={() => onSnooze(getSnoozeTime(option.id))}
-              className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-colors text-left"
-            >
-              <span className="flex-shrink-0 w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-                {option.icon}
-              </span>
-              <span className="text-sm font-medium">{option.label}</span>
-            </button>
-          ))}
+        {!customOnly && (
+          <div className="grid grid-cols-2 gap-2 px-4">
+            {options.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => onSnooze(getSnoozeTime(option.id))}
+                className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+              >
+                <span className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                  {option.icon}
+                </span>
+                <span className="text-sm font-medium">{option.label}</span>
+              </button>
+            ))}
 
-          {/* Pick date & time button */}
-          <button
-            onClick={() => setShowPicker(!showPicker)}
-            className="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 transition-colors text-left"
-          >
-            <span className="flex-shrink-0 w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </span>
-            <span className="text-sm font-medium">Pick date & time</span>
-          </button>
-        </div>
+            {/* Pick date & time button */}
+            <button
+              onClick={() => setShowPicker(!showPicker)}
+              className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+            >
+              <span className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                <Calendar className="size-4" />
+              </span>
+              <span className="text-sm font-medium">Pick date & time</span>
+            </button>
+          </div>
+        )}
 
         {/* Custom datetime picker */}
         {showPicker && (
           <div className="px-4 pb-4 flex gap-2">
-            <input
+            <Input
               type="datetime-local"
               value={customDateTime}
               onChange={(e) => setCustomDateTime(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+              className="flex-1"
               autoFocus
             />
-            <button
+            <Button
               onClick={handleCustomSubmit}
               disabled={!customDateTime}
-              className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-50 hover:bg-blue-600 transition-colors"
             >
               Set
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Safe area padding for mobile */}
         <div className="h-6 sm:hidden" />
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -19,7 +19,6 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError, conflict } from '@/lib/api-response'
 import { getReviewSession, resolveSeqNumbers, deleteReviewSession } from '@/core/review/session'
 import { bulkDone, bulkSnooze } from '@/core/tasks'
-import { withTransaction } from '@/core/db'
 
 interface ReviewAction {
   type: 'done' | 'snooze' | 'skip'

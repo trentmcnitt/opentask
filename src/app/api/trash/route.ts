@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
+import { formatTasksResponse } from '@/lib/format-task'
 import { getTasks, emptyTrash } from '@/core/tasks'
 
 export async function GET(request: NextRequest) {
@@ -19,7 +20,8 @@ export async function GET(request: NextRequest) {
 
     // Pass done explicitly to override the default "undone only" filter
     const { searchParams } = new URL(request.url)
-    const limit = searchParams.has('limit') ? parseInt(searchParams.get('limit')!) : 200
+    const limitParam = searchParams.get('limit')
+    const limit = limitParam ? Math.max(1, Math.min(500, parseInt(limitParam, 10) || 200)) : 200
 
     const tasks = getTasks({
       userId: user.id,
@@ -27,11 +29,7 @@ export async function GET(request: NextRequest) {
       limit,
     })
 
-    const formattedTasks = tasks.map((t) => ({
-      ...t,
-      is_recurring: t.rrule !== null,
-      is_snoozed: t.snoozed_from !== null,
-    }))
+    const formattedTasks = formatTasksResponse(tasks)
 
     return success({
       tasks: formattedTasks,

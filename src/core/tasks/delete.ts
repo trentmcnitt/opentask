@@ -119,7 +119,6 @@ export function restoreTask(options: RestoreTaskOptions): Task {
  */
 export function permanentlyDeleteTask(options: DeleteTaskOptions): void {
   const { userId, taskId } = options
-  const db = getDb()
 
   // Get current task state
   const task = getTaskById(taskId)
@@ -137,14 +136,17 @@ export function permanentlyDeleteTask(options: DeleteTaskOptions): void {
     throw new Error('Can only permanently delete trashed tasks')
   }
 
-  // Delete completions for this task
-  db.prepare('DELETE FROM completions WHERE task_id = ?').run(taskId)
+  // Execute all deletes in a transaction
+  withTransaction((tx) => {
+    // Delete completions for this task
+    tx.prepare('DELETE FROM completions WHERE task_id = ?').run(taskId)
 
-  // Delete notes for this task
-  db.prepare('DELETE FROM notes WHERE task_id = ?').run(taskId)
+    // Delete notes for this task
+    tx.prepare('DELETE FROM notes WHERE task_id = ?').run(taskId)
 
-  // Permanently delete the task
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId)
+    // Permanently delete the task
+    tx.prepare('DELETE FROM tasks WHERE id = ?').run(taskId)
+  })
 
   // No undo for permanent delete
 }
@@ -168,12 +170,18 @@ export function emptyTrash(userId: number): number {
     )
     .all(userId) as { id: number }[]
 
-  // Delete each task and its related records
-  for (const task of trashedTasks) {
-    db.prepare('DELETE FROM completions WHERE task_id = ?').run(task.id)
-    db.prepare('DELETE FROM notes WHERE task_id = ?').run(task.id)
-    db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id)
+  if (trashedTasks.length === 0) {
+    return 0
   }
+
+  // Delete all tasks and their related records in a transaction
+  withTransaction((tx) => {
+    for (const task of trashedTasks) {
+      tx.prepare('DELETE FROM completions WHERE task_id = ?').run(task.id)
+      tx.prepare('DELETE FROM notes WHERE task_id = ?').run(task.id)
+      tx.prepare('DELETE FROM tasks WHERE id = ?').run(task.id)
+    }
+  })
 
   return trashedTasks.length
 }

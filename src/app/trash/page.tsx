@@ -22,21 +22,23 @@ export default function TrashPage() {
   const [tasks, setTasks] = useState<TrashedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [restoringId, setRestoringId] = useState<number | null>(null)
   const [emptyingTrash, setEmptyingTrash] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const [trashRes, projRes] = await Promise.all([
         fetch('/api/trash'),
         fetch('/api/projects'),
       ])
-      if (trashRes.ok) {
-        const data = await trashRes.json()
-        setTasks(data.data?.tasks || [])
-      }
+      if (!trashRes.ok) throw new Error('Failed to fetch trash')
+      const trashData = await trashRes.json()
+      setTasks(trashData.data?.tasks || [])
+
       if (projRes.ok) {
         const data = await projRes.json()
         const map = new Map<number, string>()
@@ -45,8 +47,8 @@ export default function TrashPage() {
         }
         setProjects(map)
       }
-    } catch {
-      // Handled silently
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load trash')
     } finally {
       setLoading(false)
     }
@@ -109,6 +111,16 @@ export default function TrashPage() {
       <main className="max-w-2xl mx-auto w-full px-4 py-6">
         {loading ? (
           <div className="animate-pulse text-zinc-500 text-center py-8">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+            <button
+              onClick={fetchData}
+              className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
         ) : tasks.length === 0 ? (
           <p className="text-center text-zinc-400 py-8">Trash is empty</p>
         ) : (

@@ -22,6 +22,7 @@ export default function ArchivePage() {
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -33,18 +34,18 @@ export default function ArchivePage() {
 
   const fetchTasks = useCallback(async (query: string) => {
     setLoading(true)
+    setError(null)
     try {
       const params = new URLSearchParams({ archived: 'true', done: 'true' })
       if (query.trim()) {
         params.set('search', query.trim())
       }
       const res = await fetch(`/api/tasks?${params}`)
-      if (res.ok) {
-        const data = await res.json()
-        setTasks(data.data?.tasks || [])
-      }
-    } catch {
-      // Handled silently
+      if (!res.ok) throw new Error('Failed to fetch archived tasks')
+      const data = await res.json()
+      setTasks(data.data?.tasks || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load archived tasks')
     } finally {
       setLoading(false)
     }
@@ -105,6 +106,16 @@ export default function ArchivePage() {
 
         {loading ? (
           <div className="animate-pulse text-zinc-500 text-center py-8">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+            <button
+              onClick={() => fetchTasks(debouncedSearch)}
+              className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90"
+            >
+              Retry
+            </button>
+          </div>
         ) : tasks.length === 0 ? (
           <p className="text-center text-zinc-400 py-8">
             {search.trim() ? 'No matching archived tasks' : 'No archived tasks'}

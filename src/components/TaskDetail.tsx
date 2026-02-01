@@ -1,6 +1,18 @@
 'use client'
 
 import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
 
@@ -13,10 +25,11 @@ interface TaskDetailProps {
   onFieldChange?: (field: string, value: unknown) => void
   onAddNote?: (content: string) => void
   onDeleteNote?: (noteId: number) => void
+  onDelete?: () => void
 }
 
 const PRIORITY_OPTIONS = [
-  { value: 0, label: 'None', color: 'text-zinc-400' },
+  { value: 0, label: 'None', color: 'text-muted-foreground' },
   { value: 1, label: 'Low', color: 'text-blue-500' },
   { value: 2, label: 'Medium', color: 'text-yellow-500' },
   { value: 3, label: 'High', color: 'text-orange-500' },
@@ -32,6 +45,7 @@ export function TaskDetail({
   onFieldChange,
   onAddNote,
   onDeleteNote,
+  onDelete,
 }: TaskDetailProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(task.title)
@@ -57,30 +71,48 @@ export function TaskDetail({
 
   return (
     <div className="space-y-6">
-      {/* Title */}
-      <div>
-        {editable && editingTitle ? (
-          <input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={handleTitleSave}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleTitleSave() }}
-            className="text-2xl font-semibold w-full bg-transparent border-b-2 border-blue-500 outline-none"
-            autoFocus
-          />
-        ) : (
-          <h1
-            className={`text-2xl font-semibold ${editable ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`}
-            onClick={() => { if (editable) { setTitleDraft(task.title); setEditingTitle(true) } }}
+      {/* Title with delete button */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          {editable && editingTitle ? (
+            <Input
+              type="text"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={handleTitleSave}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleTitleSave() }}
+              className="text-2xl font-semibold h-auto py-1"
+              autoFocus
+            />
+          ) : (
+            <h1
+              className={cn(
+                "text-2xl font-semibold",
+                editable && "cursor-pointer hover:text-primary transition-colors"
+              )}
+              onClick={() => { if (editable) { setTitleDraft(task.title); setEditingTitle(true) } }}
+            >
+              {task.title}
+            </h1>
+          )}
+          {task.done && (
+            <Badge variant="secondary" className="mt-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+              Completed
+            </Badge>
+          )}
+        </div>
+
+        {/* Delete button */}
+        {editable && onDelete && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            className="text-muted-foreground hover:text-destructive"
+            aria-label="Delete task"
           >
-            {task.title}
-          </h1>
-        )}
-        {task.done && (
-          <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
-            Completed
-          </span>
+            <Trash2 className="size-5" />
+          </Button>
         )}
       </div>
 
@@ -91,7 +123,7 @@ export function TaskDetail({
           {editable ? (
             editingDue ? (
               <div className="flex gap-2">
-                <input
+                <Input
                   type="datetime-local"
                   defaultValue={task.due_at ? toLocalDatetime(task.due_at) : ''}
                   onChange={(e) => {
@@ -103,21 +135,24 @@ export function TaskDetail({
                     setEditingDue(false)
                   }}
                   onBlur={() => setEditingDue(false)}
-                  className="px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+                  className="w-auto"
                   autoFocus
                 />
               </div>
             ) : (
               <span
-                className={`cursor-pointer hover:text-blue-500 ${isOverdue ? 'text-red-600 dark:text-red-400 font-medium' : ''}`}
+                className={cn(
+                  "cursor-pointer hover:text-primary",
+                  isOverdue && "text-destructive font-medium"
+                )}
                 onClick={() => setEditingDue(true)}
               >
                 {task.due_at ? formatDateTime(task.due_at) : 'No due date (click to set)'}
               </span>
             )
           ) : (
-            <span className={isOverdue ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
-              {task.due_at ? formatDateTime(task.due_at) : <span className="text-zinc-400">No due date</span>}
+            <span className={cn(isOverdue && "text-destructive font-medium")}>
+              {task.due_at ? formatDateTime(task.due_at) : <span className="text-muted-foreground">No due date</span>}
             </span>
           )}
         </DetailField>
@@ -127,17 +162,15 @@ export function TaskDetail({
           {editable ? (
             <div className="flex gap-1">
               {PRIORITY_OPTIONS.map((opt) => (
-                <button
+                <Button
                   key={opt.value}
+                  variant={task.priority === opt.value ? "secondary" : "ghost"}
+                  size="sm"
                   onClick={() => onFieldChange?.('priority', opt.value)}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    task.priority === opt.value
-                      ? 'bg-zinc-200 dark:bg-zinc-700 font-medium'
-                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  } ${opt.color}`}
+                  className={cn("text-xs", opt.color)}
                 >
                   {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
           ) : (
@@ -148,15 +181,19 @@ export function TaskDetail({
         {/* Project */}
         <DetailField label="Project">
           {editable && projects.length > 0 ? (
-            <select
-              value={task.project_id}
-              onChange={(e) => onFieldChange?.('project_id', parseInt(e.target.value))}
-              className="px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+            <Select
+              value={task.project_id.toString()}
+              onValueChange={(value) => onFieldChange?.('project_id', parseInt(value))}
             >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+              <SelectTrigger className="w-auto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ) : (
             <span>{project?.name || 'Unknown'}</span>
           )}
@@ -173,13 +210,11 @@ export function TaskDetail({
             task.labels.length > 0 ? (
               <div className="flex flex-wrap gap-1">
                 {task.labels.map((label) => (
-                  <span key={label} className="px-2 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                    {label}
-                  </span>
+                  <Badge key={label} variant="secondary">{label}</Badge>
                 ))}
               </div>
             ) : (
-              <span className="text-zinc-400">None</span>
+              <span className="text-muted-foreground">None</span>
             )
           )}
         </DetailField>
@@ -188,7 +223,7 @@ export function TaskDetail({
         {task.rrule && (
           <DetailField label="Recurrence">
             {formatRRule(task.rrule, task.anchor_time)}
-            <span className="ml-2 text-zinc-400 text-sm">
+            <span className="ml-2 text-muted-foreground text-sm">
               ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
             </span>
           </DetailField>
@@ -217,50 +252,49 @@ export function TaskDetail({
 
       {/* Notes */}
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Notes
-          <span className="ml-2 text-zinc-400 dark:text-zinc-500">{notes.length}</span>
+          <span className="ml-2 text-muted-foreground/60">{notes.length}</span>
         </h2>
 
         {/* Add note form */}
         {editable && onAddNote && (
           <div className="mb-4 flex gap-2">
-            <input
+            <Input
               type="text"
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote() }}
               placeholder="Add a note..."
-              className="flex-1 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+              className="flex-1"
             />
-            <button
+            <Button
               onClick={handleAddNote}
               disabled={!newNote.trim()}
-              className="px-3 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium disabled:opacity-50 hover:bg-blue-600 transition-colors"
             >
               Add
-            </button>
+            </Button>
           </div>
         )}
 
         {notes.length === 0 ? (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">No notes yet.</p>
+          <p className="text-sm text-muted-foreground">No notes yet.</p>
         ) : (
           <div className="space-y-3">
             {notes.map((note) => (
               <div
                 key={note.id}
-                className="group p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
+                className="group p-3 rounded-lg bg-muted border"
               >
                 <p className="text-sm whitespace-pre-wrap">{note.content}</p>
                 <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-muted-foreground">
                     {formatDateTime(note.created_at)}
                   </p>
                   {editable && onDeleteNote && (
                     <button
                       onClick={() => onDeleteNote(note.id)}
-                      className="text-xs text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Delete
                     </button>
@@ -295,29 +329,31 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
   return (
     <div className="flex flex-wrap gap-1 items-center">
       {labels.map((label) => (
-        <span key={label} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+        <Badge key={label} variant="secondary" className="gap-1">
           {label}
-          <button onClick={() => handleRemove(label)} className="hover:text-red-500">&times;</button>
-        </span>
+          <button onClick={() => handleRemove(label)} className="hover:text-destructive">&times;</button>
+        </Badge>
       ))}
       {adding ? (
-        <input
+        <Input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={handleAdd}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
-          className="px-2 py-0.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+          className="w-24 h-6 text-xs"
           placeholder="label"
           autoFocus
         />
       ) : (
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setAdding(true)}
-          className="px-2 py-0.5 text-xs rounded-full border border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-400 hover:text-zinc-600 hover:border-zinc-400"
+          className="h-6 text-xs border-dashed"
         >
           + Add
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -326,7 +362,7 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-4">
-      <span className="w-24 flex-shrink-0 text-sm text-zinc-500 dark:text-zinc-400 pt-0.5">
+      <span className="w-24 flex-shrink-0 text-sm text-muted-foreground pt-0.5">
         {label}
       </span>
       <div className="text-sm flex-1">{children}</div>

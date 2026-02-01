@@ -15,7 +15,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const fetchProjects = useCallback(async () => {
     try {
       const res = await fetch('/api/projects')
-      if (!res.ok) return
+      if (!res.ok) {
+        console.warn('Failed to fetch projects for sidebar:', res.status)
+        return
+      }
       const data = await res.json()
       setProjects(
         (data.data?.projects || []).map((p: { id: number; name: string }) => ({
@@ -23,8 +26,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           name: p.name,
         }))
       )
-    } catch {
-      // Silent fail - sidebar just won't show projects
+    } catch (err) {
+      // Non-critical - sidebar just won't show projects
+      console.warn('Failed to fetch projects for sidebar:', err)
     }
   }, [])
 

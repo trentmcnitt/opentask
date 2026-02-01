@@ -1,6 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { Check, X, ChevronUp, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 
 interface FloatingActionBarProps {
   selectedCount: number
@@ -12,6 +20,8 @@ interface FloatingActionBarProps {
   onPriorityHigh: () => void
   onPriorityLow: () => void
   onClear: () => void
+  onMoveToProject?: () => void
+  onCustomSnooze?: () => void
 }
 
 export function FloatingActionBar({
@@ -24,86 +34,85 @@ export function FloatingActionBar({
   onPriorityHigh,
   onPriorityLow,
   onClear,
+  onMoveToProject,
+  onCustomSnooze,
 }: FloatingActionBarProps) {
-  const [showOverflow, setShowOverflow] = useState(false)
-
   if (selectedCount === 0) return null
 
   return (
-    <>
-      {/* Overflow menu backdrop */}
-      {showOverflow && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setShowOverflow(false)}
-          aria-hidden="true"
-        />
-      )}
+    <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-up">
+      <div className="flex items-center gap-2 px-4 py-3 bg-primary text-primary-foreground rounded-xl shadow-xl">
+        <span className="text-sm font-medium mr-2">
+          {selectedCount} selected
+        </span>
 
-      <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-up">
-        <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 dark:bg-zinc-100 rounded-xl shadow-xl">
-          <span className="text-sm font-medium text-white dark:text-zinc-900 mr-2">
-            {selectedCount} selected
-          </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onDone}
+          className="bg-green-600 hover:bg-green-700 text-white"
+        >
+          <Check className="size-4 mr-1" />
+          Done
+        </Button>
 
-          <ActionButton label="Done" onClick={onDone} className="bg-green-600 hover:bg-green-700 text-white" />
-          <ActionButton label="+1h" onClick={onSnooze1h} className="bg-blue-600 hover:bg-blue-700 text-white" />
-          <ActionButton label="+2h" onClick={onSnooze2h} className="bg-blue-600 hover:bg-blue-700 text-white" />
-          <ActionButton label="9AM" onClick={onSnoozeTomorrow} className="bg-blue-600 hover:bg-blue-700 text-white" />
+        <Button size="sm" variant="secondary" onClick={onSnooze1h}>
+          +1h
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onSnooze2h}>
+          +2h
+        </Button>
+        <Button size="sm" variant="secondary" onClick={onSnoozeTomorrow}>
+          9AM
+        </Button>
 
-          {/* Overflow menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShowOverflow(!showOverflow)}
-              className="px-2 py-1.5 rounded-lg bg-zinc-700 dark:bg-zinc-300 hover:bg-zinc-600 dark:hover:bg-zinc-400 text-white dark:text-zinc-900 text-sm font-medium"
-              aria-label="More actions"
-            >
-              &middot;&middot;&middot;
-            </button>
+        {/* Overflow menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="secondary" aria-label="More actions">
+              <ChevronUp className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="top">
+            <DropdownMenuItem onClick={onPriorityHigh}>
+              <ArrowUp className="size-4 text-orange-500" />
+              Priority: High
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onPriorityLow}>
+              <ArrowDown className="size-4 text-blue-500" />
+              Priority: Low
+            </DropdownMenuItem>
 
-            {showOverflow && (
-              <div className="absolute bottom-full mb-2 right-0 w-40 bg-white dark:bg-zinc-900 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1">
-                <OverflowItem label="Priority: High" onClick={() => { onPriorityHigh(); setShowOverflow(false) }} />
-                <OverflowItem label="Priority: Low" onClick={() => { onPriorityLow(); setShowOverflow(false) }} />
-                <OverflowItem label="Delete" onClick={() => { onDelete(); setShowOverflow(false) }} className="text-red-500" />
-              </div>
+            {onMoveToProject && (
+              <DropdownMenuItem onClick={onMoveToProject}>
+                Move to Project
+              </DropdownMenuItem>
             )}
-          </div>
 
-          <button
-            onClick={onClear}
-            className="ml-2 p-1 text-zinc-400 dark:text-zinc-600 hover:text-white dark:hover:text-zinc-900"
-            aria-label="Clear selection"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+            {onCustomSnooze && (
+              <DropdownMenuItem onClick={onCustomSnooze}>
+                Custom Snooze
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2 className="size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClear}
+          aria-label="Clear selection"
+          className="ml-2 text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10"
+        >
+          <X className="size-4" />
+        </Button>
       </div>
-    </>
-  )
-}
-
-function ActionButton({ label, onClick, className }: { label: string; onClick: () => void; className: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-sm font-medium ${className}`}
-    >
-      {label}
-    </button>
-  )
-}
-
-function OverflowItem({ label, onClick, className = '' }: { label: string; onClick: () => void; className?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${className}`}
-    >
-      {label}
-    </button>
+    </div>
   )
 }

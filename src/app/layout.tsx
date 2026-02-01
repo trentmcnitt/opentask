@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { SessionProvider } from '@/components/SessionProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const inter = Inter({
@@ -39,6 +40,7 @@ export default function RootLayout({
       <body className="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 antialiased">
         <SessionProvider>
           <AppLayoutWrapper>{children}</AppLayoutWrapper>
+          <Toaster position="bottom-center" />
         </SessionProvider>
       </body>
     </html>

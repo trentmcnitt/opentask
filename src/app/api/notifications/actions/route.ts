@@ -3,14 +3,13 @@
  *
  * POST /api/notifications/actions - Handle ntfy action button callbacks
  *
- * Body: { action: "done" | "snooze", task_id: number, token: string }
+ * Body: { action: "done" | "snooze" | "snooze30" | "snooze2h", task_id: number, token: string }
  */
 
 import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
-import { nowUtc } from '@/core/recurrence'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,17 +40,39 @@ export async function POST(request: NextRequest) {
         return success({ action: 'done', task_id, result })
       }
 
+      case 'snooze30': {
+        // Snooze by 30 minutes
+        const until = new Date(Date.now() + 30 * 60 * 1000)
+        const result = snoozeTask({
+          userId: user.id,
+          taskId: task_id,
+          until: until.toISOString(),
+        })
+        return success({ action: 'snooze30', task_id, until: until.toISOString(), result })
+      }
+
       case 'snooze': {
-        // Snooze by 1 hour
+        // Snooze by 1 hour (rounded to the hour)
         const until = new Date(Date.now() + 60 * 60 * 1000)
         until.setMinutes(0, 0, 0)
-
         const result = snoozeTask({
           userId: user.id,
           taskId: task_id,
           until: until.toISOString(),
         })
         return success({ action: 'snooze', task_id, until: until.toISOString(), result })
+      }
+
+      case 'snooze2h': {
+        // Snooze by 2 hours (rounded to the hour)
+        const until = new Date(Date.now() + 2 * 60 * 60 * 1000)
+        until.setMinutes(0, 0, 0)
+        const result = snoozeTask({
+          userId: user.id,
+          taskId: task_id,
+          until: until.toISOString(),
+        })
+        return success({ action: 'snooze2h', task_id, until: until.toISOString(), result })
       }
 
       default:

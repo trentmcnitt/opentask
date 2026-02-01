@@ -12,7 +12,8 @@ describe('Review workflow integration', () => {
     expect(reviewRes.status).toBe(200)
     const session = (await reviewRes.json()).data
 
-    expect(session.session_id).toBeTruthy()
+    expect(typeof session.session_id).toBe('string')
+    expect(session.session_id.length).toBeGreaterThan(0)
     expect(session.total_tasks).toBeGreaterThan(0)
 
     // Find seq numbers for tasks in the session

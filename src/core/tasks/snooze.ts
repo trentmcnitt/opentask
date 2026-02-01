@@ -108,7 +108,6 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
  */
 export function clearSnooze(options: { userId: number; taskId: number }): Task {
   const { userId, taskId } = options
-  const db = getDb()
 
   // Get current task state
   const task = getTaskById(taskId)
@@ -129,28 +128,31 @@ export function clearSnooze(options: { userId: number; taskId: number }): Task {
   const nowStr = nowUtc()
   const originalDueAt = task.snoozed_from
 
-  // Restore original due_at, clear snoozed_from
-  db.prepare(
+  // Execute update and undo log in a transaction
+  return withTransaction((tx) => {
+    // Restore original due_at, clear snoozed_from
+    tx.prepare(
+      `
+      UPDATE tasks
+      SET due_at = ?, snoozed_from = NULL, updated_at = ?
+      WHERE id = ?
     `
-    UPDATE tasks
-    SET due_at = ?, snoozed_from = NULL, updated_at = ?
-    WHERE id = ?
-  `
-  ).run(originalDueAt, nowStr, taskId)
+    ).run(originalDueAt, nowStr, taskId)
 
-  // Log to undo (this is like a reverse snooze)
-  const snapshot = createTaskSnapshot(
-    { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
-    { id: taskId, due_at: originalDueAt, snoozed_from: null },
-    ['due_at', 'snoozed_from']
-  )
-  logAction(userId, 'snooze', `Cleared snooze on "${task.title}"`, ['due_at', 'snoozed_from'], [snapshot])
+    // Log to undo (this is like a reverse snooze)
+    const snapshot = createTaskSnapshot(
+      { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
+      { id: taskId, due_at: originalDueAt, snoozed_from: null },
+      ['due_at', 'snoozed_from']
+    )
+    logAction(userId, 'snooze', `Cleared snooze on "${task.title}"`, ['due_at', 'snoozed_from'], [snapshot])
 
-  // Return updated task
-  const updatedTask = getTaskById(taskId)
-  if (!updatedTask) {
-    throw new Error('Failed to retrieve updated task')
-  }
+    // Return updated task
+    const updatedTask = getTaskById(taskId)
+    if (!updatedTask) {
+      throw new Error('Failed to retrieve updated task')
+    }
 
-  return updatedTask
+    return updatedTask
+  })
 }

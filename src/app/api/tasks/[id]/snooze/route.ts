@@ -9,6 +9,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
+import { formatTaskResponse } from '@/lib/format-task'
 import { snoozeTask } from '@/core/tasks'
 import { validateSnooze } from '@/core/validation'
 import { ZodError } from 'zod'
@@ -38,11 +39,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     })
 
     return success({
-      task: {
-        ...result.task,
-        is_recurring: result.task.rrule !== null,
-        is_snoozed: result.task.snoozed_from !== null,
-      },
+      task: formatTaskResponse(result.task),
       previous_due_at: result.previousDueAt,
       snoozed_from: result.snoozedFrom,
     })

@@ -11,6 +11,7 @@ export default function ProjectsPage() {
   const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'loading') return
@@ -21,12 +22,13 @@ export default function ProjectsPage() {
 
     async function fetchProjects() {
       try {
+        setError(null)
         const res = await fetch('/api/projects')
-        if (!res.ok) throw new Error('Failed to fetch')
+        if (!res.ok) throw new Error('Failed to fetch projects')
         const data = await res.json()
         setProjects(data.data?.projects || [])
-      } catch {
-        // Handled silently
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load projects')
       } finally {
         setLoading(false)
       }
@@ -39,6 +41,22 @@ export default function ProjectsPage() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     )
   }

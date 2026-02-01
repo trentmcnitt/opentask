@@ -1,6 +1,23 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { RecurrencePicker } from '@/components/RecurrencePicker'
 
 interface AddTaskFormProps {
   projects: { id: number; name: string }[]
@@ -11,21 +28,21 @@ interface AddTaskFormProps {
 export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
-  const [projectId, setProjectId] = useState<number | ''>('')
-  const [priority, setPriority] = useState(0)
+  const [projectId, setProjectId] = useState<string>('')
+  const [priority, setPriority] = useState<string>('0')
   const [labels, setLabels] = useState('')
+  const [rrule, setRrule] = useState<string | null>(null)
+  const [showRecurrence, setShowRecurrence] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     titleRef.current?.focus()
+  }, [])
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  const handleRruleChange = useCallback((value: string | null) => {
+    setRrule(value)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,11 +52,12 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
     try {
       const body: Record<string, unknown> = { title: title.trim() }
       if (dueAt) body.due_at = new Date(dueAt).toISOString()
-      if (projectId) body.project_id = projectId
-      if (priority > 0) body.priority = priority
+      if (projectId) body.project_id = parseInt(projectId)
+      if (parseInt(priority) > 0) body.priority = parseInt(priority)
       if (labels.trim()) {
         body.labels = labels.split(',').map((l) => l.trim()).filter(Boolean)
       }
+      if (rrule) body.rrule = rrule
 
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -55,41 +73,31 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-task-title"
-        className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slide-up"
-      >
-        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 id="add-task-title" className="text-lg font-semibold">New Task</h2>
-          <button
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" showCloseButton={false}>
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <DialogTitle>New Task</DialogTitle>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="Close"
-            className="p-1 rounded-lg text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+            <X className="size-4" />
+          </Button>
+        </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Title */}
           <div>
             <label htmlFor="task-title" className="block text-sm font-medium mb-1">Title</label>
-            <input
+            <Input
               ref={titleRef}
               id="task-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs to be done?"
-              className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
               required
             />
           </div>
@@ -97,12 +105,11 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
           {/* Due date */}
           <div>
             <label htmlFor="task-due" className="block text-sm font-medium mb-1">Due date</label>
-            <input
+            <Input
               id="task-due"
               type="datetime-local"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
             />
           </div>
 
@@ -110,61 +117,76 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             {/* Project */}
             <div>
               <label htmlFor="task-project" className="block text-sm font-medium mb-1">Project</label>
-              <select
-                id="task-project"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value ? parseInt(e.target.value) : '')}
-                className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
-              >
-                <option value="">Inbox</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Inbox" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Inbox</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Priority */}
             <div>
               <label htmlFor="task-priority" className="block text-sm font-medium mb-1">Priority</label>
-              <select
-                id="task-priority"
-                value={priority}
-                onChange={(e) => setPriority(parseInt(e.target.value))}
-                className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
-              >
-                <option value={0}>None</option>
-                <option value={1}>Low</option>
-                <option value={2}>Medium</option>
-                <option value={3}>High</option>
-                <option value={4}>Urgent</option>
-              </select>
+              <Select value={priority} onValueChange={setPriority}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">None</SelectItem>
+                  <SelectItem value="1">Low</SelectItem>
+                  <SelectItem value="2">Medium</SelectItem>
+                  <SelectItem value="3">High</SelectItem>
+                  <SelectItem value="4">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          {/* Recurrence */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowRecurrence(!showRecurrence)}
+              className="flex items-center gap-2 text-sm font-medium mb-1 hover:text-primary transition-colors"
+            >
+              Repeat
+              {showRecurrence ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+              {rrule && <span className="text-muted-foreground font-normal">(configured)</span>}
+            </button>
+            {showRecurrence && (
+              <div className="border rounded-lg p-3 mt-1">
+                <RecurrencePicker value={rrule} onChange={handleRruleChange} />
+              </div>
+            )}
           </div>
 
           {/* Labels */}
           <div>
             <label htmlFor="task-labels" className="block text-sm font-medium mb-1">Labels (comma-separated)</label>
-            <input
+            <Input
               id="task-labels"
               type="text"
               value={labels}
               onChange={(e) => setLabels(e.target.value)}
               placeholder="e.g. home, errand"
-              className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
             />
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={!title.trim() || submitting}
-            className="w-full py-2.5 rounded-lg bg-blue-500 text-white font-medium text-sm disabled:opacity-50 hover:bg-blue-600 transition-colors"
+            className="w-full"
           >
             {submitting ? 'Creating...' : 'Create Task'}
-          </button>
+          </Button>
         </form>
-
-        <div className="h-6 sm:hidden" />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

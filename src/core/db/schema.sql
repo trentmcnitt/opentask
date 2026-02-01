@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   name          TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   timezone      TEXT NOT NULL DEFAULT 'America/Chicago',
+  ntfy_topic    TEXT,
+  ntfy_server   TEXT,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -48,6 +50,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   -- Labels (JSON array of strings)
   labels        TEXT NOT NULL DEFAULT '[]',
+
+  -- Notification tracking (30-min cooldown)
+  last_notified_at TEXT,
 
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

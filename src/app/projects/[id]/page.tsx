@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
-import { Toast } from '@/components/Toast'
+import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
 export default function ProjectDetailPage() {
@@ -18,7 +18,6 @@ export default function ProjectDetailPage() {
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(true)
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
-  const [toast, setToast] = useState<{ message: string; action?: () => void } | null>(null)
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -53,6 +52,15 @@ export default function ProjectDetailPage() {
       .catch(() => {})
   }, [status, router, projectId, fetchTasks])
 
+  const handleUndo = async () => {
+    try {
+      await fetch('/api/undo', { method: 'POST' })
+      fetchTasks()
+    } catch {
+      showToast({ message: 'Undo failed' })
+    }
+  }
+
   const handleDone = async (taskId: number) => {
     const task = tasks.find((t) => t.id === taskId)
     if (!task) return
@@ -66,7 +74,7 @@ export default function ProjectDetailPage() {
       if (data.data?.task?.rrule) {
         setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
       }
-      setToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: handleUndo })
+      showToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: { label: 'Undo', onClick: handleUndo } })
     } catch {
       fetchTasks()
     }
@@ -83,19 +91,9 @@ export default function ProjectDetailPage() {
       })
       if (!res.ok) throw new Error('Failed')
       fetchTasks()
-      setToast({ message: 'Task snoozed', action: handleUndo })
+      showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
     } catch {
       fetchTasks()
-    }
-  }
-
-  const handleUndo = async () => {
-    try {
-      await fetch('/api/undo', { method: 'POST' })
-      setToast(null)
-      fetchTasks()
-    } catch {
-      setToast({ message: 'Undo failed' })
     }
   }
 
@@ -139,13 +137,6 @@ export default function ProjectDetailPage() {
           task={snoozeTask}
           onSnooze={(until) => handleSnooze(snoozeTask.id, until)}
           onClose={() => setSnoozeTask(null)}
-        />
-      )}
-      {toast && (
-        <Toast
-          message={toast.message}
-          action={toast.action ? { label: 'Undo', onClick: toast.action } : undefined}
-          onDismiss={() => setToast(null)}
         />
       )}
     </div>

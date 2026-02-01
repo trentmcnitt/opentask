@@ -9,6 +9,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { formatTaskResponse } from '@/lib/format-task'
 import { markUndone } from '@/core/tasks'
 import type { RouteContext } from '@/types/api'
 
@@ -32,11 +33,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       taskId,
     })
 
-    return success({
-      ...task,
-      is_recurring: task.rrule !== null,
-      is_snoozed: task.snoozed_from !== null,
-    })
+    return success(formatTaskResponse(task))
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
