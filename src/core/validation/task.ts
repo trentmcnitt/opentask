@@ -8,15 +8,13 @@ import { isValidRRule } from '@/core/recurrence/rrule-builder'
 /**
  * ISO 8601 datetime string validator
  */
-const dateTimeString = z
-  .string()
-  .refine(
-    (val) => {
-      const d = new Date(val)
-      return !isNaN(d.getTime())
-    },
-    { message: 'Invalid ISO 8601 datetime string' }
-  )
+const dateTimeString = z.string().refine(
+  (val) => {
+    const d = new Date(val)
+    return !isNaN(d.getTime())
+  },
+  { message: 'Invalid ISO 8601 datetime string' },
+)
 
 /**
  * Priority levels: 0=unset, 1=low, 2=medium, 3=high, 4=urgent
@@ -41,10 +39,7 @@ const rruleString = z
   .string()
   .nullable()
   .optional()
-  .refine(
-    (val) => !val || isValidRRule(val),
-    { message: 'Invalid RRULE format' }
-  )
+  .refine((val) => !val || isValidRRule(val), { message: 'Invalid RRULE format' })
 
 /**
  * Task creation input schema

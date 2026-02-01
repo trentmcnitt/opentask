@@ -75,7 +75,7 @@ export function localTimeToUtc(
   date: DateTime,
   hour: number,
   minute: number,
-  timezone: string
+  timezone: string,
 ): DateTime {
   return DateTime.fromObject(
     {
@@ -87,7 +87,7 @@ export function localTimeToUtc(
       second: 0,
       millisecond: 0,
     },
-    { zone: timezone }
+    { zone: timezone },
   ).toUTC()
 }
 

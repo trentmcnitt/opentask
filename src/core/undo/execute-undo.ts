@@ -27,7 +27,7 @@ export function executeUndo(userId: number): UndoResult | null {
     WHERE user_id = ? AND undone = 0
     ORDER BY id DESC
     LIMIT 1
-  `
+  `,
     )
     .get(userId) as
     | {
@@ -56,7 +56,7 @@ export function executeUndo(userId: number): UndoResult | null {
         tx.prepare('UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
           now,
           now,
-          snapshot.task_id
+          snapshot.task_id,
         )
       }
     } else {
@@ -91,7 +91,7 @@ export function executeUndo(userId: number): UndoResult | null {
 function restoreTaskFields(
   taskId: number,
   beforeState: Partial<Task>,
-  fieldsChanged: string[]
+  fieldsChanged: string[],
 ): void {
   const db = getDb()
 

@@ -17,19 +17,22 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleChange = useCallback((value: string) => {
-    setQuery(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+  const handleChange = useCallback(
+    (value: string) => {
+      setQuery(value)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
 
-    if (!value.trim()) {
-      onClear()
-      return
-    }
+      if (!value.trim()) {
+        onClear()
+        return
+      }
 
-    debounceRef.current = setTimeout(() => {
-      onSearch(value.trim())
-    }, 200)
-  }, [onSearch, onClear])
+      debounceRef.current = setTimeout(() => {
+        onSearch(value.trim())
+      }, 200)
+    },
+    [onSearch, onClear],
+  )
 
   const handleClear = () => {
     setQuery('')
@@ -44,27 +47,31 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
   return (
     <div className="flex items-center">
       {/* Desktop: always visible */}
-      <div className={cn(
-        "hidden md:flex items-center gap-2 transition-all",
-        expanded || query ? 'w-64' : 'w-48'
-      )}>
+      <div
+        className={cn(
+          'hidden items-center gap-2 transition-all md:flex',
+          expanded || query ? 'w-64' : 'w-48',
+        )}
+      >
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => handleChange(e.target.value)}
             onFocus={() => setExpanded(true)}
-            onBlur={() => { if (!query) setExpanded(false) }}
+            onBlur={() => {
+              if (!query) setExpanded(false)
+            }}
             placeholder="Search tasks..."
-            className="pl-9 pr-8"
+            className="pr-8 pl-9"
             aria-label="Search tasks"
           />
           {query && (
             <button
               onClick={handleClear}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
               aria-label="Clear search"
             >
               <X className="size-4" />
@@ -86,22 +93,12 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
               autoFocus
               aria-label="Search tasks"
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClear}
-              aria-label="Close search"
-            >
+            <Button variant="ghost" size="icon" onClick={handleClear} aria-label="Close search">
               <X className="size-4" />
             </Button>
           </div>
         ) : (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setExpanded(true)}
-            aria-label="Search"
-          >
+          <Button variant="ghost" size="icon" onClick={() => setExpanded(true)} aria-label="Search">
             <Search className="size-5" />
           </Button>
         )}

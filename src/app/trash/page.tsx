@@ -31,10 +31,7 @@ export default function TrashPage() {
     setLoading(true)
     setError(null)
     try {
-      const [trashRes, projRes] = await Promise.all([
-        fetch('/api/trash'),
-        fetch('/api/projects'),
-      ])
+      const [trashRes, projRes] = await Promise.all([fetch('/api/trash'), fetch('/api/projects')])
       if (!trashRes.ok) throw new Error('Failed to fetch trash')
       const trashData = await trashRes.json()
       setTasks(trashData.data?.tasks || [])
@@ -94,7 +91,7 @@ export default function TrashPage() {
 
   if (status === 'loading') {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     )
@@ -102,27 +99,27 @@ export default function TrashPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+        <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Trash</h1>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto w-full px-4 py-6">
+      <main className="mx-auto w-full max-w-2xl px-4 py-6">
         {loading ? (
-          <div className="animate-pulse text-zinc-500 text-center py-8">Loading...</div>
+          <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
         ) : error ? (
-          <div className="text-center py-8">
-            <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+          <div className="py-8 text-center">
+            <p className="mb-4 text-red-500 dark:text-red-400">{error}</p>
             <button
               onClick={fetchData}
-              className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90"
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-white hover:opacity-90 dark:bg-zinc-100 dark:text-zinc-900"
             >
               Retry
             </button>
           </div>
         ) : tasks.length === 0 ? (
-          <p className="text-center text-zinc-400 py-8">Trash is empty</p>
+          <p className="py-8 text-center text-zinc-400">Trash is empty</p>
         ) : (
           <>
             <div className="space-y-2">
@@ -131,10 +128,10 @@ export default function TrashPage() {
                 return (
                   <div
                     key={task.id}
-                    className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 flex items-center gap-3"
+                    className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{task.title}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{task.title}</p>
                       <p className="text-xs text-zinc-400">
                         {projectName && <span>{projectName} · </span>}
                         {task.deleted_at
@@ -149,7 +146,7 @@ export default function TrashPage() {
                       onClick={() => handleRestore(task.id)}
                       disabled={restoringId === task.id}
                       aria-label={`Restore ${task.title}`}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                      className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
                     >
                       {restoringId === task.id ? 'Restoring...' : 'Restore'}
                     </button>
@@ -158,22 +155,22 @@ export default function TrashPage() {
               })}
             </div>
 
-            <div className="mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+            <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-800">
               {showConfirm ? (
                 <div className="flex items-center gap-3">
-                  <p className="text-sm text-red-600 dark:text-red-400 flex-1">
+                  <p className="flex-1 text-sm text-red-600 dark:text-red-400">
                     Permanently delete all {tasks.length} item{tasks.length !== 1 ? 's' : ''}?
                   </p>
                   <button
                     onClick={() => setShowConfirm(false)}
-                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                    className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleEmptyTrash}
                     disabled={emptyingTrash}
-                    className="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                   >
                     {emptyingTrash ? 'Deleting...' : 'Delete All'}
                   </button>
@@ -181,7 +178,7 @@ export default function TrashPage() {
               ) : (
                 <button
                   onClick={() => setShowConfirm(true)}
-                  className="w-full p-3 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium"
+                  className="w-full rounded-lg border border-red-200 p-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
                 >
                   Empty Trash
                 </button>

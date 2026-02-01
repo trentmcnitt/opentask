@@ -20,7 +20,7 @@ export function useGroupSort() {
     (groupLabel: string): SortOption => {
       return sortByGroup[groupLabel] || 'priority'
     },
-    [sortByGroup]
+    [sortByGroup],
   )
 
   const setSortOption = useCallback((groupLabel: string, option: SortOption) => {
@@ -30,12 +30,15 @@ export function useGroupSort() {
     }))
   }, [])
 
-  const cycleSortOption = useCallback((groupLabel: string) => {
-    const current = sortByGroup[groupLabel] || 'priority'
-    const next: SortOption =
-      current === 'priority' ? 'title' : current === 'title' ? 'age' : 'priority'
-    setSortOption(groupLabel, next)
-  }, [sortByGroup, setSortOption])
+  const cycleSortOption = useCallback(
+    (groupLabel: string) => {
+      const current = sortByGroup[groupLabel] || 'priority'
+      const next: SortOption =
+        current === 'priority' ? 'title' : current === 'title' ? 'age' : 'priority'
+      setSortOption(groupLabel, next)
+    },
+    [sortByGroup, setSortOption],
+  )
 
   return {
     getSortOption,

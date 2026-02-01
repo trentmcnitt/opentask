@@ -54,44 +54,46 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### Environment Variables
 
 See `.env.example` for required configuration:
+
 - `AUTH_SECRET` - NextAuth secret key
 - `OPENTASK_DB_PATH` - SQLite database path (optional, defaults to `./data/tasks.db`)
 
 ## Available Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Build for production |
-| `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
-| `npm test` | Run unit and integration tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage report |
-| `npm run test:e2e` | Run Playwright E2E tests |
-| `npm run db:seed` | Seed database with initial data |
+| Script                  | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `npm run dev`           | Start development server with hot reload |
+| `npm run build`         | Build for production                     |
+| `npm run start`         | Start production server                  |
+| `npm run lint`          | Run ESLint                               |
+| `npm test`              | Run unit and integration tests           |
+| `npm run test:watch`    | Run tests in watch mode                  |
+| `npm run test:coverage` | Run tests with coverage report           |
+| `npm run test:e2e`      | Run Playwright E2E tests                 |
+| `npm run db:seed`       | Seed database with initial data          |
 
 ## API Overview
 
 ### Authentication
+
 - Session-based auth via NextAuth (web UI)
 - Bearer token auth for API/CLI access
 
 ### Key Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/tasks` | GET | List tasks with filters |
-| `/api/tasks` | POST | Create a task |
-| `/api/tasks/:id` | PATCH | Update task (PATCH semantics) |
-| `/api/tasks/:id` | DELETE | Soft delete to trash |
-| `/api/tasks/:id/done` | POST | Mark done (advances recurring) |
-| `/api/tasks/:id/snooze` | POST | Snooze to future time |
-| `/api/tasks/bulk/done` | POST | Bulk mark done |
-| `/api/tasks/bulk/snooze` | POST | Bulk snooze |
-| `/api/undo` | POST | Undo last action |
-| `/api/redo` | POST | Redo last undone action |
-| `/api/projects` | GET/POST | List/create projects |
+| Endpoint                 | Method   | Description                    |
+| ------------------------ | -------- | ------------------------------ |
+| `/api/tasks`             | GET      | List tasks with filters        |
+| `/api/tasks`             | POST     | Create a task                  |
+| `/api/tasks/:id`         | PATCH    | Update task (PATCH semantics)  |
+| `/api/tasks/:id`         | DELETE   | Soft delete to trash           |
+| `/api/tasks/:id/done`    | POST     | Mark done (advances recurring) |
+| `/api/tasks/:id/snooze`  | POST     | Snooze to future time          |
+| `/api/tasks/bulk/done`   | POST     | Bulk mark done                 |
+| `/api/tasks/bulk/snooze` | POST     | Bulk snooze                    |
+| `/api/undo`              | POST     | Undo last action               |
+| `/api/redo`              | POST     | Redo last undone action        |
+| `/api/projects`          | GET/POST | List/create projects           |
 
 See `docs/SPEC.md` for complete API documentation.
 

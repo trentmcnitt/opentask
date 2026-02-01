@@ -74,7 +74,10 @@ export default function ProjectDetailPage() {
       if (data.data?.task?.rrule) {
         setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
       }
-      showToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: task.rrule ? 'Task advanced' : 'Task completed',
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       fetchTasks()
     }
@@ -99,7 +102,7 @@ export default function ProjectDetailPage() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     )
@@ -107,14 +110,24 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
           <button
             onClick={() => router.push('/projects')}
-            className="p-2 -ml-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:text-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="-ml-2 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="Back to projects"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M19 12H5" />
               <path d="M12 19l-7-7 7-7" />
             </svg>
@@ -124,12 +137,8 @@ export default function ProjectDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto w-full px-4 py-6">
-        <TaskList
-          tasks={tasks}
-          onDone={handleDone}
-          onSnooze={(task) => setSnoozeTask(task)}
-        />
+      <main className="mx-auto w-full max-w-2xl px-4 py-6">
+        <TaskList tasks={tasks} onDone={handleDone} onSnooze={(task) => setSnoozeTask(task)} />
       </main>
 
       {snoozeTask && (

@@ -8,7 +8,14 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, forbidden, badRequest, handleError } from '@/lib/api-response'
+import {
+  success,
+  unauthorized,
+  notFound,
+  forbidden,
+  badRequest,
+  handleError,
+} from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import type { RouteContext } from '@/types/api'
@@ -25,10 +32,12 @@ interface ProjectRow {
 function getProjectById(projectId: number): ProjectRow | null {
   const db = getDb()
   return (
-    db
-      .prepare('SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?')
-      .get(projectId) as ProjectRow | undefined
-  ) ?? null
+    (db
+      .prepare(
+        'SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?',
+      )
+      .get(projectId) as ProjectRow | undefined) ?? null
+  )
 }
 
 function canAccessProject(userId: number, project: ProjectRow): boolean {
@@ -209,7 +218,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       UPDATE tasks
       SET project_id = ?, updated_at = ?
       WHERE project_id = ?
-    `
+    `,
     ).run(inbox.id, now, projectId)
 
     // Delete the project

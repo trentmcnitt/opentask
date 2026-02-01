@@ -77,7 +77,7 @@ export default function ArchivePage() {
 
   if (status === 'loading') {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     )
@@ -85,13 +85,13 @@ export default function ArchivePage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+        <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Archive</h1>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto w-full px-4 py-6">
+      <main className="mx-auto w-full max-w-2xl px-4 py-6">
         {/* Search */}
         <div className="mb-4">
           <input
@@ -100,24 +100,24 @@ export default function ArchivePage() {
             aria-label="Search archived tasks"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm placeholder:text-zinc-400"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800"
           />
         </div>
 
         {loading ? (
-          <div className="animate-pulse text-zinc-500 text-center py-8">Loading...</div>
+          <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
         ) : error ? (
-          <div className="text-center py-8">
-            <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+          <div className="py-8 text-center">
+            <p className="mb-4 text-red-500 dark:text-red-400">{error}</p>
             <button
               onClick={() => fetchTasks(debouncedSearch)}
-              className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90"
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-white hover:opacity-90 dark:bg-zinc-100 dark:text-zinc-900"
             >
               Retry
             </button>
           </div>
         ) : tasks.length === 0 ? (
-          <p className="text-center text-zinc-400 py-8">
+          <p className="py-8 text-center text-zinc-400">
             {search.trim() ? 'No matching archived tasks' : 'No archived tasks'}
           </p>
         ) : (
@@ -127,11 +127,11 @@ export default function ArchivePage() {
               return (
                 <div
                   key={task.id}
-                  className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 flex items-center gap-3"
+                  className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
                 >
                   <span className="text-green-500">&#x2713;</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{task.title}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{task.title}</p>
                     <p className="text-xs text-zinc-400">
                       {projectName && <span>{projectName} · </span>}
                       {task.done_at

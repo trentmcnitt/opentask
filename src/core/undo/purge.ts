@@ -13,12 +13,12 @@ export function purgeOldUndoLogs(): number {
   cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS)
   const cutoffIso = cutoffDate.toISOString()
 
-  const result = db
-    .prepare(`DELETE FROM undo_log WHERE created_at < ?`)
-    .run(cutoffIso)
+  const result = db.prepare(`DELETE FROM undo_log WHERE created_at < ?`).run(cutoffIso)
 
   if (result.changes > 0) {
-    console.log(`[undo-purge] Deleted ${result.changes} undo log entries older than ${RETENTION_DAYS} days`)
+    console.log(
+      `[undo-purge] Deleted ${result.changes} undo log entries older than ${RETENTION_DAYS} days`,
+    )
   }
 
   return result.changes

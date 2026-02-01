@@ -101,7 +101,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
             `
             INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
             VALUES (?, ?, ?, ?, ?)
-          `
+          `,
           )
           .run(task.id, userId, nowStr, prevDueAt, nextDueAt)
 
@@ -113,7 +113,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
           UPDATE tasks
           SET due_at = ?, snoozed_from = NULL, updated_at = ?
           WHERE id = ?
-        `
+        `,
         ).run(nextDueAt, nowStr, task.id)
 
         // Build snapshot with completion data
@@ -148,33 +148,28 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
           UPDATE tasks
           SET done = 1, done_at = ?, archived_at = ?, updated_at = ?
           WHERE id = ?
-        `
+        `,
         ).run(nowStr, nowStr, nowStr, task.id)
 
         snapshots.push(
           createTaskSnapshot(
             { id: task.id, done: false, done_at: null, archived_at: null },
             { id: task.id, done: true, done_at: nowStr, archived_at: nowStr },
-            ['done', 'done_at', 'archived_at']
-          )
+            ['done', 'done_at', 'archived_at'],
+          ),
         )
       }
     }
 
     // Single undo entry for entire batch (BO-004)
-    const fieldsChanged = recurringCount > 0 && oneOffCount > 0
-      ? ['due_at', 'snoozed_from', 'done', 'done_at', 'archived_at']
-      : recurringCount > 0
-        ? ['due_at', 'snoozed_from']
-        : ['done', 'done_at', 'archived_at']
+    const fieldsChanged =
+      recurringCount > 0 && oneOffCount > 0
+        ? ['due_at', 'snoozed_from', 'done', 'done_at', 'archived_at']
+        : recurringCount > 0
+          ? ['due_at', 'snoozed_from']
+          : ['done', 'done_at', 'archived_at']
 
-    logAction(
-      userId,
-      'bulk_done',
-      `Marked ${tasks.length} tasks done`,
-      fieldsChanged,
-      snapshots
-    )
+    logAction(userId, 'bulk_done', `Marked ${tasks.length} tasks done`, fieldsChanged, snapshots)
 
     return {
       tasksAffected: tasks.length,
@@ -262,19 +257,25 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         UPDATE tasks
         SET due_at = ?, snoozed_from = ?, updated_at = ?
         WHERE id = ?
-      `
+      `,
       ).run(until, newSnoozedFrom, nowStr, task.id)
 
       snapshots.push(
         createTaskSnapshot(
           { id: task.id, due_at: task.due_at, snoozed_from: task.snoozed_from },
           { id: task.id, due_at: until, snoozed_from: newSnoozedFrom },
-          ['due_at', 'snoozed_from']
-        )
+          ['due_at', 'snoozed_from'],
+        ),
       )
     }
 
-    logAction(userId, 'bulk_snooze', `Snoozed ${tasks.length} tasks`, ['due_at', 'snoozed_from'], snapshots)
+    logAction(
+      userId,
+      'bulk_snooze',
+      `Snoozed ${tasks.length} tasks`,
+      ['due_at', 'snoozed_from'],
+      snapshots,
+    )
 
     return {
       tasksAffected: tasks.length,
@@ -382,8 +383,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
           createTaskSnapshot(
             beforeState as Partial<Task> & { id: number },
             afterState as Partial<Task> & { id: number },
-            fieldsChanged
-          )
+            fieldsChanged,
+          ),
         )
 
         fieldsChanged.forEach((f) => allFieldsChanged.add(f))
@@ -396,7 +397,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         'bulk_edit',
         `Edited ${snapshots.length} tasks`,
         Array.from(allFieldsChanged),
-        snapshots
+        snapshots,
       )
     }
 
@@ -463,15 +464,13 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
         UPDATE tasks
         SET deleted_at = ?, updated_at = ?
         WHERE id = ?
-      `
+      `,
       ).run(nowStr, nowStr, task.id)
 
       snapshots.push(
-        createTaskSnapshot(
-          { id: task.id, deleted_at: null },
-          { id: task.id, deleted_at: nowStr },
-          ['deleted_at']
-        )
+        createTaskSnapshot({ id: task.id, deleted_at: null }, { id: task.id, deleted_at: nowStr }, [
+          'deleted_at',
+        ]),
       )
     }
 

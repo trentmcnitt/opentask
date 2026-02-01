@@ -27,14 +27,16 @@ export function localTime(hour: number, minute: number = 0, daysFromNow: number 
 export function seedTestUser(
   userId: number = TEST_USER_ID,
   email: string = TEST_USER_EMAIL,
-  timezone: string = TEST_TIMEZONE
+  timezone: string = TEST_TIMEZONE,
 ): void {
   const db = getDb()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, email, name, password_hash, timezone)
     VALUES (?, ?, ?, ?, ?)
-  `).run(userId, email, 'Test User', 'hash', timezone)
+  `,
+  ).run(userId, email, 'Test User', 'hash', timezone)
 }
 
 /**
@@ -44,14 +46,16 @@ export function seedTestProject(
   projectId: number = 1,
   name: string = 'Inbox',
   ownerId: number = TEST_USER_ID,
-  shared: boolean = false
+  shared: boolean = false,
 ): void {
   const db = getDb()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, 0)
-  `).run(projectId, name, ownerId, shared ? 1 : 0)
+  `,
+  ).run(projectId, name, ownerId, shared ? 1 : 0)
 }
 
 /**

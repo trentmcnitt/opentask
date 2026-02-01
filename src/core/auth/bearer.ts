@@ -27,7 +27,7 @@ export function validateBearerToken(token: string): AuthUser | null {
     FROM api_tokens t
     JOIN users u ON t.user_id = u.id
     WHERE t.token = ?
-  `
+  `,
     )
     .get(token) as { id: number; email: string; name: string; timezone: string } | undefined
 

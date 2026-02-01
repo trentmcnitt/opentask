@@ -22,9 +22,9 @@ export function Toast({ message, action, onDismiss, duration = 5000 }: ToastProp
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-slide-up"
+      className="animate-slide-up fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
     >
-      <div className="flex items-center gap-3 px-4 py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg shadow-lg">
+      <div className="flex items-center gap-3 rounded-lg bg-zinc-900 px-4 py-3 text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
         <span className="text-sm font-medium">{message}</span>
 
         {action && (
@@ -33,7 +33,7 @@ export function Toast({ message, action, onDismiss, duration = 5000 }: ToastProp
               action.onClick()
               onDismiss()
             }}
-            className="text-sm font-semibold text-blue-400 dark:text-blue-600 hover:text-blue-300 dark:hover:text-blue-500"
+            className="text-sm font-semibold text-blue-400 hover:text-blue-300 dark:text-blue-600 dark:hover:text-blue-500"
           >
             {action.label}
           </button>
@@ -42,7 +42,7 @@ export function Toast({ message, action, onDismiss, duration = 5000 }: ToastProp
         <button
           onClick={onDismiss}
           aria-label="Dismiss notification"
-          className="ml-2 text-zinc-400 dark:text-zinc-600 hover:text-zinc-300 dark:hover:text-zinc-500"
+          className="ml-2 text-zinc-400 hover:text-zinc-300 dark:text-zinc-600 dark:hover:text-zinc-500"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

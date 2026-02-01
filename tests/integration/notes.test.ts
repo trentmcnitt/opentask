@@ -20,7 +20,7 @@ describe('Notes integration', () => {
     const notes = (await listRes.json()).data.notes
     expect(notes.length).toBeGreaterThan(0)
     expect(notes.find((n: { id: number }) => n.id === created.id)?.content).toBe(
-      'Remember to buy organic milk'
+      'Remember to buy organic milk',
     )
   })
 
@@ -42,7 +42,7 @@ describe('Notes integration', () => {
     const afterPatch = await apiFetch('/api/tasks/4/notes')
     const patchedNotes = (await afterPatch.json()).data.notes
     expect(patchedNotes.find((n: { id: number }) => n.id === note.id)?.content).toBe(
-      'Updated content'
+      'Updated content',
     )
 
     // Delete

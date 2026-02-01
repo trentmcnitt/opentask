@@ -28,7 +28,7 @@ export interface AnchorFields {
 export function deriveAnchorFields(
   rrule: string | null,
   dueAt: string | null,
-  timezone: string
+  timezone: string,
 ): AnchorFields {
   // One-off tasks have no anchors
   if (!rrule) {
@@ -83,7 +83,7 @@ export function deriveAnchorFields(
 export function extractTimeOfDay(
   rrule: string | null,
   dueAt: string | null,
-  timezone: string
+  timezone: string,
 ): { hour: number; minute: number } | null {
   if (rrule) {
     const components = parseRRule(rrule)

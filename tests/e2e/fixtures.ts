@@ -25,11 +25,13 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     await page.waitForURL('/', { timeout: 10_000 })
 
     // Wait for tasks to load
-    await page.waitForSelector('[data-testid="task-row"], .text-4xl', {
-      timeout: 10_000,
-    }).catch(() => {
-      // Dashboard might be empty or task-row might not have testid — that's OK
-    })
+    await page
+      .waitForSelector('[data-testid="task-row"], .text-4xl', {
+        timeout: 10_000,
+      })
+      .catch(() => {
+        // Dashboard might be empty or task-row might not have testid — that's OK
+      })
 
     // Wait a moment for hydration
     await page.waitForTimeout(500)

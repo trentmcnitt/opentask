@@ -77,7 +77,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthUser> {
 export class AuthError extends Error {
   constructor(
     message: string,
-    public code: 'UNAUTHORIZED' | 'FORBIDDEN'
+    public code: 'UNAUTHORIZED' | 'FORBIDDEN',
   ) {
     super(message)
     this.name = 'AuthError'

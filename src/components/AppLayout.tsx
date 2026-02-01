@@ -24,7 +24,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         (data.data?.projects || []).map((p: { id: number; name: string }) => ({
           id: p.id,
           name: p.name,
-        }))
+        })),
       )
     } catch (err) {
       // Non-critical - sidebar just won't show projects
@@ -48,9 +48,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <OfflineBanner />
       <Sidebar projects={projects} />
 
-      <div className="flex-1 flex flex-col pb-16 md:pb-0">
-        {children}
-      </div>
+      <div className="flex flex-1 flex-col pb-16 md:pb-0">{children}</div>
 
       <BottomTabs onAddClick={() => setShowAddForm(true)} />
 

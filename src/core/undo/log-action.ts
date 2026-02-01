@@ -21,7 +21,7 @@ export function logAction(
   action: UndoAction,
   description: string | null,
   fieldsChanged: string[],
-  snapshots: UndoSnapshot[]
+  snapshots: UndoSnapshot[],
 ): number {
   const db = getDb()
 
@@ -33,7 +33,7 @@ export function logAction(
     WHERE user_id = ? AND undone = 1 AND id > (
       SELECT COALESCE(MAX(id), 0) FROM undo_log WHERE user_id = ? AND undone = 0
     )
-  `
+  `,
   ).run(userId, userId)
 
   // Insert the new action
@@ -42,15 +42,9 @@ export function logAction(
       `
     INSERT INTO undo_log (user_id, action, description, fields_changed, snapshot)
     VALUES (?, ?, ?, ?, ?)
-  `
+  `,
     )
-    .run(
-      userId,
-      action,
-      description,
-      JSON.stringify(fieldsChanged),
-      JSON.stringify(snapshots)
-    )
+    .run(userId, action, description, JSON.stringify(fieldsChanged), JSON.stringify(snapshots))
 
   return Number(result.lastInsertRowid)
 }
@@ -60,13 +54,13 @@ export function logAction(
  */
 export function createSnapshot(
   task: Partial<Task> & { id: number },
-  fieldsChanged: string[]
+  fieldsChanged: string[],
 ): Partial<Task> {
   const snapshot: Partial<Task> = { id: task.id }
 
   for (const field of fieldsChanged) {
     if (field in task) {
-      (snapshot as Record<string, unknown>)[field] = (task as Record<string, unknown>)[field]
+      ;(snapshot as Record<string, unknown>)[field] = (task as Record<string, unknown>)[field]
     }
   }
 
@@ -80,7 +74,7 @@ export function createTaskSnapshot(
   beforeTask: Partial<Task> & { id: number },
   afterTask: Partial<Task> & { id: number },
   fieldsChanged: string[],
-  completionId?: number
+  completionId?: number,
 ): UndoSnapshot {
   return {
     task_id: beforeTask.id,

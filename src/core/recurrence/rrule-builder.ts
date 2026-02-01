@@ -205,12 +205,7 @@ export const RRulePatterns = {
   /**
    * Every N months on a specific day
    */
-  everyNMonths(
-    interval: number,
-    dayOfMonth: number,
-    hour: number,
-    minute: number = 0
-  ): string {
+  everyNMonths(interval: number, dayOfMonth: number, hour: number, minute: number = 0): string {
     return buildRRule({
       freq: 'MONTHLY',
       interval,

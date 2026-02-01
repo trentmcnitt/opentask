@@ -33,30 +33,33 @@ export function useSelectionMode() {
     })
   }, [])
 
-  const rangeSelect = useCallback((id: number, orderedIds: number[]) => {
-    if (anchor === null) {
-      toggle(id)
-      return
-    }
-
-    const anchorIdx = orderedIds.indexOf(anchor)
-    const targetIdx = orderedIds.indexOf(id)
-    if (anchorIdx === -1 || targetIdx === -1) {
-      toggle(id)
-      return
-    }
-
-    const start = Math.min(anchorIdx, targetIdx)
-    const end = Math.max(anchorIdx, targetIdx)
-
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      for (let i = start; i <= end; i++) {
-        next.add(orderedIds[i])
+  const rangeSelect = useCallback(
+    (id: number, orderedIds: number[]) => {
+      if (anchor === null) {
+        toggle(id)
+        return
       }
-      return next
-    })
-  }, [anchor, toggle])
+
+      const anchorIdx = orderedIds.indexOf(anchor)
+      const targetIdx = orderedIds.indexOf(id)
+      if (anchorIdx === -1 || targetIdx === -1) {
+        toggle(id)
+        return
+      }
+
+      const start = Math.min(anchorIdx, targetIdx)
+      const end = Math.max(anchorIdx, targetIdx)
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (let i = start; i <= end; i++) {
+          next.add(orderedIds[i])
+        }
+        return next
+      })
+    },
+    [anchor, toggle],
+  )
 
   const selectAll = useCallback((ids: number[]) => {
     setSelectedIds(new Set(ids))

@@ -30,16 +30,20 @@ describe('Bulk Operations Behavioral Tests', () => {
     const db = getDb()
 
     // Seed test user
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO users (id, email, name, password_hash, timezone)
       VALUES (?, ?, ?, ?, ?)
-    `).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
+    `,
+    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
 
     // Seed inbox project
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO projects (id, name, owner_id, shared, sort_order)
       VALUES (1, 'Inbox', ?, 0, 0)
-    `).run(TEST_USER_ID)
+    `,
+    ).run(TEST_USER_ID)
   })
 
   afterEach(() => {
@@ -129,7 +133,7 @@ describe('Bulk Operations Behavioral Tests', () => {
         userId: TEST_USER_ID,
         userTimezone: TEST_TIMEZONE,
         taskIds: [validTask.id, 99999], // 99999 doesn't exist
-      })
+      }),
     ).toThrow('Invalid task IDs: 99999')
 
     // Verify valid task was NOT modified (atomic rollback)
@@ -191,9 +195,9 @@ describe('Bulk Operations Behavioral Tests', () => {
 
     // Verify completions were created for all tasks
     const db = getDb()
-    const completionCount = db
-      .prepare('SELECT COUNT(*) as count FROM completions')
-      .get() as { count: number }
+    const completionCount = db.prepare('SELECT COUNT(*) as count FROM completions').get() as {
+      count: number
+    }
     expect(completionCount.count).toBe(100)
   })
 
@@ -252,9 +256,9 @@ describe('Bulk Operations Behavioral Tests', () => {
 
     // Verify completions were deleted
     const db = getDb()
-    const completionCount = db
-      .prepare('SELECT COUNT(*) as count FROM completions')
-      .get() as { count: number }
+    const completionCount = db.prepare('SELECT COUNT(*) as count FROM completions').get() as {
+      count: number
+    }
     expect(completionCount.count).toBe(0)
   })
 

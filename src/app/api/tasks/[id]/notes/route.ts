@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       FROM notes
       WHERE task_id = ?
       ORDER BY created_at DESC
-    `
+    `,
       )
       .all(taskId) as Note[]
 
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         `
       INSERT INTO notes (task_id, content, created_at)
       VALUES (?, ?, ?)
-    `
+    `,
       )
       .run(taskId, content.trim(), now)
 

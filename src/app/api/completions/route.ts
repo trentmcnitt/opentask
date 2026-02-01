@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return badRequest('Invalid date format. Use YYYY-MM-DD')
       }
-      conditions.push("date(c.completed_at) = ?")
+      conditions.push('date(c.completed_at) = ?')
       params.push(date)
     }
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
         INNER JOIN tasks t ON c.task_id = t.id
         WHERE ${conditions.join(' AND ')}
         ORDER BY c.completed_at DESC
-      `
+      `,
       )
       .all(...params) as CompletionRow[]
 

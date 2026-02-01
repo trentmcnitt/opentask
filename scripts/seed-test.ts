@@ -44,54 +44,72 @@ export async function seedTestData(): Promise<void> {
   const hashB = await bcrypt.hash(TEST_USER_B.password, SALT_ROUNDS)
 
   // Insert users
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, email, name, password_hash, timezone)
     VALUES (?, ?, ?, ?, ?)
-  `).run(1, TEST_USER_A.email, TEST_USER_A.name, hashA, TEST_USER_A.timezone)
+  `,
+  ).run(1, TEST_USER_A.email, TEST_USER_A.name, hashA, TEST_USER_A.timezone)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, email, name, password_hash, timezone)
     VALUES (?, ?, ?, ?, ?)
-  `).run(2, TEST_USER_B.email, TEST_USER_B.name, hashB, TEST_USER_B.timezone)
+  `,
+  ).run(2, TEST_USER_B.email, TEST_USER_B.name, hashB, TEST_USER_B.timezone)
 
   // Insert projects for User A
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(1, 'Inbox', 1, 0, 0)
+  `,
+  ).run(1, 'Inbox', 1, 0, 0)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(2, 'Routine', 1, 0, 1)
+  `,
+  ).run(2, 'Routine', 1, 0, 1)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(3, 'Work', 1, 0, 2)
+  `,
+  ).run(3, 'Work', 1, 0, 2)
 
   // Insert project for User B
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(4, 'Inbox', 2, 0, 0)
+  `,
+  ).run(4, 'Inbox', 2, 0, 0)
 
   // Shared project (owned by User A)
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(5, 'Family', 1, 1, 4)
+  `,
+  ).run(5, 'Family', 1, 1, 4)
 
   // Insert API tokens
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO api_tokens (user_id, token, name)
     VALUES (?, ?, ?)
-  `).run(1, TOKEN_A, 'Test Token A')
+  `,
+  ).run(1, TOKEN_A, 'Test Token A')
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO api_tokens (user_id, token, name)
     VALUES (?, ?, ?)
-  `).run(2, TOKEN_B, 'Test Token B')
+  `,
+  ).run(2, TOKEN_B, 'Test Token B')
 
   // Insert some baseline tasks for User A
   const tomorrow = DateTime.now()
@@ -108,48 +126,64 @@ export async function seedTestData(): Promise<void> {
     .toISO()!
 
   // One-off task due tomorrow
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(1, 1, 1, 'Buy groceries', tomorrow, 2)
+  `,
+  ).run(1, 1, 1, 'Buy groceries', tomorrow, 2)
 
   // Recurring daily task
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(2, 1, 2, 'Morning routine', today, 'FREQ=DAILY', 'from_due', 1)
+  `,
+  ).run(2, 1, 2, 'Morning routine', today, 'FREQ=DAILY', 'from_due', 1)
 
   // Task for User B (isolation test)
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(3, 2, 4, 'User B task', tomorrow, 0)
+  `,
+  ).run(3, 2, 4, 'User B task', tomorrow, 0)
 
   // Additional tasks for User A for bulk/search tests
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority, labels)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(4, 1, 3, 'Review PRs', today, 3, '["work","dev"]')
+  `,
+  ).run(4, 1, 3, 'Review PRs', today, 3, '["work","dev"]')
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(5, 1, 1, 'Prepare slides', tomorrow, 2)
+  `,
+  ).run(5, 1, 1, 'Prepare slides', tomorrow, 2)
 
   // Recurring weekly task
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(6, 1, 3, 'Weekly standup', tomorrow, 'FREQ=WEEKLY;BYDAY=MO', 'from_due', 1)
+  `,
+  ).run(6, 1, 3, 'Weekly standup', tomorrow, 'FREQ=WEEKLY;BYDAY=MO', 'from_due', 1)
 
   // Extra tasks for bulk operations
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(7, 1, 1, 'Clean desk', tomorrow, 0)
+  `,
+  ).run(7, 1, 1, 'Clean desk', tomorrow, 0)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(8, 1, 1, 'Call dentist', tomorrow, 1)
+  `,
+  ).run(8, 1, 1, 'Call dentist', tomorrow, 1)
 }

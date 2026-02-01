@@ -80,23 +80,33 @@ export function TaskDetail({
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
               onBlur={handleTitleSave}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleTitleSave() }}
-              className="text-2xl font-semibold h-auto py-1"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleTitleSave()
+              }}
+              className="h-auto py-1 text-2xl font-semibold"
               autoFocus
             />
           ) : (
             <h1
               className={cn(
-                "text-2xl font-semibold",
-                editable && "cursor-pointer hover:text-primary transition-colors"
+                'text-2xl font-semibold',
+                editable && 'hover:text-primary cursor-pointer transition-colors',
               )}
-              onClick={() => { if (editable) { setTitleDraft(task.title); setEditingTitle(true) } }}
+              onClick={() => {
+                if (editable) {
+                  setTitleDraft(task.title)
+                  setEditingTitle(true)
+                }
+              }}
             >
               {task.title}
             </h1>
           )}
           {task.done && (
-            <Badge variant="secondary" className="mt-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+            <Badge
+              variant="secondary"
+              className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            >
               Completed
             </Badge>
           )}
@@ -142,8 +152,8 @@ export function TaskDetail({
             ) : (
               <span
                 className={cn(
-                  "cursor-pointer hover:text-primary",
-                  isOverdue && "text-destructive font-medium"
+                  'hover:text-primary cursor-pointer',
+                  isOverdue && 'text-destructive font-medium',
                 )}
                 onClick={() => setEditingDue(true)}
               >
@@ -151,8 +161,12 @@ export function TaskDetail({
               </span>
             )
           ) : (
-            <span className={cn(isOverdue && "text-destructive font-medium")}>
-              {task.due_at ? formatDateTime(task.due_at) : <span className="text-muted-foreground">No due date</span>}
+            <span className={cn(isOverdue && 'text-destructive font-medium')}>
+              {task.due_at ? (
+                formatDateTime(task.due_at)
+              ) : (
+                <span className="text-muted-foreground">No due date</span>
+              )}
             </span>
           )}
         </DetailField>
@@ -164,10 +178,10 @@ export function TaskDetail({
               {PRIORITY_OPTIONS.map((opt) => (
                 <Button
                   key={opt.value}
-                  variant={task.priority === opt.value ? "secondary" : "ghost"}
+                  variant={task.priority === opt.value ? 'secondary' : 'ghost'}
                   size="sm"
                   onClick={() => onFieldChange?.('priority', opt.value)}
-                  className={cn("text-xs", opt.color)}
+                  className={cn('text-xs', opt.color)}
                 >
                   {opt.label}
                 </Button>
@@ -190,7 +204,9 @@ export function TaskDetail({
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                  <SelectItem key={p.id} value={p.id.toString()}>
+                    {p.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -206,16 +222,16 @@ export function TaskDetail({
               labels={task.labels}
               onChange={(labels) => onFieldChange?.('labels', labels)}
             />
+          ) : task.labels.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {task.labels.map((label) => (
+                <Badge key={label} variant="secondary">
+                  {label}
+                </Badge>
+              ))}
+            </div>
           ) : (
-            task.labels.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {task.labels.map((label) => (
-                  <Badge key={label} variant="secondary">{label}</Badge>
-                ))}
-              </div>
-            ) : (
-              <span className="text-muted-foreground">None</span>
-            )
+            <span className="text-muted-foreground">None</span>
           )}
         </DetailField>
 
@@ -223,7 +239,7 @@ export function TaskDetail({
         {task.rrule && (
           <DetailField label="Recurrence">
             {formatRRule(task.rrule, task.anchor_time)}
-            <span className="ml-2 text-muted-foreground text-sm">
+            <span className="text-muted-foreground ml-2 text-sm">
               ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
             </span>
           </DetailField>
@@ -239,22 +255,18 @@ export function TaskDetail({
         )}
 
         {/* Created / Updated */}
-        <DetailField label="Created">
-          {formatDateTime(task.created_at)}
-        </DetailField>
+        <DetailField label="Created">{formatDateTime(task.created_at)}</DetailField>
 
         {task.updated_at !== task.created_at && (
-          <DetailField label="Updated">
-            {formatDateTime(task.updated_at)}
-          </DetailField>
+          <DetailField label="Updated">{formatDateTime(task.updated_at)}</DetailField>
         )}
       </div>
 
       {/* Notes */}
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+        <h2 className="text-muted-foreground mb-3 text-sm font-semibold tracking-wider uppercase">
           Notes
-          <span className="ml-2 text-muted-foreground/60">{notes.length}</span>
+          <span className="text-muted-foreground/60 ml-2">{notes.length}</span>
         </h2>
 
         {/* Add note form */}
@@ -264,37 +276,31 @@ export function TaskDetail({
               type="text"
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote() }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddNote()
+              }}
               placeholder="Add a note..."
               className="flex-1"
             />
-            <Button
-              onClick={handleAddNote}
-              disabled={!newNote.trim()}
-            >
+            <Button onClick={handleAddNote} disabled={!newNote.trim()}>
               Add
             </Button>
           </div>
         )}
 
         {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
+          <p className="text-muted-foreground text-sm">No notes yet.</p>
         ) : (
           <div className="space-y-3">
             {notes.map((note) => (
-              <div
-                key={note.id}
-                className="group p-3 rounded-lg bg-muted border"
-              >
+              <div key={note.id} className="group bg-muted rounded-lg border p-3">
                 <p className="text-sm whitespace-pre-wrap">{note.content}</p>
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-muted-foreground">
-                    {formatDateTime(note.created_at)}
-                  </p>
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-muted-foreground text-xs">{formatDateTime(note.created_at)}</p>
                   {editable && onDeleteNote && (
                     <button
                       onClick={() => onDeleteNote(note.id)}
-                      className="text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-muted-foreground hover:text-destructive text-xs opacity-0 transition-opacity group-hover:opacity-100"
                     >
                       Delete
                     </button>
@@ -309,7 +315,13 @@ export function TaskDetail({
   )
 }
 
-function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (labels: string[]) => void }) {
+function EditableLabels({
+  labels,
+  onChange,
+}: {
+  labels: string[]
+  onChange: (labels: string[]) => void
+}) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -327,11 +339,13 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
   }
 
   return (
-    <div className="flex flex-wrap gap-1 items-center">
+    <div className="flex flex-wrap items-center gap-1">
       {labels.map((label) => (
         <Badge key={label} variant="secondary" className="gap-1">
           {label}
-          <button onClick={() => handleRemove(label)} className="hover:text-destructive">&times;</button>
+          <button onClick={() => handleRemove(label)} className="hover:text-destructive">
+            &times;
+          </button>
         </Badge>
       ))}
       {adding ? (
@@ -340,8 +354,10 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={handleAdd}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
-          className="w-24 h-6 text-xs"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleAdd()
+          }}
+          className="h-6 w-24 text-xs"
           placeholder="label"
           autoFocus
         />
@@ -350,7 +366,7 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
           variant="outline"
           size="sm"
           onClick={() => setAdding(true)}
-          className="h-6 text-xs border-dashed"
+          className="h-6 border-dashed text-xs"
         >
           + Add
         </Button>
@@ -362,10 +378,8 @@ function EditableLabels({ labels, onChange }: { labels: string[]; onChange: (lab
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-4">
-      <span className="w-24 flex-shrink-0 text-sm text-muted-foreground pt-0.5">
-        {label}
-      </span>
-      <div className="text-sm flex-1">{children}</div>
+      <span className="text-muted-foreground w-24 flex-shrink-0 pt-0.5 text-sm">{label}</span>
+      <div className="flex-1 text-sm">{children}</div>
     </div>
   )
 }

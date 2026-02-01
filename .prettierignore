@@ -1,0 +1,8 @@
+.next/
+out/
+build/
+node_modules/
+data/
+*.db
+package-lock.json
+pnpm-lock.yaml

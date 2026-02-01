@@ -9,15 +9,16 @@ import { getDb } from '@/core/db'
 import type { AuthUser } from '@/types'
 
 /**
- * Validate email/password credentials and return the user
+ * Validate credentials and return the user
  *
+ * Accepts either username (name) or email as the identifier.
  * Used by NextAuth credentials provider.
  */
 export async function validateCredentials(
-  email: string,
-  password: string
+  identifier: string,
+  password: string,
 ): Promise<AuthUser | null> {
-  if (!email || !password) {
+  if (!identifier || !password) {
     return null
   }
 
@@ -28,10 +29,10 @@ export async function validateCredentials(
       `
     SELECT id, email, name, password_hash, timezone
     FROM users
-    WHERE email = ?
-  `
+    WHERE email = ? OR name = ?
+  `,
     )
-    .get(email) as
+    .get(identifier, identifier) as
     | { id: number; email: string; name: string; password_hash: string; timezone: string }
     | undefined
 
@@ -66,7 +67,7 @@ export function getUserById(id: number): AuthUser | null {
     SELECT id, email, name, timezone
     FROM users
     WHERE id = ?
-  `
+  `,
     )
     .get(id) as { id: number; email: string; name: string; timezone: string } | undefined
 

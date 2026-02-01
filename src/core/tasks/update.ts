@@ -226,7 +226,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     const snapshot = createTaskSnapshot(
       beforeState as Partial<Task> & { id: number },
       afterState as Partial<Task> & { id: number },
-      fieldsChanged
+      fieldsChanged,
     )
     logAction(userId, 'edit', `Edited "${task.title}"`, fieldsChanged, [snapshot])
 
@@ -251,9 +251,9 @@ export function canUserAccessTask(userId: number, task: Task): boolean {
 
   // Task is in a shared project
   const db = getDb()
-  const project = db
-    .prepare('SELECT shared FROM projects WHERE id = ?')
-    .get(task.project_id) as { shared: number } | undefined
+  const project = db.prepare('SELECT shared FROM projects WHERE id = ?').get(task.project_id) as
+    | { shared: number }
+    | undefined
 
   return project?.shared === 1
 }

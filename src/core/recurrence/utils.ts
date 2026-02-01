@@ -30,6 +30,6 @@ export function fromNaiveLocal(d: Date, timezone: string): DateTime {
       second: d.getSeconds(),
       millisecond: d.getMilliseconds(),
     },
-    { zone: timezone }
+    { zone: timezone },
   )
 }

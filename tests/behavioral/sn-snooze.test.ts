@@ -15,11 +15,7 @@ const TEST_USER_ID = 1
 
 // Helper to create a future time (always in the future)
 function futureTime(hoursFromNow: number = 1): string {
-  return DateTime.now()
-    .setZone(TEST_TIMEZONE)
-    .plus({ hours: hoursFromNow })
-    .toUTC()
-    .toISO()!
+  return DateTime.now().setZone(TEST_TIMEZONE).plus({ hours: hoursFromNow }).toUTC().toISO()!
 }
 
 // Helper to create a time in the future at a specific hour (tomorrow)
@@ -38,16 +34,20 @@ describe('Snooze Behavioral Tests', () => {
     const db = getDb()
 
     // Seed test user
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO users (id, email, name, password_hash, timezone)
       VALUES (?, ?, ?, ?, ?)
-    `).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
+    `,
+    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
 
     // Seed inbox project
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO projects (id, name, owner_id, shared, sort_order)
       VALUES (1, 'Inbox', ?, 0, 0)
-    `).run(TEST_USER_ID)
+    `,
+    ).run(TEST_USER_ID)
   })
 
   afterEach(() => {
@@ -216,18 +216,14 @@ describe('Snooze Behavioral Tests', () => {
     })
 
     // Try to snooze to past time
-    const pastTime = DateTime.now()
-      .setZone(TEST_TIMEZONE)
-      .minus({ hours: 1 })
-      .toUTC()
-      .toISO()!
+    const pastTime = DateTime.now().setZone(TEST_TIMEZONE).minus({ hours: 1 }).toUTC().toISO()!
 
     expect(() =>
       snoozeTask({
         userId: TEST_USER_ID,
         taskId: task.id,
         until: pastTime,
-      })
+      }),
     ).toThrow('Snooze target must be in the future')
   })
 
@@ -265,7 +261,7 @@ describe('Snooze Behavioral Tests', () => {
           userId: TEST_USER_ID,
           taskId: task.id,
           until: futureTime(3),
-        })
+        }),
       ).toThrow('Cannot snooze done task')
     })
 
@@ -295,7 +291,7 @@ describe('Snooze Behavioral Tests', () => {
           userId: TEST_USER_ID,
           taskId: task.id,
           until: futureTime(3),
-        })
+        }),
       ).toThrow('Cannot snooze trashed task')
     })
   })

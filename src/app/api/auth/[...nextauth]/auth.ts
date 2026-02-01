@@ -14,17 +14,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       name: 'credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.username || !credentials?.password) {
           return null
         }
 
         const user = await validateCredentials(
-          credentials.email as string,
-          credentials.password as string
+          credentials.username as string,
+          credentials.password as string,
         )
 
         if (!user) {

@@ -19,7 +19,7 @@ export function error(
   message: string,
   code: ErrorCode,
   status: number,
-  details?: Record<string, unknown>
+  details?: Record<string, unknown>,
 ): NextResponse {
   return NextResponse.json(
     {
@@ -27,17 +27,14 @@ export function error(
       code,
       details,
     },
-    { status }
+    { status },
   )
 }
 
 /**
  * 400 Bad Request - validation errors, invalid input
  */
-export function badRequest(
-  message: string,
-  details?: Record<string, unknown>
-): NextResponse {
+export function badRequest(message: string, details?: Record<string, unknown>): NextResponse {
   return error(message, 'VALIDATION_ERROR', 400, details)
 }
 
@@ -58,29 +55,21 @@ export function forbidden(message: string = 'Access denied'): NextResponse {
 /**
  * 404 Not Found
  */
-export function notFound(
-  message: string,
-  details?: Record<string, unknown>
-): NextResponse {
+export function notFound(message: string, details?: Record<string, unknown>): NextResponse {
   return error(message, 'NOT_FOUND', 404, details)
 }
 
 /**
  * 409 Conflict - e.g., stale review session
  */
-export function conflict(
-  message: string,
-  details?: Record<string, unknown>
-): NextResponse {
+export function conflict(message: string, details?: Record<string, unknown>): NextResponse {
   return error(message, 'CONFLICT', 409, details)
 }
 
 /**
  * 500 Internal Server Error
  */
-export function internalError(
-  message: string = 'Internal server error'
-): NextResponse {
+export function internalError(message: string = 'Internal server error'): NextResponse {
   return error(message, 'INTERNAL_ERROR', 500)
 }
 

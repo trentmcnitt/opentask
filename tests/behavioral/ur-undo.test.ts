@@ -26,13 +26,13 @@ async function setupTestDb() {
   const passwordHash = await bcrypt.hash('test', 10)
   db.prepare(
     `INSERT INTO users (email, name, password_hash, timezone)
-     VALUES ('test@example.com', 'Test User', ?, 'America/Chicago')`
+     VALUES ('test@example.com', 'Test User', ?, 'America/Chicago')`,
   ).run(passwordHash)
 
   // Create test project
   db.prepare(
     `INSERT INTO projects (name, owner_id, shared, sort_order)
-     VALUES ('Test Project', 1, 0, 0)`
+     VALUES ('Test Project', 1, 0, 0)`,
   ).run()
 
   return db
@@ -57,7 +57,7 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
   const result = db
     .prepare(
       `INSERT INTO tasks (user_id, project_id, title, done, priority, due_at, rrule, recurrence_mode, anchor_time, snoozed_from, labels)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       defaults.user_id,
@@ -70,7 +70,7 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
       defaults.recurrence_mode,
       defaults.anchor_time,
       defaults.snoozed_from,
-      defaults.labels
+      defaults.labels,
     )
 
   return Number(result.lastInsertRowid)
@@ -123,9 +123,13 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
     const afterTask = getTask(db, taskId)
 
     // Log the action
-    logAction(1, 'done', 'Marked task done', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'done',
+      'Marked task done',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+    )
 
     // Verify after state
     const taskAfterDone = getTask(db, taskId)
@@ -174,15 +178,19 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
     db.prepare('UPDATE tasks SET done = 1, done_at = ?, archived_at = ? WHERE id = ?').run(
       now,
       now,
-      taskId
+      taskId,
     )
 
     const afterTask = getTask(db, taskId)
 
     // Log the action
-    logAction(1, 'done', 'Marked task done', ['done', 'done_at', 'archived_at'], [
-      createTaskSnapshot(beforeTask, afterTask, ['done', 'done_at', 'archived_at']),
-    ])
+    logAction(
+      1,
+      'done',
+      'Marked task done',
+      ['done', 'done_at', 'archived_at'],
+      [createTaskSnapshot(beforeTask, afterTask, ['done', 'done_at', 'archived_at'])],
+    )
 
     // Execute undo
     const result = executeUndo(1)
@@ -220,15 +228,19 @@ describe('UR-003: Undo Snooze', () => {
     db.prepare('UPDATE tasks SET due_at = ?, snoozed_from = ? WHERE id = ?').run(
       '2026-01-31T20:00:00Z', // Snoozed to 2 PM
       '2026-01-31T14:00:00Z', // Original 8 AM
-      taskId
+      taskId,
     )
 
     const afterTask = getTask(db, taskId)
 
     // Log the action
-    logAction(1, 'snooze', 'Snoozed task', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'snooze',
+      'Snoozed task',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+    )
 
     // Execute undo
     const result = executeUndo(1)
@@ -263,16 +275,17 @@ describe('UR-004: Undo Is Surgical', () => {
     const beforeTask = getTask(db, taskId)
 
     // Action 1: Mark done (changes due_at, snoozed_from)
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(
-      '2026-02-01T14:00:00Z',
-      taskId
-    )
+    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
 
     const afterDone = getTask(db, taskId)
 
-    logAction(1, 'done', 'Marked task done', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(beforeTask, afterDone, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'done',
+      'Marked task done',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(beforeTask, afterDone, ['due_at', 'snoozed_from'])],
+    )
 
     // Action 2: Edit title (separate edit, not logged to undo for this test)
     db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run('New Title', taskId)
@@ -373,9 +386,13 @@ describe('UR-006: Redo After Undo', () => {
 
     const afterTask = getTask(db, taskId)
 
-    logAction(1, 'done', 'Marked task done', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'done',
+      'Marked task done',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+    )
 
     // Undo
     executeUndo(1)
@@ -411,9 +428,13 @@ describe('UR-007: New Action Clears Redo Stack', () => {
     // Action 1: Mark done
     db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
     const afterTask = getTask(db, taskId)
-    logAction(1, 'done', 'Action 1', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'done',
+      'Action 1',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+    )
 
     // Undo action 1
     executeUndo(1)
@@ -424,12 +445,16 @@ describe('UR-007: New Action Clears Redo Stack', () => {
     db.prepare('UPDATE tasks SET due_at = ?, snoozed_from = ? WHERE id = ?').run(
       '2026-01-31T20:00:00Z',
       '2026-01-31T14:00:00Z',
-      taskId
+      taskId,
     )
     const taskAfterSnooze = getTask(db, taskId)
-    logAction(1, 'snooze', 'Snooze action', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(taskBeforeSnooze, taskAfterSnooze, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'snooze',
+      'Snooze action',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(taskBeforeSnooze, taskAfterSnooze, ['due_at', 'snoozed_from'])],
+    )
 
     // Redo should no longer be available (new action cleared it)
     expect(canRedo(1)).toBe(false)
@@ -446,13 +471,13 @@ describe('UR-008: Per-User Isolation', () => {
     const passwordHash = await bcrypt.hash('test2', 10)
     db.prepare(
       `INSERT INTO users (email, name, password_hash, timezone)
-       VALUES ('test2@example.com', 'Test User 2', ?, 'America/Chicago')`
+       VALUES ('test2@example.com', 'Test User 2', ?, 'America/Chicago')`,
     ).run(passwordHash)
 
     // Create project for user 2
     db.prepare(
       `INSERT INTO projects (name, owner_id, shared, sort_order)
-       VALUES ('Test Project 2', 2, 0, 0)`
+       VALUES ('Test Project 2', 2, 0, 0)`,
     ).run()
   })
 
@@ -471,17 +496,25 @@ describe('UR-008: Per-User Isolation', () => {
     const before1 = getTask(db, task1Id)
     db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', task1Id)
     const after1 = getTask(db, task1Id)
-    logAction(1, 'done', 'User 1 action', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(before1, after1, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      1,
+      'done',
+      'User 1 action',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(before1, after1, ['due_at', 'snoozed_from'])],
+    )
 
     // User 2 marks their task done
     const before2 = getTask(db, task2Id)
     db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-02T14:00:00Z', task2Id)
     const after2 = getTask(db, task2Id)
-    logAction(2, 'done', 'User 2 action', ['due_at', 'snoozed_from'], [
-      createTaskSnapshot(before2, after2, ['due_at', 'snoozed_from']),
-    ])
+    logAction(
+      2,
+      'done',
+      'User 2 action',
+      ['due_at', 'snoozed_from'],
+      [createTaskSnapshot(before2, after2, ['due_at', 'snoozed_from'])],
+    )
 
     // User 1 can undo their action
     expect(canUndo(1)).toBe(true)

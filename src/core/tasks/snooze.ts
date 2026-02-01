@@ -78,14 +78,14 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
       UPDATE tasks
       SET due_at = ?, snoozed_from = ?, updated_at = ?
       WHERE id = ?
-    `
+    `,
     ).run(until, newSnoozedFrom, nowStr, taskId)
 
     // Log to undo
     const snapshot = createTaskSnapshot(
       { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
       { id: taskId, due_at: until, snoozed_from: newSnoozedFrom },
-      ['due_at', 'snoozed_from']
+      ['due_at', 'snoozed_from'],
     )
     logAction(userId, 'snooze', `Snoozed "${task.title}"`, ['due_at', 'snoozed_from'], [snapshot])
 
@@ -136,16 +136,22 @@ export function clearSnooze(options: { userId: number; taskId: number }): Task {
       UPDATE tasks
       SET due_at = ?, snoozed_from = NULL, updated_at = ?
       WHERE id = ?
-    `
+    `,
     ).run(originalDueAt, nowStr, taskId)
 
     // Log to undo (this is like a reverse snooze)
     const snapshot = createTaskSnapshot(
       { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
       { id: taskId, due_at: originalDueAt, snoozed_from: null },
-      ['due_at', 'snoozed_from']
+      ['due_at', 'snoozed_from'],
     )
-    logAction(userId, 'snooze', `Cleared snooze on "${task.title}"`, ['due_at', 'snoozed_from'], [snapshot])
+    logAction(
+      userId,
+      'snooze',
+      `Cleared snooze on "${task.title}"`,
+      ['due_at', 'snoozed_from'],
+      [snapshot],
+    )
 
     // Return updated task
     const updatedTask = getTaskById(taskId)

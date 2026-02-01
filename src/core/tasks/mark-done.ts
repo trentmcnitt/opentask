@@ -72,7 +72,7 @@ function markRecurringDone(
   userId: number,
   userTimezone: string,
   completedAt: Date,
-  nowStr: string
+  nowStr: string,
 ): MarkDoneResult {
   const db = getDb()
 
@@ -95,7 +95,7 @@ function markRecurringDone(
         `
       INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
       VALUES (?, ?, ?, ?, ?)
-    `
+    `,
       )
       .run(task.id, userId, nowStr, prevDueAt, nextDueAt)
 
@@ -107,7 +107,7 @@ function markRecurringDone(
       UPDATE tasks
       SET due_at = ?, snoozed_from = NULL, updated_at = ?
       WHERE id = ?
-    `
+    `,
     ).run(nextDueAt, nowStr, task.id)
 
     // Build snapshot with completion data for redo
@@ -162,16 +162,22 @@ function markOneOffDone(task: Task, userId: number, nowStr: string): MarkDoneRes
       UPDATE tasks
       SET done = 1, done_at = ?, archived_at = ?, updated_at = ?
       WHERE id = ?
-    `
+    `,
     ).run(nowStr, nowStr, nowStr, task.id)
 
     // Log to undo
     const snapshot = createTaskSnapshot(
       { id: task.id, done: false, done_at: null, archived_at: null },
       { id: task.id, done: true, done_at: nowStr, archived_at: nowStr },
-      ['done', 'done_at', 'archived_at']
+      ['done', 'done_at', 'archived_at'],
     )
-    logAction(userId, 'done', `Marked "${task.title}" done`, ['done', 'done_at', 'archived_at'], [snapshot])
+    logAction(
+      userId,
+      'done',
+      `Marked "${task.title}" done`,
+      ['done', 'done_at', 'archived_at'],
+      [snapshot],
+    )
 
     // Return updated task
     const updatedTask = getTaskById(task.id)
@@ -226,16 +232,22 @@ export function markUndone(options: MarkDoneOptions): Task {
       UPDATE tasks
       SET done = 0, done_at = NULL, archived_at = NULL, updated_at = ?
       WHERE id = ?
-    `
+    `,
     ).run(nowStr, taskId)
 
     // Log to undo
     const snapshot = createTaskSnapshot(
       { id: taskId, done: true, done_at: task.done_at, archived_at: task.archived_at },
       { id: taskId, done: false, done_at: null, archived_at: null },
-      ['done', 'done_at', 'archived_at']
+      ['done', 'done_at', 'archived_at'],
     )
-    logAction(userId, 'undone', `Reopened "${task.title}"`, ['done', 'done_at', 'archived_at'], [snapshot])
+    logAction(
+      userId,
+      'undone',
+      `Reopened "${task.title}"`,
+      ['done', 'done_at', 'archived_at'],
+      [snapshot],
+    )
 
     // Return updated task
     const updatedTask = getTaskById(taskId)

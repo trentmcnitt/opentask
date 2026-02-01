@@ -27,7 +27,7 @@ export function executeRedo(userId: number): RedoResult | null {
     WHERE user_id = ? AND undone = 1
     ORDER BY id ASC
     LIMIT 1
-  `
+  `,
     )
     .get(userId) as
     | {
@@ -55,7 +55,7 @@ export function executeRedo(userId: number): RedoResult | null {
       for (const snapshot of snapshots) {
         tx.prepare('UPDATE tasks SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(
           now,
-          snapshot.task_id
+          snapshot.task_id,
         )
       }
     } else {
@@ -82,14 +82,14 @@ export function executeRedo(userId: number): RedoResult | null {
               `
               INSERT INTO completions (id, task_id, user_id, completed_at, due_at_was, due_at_next)
               VALUES (?, ?, ?, ?, ?, ?)
-            `
+            `,
             ).run(
               snapshot.completion_id,
               snapshot.task_id,
               comp.user_id,
               comp.completed_at,
               comp.due_at_was,
-              comp.due_at_next
+              comp.due_at_next,
             )
           }
         }
@@ -110,11 +110,7 @@ export function executeRedo(userId: number): RedoResult | null {
 /**
  * Apply the after_state fields to a task (for redo)
  */
-function applyTaskFields(
-  taskId: number,
-  afterState: Partial<Task>,
-  fieldsChanged: string[]
-): void {
+function applyTaskFields(taskId: number, afterState: Partial<Task>, fieldsChanged: string[]): void {
   const db = getDb()
 
   // Build the SET clause for only the changed fields

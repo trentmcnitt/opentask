@@ -220,13 +220,13 @@ describe('Undo/Redo integration', () => {
     const undo3 = await undo()
     expect(undo3.status).toBe(200)
     expect((await getTask(7)).title).toBe(orig7.title)
-    expect((await getTask(5)).title).toBe('Action Two')  // still edited
+    expect((await getTask(5)).title).toBe('Action Two') // still edited
 
     // Undo 2 — reverses Action 2 (task 5)
     const undo2 = await undo()
     expect(undo2.status).toBe(200)
     expect((await getTask(5)).title).toBe(orig5.title)
-    expect((await getTask(1)).title).toBe('Action One')  // still edited
+    expect((await getTask(1)).title).toBe('Action One') // still edited
 
     // Undo 1 — reverses Action 1 (task 1)
     const undo1 = await undo()
@@ -242,7 +242,7 @@ describe('Undo/Redo integration', () => {
     const redo1 = await redo()
     expect(redo1.status).toBe(200)
     expect((await getTask(1)).title).toBe('Action One')
-    expect((await getTask(5)).title).toBe(orig5.title)  // still original
+    expect((await getTask(5)).title).toBe(orig5.title) // still original
 
     // Redo 2 — re-applies Action 2 (task 5)
     const redo2 = await redo()

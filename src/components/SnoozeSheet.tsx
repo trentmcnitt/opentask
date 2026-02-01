@@ -4,12 +4,7 @@ import { useState } from 'react'
 import { Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { Task } from '@/types'
 
 interface SnoozeSheetProps {
@@ -105,10 +100,8 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
         </SheetHeader>
 
         {/* Task preview */}
-        <div className="px-4 py-3 -mx-4 bg-muted">
-          <p className="text-sm text-muted-foreground truncate">
-            {task.title}
-          </p>
+        <div className="bg-muted -mx-4 px-4 py-3">
+          <p className="text-muted-foreground truncate text-sm">{task.title}</p>
         </div>
 
         {/* Options */}
@@ -118,9 +111,9 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
               <button
                 key={option.id}
                 onClick={() => onSnooze(getSnoozeTime(option.id))}
-                className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+                className="hover:bg-accent flex items-center gap-3 rounded-lg border p-3 text-left transition-colors"
               >
-                <span className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                <span className="bg-muted text-muted-foreground flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                   {option.icon}
                 </span>
                 <span className="text-sm font-medium">{option.label}</span>
@@ -130,9 +123,9 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
             {/* Pick date & time button */}
             <button
               onClick={() => setShowPicker(!showPicker)}
-              className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left"
+              className="hover:bg-accent flex items-center gap-3 rounded-lg border p-3 text-left transition-colors"
             >
-              <span className="flex-shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+              <span className="bg-muted text-muted-foreground flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full">
                 <Calendar className="size-4" />
               </span>
               <span className="text-sm font-medium">Pick date & time</span>
@@ -142,7 +135,7 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
 
         {/* Custom datetime picker */}
         {showPicker && (
-          <div className="px-4 pb-4 flex gap-2">
+          <div className="flex gap-2 px-4 pb-4">
             <Input
               type="datetime-local"
               value={customDateTime}
@@ -150,10 +143,7 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
               className="flex-1"
               autoFocus
             />
-            <Button
-              onClick={handleCustomSubmit}
-              disabled={!customDateTime}
-            >
+            <Button onClick={handleCustomSubmit} disabled={!customDateTime}>
               Set
             </Button>
           </div>

@@ -52,7 +52,7 @@ export function deleteTask(options: DeleteTaskOptions): Task {
     const snapshot = createTaskSnapshot(
       { id: taskId, deleted_at: null },
       { id: taskId, deleted_at: now },
-      ['deleted_at']
+      ['deleted_at'],
     )
     logAction(userId, 'delete', `Deleted "${task.title}"`, ['deleted_at'], [snapshot])
 
@@ -99,7 +99,7 @@ export function restoreTask(options: RestoreTaskOptions): Task {
     const snapshot = createTaskSnapshot(
       { id: taskId, deleted_at: task.deleted_at },
       { id: taskId, deleted_at: null },
-      ['deleted_at']
+      ['deleted_at'],
     )
     logAction(userId, 'restore', `Restored "${task.title}"`, ['deleted_at'], [snapshot])
 
@@ -166,7 +166,7 @@ export function emptyTrash(userId: number): number {
     INNER JOIN projects ON tasks.project_id = projects.id
     WHERE tasks.deleted_at IS NOT NULL
       AND (tasks.user_id = ? OR projects.shared = 1)
-  `
+  `,
     )
     .all(userId) as { id: number }[]
 

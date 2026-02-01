@@ -26,7 +26,7 @@ export function getUndoHistory(userId: number, limit: number = 50): UndoLogEntry
     WHERE user_id = ?
     ORDER BY id DESC
     LIMIT ?
-  `
+  `,
     )
     .all(userId, limit) as Array<{
     id: number
@@ -62,7 +62,7 @@ export function canUndo(userId: number): boolean {
       `
     SELECT COUNT(*) as count FROM undo_log
     WHERE user_id = ? AND undone = 0
-  `
+  `,
     )
     .get(userId) as { count: number }
 
@@ -80,7 +80,7 @@ export function canRedo(userId: number): boolean {
       `
     SELECT COUNT(*) as count FROM undo_log
     WHERE user_id = ? AND undone = 1
-  `
+  `,
     )
     .get(userId) as { count: number }
 

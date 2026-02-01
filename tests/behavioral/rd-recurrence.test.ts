@@ -22,11 +22,11 @@ function localDate(
   month: number,
   day: number,
   hour: number = 0,
-  minute: number = 0
+  minute: number = 0,
 ): Date {
   return DateTime.fromObject(
     { year, month, day, hour, minute, second: 0, millisecond: 0 },
-    { zone: TIMEZONE }
+    { zone: TIMEZONE },
   ).toJSDate()
 }
 

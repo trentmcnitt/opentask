@@ -18,11 +18,7 @@ const SelectionContext = createContext<SelectionContextType | null>(null)
 export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const selection = useSelectionMode()
 
-  return (
-    <SelectionContext.Provider value={selection}>
-      {children}
-    </SelectionContext.Provider>
-  )
+  return <SelectionContext.Provider value={selection}>{children}</SelectionContext.Provider>
 }
 
 export function useSelection() {

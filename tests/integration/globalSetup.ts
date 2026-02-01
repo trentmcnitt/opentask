@@ -22,7 +22,6 @@ const testEnv = {
 }
 
 declare global {
-   
   var __TEST_SERVER__: ChildProcess | undefined
 }
 

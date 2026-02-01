@@ -14,22 +14,26 @@ export function purgeOldTrash(): number {
   // Execute all deletes in a transaction
   const changes = withTransaction((tx) => {
     // First, delete any notes associated with the tasks we're about to purge
-    tx.prepare(`
+    tx.prepare(
+      `
       DELETE FROM notes
       WHERE task_id IN (
         SELECT id FROM tasks
         WHERE deleted_at IS NOT NULL AND deleted_at < ?
       )
-    `).run(cutoffIso)
+    `,
+    ).run(cutoffIso)
 
     // Delete any completions associated with these tasks
-    tx.prepare(`
+    tx.prepare(
+      `
       DELETE FROM completions
       WHERE task_id IN (
         SELECT id FROM tasks
         WHERE deleted_at IS NOT NULL AND deleted_at < ?
       )
-    `).run(cutoffIso)
+    `,
+    ).run(cutoffIso)
 
     // Finally, delete the tasks themselves
     const result = tx
@@ -40,7 +44,9 @@ export function purgeOldTrash(): number {
   })
 
   if (changes > 0) {
-    console.log(`[trash-purge] Permanently deleted ${changes} tasks trashed more than ${RETENTION_DAYS} days ago`)
+    console.log(
+      `[trash-purge] Permanently deleted ${changes} tasks trashed more than ${RETENTION_DAYS} days ago`,
+    )
   }
 
   return changes

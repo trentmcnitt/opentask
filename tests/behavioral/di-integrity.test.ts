@@ -214,7 +214,7 @@ describe('Data Integrity Behavioral Tests', () => {
     expect(finalTask.labels).toEqual(['new-label'])
   })
 
-  test('DI-004: Update and delete don\'t conflict', () => {
+  test("DI-004: Update and delete don't conflict", () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -288,9 +288,9 @@ describe('Delete/Restore Operations', () => {
 
     deleteTask({ userId: TEST_USER_ID, taskId: task.id })
 
-    expect(() =>
-      deleteTask({ userId: TEST_USER_ID, taskId: task.id })
-    ).toThrow('Task is already in trash')
+    expect(() => deleteTask({ userId: TEST_USER_ID, taskId: task.id })).toThrow(
+      'Task is already in trash',
+    )
   })
 
   test('Cannot restore non-deleted task', () => {
@@ -300,9 +300,9 @@ describe('Delete/Restore Operations', () => {
       input: { title: 'Not deleted' },
     })
 
-    expect(() =>
-      restoreTask({ userId: TEST_USER_ID, taskId: task.id })
-    ).toThrow('Task is not in trash')
+    expect(() => restoreTask({ userId: TEST_USER_ID, taskId: task.id })).toThrow(
+      'Task is not in trash',
+    )
   })
 
   test('Cannot edit deleted task', () => {
@@ -320,7 +320,7 @@ describe('Delete/Restore Operations', () => {
         userTimezone: TEST_TIMEZONE,
         taskId: task.id,
         input: { title: 'New title' },
-      })
+      }),
     ).toThrow('Cannot edit trashed task')
   })
 })

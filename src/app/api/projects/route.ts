@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       FROM projects
       WHERE owner_id = ? OR shared = 1
       ORDER BY sort_order ASC, name ASC
-    `
+    `,
       )
       .all(user.id) as Array<{
       id: number
@@ -88,14 +88,16 @@ export async function POST(request: NextRequest) {
         `
       INSERT INTO projects (name, owner_id, shared, sort_order, created_at)
       VALUES (?, ?, ?, ?, ?)
-    `
+    `,
       )
       .run(name, user.id, shared ? 1 : 0, sortOrder, now)
 
     const projectId = Number(result.lastInsertRowid)
 
     const project = db
-      .prepare('SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?')
+      .prepare(
+        'SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?',
+      )
       .get(projectId) as {
       id: number
       name: string
@@ -114,7 +116,7 @@ export async function POST(request: NextRequest) {
         sort_order: project.sort_order,
         created_at: project.created_at,
       },
-      201
+      201,
     )
   } catch (err) {
     if (err instanceof AuthError) {

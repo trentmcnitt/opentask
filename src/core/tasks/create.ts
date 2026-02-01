@@ -79,7 +79,7 @@ export function createTask(options: CreateTaskOptions): Task {
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         labels, created_at, updated_at
       ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
+    `,
       )
       .run(
         userId,
@@ -94,7 +94,7 @@ export function createTask(options: CreateTaskOptions): Task {
         anchorDom,
         labelsJson,
         now,
-        now
+        now,
       )
 
     const taskId = Number(result.lastInsertRowid)
@@ -110,7 +110,7 @@ export function createTask(options: CreateTaskOptions): Task {
     const snapshot = createTaskSnapshot(
       { id: taskId }, // before_state is essentially empty
       task,
-      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels']
+      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels'],
     )
 
     logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])
@@ -132,7 +132,7 @@ export function getTaskById(taskId: number): Task | null {
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            snoozed_from, deleted_at, archived_at, labels, created_at, updated_at
     FROM tasks WHERE id = ?
-  `
+  `,
     )
     .get(taskId) as TaskRow | undefined
 
@@ -229,7 +229,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
 
   // Filter by label
   if (options.label) {
-    conditions.push("tasks.labels LIKE ?")
+    conditions.push('tasks.labels LIKE ?')
     params.push(`%"${options.label}"%`)
   }
 

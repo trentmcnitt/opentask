@@ -50,17 +50,17 @@ interface DueExport {
 
 // Prefix to label mapping
 const PREFIX_LABELS: Record<string, string> = {
-  'M': 'morning',
-  'A': 'afternoon',
-  'E': 'evening',
-  'N': 'night',
-  'EM': 'early-morning',
-  'LM': 'late-morning',
-  'EE': 'early-evening',
-  'W': 'weekly',
-  'Weekend': 'weekend',
-  'Weekly': 'weekly',
-  'Monthly': 'monthly',
+  M: 'morning',
+  A: 'afternoon',
+  E: 'evening',
+  N: 'night',
+  EM: 'early-morning',
+  LM: 'late-morning',
+  EE: 'early-evening',
+  W: 'weekly',
+  Weekend: 'weekend',
+  Weekly: 'weekly',
+  Monthly: 'monthly',
   'Tri-Monthly': 'tri-monthly',
 }
 
@@ -88,10 +88,7 @@ function parseTitle(title: string): { prefix: string | null; cleanTitle: string 
 /**
  * Convert Due recurrence to RRULE string
  */
-function convertToRRule(
-  recurrence: DueReminder['recurrence'],
-  dueDate: DateTime
-): string | null {
+function convertToRRule(recurrence: DueReminder['recurrence'], dueDate: DateTime): string | null {
   if (!recurrence) return null
 
   const { frequency, interval, days } = recurrence
@@ -129,15 +126,15 @@ function convertToRRule(
   // Handle weekly with specific days
   if (frequency === 'weekly' && days && days.length > 0) {
     const dayMap: Record<string, Weekday> = {
-      'MO': RRule.MO,
-      'TU': RRule.TU,
-      'WE': RRule.WE,
-      'TH': RRule.TH,
-      'FR': RRule.FR,
-      'SA': RRule.SA,
-      'SU': RRule.SU,
+      MO: RRule.MO,
+      TU: RRule.TU,
+      WE: RRule.WE,
+      TH: RRule.TH,
+      FR: RRule.FR,
+      SA: RRule.SA,
+      SU: RRule.SU,
     }
-    options.byweekday = days.map(d => dayMap[d]).filter(Boolean)
+    options.byweekday = days.map((d) => dayMap[d]).filter(Boolean)
   }
 
   // Handle monthly - add BYMONTHDAY
@@ -169,17 +166,15 @@ function deriveAnchors(dueDate: DateTime): {
  * Find the latest Due export file
  */
 function findLatestExport(): string | null {
-  const dataDir = path.join(
-    process.env.HOME || '',
-    'working_dir/todo-manager/data'
-  )
+  const dataDir = path.join(process.env.HOME || '', 'working_dir/todo-manager/data')
 
   if (!fs.existsSync(dataDir)) {
     return null
   }
 
-  const files = fs.readdirSync(dataDir)
-    .filter(f => f.startsWith('due-export-') && f.endsWith('.json'))
+  const files = fs
+    .readdirSync(dataDir)
+    .filter((f) => f.startsWith('due-export-') && f.endsWith('.json'))
     .sort()
     .reverse()
 
@@ -307,7 +302,9 @@ async function migrate(): Promise<MigrationResult> {
       const rrule = convertToRRule(reminder.recurrence, dueDate)
 
       // Derive anchor fields
-      const anchors = rrule ? deriveAnchors(dueDate) : { anchor_time: null, anchor_dow: null, anchor_dom: null }
+      const anchors = rrule
+        ? deriveAnchors(dueDate)
+        : { anchor_time: null, anchor_dow: null, anchor_dom: null }
 
       // Priority: critical = 4, others = 0
       const priority = reminder.critical ? 4 : 0
@@ -341,7 +338,7 @@ async function migrate(): Promise<MigrationResult> {
           anchors.anchor_dom,
           JSON.stringify(labels),
           createdAt,
-          updatedAt
+          updatedAt,
         )
         result.imported++
       }
@@ -357,17 +354,17 @@ async function migrate(): Promise<MigrationResult> {
 
 // Run migration
 migrate()
-  .then(result => {
+  .then((result) => {
     console.log('\n=== Migration Complete ===')
     console.log(`Imported: ${result.imported}`)
     console.log(`Skipped: ${result.skipped}`)
 
     if (result.errors.length > 0) {
       console.log(`\nErrors (${result.errors.length}):`)
-      result.errors.forEach(e => console.log(`  - ${e}`))
+      result.errors.forEach((e) => console.log(`  - ${e}`))
     }
   })
-  .catch(err => {
+  .catch((err) => {
     console.error('Migration failed:', err)
     process.exit(1)
   })

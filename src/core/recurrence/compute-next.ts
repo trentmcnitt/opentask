@@ -79,7 +79,7 @@ function computeFromDue(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
-  completedAt: Date
+  completedAt: Date,
 ): Date {
   const components = parseRRule(rruleStr)
 
@@ -110,7 +110,9 @@ function computeFromDue(
   if (components.byday && components.byday.length > 0) {
     // Cast to any to work around rrule.js type inconsistency
     // The Weekday type from RRule is compatible but TypeScript doesn't recognize it
-    ruleOptions.byweekday = components.byday.map((dow) => DOW_TO_RRULE_WEEKDAY[dow]) as unknown as number[]
+    ruleOptions.byweekday = components.byday.map(
+      (dow) => DOW_TO_RRULE_WEEKDAY[dow],
+    ) as unknown as number[]
   }
 
   // Add day-of-month for monthly patterns
@@ -167,7 +169,7 @@ function computeFromCompletion(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
-  completedAt: Date
+  completedAt: Date,
 ): Date {
   const components = parseRRule(rruleStr)
   const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
@@ -224,7 +226,7 @@ export function isRecurring(rrule: string | null): boolean {
 export function computeFirstOccurrence(
   rruleStr: string,
   anchorTime: string | null,
-  timezone: string
+  timezone: string,
 ): Date {
   return computeFromDue(rruleStr, anchorTime, timezone, new Date())
 }

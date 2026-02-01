@@ -15,7 +15,7 @@ export default function SettingsPage() {
 
   if (status === 'loading') {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     )
@@ -23,16 +23,18 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+        <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto w-full px-4 py-6 space-y-6">
+      <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
         {/* Account info */}
-        <section className="p-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">Account</h2>
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Account
+          </h2>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-zinc-500">Name</span>
@@ -46,22 +48,24 @@ export default function SettingsPage() {
         </section>
 
         {/* Navigation links (mobile access to Archive & Trash) */}
-        <section className="p-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">More</h2>
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            More
+          </h2>
           <div className="space-y-1">
             <Link
               href="/archive"
-              className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="-mx-2 flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               <span className="text-sm">Archive</span>
-              <span className="text-zinc-400 text-xs">&rsaquo;</span>
+              <span className="text-xs text-zinc-400">&rsaquo;</span>
             </Link>
             <Link
               href="/trash"
-              className="flex items-center justify-between p-2 -mx-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="-mx-2 flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               <span className="text-sm">Trash</span>
-              <span className="text-zinc-400 text-xs">&rsaquo;</span>
+              <span className="text-xs text-zinc-400">&rsaquo;</span>
             </Link>
           </div>
         </section>
@@ -69,7 +73,7 @@ export default function SettingsPage() {
         {/* Sign out */}
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
-          className="w-full p-3 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium"
+          className="w-full rounded-lg border border-red-200 p-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
         >
           Sign Out
         </button>

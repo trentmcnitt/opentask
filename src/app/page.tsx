@@ -42,6 +42,17 @@ function HomeContent() {
     return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
   }, [tasks])
 
+  const todayCount = useMemo(() => {
+    const now = new Date()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
+    return tasks.filter((t) => {
+      if (!t.due_at) return false
+      const due = new Date(t.due_at)
+      return due >= startOfDay && due < endOfDay
+    }).length
+  }, [tasks])
+
   const fetchTasks = useCallback(async () => {
     try {
       const res = await fetch('/api/tasks?limit=500')
@@ -102,11 +113,11 @@ function HomeContent() {
   }, [selection])
 
   const handleDone = async (taskId: number) => {
-    const task = tasks.find(t => t.id === taskId)
+    const task = tasks.find((t) => t.id === taskId)
     if (!task) return
 
     if (!task.rrule) {
-      setTasks(prev => prev.filter(t => t.id !== taskId))
+      setTasks((prev) => prev.filter((t) => t.id !== taskId))
     }
 
     try {
@@ -114,19 +125,22 @@ function HomeContent() {
       if (!res.ok) throw new Error('Failed to mark done')
       const data = await res.json()
       if (data.data?.task?.rrule) {
-        setTasks(prev => prev.map(t => (t.id === taskId ? data.data.task : t)))
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
       }
-      showToast({ message: task.rrule ? 'Task advanced' : 'Task completed', action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: task.rrule ? 'Task advanced' : 'Task completed',
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       fetchTasks()
     }
   }
 
   const handleSnooze = async (taskId: number, until: string) => {
-    const task = tasks.find(t => t.id === taskId)
+    const task = tasks.find((t) => t.id === taskId)
     if (!task) return
 
-    setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, due_at: until } : t)))
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
     setSnoozeTask(null)
 
     try {
@@ -197,7 +211,10 @@ function HomeContent() {
       if (!res.ok) throw new Error('Bulk action failed')
       selection.clear()
       fetchTasks()
-      showToast({ message: `${count} tasks updated`, action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: `${count} tasks updated`,
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       showToast({ message: 'Action failed' })
     }
@@ -226,7 +243,10 @@ function HomeContent() {
       const res = await fetch('/api/tasks/bulk/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [...selection.selectedIds], changes: { project_id: projectId } }),
+        body: JSON.stringify({
+          ids: [...selection.selectedIds],
+          changes: { project_id: projectId },
+        }),
       })
       if (!res.ok) throw new Error('Move failed')
       selection.clear()
@@ -249,7 +269,10 @@ function HomeContent() {
       if (!res.ok) throw new Error('Snooze failed')
       selection.clear()
       fetchTasks()
-      showToast({ message: `${count} tasks snoozed`, action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: `${count} tasks snoozed`,
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       showToast({ message: 'Snooze failed' })
     }
@@ -276,7 +299,7 @@ function HomeContent() {
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     )
@@ -286,12 +309,16 @@ function HomeContent() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="text-red-500 mb-4">{error}</div>
+          <div className="mb-4 text-red-500">{error}</div>
           <button
-            onClick={() => { setError(null); setLoading(true); fetchTasks() }}
-            className="px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+            onClick={() => {
+              setError(null)
+              setLoading(true)
+              fetchTasks()
+            }}
+            className="rounded-lg bg-zinc-100 px-4 py-2 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
             Retry
           </button>
@@ -301,10 +328,11 @@ function HomeContent() {
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex flex-1 flex-col">
       <Header
         taskCount={tasks.length}
         overdueCount={overdueCount}
+        todayCount={todayCount}
         grouping={grouping}
         onGroupingChange={setGrouping}
         onUndo={handleUndo}
@@ -313,12 +341,13 @@ function HomeContent() {
         userName={session?.user?.name || undefined}
       />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
         <QuickAdd onAdd={handleQuickAdd} />
 
         {searchQuery && (
           <div className="mb-4 text-sm text-zinc-500">
-            {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for &ldquo;{searchQuery}&rdquo;
+            {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for &ldquo;
+            {searchQuery}&rdquo;
           </div>
         )}
 
@@ -336,12 +365,37 @@ function HomeContent() {
       <FloatingActionBar
         selectedCount={selection.selectedIds.size}
         onDone={() => bulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
-        onSnooze1h={() => bulkAction('/api/tasks/bulk/snooze', { ids: [...selection.selectedIds], until: getSnoozeTime('+1h') })}
-        onSnooze2h={() => bulkAction('/api/tasks/bulk/snooze', { ids: [...selection.selectedIds], until: getSnoozeTime('+2h') })}
-        onSnoozeTomorrow={() => bulkAction('/api/tasks/bulk/snooze', { ids: [...selection.selectedIds], until: getSnoozeTime('tomorrow') })}
+        onSnooze1h={() =>
+          bulkAction('/api/tasks/bulk/snooze', {
+            ids: [...selection.selectedIds],
+            until: getSnoozeTime('+1h'),
+          })
+        }
+        onSnooze2h={() =>
+          bulkAction('/api/tasks/bulk/snooze', {
+            ids: [...selection.selectedIds],
+            until: getSnoozeTime('+2h'),
+          })
+        }
+        onSnoozeTomorrow={() =>
+          bulkAction('/api/tasks/bulk/snooze', {
+            ids: [...selection.selectedIds],
+            until: getSnoozeTime('tomorrow'),
+          })
+        }
         onDelete={bulkDelete}
-        onPriorityHigh={() => bulkAction('/api/tasks/bulk/edit', { ids: [...selection.selectedIds], changes: { priority: 3 } })}
-        onPriorityLow={() => bulkAction('/api/tasks/bulk/edit', { ids: [...selection.selectedIds], changes: { priority: 1 } })}
+        onPriorityHigh={() =>
+          bulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { priority: 3 },
+          })
+        }
+        onPriorityLow={() =>
+          bulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { priority: 1 },
+          })
+        }
         onClear={selection.clear}
         onMoveToProject={() => setShowProjectPicker(true)}
         onCustomSnooze={() => setBulkSnoozeCustom(true)}

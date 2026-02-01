@@ -30,12 +30,14 @@ export function QuickAdd({ onAdd }: QuickAddProps) {
 
   return (
     <div className="mb-6">
-      <div className={cn(
-        "flex items-center gap-2 p-3 rounded-lg border bg-card",
-        "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
-        "transition-all"
-      )}>
-        <Plus className="size-5 text-muted-foreground flex-shrink-0" />
+      <div
+        className={cn(
+          'bg-card flex items-center gap-2 rounded-lg border p-3',
+          'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+          'transition-all',
+        )}
+      >
+        <Plus className="text-muted-foreground size-5 flex-shrink-0" />
         <Input
           ref={inputRef}
           type="text"
@@ -48,7 +50,7 @@ export function QuickAdd({ onAdd }: QuickAddProps) {
             }
           }}
           placeholder="Add a task..."
-          className="flex-1 border-0 shadow-none focus-visible:ring-0 p-0 h-auto"
+          className="h-auto flex-1 border-0 p-0 shadow-none focus-visible:ring-0"
           aria-label="Quick add task"
           disabled={submitting}
         />

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -28,7 +29,7 @@ interface AddTaskFormProps {
 export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
-  const [projectId, setProjectId] = useState<string>('')
+  const [projectId, setProjectId] = useState<string>('inbox')
   const [priority, setPriority] = useState<string>('0')
   const [labels, setLabels] = useState('')
   const [rrule, setRrule] = useState<string | null>(null)
@@ -52,10 +53,13 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
     try {
       const body: Record<string, unknown> = { title: title.trim() }
       if (dueAt) body.due_at = new Date(dueAt).toISOString()
-      if (projectId) body.project_id = parseInt(projectId)
+      if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
       if (parseInt(priority) > 0) body.priority = parseInt(priority)
       if (labels.trim()) {
-        body.labels = labels.split(',').map((l) => l.trim()).filter(Boolean)
+        body.labels = labels
+          .split(',')
+          .map((l) => l.trim())
+          .filter(Boolean)
       }
       if (rrule) body.rrule = rrule
 
@@ -74,15 +78,15 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" showCloseButton={false}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" showCloseButton={false}>
         <DialogHeader className="flex flex-row items-center justify-between">
-          <DialogTitle>New Task</DialogTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <div>
+            <DialogTitle>New Task</DialogTitle>
+            <DialogDescription className="sr-only">
+              Create a new task with title, due date, project, and priority
+            </DialogDescription>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
             <X className="size-4" />
           </Button>
         </DialogHeader>
@@ -90,7 +94,9 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Title */}
           <div>
-            <label htmlFor="task-title" className="block text-sm font-medium mb-1">Title</label>
+            <label htmlFor="task-title" className="mb-1 block text-sm font-medium">
+              Title
+            </label>
             <Input
               ref={titleRef}
               id="task-title"
@@ -104,7 +110,9 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
           {/* Due date */}
           <div>
-            <label htmlFor="task-due" className="block text-sm font-medium mb-1">Due date</label>
+            <label htmlFor="task-due" className="mb-1 block text-sm font-medium">
+              Due date
+            </label>
             <Input
               id="task-due"
               type="datetime-local"
@@ -116,15 +124,19 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
           <div className="grid grid-cols-2 gap-4">
             {/* Project */}
             <div>
-              <label htmlFor="task-project" className="block text-sm font-medium mb-1">Project</label>
+              <label htmlFor="task-project" className="mb-1 block text-sm font-medium">
+                Project
+              </label>
               <Select value={projectId} onValueChange={setProjectId}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Inbox" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Inbox</SelectItem>
+                  <SelectItem value="inbox">Inbox</SelectItem>
                   {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id.toString()}>
+                      {p.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -132,7 +144,9 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
             {/* Priority */}
             <div>
-              <label htmlFor="task-priority" className="block text-sm font-medium mb-1">Priority</label>
+              <label htmlFor="task-priority" className="mb-1 block text-sm font-medium">
+                Priority
+              </label>
               <Select value={priority} onValueChange={setPriority}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -153,14 +167,18 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             <button
               type="button"
               onClick={() => setShowRecurrence(!showRecurrence)}
-              className="flex items-center gap-2 text-sm font-medium mb-1 hover:text-primary transition-colors"
+              className="hover:text-primary mb-1 flex items-center gap-2 text-sm font-medium transition-colors"
             >
               Repeat
-              {showRecurrence ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+              {showRecurrence ? (
+                <ChevronUp className="size-4" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
               {rrule && <span className="text-muted-foreground font-normal">(configured)</span>}
             </button>
             {showRecurrence && (
-              <div className="border rounded-lg p-3 mt-1">
+              <div className="mt-1 rounded-lg border p-3">
                 <RecurrencePicker value={rrule} onChange={handleRruleChange} />
               </div>
             )}
@@ -168,7 +186,9 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
           {/* Labels */}
           <div>
-            <label htmlFor="task-labels" className="block text-sm font-medium mb-1">Labels (comma-separated)</label>
+            <label htmlFor="task-labels" className="mb-1 block text-sm font-medium">
+              Labels (comma-separated)
+            </label>
             <Input
               id="task-labels"
               type="text"
@@ -178,11 +198,7 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             />
           </div>
 
-          <Button
-            type="submit"
-            disabled={!title.trim() || submitting}
-            className="w-full"
-          >
+          <Button type="submit" disabled={!title.trim() || submitting} className="w-full">
             {submitting ? 'Creating...' : 'Create Task'}
           </Button>
         </form>

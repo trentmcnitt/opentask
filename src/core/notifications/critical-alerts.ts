@@ -40,7 +40,7 @@ export async function checkCriticalTasks(): Promise<void> {
           AND (last_notified_at IS NULL OR last_notified_at < ?)
         ORDER BY due_at ASC
         LIMIT 5
-      `
+      `,
       )
       .all(cooldownCutoff.toISOString()) as CriticalTask[]
 
@@ -58,7 +58,7 @@ export async function checkCriticalTasks(): Promise<void> {
       // Update last_notified_at for cooldown
       db.prepare('UPDATE tasks SET last_notified_at = ? WHERE id = ?').run(
         now.toISOString(),
-        task.id
+        task.id,
       )
     }
   } catch (err) {
@@ -90,7 +90,7 @@ async function sendPushoverAlert(task: CriticalTask): Promise<void> {
       title: `CRITICAL: ${task.title}`,
       message: `Overdue critical task: "${task.title}" (due ${task.due_at})`,
       priority: '2', // Emergency
-      retry: '300',  // Retry every 5 min
+      retry: '300', // Retry every 5 min
       expire: '3600', // Expire after 1 hour
     })
 

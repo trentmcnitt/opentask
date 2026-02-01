@@ -4,7 +4,6 @@ import Image from 'next/image'
 import { signOut } from 'next-auth/react'
 import { FolderOpen, Clock, Undo2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { GroupingMode } from './TaskList'
 import { SearchBar } from './SearchBar'
@@ -12,6 +11,7 @@ import { SearchBar } from './SearchBar'
 interface HeaderProps {
   taskCount: number
   overdueCount?: number
+  todayCount?: number
   grouping?: GroupingMode
   onGroupingChange?: (mode: GroupingMode) => void
   onUndo: () => void
@@ -20,35 +20,51 @@ interface HeaderProps {
   userName?: string
 }
 
-export function Header({ taskCount, overdueCount = 0, grouping = 'time', onGroupingChange, onUndo, onSearch, onSearchClear, userName }: HeaderProps) {
+export function Header({
+  taskCount,
+  overdueCount = 0,
+  todayCount = 0,
+  grouping = 'time',
+  onGroupingChange,
+  onUndo,
+  onSearch,
+  onSearchClear,
+  userName,
+}: HeaderProps) {
   return (
     <TooltipProvider delayDuration={300}>
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+          <div className="flex min-w-0 items-center gap-1.5">
             <Image
               src="/opentask-logo.png"
               alt="OpenTask"
               width={120}
-              height={28}
-              className="dark:invert"
+              height={36}
+              className="h-7 w-auto flex-shrink-0 md:h-9 dark:invert"
+              unoptimized
               priority
             />
-            <span className="text-sm text-muted-foreground">
-              {taskCount} tasks
-            </span>
-            {overdueCount > 0 && (
-              <Badge variant="destructive" className="min-w-[20px] justify-center">
-                {overdueCount}
-              </Badge>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-1">
+              <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium">
+                {taskCount}
+              </span>
+              {overdueCount > 0 && (
+                <span className="bg-destructive/15 text-destructive inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium">
+                  {overdueCount}
+                </span>
+              )}
+              {todayCount > 0 && (
+                <span className="bg-primary/15 text-primary inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium">
+                  {todayCount}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-1">
             {/* Search */}
-            {onSearch && onSearchClear && (
-              <SearchBar onSearch={onSearch} onClear={onSearchClear} />
-            )}
+            {onSearch && onSearchClear && <SearchBar onSearch={onSearch} onClear={onSearchClear} />}
 
             {/* Grouping toggle */}
             {onGroupingChange && (
@@ -67,21 +83,14 @@ export function Header({ taskCount, overdueCount = 0, grouping = 'time', onGroup
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>
-                  Group by {grouping === 'time' ? 'project' : 'time'}
-                </TooltipContent>
+                <TooltipContent>Group by {grouping === 'time' ? 'project' : 'time'}</TooltipContent>
               </Tooltip>
             )}
 
             {/* Undo button */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onUndo}
-                  aria-label="Undo last action"
-                >
+                <Button variant="ghost" size="icon" onClick={onUndo} aria-label="Undo last action">
                   <Undo2 className="size-5" />
                 </Button>
               </TooltipTrigger>

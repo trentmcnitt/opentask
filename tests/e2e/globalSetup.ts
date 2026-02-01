@@ -38,32 +38,42 @@ export default async function globalSetup() {
 
   // Create test user
   const passwordHash = await bcrypt.hash('testpass123', 4)
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, email, name, password_hash, timezone)
     VALUES (?, ?, ?, ?, ?)
-  `).run(1, 'test@opentask.local', 'Test User', passwordHash, 'America/Chicago')
+  `,
+  ).run(1, 'test@opentask.local', 'Test User', passwordHash, 'America/Chicago')
 
   // Create projects
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(1, 'Inbox', 1, 0, 0)
+  `,
+  ).run(1, 'Inbox', 1, 0, 0)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(2, 'Routine', 1, 0, 1)
+  `,
+  ).run(2, 'Routine', 1, 0, 1)
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO projects (id, name, owner_id, shared, sort_order)
     VALUES (?, ?, ?, ?, ?)
-  `).run(3, 'Work', 1, 0, 2)
+  `,
+  ).run(3, 'Work', 1, 0, 2)
 
   // Create API token
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO api_tokens (user_id, token, name)
     VALUES (?, ?, ?)
-  `).run(1, 'a'.repeat(64), 'E2E Token')
+  `,
+  ).run(1, 'a'.repeat(64), 'E2E Token')
 
   // Create tasks with specific dates
   const tz = 'America/Chicago'
@@ -107,40 +117,52 @@ export default async function globalSetup() {
     .toISO()!
 
   // One-off: "Buy groceries" due tomorrow
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(1, 1, 1, 'Buy groceries', tomorrow, 2)
+  `,
+  ).run(1, 1, 1, 'Buy groceries', tomorrow, 2)
 
   // Recurring daily: "Morning routine" at 7 AM
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(2, 1, 2, 'Morning routine', todayMorning, 'FREQ=DAILY', 'from_due', 1)
+  `,
+  ).run(2, 1, 2, 'Morning routine', todayMorning, 'FREQ=DAILY', 'from_due', 1)
 
   // Recurring daily: "Evening review" at 9 PM
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(3, 1, 2, 'Evening review', todayEvening, 'FREQ=DAILY', 'from_due', 1)
+  `,
+  ).run(3, 1, 2, 'Evening review', todayEvening, 'FREQ=DAILY', 'from_due', 1)
 
   // Recurring weekly: "Weekly standup" Mon 10 AM
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(4, 1, 3, 'Weekly standup', nextMonday, 'FREQ=WEEKLY;BYDAY=MO', 'from_due', 1)
+  `,
+  ).run(4, 1, 3, 'Weekly standup', nextMonday, 'FREQ=WEEKLY;BYDAY=MO', 'from_due', 1)
 
   // One-off: "Review PRs" due today 5pm
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(5, 1, 3, 'Review PRs', today5pm, 3)
+  `,
+  ).run(5, 1, 3, 'Review PRs', today5pm, 3)
 
   // One-off: "Prepare slides" due +3 days
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(6, 1, 1, 'Prepare slides', threeDays, 2)
+  `,
+  ).run(6, 1, 1, 'Prepare slides', threeDays, 2)
 
   db.close()
   console.log('[e2e] Database seeded at', DB_PATH)

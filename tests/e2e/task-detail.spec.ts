@@ -1,7 +1,9 @@
 import { test, expect } from './fixtures'
 
 test.describe('Task detail', () => {
-  test('clicking task title navigates to detail page with fields visible', async ({ authenticatedPage: page }) => {
+  test('clicking task title navigates to detail page with fields visible', async ({
+    authenticatedPage: page,
+  }) => {
     const taskLink = page.getByRole('link', { name: 'Review PRs' })
     await expect(taskLink).toBeVisible({ timeout: 5000 })
     await taskLink.click()

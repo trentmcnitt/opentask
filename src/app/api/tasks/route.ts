@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
       projectId,
       done: searchParams.has('done') ? searchParams.get('done') === 'true' : undefined,
       overdue: searchParams.has('overdue') ? searchParams.get('overdue') === 'true' : undefined,
-      recurring: searchParams.has('recurring') ? searchParams.get('recurring') === 'true' : undefined,
+      recurring: searchParams.has('recurring')
+        ? searchParams.get('recurring') === 'true'
+        : undefined,
       oneOff: searchParams.has('one_off') ? searchParams.get('one_off') === 'true' : undefined,
       search: searchParams.get('search') || undefined,
       label: searchParams.get('label') || undefined,

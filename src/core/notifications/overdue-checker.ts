@@ -52,7 +52,7 @@ export async function checkOverdueTasks(): Promise<void> {
           AND (t.last_notified_at IS NULL OR t.last_notified_at < ?)
         ORDER BY t.due_at ASC
         LIMIT 50
-      `
+      `,
       )
       .all(cooldownCutoff.toISOString()) as OverdueTask[]
 
@@ -70,7 +70,7 @@ export async function checkOverdueTasks(): Promise<void> {
                  (SELECT token FROM api_tokens WHERE user_id = u.id LIMIT 1) as api_token
           FROM users u
           WHERE u.id = ?
-        `
+        `,
         )
         .get(userId) as UserNotificationSettings | undefined
 
@@ -179,7 +179,7 @@ export async function checkOverdueTasks(): Promise<void> {
               task_id: firstTask.id,
               token: settings.api_token,
             }),
-          }
+          },
         )
       }
 
@@ -197,9 +197,10 @@ export async function checkOverdueTasks(): Promise<void> {
       // Update last_notified_at for all notified tasks
       const taskIds = tasks.map((t) => t.id)
       const placeholders = taskIds.map(() => '?').join(',')
-      db.prepare(
-        `UPDATE tasks SET last_notified_at = ? WHERE id IN (${placeholders})`
-      ).run(now.toISOString(), ...taskIds)
+      db.prepare(`UPDATE tasks SET last_notified_at = ? WHERE id IN (${placeholders})`).run(
+        now.toISOString(),
+        ...taskIds,
+      )
     }
   } catch (err) {
     console.error('Overdue checker error:', err)

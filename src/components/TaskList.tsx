@@ -88,38 +88,42 @@ const SORT_LABELS: Record<SortOption, string> = {
   age: 'Oldest',
 }
 
-export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSnooze, onSwipeSnooze }: TaskListProps) {
+export function TaskList({
+  tasks,
+  projects = [],
+  grouping = 'time',
+  onDone,
+  onSnooze,
+  onSwipeSnooze,
+}: TaskListProps) {
   const { getSortOption, setSortOption } = useGroupSort()
   const selection = useSafeSelection()
 
   // Snooze +1h helper for swipe (must be before early return for hooks rules)
-  const handleSwipeSnooze = useCallback((task: Task) => {
-    const snoozeTime = new Date(Date.now() + 60 * 60 * 1000)
-    snoozeTime.setMinutes(0, 0, 0)
-    if (onSwipeSnooze) {
-      onSwipeSnooze(task.id, snoozeTime.toISOString())
-    } else {
-      onSnooze(task)
-    }
-  }, [onSwipeSnooze, onSnooze])
+  const handleSwipeSnooze = useCallback(
+    (task: Task) => {
+      const snoozeTime = new Date(Date.now() + 60 * 60 * 1000)
+      snoozeTime.setMinutes(0, 0, 0)
+      if (onSwipeSnooze) {
+        onSwipeSnooze(task.id, snoozeTime.toISOString())
+      } else {
+        onSnooze(task)
+      }
+    },
+    [onSwipeSnooze, onSnooze],
+  )
 
   if (tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="text-4xl mb-4">&#x2705;</div>
-        <h2 className="text-xl font-medium text-zinc-900 dark:text-zinc-100">
-          All caught up!
-        </h2>
-        <p className="text-zinc-500 dark:text-zinc-400 mt-1">
-          No tasks due right now.
-        </p>
+        <div className="mb-4 text-4xl">&#x2705;</div>
+        <h2 className="text-xl font-medium text-zinc-900 dark:text-zinc-100">All caught up!</h2>
+        <p className="mt-1 text-zinc-500 dark:text-zinc-400">No tasks due right now.</p>
       </div>
     )
   }
 
-  const groups = grouping === 'project'
-    ? groupByProject(tasks, projects)
-    : groupByTime(tasks)
+  const groups = grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks)
 
   // Build ordered ID list for range-select
   const orderedIds = groups.flatMap((g) => g.tasks.map((t) => t.id))
@@ -135,64 +139,61 @@ export function TaskList({ tasks, projects = [], grouping = 'time', onDone, onSn
         const sortedTasks = sortTasks(group.tasks, sortOption)
 
         return (
-        <section key={group.label}>
-          {/* "Now" separator between Overdue and the next group */}
-          {hasOverdue && hasUpcoming && groupIdx === 1 && (
-            <NowSeparator />
-          )}
+          <section key={group.label}>
+            {/* "Now" separator between Overdue and the next group */}
+            {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator />}
 
-          <div className="flex items-center justify-between mb-2 px-1">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              {group.label}
-              <span className="ml-2 text-zinc-400 dark:text-zinc-500">
-                {group.tasks.length}
-              </span>
-            </h2>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+            <div className="mb-2 flex items-center justify-between px-1">
+              <h2 className="text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                {group.label}
+                <span className="ml-2 text-zinc-400 dark:text-zinc-500">{group.tasks.length}</span>
+              </h2>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                  >
+                    <ArrowUpDown className="mr-1 size-3" />
+                    {SORT_LABELS[sortOption]}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'priority')}>
+                    Priority
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'title')}>
+                    Title (A-Z)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'age')}>
+                    Age (oldest first)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="space-y-1">
+              {sortedTasks.map((task) => (
+                <SwipeableRow
+                  key={task.id}
+                  onSwipeRight={() => onDone(task.id)}
+                  onSwipeLeft={() => handleSwipeSnooze(task)}
+                  disabled={selection.isSelectionMode}
                 >
-                  <ArrowUpDown className="size-3 mr-1" />
-                  {SORT_LABELS[sortOption]}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setSortOption(group.label, 'priority')}>
-                  Priority
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortOption(group.label, 'title')}>
-                  Title (A-Z)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortOption(group.label, 'age')}>
-                  Age (oldest first)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <div className="space-y-1">
-            {sortedTasks.map((task) => (
-              <SwipeableRow
-                key={task.id}
-                onSwipeRight={() => onDone(task.id)}
-                onSwipeLeft={() => handleSwipeSnooze(task)}
-              >
-                <TaskRow
-                  task={task}
-                  onDone={() => onDone(task.id)}
-                  onSnooze={() => onSnooze(task)}
-                  isOverdue={isTaskOverdue(task)}
-                  isSelected={selection.selectedIds.has(task.id)}
-                  isSelectionMode={selection.isSelectionMode}
-                  onSelect={() => selection.toggle(task.id)}
-                  onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
-                />
-              </SwipeableRow>
-            ))}
-          </div>
-        </section>
+                  <TaskRow
+                    task={task}
+                    onDone={() => onDone(task.id)}
+                    onSnooze={() => onSnooze(task)}
+                    isOverdue={isTaskOverdue(task)}
+                    isSelected={selection.selectedIds.has(task.id)}
+                    isSelectionMode={selection.isSelectionMode}
+                    onSelect={() => selection.toggle(task.id)}
+                    onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
+                  />
+                </SwipeableRow>
+              ))}
+            </div>
+          </section>
         )
       })}
     </div>
@@ -320,12 +321,12 @@ function NowSeparator() {
   })
 
   return (
-    <div className="flex items-center gap-3 py-3 mb-4" aria-label={`Current time: ${timeStr}`}>
-      <div className="flex-1 h-px bg-zinc-300 dark:bg-zinc-700" />
-      <span className="text-xs text-zinc-400 dark:text-zinc-500 font-medium whitespace-nowrap">
+    <div className="mb-4 flex items-center gap-3 py-3" aria-label={`Current time: ${timeStr}`}>
+      <div className="h-px flex-1 bg-zinc-300 dark:bg-zinc-700" />
+      <span className="text-xs font-medium whitespace-nowrap text-zinc-400 dark:text-zinc-500">
         now ({timeStr})
       </span>
-      <div className="flex-1 h-px bg-zinc-300 dark:bg-zinc-700" />
+      <div className="h-px flex-1 bg-zinc-300 dark:bg-zinc-700" />
     </div>
   )
 }

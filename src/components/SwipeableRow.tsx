@@ -5,9 +5,10 @@ import { useDrag } from '@use-gesture/react'
 
 interface SwipeableRowProps {
   children: React.ReactNode
-  onSwipeRight?: () => void  // done
-  onSwipeLeft?: () => void   // snooze +1h
-  threshold?: number         // fraction of width, default 0.4
+  onSwipeRight?: () => void // done
+  onSwipeLeft?: () => void // snooze +1h
+  threshold?: number // fraction of width, default 0.4
+  disabled?: boolean // disable swiping (e.g. during selection mode)
 }
 
 export function SwipeableRow({
@@ -15,6 +16,7 @@ export function SwipeableRow({
   onSwipeRight,
   onSwipeLeft,
   threshold = 0.4,
+  disabled = false,
 }: SwipeableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
@@ -22,7 +24,7 @@ export function SwipeableRow({
 
   const bind = useDrag(
     ({ movement: [mx], down, cancel }) => {
-      if (swiped) return
+      if (swiped || disabled) return
 
       const width = containerRef.current?.offsetWidth || 300
       const thresholdPx = width * threshold
@@ -58,14 +60,10 @@ export function SwipeableRow({
     {
       axis: 'x',
       filterTaps: true,
-    }
+    },
   )
 
-  const bgColor = offset > 0
-    ? 'bg-green-500'
-    : offset < 0
-    ? 'bg-blue-500'
-    : ''
+  const bgColor = offset > 0 ? 'bg-green-500' : offset < 0 ? 'bg-blue-500' : ''
 
   const label = offset > 0 ? 'Done' : offset < 0 ? 'Snooze' : ''
 
@@ -78,7 +76,7 @@ export function SwipeableRow({
             offset > 0 ? 'justify-start pl-4' : 'justify-end pr-4'
           }`}
         >
-          <span className="text-white font-medium text-sm">{label}</span>
+          <span className="text-sm font-medium text-white">{label}</span>
         </div>
       )}
 

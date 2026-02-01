@@ -118,7 +118,9 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
       case 'WEEKLY':
         base = interval === 1 ? 'Every week' : `Every ${interval} weeks`
         if (selectedDays.length > 0) {
-          const dayNames = selectedDays.map(d => DAYS_OF_WEEK.find(day => day.id === d)?.full || d)
+          const dayNames = selectedDays.map(
+            (d) => DAYS_OF_WEEK.find((day) => day.id === d)?.full || d,
+          )
           base += ` on ${dayNames.join(', ')}`
         }
         break
@@ -145,17 +147,13 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
   }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate])
 
   const toggleDay = (day: string) => {
-    setSelectedDays(prev =>
-      prev.includes(day)
-        ? prev.filter(d => d !== day)
-        : [...prev, day]
-    )
+    setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
   }
 
   return (
     <div className="space-y-4">
       {/* Frequency */}
-      <div className="flex gap-4 items-center">
+      <div className="flex items-center gap-4">
         <Select value={frequency} onValueChange={(v) => setFrequency(v as Frequency)}>
           <SelectTrigger className="w-32">
             <SelectValue />
@@ -171,7 +169,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
 
         {frequency !== 'NONE' && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Every</span>
+            <span className="text-muted-foreground text-sm">Every</span>
             <Input
               type="number"
               min={1}
@@ -180,7 +178,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
               onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
               className="w-16"
             />
-            <span className="text-sm text-muted-foreground">
+            <span className="text-muted-foreground text-sm">
               {frequency === 'DAILY' && (interval === 1 ? 'day' : 'days')}
               {frequency === 'WEEKLY' && (interval === 1 ? 'week' : 'weeks')}
               {frequency === 'MONTHLY' && (interval === 1 ? 'month' : 'months')}
@@ -200,7 +198,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
               variant={selectedDays.includes(day.id) ? 'default' : 'outline'}
               size="icon"
               onClick={() => toggleDay(day.id)}
-              className="w-9 h-9"
+              className="h-9 w-9"
               title={day.full}
             >
               {day.label}
@@ -211,8 +209,8 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
 
       {/* Day of month picker (for monthly) */}
       {frequency === 'MONTHLY' && (
-        <div className="flex gap-2 items-center">
-          <span className="text-sm text-muted-foreground">On day</span>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground text-sm">On day</span>
           <Select
             value={monthDay.toString()}
             onValueChange={(v) => setMonthDay(v === 'last' ? 'last' : parseInt(v))}
@@ -222,7 +220,9 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
             </SelectTrigger>
             <SelectContent>
               {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                <SelectItem key={day} value={day.toString()}>{day}</SelectItem>
+                <SelectItem key={day} value={day.toString()}>
+                  {day}
+                </SelectItem>
               ))}
               <SelectItem value="last">Last day</SelectItem>
             </SelectContent>
@@ -232,8 +232,8 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
 
       {/* End condition */}
       {frequency !== 'NONE' && (
-        <div className="flex gap-2 items-center">
-          <span className="text-sm text-muted-foreground">Ends</span>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground text-sm">Ends</span>
           <Select value={endType} onValueChange={(v) => setEndType(v as EndType)}>
             <SelectTrigger className="w-28">
               <SelectValue />
@@ -255,7 +255,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
                 onChange={(e) => setEndCount(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-16"
               />
-              <span className="text-sm text-muted-foreground">occurrences</span>
+              <span className="text-muted-foreground text-sm">occurrences</span>
             </div>
           )}
 
@@ -271,9 +271,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
       )}
 
       {/* Preview */}
-      <div className="text-sm text-muted-foreground bg-muted p-2 rounded">
-        {previewText}
-      </div>
+      <div className="text-muted-foreground bg-muted rounded p-2 text-sm">{previewText}</div>
     </div>
   )
 }
