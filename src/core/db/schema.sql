@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   timezone      TEXT NOT NULL DEFAULT 'America/Chicago',
   ntfy_topic    TEXT,
   ntfy_server   TEXT,
+  default_grouping TEXT NOT NULL DEFAULT 'project',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

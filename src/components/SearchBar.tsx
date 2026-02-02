@@ -9,13 +9,22 @@ import { cn } from '@/lib/utils'
 interface SearchBarProps {
   onSearch: (query: string) => void
   onClear: () => void
+  onExpandedChange?: (expanded: boolean) => void
 }
 
-export function SearchBar({ onSearch, onClear }: SearchBarProps) {
+export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const setExpandedState = useCallback(
+    (value: boolean) => {
+      setExpanded(value)
+      onExpandedChange?.(value)
+    },
+    [onExpandedChange],
+  )
 
   const handleChange = useCallback(
     (value: string) => {
@@ -37,20 +46,23 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
   const handleClear = () => {
     setQuery('')
     onClear()
-    setExpanded(false)
+    setExpandedState(false)
   }
 
   useEffect(() => {
     if (expanded) inputRef.current?.focus()
   }, [expanded])
 
+  const isActive = expanded || !!query
+
   return (
-    <div className="flex items-center">
-      {/* Desktop: always visible */}
+    // ml-auto keeps search right-aligned; flex-1 when active gives room for leftward growth
+    <div className={cn('flex items-center', isActive ? 'min-w-0 flex-1' : 'ml-auto')}>
+      {/* Desktop: ml-auto + width transition = expands leftward from right edge */}
       <div
         className={cn(
-          'hidden items-center gap-2 transition-all md:flex',
-          expanded || query ? 'w-64' : 'w-48',
+          'ml-auto hidden items-center transition-[width] duration-200 ease-in-out md:flex',
+          isActive ? 'bg-background relative z-10 w-[calc(100%-0.5rem)]' : 'w-48',
         )}
       >
         <div className="relative flex-1">
@@ -60,9 +72,9 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
             type="text"
             value={query}
             onChange={(e) => handleChange(e.target.value)}
-            onFocus={() => setExpanded(true)}
+            onFocus={() => setExpandedState(true)}
             onBlur={() => {
-              if (!query) setExpanded(false)
+              if (!query) setExpandedState(false)
             }}
             placeholder="Search tasks..."
             className="pr-8 pl-9"
@@ -80,25 +92,34 @@ export function SearchBar({ onSearch, onClear }: SearchBarProps) {
         </div>
       </div>
 
-      {/* Mobile: icon that expands to full bar */}
+      {/* Mobile: icon button, or absolute overlay when expanded */}
       <div className="md:hidden">
         {expanded ? (
-          <div className="flex items-center gap-2">
+          <div className="animate-fade-in bg-background absolute inset-y-0 right-14 left-4 z-20 flex items-center gap-1">
             <Input
               type="text"
               value={query}
               onChange={(e) => handleChange(e.target.value)}
               placeholder="Search..."
-              className="w-40"
+              className="min-w-0 flex-1"
               autoFocus
               aria-label="Search tasks"
             />
-            <Button variant="ghost" size="icon" onClick={handleClear} aria-label="Close search">
+            <button
+              onClick={handleClear}
+              className="text-muted-foreground hover:text-foreground flex-shrink-0 p-1"
+              aria-label="Close search"
+            >
               <X className="size-4" />
-            </Button>
+            </button>
           </div>
         ) : (
-          <Button variant="ghost" size="icon" onClick={() => setExpanded(true)} aria-label="Search">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setExpandedState(true)}
+            aria-label="Search"
+          >
             <Search className="size-5" />
           </Button>
         )}

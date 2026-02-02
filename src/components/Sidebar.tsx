@@ -5,13 +5,19 @@ import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Circle, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import {
+  SortableProjectList,
+  DragHandle,
+  type DragHandleProps,
+} from '@/components/SortableProjectList'
 
 interface SidebarProps {
   projects?: { id: number; name: string }[]
   onAddClick?: () => void
+  onReorderProjects?: (projectIds: number[]) => void
 }
 
-export function Sidebar({ projects = [], onAddClick }: SidebarProps) {
+export function Sidebar({ projects = [], onAddClick, onReorderProjects }: SidebarProps) {
   const pathname = usePathname()
 
   const navItems = [
@@ -56,26 +62,23 @@ export function Sidebar({ projects = [], onAddClick }: SidebarProps) {
             <h3 className="text-muted-foreground mb-1 px-3 text-xs font-semibold tracking-wider uppercase">
               Projects
             </h3>
-            {projects.map((project) => {
-              const href = `/projects/${project.id}`
-              const isActive = pathname === href
-
-              return (
-                <Link
-                  key={project.id}
-                  href={href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                  )}
-                >
-                  <Circle className="size-4" />
-                  {project.name}
-                </Link>
-              )
-            })}
+            {onReorderProjects ? (
+              <SortableProjectList
+                projects={projects}
+                onReorder={onReorderProjects}
+                renderItem={(project, dragHandle) => (
+                  <SidebarProjectItem
+                    project={project}
+                    pathname={pathname}
+                    dragHandle={dragHandle}
+                  />
+                )}
+              />
+            ) : (
+              projects.map((project) => (
+                <SidebarProjectItem key={project.id} project={project} pathname={pathname} />
+              ))
+            )}
           </div>
         )}
       </nav>
@@ -114,5 +117,45 @@ export function Sidebar({ projects = [], onAddClick }: SidebarProps) {
         })}
       </div>
     </aside>
+  )
+}
+
+function SidebarProjectItem({
+  project,
+  pathname,
+  dragHandle,
+}: {
+  project: { id: number; name: string }
+  pathname: string
+  dragHandle?: DragHandleProps
+}) {
+  const href = `/projects/${project.id}`
+  const isActive = pathname === href
+
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-1 rounded-lg text-sm transition-colors',
+        isActive
+          ? 'bg-accent text-accent-foreground font-medium'
+          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+        dragHandle?.isDragging && 'bg-accent shadow-sm',
+      )}
+    >
+      {dragHandle && (
+        <DragHandle
+          attributes={dragHandle.attributes}
+          listeners={dragHandle.listeners}
+          className="ml-1 opacity-0 group-hover:opacity-100"
+        />
+      )}
+      <Link
+        href={href}
+        className={cn('flex flex-1 items-center gap-3 py-2 pr-3', dragHandle ? 'pl-0' : 'pl-3')}
+      >
+        <Circle className="size-4 flex-shrink-0" />
+        {project.name}
+      </Link>
+    </div>
   )
 }

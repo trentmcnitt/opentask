@@ -27,32 +27,51 @@ npm run type-check && npm run lint && npm test
 
 ### When to Run Which Tests
 
-| Change type                                   | What to run                                       |
-| --------------------------------------------- | ------------------------------------------------- |
-| Any code change                               | `npm run type-check && npm run lint && npm test`  |
-| API routes, core logic, validation, auth      | Above + `npm run test:integration`                |
-| UI components, hooks, styles, client behavior | Above + `npm run test:e2e` + browser verification |
-| Iterative dev deploys                         | Quick check between deploys is sufficient         |
-| Production deploy                             | All test suites (see Deployment section)          |
+| Change type                                   | What to run                                                                                                                               |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Any code change                               | `npm run type-check && npm run lint && npm test`                                                                                          |
+| API routes, core logic, validation, auth      | Above + `npm run test:integration`                                                                                                        |
+| UI components, hooks, styles, client behavior | Above + `npm run test:e2e` + **deploy to dev + browser verification (see [UI Verification](#ui-verification) — mandatory, not optional)** |
+| Iterative dev deploys                         | Quick check between deploys is sufficient                                                                                                 |
+| Production deploy                             | All test suites (see Deployment section)                                                                                                  |
 
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 ### UI Verification
 
-Changes that affect UI, components, styles, or client-side behavior require browser verification before the work is complete. Passing type-check/lint/tests alone is not sufficient — do not report a UI change as done without verifying it in the browser.
+**Any change that touches UI, components, styles, or client-side behavior is NOT complete until you have deployed to dev and verified it in the browser yourself.** Do not tell the user the work is done, suggest they verify, or ask if they'd like you to deploy. You must do it — every time, automatically, without being asked.
 
-1. Deploy to dev: `./scripts/deploy.sh dev`
+1. Deploy to dev: `./scripts/deploy.sh dev` — do this immediately after the quick check passes, before reporting results
 2. **Playwright**: navigate to the affected page, take screenshots at both desktop (1280×800+) and mobile (375×812) viewports, confirm it renders correctly at each size
 3. **Chrome DevTools MCP**: check for console errors/warnings and failed network requests
 4. **If interactive** (clicks, swipes, form submissions, state changes): test the actual user flow with Playwright — don't just look at a static screenshot
-5. Share the dev link only after all browser verification steps pass: https://tasks-dev.tk11.mcnitt.io
+5. If something looks wrong, fix it and re-deploy — iterate until it's right
+6. Share the dev link only after all browser verification steps pass: https://tasks-dev.tk11.mcnitt.io
+
+**To be explicit**: "You'll want to deploy and verify" is not acceptable. You deploy it. You verify it. You report what you found.
+
+**UI change is not done until every box is checked:**
+
+- [ ] Quick check passes (`npm run type-check && npm run lint && npm test`)
+- [ ] Deployed to dev via `./scripts/deploy.sh dev`
+- [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports
+- [ ] Chrome DevTools MCP: no console errors/warnings, no failed network requests
+- [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
+- [ ] Fixes applied and re-deployed if anything looked wrong
+- [ ] Dev link shared with results: https://tasks-dev.tk11.mcnitt.io
 
 Backend/logic-only changes with no UI touchpoint do not need browser verification — passing tests are sufficient.
+
+**Dev login credentials** are in `.secrets` at the project root. Read that file to get the username and password before logging in via Playwright.
 
 ## Critical Requirements
 
 These rules prevent data-loss bugs and security issues. Violating them breaks undo, causes data inconsistencies, or creates auth bypasses.
+
+### UI verification is mandatory
+
+Any change that touches UI, components, styles, or client-side behavior **must** be deployed to dev and verified in the browser before reporting the work as done. This is not optional and not deferrable. Tests passing is necessary but not sufficient — you must also visually confirm the change works. See the [UI Verification](#ui-verification) section for the full checklist.
 
 ### Undo logging
 
@@ -281,13 +300,11 @@ Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 | Service | opentask.service            | opentask-dev.service            | `npm run dev`  |
 | DB Path | /opt/opentask/data/tasks.db | /opt/opentask-dev/data/tasks.db | data/tasks.db  |
 | Server  | tk11.mcnitt.io              | tk11.mcnitt.io                  | —              |
-| Status  | **Not yet provisioned**     | Active                          | Active         |
+| Status  | Active                      | Active                          | Active         |
 
 Remote instances run behind Caddy reverse proxy on Ubuntu 24.04. Server: `ssh admin@tk11.mcnitt.io`.
 
 ### Deployment
-
-Note: Production is not yet provisioned — `deploy.sh prod` will fail until the systemd service is created.
 
 Ensure changes are committed before deploying — the rollback strategy depends on checking out a previous commit.
 

@@ -1,10 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { Project } from '@/types'
+import {
+  SortableProjectList,
+  DragHandle,
+  type DragHandleProps,
+} from '@/components/SortableProjectList'
+import { showToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 export default function ProjectsPage() {
   const { status } = useSession()
@@ -36,6 +43,32 @@ export default function ProjectsPage() {
 
     fetchProjects()
   }, [status, router])
+
+  const handleReorder = useCallback(
+    async (projectIds: number[]) => {
+      const prevProjects = projects
+      setProjects(
+        projectIds
+          .map((id) => projects.find((p) => p.id === id))
+          .filter((p): p is Project => p !== undefined),
+      )
+
+      try {
+        const res = await fetch('/api/projects/reorder', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_ids: projectIds }),
+        })
+        if (!res.ok) throw new Error('Reorder failed')
+        // Notify other components (e.g., dashboard, sidebar) to re-fetch projects
+        window.dispatchEvent(new CustomEvent('projects-reordered'))
+      } catch {
+        setProjects(prevProjects)
+        showToast({ message: 'Failed to reorder projects' })
+      }
+    },
+    [projects],
+  )
 
   if (status === 'loading' || loading) {
     return (
@@ -71,20 +104,53 @@ export default function ProjectsPage() {
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
         <div className="space-y-2">
-          {projects.map((project) => (
-            <Link
-              key={project.id}
-              href={`/projects/${project.id}`}
-              className="flex items-center justify-between rounded-lg border border-zinc-200 p-4 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
-            >
-              <div>
-                <span className="font-medium">{project.name}</span>
-                {project.shared && <span className="ml-2 text-xs text-zinc-400">Shared</span>}
-              </div>
-            </Link>
-          ))}
+          <SortableProjectList
+            projects={projects}
+            onReorder={handleReorder}
+            renderItem={(project, dragHandle) => {
+              const fullProject = projects.find((p) => p.id === project.id)
+              return (
+                <ProjectCard
+                  project={project}
+                  shared={fullProject?.shared}
+                  dragHandle={dragHandle}
+                />
+              )
+            }}
+          />
         </div>
       </main>
+    </div>
+  )
+}
+
+function ProjectCard({
+  project,
+  shared,
+  dragHandle,
+}: {
+  project: { id: number; name: string }
+  shared?: boolean
+  dragHandle: DragHandleProps
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-lg border border-zinc-200 p-4 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700',
+        dragHandle.isDragging && 'border-zinc-300 shadow-md dark:border-zinc-600',
+      )}
+    >
+      <DragHandle
+        attributes={dragHandle.attributes}
+        listeners={dragHandle.listeners}
+        className="flex-shrink-0"
+      />
+      <Link href={`/projects/${project.id}`} className="flex flex-1 items-center justify-between">
+        <div>
+          <span className="font-medium">{project.name}</span>
+          {shared && <span className="ml-2 text-xs text-zinc-400">Shared</span>}
+        </div>
+      </Link>
     </div>
   )
 }

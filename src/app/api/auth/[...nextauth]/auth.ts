@@ -36,6 +36,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           timezone: user.timezone,
+          default_grouping: user.default_grouping,
         }
       },
     }),
@@ -46,6 +47,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id
         token.timezone = user.timezone
+        token.default_grouping = user.default_grouping
       }
       return token
     },
@@ -54,6 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token && session.user) {
         session.user.id = token.id
         session.user.timezone = token.timezone
+        session.user.default_grouping = token.default_grouping
       }
       return session
     },

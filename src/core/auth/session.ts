@@ -27,13 +27,20 @@ export async function validateCredentials(
   const row = db
     .prepare(
       `
-    SELECT id, email, name, password_hash, timezone
+    SELECT id, email, name, password_hash, timezone, default_grouping
     FROM users
     WHERE email = ? COLLATE NOCASE OR name = ? COLLATE NOCASE
   `,
     )
     .get(identifier, identifier) as
-    | { id: number; email: string; name: string; password_hash: string; timezone: string }
+    | {
+        id: number
+        email: string
+        name: string
+        password_hash: string
+        timezone: string
+        default_grouping: string
+      }
     | undefined
 
   if (!row) {
@@ -50,6 +57,7 @@ export async function validateCredentials(
     email: row.email,
     name: row.name,
     timezone: row.timezone,
+    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
   }
 }
 
@@ -64,12 +72,14 @@ export function getUserById(id: number): AuthUser | null {
   const row = db
     .prepare(
       `
-    SELECT id, email, name, timezone
+    SELECT id, email, name, timezone, default_grouping
     FROM users
     WHERE id = ?
   `,
     )
-    .get(id) as { id: number; email: string; name: string; timezone: string } | undefined
+    .get(id) as
+    | { id: number; email: string; name: string; timezone: string; default_grouping: string }
+    | undefined
 
   if (!row) {
     return null
@@ -80,5 +90,6 @@ export function getUserById(id: number): AuthUser | null {
     email: row.email,
     name: row.name,
     timezone: row.timezone,
+    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
   }
 }

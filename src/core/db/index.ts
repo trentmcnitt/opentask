@@ -76,6 +76,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('users', 'ntfy_server')) {
     database.exec('ALTER TABLE users ADD COLUMN ntfy_server TEXT')
   }
+
+  // Migration: Add default_grouping to users
+  if (!hasColumn('users', 'default_grouping')) {
+    database.exec("ALTER TABLE users ADD COLUMN default_grouping TEXT NOT NULL DEFAULT 'project'")
+  }
 }
 
 export function closeDb(): void {

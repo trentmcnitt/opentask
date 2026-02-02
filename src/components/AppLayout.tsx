@@ -1,46 +1,75 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
 import { AddTaskForm } from './AddTaskForm'
 import { OfflineBanner } from './OfflineBanner'
+import { showToast } from '@/lib/toast'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
 
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects')
+      if (!res.ok) return
+      const data = await res.json()
+      setProjects(
+        (data.data?.projects || []).map((p: { id: number; name: string }) => ({
+          id: p.id,
+          name: p.name,
+        })),
+      )
+    } catch (err) {
+      console.warn('Failed to fetch projects for sidebar:', err)
+    }
+  }, [])
+
   useEffect(() => {
     if (status !== 'authenticated') return
     let cancelled = false
 
-    async function loadProjects() {
-      try {
-        const res = await fetch('/api/projects')
-        if (!res.ok || cancelled) return
-        const data = await res.json()
-        if (!cancelled) {
-          setProjects(
-            (data.data?.projects || []).map((p: { id: number; name: string }) => ({
-              id: p.id,
-              name: p.name,
-            })),
-          )
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn('Failed to fetch projects for sidebar:', err)
-        }
-      }
+    async function init() {
+      await loadProjects()
+      if (cancelled) return
     }
 
-    loadProjects()
+    init()
     return () => {
       cancelled = true
     }
-  }, [status])
+  }, [status, loadProjects])
+
+  const handleReorderProjects = useCallback(
+    async (projectIds: number[]) => {
+      // Optimistic update
+      const prevProjects = projects
+      setProjects(
+        projectIds
+          .map((id) => projects.find((p) => p.id === id))
+          .filter((p): p is { id: number; name: string } => p !== undefined),
+      )
+
+      try {
+        const res = await fetch('/api/projects/reorder', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_ids: projectIds }),
+        })
+        if (!res.ok) throw new Error('Reorder failed')
+        // Notify other components (e.g., dashboard) to re-fetch projects
+        window.dispatchEvent(new CustomEvent('projects-reordered'))
+      } catch {
+        setProjects(prevProjects)
+        showToast({ message: 'Failed to reorder projects' })
+      }
+    },
+    [projects],
+  )
 
   // Don't show nav for unauthenticated users
   if (status !== 'authenticated') {
@@ -50,7 +79,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <OfflineBanner />
-      <Sidebar projects={projects} onAddClick={() => setShowAddForm(true)} />
+      <Sidebar
+        projects={projects}
+        onAddClick={() => setShowAddForm(true)}
+        onReorderProjects={handleReorderProjects}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">{children}</div>
 

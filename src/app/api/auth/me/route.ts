@@ -20,5 +20,6 @@ export async function GET(request: NextRequest) {
     email: user.email,
     name: user.name,
     timezone: user.timezone,
+    default_grouping: user.default_grouping,
   })
 }

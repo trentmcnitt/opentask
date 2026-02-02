@@ -23,13 +23,15 @@ export function validateBearerToken(token: string): AuthUser | null {
   const row = db
     .prepare(
       `
-    SELECT u.id, u.email, u.name, u.timezone
+    SELECT u.id, u.email, u.name, u.timezone, u.default_grouping
     FROM api_tokens t
     JOIN users u ON t.user_id = u.id
     WHERE t.token = ?
   `,
     )
-    .get(token) as { id: number; email: string; name: string; timezone: string } | undefined
+    .get(token) as
+    | { id: number; email: string; name: string; timezone: string; default_grouping: string }
+    | undefined
 
   if (!row) {
     return null
@@ -40,6 +42,7 @@ export function validateBearerToken(token: string): AuthUser | null {
     email: row.email,
     name: row.name,
     timezone: row.timezone,
+    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
   }
 }
 

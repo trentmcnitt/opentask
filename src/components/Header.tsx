@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Image from 'next/image'
 import { signOut } from 'next-auth/react'
 import { FolderOpen, Clock, Undo2, LogOut, Menu } from 'lucide-react'
@@ -13,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import type { GroupingMode } from './TaskList'
 import { SearchBar } from './SearchBar'
 
@@ -39,24 +41,38 @@ export function Header({
   onSearchClear,
   userName,
 }: HeaderProps) {
+  const [searchExpanded, setSearchExpanded] = useState(false)
+
   return (
     <TooltipProvider delayDuration={300}>
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Image
-              src="/opentask-logo.png"
-              alt="OpenTask"
-              width={120}
-              height={36}
-              className="h-7 w-auto flex-shrink-0 md:h-9 dark:invert"
-              unoptimized
-              priority
-            />
+        <div className="relative mx-auto flex max-w-2xl items-center gap-1 px-4 py-3 md:gap-1.5">
+          {/* Logo: opacity-only fade on mobile (no width collapse = no squish), always visible on desktop */}
+          <Image
+            src="/opentask-logo.png"
+            alt="OpenTask"
+            width={120}
+            height={36}
+            className={cn(
+              'h-7 w-auto flex-shrink-0 transition-opacity duration-200 md:h-9 dark:invert',
+              searchExpanded ? 'opacity-0 md:opacity-100' : '',
+            )}
+            unoptimized
+            priority
+          />
+
+          {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
+          <div className="flex min-w-0 flex-1 items-center">
+            {/* Badges: fade + collapse when search expanded */}
             <Popover>
               <PopoverTrigger asChild>
                 <div
-                  className="flex flex-shrink-0 cursor-pointer items-center gap-1"
+                  className={cn(
+                    'flex flex-shrink-0 cursor-pointer items-center gap-1 transition-[opacity,max-width] duration-200',
+                    searchExpanded
+                      ? 'pointer-events-none opacity-0 md:max-w-0 md:overflow-hidden'
+                      : 'max-w-[12rem] opacity-100',
+                  )}
                   role="group"
                   aria-label="Task counts"
                   tabIndex={0}
@@ -86,12 +102,19 @@ export function Header({
                 </div>
               </PopoverContent>
             </Popover>
+
+            {/* Search: ml-auto keeps it right-aligned, expands leftward */}
+            {onSearch && onSearchClear && (
+              <SearchBar
+                onSearch={onSearch}
+                onClear={onSearchClear}
+                onExpandedChange={setSearchExpanded}
+              />
+            )}
           </div>
 
-          <div className="flex items-center gap-1">
-            {/* Search */}
-            {onSearch && onSearchClear && <SearchBar onSearch={onSearch} onClear={onSearchClear} />}
-
+          {/* Action buttons: always fixed in place */}
+          <div className="flex flex-shrink-0 items-center gap-1">
             {/* Grouping toggle (desktop only) */}
             {onGroupingChange && (
               <Tooltip>

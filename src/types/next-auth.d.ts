@@ -5,6 +5,7 @@ declare module 'next-auth' {
   interface User {
     id: string
     timezone: string
+    default_grouping: string
   }
 
   interface Session {
@@ -19,5 +20,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string
     timezone: string
+    default_grouping: string
   }
 }

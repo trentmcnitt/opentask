@@ -3,15 +3,46 @@
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { showToast } from '@/lib/toast'
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const [defaultGrouping, setDefaultGrouping] = useState<'time' | 'project'>('project')
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    fetch('/api/user/preferences')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.data?.default_grouping) {
+          setDefaultGrouping(data.data.default_grouping)
+        }
+      })
+      .catch(() => {})
+  }, [status])
+
+  const handleGroupingChange = async (value: 'time' | 'project') => {
+    const prev = defaultGrouping
+    setDefaultGrouping(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_grouping: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setDefaultGrouping(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
 
   if (status === 'loading') {
     return (
@@ -43,6 +74,26 @@ export default function SettingsPage() {
             <div className="flex justify-between">
               <span className="text-zinc-500">Email</span>
               <span>{session?.user?.email || '-'}</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Preferences */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Preferences
+          </h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Default grouping</span>
+              <select
+                value={defaultGrouping}
+                onChange={(e) => handleGroupingChange(e.target.value as 'time' | 'project')}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="project">By project</option>
+                <option value="time">By time</option>
+              </select>
             </div>
           </div>
         </section>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
@@ -300,9 +300,34 @@ function HomeContent() {
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [bulkSnoozeCustom, setBulkSnoozeCustom] = useState(false)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
-  const [grouping, setGrouping] = useState<GroupingMode>('time')
+  const [grouping, setGrouping] = useState<GroupingMode>('project')
+  const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
+
+  // Fetch saved grouping preference on mount
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let cancelled = false
+    fetch('/api/user/preferences')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.data?.default_grouping) return
+        // Only apply if user hasn't manually toggled yet
+        if (!hasToggledGrouping.current) {
+          setGrouping(data.data.default_grouping)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [status])
+
+  const handleGroupingChange = useCallback((mode: GroupingMode) => {
+    hasToggledGrouping.current = true
+    setGrouping(mode)
+  }, [])
 
   const bulk = useBulkActions(
     selection,
@@ -345,6 +370,12 @@ function HomeContent() {
     window.addEventListener('task-created', handler)
     return () => window.removeEventListener('task-created', handler)
   }, [fetchTasks])
+
+  useEffect(() => {
+    const handler = () => fetchProjects()
+    window.addEventListener('projects-reordered', handler)
+    return () => window.removeEventListener('projects-reordered', handler)
+  }, [fetchProjects])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -399,7 +430,7 @@ function HomeContent() {
       showProjectPicker={showProjectPicker}
       bulkSnoozeCustom={bulkSnoozeCustom}
       actions={actions}
-      onGroupingChange={setGrouping}
+      onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
         setSearchQuery(null)

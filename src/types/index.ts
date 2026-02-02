@@ -196,4 +196,5 @@ export interface AuthUser {
   email: string
   name: string
   timezone: string
+  default_grouping: 'time' | 'project'
 }
