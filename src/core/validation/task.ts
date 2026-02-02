@@ -19,17 +19,17 @@ const dateTimeString = z.string().refine(
 /**
  * Priority levels: 0=unset, 1=low, 2=medium, 3=high, 4=urgent
  */
-const priority = z.number().int().min(0).max(4).default(0)
+const priority = z.number().int().min(0).max(4)
 
 /**
  * Recurrence mode
  */
-const recurrenceMode = z.enum(['from_due', 'from_completion']).default('from_due')
+const recurrenceMode = z.enum(['from_due', 'from_completion'])
 
 /**
  * Labels array
  */
-const labels = z.array(z.string()).default([])
+const labels = z.array(z.string())
 
 /**
  * RRULE string validator
@@ -48,10 +48,10 @@ export const taskCreateSchema = z.object({
   title: z.string().min(1, 'Title is required').max(500, 'Title too long'),
   due_at: dateTimeString.nullable().optional(),
   rrule: rruleString,
-  recurrence_mode: recurrenceMode.optional(),
+  recurrence_mode: recurrenceMode.default('from_due').optional(),
   project_id: z.number().int().positive().optional(),
-  priority: priority.optional(),
-  labels: labels.optional(),
+  priority: priority.default(0).optional(),
+  labels: labels.default([]).optional(),
 })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>

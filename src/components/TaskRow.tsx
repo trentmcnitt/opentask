@@ -14,6 +14,7 @@ import type { Task } from '@/types'
 function useLongPress(onLongPress?: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const origin = useRef<{ x: number; y: number } | null>(null)
+  const fired = useRef(false)
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -33,8 +34,10 @@ function useLongPress(onLongPress?: () => void) {
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (!onLongPress) return
+      fired.current = false
       origin.current = { x: e.clientX, y: e.clientY }
       timer.current = setTimeout(() => {
+        fired.current = true
         onLongPress()
       }, 400)
     },
@@ -56,7 +59,14 @@ function useLongPress(onLongPress?: () => void) {
     }
   }, [])
 
-  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel }
+  /** True if the most recent pointer interaction triggered the long-press callback */
+  const didFire = useCallback(() => {
+    const result = fired.current
+    fired.current = false
+    return result
+  }, [])
+
+  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel, didFire }
 }
 
 interface TaskRowProps {
@@ -83,7 +93,9 @@ export function TaskRow({
   cancelLongPressRef,
 }: TaskRowProps) {
   const timezone = useTimezone()
-  const pointer = useLongPress(onSelect)
+  // Long-press: range-select when already in selection mode, otherwise toggle
+  const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
+  const pointer = useLongPress(longPressAction)
 
   // Expose long-press cancel function to parent (SwipeableRow)
   useEffect(() => {
@@ -94,7 +106,17 @@ export function TaskRow({
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (isSelectionMode && onSelect) {
+      // Suppress click that follows a long-press
+      if (pointer.didFire()) {
+        e.preventDefault()
+        return
+      }
+
+      const modifierHeld = e.metaKey || e.ctrlKey
+
+      // Cmd/Ctrl-click or Shift-click enters selection mode even if not already in it
+      if (isSelectionMode || modifierHeld || e.shiftKey) {
+        if (!onSelect) return
         e.preventDefault()
         if (e.shiftKey && onRangeSelect) {
           onRangeSelect()
@@ -103,7 +125,7 @@ export function TaskRow({
         }
       }
     },
-    [isSelectionMode, onSelect, onRangeSelect],
+    [isSelectionMode, onSelect, onRangeSelect, pointer],
   )
 
   const priorityIndicator = getPriorityIndicator(task.priority)

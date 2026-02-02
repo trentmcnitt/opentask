@@ -6,8 +6,9 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
-import type { UndoSnapshot, UndoResult, Task } from '@/types'
+import type { UndoSnapshot, UndoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
+import { applyFieldsToTask } from './apply-fields'
 
 /**
  * Execute undo for the most recent non-undone action
@@ -62,7 +63,7 @@ export function executeUndo(userId: number): UndoResult | null {
     } else {
       // Restore each task to its before_state for the changed fields only
       for (const snapshot of snapshots) {
-        restoreTaskFields(snapshot.task_id, snapshot.before_state, fieldsChanged)
+        applyFieldsToTask(snapshot.task_id, snapshot.before_state, fieldsChanged)
 
         // If this was a recurring task completion, delete the completion record
         if (snapshot.completion_id) {
@@ -80,52 +81,4 @@ export function executeUndo(userId: number): UndoResult | null {
       tasks_affected: snapshots.length,
     }
   })
-}
-
-/**
- * Restore specific fields of a task to their previous values
- *
- * This is the "surgical" part of surgical undo - only the fields that
- * were changed by the original action are restored.
- */
-function restoreTaskFields(
-  taskId: number,
-  beforeState: Partial<Task>,
-  fieldsChanged: string[],
-): void {
-  const db = getDb()
-
-  // Build the SET clause for only the changed fields
-  const setClauses: string[] = []
-  const values: unknown[] = []
-
-  for (const field of fieldsChanged) {
-    if (field in beforeState && field !== 'id') {
-      // Handle special fields
-      if (field === 'labels') {
-        setClauses.push(`${field} = ?`)
-        values.push(JSON.stringify(beforeState[field as keyof Task]))
-      } else if (field === 'done') {
-        setClauses.push(`${field} = ?`)
-        values.push((beforeState as { done?: boolean }).done ? 1 : 0)
-      } else {
-        setClauses.push(`${field} = ?`)
-        values.push((beforeState as Record<string, unknown>)[field])
-      }
-    }
-  }
-
-  if (setClauses.length === 0) {
-    return
-  }
-
-  // Always update updated_at
-  setClauses.push('updated_at = ?')
-  values.push(nowUtc())
-
-  // Add task ID for WHERE clause
-  values.push(taskId)
-
-  const sql = `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`
-  db.prepare(sql).run(...values)
 }

@@ -7,9 +7,11 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
+import { validateProjectCreate } from '@/core/validation'
+import { ZodError } from 'zod'
 import type { Project } from '@/types'
 
 export async function GET(request: NextRequest) {
@@ -70,15 +72,11 @@ export async function POST(request: NextRequest) {
       return unauthorized()
     }
 
-    const body = await request.json()
+    const input = validateProjectCreate(await request.json())
 
-    if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
-      return badRequest('Project name is required')
-    }
-
-    const name = body.name.trim()
-    const shared = body.shared === true
-    const sortOrder = typeof body.sort_order === 'number' ? body.sort_order : 0
+    const name = input.name.trim()
+    const shared = input.shared
+    const sortOrder = input.sort_order
 
     const db = getDb()
     const now = nowUtc()
@@ -119,10 +117,8 @@ export async function POST(request: NextRequest) {
       201,
     )
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    console.error('POST /api/projects error:', err)
+    if (err instanceof AuthError) return unauthorized(err.message)
+    if (err instanceof ZodError) return handleZodError(err)
     return handleError(err)
   }
 }

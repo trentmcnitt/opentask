@@ -15,9 +15,6 @@ test.describe('Selection and FAB', () => {
     await page.waitForTimeout(500)
     await page.mouse.up()
 
-    // Wait for selection mode to activate
-    await page.waitForTimeout(300)
-
     // In selection mode, task should still be visible
     await expect(page.getByText('Morning routine')).toBeVisible()
   })
@@ -34,11 +31,9 @@ test.describe('Selection and FAB', () => {
     await page.mouse.down()
     await page.waitForTimeout(500)
     await page.mouse.up()
-    await page.waitForTimeout(300)
 
     // Press Escape to exit selection mode
     await page.keyboard.press('Escape')
-    await page.waitForTimeout(300)
 
     // Tasks should still be visible
     await expect(page.getByText('Review PRs')).toBeVisible()

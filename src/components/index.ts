@@ -26,7 +26,6 @@ export { ProjectPickerSheet } from './ProjectPickerSheet'
 export { FloatingActionBar } from './FloatingActionBar'
 
 // Feedback components
-export { Toast } from './Toast'
 export { OfflineBanner } from './OfflineBanner'
 
 // Providers

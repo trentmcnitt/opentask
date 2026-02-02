@@ -157,15 +157,14 @@ export function permanentlyDeleteTask(options: DeleteTaskOptions): void {
 export function emptyTrash(userId: number): number {
   const db = getDb()
 
-  // Get all trashed tasks for this user
+  // Get all trashed tasks owned by this user
   const trashedTasks = db
     .prepare(
       `
     SELECT tasks.id
     FROM tasks
-    INNER JOIN projects ON tasks.project_id = projects.id
     WHERE tasks.deleted_at IS NOT NULL
-      AND (tasks.user_id = ? OR projects.shared = 1)
+      AND tasks.user_id = ?
   `,
     )
     .all(userId) as { id: number }[]

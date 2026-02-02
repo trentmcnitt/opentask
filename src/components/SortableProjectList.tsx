@@ -125,6 +125,7 @@ export function DragHandle({
   return (
     <button
       type="button"
+      aria-label="Drag to reorder"
       className={cn(
         'text-muted-foreground/50 hover:text-muted-foreground cursor-grab touch-none active:cursor-grabbing',
         className,

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { formatDateTime, toLocalDatetimeInput } from '@/lib/format-date'
+import { formatDateTime, toLocalDatetimeInput, parseLocalDatetimeInput } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
@@ -312,7 +312,7 @@ function DueField({
               onChange={(e) => {
                 onFieldChange?.(
                   'due_at',
-                  e.target.value ? new Date(e.target.value).toISOString() : null,
+                  e.target.value ? parseLocalDatetimeInput(e.target.value, timezone) : null,
                 )
                 onEditDue(false)
               }}

@@ -15,9 +15,12 @@ import {
   forbidden,
   badRequest,
   handleError,
+  handleZodError,
 } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
+import { validateProjectUpdate } from '@/core/validation'
+import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 
 interface ProjectRow {
@@ -108,31 +111,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return forbidden('Only the project owner can edit this project')
     }
 
-    const body = await request.json()
+    const input = validateProjectUpdate(await request.json())
     const db = getDb()
 
     const updates: string[] = []
     const values: unknown[] = []
 
-    if (body.name !== undefined) {
-      if (typeof body.name !== 'string' || body.name.trim().length === 0) {
-        return badRequest('Project name must be a non-empty string')
-      }
+    if (input.name !== undefined) {
       updates.push('name = ?')
-      values.push(body.name.trim())
+      values.push(input.name.trim())
     }
 
-    if (body.sort_order !== undefined) {
-      if (typeof body.sort_order !== 'number') {
-        return badRequest('sort_order must be a number')
-      }
+    if (input.sort_order !== undefined) {
       updates.push('sort_order = ?')
-      values.push(body.sort_order)
+      values.push(input.sort_order)
     }
 
-    if (body.shared !== undefined) {
+    if (input.shared !== undefined) {
       updates.push('shared = ?')
-      values.push(body.shared ? 1 : 0)
+      values.push(input.shared ? 1 : 0)
     }
 
     if (updates.length === 0) {
@@ -162,10 +159,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       created_at: updated.created_at,
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    console.error('PATCH /api/projects/:id error:', err)
+    if (err instanceof AuthError) return unauthorized(err.message)
+    if (err instanceof ZodError) return handleZodError(err)
     return handleError(err)
   }
 }

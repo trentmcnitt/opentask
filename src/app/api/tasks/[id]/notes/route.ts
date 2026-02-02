@@ -7,10 +7,12 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
 import { getTaskById, canUserAccessTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
+import { validateNoteCreate } from '@/core/validation'
+import { ZodError } from 'zod'
 import type { Note } from '@/types'
 import type { RouteContext } from '@/types/api'
 
@@ -85,12 +87,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return notFound('Task not found', { task_id: taskId })
     }
 
-    const body = await request.json()
-    const content = body.content
-
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
-      return badRequest('Note content is required')
-    }
+    const { content } = validateNoteCreate(await request.json())
 
     const db = getDb()
     const now = nowUtc()
@@ -112,10 +109,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return success(note, 201)
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
-    console.error('POST /api/tasks/:id/notes error:', err)
+    if (err instanceof AuthError) return unauthorized(err.message)
+    if (err instanceof ZodError) return handleZodError(err)
     return handleError(err)
   }
 }

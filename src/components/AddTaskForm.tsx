@@ -19,6 +19,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { useTimezone } from '@/hooks/useTimezone'
+import { parseLocalDatetimeInput } from '@/lib/format-date'
+import { showErrorToast } from '@/lib/toast'
 
 interface AddTaskFormProps {
   projects: { id: number; name: string }[]
@@ -33,9 +36,10 @@ function buildTaskBody(
   priority: string,
   labels: string,
   rrule: string | null,
+  timezone: string,
 ): Record<string, unknown> {
   const body: Record<string, unknown> = { title: title.trim() }
-  if (dueAt) body.due_at = new Date(dueAt).toISOString()
+  if (dueAt) body.due_at = parseLocalDatetimeInput(dueAt, timezone)
   if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
   if (parseInt(priority) > 0) body.priority = parseInt(priority)
   if (labels.trim()) {
@@ -49,6 +53,7 @@ function buildTaskBody(
 }
 
 export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) {
+  const timezone = useTimezone()
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [projectId, setProjectId] = useState<string>('inbox')
@@ -73,7 +78,7 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
     setSubmitting(true)
     try {
-      const body = buildTaskBody(title, dueAt, projectId, priority, labels, rrule)
+      const body = buildTaskBody(title, dueAt, projectId, priority, labels, rrule, timezone)
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,6 +88,7 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
       if (!res.ok) throw new Error('Failed to create task')
       onCreated()
     } catch {
+      showErrorToast('Failed to create task')
       setSubmitting(false)
     }
   }

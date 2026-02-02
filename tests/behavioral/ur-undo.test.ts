@@ -532,3 +532,59 @@ describe('UR-008: Per-User Isolation', () => {
     expect(getTask(db, task2Id).due_at).toBe('2026-01-31T14:00:00Z') // Restored
   })
 })
+
+describe('UR-009: Undo Task Creation (soft delete)', () => {
+  let db: ReturnType<typeof getDb>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
+
+  test('undoing a task creation soft-deletes the task', () => {
+    // Create a task and log the create action
+    const taskId = createTestTask(db, { rrule: null, title: 'New Task' })
+    const task = getTask(db, taskId)
+
+    logAction(
+      1,
+      'create',
+      'Created "New Task"',
+      ['title', 'project_id', 'priority', 'due_at'],
+      [
+        createTaskSnapshot(
+          { id: taskId },
+          {
+            id: taskId,
+            title: task.title,
+            priority: task.priority,
+            due_at: task.due_at,
+          },
+          ['title', 'project_id', 'priority', 'due_at'],
+        ),
+      ],
+    )
+
+    // Verify the task exists and is not deleted
+    expect(getTask(db, taskId).title).toBe('New Task')
+    const beforeUndo = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
+      deleted_at: string | null
+    }
+    expect(beforeUndo.deleted_at).toBeNull()
+
+    // Undo the creation
+    const result = executeUndo(1)
+    expect(result).not.toBeNull()
+    expect(result!.undone_action).toBe('create')
+
+    // Verify the task was soft-deleted, not permanently removed
+    const afterUndo = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
+      deleted_at: string | null
+    }
+    expect(afterUndo).not.toBeUndefined()
+    expect(afterUndo.deleted_at).not.toBeNull()
+  })
+})

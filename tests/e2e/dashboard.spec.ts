@@ -14,11 +14,10 @@ test.describe('Dashboard', () => {
 
     // Click to switch grouping mode
     await toggleBtn.click()
-    await page.waitForTimeout(300)
+    await expect(page.getByText('Buy groceries')).toBeVisible()
 
     // Click again to switch back
     await toggleBtn.click()
-    await page.waitForTimeout(300)
 
     // Tasks should still be visible after toggling
     await expect(page.getByText('Buy groceries')).toBeVisible()

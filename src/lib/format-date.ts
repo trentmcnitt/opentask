@@ -154,3 +154,43 @@ export function toLocalDatetimeInput(isoUtc: string, timezone: string): string {
   const hour = get('hour') === '24' ? '00' : get('hour')
   return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`
 }
+
+/**
+ * Parse a datetime-local input value ("YYYY-MM-DDTHH:MM") as the user's timezone
+ * and return a UTC ISO string.
+ *
+ * This is the inverse of toLocalDatetimeInput(): that function converts UTC → local display,
+ * and this function converts local input → UTC for storage.
+ */
+export function parseLocalDatetimeInput(value: string, timezone: string): string {
+  const [datePart, timePart] = value.split('T')
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, minute] = timePart.split(':').map(Number)
+
+  // Get the UTC offset for this specific date/time in the target timezone
+  // by creating a UTC guess near the target and measuring the difference
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0))
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(utcGuess)
+
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')
+  const localH = get('hour')
+  const localM = get('minute')
+
+  const utcH = utcGuess.getUTCHours()
+  const utcM = utcGuess.getUTCMinutes()
+  const offsetMs = (localH - utcH) * 60 * 60 * 1000 + (localM - utcM) * 60 * 1000
+
+  // The desired local time as if it were UTC, then subtract the offset
+  const localAsUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0))
+  return new Date(localAsUtc.getTime() - offsetMs).toISOString()
+}

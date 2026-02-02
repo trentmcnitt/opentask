@@ -5,6 +5,8 @@ import { Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useTimezone } from '@/hooks/useTimezone'
+import { getTimezoneDayBoundaries, parseLocalDatetimeInput } from '@/lib/format-date'
 import type { Task } from '@/types'
 
 interface SnoozeSheetProps {
@@ -15,24 +17,46 @@ interface SnoozeSheetProps {
 }
 
 /**
- * Round to the nearest hour per SPEC:
+ * Round a UTC Date to the nearest hour per SPEC:
  * minutes < 35 round down, >= 35 round up
  */
 function roundToHour(date: Date): Date {
   const result = new Date(date)
-  if (result.getMinutes() >= 35) {
-    result.setHours(result.getHours() + 1)
+  if (result.getUTCMinutes() >= 35) {
+    result.setUTCHours(result.getUTCHours() + 1)
   }
-  result.setMinutes(0, 0, 0)
+  result.setUTCMinutes(0, 0, 0)
   return result
 }
 
+/**
+ * Get a UTC ISO string for a specific hour in the user's timezone on the day
+ * represented by the given UTC Date. Extracts date parts in the target timezone
+ * (not UTC) to avoid calendar-day mismatches for timezones ahead of UTC.
+ */
+function dateAtHourInTimezone(dayUtc: Date, hour: number, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(dayUtc)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return parseLocalDatetimeInput(
+    `${get('year')}-${get('month')}-${get('day')}T${pad(hour)}:00`,
+    timezone,
+  )
+}
+
 export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: SnoozeSheetProps) {
+  const timezone = useTimezone()
   const [showPicker, setShowPicker] = useState(customOnly)
   const [customDateTime, setCustomDateTime] = useState('')
 
   const getSnoozeTime = (option: string): string => {
     const now = new Date()
+    const { tomorrowStart } = getTimezoneDayBoundaries(timezone)
 
     switch (option) {
       case '+1h': {
@@ -48,25 +72,19 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
         return t.toISOString()
       }
       case 'tomorrow9am': {
-        const tomorrow = new Date(now)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        tomorrow.setHours(9, 0, 0, 0)
-        return tomorrow.toISOString()
+        return dateAtHourInTimezone(tomorrowStart, 9, timezone)
       }
       case '+1d': {
-        const t = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-        t.setMinutes(0, 0, 0)
+        const t = roundToHour(new Date(now.getTime() + 24 * 60 * 60 * 1000))
         return t.toISOString()
       }
       case '+3d': {
-        const t = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
-        t.setHours(9, 0, 0, 0)
-        return t.toISOString()
+        const dayTarget = new Date(tomorrowStart.getTime() + 2 * 24 * 60 * 60 * 1000)
+        return dateAtHourInTimezone(dayTarget, 9, timezone)
       }
       case '+1w': {
-        const t = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-        t.setHours(9, 0, 0, 0)
-        return t.toISOString()
+        const dayTarget = new Date(tomorrowStart.getTime() + 6 * 24 * 60 * 60 * 1000)
+        return dateAtHourInTimezone(dayTarget, 9, timezone)
       }
       default:
         return new Date(now.getTime() + 60 * 60 * 1000).toISOString()
@@ -85,10 +103,7 @@ export function SnoozeSheet({ task, onSnooze, onClose, customOnly = false }: Sno
 
   const handleCustomSubmit = () => {
     if (customDateTime) {
-      const dt = new Date(customDateTime)
-      if (!isNaN(dt.getTime())) {
-        onSnooze(dt.toISOString())
-      }
+      onSnooze(parseLocalDatetimeInput(customDateTime, timezone))
     }
   }
 

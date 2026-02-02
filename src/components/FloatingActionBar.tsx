@@ -41,7 +41,10 @@ export function FloatingActionBar({
 
   return (
     <div className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6">
-      <div className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl">
+      <div
+        className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
+        aria-live="polite"
+      >
         <span className="mr-2 text-sm font-medium">{selectedCount} selected</span>
 
         <Button

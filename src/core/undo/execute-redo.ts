@@ -7,6 +7,7 @@
 import { getDb, withTransaction } from '@/core/db'
 import type { UndoSnapshot, RedoResult, Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
+import { applyFieldsToTask } from './apply-fields'
 
 /**
  * Execute redo for the most recently undone action
@@ -59,9 +60,9 @@ export function executeRedo(userId: number): RedoResult | null {
         )
       }
     } else {
-      // Restore each task to its after_state for the changed fields only
+      // Re-apply each task's after_state for the changed fields only
       for (const snapshot of snapshots) {
-        applyTaskFields(snapshot.task_id, snapshot.after_state, fieldsChanged)
+        applyFieldsToTask(snapshot.task_id, snapshot.after_state, fieldsChanged)
 
         // If this was a recurring task completion, recreate the completion record
         if (snapshot.completion_id) {
@@ -105,45 +106,4 @@ export function executeRedo(userId: number): RedoResult | null {
       tasks_affected: snapshots.length,
     }
   })
-}
-
-/**
- * Apply the after_state fields to a task (for redo)
- */
-function applyTaskFields(taskId: number, afterState: Partial<Task>, fieldsChanged: string[]): void {
-  const db = getDb()
-
-  // Build the SET clause for only the changed fields
-  const setClauses: string[] = []
-  const values: unknown[] = []
-
-  for (const field of fieldsChanged) {
-    if (field in afterState && field !== 'id') {
-      // Handle special fields
-      if (field === 'labels') {
-        setClauses.push(`${field} = ?`)
-        values.push(JSON.stringify(afterState[field as keyof Task]))
-      } else if (field === 'done') {
-        setClauses.push(`${field} = ?`)
-        values.push((afterState as { done?: boolean }).done ? 1 : 0)
-      } else {
-        setClauses.push(`${field} = ?`)
-        values.push((afterState as Record<string, unknown>)[field])
-      }
-    }
-  }
-
-  if (setClauses.length === 0) {
-    return
-  }
-
-  // Always update updated_at
-  setClauses.push('updated_at = ?')
-  values.push(nowUtc())
-
-  // Add task ID for WHERE clause
-  values.push(taskId)
-
-  const sql = `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`
-  db.prepare(sql).run(...values)
 }

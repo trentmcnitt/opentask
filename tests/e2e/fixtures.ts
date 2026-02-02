@@ -33,8 +33,8 @@ export const test = base.extend<{ authenticatedPage: Page }>({
         // Dashboard might be empty or task-row might not have testid — that's OK
       })
 
-    // Wait a moment for hydration
-    await page.waitForTimeout(500)
+    // Wait for hydration to complete
+    await page.waitForLoadState('networkidle')
 
     await use(page)
   },

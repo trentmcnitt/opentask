@@ -6,11 +6,20 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { getDb } from '@/core/db'
-import { createTask, getTaskById, updateTask, deleteTask, restoreTask } from '@/core/tasks'
+import {
+  createTask,
+  getTaskById,
+  updateTask,
+  deleteTask,
+  restoreTask,
+  emptyTrash,
+} from '@/core/tasks'
 import {
   setupTestDb,
   teardownTestDb,
   localTime,
+  seedTestUser,
+  seedTestProject,
   TEST_USER_ID,
   TEST_TIMEZONE,
 } from '../helpers/setup'
@@ -332,5 +341,47 @@ describe('Delete/Restore Operations', () => {
         input: { title: 'New title' },
       }),
     ).toThrow('Cannot edit trashed task')
+  })
+
+  test('emptyTrash only deletes tasks owned by the user', () => {
+    const db = getDb()
+
+    // Create a second user with their own project
+    seedTestUser(2, 'user2@example.com')
+    seedTestProject(2, 'User2 Inbox', 2)
+
+    // Create a shared project (owned by user 1, shared with user 2)
+    seedTestProject(3, 'Shared Project', TEST_USER_ID, true)
+
+    // User 1 creates and trashes a task in shared project
+    const user1Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'User 1 shared task', project_id: 3 },
+    })
+    deleteTask({ userId: TEST_USER_ID, taskId: user1Task.id })
+
+    // User 2 creates and trashes a task in shared project
+    const user2Task = createTask({
+      userId: 2,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'User 2 shared task', project_id: 3 },
+    })
+    deleteTask({ userId: 2, taskId: user2Task.id })
+
+    // User 1 empties trash — should only delete their own task
+    const count = emptyTrash(TEST_USER_ID)
+    expect(count).toBe(1)
+
+    // User 1's task should be permanently gone
+    const user1Row = db.prepare('SELECT id FROM tasks WHERE id = ?').get(user1Task.id)
+    expect(user1Row).toBeUndefined()
+
+    // User 2's task should still exist (even though it's in a shared project)
+    const user2Row = db.prepare('SELECT id FROM tasks WHERE id = ?').get(user2Task.id) as {
+      id: number
+    }
+    expect(user2Row).toBeDefined()
+    expect(user2Row.id).toBe(user2Task.id)
   })
 })

@@ -28,3 +28,16 @@ export type {
   BulkEditInput,
   BulkDeleteInput,
 } from './task'
+
+export {
+  projectCreateSchema,
+  projectUpdateSchema,
+  validateProjectCreate,
+  validateProjectUpdate,
+} from './project'
+
+export type { ProjectCreateInput, ProjectUpdateInput } from './project'
+
+export { noteCreateSchema, validateNoteCreate } from './note'
+
+export type { NoteCreateInput } from './note'

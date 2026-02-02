@@ -18,6 +18,18 @@ describe('Auth integration', () => {
     expect(res.status).toBe(401)
   })
 
+  test('Invalid Bearer token never falls through to session auth', async () => {
+    // Even if a valid session cookie existed, an invalid Bearer token
+    // must result in 401 — the system must not fall through to cookie auth
+    const res = await apiAnon('/api/tasks', {
+      headers: {
+        Authorization: 'Bearer definitely-not-a-valid-token',
+        Cookie: 'next-auth.session-token=some-session-value',
+      },
+    })
+    expect(res.status).toBe(401)
+  })
+
   test('User A only sees own tasks, not User B tasks', async () => {
     const resA = await apiFetch('/api/tasks')
     expect(resA.status).toBe(200)

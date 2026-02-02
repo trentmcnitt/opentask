@@ -14,10 +14,7 @@ test.describe('Search', () => {
     await searchInput.fill('standup')
 
     // Wait for debounce and results
-    await page.waitForTimeout(500)
-
-    // Should show results count
-    await expect(page.getByText(/result/i)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/result/i)).toBeVisible({ timeout: 5000 })
 
     // Should see Weekly standup
     await expect(page.getByText('Weekly standup')).toBeVisible()
@@ -31,10 +28,7 @@ test.describe('Search', () => {
       await searchInput.fill('')
     }
 
-    // Wait for list to restore
-    await page.waitForTimeout(500)
-
-    // Should see other tasks again
-    await expect(page.getByText('Review PRs')).toBeVisible({ timeout: 3000 })
+    // Should see other tasks again after clearing
+    await expect(page.getByText('Review PRs')).toBeVisible({ timeout: 5000 })
   })
 })

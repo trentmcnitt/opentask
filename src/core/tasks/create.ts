@@ -130,7 +130,8 @@ export function getTaskById(taskId: number): Task | null {
       `
     SELECT id, user_id, project_id, title, done, done_at, priority, due_at,
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-           snoozed_from, deleted_at, archived_at, labels, created_at, updated_at
+           snoozed_from, last_notified_at, deleted_at, archived_at, labels,
+           created_at, updated_at
     FROM tasks WHERE id = ?
   `,
     )
@@ -241,8 +242,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.done_at, tasks.priority, tasks.due_at,
            tasks.rrule, tasks.recurrence_mode, tasks.anchor_time,
            tasks.anchor_dow, tasks.anchor_dom, tasks.snoozed_from,
-           tasks.deleted_at, tasks.archived_at, tasks.labels,
-           tasks.created_at, tasks.updated_at
+           tasks.last_notified_at, tasks.deleted_at, tasks.archived_at,
+           tasks.labels, tasks.created_at, tasks.updated_at
     FROM tasks
     INNER JOIN projects ON tasks.project_id = projects.id
     WHERE ${conditions.join(' AND ')}
@@ -270,6 +271,7 @@ interface TaskRow {
   anchor_dow: number | null
   anchor_dom: number | null
   snoozed_from: string | null
+  last_notified_at: string | null
   deleted_at: string | null
   archived_at: string | null
   labels: string
@@ -293,6 +295,7 @@ function rowToTask(row: TaskRow): Task {
     anchor_dow: row.anchor_dow,
     anchor_dom: row.anchor_dom,
     snoozed_from: row.snoozed_from,
+    last_notified_at: row.last_notified_at,
     deleted_at: row.deleted_at,
     archived_at: row.archived_at,
     labels: JSON.parse(row.labels),

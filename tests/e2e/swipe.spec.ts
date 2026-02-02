@@ -21,7 +21,6 @@ test.describe('Swipe gestures', () => {
         await page.waitForTimeout(10)
       }
       await page.mouse.up()
-      await page.waitForTimeout(500)
     }
 
     // Swipe gestures may not trigger reliably in headless Chrome
@@ -47,7 +46,6 @@ test.describe('Swipe gestures', () => {
         await page.waitForTimeout(10)
       }
       await page.mouse.up()
-      await page.waitForTimeout(500)
     }
 
     // Task should still be present (snooze doesn't remove)

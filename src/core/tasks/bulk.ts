@@ -336,6 +336,16 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const allFieldsChanged = new Set<string>()
 
   return withTransaction((tx) => {
+    // Validate project access once before processing tasks
+    if (changes.project_id !== undefined) {
+      const project = tx
+        .prepare('SELECT owner_id, shared FROM projects WHERE id = ?')
+        .get(changes.project_id) as { owner_id: number; shared: number } | undefined
+      if (!project || (project.owner_id !== userId && project.shared !== 1)) {
+        throw new Error('Access denied to target project')
+      }
+    }
+
     for (const task of tasks) {
       const setClauses: string[] = []
       const values: unknown[] = []

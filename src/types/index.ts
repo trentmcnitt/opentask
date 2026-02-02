@@ -6,6 +6,9 @@ export interface User {
   name: string
   password_hash: string
   timezone: string
+  ntfy_topic: string | null
+  ntfy_server: string | null
+  default_grouping: 'time' | 'project'
   created_at: string
 }
 
@@ -37,6 +40,9 @@ export interface Task {
 
   // Snooze
   snoozed_from: string | null
+
+  // Notifications
+  last_notified_at: string | null
 
   // Soft delete and archive
   deleted_at: string | null
@@ -104,48 +110,16 @@ export interface UndoSnapshot {
   completion_id?: number // For recurring task done - tracks the completion record to delete on undo
 }
 
-// API types
-export interface TaskCreateInput {
-  title: string
-  due_at?: string | null
-  rrule?: string | null
-  recurrence_mode?: 'from_due' | 'from_completion'
-  project_id?: number
-  priority?: number
-  labels?: string[]
-}
-
-export interface TaskUpdateInput {
-  title?: string
-  due_at?: string | null
-  rrule?: string | null
-  recurrence_mode?: 'from_due' | 'from_completion'
-  project_id?: number
-  priority?: number
-  labels?: string[]
-}
-
-export interface SnoozeInput {
-  until: string // ISO 8601 datetime
-}
-
-export interface BulkDoneInput {
-  ids: number[]
-}
-
-export interface BulkSnoozeInput {
-  ids: number[]
-  until: string
-}
-
-export interface BulkEditInput {
-  ids: number[]
-  changes: TaskUpdateInput
-}
-
-export interface BulkDeleteInput {
-  ids: number[]
-}
+// API input types — canonical definitions live in @/core/validation/task (Zod schemas)
+export type {
+  TaskCreateInput,
+  TaskUpdateInput,
+  SnoozeInput,
+  BulkDoneInput,
+  BulkSnoozeInput,
+  BulkEditInput,
+  BulkDeleteInput,
+} from '@/core/validation/task'
 
 // API response types
 export interface ApiResponse<T> {
