@@ -24,51 +24,15 @@ const DAYS_OF_WEEK = [
   { id: 'SU', label: 'S', full: 'Sunday' },
 ]
 
-interface RecurrencePickerProps {
-  value?: string | null
-  onChange: (rrule: string | null) => void
-}
-
-export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
-  const [frequency, setFrequency] = useState<Frequency>('NONE')
-  const [interval, setInterval] = useState(1)
-  const [selectedDays, setSelectedDays] = useState<string[]>([])
-  const [monthDay, setMonthDay] = useState<number | 'last'>(1)
-  const [endType, setEndType] = useState<EndType>('never')
-  const [endCount, setEndCount] = useState(10)
-  const [endDate, setEndDate] = useState('')
-
-  // Parse initial value
-  useEffect(() => {
-    if (!value) {
-      setFrequency('NONE')
-      return
-    }
-
-    const parts = parseRRule(value)
-    if (parts.FREQ) {
-      setFrequency(parts.FREQ as Frequency)
-    }
-    if (parts.INTERVAL) {
-      setInterval(parseInt(parts.INTERVAL))
-    }
-    if (parts.BYDAY) {
-      setSelectedDays(parts.BYDAY.split(','))
-    }
-    if (parts.BYMONTHDAY) {
-      const day = parseInt(parts.BYMONTHDAY)
-      setMonthDay(day === -1 ? 'last' : day)
-    }
-    if (parts.COUNT) {
-      setEndType('count')
-      setEndCount(parseInt(parts.COUNT))
-    } else if (parts.UNTIL) {
-      setEndType('date')
-      setEndDate(parts.UNTIL.slice(0, 10))
-    }
-  }, [value])
-
-  // Generate RRULE string
+function useRRuleBuilder(
+  frequency: Frequency,
+  interval: number,
+  selectedDays: string[],
+  monthDay: number | 'last',
+  endType: EndType,
+  endCount: number,
+  endDate: string,
+) {
   const rrule = useMemo(() => {
     if (frequency === 'NONE') return null
 
@@ -99,16 +63,9 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
     return parts.join(';')
   }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate])
 
-  // Notify parent of changes
-  useEffect(() => {
-    onChange(rrule)
-  }, [rrule, onChange])
-
-  // Preview text
   const previewText = useMemo(() => {
     if (frequency === 'NONE') return 'No repeat'
 
-    const intervalStr = interval > 1 ? `${interval} ` : ''
     let base = ''
 
     switch (frequency) {
@@ -146,14 +103,113 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
     return base
   }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate])
 
+  return { rrule, previewText }
+}
+
+function EndConditionPicker({
+  endType,
+  setEndType,
+  endCount,
+  setEndCount,
+  endDate,
+  setEndDate,
+}: {
+  endType: EndType
+  setEndType: (v: EndType) => void
+  endCount: number
+  setEndCount: (v: number) => void
+  endDate: string
+  setEndDate: (v: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-sm">Ends</span>
+      <Select value={endType} onValueChange={(v) => setEndType(v as EndType)}>
+        <SelectTrigger className="w-28">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="never">Never</SelectItem>
+          <SelectItem value="count">After</SelectItem>
+          <SelectItem value="date">On date</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {endType === 'count' && (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={999}
+            value={endCount}
+            onChange={(e) => setEndCount(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-16"
+          />
+          <span className="text-muted-foreground text-sm">occurrences</span>
+        </div>
+      )}
+
+      {endType === 'date' && (
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="w-40"
+        />
+      )}
+    </div>
+  )
+}
+
+interface RecurrencePickerProps {
+  value?: string | null
+  onChange: (rrule: string | null) => void
+}
+
+export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
+  const initial = useMemo(() => parseInitialState(value), [value])
+  const [frequency, setFrequency] = useState<Frequency>(initial.frequency)
+  const [interval, setInterval] = useState(initial.interval)
+  const [selectedDays, setSelectedDays] = useState<string[]>(initial.selectedDays)
+  const [monthDay, setMonthDay] = useState<number | 'last'>(initial.monthDay)
+  const [endType, setEndType] = useState<EndType>(initial.endType)
+  const [endCount, setEndCount] = useState(initial.endCount)
+  const [endDate, setEndDate] = useState(initial.endDate)
+
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    const parsed = parseInitialState(value)
+    setFrequency(parsed.frequency)
+    setInterval(parsed.interval)
+    setSelectedDays(parsed.selectedDays)
+    setMonthDay(parsed.monthDay)
+    setEndType(parsed.endType)
+    setEndCount(parsed.endCount)
+    setEndDate(parsed.endDate)
+  }
+
+  const { rrule, previewText } = useRRuleBuilder(
+    frequency,
+    interval,
+    selectedDays,
+    monthDay,
+    endType,
+    endCount,
+    endDate,
+  )
+
+  useEffect(() => {
+    onChange(rrule)
+  }, [rrule, onChange])
+
   const toggleDay = (day: string) => {
     setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
   }
 
   return (
-    <div className="space-y-4">
-      {/* Frequency */}
-      <div className="flex items-center gap-4">
+    <div className="space-y-4 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-4">
         <Select value={frequency} onValueChange={(v) => setFrequency(v as Frequency)}>
           <SelectTrigger className="w-32">
             <SelectValue />
@@ -188,9 +244,8 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
         )}
       </div>
 
-      {/* Day of week picker (for weekly) */}
       {frequency === 'WEEKLY' && (
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {DAYS_OF_WEEK.map((day) => (
             <Button
               key={day.id}
@@ -198,7 +253,7 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
               variant={selectedDays.includes(day.id) ? 'default' : 'outline'}
               size="icon"
               onClick={() => toggleDay(day.id)}
-              className="h-9 w-9"
+              className="h-8 w-8 text-xs"
               title={day.full}
             >
               {day.label}
@@ -207,7 +262,6 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
         </div>
       )}
 
-      {/* Day of month picker (for monthly) */}
       {frequency === 'MONTHLY' && (
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-sm">On day</span>
@@ -230,50 +284,49 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
         </div>
       )}
 
-      {/* End condition */}
       {frequency !== 'NONE' && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-sm">Ends</span>
-          <Select value={endType} onValueChange={(v) => setEndType(v as EndType)}>
-            <SelectTrigger className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="never">Never</SelectItem>
-              <SelectItem value="count">After</SelectItem>
-              <SelectItem value="date">On date</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {endType === 'count' && (
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                max={999}
-                value={endCount}
-                onChange={(e) => setEndCount(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-16"
-              />
-              <span className="text-muted-foreground text-sm">occurrences</span>
-            </div>
-          )}
-
-          {endType === 'date' && (
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-40"
-            />
-          )}
-        </div>
+        <EndConditionPicker
+          endType={endType}
+          setEndType={setEndType}
+          endCount={endCount}
+          setEndCount={setEndCount}
+          endDate={endDate}
+          setEndDate={setEndDate}
+        />
       )}
 
-      {/* Preview */}
       <div className="text-muted-foreground bg-muted rounded p-2 text-sm">{previewText}</div>
     </div>
   )
+}
+
+function parseInitialState(value: string | null | undefined) {
+  const defaults = {
+    frequency: 'NONE' as Frequency,
+    interval: 1,
+    selectedDays: [] as string[],
+    monthDay: 1 as number | 'last',
+    endType: 'never' as EndType,
+    endCount: 10,
+    endDate: '',
+  }
+
+  if (!value) return defaults
+
+  const parts = parseRRule(value)
+  return {
+    frequency: (parts.FREQ as Frequency) || defaults.frequency,
+    interval: parts.INTERVAL ? parseInt(parts.INTERVAL) : defaults.interval,
+    selectedDays: parts.BYDAY ? parts.BYDAY.split(',') : defaults.selectedDays,
+    monthDay: parts.BYMONTHDAY
+      ? parseInt(parts.BYMONTHDAY) === -1
+        ? 'last'
+        : parseInt(parts.BYMONTHDAY)
+      : defaults.monthDay,
+    endType: parts.COUNT ? 'count' : parts.UNTIL ? 'date' : defaults.endType,
+    endCount: parts.COUNT ? parseInt(parts.COUNT) : defaults.endCount,
+    endDate: parts.UNTIL ? parts.UNTIL.slice(0, 10) : defaults.endDate,
+  }
 }
 
 function parseRRule(rrule: string): Record<string, string> {

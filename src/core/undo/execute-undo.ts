@@ -6,7 +6,7 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
-import type { UndoLogEntry, UndoSnapshot, UndoResult, Task } from '@/types'
+import type { UndoSnapshot, UndoResult, Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 
 /**

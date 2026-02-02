@@ -2,14 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, History, Archive, Trash2, Settings, Circle } from 'lucide-react'
+import { LayoutDashboard, History, Archive, Trash2, Settings, Circle, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface SidebarProps {
   projects?: { id: number; name: string }[]
+  onAddClick?: () => void
 }
 
-export function Sidebar({ projects = [] }: SidebarProps) {
+export function Sidebar({ projects = [], onAddClick }: SidebarProps) {
   const pathname = usePathname()
 
   const navItems = [
@@ -77,6 +79,16 @@ export function Sidebar({ projects = [] }: SidebarProps) {
           </div>
         )}
       </nav>
+
+      {/* Add Task button */}
+      {onAddClick && (
+        <div className="border-t px-2 py-3">
+          <Button variant="outline" className="w-full justify-start gap-2" onClick={onAddClick}>
+            <Plus className="size-4" />
+            Add Task
+          </Button>
+        </div>
+      )}
 
       {/* Pinned bottom nav — outside scrollable area */}
       <div className="space-y-1 border-t px-2 py-3">

@@ -4,7 +4,7 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
-import { getDb, withTransaction } from '@/core/db'
+import { withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
@@ -31,8 +31,6 @@ export interface MarkDoneResult {
  */
 export function markDone(options: MarkDoneOptions): MarkDoneResult {
   const { userId, userTimezone, taskId } = options
-  const db = getDb()
-
   // Get current task state
   const task = getTaskById(taskId)
   if (!task) {
@@ -74,8 +72,6 @@ function markRecurringDone(
   completedAt: Date,
   nowStr: string,
 ): MarkDoneResult {
-  const db = getDb()
-
   // Compute next occurrence
   const nextOccurrence = computeNextOccurrence({
     rrule: task.rrule!,

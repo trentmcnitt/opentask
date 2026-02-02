@@ -16,6 +16,52 @@ interface Project {
   name: string
 }
 
+function EmptyTrashConfirm({
+  taskCount,
+  showConfirm,
+  emptyingTrash,
+  onShowConfirm,
+  onEmptyTrash,
+}: {
+  taskCount: number
+  showConfirm: boolean
+  emptyingTrash: boolean
+  onShowConfirm: (show: boolean) => void
+  onEmptyTrash: () => void
+}) {
+  return (
+    <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      {showConfirm ? (
+        <div className="flex items-center gap-3">
+          <p className="flex-1 text-sm text-red-600 dark:text-red-400">
+            Permanently delete all {taskCount} item{taskCount !== 1 ? 's' : ''}?
+          </p>
+          <button
+            onClick={() => onShowConfirm(false)}
+            className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onEmptyTrash}
+            disabled={emptyingTrash}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+          >
+            {emptyingTrash ? 'Deleting...' : 'Delete All'}
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => onShowConfirm(true)}
+          className="w-full rounded-lg border border-red-200 p-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
+        >
+          Empty Trash
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function TrashPage() {
   const { status } = useSession()
   const router = useRouter()
@@ -155,35 +201,13 @@ export default function TrashPage() {
               })}
             </div>
 
-            <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-              {showConfirm ? (
-                <div className="flex items-center gap-3">
-                  <p className="flex-1 text-sm text-red-600 dark:text-red-400">
-                    Permanently delete all {tasks.length} item{tasks.length !== 1 ? 's' : ''}?
-                  </p>
-                  <button
-                    onClick={() => setShowConfirm(false)}
-                    className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleEmptyTrash}
-                    disabled={emptyingTrash}
-                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-                  >
-                    {emptyingTrash ? 'Deleting...' : 'Delete All'}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowConfirm(true)}
-                  className="w-full rounded-lg border border-red-200 p-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
-                >
-                  Empty Trash
-                </button>
-              )}
-            </div>
+            <EmptyTrashConfirm
+              taskCount={tasks.length}
+              showConfirm={showConfirm}
+              emptyingTrash={emptyingTrash}
+              onShowConfirm={setShowConfirm}
+              onEmptyTrash={handleEmptyTrash}
+            />
           </>
         )}
       </main>

@@ -112,57 +112,31 @@ export function parseRRule(rrule: string): RRuleComponents {
 }
 
 /**
+ * Validate parsed RRULE components against allowed ranges
+ */
+function validateComponents(components: RRuleComponents): boolean {
+  if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(components.freq)) return false
+  if (components.interval !== undefined && components.interval < 1) return false
+  if (components.byhour !== undefined && (components.byhour < 0 || components.byhour > 23))
+    return false
+  if (components.byminute !== undefined && (components.byminute < 0 || components.byminute > 59))
+    return false
+  if (components.byday?.some((dow) => dow < 0 || dow > 6)) return false
+  if (components.bymonthday !== undefined) {
+    const days = Array.isArray(components.bymonthday)
+      ? components.bymonthday
+      : [components.bymonthday]
+    if (days.some((day) => (day < -31 || day > 31) && day !== 0)) return false
+  }
+  return true
+}
+
+/**
  * Check if an RRULE string is valid
  */
 export function isValidRRule(rrule: string): boolean {
   try {
-    const components = parseRRule(rrule)
-
-    // Must have a frequency
-    if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(components.freq)) {
-      return false
-    }
-
-    // Interval must be positive if specified
-    if (components.interval !== undefined && components.interval < 1) {
-      return false
-    }
-
-    // Hour must be 0-23
-    if (components.byhour !== undefined && (components.byhour < 0 || components.byhour > 23)) {
-      return false
-    }
-
-    // Minute must be 0-59
-    if (
-      components.byminute !== undefined &&
-      (components.byminute < 0 || components.byminute > 59)
-    ) {
-      return false
-    }
-
-    // Days of week must be 0-6
-    if (components.byday) {
-      for (const dow of components.byday) {
-        if (dow < 0 || dow > 6) {
-          return false
-        }
-      }
-    }
-
-    // Month day must be 1-31 or negative for "last"
-    if (components.bymonthday !== undefined) {
-      const days = Array.isArray(components.bymonthday)
-        ? components.bymonthday
-        : [components.bymonthday]
-      for (const day of days) {
-        if ((day < -31 || day > 31) && day !== 0) {
-          return false
-        }
-      }
-    }
-
-    return true
+    return validateComponents(parseRRule(rrule))
   } catch {
     return false
   }

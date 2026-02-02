@@ -43,7 +43,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 Changes that affect UI, components, styles, or client-side behavior require browser verification before the work is complete. Passing type-check/lint/tests alone is not sufficient — do not report a UI change as done without verifying it in the browser.
 
 1. Deploy to dev: `./scripts/deploy.sh dev`
-2. **Playwright**: navigate to the affected page, take a screenshot, confirm it renders correctly
+2. **Playwright**: navigate to the affected page, take screenshots at both desktop (1280×800+) and mobile (375×812) viewports, confirm it renders correctly at each size
 3. **Chrome DevTools MCP**: check for console errors/warnings and failed network requests
 4. **If interactive** (clicks, swipes, form submissions, state changes): test the actual user flow with Playwright — don't just look at a static screenshot
 5. Share the dev link only after all browser verification steps pass: https://tasks-dev.tk11.mcnitt.io
@@ -102,6 +102,7 @@ If an Authorization header is present but the token is invalid, return 401 immed
 - `priority` values: 0=unset, 1=low, 2=medium, 3=high, 4=urgent
 - All task deletions are soft-deletes (set `deleted_at`). The only hard-delete operation is "Empty Trash."
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
+- **Never suppress lint errors or warnings** (e.g., `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`) without explicit approval from the user. Fix the root cause instead. If a fix is genuinely impossible, ask the user before adding any suppression comment.
 
 ## Architecture
 

@@ -26,6 +26,28 @@ interface AddTaskFormProps {
   onCreated: () => void
 }
 
+function buildTaskBody(
+  title: string,
+  dueAt: string,
+  projectId: string,
+  priority: string,
+  labels: string,
+  rrule: string | null,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { title: title.trim() }
+  if (dueAt) body.due_at = new Date(dueAt).toISOString()
+  if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
+  if (parseInt(priority) > 0) body.priority = parseInt(priority)
+  if (labels.trim()) {
+    body.labels = labels
+      .split(',')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  }
+  if (rrule) body.rrule = rrule
+  return body
+}
+
 export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
@@ -51,18 +73,7 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
     setSubmitting(true)
     try {
-      const body: Record<string, unknown> = { title: title.trim() }
-      if (dueAt) body.due_at = new Date(dueAt).toISOString()
-      if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
-      if (parseInt(priority) > 0) body.priority = parseInt(priority)
-      if (labels.trim()) {
-        body.labels = labels
-          .split(',')
-          .map((l) => l.trim())
-          .filter(Boolean)
-      }
-      if (rrule) body.rrule = rrule
-
+      const body = buildTaskBody(title, dueAt, projectId, priority, labels, rrule)
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -78,7 +89,10 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" showCloseButton={false}>
+      <DialogContent
+        className="max-h-[90vh] [touch-action:pan-y] overflow-y-auto sm:max-w-lg"
+        showCloseButton={false}
+      >
         <DialogHeader className="flex flex-row items-center justify-between">
           <div>
             <DialogTitle>New Task</DialogTitle>
@@ -92,7 +106,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Title */}
           <div>
             <label htmlFor="task-title" className="mb-1 block text-sm font-medium">
               Title
@@ -108,7 +121,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             />
           </div>
 
-          {/* Due date */}
           <div>
             <label htmlFor="task-due" className="mb-1 block text-sm font-medium">
               Due date
@@ -122,7 +134,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {/* Project */}
             <div>
               <label htmlFor="task-project" className="mb-1 block text-sm font-medium">
                 Project
@@ -142,7 +153,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
               </Select>
             </div>
 
-            {/* Priority */}
             <div>
               <label htmlFor="task-priority" className="mb-1 block text-sm font-medium">
                 Priority
@@ -162,7 +172,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             </div>
           </div>
 
-          {/* Recurrence */}
           <div>
             <button
               type="button"
@@ -184,7 +193,6 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
             )}
           </div>
 
-          {/* Labels */}
           <div>
             <label htmlFor="task-labels" className="mb-1 block text-sm font-medium">
               Labels (comma-separated)

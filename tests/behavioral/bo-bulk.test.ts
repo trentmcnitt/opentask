@@ -200,6 +200,31 @@ describe('Bulk Operations Behavioral Tests', () => {
     }
     expect(completionCount.count).toBe(100)
   })
+})
+
+describe('Bulk Operations Undo & Mixed Types', () => {
+  beforeEach(() => {
+    resetDb()
+    const db = getDb()
+
+    db.prepare(
+      `
+      INSERT INTO users (id, email, name, password_hash, timezone)
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
+
+    db.prepare(
+      `
+      INSERT INTO projects (id, name, owner_id, shared, sort_order)
+      VALUES (1, 'Inbox', ?, 0, 0)
+    `,
+    ).run(TEST_USER_ID)
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
 
   /**
    * BO-004: Bulk Operations Are Single Undo Entry

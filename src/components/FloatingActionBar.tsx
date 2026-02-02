@@ -40,7 +40,7 @@ export function FloatingActionBar({
   if (selectedCount === 0) return null
 
   return (
-    <div className="animate-slide-up fixed bottom-20 left-1/2 z-50 -translate-x-1/2 md:bottom-6">
+    <div className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6">
       <div className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl">
         <span className="mr-2 text-sm font-medium">{selectedCount} selected</span>
 
@@ -54,13 +54,28 @@ export function FloatingActionBar({
           Done
         </Button>
 
-        <Button size="sm" variant="secondary" onClick={onSnooze1h}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onSnooze1h}
+          className="hidden md:inline-flex"
+        >
           +1h
         </Button>
-        <Button size="sm" variant="secondary" onClick={onSnooze2h}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onSnooze2h}
+          className="hidden md:inline-flex"
+        >
           +2h
         </Button>
-        <Button size="sm" variant="secondary" onClick={onSnoozeTomorrow}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onSnoozeTomorrow}
+          className="hidden md:inline-flex"
+        >
           9AM
         </Button>
 
@@ -72,6 +87,16 @@ export function FloatingActionBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top">
+            <DropdownMenuItem onClick={onSnooze1h} className="md:hidden">
+              +1h Snooze
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onSnooze2h} className="md:hidden">
+              +2h Snooze
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onSnoozeTomorrow} className="md:hidden">
+              9AM Tomorrow
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="md:hidden" />
             <DropdownMenuItem onClick={onPriorityHigh}>
               <ArrowUp className="size-4 text-orange-500" />
               Priority: High

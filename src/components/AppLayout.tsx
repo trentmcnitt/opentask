@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
@@ -12,31 +12,35 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
 
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch('/api/projects')
-      if (!res.ok) {
-        console.warn('Failed to fetch projects for sidebar:', res.status)
-        return
-      }
-      const data = await res.json()
-      setProjects(
-        (data.data?.projects || []).map((p: { id: number; name: string }) => ({
-          id: p.id,
-          name: p.name,
-        })),
-      )
-    } catch (err) {
-      // Non-critical - sidebar just won't show projects
-      console.warn('Failed to fetch projects for sidebar:', err)
-    }
-  }, [])
-
   useEffect(() => {
-    if (status === 'authenticated') {
-      fetchProjects()
+    if (status !== 'authenticated') return
+    let cancelled = false
+
+    async function loadProjects() {
+      try {
+        const res = await fetch('/api/projects')
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        if (!cancelled) {
+          setProjects(
+            (data.data?.projects || []).map((p: { id: number; name: string }) => ({
+              id: p.id,
+              name: p.name,
+            })),
+          )
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('Failed to fetch projects for sidebar:', err)
+        }
+      }
     }
-  }, [status, fetchProjects])
+
+    loadProjects()
+    return () => {
+      cancelled = true
+    }
+  }, [status])
 
   // Don't show nav for unauthenticated users
   if (status !== 'authenticated') {
@@ -44,9 +48,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen select-none">
       <OfflineBanner />
-      <Sidebar projects={projects} />
+      <Sidebar projects={projects} onAddClick={() => setShowAddForm(true)} />
 
       <div className="flex flex-1 flex-col pb-16 md:pb-0">{children}</div>
 

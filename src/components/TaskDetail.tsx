@@ -49,11 +49,6 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(task.title)
-  const [newNote, setNewNote] = useState('')
-  const [editingDue, setEditingDue] = useState(false)
-
-  const isOverdue = task.due_at && new Date(task.due_at) < new Date()
-  const priority = PRIORITY_OPTIONS.find((p) => p.value === task.priority) || PRIORITY_OPTIONS[0]
 
   const handleTitleSave = () => {
     if (titleDraft.trim() && titleDraft.trim() !== task.title) {
@@ -61,6 +56,295 @@ export function TaskDetail({
     }
     setEditingTitle(false)
   }
+
+  return (
+    <div className="space-y-6">
+      <TitleSection
+        task={task}
+        editable={editable}
+        editingTitle={editingTitle}
+        titleDraft={titleDraft}
+        onTitleDraftChange={setTitleDraft}
+        onTitleSave={handleTitleSave}
+        onEditTitle={() => {
+          setTitleDraft(task.title)
+          setEditingTitle(true)
+        }}
+        onDelete={onDelete}
+      />
+
+      <TaskFields
+        task={task}
+        project={project}
+        projects={projects}
+        editable={editable}
+        onFieldChange={onFieldChange}
+      />
+
+      <NotesSection
+        notes={notes}
+        editable={editable}
+        onAddNote={onAddNote}
+        onDeleteNote={onDeleteNote}
+      />
+    </div>
+  )
+}
+
+function TitleSection({
+  task,
+  editable,
+  editingTitle,
+  titleDraft,
+  onTitleDraftChange,
+  onTitleSave,
+  onEditTitle,
+  onDelete,
+}: {
+  task: Task
+  editable: boolean
+  editingTitle: boolean
+  titleDraft: string
+  onTitleDraftChange: (v: string) => void
+  onTitleSave: () => void
+  onEditTitle: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1">
+        {editable && editingTitle ? (
+          <Input
+            type="text"
+            value={titleDraft}
+            onChange={(e) => onTitleDraftChange(e.target.value)}
+            onBlur={onTitleSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onTitleSave()
+            }}
+            className="h-auto py-1 text-2xl font-semibold"
+            autoFocus
+          />
+        ) : (
+          <h1
+            className={cn(
+              'text-2xl font-semibold',
+              editable && 'hover:text-primary cursor-pointer transition-colors',
+            )}
+            onClick={() => editable && onEditTitle()}
+          >
+            {task.title}
+          </h1>
+        )}
+        {task.done && (
+          <Badge
+            variant="secondary"
+            className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+          >
+            Completed
+          </Badge>
+        )}
+      </div>
+
+      {editable && onDelete && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          className="text-muted-foreground hover:text-destructive"
+          aria-label="Delete task"
+        >
+          <Trash2 className="size-5" />
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function TaskFields({
+  task,
+  project,
+  projects,
+  editable,
+  onFieldChange,
+}: {
+  task: Task
+  project?: Project
+  projects: Project[]
+  editable: boolean
+  onFieldChange?: (field: string, value: unknown) => void
+}) {
+  const [editingDue, setEditingDue] = useState(false)
+  const isOverdue = task.due_at && new Date(task.due_at) < new Date()
+  const priority = PRIORITY_OPTIONS.find((p) => p.value === task.priority) || PRIORITY_OPTIONS[0]
+
+  return (
+    <div className="space-y-4">
+      <DueField
+        task={task}
+        editable={editable}
+        editingDue={editingDue}
+        isOverdue={!!isOverdue}
+        onEditDue={setEditingDue}
+        onFieldChange={onFieldChange}
+      />
+
+      <DetailField label="Priority">
+        {editable ? (
+          <div className="flex gap-1">
+            {PRIORITY_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                variant={task.priority === opt.value ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => onFieldChange?.('priority', opt.value)}
+                className={cn('text-xs', opt.color)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <span className={priority.color}>{priority.label}</span>
+        )}
+      </DetailField>
+
+      <DetailField label="Project">
+        {editable && projects.length > 0 ? (
+          <Select
+            value={task.project_id.toString()}
+            onValueChange={(value) => onFieldChange?.('project_id', parseInt(value))}
+          >
+            <SelectTrigger className="w-auto">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id.toString()}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span>{project?.name || 'Unknown'}</span>
+        )}
+      </DetailField>
+
+      <DetailField label="Labels">
+        {editable ? (
+          <EditableLabels
+            labels={task.labels}
+            onChange={(labels) => onFieldChange?.('labels', labels)}
+          />
+        ) : task.labels.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {task.labels.map((label) => (
+              <Badge key={label} variant="secondary">
+                {label}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        )}
+      </DetailField>
+
+      {task.rrule && (
+        <DetailField label="Recurrence">
+          {formatRRule(task.rrule, task.anchor_time)}
+          <span className="text-muted-foreground ml-2 text-sm">
+            ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
+          </span>
+        </DetailField>
+      )}
+
+      {task.snoozed_from && (
+        <DetailField label="Snoozed">
+          <span className="text-blue-500">Originally due {formatDateTime(task.snoozed_from)}</span>
+        </DetailField>
+      )}
+
+      <DetailField label="Created">{formatDateTime(task.created_at)}</DetailField>
+
+      {task.updated_at !== task.created_at && (
+        <DetailField label="Updated">{formatDateTime(task.updated_at)}</DetailField>
+      )}
+    </div>
+  )
+}
+
+function DueField({
+  task,
+  editable,
+  editingDue,
+  isOverdue,
+  onEditDue,
+  onFieldChange,
+}: {
+  task: Task
+  editable: boolean
+  editingDue: boolean
+  isOverdue: boolean
+  onEditDue: (v: boolean) => void
+  onFieldChange?: (field: string, value: unknown) => void
+}) {
+  return (
+    <DetailField label="Due">
+      {editable ? (
+        editingDue ? (
+          <div className="flex gap-2">
+            <Input
+              type="datetime-local"
+              defaultValue={task.due_at ? toLocalDatetime(task.due_at) : ''}
+              onChange={(e) => {
+                onFieldChange?.(
+                  'due_at',
+                  e.target.value ? new Date(e.target.value).toISOString() : null,
+                )
+                onEditDue(false)
+              }}
+              onBlur={() => onEditDue(false)}
+              className="w-auto"
+              autoFocus
+            />
+          </div>
+        ) : (
+          <span
+            className={cn(
+              'hover:text-primary cursor-pointer',
+              isOverdue && 'text-destructive font-medium',
+            )}
+            onClick={() => onEditDue(true)}
+          >
+            {task.due_at ? formatDateTime(task.due_at) : 'No due date (click to set)'}
+          </span>
+        )
+      ) : (
+        <span className={cn(isOverdue && 'text-destructive font-medium')}>
+          {task.due_at ? (
+            formatDateTime(task.due_at)
+          ) : (
+            <span className="text-muted-foreground">No due date</span>
+          )}
+        </span>
+      )}
+    </DetailField>
+  )
+}
+
+function NotesSection({
+  notes,
+  editable,
+  onAddNote,
+  onDeleteNote,
+}: {
+  notes: Note[]
+  editable: boolean
+  onAddNote?: (content: string) => void
+  onDeleteNote?: (noteId: number) => void
+}) {
+  const [newNote, setNewNote] = useState('')
 
   const handleAddNote = () => {
     if (newNote.trim()) {
@@ -70,247 +354,52 @@ export function TaskDetail({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Title with delete button */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          {editable && editingTitle ? (
-            <Input
-              type="text"
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={handleTitleSave}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleTitleSave()
-              }}
-              className="h-auto py-1 text-2xl font-semibold"
-              autoFocus
-            />
-          ) : (
-            <h1
-              className={cn(
-                'text-2xl font-semibold',
-                editable && 'hover:text-primary cursor-pointer transition-colors',
-              )}
-              onClick={() => {
-                if (editable) {
-                  setTitleDraft(task.title)
-                  setEditingTitle(true)
-                }
-              }}
-            >
-              {task.title}
-            </h1>
-          )}
-          {task.done && (
-            <Badge
-              variant="secondary"
-              className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-            >
-              Completed
-            </Badge>
-          )}
-        </div>
+    <div>
+      <h2 className="text-muted-foreground mb-3 text-sm font-semibold tracking-wider uppercase">
+        Notes
+        <span className="text-muted-foreground/60 ml-2">{notes.length}</span>
+      </h2>
 
-        {/* Delete button */}
-        {editable && onDelete && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onDelete}
-            className="text-muted-foreground hover:text-destructive"
-            aria-label="Delete task"
-          >
-            <Trash2 className="size-5" />
+      {editable && onAddNote && (
+        <div className="mb-4 flex gap-2">
+          <Input
+            type="text"
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddNote()
+            }}
+            placeholder="Add a note..."
+            className="flex-1"
+          />
+          <Button onClick={handleAddNote} disabled={!newNote.trim()}>
+            Add
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Fields */}
-      <div className="space-y-4">
-        {/* Due date */}
-        <DetailField label="Due">
-          {editable ? (
-            editingDue ? (
-              <div className="flex gap-2">
-                <Input
-                  type="datetime-local"
-                  defaultValue={task.due_at ? toLocalDatetime(task.due_at) : ''}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      onFieldChange?.('due_at', new Date(e.target.value).toISOString())
-                    } else {
-                      onFieldChange?.('due_at', null)
-                    }
-                    setEditingDue(false)
-                  }}
-                  onBlur={() => setEditingDue(false)}
-                  className="w-auto"
-                  autoFocus
-                />
-              </div>
-            ) : (
-              <span
-                className={cn(
-                  'hover:text-primary cursor-pointer',
-                  isOverdue && 'text-destructive font-medium',
+      {notes.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No notes yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {notes.map((note) => (
+            <div key={note.id} className="group bg-muted rounded-lg border p-3">
+              <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-muted-foreground text-xs">{formatDateTime(note.created_at)}</p>
+                {editable && onDeleteNote && (
+                  <button
+                    onClick={() => onDeleteNote(note.id)}
+                    className="text-muted-foreground hover:text-destructive text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    Delete
+                  </button>
                 )}
-                onClick={() => setEditingDue(true)}
-              >
-                {task.due_at ? formatDateTime(task.due_at) : 'No due date (click to set)'}
-              </span>
-            )
-          ) : (
-            <span className={cn(isOverdue && 'text-destructive font-medium')}>
-              {task.due_at ? (
-                formatDateTime(task.due_at)
-              ) : (
-                <span className="text-muted-foreground">No due date</span>
-              )}
-            </span>
-          )}
-        </DetailField>
-
-        {/* Priority */}
-        <DetailField label="Priority">
-          {editable ? (
-            <div className="flex gap-1">
-              {PRIORITY_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  variant={task.priority === opt.value ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => onFieldChange?.('priority', opt.value)}
-                  className={cn('text-xs', opt.color)}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          ) : (
-            <span className={priority.color}>{priority.label}</span>
-          )}
-        </DetailField>
-
-        {/* Project */}
-        <DetailField label="Project">
-          {editable && projects.length > 0 ? (
-            <Select
-              value={task.project_id.toString()}
-              onValueChange={(value) => onFieldChange?.('project_id', parseInt(value))}
-            >
-              <SelectTrigger className="w-auto">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id.toString()}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <span>{project?.name || 'Unknown'}</span>
-          )}
-        </DetailField>
-
-        {/* Labels */}
-        <DetailField label="Labels">
-          {editable ? (
-            <EditableLabels
-              labels={task.labels}
-              onChange={(labels) => onFieldChange?.('labels', labels)}
-            />
-          ) : task.labels.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {task.labels.map((label) => (
-                <Badge key={label} variant="secondary">
-                  {label}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <span className="text-muted-foreground">None</span>
-          )}
-        </DetailField>
-
-        {/* Recurrence */}
-        {task.rrule && (
-          <DetailField label="Recurrence">
-            {formatRRule(task.rrule, task.anchor_time)}
-            <span className="text-muted-foreground ml-2 text-sm">
-              ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
-            </span>
-          </DetailField>
-        )}
-
-        {/* Snoozed info */}
-        {task.snoozed_from && (
-          <DetailField label="Snoozed">
-            <span className="text-blue-500">
-              Originally due {formatDateTime(task.snoozed_from)}
-            </span>
-          </DetailField>
-        )}
-
-        {/* Created / Updated */}
-        <DetailField label="Created">{formatDateTime(task.created_at)}</DetailField>
-
-        {task.updated_at !== task.created_at && (
-          <DetailField label="Updated">{formatDateTime(task.updated_at)}</DetailField>
-        )}
-      </div>
-
-      {/* Notes */}
-      <div>
-        <h2 className="text-muted-foreground mb-3 text-sm font-semibold tracking-wider uppercase">
-          Notes
-          <span className="text-muted-foreground/60 ml-2">{notes.length}</span>
-        </h2>
-
-        {/* Add note form */}
-        {editable && onAddNote && (
-          <div className="mb-4 flex gap-2">
-            <Input
-              type="text"
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddNote()
-              }}
-              placeholder="Add a note..."
-              className="flex-1"
-            />
-            <Button onClick={handleAddNote} disabled={!newNote.trim()}>
-              Add
-            </Button>
-          </div>
-        )}
-
-        {notes.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No notes yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {notes.map((note) => (
-              <div key={note.id} className="group bg-muted rounded-lg border p-3">
-                <p className="text-sm whitespace-pre-wrap">{note.content}</p>
-                <div className="mt-2 flex items-center justify-between">
-                  <p className="text-muted-foreground text-xs">{formatDateTime(note.created_at)}</p>
-                  {editable && onDeleteNote && (
-                    <button
-                      onClick={() => onDeleteNote(note.id)}
-                      className="text-muted-foreground hover:text-destructive text-xs opacity-0 transition-opacity group-hover:opacity-100"
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -334,16 +423,15 @@ function EditableLabels({
     setAdding(false)
   }
 
-  const handleRemove = (label: string) => {
-    onChange(labels.filter((l) => l !== label))
-  }
-
   return (
     <div className="flex flex-wrap items-center gap-1">
       {labels.map((label) => (
         <Badge key={label} variant="secondary" className="gap-1">
           {label}
-          <button onClick={() => handleRemove(label)} className="hover:text-destructive">
+          <button
+            onClick={() => onChange(labels.filter((l) => l !== label))}
+            className="hover:text-destructive"
+          >
             &times;
           </button>
         </Badge>

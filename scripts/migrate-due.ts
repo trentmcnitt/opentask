@@ -284,7 +284,7 @@ async function migrate(): Promise<MigrationResult> {
       }
 
       // Parse title and extract prefix
-      const { prefix, cleanTitle } = parseTitle(reminder.title)
+      const { prefix } = parseTitle(reminder.title)
 
       // Build labels array
       const labels: string[] = []

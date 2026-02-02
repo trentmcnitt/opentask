@@ -36,13 +36,6 @@ function cleanup() {
 export function createReviewSession(userId: number): { sessionId: string; groups: ReviewGroup[] } {
   cleanup()
 
-  const tasks = getTasks({
-    userId,
-    overdue: true,
-    limit: 500,
-  })
-
-  // Also get tasks due today
   const allTasks = getTasks({
     userId,
     limit: 500,

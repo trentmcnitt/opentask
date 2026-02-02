@@ -6,7 +6,7 @@
  * - Re-snooze: preserves original snoozed_from
  */
 
-import { getDb, withTransaction } from '@/core/db'
+import { withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'

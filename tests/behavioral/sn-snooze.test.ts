@@ -198,6 +198,31 @@ describe('Snooze Behavioral Tests', () => {
     // Verify the task is no longer at the snoozed time (2:00 PM)
     expect(result.task.due_at).not.toBe(snoozeTo)
   })
+})
+
+describe('Snooze Validation Tests', () => {
+  beforeEach(() => {
+    resetDb()
+    const db = getDb()
+
+    db.prepare(
+      `
+      INSERT INTO users (id, email, name, password_hash, timezone)
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
+
+    db.prepare(
+      `
+      INSERT INTO projects (id, name, owner_id, shared, sort_order)
+      VALUES (1, 'Inbox', ?, 0, 0)
+    `,
+    ).run(TEST_USER_ID)
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
 
   /**
    * SN-004: Snooze Rejects Past Time

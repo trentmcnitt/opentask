@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from 'vitest'
-import { apiFetch, apiFetchB, resetTestData } from './helpers'
+import { apiFetch, resetTestData } from './helpers'
 
 describe('Task CRUD integration', () => {
   beforeAll(async () => {

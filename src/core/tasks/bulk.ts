@@ -4,7 +4,7 @@
  * All bulk operations execute as a single transaction and produce a single undo entry.
  */
 
-import { getDb, withTransaction } from '@/core/db'
+import { withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot, TaskUpdateInput } from '@/types'
 import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
@@ -40,7 +40,6 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0, failedIds: [] }
   }
 
-  const db = getDb()
   const now = new Date()
   const nowStr = nowUtc()
 
@@ -213,7 +212,6 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     throw new Error('Snooze target must be in the future')
   }
 
-  const db = getDb()
   const nowStr = nowUtc()
 
   // Validate all tasks

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { Check, Clock, Repeat } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,77 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
+
+function useLongPress(onLongPress?: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const origin = useRef<{ x: number; y: number } | null>(null)
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current)
+    }
+  }, [])
+
+  const cancel = useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+    origin.current = null
+  }, [])
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!onLongPress) return
+      origin.current = { x: e.clientX, y: e.clientY }
+      timer.current = setTimeout(() => {
+        onLongPress()
+      }, 400)
+    },
+    [onLongPress],
+  )
+
+  const onPointerUp = useCallback(() => {
+    cancel()
+  }, [cancel])
+
+  // Only cancel long-press if pointer moves >10px (ignore sub-pixel jitter)
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!timer.current || !origin.current) return
+    const dx = e.clientX - origin.current.x
+    const dy = e.clientY - origin.current.y
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+  }, [])
+
+  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel }
+}
+
+function formatDueTime(dueAt: string): string {
+  const due = new Date(dueAt)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+
+  const time = due.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  if (due < today) {
+    return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time
+  } else if (due < tomorrow) {
+    return time
+  } else if (due < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)) {
+    return 'Tomorrow ' + time
+  } else {
+    return due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  }
+}
 
 interface TaskRowProps {
   task: Task
@@ -30,29 +101,7 @@ export function TaskRow({
   onSelect,
   onRangeSelect,
 }: TaskRowProps) {
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handlePointerDown = useCallback(() => {
-    if (!onSelect) return
-    longPressTimer.current = setTimeout(() => {
-      onSelect()
-    }, 400)
-  }, [onSelect])
-
-  const handlePointerUp = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-  }, [])
-
-  // Cancel long-press if the user starts dragging (swipe gesture)
-  const handlePointerMove = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-  }, [])
+  const pointer = useLongPress(onSelect)
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -68,42 +117,18 @@ export function TaskRow({
     [isSelectionMode, onSelect, onRangeSelect],
   )
 
-  const formatDueTime = (dueAt: string | null) => {
-    if (!dueAt) return null
-
-    const due = new Date(dueAt)
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
-
-    const time = due.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-
-    if (due < today) {
-      return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time
-    } else if (due < tomorrow) {
-      return time
-    } else if (due < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)) {
-      return 'Tomorrow ' + time
-    } else {
-      return due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    }
-  }
-
   const priorityIndicator = getPriorityIndicator(task.priority)
 
   return (
     <div
       onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerMove={handlePointerMove}
-      onPointerCancel={handlePointerUp}
+      onPointerDown={pointer.onPointerDown}
+      onPointerUp={pointer.onPointerUp}
+      onPointerMove={pointer.onPointerMove}
+      onPointerLeave={pointer.onPointerLeave}
+      onPointerCancel={pointer.onPointerUp}
       className={cn(
-        'group flex items-center gap-3 rounded-lg p-3',
+        'group flex items-center gap-3 rounded-lg p-3 select-none',
         'bg-card border',
         'hover:border-border/80 transition-colors',
         isOverdue && 'border-l-destructive border-l-4',

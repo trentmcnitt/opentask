@@ -21,7 +21,11 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,json,md,css,yml,yaml}": [
+    "*.{ts,tsx,js,jsx,mjs}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,css,yml,yaml}": [
       "prettier --write"
     ]
   },
@@ -44,6 +48,7 @@
     "next-auth": "5.0.0-beta.30",
     "next-themes": "^0.4.6",
     "node-cron": "^4.2.1",
+    "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "rrule": "^2.8.1",

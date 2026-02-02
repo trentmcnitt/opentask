@@ -193,8 +193,12 @@ describe('Undo/Redo integration', () => {
     const after = await getTask(2)
     expect(after.due_at).toBe(advancedDueAt)
   })
+})
 
-  // ─── Multi-level undo/redo ──────────────────────────────────────
+describe('Undo/Redo multi-level & edge cases', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
 
   test('multi-level: 3 actions, undo all 3, redo all 3', async () => {
     // Capture original states
@@ -373,9 +377,6 @@ describe('Undo/Redo integration', () => {
   })
 
   test('bulk done undo then redo restores all tasks both ways', async () => {
-    const orig7 = await getTask(7)
-    const orig8 = await getTask(8)
-
     // Bulk mark done
     const bulkRes = await apiFetch('/api/tasks/bulk/done', {
       method: 'POST',

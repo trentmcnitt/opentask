@@ -6,6 +6,41 @@ import { useRouter, useParams } from 'next/navigation'
 import { TaskDetail } from '@/components/TaskDetail'
 import type { Task, Note, Project } from '@/types'
 
+function useNoteActions(taskId: string) {
+  const [notes, setNotes] = useState<Note[]>([])
+
+  const handleAddNote = async (content: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (!res.ok) throw new Error('Failed to add note')
+
+      const notesRes = await fetch(`/api/tasks/${taskId}/notes`)
+      if (notesRes.ok) {
+        const notesData = await notesRes.json()
+        setNotes(notesData.data?.notes || [])
+      }
+    } catch {
+      // Silent fail
+    }
+  }
+
+  const handleDeleteNote = async (noteId: number) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete note')
+      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+    } catch {
+      // Silent fail
+    }
+  }
+
+  return { notes, setNotes, handleAddNote, handleDeleteNote }
+}
+
 export default function TaskDetailPage() {
   const { status } = useSession()
   const router = useRouter()
@@ -13,7 +48,7 @@ export default function TaskDetailPage() {
   const taskId = params.id as string
 
   const [task, setTask] = useState<Task | null>(null)
-  const [notes, setNotes] = useState<Note[]>([])
+  const { notes, setNotes, handleAddNote, handleDeleteNote } = useNoteActions(taskId)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,7 +89,7 @@ export default function TaskDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [taskId, router])
+  }, [taskId, router, setNotes])
 
   useEffect(() => {
     if (status === 'loading') return
@@ -79,38 +114,7 @@ export default function TaskDetailPage() {
       const data = await res.json()
       setTask(data.data as Task)
     } catch {
-      // Revert by re-fetching
       fetchTask()
-    }
-  }
-
-  const handleAddNote = async (content: string) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      })
-      if (!res.ok) throw new Error('Failed to add note')
-
-      // Re-fetch notes
-      const notesRes = await fetch(`/api/tasks/${taskId}/notes`)
-      if (notesRes.ok) {
-        const notesData = await notesRes.json()
-        setNotes(notesData.data?.notes || [])
-      }
-    } catch {
-      // Silent fail
-    }
-  }
-
-  const handleDeleteNote = async (noteId: number) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete note')
-      setNotes((prev) => prev.filter((n) => n.id !== noteId))
-    } catch {
-      // Silent fail
     }
   }
 

@@ -5,7 +5,6 @@
  * They are NOT used for recurrence computation - the RRULE is the source of truth.
  */
 
-import { DateTime } from 'luxon'
 import { parseRRule } from './rrule-builder'
 import { formatAnchorTime, utcToLocal } from './timezone'
 

@@ -50,10 +50,6 @@ describe('Bulk operations integration', () => {
   test('POST bulk/done then POST undo restores all tasks', async () => {
     const ids = [7, 8]
 
-    // Get original due_at values
-    const before7 = (await (await apiFetch('/api/tasks/7')).json()).data
-    const before8 = (await (await apiFetch('/api/tasks/8')).json()).data
-
     // Bulk done
     await apiFetch('/api/tasks/bulk/done', {
       method: 'POST',

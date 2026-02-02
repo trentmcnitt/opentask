@@ -106,104 +106,129 @@ export default function HistoryPage() {
         </div>
 
         {tab === 'completions' && (
-          <div>
-            {/* Date navigation */}
-            <div className="mb-4 flex items-center gap-3">
-              <button
-                onClick={() => {
-                  const d = new Date(date)
-                  d.setDate(d.getDate() - 1)
-                  setDate(d.toISOString().split('T')[0])
-                }}
-                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Previous day"
-              >
-                &larr;
-              </button>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-              />
-              <button
-                onClick={() => {
-                  const d = new Date(date)
-                  d.setDate(d.getDate() + 1)
-                  setDate(d.toISOString().split('T')[0])
-                }}
-                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Next day"
-              >
-                &rarr;
-              </button>
-            </div>
-
-            {loading ? (
-              <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
-            ) : completions.length === 0 ? (
-              <p className="py-8 text-center text-zinc-400">No completions for this date.</p>
-            ) : (
-              <div className="space-y-2">
-                {completions.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
-                  >
-                    <span className="text-green-500">&#x2713;</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{c.task_title}</p>
-                      <p className="text-xs text-zinc-400">
-                        {new Date(c.completed_at).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <CompletionsTab
+            date={date}
+            setDate={setDate}
+            loading={loading}
+            completions={completions}
+          />
         )}
 
-        {tab === 'activity' && (
-          <div>
-            {loading ? (
-              <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
-            ) : activities.length === 0 ? (
-              <p className="py-8 text-center text-zinc-400">No activity recorded.</p>
-            ) : (
-              <div className="space-y-2">
-                {activities.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
-                  >
-                    <span className={a.undone ? 'text-zinc-400' : 'text-blue-500'}>
-                      {a.undone ? '○' : '●'}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{a.description || a.action}</p>
-                      <p className="text-xs text-zinc-400">
-                        {new Date(a.created_at).toLocaleString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                        {a.undone && ' (undone)'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {tab === 'activity' && <ActivityTab loading={loading} activities={activities} />}
       </main>
+    </div>
+  )
+}
+
+function CompletionsTab({
+  date,
+  setDate,
+  loading,
+  completions,
+}: {
+  date: string
+  setDate: (d: string) => void
+  loading: boolean
+  completions: CompletionEntry[]
+}) {
+  return (
+    <div>
+      {/* Date navigation */}
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          onClick={() => {
+            const d = new Date(date)
+            d.setDate(d.getDate() - 1)
+            setDate(d.toISOString().split('T')[0])
+          }}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          aria-label="Previous day"
+        >
+          &larr;
+        </button>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+        />
+        <button
+          onClick={() => {
+            const d = new Date(date)
+            d.setDate(d.getDate() + 1)
+            setDate(d.toISOString().split('T')[0])
+          }}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          aria-label="Next day"
+        >
+          &rarr;
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+      ) : completions.length === 0 ? (
+        <p className="py-8 text-center text-zinc-400">No completions for this date.</p>
+      ) : (
+        <div className="space-y-2">
+          {completions.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+            >
+              <span className="text-green-500">&#x2713;</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{c.task_title}</p>
+                <p className="text-xs text-zinc-400">
+                  {new Date(c.completed_at).toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActivityTab({ loading, activities }: { loading: boolean; activities: UndoEntry[] }) {
+  return (
+    <div>
+      {loading ? (
+        <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+      ) : activities.length === 0 ? (
+        <p className="py-8 text-center text-zinc-400">No activity recorded.</p>
+      ) : (
+        <div className="space-y-2">
+          {activities.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+            >
+              <span className={a.undone ? 'text-zinc-400' : 'text-blue-500'}>
+                {a.undone ? '○' : '●'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{a.description || a.action}</p>
+                <p className="text-xs text-zinc-400">
+                  {new Date(a.created_at).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                  {a.undone && ' (undone)'}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

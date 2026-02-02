@@ -22,36 +22,29 @@ export default function Home() {
   )
 }
 
-function HomeContent() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
-  const selection = useSelection()
+function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow'): string {
+  const now = new Date()
+  if (option === '+1h') {
+    const t = new Date(now.getTime() + 60 * 60 * 1000)
+    t.setMinutes(0, 0, 0)
+    return t.toISOString()
+  }
+  if (option === '+2h') {
+    const t = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+    t.setMinutes(0, 0, 0)
+    return t.toISOString()
+  }
+  const t = new Date(now)
+  t.setDate(t.getDate() + 1)
+  t.setHours(9, 0, 0, 0)
+  return t.toISOString()
+}
+
+function useFetchData(router: ReturnType<typeof useRouter>) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
-  const [bulkSnoozeCustom, setBulkSnoozeCustom] = useState(false)
-  const [showProjectPicker, setShowProjectPicker] = useState(false)
-  const [grouping, setGrouping] = useState<GroupingMode>('time')
-  const [searchQuery, setSearchQuery] = useState<string | null>(null)
-  const [searchResults, setSearchResults] = useState<Task[]>([])
-
-  const overdueCount = useMemo(() => {
-    const now = new Date()
-    return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
-  }, [tasks])
-
-  const todayCount = useMemo(() => {
-    const now = new Date()
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-    return tasks.filter((t) => {
-      if (!t.due_at) return false
-      const due = new Date(t.due_at)
-      return due >= startOfDay && due < endOfDay
-    }).length
-  }, [tasks])
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -60,9 +53,7 @@ function HomeContent() {
         router.push('/login')
         return
       }
-      if (!res.ok) {
-        throw new Error('Failed to fetch tasks')
-      }
+      if (!res.ok) throw new Error('Failed to fetch tasks')
       const data = await res.json()
       setTasks(data.data?.tasks || [])
       setError(null)
@@ -84,80 +75,25 @@ function HomeContent() {
     }
   }, [])
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (status === 'unauthenticated') {
-      router.push('/login')
-      return
-    }
-    fetchTasks()
-    fetchProjects()
-  }, [status, router, fetchTasks, fetchProjects])
-
-  // Listen for task-created events from AddTaskForm in AppLayout
-  useEffect(() => {
-    const handler = () => fetchTasks()
-    window.addEventListener('task-created', handler)
-    return () => window.removeEventListener('task-created', handler)
-  }, [fetchTasks])
-
-  // Escape exits selection mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selection.isSelectionMode) {
-        selection.clear()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selection])
-
-  const handleDone = async (taskId: number) => {
-    const task = tasks.find((t) => t.id === taskId)
-    if (!task) return
-
-    if (!task.rrule) {
-      setTasks((prev) => prev.filter((t) => t.id !== taskId))
-    }
-
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to mark done')
-      const data = await res.json()
-      if (data.data?.task?.rrule) {
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
-      }
-      showToast({
-        message: task.rrule ? 'Task advanced' : 'Task completed',
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      fetchTasks()
-    }
+  return {
+    tasks,
+    setTasks,
+    projects,
+    loading,
+    setLoading,
+    error,
+    setError,
+    fetchTasks,
+    fetchProjects,
   }
+}
 
-  const handleSnooze = async (taskId: number, until: string) => {
-    const task = tasks.find((t) => t.id === taskId)
-    if (!task) return
-
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
-    setSnoozeTask(null)
-
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/snooze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ until }),
-      })
-      if (!res.ok) throw new Error('Failed to snooze')
-      fetchTasks()
-      showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
-    } catch {
-      fetchTasks()
-    }
-  }
-
-  const handleUndo = async () => {
+function useTaskActions(
+  fetchTasks: () => Promise<void>,
+  tasks: Task[],
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
+) {
+  const handleUndo = useCallback(async () => {
     try {
       const res = await fetch('/api/undo', { method: 'POST' })
       if (!res.ok) throw new Error('Failed to undo')
@@ -165,41 +101,85 @@ function HomeContent() {
     } catch {
       showToast({ message: 'Undo failed' })
     }
-  }
+  }, [fetchTasks])
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query)
-    try {
-      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=500`)
-      if (!res.ok) return
-      const data = await res.json()
-      setSearchResults(data.data?.tasks || [])
-    } catch {
-      // Silent fail
-    }
-  }
+  const handleDone = useCallback(
+    async (taskId: number) => {
+      const task = tasks.find((t) => t.id === taskId)
+      if (!task) return
 
-  const handleSearchClear = () => {
-    setSearchQuery(null)
-    setSearchResults([])
-  }
+      if (!task.rrule) {
+        setTasks((prev) => prev.filter((t) => t.id !== taskId))
+      }
 
-  const handleQuickAdd = async (title: string) => {
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      })
-      if (!res.ok) throw new Error('Failed to create task')
-      fetchTasks()
-      showToast({ message: 'Task added' })
-    } catch {
-      showToast({ message: 'Failed to add task' })
-    }
-  }
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
+        if (!res.ok) throw new Error('Failed to mark done')
+        const data = await res.json()
+        if (data.data?.task?.rrule) {
+          setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
+        }
+        showToast({
+          message: task.rrule ? 'Task advanced' : 'Task completed',
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+      } catch {
+        fetchTasks()
+      }
+    },
+    [tasks, setTasks, fetchTasks, handleUndo],
+  )
 
-  // Bulk action helpers
+  const handleSnooze = useCallback(
+    async (taskId: number, until: string) => {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/snooze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ until }),
+        })
+        if (!res.ok) throw new Error('Failed to snooze')
+        fetchTasks()
+        showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
+      } catch {
+        fetchTasks()
+      }
+    },
+    [setTasks, fetchTasks, handleUndo],
+  )
+
+  const handleQuickAdd = useCallback(
+    async (title: string) => {
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        })
+        if (!res.ok) throw new Error('Failed to create task')
+        fetchTasks()
+        showToast({ message: 'Task added' })
+      } catch {
+        showToast({ message: 'Failed to add task' })
+      }
+    },
+    [fetchTasks],
+  )
+
+  return { handleDone, handleSnooze, handleUndo, handleQuickAdd }
+}
+
+function useBulkActions(
+  selection: ReturnType<typeof useSelection>,
+  fetchTasks: () => Promise<void>,
+  handleUndo: () => Promise<void>,
+  setShowProjectPicker: (show: boolean) => void,
+  setBulkSnoozeCustom: (show: boolean) => void,
+  setSearchQuery: (q: string | null) => void,
+  setSearchResults: (tasks: Task[]) => void,
+) {
   const bulkAction = async (endpoint: string, body: Record<string, unknown>) => {
     const count = selection.selectedIds.size
     try {
@@ -230,7 +210,10 @@ function HomeContent() {
       if (!res.ok) throw new Error('Delete failed')
       selection.clear()
       fetchTasks()
-      showToast({ message: 'Tasks deleted', action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: 'Tasks deleted',
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       showToast({ message: 'Delete failed' })
     }
@@ -251,7 +234,10 @@ function HomeContent() {
       if (!res.ok) throw new Error('Move failed')
       selection.clear()
       fetchTasks()
-      showToast({ message: `${count} tasks moved`, action: { label: 'Undo', onClick: handleUndo } })
+      showToast({
+        message: `${count} tasks moved`,
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       showToast({ message: 'Move failed' })
     }
@@ -278,24 +264,95 @@ function HomeContent() {
     }
   }
 
-  const getSnoozeTime = (option: '+1h' | '+2h' | 'tomorrow'): string => {
-    const now = new Date()
-    if (option === '+1h') {
-      const t = new Date(now.getTime() + 60 * 60 * 1000)
-      t.setMinutes(0, 0, 0)
-      return t.toISOString()
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+    try {
+      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=500`)
+      if (!res.ok) return
+      const data = await res.json()
+      setSearchResults(data.data?.tasks || [])
+    } catch {
+      // Silent fail
     }
-    if (option === '+2h') {
-      const t = new Date(now.getTime() + 2 * 60 * 60 * 1000)
-      t.setMinutes(0, 0, 0)
-      return t.toISOString()
-    }
-    // tomorrow 9am
-    const t = new Date(now)
-    t.setDate(t.getDate() + 1)
-    t.setHours(9, 0, 0, 0)
-    return t.toISOString()
   }
+
+  return { bulkAction, bulkDelete, handleBulkMoveToProject, handleBulkCustomSnooze, handleSearch }
+}
+
+function HomeContent() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const selection = useSelection()
+  const data = useFetchData(router)
+  const {
+    tasks,
+    setTasks,
+    projects,
+    loading,
+    error,
+    setError,
+    setLoading,
+    fetchTasks,
+    fetchProjects,
+  } = data
+  const actions = useTaskActions(fetchTasks, tasks, setTasks)
+
+  const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
+  const [bulkSnoozeCustom, setBulkSnoozeCustom] = useState(false)
+  const [showProjectPicker, setShowProjectPicker] = useState(false)
+  const [grouping, setGrouping] = useState<GroupingMode>('time')
+  const [searchQuery, setSearchQuery] = useState<string | null>(null)
+  const [searchResults, setSearchResults] = useState<Task[]>([])
+
+  const bulk = useBulkActions(
+    selection,
+    fetchTasks,
+    actions.handleUndo,
+    setShowProjectPicker,
+    setBulkSnoozeCustom,
+    setSearchQuery,
+    setSearchResults,
+  )
+
+  const overdueCount = useMemo(() => {
+    const now = new Date()
+    return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
+  }, [tasks])
+
+  const todayCount = useMemo(() => {
+    const now = new Date()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
+    return tasks.filter((t) => {
+      if (!t.due_at) return false
+      const due = new Date(t.due_at)
+      return due >= startOfDay && due < endOfDay
+    }).length
+  }, [tasks])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (status === 'unauthenticated') {
+      router.push('/login')
+      return
+    }
+    fetchTasks()
+    fetchProjects()
+  }, [status, router, fetchTasks, fetchProjects])
+
+  useEffect(() => {
+    const handler = () => fetchTasks()
+    window.addEventListener('task-created', handler)
+    return () => window.removeEventListener('task-created', handler)
+  }, [fetchTasks])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selection.isSelectionMode) selection.clear()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [selection])
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
@@ -328,100 +385,180 @@ function HomeContent() {
   }
 
   return (
+    <DashboardView
+      session={session}
+      tasks={searchQuery ? searchResults : tasks}
+      projects={projects}
+      grouping={searchQuery ? 'time' : grouping}
+      searchQuery={searchQuery}
+      searchResultCount={searchResults.length}
+      overdueCount={overdueCount}
+      todayCount={todayCount}
+      selection={selection}
+      snoozeTask={snoozeTask}
+      showProjectPicker={showProjectPicker}
+      bulkSnoozeCustom={bulkSnoozeCustom}
+      actions={actions}
+      onGroupingChange={setGrouping}
+      onSearch={bulk.handleSearch}
+      onSearchClear={() => {
+        setSearchQuery(null)
+        setSearchResults([])
+      }}
+      onSnoozeTask={setSnoozeTask}
+      onBulkAction={bulk.bulkAction}
+      onBulkDelete={bulk.bulkDelete}
+      onBulkMoveToProject={bulk.handleBulkMoveToProject}
+      onBulkCustomSnooze={bulk.handleBulkCustomSnooze}
+      onShowProjectPicker={setShowProjectPicker}
+      onBulkSnoozeCustom={setBulkSnoozeCustom}
+    />
+  )
+}
+
+function DashboardView({
+  session,
+  tasks,
+  projects,
+  grouping,
+  searchQuery,
+  searchResultCount,
+  overdueCount,
+  todayCount,
+  selection,
+  snoozeTask,
+  showProjectPicker,
+  bulkSnoozeCustom,
+  actions,
+  onGroupingChange,
+  onSearch,
+  onSearchClear,
+  onSnoozeTask,
+  onBulkAction,
+  onBulkDelete,
+  onBulkMoveToProject,
+  onBulkCustomSnooze,
+  onShowProjectPicker,
+  onBulkSnoozeCustom,
+}: {
+  session: ReturnType<typeof useSession>['data']
+  tasks: Task[]
+  projects: Project[]
+  grouping: GroupingMode
+  searchQuery: string | null
+  searchResultCount: number
+  overdueCount: number
+  todayCount: number
+  selection: ReturnType<typeof useSelection>
+  snoozeTask: Task | null
+  showProjectPicker: boolean
+  bulkSnoozeCustom: boolean
+  actions: ReturnType<typeof useTaskActions>
+  onGroupingChange: (g: GroupingMode) => void
+  onSearch: (q: string) => void
+  onSearchClear: () => void
+  onSnoozeTask: (t: Task | null) => void
+  onBulkAction: (endpoint: string, body: Record<string, unknown>) => void
+  onBulkDelete: () => void
+  onBulkMoveToProject: (projectId: number) => void
+  onBulkCustomSnooze: (until: string) => void
+  onShowProjectPicker: (show: boolean) => void
+  onBulkSnoozeCustom: (show: boolean) => void
+}) {
+  return (
     <div className="flex flex-1 flex-col">
       <Header
         taskCount={tasks.length}
         overdueCount={overdueCount}
         todayCount={todayCount}
         grouping={grouping}
-        onGroupingChange={setGrouping}
-        onUndo={handleUndo}
-        onSearch={handleSearch}
-        onSearchClear={handleSearchClear}
+        onGroupingChange={onGroupingChange}
+        onUndo={actions.handleUndo}
+        onSearch={onSearch}
+        onSearchClear={onSearchClear}
         userName={session?.user?.name || undefined}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
-        <QuickAdd onAdd={handleQuickAdd} />
+        <QuickAdd onAdd={actions.handleQuickAdd} />
 
         {searchQuery && (
           <div className="mb-4 text-sm text-zinc-500">
-            {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for &ldquo;
+            {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
             {searchQuery}&rdquo;
           </div>
         )}
 
         <TaskList
-          tasks={searchQuery ? searchResults : tasks}
+          tasks={tasks}
           projects={projects}
-          grouping={searchQuery ? 'time' : grouping}
-          onDone={handleDone}
-          onSnooze={(task) => setSnoozeTask(task)}
-          onSwipeSnooze={handleSnooze}
+          grouping={grouping}
+          onDone={actions.handleDone}
+          onSnooze={(task) => onSnoozeTask(task)}
+          onSwipeSnooze={actions.handleSnooze}
         />
       </main>
 
-      {/* Floating Action Bar for bulk selection */}
       <FloatingActionBar
         selectedCount={selection.selectedIds.size}
-        onDone={() => bulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
+        onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
         onSnooze1h={() =>
-          bulkAction('/api/tasks/bulk/snooze', {
+          onBulkAction('/api/tasks/bulk/snooze', {
             ids: [...selection.selectedIds],
             until: getSnoozeTime('+1h'),
           })
         }
         onSnooze2h={() =>
-          bulkAction('/api/tasks/bulk/snooze', {
+          onBulkAction('/api/tasks/bulk/snooze', {
             ids: [...selection.selectedIds],
             until: getSnoozeTime('+2h'),
           })
         }
         onSnoozeTomorrow={() =>
-          bulkAction('/api/tasks/bulk/snooze', {
+          onBulkAction('/api/tasks/bulk/snooze', {
             ids: [...selection.selectedIds],
             until: getSnoozeTime('tomorrow'),
           })
         }
-        onDelete={bulkDelete}
+        onDelete={onBulkDelete}
         onPriorityHigh={() =>
-          bulkAction('/api/tasks/bulk/edit', {
+          onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
             changes: { priority: 3 },
           })
         }
         onPriorityLow={() =>
-          bulkAction('/api/tasks/bulk/edit', {
+          onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
             changes: { priority: 1 },
           })
         }
         onClear={selection.clear}
-        onMoveToProject={() => setShowProjectPicker(true)}
-        onCustomSnooze={() => setBulkSnoozeCustom(true)}
+        onMoveToProject={() => onShowProjectPicker(true)}
+        onCustomSnooze={() => onBulkSnoozeCustom(true)}
       />
 
       {snoozeTask && (
         <SnoozeSheet
           task={snoozeTask}
-          onSnooze={(until) => handleSnooze(snoozeTask.id, until)}
-          onClose={() => setSnoozeTask(null)}
+          onSnooze={(until) => actions.handleSnooze(snoozeTask.id, until)}
+          onClose={() => onSnoozeTask(null)}
         />
       )}
 
       {showProjectPicker && (
         <ProjectPickerSheet
           projects={projects}
-          onSelect={handleBulkMoveToProject}
-          onClose={() => setShowProjectPicker(false)}
+          onSelect={onBulkMoveToProject}
+          onClose={() => onShowProjectPicker(false)}
         />
       )}
 
       {bulkSnoozeCustom && (
         <SnoozeSheet
           task={{ id: 0, title: `${selection.selectedIds.size} selected tasks` } as Task}
-          onSnooze={handleBulkCustomSnooze}
-          onClose={() => setBulkSnoozeCustom(false)}
+          onSnooze={onBulkCustomSnooze}
+          onClose={() => onBulkSnoozeCustom(false)}
           customOnly
         />
       )}

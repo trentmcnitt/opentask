@@ -129,6 +129,16 @@ describe('Data Integrity Behavioral Tests', () => {
 
     expect(restoredTask.deleted_at).toBeNull()
   })
+})
+
+describe('Data Safety & Concurrent Write Tests', () => {
+  beforeEach(() => {
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    teardownTestDb()
+  })
 
   /**
    * DI-003: No Silent Data Loss

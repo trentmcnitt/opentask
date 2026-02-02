@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useDrag } from '@use-gesture/react'
 
 interface SwipeableRowProps {
@@ -21,10 +21,35 @@ export function SwipeableRow({
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
   const [swiped, setSwiped] = useState(false)
+  const disabledRef = useRef(disabled)
+  const swipeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [prevDisabled, setPrevDisabled] = useState(disabled)
+
+  // Reset any in-progress swipe when entering selection mode (render-time state adjustment)
+  if (disabled !== prevDisabled) {
+    setPrevDisabled(disabled)
+    if (disabled) {
+      setOffset(0)
+    }
+  }
+
+  // Keep ref in sync and clean up swipe timer on unmount
+  useEffect(() => {
+    disabledRef.current = disabled
+  }, [disabled])
+
+  useEffect(() => {
+    return () => {
+      if (swipeTimer.current) clearTimeout(swipeTimer.current)
+    }
+  }, [])
 
   const bind = useDrag(
     ({ movement: [mx], down, cancel }) => {
-      if (swiped || disabled) return
+      if (swiped || disabledRef.current) {
+        if (disabledRef.current) cancel?.()
+        return
+      }
 
       const width = containerRef.current?.offsetWidth || 300
       const thresholdPx = width * threshold
@@ -38,7 +63,7 @@ export function SwipeableRow({
         if (mx > thresholdPx && onSwipeRight) {
           setSwiped(true)
           setOffset(width)
-          setTimeout(() => {
+          swipeTimer.current = setTimeout(() => {
             onSwipeRight()
             setOffset(0)
             setSwiped(false)
@@ -46,7 +71,7 @@ export function SwipeableRow({
         } else if (mx < -thresholdPx && onSwipeLeft) {
           setSwiped(true)
           setOffset(-width)
-          setTimeout(() => {
+          swipeTimer.current = setTimeout(() => {
             onSwipeLeft()
             setOffset(0)
             setSwiped(false)
