@@ -29,7 +29,7 @@ export async function validateCredentials(
       `
     SELECT id, email, name, password_hash, timezone
     FROM users
-    WHERE email = ? OR name = ?
+    WHERE email = ? COLLATE NOCASE OR name = ? COLLATE NOCASE
   `,
     )
     .get(identifier, identifier) as
