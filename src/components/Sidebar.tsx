@@ -26,7 +26,7 @@ export function Sidebar({ projects = [], onAddClick }: SidebarProps) {
   ]
 
   return (
-    <aside className="bg-muted/50 sticky top-0 hidden h-screen w-56 flex-shrink-0 flex-col border-r md:flex">
+    <aside className="bg-muted/50 sticky top-0 hidden h-screen w-56 flex-shrink-0 flex-col border-r select-none md:flex">
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
         {navItems.map((item) => {

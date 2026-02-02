@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { formatDateTime, toLocalDatetimeInput } from '@/lib/format-date'
+import { useTimezone } from '@/hooks/useTimezone'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
 
@@ -47,6 +49,7 @@ export function TaskDetail({
   onDeleteNote,
   onDelete,
 }: TaskDetailProps) {
+  const timezone = useTimezone()
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(task.title)
 
@@ -79,6 +82,7 @@ export function TaskDetail({
         projects={projects}
         editable={editable}
         onFieldChange={onFieldChange}
+        timezone={timezone}
       />
 
       <NotesSection
@@ -86,6 +90,7 @@ export function TaskDetail({
         editable={editable}
         onAddNote={onAddNote}
         onDeleteNote={onDeleteNote}
+        timezone={timezone}
       />
     </div>
   )
@@ -167,12 +172,14 @@ function TaskFields({
   projects,
   editable,
   onFieldChange,
+  timezone,
 }: {
   task: Task
   project?: Project
   projects: Project[]
   editable: boolean
   onFieldChange?: (field: string, value: unknown) => void
+  timezone: string
 }) {
   const [editingDue, setEditingDue] = useState(false)
   const isOverdue = task.due_at && new Date(task.due_at) < new Date()
@@ -187,6 +194,7 @@ function TaskFields({
         isOverdue={!!isOverdue}
         onEditDue={setEditingDue}
         onFieldChange={onFieldChange}
+        timezone={timezone}
       />
 
       <DetailField label="Priority">
@@ -261,14 +269,16 @@ function TaskFields({
 
       {task.snoozed_from && (
         <DetailField label="Snoozed">
-          <span className="text-blue-500">Originally due {formatDateTime(task.snoozed_from)}</span>
+          <span className="text-blue-500">
+            Originally due {formatDateTime(task.snoozed_from, timezone)}
+          </span>
         </DetailField>
       )}
 
-      <DetailField label="Created">{formatDateTime(task.created_at)}</DetailField>
+      <DetailField label="Created">{formatDateTime(task.created_at, timezone)}</DetailField>
 
       {task.updated_at !== task.created_at && (
-        <DetailField label="Updated">{formatDateTime(task.updated_at)}</DetailField>
+        <DetailField label="Updated">{formatDateTime(task.updated_at, timezone)}</DetailField>
       )}
     </div>
   )
@@ -281,6 +291,7 @@ function DueField({
   isOverdue,
   onEditDue,
   onFieldChange,
+  timezone,
 }: {
   task: Task
   editable: boolean
@@ -288,6 +299,7 @@ function DueField({
   isOverdue: boolean
   onEditDue: (v: boolean) => void
   onFieldChange?: (field: string, value: unknown) => void
+  timezone: string
 }) {
   return (
     <DetailField label="Due">
@@ -296,7 +308,7 @@ function DueField({
           <div className="flex gap-2">
             <Input
               type="datetime-local"
-              defaultValue={task.due_at ? toLocalDatetime(task.due_at) : ''}
+              defaultValue={task.due_at ? toLocalDatetimeInput(task.due_at, timezone) : ''}
               onChange={(e) => {
                 onFieldChange?.(
                   'due_at',
@@ -317,13 +329,13 @@ function DueField({
             )}
             onClick={() => onEditDue(true)}
           >
-            {task.due_at ? formatDateTime(task.due_at) : 'No due date (click to set)'}
+            {task.due_at ? formatDateTime(task.due_at, timezone) : 'No due date (click to set)'}
           </span>
         )
       ) : (
         <span className={cn(isOverdue && 'text-destructive font-medium')}>
           {task.due_at ? (
-            formatDateTime(task.due_at)
+            formatDateTime(task.due_at, timezone)
           ) : (
             <span className="text-muted-foreground">No due date</span>
           )}
@@ -338,11 +350,13 @@ function NotesSection({
   editable,
   onAddNote,
   onDeleteNote,
+  timezone,
 }: {
   notes: Note[]
   editable: boolean
   onAddNote?: (content: string) => void
   onDeleteNote?: (noteId: number) => void
+  timezone: string
 }) {
   const [newNote, setNewNote] = useState('')
 
@@ -386,7 +400,9 @@ function NotesSection({
             <div key={note.id} className="group bg-muted rounded-lg border p-3">
               <p className="text-sm whitespace-pre-wrap">{note.content}</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-muted-foreground text-xs">{formatDateTime(note.created_at)}</p>
+                <p className="text-muted-foreground text-xs">
+                  {formatDateTime(note.created_at, timezone)}
+                </p>
                 {editable && onDeleteNote && (
                   <button
                     onClick={() => onDeleteNote(note.id)}
@@ -470,24 +486,4 @@ function DetailField({ label, children }: { label: string; children: React.React
       <div className="flex-1 text-sm">{children}</div>
     </div>
   )
-}
-
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  return date.toLocaleString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-}
-
-function toLocalDatetime(iso: string): string {
-  const d = new Date(iso)
-  const offset = d.getTimezoneOffset()
-  const local = new Date(d.getTime() - offset * 60 * 1000)
-  return local.toISOString().slice(0, 16)
 }

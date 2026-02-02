@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { formatDueTime } from '@/lib/format-date'
+import { useTimezone } from '@/hooks/useTimezone'
 import type { Task } from '@/types'
 
 function useLongPress(onLongPress?: () => void) {
@@ -57,29 +59,6 @@ function useLongPress(onLongPress?: () => void) {
   return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel }
 }
 
-function formatDueTime(dueAt: string): string {
-  const due = new Date(dueAt)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
-
-  const time = due.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-
-  if (due < today) {
-    return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time
-  } else if (due < tomorrow) {
-    return time
-  } else if (due < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)) {
-    return 'Tomorrow ' + time
-  } else {
-    return due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  }
-}
-
 interface TaskRowProps {
   task: Task
   onDone: () => void
@@ -89,6 +68,7 @@ interface TaskRowProps {
   isSelectionMode?: boolean
   onSelect?: () => void
   onRangeSelect?: () => void
+  cancelLongPressRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function TaskRow({
@@ -100,8 +80,17 @@ export function TaskRow({
   isSelectionMode = false,
   onSelect,
   onRangeSelect,
+  cancelLongPressRef,
 }: TaskRowProps) {
+  const timezone = useTimezone()
   const pointer = useLongPress(onSelect)
+
+  // Expose long-press cancel function to parent (SwipeableRow)
+  useEffect(() => {
+    if (cancelLongPressRef) {
+      cancelLongPressRef.current = pointer.onPointerLeave
+    }
+  }, [cancelLongPressRef, pointer.onPointerLeave])
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -210,7 +199,7 @@ export function TaskRow({
                 isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground',
               )}
             >
-              {formatDueTime(task.due_at)}
+              {formatDueTime(task.due_at, timezone)}
             </span>
           )}
 

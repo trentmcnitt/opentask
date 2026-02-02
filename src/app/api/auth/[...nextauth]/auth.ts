@@ -7,7 +7,6 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { validateCredentials } from '@/core/auth/session'
-import type { AuthUser } from '@/types'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -46,17 +45,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign in, add user data to the token
       if (user) {
         token.id = user.id
-        token.timezone = (user as AuthUser & { id: string }).timezone
+        token.timezone = user.timezone
       }
       return token
     },
     session({ session, token }) {
       // Add user data from token to session
       if (token && session.user) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const user = session.user as any
-        user.id = token.id as string
-        user.timezone = token.timezone as string
+        session.user.id = token.id
+        session.user.timezone = token.timezone
       }
       return session
     },

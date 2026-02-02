@@ -78,7 +78,7 @@ export function Header({
               </PopoverTrigger>
               <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
                 <div className="flex flex-col gap-1">
-                  <span>{taskCount} tasks</span>
+                  <span>{taskCount} total</span>
                   {overdueCount > 0 && (
                     <span className="text-destructive">{overdueCount} overdue</span>
                   )}

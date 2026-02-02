@@ -3,7 +3,7 @@
 import { createContext, useContext } from 'react'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 
-interface SelectionContextType {
+export interface SelectionContextType {
   selectedIds: Set<number>
   anchor: number | null
   isSelectionMode: boolean
@@ -27,4 +27,8 @@ export function useSelection() {
     throw new Error('useSelection must be used within SelectionProvider')
   }
   return context
+}
+
+export function useSelectionOptional(): SelectionContextType | null {
+  return useContext(SelectionContext)
 }

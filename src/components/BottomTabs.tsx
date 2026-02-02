@@ -19,7 +19,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
   ]
 
   return (
-    <nav className="safe-bottom fixed right-0 bottom-0 left-0 z-20 border-t border-zinc-200 bg-white md:hidden dark:border-zinc-800 dark:bg-zinc-950">
+    <nav className="safe-bottom border-border bg-background fixed right-0 bottom-0 left-0 z-20 border-t select-none md:hidden">
       <div className="flex items-center justify-around px-2 py-1">
         {tabs.map((tab) => {
           const isActive =
@@ -49,7 +49,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
               href={tab.href}
               aria-label={tab.label}
               className={`flex min-w-[48px] flex-col items-center justify-center rounded-lg p-2 ${
-                isActive ? 'text-blue-500' : 'text-zinc-400 dark:text-zinc-500'
+                isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}
             >
               <Icon className="h-5 w-5" />

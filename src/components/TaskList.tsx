@@ -1,7 +1,7 @@
 'use client'
 
 // Selection integration via context
-import { useCallback } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { ArrowUpDown } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
@@ -14,34 +14,21 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Task, Project } from '@/types'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
+import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { useTimezone } from '@/hooks/useTimezone'
 
 export type GroupingMode = 'time' | 'project'
 
-// Optional selection context - works whether or not SelectionProvider is present
-interface SelectionContextType {
-  selectedIds: Set<number>
-  isSelectionMode: boolean
-  toggle: (id: number) => void
-  rangeSelect: (id: number, orderedIds: number[]) => void
-}
+import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
-// We import the context from SelectionProvider, but provide a safe fallback
 const fallbackSelection: SelectionContextType = {
   selectedIds: new Set(),
+  anchor: null,
   isSelectionMode: false,
   toggle: () => {},
   rangeSelect: () => {},
-}
-
-// Re-import the actual context
-import { useSelection as useSelectionHook } from './SelectionProvider'
-
-function useSafeSelection(): SelectionContextType {
-  try {
-    return useSelectionHook()
-  } catch {
-    return fallbackSelection
-  }
+  selectAll: () => {},
+  clear: () => {},
 }
 
 interface TaskListProps {
@@ -97,7 +84,8 @@ export function TaskList({
   onSwipeSnooze,
 }: TaskListProps) {
   const { getSortOption, setSortOption } = useGroupSort()
-  const selection = useSafeSelection()
+  const selection = useSelectionOptional() ?? fallbackSelection
+  const timezone = useTimezone()
 
   // Snooze +1h helper for swipe (must be before early return for hooks rules)
   const handleSwipeSnooze = useCallback(
@@ -117,13 +105,14 @@ export function TaskList({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="mb-4 text-4xl">&#x2705;</div>
-        <h2 className="text-xl font-medium text-zinc-900 dark:text-zinc-100">All caught up!</h2>
-        <p className="mt-1 text-zinc-500 dark:text-zinc-400">No tasks due right now.</p>
+        <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
+        <p className="text-muted-foreground mt-1">No tasks due right now.</p>
       </div>
     )
   }
 
-  const groups = grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks)
+  const groups =
+    grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
 
   // Build ordered ID list for range-select
   const orderedIds = groups.flatMap((g) => g.tasks.map((t) => t.id))
@@ -141,57 +130,43 @@ export function TaskList({
         return (
           <section key={group.label}>
             {/* "Now" separator between Overdue and the next group */}
-            {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator />}
+            {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
             <div className="mb-2 flex items-center justify-between px-1">
-              <h2 className="text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                 {group.label}
-                <span className="ml-2 text-zinc-400 dark:text-zinc-500">{group.tasks.length}</span>
+                <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
               </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-                  >
-                    <ArrowUpDown className="mr-1 size-3" />
-                    {SORT_LABELS[sortOption]}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'priority')}>
-                    Priority
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'title')}>
-                    Title (A-Z)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortOption(group.label, 'age')}>
-                    Age (oldest first)
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <SortDropdown
+                sortOption={sortOption}
+                onSort={(option) => setSortOption(group.label, option)}
+              />
             </div>
             <div className="space-y-1">
-              {sortedTasks.map((task) => (
-                <SwipeableRow
-                  key={task.id}
-                  onSwipeRight={() => onDone(task.id)}
-                  onSwipeLeft={() => handleSwipeSnooze(task)}
-                  disabled={selection.isSelectionMode}
-                >
-                  <TaskRow
-                    task={task}
-                    onDone={() => onDone(task.id)}
-                    onSnooze={() => onSnooze(task)}
-                    isOverdue={isTaskOverdue(task)}
-                    isSelected={selection.selectedIds.has(task.id)}
-                    isSelectionMode={selection.isSelectionMode}
-                    onSelect={() => selection.toggle(task.id)}
-                    onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
-                  />
-                </SwipeableRow>
-              ))}
+              {sortedTasks.map((task) => {
+                const cancelRef = { current: null as (() => void) | null }
+                return (
+                  <SwipeableRow
+                    key={task.id}
+                    onSwipeRight={() => onDone(task.id)}
+                    onSwipeLeft={() => handleSwipeSnooze(task)}
+                    onDragStart={() => cancelRef.current?.()}
+                    disabled={selection.isSelectionMode}
+                  >
+                    <TaskRow
+                      task={task}
+                      onDone={() => onDone(task.id)}
+                      onSnooze={() => onSnooze(task)}
+                      isOverdue={isTaskOverdue(task)}
+                      isSelected={selection.selectedIds.has(task.id)}
+                      isSelectionMode={selection.isSelectionMode}
+                      onSelect={() => selection.toggle(task.id)}
+                      onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
+                      cancelLongPressRef={cancelRef}
+                    />
+                  </SwipeableRow>
+                )
+              })}
             </div>
           </section>
         )
@@ -210,12 +185,13 @@ interface TaskGroup {
   tasks: Task[]
 }
 
-function groupByTime(tasks: Task[]): TaskGroup[] {
+function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
-  const dayAfterTomorrow = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)
-  const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const {
+    tomorrowStart: tomorrow,
+    dayAfterTomorrowStart: dayAfterTomorrow,
+    nextWeekStart: nextWeek,
+  } = getTimezoneDayBoundaries(timezone)
 
   const buckets: Record<string, Task[]> = {
     Overdue: [],
@@ -288,8 +264,8 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     const projectTasks = byProject.get(projectId) || []
 
     // Sort within project: overdue first, then by due_at, then by anchor_time
+    const now = Date.now()
     projectTasks.sort((a, b) => {
-      const now = Date.now()
       const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
       const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
       const aOverdue = aDue < now ? 0 : 1
@@ -312,9 +288,53 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
   return groups
 }
 
-function NowSeparator() {
+function SortDropdown({
+  sortOption,
+  onSort,
+}: {
+  sortOption: SortOption
+  onSort: (option: SortOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const isTouchRef = useRef(false)
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground h-6 px-2 text-xs"
+          onPointerDown={(e) => {
+            isTouchRef.current = e.pointerType === 'touch'
+            if (e.pointerType === 'touch') {
+              e.preventDefault()
+            }
+          }}
+          onClick={() => {
+            if (isTouchRef.current) {
+              setOpen((prev) => !prev)
+              isTouchRef.current = false
+            }
+          }}
+        >
+          <ArrowUpDown className="mr-1 size-3" />
+          {SORT_LABELS[sortOption]}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onSort('priority')}>Priority</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onSort('title')}>Title (A-Z)</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onSort('age')}>Age (oldest first)</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function NowSeparator({ timezone }: { timezone: string }) {
   const now = new Date()
   const timeStr = now.toLocaleTimeString('en-US', {
+    timeZone: timezone,
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -322,11 +342,11 @@ function NowSeparator() {
 
   return (
     <div className="mb-4 flex items-center gap-3 py-3" aria-label={`Current time: ${timeStr}`}>
-      <div className="h-px flex-1 bg-zinc-300 dark:bg-zinc-700" />
-      <span className="text-xs font-medium whitespace-nowrap text-zinc-400 dark:text-zinc-500">
+      <div className="bg-border h-px flex-1" />
+      <span className="text-muted-foreground text-xs font-medium whitespace-nowrap">
         now ({timeStr})
       </span>
-      <div className="h-px flex-1 bg-zinc-300 dark:bg-zinc-700" />
+      <div className="bg-border h-px flex-1" />
     </div>
   )
 }

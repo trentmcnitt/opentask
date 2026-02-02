@@ -24,7 +24,7 @@ export function Toast({ message, action, onDismiss, duration = 5000 }: ToastProp
       aria-live="polite"
       className="animate-slide-up fixed bottom-4 left-1/2 z-50 -translate-x-1/2"
     >
-      <div className="flex items-center gap-3 rounded-lg bg-zinc-900 px-4 py-3 text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
+      <div className="bg-foreground text-background flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg">
         <span className="text-sm font-medium">{message}</span>
 
         {action && (
@@ -42,7 +42,7 @@ export function Toast({ message, action, onDismiss, duration = 5000 }: ToastProp
         <button
           onClick={onDismiss}
           aria-label="Dismiss notification"
-          className="ml-2 text-zinc-400 hover:text-zinc-300 dark:text-zinc-600 dark:hover:text-zinc-500"
+          className="text-background/60 hover:text-background/80 ml-2"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

@@ -7,6 +7,7 @@ interface SwipeableRowProps {
   children: React.ReactNode
   onSwipeRight?: () => void // done
   onSwipeLeft?: () => void // snooze +1h
+  onDragStart?: () => void // called on first meaningful drag movement
   threshold?: number // fraction of width, default 0.4
   disabled?: boolean // disable swiping (e.g. during selection mode)
 }
@@ -15,6 +16,7 @@ export function SwipeableRow({
   children,
   onSwipeRight,
   onSwipeLeft,
+  onDragStart,
   threshold = 0.4,
   disabled = false,
 }: SwipeableRowProps) {
@@ -23,6 +25,7 @@ export function SwipeableRow({
   const [swiped, setSwiped] = useState(false)
   const disabledRef = useRef(disabled)
   const swipeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dragStarted = useRef(false)
   const [prevDisabled, setPrevDisabled] = useState(disabled)
 
   // Reset any in-progress swipe when entering selection mode (render-time state adjustment)
@@ -55,10 +58,16 @@ export function SwipeableRow({
       const thresholdPx = width * threshold
 
       if (down) {
+        // Notify parent on first meaningful drag movement (cancels long-press)
+        if (!dragStarted.current && Math.abs(mx) > 5) {
+          dragStarted.current = true
+          onDragStart?.()
+        }
         // Clamp movement to reasonable bounds
         const clamped = Math.max(-width * 0.5, Math.min(width * 0.5, mx))
         setOffset(clamped)
       } else {
+        dragStarted.current = false
         // Released
         if (mx > thresholdPx && onSwipeRight) {
           setSwiped(true)
