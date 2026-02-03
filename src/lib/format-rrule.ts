@@ -142,6 +142,125 @@ export function formatRRule(rrule: string, anchorTime?: string | null): string {
   }
 }
 
+const COMPACT_DAY_NAMES: Record<string, string> = {
+  MO: 'M',
+  TU: 'Tu',
+  WE: 'W',
+  TH: 'Th',
+  FR: 'F',
+  SA: 'Sa',
+  SU: 'Su',
+}
+
+const PLURAL_DAY_NAMES: Record<string, string> = {
+  MO: 'Mondays',
+  TU: 'Tuesdays',
+  WE: 'Wednesdays',
+  TH: 'Thursdays',
+  FR: 'Fridays',
+  SA: 'Saturdays',
+  SU: 'Sundays',
+}
+
+// ISO day ordering: Monday=0 through Sunday=6
+const DAY_ORDER: Record<string, number> = {
+  MO: 0,
+  TU: 1,
+  WE: 2,
+  TH: 3,
+  FR: 4,
+  SA: 5,
+  SU: 6,
+}
+
+function formatDaysCompact(byDay: string[]): string {
+  const upper = byDay.map((d) => d.toUpperCase())
+
+  // Sort by ISO index
+  const sorted = [...upper].sort((a, b) => (DAY_ORDER[a] ?? 0) - (DAY_ORDER[b] ?? 0))
+
+  // Special cases
+  if (sorted.length === 7) return 'Daily'
+  if (sorted.length === 5 && !sorted.includes('SA') && !sorted.includes('SU')) {
+    return 'Weekdays'
+  }
+  if (sorted.length === 2 && sorted.includes('SA') && sorted.includes('SU')) {
+    return 'Weekends'
+  }
+
+  return sorted.map((d) => COMPACT_DAY_NAMES[d] || d).join(', ')
+}
+
+/**
+ * Compact RRULE formatting for TaskRow's second line.
+ *
+ * Strips time info (time is already shown in the relative time portion).
+ * Uses single-letter day abbreviations (M, Tu, W, Th, F, Sa, Su).
+ */
+export function formatRRuleCompact(rrule: string): string {
+  const parts = parseRRuleParts(rrule)
+  const freq = parts.FREQ?.toUpperCase()
+  const interval = parts.INTERVAL ? parseInt(parts.INTERVAL) : 1
+  const byDay = parts.BYDAY?.split(',') || []
+  const byMonthDay = parts.BYMONTHDAY?.split(',').map(Number) || []
+
+  switch (freq) {
+    case 'DAILY':
+      return formatDailyCompact(interval)
+    case 'WEEKLY':
+      return formatWeeklyCompact(interval, byDay)
+    case 'MONTHLY':
+      return formatMonthlyCompact(interval, byDay, byMonthDay)
+    case 'YEARLY':
+      return formatYearlyCompact(interval)
+    default:
+      return rrule
+  }
+}
+
+function formatDailyCompact(interval: number): string {
+  return interval === 1 ? 'Daily' : `Every ${interval} days`
+}
+
+function formatWeeklyCompact(interval: number, byDay: string[]): string {
+  if (byDay.length === 0) {
+    return interval === 1 ? 'Weekly' : `Every ${interval} weeks`
+  }
+
+  const dayStr = formatDaysCompact(byDay)
+
+  // "Daily", "Weekdays", "Weekends" are already complete
+  if (dayStr === 'Daily' || dayStr === 'Weekdays' || dayStr === 'Weekends') {
+    return dayStr
+  }
+
+  if (interval === 1) {
+    // Single day weekly: use plural natural form ("Fridays")
+    if (byDay.length === 1) {
+      return PLURAL_DAY_NAMES[byDay[0].toUpperCase()] || dayStr
+    }
+    return dayStr
+  }
+
+  return `Every ${interval} weeks on ${dayStr}`
+}
+
+function formatMonthlyCompact(interval: number, byDay: string[], byMonthDay: number[]): string {
+  const prefix = interval === 1 ? 'Monthly' : `Every ${interval} months`
+  if (byMonthDay.length > 0) {
+    return `${prefix} on the ${byMonthDay.map(ordinal).join(', ')}`
+  }
+  if (byDay.length > 0) {
+    const dayName = SHORT_DAY_NAMES[byDay[0].replace(/[^A-Z]/gi, '').toUpperCase()] || byDay[0]
+    return `${prefix} on ${dayName}`
+  }
+  return prefix
+}
+
+function formatYearlyCompact(interval: number): string {
+  return interval === 1 ? 'Yearly' : `Every ${interval} years`
+}
+
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100

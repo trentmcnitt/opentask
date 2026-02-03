@@ -81,6 +81,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('users', 'default_grouping')) {
     database.exec("ALTER TABLE users ADD COLUMN default_grouping TEXT NOT NULL DEFAULT 'project'")
   }
+
+  // Migration: Add label_config to users
+  if (!hasColumn('users', 'label_config')) {
+    database.exec("ALTER TABLE users ADD COLUMN label_config TEXT NOT NULL DEFAULT '[]'")
+  }
 }
 
 export function closeDb(): void {

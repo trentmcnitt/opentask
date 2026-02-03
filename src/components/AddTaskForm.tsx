@@ -19,12 +19,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { LabelPicker } from '@/components/LabelPicker'
 import { useTimezone } from '@/hooks/useTimezone'
 import { parseLocalDatetimeInput } from '@/lib/format-date'
 import { showErrorToast } from '@/lib/toast'
 
 interface AddTaskFormProps {
   projects: { id: number; name: string }[]
+  initialTitle?: string
   onClose: () => void
   onCreated: () => void
 }
@@ -34,7 +36,7 @@ function buildTaskBody(
   dueAt: string,
   projectId: string,
   priority: string,
-  labels: string,
+  labels: string[],
   rrule: string | null,
   timezone: string,
 ): Record<string, unknown> {
@@ -42,23 +44,18 @@ function buildTaskBody(
   if (dueAt) body.due_at = parseLocalDatetimeInput(dueAt, timezone)
   if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
   if (parseInt(priority) > 0) body.priority = parseInt(priority)
-  if (labels.trim()) {
-    body.labels = labels
-      .split(',')
-      .map((l) => l.trim())
-      .filter(Boolean)
-  }
+  if (labels.length > 0) body.labels = labels
   if (rrule) body.rrule = rrule
   return body
 }
 
-export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) {
+export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddTaskFormProps) {
   const timezone = useTimezone()
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle || '')
   const [dueAt, setDueAt] = useState('')
   const [projectId, setProjectId] = useState<string>('inbox')
   const [priority, setPriority] = useState<string>('0')
-  const [labels, setLabels] = useState('')
+  const [labels, setLabels] = useState<string[]>([])
   const [rrule, setRrule] = useState<string | null>(null)
   const [showRecurrence, setShowRecurrence] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -200,16 +197,10 @@ export function AddTaskForm({ projects, onClose, onCreated }: AddTaskFormProps) 
           </div>
 
           <div>
-            <label htmlFor="task-labels" className="mb-1 block text-sm font-medium">
-              Labels (comma-separated)
-            </label>
-            <Input
-              id="task-labels"
-              type="text"
-              value={labels}
-              onChange={(e) => setLabels(e.target.value)}
-              placeholder="e.g. home, errand"
-            />
+            <label className="mb-1 block text-sm font-medium">Labels</label>
+            <div className="rounded-md border px-2 py-1.5">
+              <LabelPicker labels={labels} onChange={setLabels} />
+            </div>
           </div>
 
           <Button type="submit" disabled={!title.trim() || submitting} className="w-full">

@@ -28,6 +28,7 @@ interface HeaderProps {
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   userName?: string
+  onSnoozeOverdue?: () => void
 }
 
 export function Header({
@@ -40,13 +41,14 @@ export function Header({
   onSearch,
   onSearchClear,
   userName,
+  onSnoozeOverdue,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
 
   return (
     <TooltipProvider delayDuration={300}>
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
-        <div className="relative mx-auto flex max-w-2xl items-center gap-1 px-4 py-3 md:gap-1.5">
+        <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
           {/* Logo: opacity-only fade on mobile (no width collapse = no squish), always visible on desktop */}
           <Image
             src="/opentask-logo.png"
@@ -114,67 +116,28 @@ export function Header({
           </div>
 
           {/* Action buttons: always fixed in place */}
-          <div className="flex flex-shrink-0 items-center gap-1">
-            {/* Grouping toggle (desktop only) */}
-            {onGroupingChange && (
+          <div className="flex flex-shrink-0 items-center">
+            {/* Snooze all overdue button */}
+            {onSnoozeOverdue && overdueCount > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => onGroupingChange(grouping === 'time' ? 'project' : 'time')}
-                    aria-label={`Group by ${grouping === 'time' ? 'project' : 'time'}`}
-                    className="hidden md:inline-flex"
+                    onClick={onSnoozeOverdue}
+                    aria-label="Snooze all overdue +1h"
                   >
-                    {grouping === 'time' ? (
-                      <FolderOpen className="size-5" />
-                    ) : (
-                      <Clock className="size-5" />
-                    )}
+                    <Clock className="size-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Group by {grouping === 'time' ? 'project' : 'time'}</TooltipContent>
+                <TooltipContent>Snooze all overdue +1h</TooltipContent>
               </Tooltip>
             )}
 
-            {/* Undo button (desktop only) */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onUndo}
-                  aria-label="Undo last action"
-                  className="hidden md:inline-flex"
-                >
-                  <Undo2 className="size-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
-            </Tooltip>
-
-            {/* Sign out button (desktop only) */}
-            {userName && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => signOut({ callbackUrl: '/login' })}
-                    aria-label={`Sign out ${userName}`}
-                    className="hidden md:inline-flex"
-                  >
-                    <LogOut className="size-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Sign out ({userName})</TooltipContent>
-              </Tooltip>
-            )}
-
-            {/* Hamburger menu (mobile only) */}
+            {/* Hamburger menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Menu" className="md:hidden">
+                <Button variant="ghost" size="icon" aria-label="Menu">
                   <Menu className="size-5" />
                 </Button>
               </DropdownMenuTrigger>

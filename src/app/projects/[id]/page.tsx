@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
+import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
+import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
@@ -18,6 +20,26 @@ export default function ProjectDetailPage() {
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(true)
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
+  const [focusedTask, setFocusedTask] = useState<Task | null>(null)
+  const [quickActionOpen, setQuickActionOpen] = useState(false)
+
+  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
+
+  const toggleLabel = useCallback((label: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    )
+  }, [])
+
+  const clearLabels = useCallback(() => {
+    setSelectedLabels([])
+  }, [])
+
+  const displayTasks = useMemo(() => {
+    if (selectedLabels.length === 0) return tasks
+    return tasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
+  }, [tasks, selectedLabels])
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -138,7 +160,19 @@ export default function ProjectDetailPage() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        <TaskList tasks={tasks} onDone={handleDone} onSnooze={(task) => setSnoozeTask(task)} />
+        <LabelFilterBar
+          tasks={tasks}
+          selectedLabels={selectedLabels}
+          onToggleLabel={toggleLabel}
+          onClearAll={clearLabels}
+        />
+        <TaskList
+          tasks={displayTasks}
+          onDone={handleDone}
+          onSnooze={(task) => setSnoozeTask(task)}
+          onLabelClick={toggleLabel}
+          onTaskFocus={setFocusedTask}
+        />
       </main>
 
       {snoozeTask && (
@@ -148,6 +182,13 @@ export default function ProjectDetailPage() {
           onClose={() => setSnoozeTask(null)}
         />
       )}
+
+      <QuickActionPopover
+        focusedTask={focusedTask}
+        open={quickActionOpen}
+        onClose={() => setQuickActionOpen(false)}
+        onDateSave={handleSnooze}
+      />
     </div>
   )
 }

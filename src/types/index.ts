@@ -1,5 +1,12 @@
 // Core domain types for OpenTask
 
+export type LabelColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'gray'
+
+export interface LabelConfig {
+  name: string
+  color: LabelColor
+}
+
 export interface User {
   id: number
   email: string
@@ -9,6 +16,7 @@ export interface User {
   ntfy_topic: string | null
   ntfy_server: string | null
   default_grouping: 'time' | 'project'
+  label_config: LabelConfig[]
   created_at: string
 }
 

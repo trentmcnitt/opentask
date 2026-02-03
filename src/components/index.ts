@@ -12,6 +12,8 @@ export { TaskRow } from './TaskRow'
 export { TaskDetail } from './TaskDetail'
 export { SwipeableRow } from './SwipeableRow'
 
+export { LabelFilterBar } from './LabelFilterBar'
+
 // Form components
 export { QuickAdd } from './QuickAdd'
 export { AddTaskForm } from './AddTaskForm'
@@ -23,7 +25,9 @@ export { SnoozeSheet } from './SnoozeSheet'
 export { ProjectPickerSheet } from './ProjectPickerSheet'
 
 // Action components
-export { FloatingActionBar } from './FloatingActionBar'
+export { SelectionActionSheet } from './SelectionActionSheet'
+export { QuickActionPanel } from './QuickActionPanel'
+export { QuickActionPopover } from './QuickActionPopover'
 
 // Feedback components
 export { OfflineBanner } from './OfflineBanner'
@@ -31,3 +35,7 @@ export { OfflineBanner } from './OfflineBanner'
 // Providers
 export { SessionProvider } from './SessionProvider'
 export { SelectionProvider, useSelection } from './SelectionProvider'
+export { LabelConfigProvider, useLabelConfig } from './LabelConfigProvider'
+
+// Label components
+export { LabelPicker } from './LabelPicker'

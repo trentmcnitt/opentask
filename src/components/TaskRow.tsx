@@ -7,9 +7,48 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { formatDueTime } from '@/lib/format-date'
+import { formatDueTimeParts, formatSnoozedFrom } from '@/lib/format-date'
+import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
-import type { Task } from '@/types'
+import { useLabelConfig } from '@/components/LabelConfigProvider'
+import { getLabelClasses } from '@/lib/label-colors'
+import type { Task, LabelConfig } from '@/types'
+
+/**
+ * TaskRow visual reference — complete rendered examples:
+ *
+ *   Line 1: [priority] [title] [recurrence icon] [labels]
+ *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X]
+ *
+ * Due soon (< 3h, shows both relative + absolute):
+ *   ┌─────────────────────────────────────────────────────────┐
+ *   │ ○  Buy groceries                                       │
+ *   │    in 47m · 2:25 PM                                    │
+ *   └─────────────────────────────────────────────────────────┘
+ *
+ * Recurring + labels:
+ *   ┌─────────────────────────────────────────────────────────┐
+ *   │ ○  Morning standup  ↻  [work]                          │
+ *   │    in 1h 30m · 9:00 AM · Weekdays                      │
+ *   └─────────────────────────────────────────────────────────┘
+ *
+ * Overdue (red left border, relative "ago" + absolute time):
+ *   ┃─────────────────────────────────────────────────────────┐
+ *   ┃ ○  Pay rent                                             │
+ *   ┃    3h ago · 9:00 AM                                     │
+ *   ┃─────────────────────────────────────────────────────────┘
+ *
+ * Snoozed (blue left border, snoozed-from context):
+ *   ┃─────────────────────────────────────────────────────────┐
+ *   ┃ ○  Review PR  [ops]                                     │
+ *   ┃    Tomorrow 3:00 PM · snoozed from Tue                  │
+ *   ┃─────────────────────────────────────────────────────────┘
+ *
+ * Overdue times: <1m ago · 5:00 PM | 3h ago · 9 AM | yesterday · 5 PM | 3d ago · Jan 30 5 PM
+ * Future times:  in 47m · 5:00 PM · Tomorrow 9 AM · Wed 9 AM · Feb 11 9 AM
+ * Left border:   red=overdue (wins), blue=snoozed, none=default
+ * Snooze button:  desktop only (hover) — mobile uses swipe
+ */
 
 function useLongPress(onLongPress?: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -79,6 +118,8 @@ interface TaskRowProps {
   onSelect?: () => void
   onRangeSelect?: () => void
   cancelLongPressRef?: React.MutableRefObject<(() => void) | null>
+  onLabelClick?: (label: string) => void
+  onFocus?: () => void
 }
 
 export function TaskRow({
@@ -91,8 +132,11 @@ export function TaskRow({
   onSelect,
   onRangeSelect,
   cancelLongPressRef,
+  onLabelClick,
+  onFocus,
 }: TaskRowProps) {
   const timezone = useTimezone()
+  const { labelConfig } = useLabelConfig()
   // Long-press: range-select when already in selection mode, otherwise toggle
   const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
   const pointer = useLongPress(longPressAction)
@@ -112,27 +156,29 @@ export function TaskRow({
         return
       }
 
-      const modifierHeld = e.metaKey || e.ctrlKey
-
-      // Cmd/Ctrl-click or Shift-click enters selection mode even if not already in it
-      if (isSelectionMode || modifierHeld || e.shiftKey) {
-        if (!onSelect) return
-        e.preventDefault()
-        if (e.shiftKey && onRangeSelect) {
-          onRangeSelect()
-        } else {
-          onSelect()
-        }
+      // Clicking anywhere on the row (except interactive elements with stopPropagation)
+      // enters selection mode and selects this task
+      if (!onSelect) return
+      e.preventDefault()
+      if (e.shiftKey && onRangeSelect) {
+        onRangeSelect()
+      } else {
+        onSelect()
       }
     },
-    [isSelectionMode, onSelect, onRangeSelect, pointer],
+    [onSelect, onRangeSelect, pointer],
   )
 
   const priorityIndicator = getPriorityIndicator(task.priority)
+  const isSnoozed = !!task.snoozed_from
+  const metaSegments = buildMetaSegments(task, timezone, isOverdue)
+  const hasLabels = task.labels.length > 0
+  const hasLine2 = metaSegments.length > 0
 
   return (
     <div
       onClick={handleClick}
+      onMouseEnter={onFocus}
       onPointerDown={pointer.onPointerDown}
       onPointerUp={pointer.onPointerUp}
       onPointerMove={pointer.onPointerMove}
@@ -143,6 +189,7 @@ export function TaskRow({
         'bg-card border',
         'hover:border-border/80 transition-colors',
         isOverdue && 'border-l-destructive border-l-4',
+        !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
       )}
@@ -206,41 +253,28 @@ export function TaskRow({
             </span>
           )}
 
-          {task.snoozed_from && (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-              snoozed
-            </Badge>
+          {hasLabels && (
+            <LabelBadges
+              labels={task.labels}
+              labelConfig={labelConfig}
+              onLabelClick={onLabelClick}
+            />
           )}
         </div>
 
-        <div className="mt-0.5 flex items-center gap-2">
-          {task.due_at && (
-            <span
-              className={cn(
-                'text-sm',
-                isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground',
-              )}
-            >
-              {formatDueTime(task.due_at, timezone)}
-            </span>
-          )}
-
-          {task.labels.length > 0 && (
-            <div className="flex gap-1">
-              {task.labels.slice(0, 2).map((label) => (
-                <Badge key={label} variant="secondary" className="px-1.5 py-0 text-xs">
-                  {label}
-                </Badge>
-              ))}
-              {task.labels.length > 2 && (
-                <span className="text-muted-foreground text-xs">+{task.labels.length - 2}</span>
-              )}
-            </div>
-          )}
-        </div>
+        {hasLine2 && (
+          <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
+            {metaSegments.map((seg, i) => (
+              <span key={i} className={cn('whitespace-nowrap', seg.className)}>
+                {i > 0 && <span className="text-muted-foreground/50 mr-1">·</span>}
+                {seg.text}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Snooze button (hidden in selection mode) */}
+      {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction) */}
       {!isSelectionMode && (
         <Button
           variant="ghost"
@@ -250,7 +284,7 @@ export function TaskRow({
             onSnooze()
           }}
           aria-label={`Snooze "${task.title}"`}
-          className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+          className="hidden flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 md:flex"
           title="Snooze"
         >
           <Clock className="size-4" />
@@ -258,6 +292,77 @@ export function TaskRow({
       )}
     </div>
   )
+}
+
+function LabelBadges({
+  labels,
+  labelConfig,
+  onLabelClick,
+}: {
+  labels: string[]
+  labelConfig: LabelConfig[]
+  onLabelClick?: (label: string) => void
+}) {
+  return (
+    <div className="flex flex-shrink-0 gap-1">
+      {labels.slice(0, 2).map((label) => {
+        const colorClasses = getLabelClasses(label, labelConfig)
+        return (
+          <Badge
+            key={label}
+            variant={colorClasses ? undefined : 'secondary'}
+            className={cn(
+              'px-1.5 py-0 text-xs',
+              colorClasses && `${colorClasses} border-0`,
+              onLabelClick && 'cursor-pointer',
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              onLabelClick?.(label)
+            }}
+          >
+            {label}
+          </Badge>
+        )
+      })}
+      {labels.length > 2 && (
+        <span className="text-muted-foreground text-xs">+{labels.length - 2}</span>
+      )}
+    </div>
+  )
+}
+
+interface MetaSegment {
+  text: string
+  className?: string
+}
+
+function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
+  const segments: MetaSegment[] = []
+
+  if (task.due_at) {
+    const dueParts = formatDueTimeParts(task.due_at, timezone)
+    segments.push({
+      text: dueParts.relative,
+      className: isOverdue ? 'text-destructive font-medium' : undefined,
+    })
+    if (dueParts.absolute) {
+      segments.push({ text: dueParts.absolute })
+    }
+  }
+
+  if (task.rrule) {
+    segments.push({ text: formatRRuleCompact(task.rrule) })
+  }
+
+  if (task.snoozed_from) {
+    const text = formatSnoozedFrom(task.snoozed_from, timezone)
+    if (text) {
+      segments.push({ text, className: 'text-blue-400' })
+    }
+  }
+
+  return segments
 }
 
 function getPriorityIndicator(

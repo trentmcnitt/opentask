@@ -80,45 +80,6 @@ function parseInTimezone(year: number, month: number, day: number, timezone: str
 }
 
 /**
- * Relative due time for task rows: "9:00 AM", "Tomorrow 9:00 AM", "Wed, Jan 5"
- */
-export function formatDueTime(isoUtc: string, timezone: string): string {
-  const due = new Date(isoUtc)
-  const { todayStart, tomorrowStart, dayAfterTomorrowStart } = getTimezoneDayBoundaries(timezone)
-
-  const time = due.toLocaleTimeString('en-US', {
-    timeZone: timezone,
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-
-  if (due < todayStart) {
-    // Past — show date + time
-    return (
-      due.toLocaleDateString('en-US', {
-        timeZone: timezone,
-        month: 'short',
-        day: 'numeric',
-      }) +
-      ' ' +
-      time
-    )
-  } else if (due < tomorrowStart) {
-    return time
-  } else if (due < dayAfterTomorrowStart) {
-    return 'Tomorrow ' + time
-  } else {
-    return due.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
-}
-
-/**
  * Full date-time for task detail: "Wed, Jan 5, 2025, 9:00 AM"
  */
 export function formatDateTime(isoUtc: string, timezone: string): string {
@@ -153,6 +114,179 @@ export function toLocalDatetimeInput(isoUtc: string, timezone: string): string {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
   const hour = get('hour') === '24' ? '00' : get('hour')
   return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`
+}
+
+export interface DueTimeParts {
+  relative: string // "in 47m", "5:00 PM", "Tomorrow 9:00 AM", "3h ago", etc.
+  absolute?: string // "2:25 PM" — only present when relative is "in X"
+}
+
+/**
+ * Structured due-time data for TaskRow's second line.
+ *
+ * Returns a relative string (always) and an optional absolute string
+ * (only when relative is "in Xm" / "in Xh Ym").
+ */
+export function formatDueTimeParts(isoUtc: string, timezone: string): DueTimeParts {
+  const due = new Date(isoUtc)
+  const now = new Date()
+  const { todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
+    getTimezoneDayBoundaries(timezone)
+
+  const time = formatTimeInZone(due, timezone)
+
+  // Overdue — due is in the past
+  if (due < now) {
+    return formatOverdue(due, now, todayStart, timezone, time)
+  }
+
+  // Today, future
+  if (due < tomorrowStart) {
+    return formatTodayFuture(due, now, time)
+  }
+
+  // Tomorrow
+  if (due < dayAfterTomorrowStart) {
+    return { relative: `Tomorrow ${time}` }
+  }
+
+  // Within 7 days (after tomorrow)
+  if (due < nextWeekStart) {
+    const dayName = due.toLocaleDateString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    })
+    return { relative: `${dayName} ${time}` }
+  }
+
+  // Beyond 7 days
+  const dateStr = due.toLocaleDateString('en-US', {
+    timeZone: timezone,
+    month: 'short',
+    day: 'numeric',
+  })
+  return { relative: `${dateStr} ${time}` }
+}
+
+/**
+ * Overdue format — relative + absolute:
+ *   < 60 min:    "Xm ago"     · "5:00 PM"
+ *   today:       "Xh ago"     · "5:00 PM"
+ *   yesterday:   "yesterday"  · "5:00 PM"
+ *   2–6 days:    "Xd ago"     · "Jan 30 5:00 PM"
+ *   1–4 weeks:   "Xw ago"     · "Jan 15 5:00 PM"
+ *   5+ weeks:    "Xmo ago"    · "Dec 1 5:00 PM"
+ */
+function formatOverdue(
+  due: Date,
+  now: Date,
+  todayStart: Date,
+  timezone: string,
+  time: string,
+): DueTimeParts {
+  const diffMs = now.getTime() - due.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+
+  // For today/yesterday, absolute is just the time.
+  // For older, absolute includes the date.
+  const dateAndTime = `${due.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })} ${time}`
+
+  // Still today — show minutes or hours
+  if (due >= todayStart) {
+    if (diffMin < 60) {
+      const rel = diffMin < 1 ? '<1m ago' : `${diffMin}m ago`
+      return { relative: rel, absolute: time }
+    }
+    return { relative: `${Math.floor(diffMin / 60)}h ago`, absolute: time }
+  }
+
+  // Yesterday
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
+  if (due >= yesterdayStart) {
+    return { relative: 'yesterday', absolute: time }
+  }
+
+  // Days/weeks/months ago (based on calendar days in timezone)
+  const dueDateStr = due.toLocaleDateString('en-US', { timeZone: timezone })
+  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
+  const dueDate = new Date(dueDateStr)
+  const today = new Date(todayStr)
+  const calendarDays = Math.round((today.getTime() - dueDate.getTime()) / (24 * 60 * 60 * 1000))
+
+  if (calendarDays < 7) {
+    return { relative: `${calendarDays}d ago`, absolute: dateAndTime }
+  }
+
+  const weeks = Math.floor(calendarDays / 7)
+  if (calendarDays < 35) {
+    return { relative: `${weeks}w ago`, absolute: dateAndTime }
+  }
+
+  const months = Math.round(calendarDays / 30)
+  return { relative: `${Math.max(1, months)}mo ago`, absolute: dateAndTime }
+}
+
+function formatTodayFuture(due: Date, now: Date, time: string): DueTimeParts {
+  const diffMin = Math.floor((due.getTime() - now.getTime()) / 60000)
+  const threeHoursMin = 180
+
+  if (diffMin < 1) {
+    return { relative: 'in <1m', absolute: time }
+  }
+
+  if (diffMin < threeHoursMin) {
+    const hours = Math.floor(diffMin / 60)
+    const mins = diffMin % 60
+    let rel: string
+    if (hours === 0) {
+      rel = `in ${mins}m`
+    } else if (mins === 0) {
+      rel = `in ${hours}h`
+    } else {
+      rel = `in ${hours}h ${mins}m`
+    }
+    return { relative: rel, absolute: time }
+  }
+
+  return { relative: time }
+}
+
+/**
+ * "snoozed from Tue" or "snoozed from Jan 30" for snooze context in TaskRow.
+ */
+export function formatSnoozedFrom(isoUtc: string, timezone: string): string | null {
+  const snoozedDate = new Date(isoUtc)
+  const now = new Date()
+
+  // Only render if snoozed_from is in the past
+  if (snoozedDate > now) return null
+
+  const diffMs = now.getTime() - snoozedDate.getTime()
+  const diffDays = diffMs / (24 * 60 * 60 * 1000)
+
+  if (diffDays <= 7) {
+    const dayName = snoozedDate.toLocaleDateString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    })
+    return `snoozed from ${dayName}`
+  }
+
+  const dateStr = snoozedDate.toLocaleDateString('en-US', {
+    timeZone: timezone,
+    month: 'short',
+    day: 'numeric',
+  })
+  return `snoozed from ${dateStr}`
+}
+
+function formatTimeInZone(date: Date, timezone: string): string {
+  return date.toLocaleTimeString('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
 }
 
 /**

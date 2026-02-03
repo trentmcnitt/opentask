@@ -6,6 +6,7 @@ import { ArrowUpDown } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,8 @@ const fallbackSelection: SelectionContextType = {
   toggle: () => {},
   rangeSelect: () => {},
   selectAll: () => {},
+  addAll: () => {},
+  removeAll: () => {},
   clear: () => {},
 }
 
@@ -38,6 +41,8 @@ interface TaskListProps {
   onDone: (taskId: number) => void
   onSnooze: (task: Task) => void
   onSwipeSnooze?: (taskId: number, until: string) => void
+  onLabelClick?: (label: string) => void
+  onTaskFocus?: (task: Task) => void
 }
 
 // Sort tasks within a group
@@ -82,6 +87,8 @@ export function TaskList({
   onDone,
   onSnooze,
   onSwipeSnooze,
+  onLabelClick,
+  onTaskFocus,
 }: TaskListProps) {
   const { getSortOption, setSortOption } = useGroupSort()
   const selection = useSelectionOptional() ?? fallbackSelection
@@ -133,10 +140,18 @@ export function TaskList({
             {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
             <div className="mb-2 flex items-center justify-between px-1">
-              <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                {group.label}
-                <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
-              </h2>
+              <div className="flex items-center gap-2">
+                {selection.isSelectionMode && (
+                  <GroupCheckbox
+                    groupTaskIds={sortedTasks.map((t) => t.id)}
+                    selection={selection}
+                  />
+                )}
+                <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                  {group.label}
+                  <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
+                </h2>
+              </div>
               <SortDropdown
                 sortOption={sortOption}
                 onSort={(option) => setSortOption(group.label, option)}
@@ -163,6 +178,8 @@ export function TaskList({
                       onSelect={() => selection.toggle(task.id)}
                       onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
                       cancelLongPressRef={cancelRef}
+                      onLabelClick={onLabelClick}
+                      onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
                     />
                   </SwipeableRow>
                 )
@@ -286,6 +303,33 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
   }
 
   return groups
+}
+
+function GroupCheckbox({
+  groupTaskIds,
+  selection,
+}: {
+  groupTaskIds: number[]
+  selection: SelectionContextType
+}) {
+  const selectedCount = groupTaskIds.filter((id) => selection.selectedIds.has(id)).length
+  const allSelected = selectedCount === groupTaskIds.length
+  const someSelected = selectedCount > 0 && !allSelected
+
+  return (
+    <Checkbox
+      checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+      onCheckedChange={() => {
+        if (allSelected) {
+          selection.removeAll(groupTaskIds)
+        } else {
+          selection.addAll(groupTaskIds)
+        }
+      }}
+      className="size-3.5"
+      aria-label={allSelected ? 'Deselect all in group' : 'Select all in group'}
+    />
+  )
 }
 
 function SortDropdown({

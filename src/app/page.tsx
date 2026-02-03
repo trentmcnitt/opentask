@@ -7,10 +7,13 @@ import { TaskList } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
+import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
-import { FloatingActionBar } from '@/components/FloatingActionBar'
+import { SelectionActionSheet } from '@/components/SelectionActionSheet'
+import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
+import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { showToast } from '@/lib/toast'
 import type { Task, Project } from '@/types'
 
@@ -176,7 +179,6 @@ function useBulkActions(
   fetchTasks: () => Promise<void>,
   handleUndo: () => Promise<void>,
   setShowProjectPicker: (show: boolean) => void,
-  setBulkSnoozeCustom: (show: boolean) => void,
   setSearchQuery: (q: string | null) => void,
   setSearchResults: (tasks: Task[]) => void,
 ) {
@@ -243,27 +245,6 @@ function useBulkActions(
     }
   }
 
-  const handleBulkCustomSnooze = async (until: string) => {
-    const count = selection.selectedIds.size
-    setBulkSnoozeCustom(false)
-    try {
-      const res = await fetch('/api/tasks/bulk/snooze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [...selection.selectedIds], until }),
-      })
-      if (!res.ok) throw new Error('Snooze failed')
-      selection.clear()
-      fetchTasks()
-      showToast({
-        message: `${count} tasks snoozed`,
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      showToast({ message: 'Snooze failed' })
-    }
-  }
-
   const handleSearch = async (query: string) => {
     setSearchQuery(query)
     try {
@@ -276,7 +257,7 @@ function useBulkActions(
     }
   }
 
-  return { bulkAction, bulkDelete, handleBulkMoveToProject, handleBulkCustomSnooze, handleSearch }
+  return { bulkAction, bulkDelete, handleBulkMoveToProject, handleSearch }
 }
 
 function HomeContent() {
@@ -298,12 +279,32 @@ function HomeContent() {
   const actions = useTaskActions(fetchTasks, tasks, setTasks)
 
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
-  const [bulkSnoozeCustom, setBulkSnoozeCustom] = useState(false)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
+  const [focusedTask, setFocusedTask] = useState<Task | null>(null)
+  const [quickActionOpen, setQuickActionOpen] = useState(false)
+
+  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
   const [grouping, setGrouping] = useState<GroupingMode>('project')
   const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
+
+  const toggleLabel = useCallback((label: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    )
+  }, [])
+
+  const clearLabels = useCallback(() => {
+    setSelectedLabels([])
+  }, [])
+
+  const baseTasks = searchQuery ? searchResults : tasks
+  const displayTasks = useMemo(() => {
+    if (selectedLabels.length === 0) return baseTasks
+    return baseTasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
+  }, [baseTasks, selectedLabels])
 
   // Fetch saved grouping preference on mount
   useEffect(() => {
@@ -329,12 +330,40 @@ function HomeContent() {
     setGrouping(mode)
   }, [])
 
+  const handleSnoozeAllOverdue = useCallback(async () => {
+    const now = new Date()
+    const overdueTasks = tasks.filter((t) => t.due_at && new Date(t.due_at) < now)
+    const eligible = overdueTasks.filter((t) => (t.priority || 0) <= 2)
+    const skipped = overdueTasks.length - eligible.length
+
+    if (eligible.length === 0) {
+      showToast({ message: 'No snoozable overdue tasks' })
+      return
+    }
+
+    try {
+      const res = await fetch('/api/tasks/bulk/snooze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: eligible.map((t) => t.id), until: getSnoozeTime('+1h') }),
+      })
+      if (!res.ok) throw new Error('Snooze failed')
+      fetchTasks()
+      const skippedMsg = skipped > 0 ? ` (${skipped} high/urgent skipped)` : ''
+      showToast({
+        message: `Snoozed ${eligible.length} overdue tasks +1h${skippedMsg}`,
+        action: { label: 'Undo', onClick: actions.handleUndo },
+      })
+    } catch {
+      showToast({ message: 'Snooze failed' })
+    }
+  }, [tasks, fetchTasks, actions.handleUndo])
+
   const bulk = useBulkActions(
     selection,
     fetchTasks,
     actions.handleUndo,
     setShowProjectPicker,
-    setBulkSnoozeCustom,
     setSearchQuery,
     setSearchResults,
   )
@@ -418,7 +447,8 @@ function HomeContent() {
   return (
     <DashboardView
       session={session}
-      tasks={searchQuery ? searchResults : tasks}
+      tasks={displayTasks}
+      allTasks={baseTasks}
       projects={projects}
       grouping={searchQuery ? 'time' : grouping}
       searchQuery={searchQuery}
@@ -428,8 +458,10 @@ function HomeContent() {
       selection={selection}
       snoozeTask={snoozeTask}
       showProjectPicker={showProjectPicker}
-      bulkSnoozeCustom={bulkSnoozeCustom}
       actions={actions}
+      selectedLabels={selectedLabels}
+      onToggleLabel={toggleLabel}
+      onClearLabels={clearLabels}
       onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
@@ -440,9 +472,13 @@ function HomeContent() {
       onBulkAction={bulk.bulkAction}
       onBulkDelete={bulk.bulkDelete}
       onBulkMoveToProject={bulk.handleBulkMoveToProject}
-      onBulkCustomSnooze={bulk.handleBulkCustomSnooze}
       onShowProjectPicker={setShowProjectPicker}
-      onBulkSnoozeCustom={setBulkSnoozeCustom}
+      onSnoozeOverdue={handleSnoozeAllOverdue}
+      focusedTask={focusedTask}
+      quickActionOpen={quickActionOpen}
+      onTaskFocus={setFocusedTask}
+      onQuickActionClose={() => setQuickActionOpen(false)}
+      onQuickActionDateSave={actions.handleSnooze}
     />
   )
 }
@@ -450,6 +486,7 @@ function HomeContent() {
 function DashboardView({
   session,
   tasks,
+  allTasks,
   projects,
   grouping,
   searchQuery,
@@ -459,8 +496,10 @@ function DashboardView({
   selection,
   snoozeTask,
   showProjectPicker,
-  bulkSnoozeCustom,
   actions,
+  selectedLabels,
+  onToggleLabel,
+  onClearLabels,
   onGroupingChange,
   onSearch,
   onSearchClear,
@@ -468,12 +507,17 @@ function DashboardView({
   onBulkAction,
   onBulkDelete,
   onBulkMoveToProject,
-  onBulkCustomSnooze,
   onShowProjectPicker,
-  onBulkSnoozeCustom,
+  onSnoozeOverdue,
+  focusedTask,
+  quickActionOpen,
+  onTaskFocus,
+  onQuickActionClose,
+  onQuickActionDateSave,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
+  allTasks: Task[]
   projects: Project[]
   grouping: GroupingMode
   searchQuery: string | null
@@ -483,8 +527,10 @@ function DashboardView({
   selection: ReturnType<typeof useSelection>
   snoozeTask: Task | null
   showProjectPicker: boolean
-  bulkSnoozeCustom: boolean
   actions: ReturnType<typeof useTaskActions>
+  selectedLabels: string[]
+  onToggleLabel: (label: string) => void
+  onClearLabels: () => void
   onGroupingChange: (g: GroupingMode) => void
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -492,9 +538,13 @@ function DashboardView({
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => void
   onBulkDelete: () => void
   onBulkMoveToProject: (projectId: number) => void
-  onBulkCustomSnooze: (until: string) => void
   onShowProjectPicker: (show: boolean) => void
-  onBulkSnoozeCustom: (show: boolean) => void
+  onSnoozeOverdue: () => void
+  focusedTask: Task | null
+  quickActionOpen: boolean
+  onTaskFocus: (task: Task) => void
+  onQuickActionClose: () => void
+  onQuickActionDateSave: (taskId: number, until: string) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -508,15 +558,37 @@ function DashboardView({
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         userName={session?.user?.name || undefined}
+        onSnoozeOverdue={onSnoozeOverdue}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
-        <QuickAdd onAdd={actions.handleQuickAdd} />
+        <QuickAdd
+          onAdd={actions.handleQuickAdd}
+          onOpenAddForm={(title) => {
+            window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
+          }}
+        />
+
+        <LabelFilterBar
+          tasks={allTasks}
+          selectedLabels={selectedLabels}
+          onToggleLabel={onToggleLabel}
+          onClearAll={onClearLabels}
+        />
 
         {searchQuery && (
           <div className="mb-4 text-sm text-zinc-500">
             {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
             {searchQuery}&rdquo;
+          </div>
+        )}
+
+        {selectedLabels.length > 0 && (
+          <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
+            Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
+            <button onClick={onClearLabels} className="text-foreground font-medium hover:underline">
+              Clear filter
+            </button>
           </div>
         )}
 
@@ -527,46 +599,37 @@ function DashboardView({
           onDone={actions.handleDone}
           onSnooze={(task) => onSnoozeTask(task)}
           onSwipeSnooze={actions.handleSnooze}
+          onLabelClick={onToggleLabel}
+          onTaskFocus={onTaskFocus}
         />
       </main>
 
-      <FloatingActionBar
+      <SelectionActionSheet
         selectedCount={selection.selectedIds.size}
         onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
-        onSnooze1h={() =>
+        onSnooze={(until) =>
           onBulkAction('/api/tasks/bulk/snooze', {
             ids: [...selection.selectedIds],
-            until: getSnoozeTime('+1h'),
-          })
-        }
-        onSnooze2h={() =>
-          onBulkAction('/api/tasks/bulk/snooze', {
-            ids: [...selection.selectedIds],
-            until: getSnoozeTime('+2h'),
-          })
-        }
-        onSnoozeTomorrow={() =>
-          onBulkAction('/api/tasks/bulk/snooze', {
-            ids: [...selection.selectedIds],
-            until: getSnoozeTime('tomorrow'),
+            until,
           })
         }
         onDelete={onBulkDelete}
-        onPriorityHigh={() =>
+        onPriorityChange={(delta) => {
+          // Priority up: set to high (3), down: set to low (1)
+          const priority = delta > 0 ? 3 : 1
           onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
-            changes: { priority: 3 },
+            changes: { priority },
           })
-        }
-        onPriorityLow={() =>
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes: { priority: 1 },
-          })
-        }
-        onClear={selection.clear}
+        }}
         onMoveToProject={() => onShowProjectPicker(true)}
-        onCustomSnooze={() => onBulkSnoozeCustom(true)}
+        onClear={selection.clear}
+      />
+
+      <SnoozeAllFab
+        overdueCount={overdueCount}
+        isSelectionMode={selection.isSelectionMode}
+        onSnoozeOverdue={onSnoozeOverdue}
       />
 
       {snoozeTask && (
@@ -585,14 +648,12 @@ function DashboardView({
         />
       )}
 
-      {bulkSnoozeCustom && (
-        <SnoozeSheet
-          task={{ id: 0, title: `${selection.selectedIds.size} selected tasks` } as Task}
-          onSnooze={onBulkCustomSnooze}
-          onClose={() => onBulkSnoozeCustom(false)}
-          customOnly
-        />
-      )}
+      <QuickActionPopover
+        focusedTask={focusedTask}
+        open={quickActionOpen}
+        onClose={onQuickActionClose}
+        onDateSave={onQuickActionDateSave}
+      />
     </div>
   )
 }

@@ -118,6 +118,24 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleSnooze = async (until: string) => {
+    if (!task) return
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/snooze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ until }),
+      })
+      if (!res.ok) throw new Error('Failed to snooze')
+
+      const data = await res.json()
+      setTask(data.data.task as Task)
+    } catch {
+      fetchTask()
+    }
+  }
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -182,6 +200,7 @@ export default function TaskDetailPage() {
           projects={projects}
           editable
           onFieldChange={handleFieldChange}
+          onSnooze={handleSnooze}
           onAddNote={handleAddNote}
           onDeleteNote={handleDeleteNote}
         />

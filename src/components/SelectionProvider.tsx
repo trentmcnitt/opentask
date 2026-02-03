@@ -10,6 +10,8 @@ export interface SelectionContextType {
   toggle: (id: number) => void
   rangeSelect: (id: number, orderedIds: number[]) => void
   selectAll: (ids: number[]) => void
+  addAll: (ids: number[]) => void
+  removeAll: (ids: number[]) => void
   clear: () => void
 }
 

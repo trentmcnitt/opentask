@@ -12,6 +12,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const [projects, setProjects] = useState<{ id: number; name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
+  const [addFormTitle, setAddFormTitle] = useState('')
 
   const loadProjects = useCallback(async () => {
     try {
@@ -43,6 +44,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       cancelled = true
     }
   }, [status, loadProjects])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      setAddFormTitle(detail?.title || '')
+      setShowAddForm(true)
+    }
+    window.addEventListener('open-add-form', handler)
+    return () => window.removeEventListener('open-add-form', handler)
+  }, [])
 
   const handleReorderProjects = useCallback(
     async (projectIds: number[]) => {
@@ -92,10 +103,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {showAddForm && (
         <AddTaskForm
           projects={projects}
-          onClose={() => setShowAddForm(false)}
+          initialTitle={addFormTitle}
+          onClose={() => {
+            setShowAddForm(false)
+            setAddFormTitle('')
+          }}
           onCreated={() => {
             setShowAddForm(false)
-            // Page will re-fetch tasks via its own mechanism
+            setAddFormTitle('')
             window.dispatchEvent(new CustomEvent('task-created'))
           }}
         />

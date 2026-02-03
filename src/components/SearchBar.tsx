@@ -57,12 +57,12 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
 
   return (
     // ml-auto keeps search right-aligned; flex-1 when active gives room for leftward growth
-    <div className={cn('flex items-center', isActive ? 'min-w-0 flex-1' : 'ml-auto')}>
+    <div className="flex min-w-0 flex-1 items-center">
       {/* Desktop: ml-auto + width transition = expands leftward from right edge */}
       <div
         className={cn(
-          'ml-auto hidden items-center transition-[width] duration-200 ease-in-out md:flex',
-          isActive ? 'bg-background relative z-10 w-[calc(100%-0.5rem)]' : 'w-48',
+          'hidden flex-1 items-center transition-[width] duration-200 ease-in-out md:flex',
+          isActive ? 'bg-background relative z-10' : '',
         )}
       >
         <div className="relative flex-1">

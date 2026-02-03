@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -13,8 +13,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { formatDateTime, toLocalDatetimeInput, parseLocalDatetimeInput } from '@/lib/format-date'
+import { formatDateTime } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useLabelConfig } from '@/components/LabelConfigProvider'
+import { getLabelClasses } from '@/lib/label-colors'
+import { LabelPicker } from '@/components/LabelPicker'
+import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { QuickActionPanel } from '@/components/QuickActionPanel'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
 
@@ -25,6 +30,7 @@ interface TaskDetailProps {
   projects?: Project[]
   editable?: boolean
   onFieldChange?: (field: string, value: unknown) => void
+  onSnooze?: (until: string) => void
   onAddNote?: (content: string) => void
   onDeleteNote?: (noteId: number) => void
   onDelete?: () => void
@@ -45,6 +51,7 @@ export function TaskDetail({
   projects = [],
   editable = false,
   onFieldChange,
+  onSnooze,
   onAddNote,
   onDeleteNote,
   onDelete,
@@ -82,6 +89,8 @@ export function TaskDetail({
         projects={projects}
         editable={editable}
         onFieldChange={onFieldChange}
+        onSnooze={onSnooze}
+        onDelete={onDelete}
         timezone={timezone}
       />
 
@@ -172,6 +181,8 @@ function TaskFields({
   projects,
   editable,
   onFieldChange,
+  onSnooze,
+  onDelete,
   timezone,
 }: {
   task: Task
@@ -179,27 +190,99 @@ function TaskFields({
   projects: Project[]
   editable: boolean
   onFieldChange?: (field: string, value: unknown) => void
+  onSnooze?: (until: string) => void
+  onDelete?: () => void
   timezone: string
 }) {
-  const [editingDue, setEditingDue] = useState(false)
+  const [editingRecurrence, setEditingRecurrence] = useState(false)
+  const currentRruleRef = useRef(task.rrule)
+  useEffect(() => {
+    currentRruleRef.current = task.rrule
+  }, [task.rrule])
   const isOverdue = task.due_at && new Date(task.due_at) < new Date()
   const priority = PRIORITY_OPTIONS.find((p) => p.value === task.priority) || PRIORITY_OPTIONS[0]
 
+  const handleRruleChange = useCallback(
+    (value: string | null) => {
+      if (value === currentRruleRef.current) return
+      onFieldChange?.('rrule', value)
+    },
+    [onFieldChange],
+  )
+
+  const handleDateChange = useCallback(
+    (isoUtc: string) => {
+      // Use snooze endpoint if task already has a due_at, PATCH otherwise
+      if (task.due_at && onSnooze) {
+        onSnooze(isoUtc)
+      } else {
+        onFieldChange?.('due_at', isoUtc)
+      }
+    },
+    [task.due_at, onSnooze, onFieldChange],
+  )
+
+  const handlePriorityChange = useCallback(
+    (delta: 1 | -1) => {
+      const current = task.priority || 0
+      const next = Math.max(0, Math.min(4, current + delta))
+      if (next !== current) {
+        onFieldChange?.('priority', next)
+      }
+    },
+    [task.priority, onFieldChange],
+  )
+
+  const handleMoveToProject = useCallback(() => {
+    // Cycle to next project (simple approach for inline mode)
+    if (projects.length < 2) return
+    const currentIdx = projects.findIndex((p) => p.id === task.project_id)
+    const nextIdx = (currentIdx + 1) % projects.length
+    onFieldChange?.('project_id', projects[nextIdx].id)
+  }, [projects, task.project_id, onFieldChange])
+
   return (
     <div className="space-y-4">
-      <DueField
-        task={task}
-        editable={editable}
-        editingDue={editingDue}
-        isOverdue={!!isOverdue}
-        onEditDue={setEditingDue}
-        onFieldChange={onFieldChange}
-        timezone={timezone}
-      />
+      {/* Quick Action Panel — positioned above notes for mobile thumb reach */}
+      {editable && (
+        <div className="rounded-lg border p-3">
+          <QuickActionPanel
+            task={task}
+            timezone={timezone}
+            mode="inline"
+            onDateChange={handleDateChange}
+            onPriorityChange={handlePriorityChange}
+            onRecurrence={() => setEditingRecurrence(!editingRecurrence)}
+            onMoveToProject={projects.length > 1 ? handleMoveToProject : undefined}
+            onDelete={onDelete}
+          />
+        </div>
+      )}
 
-      <DetailField label="Priority">
-        {editable ? (
-          <div className="flex gap-1">
+      {/* Read-only due date display */}
+      {!editable && (
+        <DetailField label="Due">
+          <span className={cn(isOverdue && 'text-destructive font-medium')}>
+            {task.due_at ? (
+              formatDateTime(task.due_at, timezone)
+            ) : (
+              <span className="text-muted-foreground">No due date</span>
+            )}
+          </span>
+        </DetailField>
+      )}
+
+      {/* Priority (read-only — editing via QuickActionPanel icons) */}
+      {!editable && (
+        <DetailField label="Priority">
+          <span className={priority.color}>{priority.label}</span>
+        </DetailField>
+      )}
+
+      {/* Priority buttons (editable, for fine-grained control) */}
+      {editable && (
+        <DetailField label="Priority">
+          <div className="flex flex-wrap gap-1">
             {PRIORITY_OPTIONS.map((opt) => (
               <Button
                 key={opt.value}
@@ -212,10 +295,8 @@ function TaskFields({
               </Button>
             ))}
           </div>
-        ) : (
-          <span className={priority.color}>{priority.label}</span>
-        )}
-      </DetailField>
+        </DetailField>
+      )}
 
       <DetailField label="Project">
         {editable && projects.length > 0 ? (
@@ -241,31 +322,81 @@ function TaskFields({
 
       <DetailField label="Labels">
         {editable ? (
-          <EditableLabels
+          <LabelPicker
             labels={task.labels}
             onChange={(labels) => onFieldChange?.('labels', labels)}
           />
         ) : task.labels.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {task.labels.map((label) => (
-              <Badge key={label} variant="secondary">
-                {label}
-              </Badge>
-            ))}
-          </div>
+          <ColoredLabels labels={task.labels} />
         ) : (
           <span className="text-muted-foreground">None</span>
         )}
       </DetailField>
 
-      {task.rrule && (
-        <DetailField label="Recurrence">
-          {formatRRule(task.rrule, task.anchor_time)}
-          <span className="text-muted-foreground ml-2 text-sm">
-            ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
-          </span>
-        </DetailField>
-      )}
+      <DetailField label="Recurrence">
+        {editable ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => setEditingRecurrence(!editingRecurrence)}
+              className="hover:text-primary flex items-center gap-1 transition-colors"
+            >
+              <span>
+                {task.rrule ? formatRRule(task.rrule, task.anchor_time) : 'Add recurrence'}
+              </span>
+              {editingRecurrence ? (
+                <ChevronUp className="size-4" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+            </button>
+            {task.rrule && !editingRecurrence && (
+              <span className="text-muted-foreground ml-1 text-xs">
+                ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
+              </span>
+            )}
+            {editingRecurrence && (
+              <div className="mt-2 space-y-3">
+                <div className="rounded-lg border p-3">
+                  <RecurrencePicker value={task.rrule} onChange={handleRruleChange} />
+                </div>
+                {task.rrule && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">Mode:</span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant={task.recurrence_mode !== 'from_completion' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => onFieldChange?.('recurrence_mode', 'from_due')}
+                      >
+                        From due date
+                      </Button>
+                      <Button
+                        variant={task.recurrence_mode === 'from_completion' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => onFieldChange?.('recurrence_mode', 'from_completion')}
+                      >
+                        From completion
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : task.rrule ? (
+          <>
+            {formatRRule(task.rrule, task.anchor_time)}
+            <span className="text-muted-foreground ml-2 text-sm">
+              ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
+            </span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        )}
+      </DetailField>
 
       {task.snoozed_from && (
         <DetailField label="Snoozed">
@@ -281,67 +412,6 @@ function TaskFields({
         <DetailField label="Updated">{formatDateTime(task.updated_at, timezone)}</DetailField>
       )}
     </div>
-  )
-}
-
-function DueField({
-  task,
-  editable,
-  editingDue,
-  isOverdue,
-  onEditDue,
-  onFieldChange,
-  timezone,
-}: {
-  task: Task
-  editable: boolean
-  editingDue: boolean
-  isOverdue: boolean
-  onEditDue: (v: boolean) => void
-  onFieldChange?: (field: string, value: unknown) => void
-  timezone: string
-}) {
-  return (
-    <DetailField label="Due">
-      {editable ? (
-        editingDue ? (
-          <div className="flex gap-2">
-            <Input
-              type="datetime-local"
-              defaultValue={task.due_at ? toLocalDatetimeInput(task.due_at, timezone) : ''}
-              onChange={(e) => {
-                onFieldChange?.(
-                  'due_at',
-                  e.target.value ? parseLocalDatetimeInput(e.target.value, timezone) : null,
-                )
-                onEditDue(false)
-              }}
-              onBlur={() => onEditDue(false)}
-              className="w-auto"
-              autoFocus
-            />
-          </div>
-        ) : (
-          <span
-            className={cn(
-              'hover:text-primary cursor-pointer',
-              isOverdue && 'text-destructive font-medium',
-            )}
-            onClick={() => onEditDue(true)}
-          >
-            {task.due_at ? formatDateTime(task.due_at, timezone) : 'No due date (click to set)'}
-          </span>
-        )
-      ) : (
-        <span className={cn(isOverdue && 'text-destructive font-medium')}>
-          {task.due_at ? (
-            formatDateTime(task.due_at, timezone)
-          ) : (
-            <span className="text-muted-foreground">No due date</span>
-          )}
-        </span>
-      )}
-    </DetailField>
   )
 }
 
@@ -420,61 +490,22 @@ function NotesSection({
   )
 }
 
-function EditableLabels({
-  labels,
-  onChange,
-}: {
-  labels: string[]
-  onChange: (labels: string[]) => void
-}) {
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState('')
-
-  const handleAdd = () => {
-    const trimmed = draft.trim()
-    if (trimmed && !labels.includes(trimmed)) {
-      onChange([...labels, trimmed])
-    }
-    setDraft('')
-    setAdding(false)
-  }
-
+function ColoredLabels({ labels }: { labels: string[] }) {
+  const { labelConfig } = useLabelConfig()
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {labels.map((label) => (
-        <Badge key={label} variant="secondary" className="gap-1">
-          {label}
-          <button
-            onClick={() => onChange(labels.filter((l) => l !== label))}
-            className="hover:text-destructive"
+    <div className="flex flex-wrap gap-1">
+      {labels.map((label) => {
+        const colorClasses = getLabelClasses(label, labelConfig)
+        return (
+          <Badge
+            key={label}
+            variant={colorClasses ? undefined : 'secondary'}
+            className={colorClasses ? `${colorClasses} border-0` : undefined}
           >
-            &times;
-          </button>
-        </Badge>
-      ))}
-      {adding ? (
-        <Input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={handleAdd}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleAdd()
-          }}
-          className="h-6 w-24 text-xs"
-          placeholder="label"
-          autoFocus
-        />
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding(true)}
-          className="h-6 border-dashed text-xs"
-        >
-          + Add
-        </Button>
-      )}
+            {label}
+          </Badge>
+        )
+      })}
     </div>
   )
 }
@@ -483,7 +514,7 @@ function DetailField({ label, children }: { label: string; children: React.React
   return (
     <div className="flex items-start gap-4">
       <span className="text-muted-foreground w-24 flex-shrink-0 pt-0.5 text-sm">{label}</span>
-      <div className="flex-1 text-sm">{children}</div>
+      <div className="min-w-0 flex-1 text-sm">{children}</div>
     </div>
   )
 }

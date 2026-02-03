@@ -66,6 +66,27 @@ export function useSelectionMode() {
     setIsSelectionMode(ids.length > 0)
   }, [])
 
+  const addAll = useCallback((ids: number[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.add(id)
+      return next
+    })
+    if (ids.length > 0) setIsSelectionMode(true)
+  }, [])
+
+  const removeAll = useCallback((ids: number[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.delete(id)
+      if (next.size === 0) {
+        setIsSelectionMode(false)
+        setAnchor(null)
+      }
+      return next
+    })
+  }, [])
+
   const clear = useCallback(() => {
     setSelectedIds(new Set())
     setAnchor(null)
@@ -79,6 +100,8 @@ export function useSelectionMode() {
     toggle,
     rangeSelect,
     selectAll,
+    addAll,
+    removeAll,
     clear,
   }
 }

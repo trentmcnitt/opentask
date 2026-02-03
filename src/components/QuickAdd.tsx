@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils'
 
 interface QuickAddProps {
   onAdd: (title: string) => void
+  onOpenAddForm?: (title: string) => void
 }
 
-export function QuickAdd({ onAdd }: QuickAddProps) {
+export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -37,7 +38,17 @@ export function QuickAdd({ onAdd }: QuickAddProps) {
           'transition-all',
         )}
       >
-        <Plus className="text-muted-foreground size-5 flex-shrink-0" />
+        <button
+          type="button"
+          onClick={() => {
+            onOpenAddForm?.(title)
+            setTitle('')
+          }}
+          className="hover:text-primary hover:bg-accent text-muted-foreground flex-shrink-0 rounded p-0.5 transition-colors"
+          aria-label="Open full add form"
+        >
+          <Plus className="size-5" />
+        </button>
         <Input
           ref={inputRef}
           type="text"
