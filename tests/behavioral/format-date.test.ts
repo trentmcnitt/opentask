@@ -11,11 +11,11 @@ import { formatRRuleCompact } from '@/lib/format-rrule'
 const TZ = 'America/Chicago'
 
 describe('formatDueTimeParts', () => {
-  test('overdue <1m ago shows "<1m ago" with time', () => {
+  test('overdue <1m ago shows "just now" with time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
     // 30 seconds ago — 5:59 AM CST
     const result = formatDueTimeParts('2025-02-01T11:59:30Z', TZ)
-    expect(result.relative).toBe('<1m ago')
+    expect(result.relative).toBe('just now')
     expect(result.absolute).toBe('5:59 AM')
   })
 

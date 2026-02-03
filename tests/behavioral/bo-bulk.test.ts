@@ -4,50 +4,31 @@
  * Tests bulk operations with atomicity and undo integration.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { getDb, resetDb } from '@/core/db'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
+import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
 import { bulkDone } from '@/core/tasks/bulk'
 import { executeUndo, canUndo, getUndoHistory } from '@/core/undo'
 import { DateTime } from 'luxon'
-
-const TEST_TIMEZONE = 'America/Chicago'
-const TEST_USER_ID = 1
-
-// Helper to create a test date in local timezone
-function localTime(hour: number, minute: number = 0, daysFromNow: number = 0): string {
-  return DateTime.now()
-    .setZone(TEST_TIMEZONE)
-    .plus({ days: daysFromNow })
-    .set({ hour, minute, second: 0, millisecond: 0 })
-    .toUTC()
-    .toISO()!
-}
+import {
+  setupTestDb,
+  teardownTestDb,
+  localTime,
+  TEST_USER_ID,
+  TEST_TIMEZONE,
+} from '../helpers/setup'
 
 describe('Bulk Operations Behavioral Tests', () => {
   beforeEach(() => {
-    resetDb()
-    const db = getDb()
-
-    // Seed test user
-    db.prepare(
-      `
-      INSERT INTO users (id, email, name, password_hash, timezone)
-      VALUES (?, ?, ?, ?, ?)
-    `,
-    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
-
-    // Seed inbox project
-    db.prepare(
-      `
-      INSERT INTO projects (id, name, owner_id, shared, sort_order)
-      VALUES (1, 'Inbox', ?, 0, 0)
-    `,
-    ).run(TEST_USER_ID)
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    // This ensures localTime(8, 0) creates a time 2 hours in the past
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
   })
 
   afterEach(() => {
-    resetDb()
+    vi.useRealTimers()
+    teardownTestDb()
   })
 
   /**
@@ -204,26 +185,14 @@ describe('Bulk Operations Behavioral Tests', () => {
 
 describe('Bulk Operations Undo & Mixed Types', () => {
   beforeEach(() => {
-    resetDb()
-    const db = getDb()
-
-    db.prepare(
-      `
-      INSERT INTO users (id, email, name, password_hash, timezone)
-      VALUES (?, ?, ?, ?, ?)
-    `,
-    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
-
-    db.prepare(
-      `
-      INSERT INTO projects (id, name, owner_id, shared, sort_order)
-      VALUES (1, 'Inbox', ?, 0, 0)
-    `,
-    ).run(TEST_USER_ID)
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
   })
 
   afterEach(() => {
-    resetDb()
+    vi.useRealTimers()
+    teardownTestDb()
   })
 
   /**

@@ -122,6 +122,7 @@ If an Authorization header is present but the token is invalid, return 401 immed
 - All task deletions are soft-deletes (set `deleted_at`). The only hard-delete operation is "Empty Trash."
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
 - **Never suppress lint errors or warnings** (e.g., `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`) without explicit approval from the user. Fix the root cause instead. If a fix is genuinely impossible, ask the user before adding any suppression comment.
+- **No brittle fixes or tolerances.** Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should run like clockwork, not something mushy. Don't attempt hacky workarounds without understanding the real problem.
 
 ## Architecture
 
@@ -241,6 +242,10 @@ Note: `updateTask()` handles its own transaction and undo logging internally —
 ;['rrule', 'anchor_time', 'anchor_dow', 'anchor_dom', 'due_at']
 ```
 
+### Snooze
+
+**Snooze is just changing `due_at`.** That's all it is. It's called "snoozing" instead of changing the due date, because in cases where a task is recurring, the recurrence schedule doesn't change (daily 9:00am snoozed until noon then completed will still re-generate as a task due at 9:00am tomorrow)
+
 ### Undo
 
 The app logs every mutation to `undo_log` with a snapshot of only the changed fields.
@@ -290,6 +295,51 @@ Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 ### Test Data Seeding
 
 `scripts/seed-test.ts` provides deterministic test data seeding used by integration and E2E tests.
+
+### Time-Based Testing
+
+Tests must be **time-agnostic** — they should pass regardless of when they run. Use these patterns:
+
+**Behavioral tests**: Use `vi.setSystemTime()` to freeze the clock at a known moment:
+
+```typescript
+import { vi, beforeEach, afterEach } from 'vitest'
+
+describe('My tests', () => {
+  beforeEach(() => {
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('task completion advances due date', () => {
+    // localTime(8, 0) now creates Jan 15 at 8am — 2 hours in the past
+    // Tests are deterministic regardless of actual wall-clock time
+  })
+})
+```
+
+**Test data seeding**: Always use future dates for "upcoming" tasks:
+
+```typescript
+// WRONG: Could be in the past depending on when tests run
+const today5pm = DateTime.now().set({ hour: 17 })
+
+// RIGHT: Always in the future
+const tomorrow5pm = DateTime.now().plus({ days: 1 }).set({ hour: 17 })
+```
+
+**Why not just use relative dates everywhere?** Clock mocking is preferred for behavioral tests because:
+
+1. Complete determinism — tests behave identically at any time
+2. Self-documenting — the frozen time is visible in the test
+3. Enables testing edge cases (DST transitions, year boundaries)
+4. Industry standard practice
+
+See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts` for examples.
 
 ## Environments
 

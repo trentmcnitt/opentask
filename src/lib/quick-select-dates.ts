@@ -7,7 +7,7 @@
  * arithmetic to survive DST transitions).
  */
 
-import { parseLocalDatetimeInput } from '@/lib/format-date'
+import { parseLocalDatetimeInput, getTimezoneDayBoundaries } from '@/lib/format-date'
 
 /** Preset time slots (24h format in user's local timezone) */
 export const PRESET_TIMES = [
@@ -146,23 +146,54 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
 
 /**
  * Format the header line for the Quick Action Panel.
- * Returns: "Mon, Feb 2 at 6:50 PM"
+ * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM"
  */
 export function formatQuickSelectHeader(isoUtc: string, timezone: string): string {
   const date = new Date(isoUtc)
-  return date.toLocaleString('en-US', {
+  const { todayStart, tomorrowStart, dayAfterTomorrowStart } = getTimezoneDayBoundaries(timezone)
+
+  // Determine yesterday boundary
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
+
+  // Format the time portion
+  const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
   })
+
+  // Format the date portion (month + day)
+  const datePart = date.toLocaleString('en-US', {
+    timeZone: timezone,
+    month: 'short',
+    day: 'numeric',
+  })
+
+  // Determine the day label
+  let dayLabel: string
+  if (date >= yesterdayStart && date < todayStart) {
+    dayLabel = 'Yesterday'
+  } else if (date >= todayStart && date < tomorrowStart) {
+    dayLabel = 'Today'
+  } else if (date >= tomorrowStart && date < dayAfterTomorrowStart) {
+    dayLabel = 'Tomorrow'
+  } else {
+    // Use weekday for other days
+    dayLabel = date.toLocaleString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    })
+  }
+
+  return `${dayLabel}, ${datePart}, ${timePart}`
 }
 
 /**
- * Format the relative time portion: "in 26 mins", "3h ago", etc.
+ * Format the relative time portion: "in 26 mins", "3h ago", "in 2 days", etc.
+ *
+ * For same-day durations, shows hours and minutes (e.g., "in 2h 30m").
+ * For multi-day durations, shows only days (e.g., "in 2 days" not "in 2 days 1h").
  */
 export function formatRelativeTime(isoUtc: string, now?: Date): string {
   const target = new Date(isoUtc)
@@ -178,17 +209,15 @@ export function formatRelativeTime(isoUtc: string, now?: Date): string {
 
   let text: string
   if (days > 0) {
+    // Multi-day: show only days (no hours)
     text = days === 1 ? '1 day' : `${days} days`
-    const remainingHours = hours % 24
-    if (remainingHours > 0) {
-      text += ` ${remainingHours}h`
-    }
   } else if (hours > 0) {
     text = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
   } else if (totalMinutes > 0) {
     text = `${totalMinutes} min${totalMinutes !== 1 ? 's' : ''}`
   } else {
-    text = '<1 min'
+    // Less than 1 minute
+    return isPast ? 'just now' : 'in <1 min'
   }
 
   return isPast ? `${text} ago` : `in ${text}`

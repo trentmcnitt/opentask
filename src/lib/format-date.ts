@@ -194,7 +194,7 @@ function formatOverdue(
   // Still today — show minutes or hours
   if (due >= todayStart) {
     if (diffMin < 60) {
-      const rel = diffMin < 1 ? '<1m ago' : `${diffMin}m ago`
+      const rel = diffMin < 1 ? 'just now' : `${diffMin}m ago`
       return { relative: rel, absolute: time }
     }
     return { relative: `${Math.floor(diffMin / 60)}h ago`, absolute: time }

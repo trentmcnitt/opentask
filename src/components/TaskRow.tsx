@@ -201,6 +201,7 @@ export function TaskRow({
           onCheckedChange={() => onSelect?.()}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Select "${task.title}"`}
+          className="size-6"
         />
       ) : (
         <button
@@ -265,9 +266,9 @@ export function TaskRow({
         {hasLine2 && (
           <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
             {metaSegments.map((seg, i) => (
-              <span key={i} className={cn('whitespace-nowrap', seg.className)}>
-                {i > 0 && <span className="text-muted-foreground/50 mr-1">·</span>}
-                {seg.text}
+              <span key={i} className="contents">
+                <span className={cn('whitespace-nowrap', seg.className)}>{seg.text}</span>
+                {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
               </span>
             ))}
           </div>

@@ -132,15 +132,6 @@
   animation: fade-in 0.15s ease-out;
 }
 
-/* Touch-friendly tap targets */
-@media (pointer: coarse) {
-  button,
-  [role='button'] {
-    min-height: 44px;
-    min-width: 44px;
-  }
-}
-
 /* Hide scrollbar for horizontal scroll areas */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

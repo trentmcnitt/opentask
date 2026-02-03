@@ -76,6 +76,7 @@ export default async function globalSetup() {
   ).run(1, 'a'.repeat(64), 'E2E Token')
 
   // Create tasks with specific dates
+  // All dates use future times to ensure tests are time-agnostic (pass at any time of day)
   const tz = 'America/Chicago'
   const tomorrow = DateTime.now()
     .setZone(tz)
@@ -84,20 +85,23 @@ export default async function globalSetup() {
     .toUTC()
     .toISO()!
 
-  const todayEvening = DateTime.now()
+  const tomorrowEvening = DateTime.now()
     .setZone(tz)
+    .plus({ days: 1 })
     .set({ hour: 21, minute: 0, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()!
 
-  const todayMorning = DateTime.now()
+  const tomorrowMorning = DateTime.now()
     .setZone(tz)
+    .plus({ days: 1 })
     .set({ hour: 7, minute: 0, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()!
 
-  const today5pm = DateTime.now()
+  const tomorrow5pm = DateTime.now()
     .setZone(tz)
+    .plus({ days: 1 })
     .set({ hour: 17, minute: 0, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()!
@@ -130,7 +134,7 @@ export default async function globalSetup() {
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `,
-  ).run(2, 1, 2, 'Morning routine', todayMorning, 'FREQ=DAILY', 'from_due', 1)
+  ).run(2, 1, 2, 'Morning routine', tomorrowMorning, 'FREQ=DAILY', 'from_due', 1)
 
   // Recurring daily: "Evening review" at 9 PM
   db.prepare(
@@ -138,7 +142,7 @@ export default async function globalSetup() {
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `,
-  ).run(3, 1, 2, 'Evening review', todayEvening, 'FREQ=DAILY', 'from_due', 1)
+  ).run(3, 1, 2, 'Evening review', tomorrowEvening, 'FREQ=DAILY', 'from_due', 1)
 
   // Recurring weekly: "Weekly standup" Mon 10 AM
   db.prepare(
@@ -148,13 +152,13 @@ export default async function globalSetup() {
   `,
   ).run(4, 1, 3, 'Weekly standup', nextMonday, 'FREQ=WEEKLY;BYDAY=MO', 'from_due', 1)
 
-  // One-off: "Review PRs" due today 5pm
+  // One-off: "Review PRs" due tomorrow 5pm
   db.prepare(
     `
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
     VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(5, 1, 3, 'Review PRs', today5pm, 3)
+  ).run(5, 1, 3, 'Review PRs', tomorrow5pm, 3)
 
   // One-off: "Prepare slides" due +3 days
   db.prepare(

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   snapToNextPreset,
   adjustDate,
@@ -8,6 +8,10 @@ import {
 } from '@/lib/quick-select-dates'
 
 const TZ = 'America/Chicago' // UTC-6 (CST) / UTC-5 (CDT)
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('snapToNextPreset', () => {
   it('returns today if the preset time has not passed', () => {
@@ -118,14 +122,39 @@ describe('initWorkingDate', () => {
 })
 
 describe('formatQuickSelectHeader', () => {
-  it('formats a date with weekday, month, day, and time', () => {
-    // Feb 3, 2025 9:00 AM CST
+  it('shows "Today" for today\'s date', () => {
+    // Feb 3, 2025 9:00 AM CST, now is Feb 3 8 AM CST
+    vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST
     const result = formatQuickSelectHeader('2025-02-03T15:00:00.000Z', TZ)
-    expect(result).toContain('Mon')
+    expect(result).toContain('Today')
     expect(result).toContain('Feb')
     expect(result).toContain('3')
     expect(result).toContain('9:00')
     expect(result).toContain('AM')
+  })
+
+  it('shows "Tomorrow" for tomorrow\'s date', () => {
+    vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
+    const result = formatQuickSelectHeader('2025-02-04T15:00:00.000Z', TZ) // Feb 4 9 AM CST
+    expect(result).toContain('Tomorrow')
+    expect(result).toContain('Feb')
+    expect(result).toContain('4')
+  })
+
+  it('shows "Yesterday" for yesterday\'s date', () => {
+    vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
+    const result = formatQuickSelectHeader('2025-02-02T15:00:00.000Z', TZ) // Feb 2 9 AM CST
+    expect(result).toContain('Yesterday')
+    expect(result).toContain('Feb')
+    expect(result).toContain('2')
+  })
+
+  it('shows weekday for dates beyond yesterday/tomorrow', () => {
+    vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
+    const result = formatQuickSelectHeader('2025-02-05T15:00:00.000Z', TZ) // Feb 5 9 AM CST (Wednesday)
+    expect(result).toContain('Wed')
+    expect(result).toContain('Feb')
+    expect(result).toContain('5')
   })
 })
 
@@ -160,9 +189,15 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(past, now)).toBe('2 days ago')
   })
 
-  it('shows "<1 min" for very small differences', () => {
+  it('shows "in <1 min" for very small future differences', () => {
     const now = new Date('2025-02-03T15:00:00.000Z')
     const near = '2025-02-03T15:00:30.000Z'
     expect(formatRelativeTime(near, now)).toBe('in <1 min')
+  })
+
+  it('shows "just now" for very small past differences', () => {
+    const now = new Date('2025-02-03T15:00:30.000Z')
+    const recent = '2025-02-03T15:00:00.000Z'
+    expect(formatRelativeTime(recent, now)).toBe('just now')
   })
 })

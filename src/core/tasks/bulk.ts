@@ -203,14 +203,12 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     return { tasksAffected: 0, failedIds: [] }
   }
 
-  // Validate snooze target
+  // Validate snooze target is a valid datetime
   const snoozeTarget = new Date(until)
   if (isNaN(snoozeTarget.getTime())) {
     throw new Error('Invalid snooze target datetime')
   }
-  if (snoozeTarget <= new Date()) {
-    throw new Error('Snooze target must be in the future')
-  }
+  // Note: We allow snoozing to past times - tasks will just appear overdue immediately.
 
   const nowStr = nowUtc()
 

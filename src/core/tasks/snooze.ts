@@ -45,14 +45,13 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     throw new Error('Access denied')
   }
 
-  // Validate snooze target is in the future
+  // Validate snooze target is a valid datetime
   const snoozeTarget = new Date(until)
   if (isNaN(snoozeTarget.getTime())) {
     throw new Error('Invalid snooze target datetime')
   }
-  if (snoozeTarget <= new Date()) {
-    throw new Error('Snooze target must be in the future')
-  }
+  // Note: We allow snoozing to past times - the task will just appear overdue immediately.
+  // This lets users adjust due dates freely using the increment/decrement controls.
 
   // Only active tasks can be snoozed (SN-005)
   if (task.done) {

@@ -147,10 +147,28 @@ export function TaskList({
                     selection={selection}
                   />
                 )}
-                <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ids = sortedTasks.map((t) => t.id)
+                    if (selection.isSelectionMode) {
+                      // Toggle: if all selected, deselect all; otherwise select all
+                      const allSelected = ids.every((id) => selection.selectedIds.has(id))
+                      if (allSelected) {
+                        selection.removeAll(ids)
+                      } else {
+                        selection.addAll(ids)
+                      }
+                    } else {
+                      // Enter selection mode and select all in this group
+                      selection.addAll(ids)
+                    }
+                  }}
+                  className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
+                >
                   {group.label}
                   <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
-                </h2>
+                </button>
               </div>
               <SortDropdown
                 sortOption={sortOption}

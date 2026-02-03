@@ -225,11 +225,12 @@ describe('Snooze Validation Tests', () => {
   })
 
   /**
-   * SN-004: Snooze Rejects Past Time
+   * SN-004: Snooze Allows Past Time
    *
-   * Snoozing to a time in the past returns 400 error.
+   * Snoozing to a time in the past is allowed - the task will appear overdue.
+   * This enables users to freely adjust due dates using increment/decrement controls.
    */
-  test('SN-004: Snooze rejects past time', () => {
+  test('SN-004: Snooze allows past time (task appears overdue)', () => {
     // Create task
     const task = createTask({
       userId: TEST_USER_ID,
@@ -240,16 +241,19 @@ describe('Snooze Validation Tests', () => {
       },
     })
 
-    // Try to snooze to past time
+    // Snooze to past time - should succeed
     const pastTime = DateTime.now().setZone(TEST_TIMEZONE).minus({ hours: 1 }).toUTC().toISO()!
 
-    expect(() =>
-      snoozeTask({
-        userId: TEST_USER_ID,
-        taskId: task.id,
-        until: pastTime,
-      }),
-    ).toThrow('Snooze target must be in the future')
+    const result = snoozeTask({
+      userId: TEST_USER_ID,
+      taskId: task.id,
+      until: pastTime,
+    })
+
+    // Task should be snoozed to the past time
+    expect(result.task.due_at).toBe(pastTime)
+    // And it's now overdue
+    expect(new Date(result.task.due_at!).getTime()).toBeLessThan(Date.now())
   })
 
   /**

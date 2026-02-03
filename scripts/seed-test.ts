@@ -112,6 +112,7 @@ export async function seedTestData(): Promise<void> {
   ).run(2, TOKEN_B, 'Test Token B')
 
   // Insert some baseline tasks for User A
+  // Use future dates to ensure tests are time-agnostic (pass at any time of day)
   const tomorrow = DateTime.now()
     .setZone(TEST_USER_A.timezone)
     .plus({ days: 1 })
@@ -119,9 +120,11 @@ export async function seedTestData(): Promise<void> {
     .toUTC()
     .toISO()!
 
-  const today = DateTime.now()
+  // Use tomorrow 7am for "morning" tasks to ensure they're always upcoming
+  const tomorrowMorning = DateTime.now()
     .setZone(TEST_USER_A.timezone)
-    .set({ hour: 17, minute: 0, second: 0, millisecond: 0 })
+    .plus({ days: 1 })
+    .set({ hour: 7, minute: 0, second: 0, millisecond: 0 })
     .toUTC()
     .toISO()!
 
@@ -139,7 +142,7 @@ export async function seedTestData(): Promise<void> {
     INSERT INTO tasks (id, user_id, project_id, title, due_at, rrule, recurrence_mode, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `,
-  ).run(2, 1, 2, 'Morning routine', today, 'FREQ=DAILY', 'from_due', 1)
+  ).run(2, 1, 2, 'Morning routine', tomorrowMorning, 'FREQ=DAILY', 'from_due', 1)
 
   // Task for User B (isolation test)
   db.prepare(
@@ -155,7 +158,7 @@ export async function seedTestData(): Promise<void> {
     INSERT INTO tasks (id, user_id, project_id, title, due_at, priority, labels)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `,
-  ).run(4, 1, 3, 'Review PRs', today, 3, '["work","dev"]')
+  ).run(4, 1, 3, 'Review PRs', tomorrowMorning, 3, '["work","dev"]')
 
   db.prepare(
     `
