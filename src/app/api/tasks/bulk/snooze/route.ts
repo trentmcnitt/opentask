@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
 
     const result = bulkSnooze({
       userId: user.id,
+      userTimezone: user.timezone,
       taskIds: input.ids,
       until: input.until,
       deltaMinutes: input.delta_minutes,

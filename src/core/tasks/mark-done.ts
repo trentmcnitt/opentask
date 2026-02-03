@@ -8,6 +8,7 @@ import { withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 
@@ -58,7 +59,7 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   if (isRecurring(task.rrule)) {
     return markRecurringDone(task, userId, userTimezone, now, nowStr)
   } else {
-    return markOneOffDone(task, userId, nowStr)
+    return markOneOffDone(task, userId, userTimezone, nowStr)
   }
 }
 
@@ -84,6 +85,11 @@ function markRecurringDone(
   const nextDueAt = nextOccurrence.toISOString()
   const prevDueAt = task.due_at
 
+  // Compute new stats values
+  const newCompletionCount = task.completion_count + 1
+  const newFirstCompletedAt = task.first_completed_at ?? nowStr
+  const newLastCompletedAt = nowStr
+
   return withTransaction((tx) => {
     // Create completion record
     const completionResult = tx
@@ -97,20 +103,25 @@ function markRecurringDone(
 
     const completionId = Number(completionResult.lastInsertRowid)
 
-    // Update task: advance due_at, clear snoozed_from
+    // Update task: advance due_at, clear snoozed_from, update completion stats
     tx.prepare(
       `
       UPDATE tasks
-      SET due_at = ?, snoozed_from = NULL, updated_at = ?
+      SET due_at = ?, snoozed_from = NULL,
+          completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+          updated_at = ?
       WHERE id = ?
     `,
-    ).run(nextDueAt, nowStr, task.id)
+    ).run(nextDueAt, newCompletionCount, newFirstCompletedAt, newLastCompletedAt, nowStr, task.id)
 
     // Build snapshot with completion data for redo
     const afterState: Partial<Task> & { _completion?: unknown } = {
       id: task.id,
       due_at: nextDueAt,
       snoozed_from: null,
+      completion_count: newCompletionCount,
+      first_completed_at: newFirstCompletedAt,
+      last_completed_at: newLastCompletedAt,
       _completion: {
         user_id: userId,
         completed_at: nowStr,
@@ -125,13 +136,26 @@ function markRecurringDone(
         id: task.id,
         due_at: task.due_at,
         snoozed_from: task.snoozed_from,
+        completion_count: task.completion_count,
+        first_completed_at: task.first_completed_at,
+        last_completed_at: task.last_completed_at,
       },
       after_state: afterState,
       completion_id: completionId,
     }
 
     // Log to undo
-    logAction(userId, 'done', `Marked "${task.title}" done`, ['due_at', 'snoozed_from'], [snapshot])
+    const fieldsChanged = [
+      'due_at',
+      'snoozed_from',
+      'completion_count',
+      'first_completed_at',
+      'last_completed_at',
+    ]
+    logAction(userId, 'done', `Marked "${task.title}" done`, fieldsChanged, [snapshot])
+
+    // Increment daily stats
+    incrementDailyStat(userId, 'completions', userTimezone)
 
     // Return updated task
     const updatedTask = getTaskById(task.id)
@@ -150,30 +174,83 @@ function markRecurringDone(
 /**
  * Mark a one-off task done - set done=1 and archive
  */
-function markOneOffDone(task: Task, userId: number, nowStr: string): MarkDoneResult {
+function markOneOffDone(
+  task: Task,
+  userId: number,
+  userTimezone: string,
+  nowStr: string,
+): MarkDoneResult {
+  // Compute new stats values
+  const newCompletionCount = task.completion_count + 1
+  const newFirstCompletedAt = task.first_completed_at ?? nowStr
+  const newLastCompletedAt = nowStr
+
   return withTransaction((tx) => {
-    // Update task: set done=1, done_at, archived_at
+    // Update task: set done=1, done_at, archived_at, update completion stats
     tx.prepare(
       `
       UPDATE tasks
-      SET done = 1, done_at = ?, archived_at = ?, updated_at = ?
+      SET done = 1, done_at = ?, archived_at = ?,
+          completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+          updated_at = ?
       WHERE id = ?
     `,
-    ).run(nowStr, nowStr, nowStr, task.id)
+    ).run(
+      nowStr,
+      nowStr,
+      newCompletionCount,
+      newFirstCompletedAt,
+      newLastCompletedAt,
+      nowStr,
+      task.id,
+    )
 
     // Log to undo
     const snapshot = createTaskSnapshot(
-      { id: task.id, done: false, done_at: null, archived_at: null },
-      { id: task.id, done: true, done_at: nowStr, archived_at: nowStr },
-      ['done', 'done_at', 'archived_at'],
+      {
+        id: task.id,
+        done: false,
+        done_at: null,
+        archived_at: null,
+        completion_count: task.completion_count,
+        first_completed_at: task.first_completed_at,
+        last_completed_at: task.last_completed_at,
+      },
+      {
+        id: task.id,
+        done: true,
+        done_at: nowStr,
+        archived_at: nowStr,
+        completion_count: newCompletionCount,
+        first_completed_at: newFirstCompletedAt,
+        last_completed_at: newLastCompletedAt,
+      },
+      [
+        'done',
+        'done_at',
+        'archived_at',
+        'completion_count',
+        'first_completed_at',
+        'last_completed_at',
+      ],
     )
     logAction(
       userId,
       'done',
       `Marked "${task.title}" done`,
-      ['done', 'done_at', 'archived_at'],
+      [
+        'done',
+        'done_at',
+        'archived_at',
+        'completion_count',
+        'first_completed_at',
+        'last_completed_at',
+      ],
       [snapshot],
     )
+
+    // Increment daily stats
+    incrementDailyStat(userId, 'completions', userTimezone)
 
     // Return updated task
     const updatedTask = getTaskById(task.id)

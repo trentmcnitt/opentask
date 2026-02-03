@@ -5,12 +5,15 @@ import {
   snapToNextPreset,
   formatQuickSelectHeader,
   formatRelativeTime,
+  formatDeltaText,
 } from '@/lib/quick-select-dates'
 
 interface UseQuickSelectDateOptions {
   dueAt: string | null
   timezone: string
 }
+
+type OperationType = 'preset' | 'delta' | null
 
 interface UseQuickSelectDateResult {
   /** Current working date (UTC ISO string) */
@@ -19,7 +22,7 @@ interface UseQuickSelectDateResult {
   isDirty: boolean
   /** Formatted header text: "Mon, Feb 2 at 6:50 PM" */
   headerText: string
-  /** Formatted relative text: "in 26 mins" or "3h ago" */
+  /** Formatted relative text: "in 26 mins" or "3h ago" or "in 2h (snoozing +1h)" */
   relativeText: string
   /** Whether the working date is in the past */
   isPast: boolean
@@ -41,6 +44,8 @@ export function useQuickSelectDate({
   const [workingDate, setWorkingDate] = useState(() => initWorkingDate(dueAt))
   const [tick, setTick] = useState(0)
   const [prevDueAt, setPrevDueAt] = useState(dueAt)
+  const [operationType, setOperationType] = useState<OperationType>(null)
+  const [deltaMinutes, setDeltaMinutes] = useState(0)
 
   // Reset when the task's due_at changes externally
   if (dueAt !== prevDueAt) {
@@ -48,6 +53,8 @@ export function useQuickSelectDate({
     const newInitial = initWorkingDate(dueAt)
     setInitialDate(newInitial)
     setWorkingDate(newInitial)
+    setOperationType(null)
+    setDeltaMinutes(0)
   }
 
   // Auto-refresh relative time every 15 seconds
@@ -59,6 +66,8 @@ export function useQuickSelectDate({
   const applyPreset = useCallback(
     (hour: number, minute: number) => {
       setWorkingDate(snapToNextPreset(hour, minute, timezone))
+      setOperationType('preset')
+      setDeltaMinutes(0)
     },
     [timezone],
   )
@@ -66,12 +75,25 @@ export function useQuickSelectDate({
   const applyIncrement = useCallback(
     (increment: { minutes: number | null; days?: number }) => {
       setWorkingDate((prev) => adjustDate(prev, increment, timezone))
+      setOperationType('delta')
+
+      // Convert day-based increments to minutes for accumulation
+      let minutesToAdd: number
+      if (increment.minutes === null && increment.days) {
+        minutesToAdd = increment.days * 24 * 60
+      } else {
+        minutesToAdd = increment.minutes ?? 0
+      }
+
+      setDeltaMinutes((prev) => prev + minutesToAdd)
     },
     [timezone],
   )
 
   const reset = useCallback(() => {
     setWorkingDate(initialDate)
+    setOperationType(null)
+    setDeltaMinutes(0)
   }, [initialDate])
 
   const isDirty = workingDate !== initialDate
@@ -81,8 +103,18 @@ export function useQuickSelectDate({
 
   const now = new Date()
   const headerText = formatQuickSelectHeader(workingDate, timezone)
-  const relativeText = formatRelativeTime(workingDate, now)
   const isPast = new Date(workingDate) < now
+
+  // Compute relativeText based on operation type
+  let relativeText: string
+  if (operationType === 'delta' && deltaMinutes !== 0) {
+    // Delta mode: show "in 2h (snoozing +1h)" like bulk mode
+    const relativeFromNow = formatRelativeTime(workingDate, now)
+    const deltaStr = formatDeltaText(deltaMinutes)
+    relativeText = `${relativeFromNow} (snoozing ${deltaStr})`
+  } else {
+    relativeText = formatRelativeTime(workingDate, now)
+  }
 
   return {
     workingDate,

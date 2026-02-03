@@ -86,6 +86,46 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('users', 'label_config')) {
     database.exec("ALTER TABLE users ADD COLUMN label_config TEXT NOT NULL DEFAULT '[]'")
   }
+
+  // Migration: Add per-task stats columns
+  if (!hasColumn('tasks', 'completion_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN completion_count INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn('tasks', 'snooze_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN snooze_count INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn('tasks', 'first_completed_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN first_completed_at TEXT')
+  }
+  if (!hasColumn('tasks', 'last_completed_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN last_completed_at TEXT')
+  }
+  if (!hasColumn('tasks', 'meta_notes')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN meta_notes TEXT')
+  }
+
+  // Migration: Create user_daily_stats table if it doesn't exist
+  // This is handled by schema.sql CREATE TABLE IF NOT EXISTS, but we need
+  // to ensure the table exists for older databases that ran schema.sql
+  // before this table was added
+  const hasStatsTable = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='user_daily_stats'")
+    .get()
+  if (!hasStatsTable) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS user_daily_stats (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       INTEGER NOT NULL REFERENCES users(id),
+        date          TEXT NOT NULL,
+        completions   INTEGER NOT NULL DEFAULT 0,
+        tasks_created INTEGER NOT NULL DEFAULT 0,
+        snoozes       INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(user_id, date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_daily_stats_user_date
+        ON user_daily_stats(user_id, date);
+    `)
+  }
 }
 
 export function closeDb(): void {

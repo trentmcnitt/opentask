@@ -3,6 +3,7 @@ import { DateTime } from 'luxon'
 import {
   formatQuickSelectHeader,
   formatRelativeTime,
+  formatDeltaText,
   snapToNextPreset,
 } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
@@ -128,27 +129,6 @@ function computeInitialDisplay(
   }
 }
 
-/**
- * Format delta minutes for display: "+1h 30m" or "+1h 30m from each"
- */
-function formatDeltaText(deltaMinutes: number, showFromEach: boolean): string {
-  const absDelta = Math.abs(deltaMinutes)
-  const sign = deltaMinutes >= 0 ? '+' : '-'
-  const hours = Math.floor(absDelta / 60)
-  const minutes = absDelta % 60
-
-  let text: string
-  if (hours > 0 && minutes > 0) {
-    text = `${sign}${hours}h ${minutes}m`
-  } else if (hours > 0) {
-    text = `${sign}${hours}h`
-  } else {
-    text = `${sign}${minutes}m`
-  }
-
-  return showFromEach ? `${text} from each` : text
-}
-
 export function useBulkQuickSelectDate({
   tasks,
   timezone,
@@ -238,10 +218,10 @@ export function useBulkQuickSelectDate({
         isPast: new Date(earliestDueAt) < now,
       }
     }
-    // Mixed dates
+    // Mixed dates - just show relative time of earliest, no "Earliest:" prefix
     const dueDates = tasks.map((t) => t.due_at).filter((d): d is string => d !== null)
     return {
-      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, now)}`,
+      relativeText: formatRelativeTime(earliestDueAt, now),
       isPast: hasMixedDates && dueDates.some((d) => new Date(d) < now),
     }
   }
@@ -265,13 +245,15 @@ export function useBulkQuickSelectDate({
       const newTime = new Date(new Date(earliestDueAt).getTime() + deltaMinutes * 60 * 1000)
       const newTimeIso = newTime.toISOString()
       headerText = formatQuickSelectHeader(newTimeIso, timezone)
-      // Show delta in relative text: "(+1h)" or "(-30m)"
-      relativeText = formatDeltaText(deltaMinutes, false)
+      // Combined: "in 2h (snoozing +1h)" or "1h ago (snoozing +1h)"
+      const relativeFromNow = formatRelativeTime(newTimeIso, now)
+      const deltaStr = formatDeltaText(deltaMinutes)
+      relativeText = `${relativeFromNow} (snoozing ${deltaStr})`
       isPast = newTime < now
     } else {
       // Mixed dates: show original header with "+Xh from each"
       headerText = initialDisplay.headerText
-      relativeText = formatDeltaText(deltaMinutes, true)
+      relativeText = `${formatDeltaText(deltaMinutes)} from each`
       isPast = false
     }
   } else {

@@ -68,6 +68,7 @@ export const taskUpdateSchema = z.object({
   project_id: z.number().int().positive().optional(),
   priority: priority.optional(),
   labels: labels.optional(),
+  meta_notes: z.string().max(5000, 'Meta notes too long').nullable().optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>

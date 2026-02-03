@@ -222,3 +222,29 @@ export function formatRelativeTime(isoUtc: string, now?: Date): string {
 
   return isPast ? `${text} ago` : `in ${text}`
 }
+
+/**
+ * Format delta minutes for display: "+1h 30m", "+2d 2h", "-30m", etc.
+ * Used by both single-task and bulk snooze to show the delta applied.
+ */
+export function formatDeltaText(deltaMinutes: number): string {
+  const absDelta = Math.abs(deltaMinutes)
+  const sign = deltaMinutes >= 0 ? '+' : '-'
+
+  const totalHours = Math.floor(absDelta / 60)
+  const minutes = absDelta % 60
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+
+  if (days > 0 && hours > 0) {
+    return `${sign}${days}d ${hours}h`
+  } else if (days > 0) {
+    return `${sign}${days}d`
+  } else if (hours > 0 && minutes > 0) {
+    return `${sign}${hours}h ${minutes}m`
+  } else if (hours > 0) {
+    return `${sign}${hours}h`
+  } else {
+    return `${sign}${minutes}m`
+  }
+}

@@ -81,6 +81,7 @@ describe('Snooze Behavioral Tests', () => {
     const snoozeTo = futureLocalTime(14, 0, 1)
     const result = snoozeTask({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       until: snoozeTo,
     })
@@ -118,6 +119,7 @@ describe('Snooze Behavioral Tests', () => {
     const firstSnoozeTime = futureLocalTime(14, 0, 1)
     snoozeTask({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       until: firstSnoozeTime,
     })
@@ -131,6 +133,7 @@ describe('Snooze Behavioral Tests', () => {
     const secondSnoozeTime = futureLocalTime(16, 0, 1)
     const result = snoozeTask({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       until: secondSnoozeTime,
     })
@@ -170,6 +173,7 @@ describe('Snooze Behavioral Tests', () => {
     const snoozeTo = futureLocalTime(14, 0, 1)
     snoozeTask({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       until: snoozeTo,
     })
@@ -246,6 +250,7 @@ describe('Snooze Validation Tests', () => {
 
     const result = snoozeTask({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskId: task.id,
       until: pastTime,
     })
@@ -288,6 +293,7 @@ describe('Snooze Validation Tests', () => {
       expect(() =>
         snoozeTask({
           userId: TEST_USER_ID,
+          userTimezone: TEST_TIMEZONE,
           taskId: task.id,
           until: futureTime(3),
         }),
@@ -318,6 +324,7 @@ describe('Snooze Validation Tests', () => {
       expect(() =>
         snoozeTask({
           userId: TEST_USER_ID,
+          userTimezone: TEST_TIMEZONE,
           taskId: task.id,
           until: futureTime(3),
         }),

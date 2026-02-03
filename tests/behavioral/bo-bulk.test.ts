@@ -370,6 +370,7 @@ describe('Bulk Snooze Relative Mode', () => {
     // Bulk snooze with delta of +90 minutes
     const result = bulkSnooze({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskIds: [task1.id, task2.id],
       deltaMinutes: 90,
     })
@@ -412,6 +413,7 @@ describe('Bulk Snooze Relative Mode', () => {
     // Snooze backwards by 30 minutes
     const result = bulkSnooze({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskIds: [task.id],
       deltaMinutes: -30,
     })
@@ -443,6 +445,7 @@ describe('Bulk Snooze Relative Mode', () => {
     // Snooze by +60 minutes
     const result = bulkSnooze({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskIds: [task.id],
       deltaMinutes: 60,
     })
@@ -485,6 +488,7 @@ describe('Bulk Snooze Relative Mode', () => {
     // Bulk snooze
     bulkSnooze({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskIds: [task1.id, task2.id],
       deltaMinutes: 60,
     })
@@ -526,6 +530,7 @@ describe('Bulk Snooze Relative Mode', () => {
     expect(() =>
       bulkSnooze({
         userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
         taskIds: [task.id],
         until: localTime(12, 0),
         deltaMinutes: 60,
@@ -549,6 +554,7 @@ describe('Bulk Snooze Relative Mode', () => {
     expect(() =>
       bulkSnooze({
         userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
         taskIds: [task.id],
         // Neither until nor deltaMinutes provided
       }),
@@ -581,6 +587,7 @@ describe('Bulk Snooze Relative Mode', () => {
 
     const result = bulkSnooze({
       userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
       taskIds: [task1.id, task2.id],
       until: targetTime,
     })

@@ -34,6 +34,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const result = snoozeTask({
       userId: user.id,
+      userTimezone: user.timezone,
       taskId,
       until: input.until,
     })

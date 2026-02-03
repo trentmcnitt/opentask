@@ -59,6 +59,13 @@ export interface Task {
   // Labels
   labels: string[]
 
+  // Per-task stats (survive beyond completions retention)
+  completion_count: number
+  snooze_count: number
+  first_completed_at: string | null
+  last_completed_at: string | null
+  meta_notes: string | null
+
   created_at: string
   updated_at: string
 }
@@ -96,6 +103,34 @@ export interface UndoLogEntry {
   snapshot: UndoSnapshot[] // JSON array
   created_at: string
   undone: boolean
+}
+
+export interface DailyStat {
+  id: number
+  user_id: number
+  date: string // YYYY-MM-DD in user's timezone
+  completions: number
+  tasks_created: number
+  snoozes: number
+}
+
+export interface StatsSummary {
+  today: DailyStat | null
+  week: {
+    completions: number
+    tasks_created: number
+    snoozes: number
+  }
+  month: {
+    completions: number
+    tasks_created: number
+    snoozes: number
+  }
+  all_time: {
+    completions: number
+    tasks_created: number
+    snoozes: number
+  }
 }
 
 export type UndoAction =

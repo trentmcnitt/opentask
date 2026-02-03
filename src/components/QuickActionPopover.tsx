@@ -23,10 +23,14 @@ interface QuickActionPopoverProps {
   onClose: () => void
   /** Called to save the date change (snooze or patch) */
   onDateSave: (taskId: number, isoUtc: string) => void
-  /** Called on priority change */
+  /** Called on priority change with absolute priority (0-4) */
   onPriorityChange?: (taskId: number, newPriority: number) => void
   /** Called to delete task */
   onDelete?: (taskId: number) => void
+  /** Called to navigate to task detail page */
+  onNavigateToDetail?: (taskId: number) => void
+  /** Called to open project picker for task */
+  onMoveToProject?: (taskId: number) => void
 }
 
 export function QuickActionPopover({
@@ -36,9 +40,15 @@ export function QuickActionPopover({
   onDateSave,
   onPriorityChange,
   onDelete,
+  onNavigateToDetail,
+  onMoveToProject,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
   const [isMobile, setIsMobile] = useState(false)
+  // Track pending date change - use state keyed by open+taskId to auto-reset
+  const [pendingDate, setPendingDate] = useState<string | null>(null)
+  // Track the task ID we last had a pending date for, to reset when task changes
+  const lastTaskIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 640)
@@ -47,27 +57,51 @@ export function QuickActionPopover({
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // Track date changes but don't save immediately
   const handleDateChange = useCallback(
     (isoUtc: string) => {
-      if (focusedTask) {
-        onDateSave(focusedTask.id, isoUtc)
-      }
-      onClose()
+      // If task changed since last pending date, this will naturally overwrite
+      setPendingDate(isoUtc)
+      lastTaskIdRef.current = focusedTask?.id ?? null
     },
-    [focusedTask, onDateSave, onClose],
+    [focusedTask?.id],
   )
 
+  // Save button: apply pending date change and close
+  const handleSave = useCallback(() => {
+    // Only save if pending date is for the current task
+    if (focusedTask && pendingDate && lastTaskIdRef.current === focusedTask.id) {
+      onDateSave(focusedTask.id, pendingDate)
+    }
+    setPendingDate(null)
+    onClose()
+  }, [focusedTask, pendingDate, onDateSave, onClose])
+
+  // Cancel button: discard changes and close
+  const handleCancel = useCallback(() => {
+    setPendingDate(null)
+    onClose()
+  }, [onClose])
+
   const handlePriorityChange = useCallback(
-    (delta: 1 | -1) => {
+    (priority: number) => {
       if (!focusedTask || !onPriorityChange) return
-      const current = focusedTask.priority || 0
-      const next = Math.max(0, Math.min(4, current + delta))
-      if (next !== current) {
-        onPriorityChange(focusedTask.id, next)
-      }
+      onPriorityChange(focusedTask.id, priority)
     },
     [focusedTask, onPriorityChange],
   )
+
+  const handleNavigateToDetail = useCallback(() => {
+    if (!focusedTask || !onNavigateToDetail) return
+    onNavigateToDetail(focusedTask.id)
+    onClose()
+  }, [focusedTask, onNavigateToDetail, onClose])
+
+  const handleMoveToProject = useCallback(() => {
+    if (!focusedTask || !onMoveToProject) return
+    onMoveToProject(focusedTask.id)
+    onClose()
+  }, [focusedTask, onMoveToProject, onClose])
 
   const handleDelete = useCallback(() => {
     if (focusedTask && onDelete) {
@@ -76,6 +110,17 @@ export function QuickActionPopover({
     }
   }, [focusedTask, onDelete, onClose])
 
+  // Handle dialog/sheet close - reset pending date
+  const handleOpenChange = useCallback(
+    (newOpen: boolean) => {
+      if (!newOpen) {
+        setPendingDate(null)
+        onClose()
+      }
+    },
+    [onClose],
+  )
+
   if (!focusedTask) return null
 
   const panel = (
@@ -83,16 +128,19 @@ export function QuickActionPopover({
       task={focusedTask}
       timezone={timezone}
       mode={isMobile ? 'sheet' : 'popover'}
-      open={open}
       onDateChange={handleDateChange}
-      onPriorityChange={handlePriorityChange}
+      onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
       onDelete={onDelete ? handleDelete : undefined}
+      onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
+      onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
+      onSave={handleSave}
+      onCancel={handleCancel}
     />
   )
 
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
           <SheetHeader>
             <SheetTitle>Quick Actions</SheetTitle>
@@ -108,8 +156,8 @@ export function QuickActionPopover({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="w-96 max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
         <VisuallyHidden>
           <DialogTitle>Quick Actions</DialogTitle>
           <DialogDescription>Adjust date, priority, and other task settings</DialogDescription>

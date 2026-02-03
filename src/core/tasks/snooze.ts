@@ -10,11 +10,13 @@ import { withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 
 export interface SnoozeTaskOptions {
   userId: number
+  userTimezone: string
   taskId: number
   until: string // ISO 8601 datetime
 }
@@ -32,7 +34,7 @@ export interface SnoozeResult {
  * - Re-snooze: preserves existing snoozed_from (the original)
  */
 export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
-  const { userId, taskId, until } = options
+  const { userId, userTimezone, taskId, until } = options
 
   // Get current task state
   const task = getTaskById(taskId)
@@ -69,24 +71,48 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // - Re-snooze (snoozed_from already set): keep existing snoozed_from
   const newSnoozedFrom = task.snoozed_from ?? task.due_at
 
+  // Only increment snooze_count on first snooze (when snoozed_from goes from null to a value)
+  const isFirstSnooze = task.snoozed_from === null
+  const newSnoozeCount = isFirstSnooze ? task.snooze_count + 1 : task.snooze_count
+
   // Execute snooze and undo log in a transaction
   return withTransaction((db) => {
     // Update task
     db.prepare(
       `
       UPDATE tasks
-      SET due_at = ?, snoozed_from = ?, updated_at = ?
+      SET due_at = ?, snoozed_from = ?, snooze_count = ?, updated_at = ?
       WHERE id = ?
     `,
-    ).run(until, newSnoozedFrom, nowStr, taskId)
+    ).run(until, newSnoozedFrom, newSnoozeCount, nowStr, taskId)
+
+    // Build snapshot - only include snooze_count if it changed
+    const fieldsChanged = ['due_at', 'snoozed_from']
+    const beforeState: Partial<Task> & { id: number } = {
+      id: taskId,
+      due_at: task.due_at,
+      snoozed_from: task.snoozed_from,
+    }
+    const afterState: Partial<Task> & { id: number } = {
+      id: taskId,
+      due_at: until,
+      snoozed_from: newSnoozedFrom,
+    }
+
+    if (isFirstSnooze) {
+      fieldsChanged.push('snooze_count')
+      beforeState.snooze_count = task.snooze_count
+      afterState.snooze_count = newSnoozeCount
+    }
 
     // Log to undo
-    const snapshot = createTaskSnapshot(
-      { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
-      { id: taskId, due_at: until, snoozed_from: newSnoozedFrom },
-      ['due_at', 'snoozed_from'],
-    )
-    logAction(userId, 'snooze', `Snoozed "${task.title}"`, ['due_at', 'snoozed_from'], [snapshot])
+    const snapshot = createTaskSnapshot(beforeState, afterState, fieldsChanged)
+    logAction(userId, 'snooze', `Snoozed "${task.title}"`, fieldsChanged, [snapshot])
+
+    // Increment daily stats only on first snooze
+    if (isFirstSnooze) {
+      incrementDailyStat(userId, 'snoozes', userTimezone)
+    }
 
     // Return updated task
     const updatedTask = getTaskById(taskId)

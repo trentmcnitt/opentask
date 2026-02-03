@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Notification tracking (30-min cooldown)
   last_notified_at TEXT,
 
+  -- Per-task stats (survive beyond completions retention)
+  completion_count   INTEGER NOT NULL DEFAULT 0,
+  snooze_count       INTEGER NOT NULL DEFAULT 0,
+  first_completed_at TEXT,
+  last_completed_at  TEXT,
+  meta_notes         TEXT,
+
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -99,6 +106,17 @@ CREATE TABLE IF NOT EXISTS undo_log (
   undone         INTEGER NOT NULL DEFAULT 0
 );
 
+-- User daily stats table (aggregate stats with daily granularity)
+CREATE TABLE IF NOT EXISTS user_daily_stats (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  date          TEXT NOT NULL,  -- YYYY-MM-DD in user's timezone
+  completions   INTEGER NOT NULL DEFAULT 0,
+  tasks_created INTEGER NOT NULL DEFAULT 0,
+  snoozes       INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, date)
+);
+
 -- Indexes for query performance
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
@@ -121,3 +139,8 @@ CREATE INDEX IF NOT EXISTS idx_undo_log_user_id ON undo_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_undo_log_undone ON undo_log(user_id, undone);
 
 CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_daily_stats_user_date
+  ON user_daily_stats(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_user_daily_stats_date
+  ON user_daily_stats(date);

@@ -171,7 +171,30 @@ function useTaskActions(
     [fetchTasks],
   )
 
-  return { handleDone, handleSnooze, handleUndo, handleQuickAdd }
+  const handlePriorityChange = useCallback(
+    async (taskId: number, newPriority: number) => {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t)))
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priority: newPriority }),
+        })
+        if (!res.ok) throw new Error('Failed to update priority')
+        fetchTasks()
+        showToast({
+          message: 'Priority updated',
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+      } catch {
+        fetchTasks()
+      }
+    },
+    [setTasks, fetchTasks, handleUndo],
+  )
+
+  return { handleDone, handleSnooze, handleUndo, handleQuickAdd, handlePriorityChange }
 }
 
 function useBulkActions(
@@ -509,6 +532,9 @@ function HomeContent() {
       onTaskFocus={setFocusedTask}
       onQuickActionClose={() => setQuickActionOpen(false)}
       onQuickActionDateSave={actions.handleSnooze}
+      onQuickActionPriorityChange={actions.handlePriorityChange}
+      onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
+      onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
     />
   )
 }
@@ -546,6 +572,9 @@ function DashboardView({
   onTaskFocus,
   onQuickActionClose,
   onQuickActionDateSave,
+  onQuickActionPriorityChange,
+  onQuickActionNavigate,
+  onNavigateToDetail,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -579,6 +608,9 @@ function DashboardView({
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
   onQuickActionDateSave: (taskId: number, until: string) => void
+  onQuickActionPriorityChange: (taskId: number, newPriority: number) => void
+  onQuickActionNavigate: (taskId: number) => void
+  onNavigateToDetail: (taskId: number) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -650,9 +682,7 @@ function DashboardView({
         }
         onSnoozeRelative={onBulkSnoozeRelative}
         onDelete={onBulkDelete}
-        onPriorityChange={(delta) => {
-          // Priority up: set to high (3), down: set to low (1)
-          const priority = delta > 0 ? 3 : 1
+        onPriorityChange={(priority) => {
           onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
             changes: { priority },
@@ -660,6 +690,7 @@ function DashboardView({
         }}
         onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
+        onNavigateToDetail={onNavigateToDetail}
       />
 
       <SnoozeAllFab
@@ -689,6 +720,8 @@ function DashboardView({
         open={quickActionOpen}
         onClose={onQuickActionClose}
         onDateSave={onQuickActionDateSave}
+        onPriorityChange={onQuickActionPriorityChange}
+        onNavigateToDetail={onQuickActionNavigate}
       />
     </div>
   )

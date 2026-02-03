@@ -1,11 +1,21 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
-import { ArrowUp, ArrowDown, Repeat, Timer, Bell, FolderInput, Trash2 } from 'lucide-react'
+import { Repeat, Timer, Bell, FolderInput, Trash2, MoreHorizontal, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
+import { formatRRuleCompact } from '@/lib/format-rrule'
 import { PRESET_TIMES, INCREMENTS, DECREMENTS } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
 
@@ -18,14 +28,14 @@ export interface QuickActionPanelProps {
   selectedCount?: number
   /** User's IANA timezone */
   timezone: string
-  /** "inline" shows Apply button; "popover"/"sheet" auto-saves on dismiss */
+  /** "inline" shows Apply button; "popover"/"sheet" show Save/Cancel when dirty */
   mode: 'inline' | 'popover' | 'sheet'
   /** Called with the final date when saving (absolute mode) */
   onDateChange: (isoUtc: string) => void
   /** Called with delta minutes when saving (relative mode, bulk only) */
   onDateChangeRelative?: (deltaMinutes: number) => void
-  /** Called on priority change (fires immediately) */
-  onPriorityChange?: (delta: 1 | -1) => void
+  /** Called with absolute priority value (0=none, 1=low, 2=medium, 3=high, 4=urgent) */
+  onPriorityChange?: (priority: number) => void
   /** Called to open recurrence editor */
   onRecurrence?: () => void
   /** Called to open project picker */
@@ -34,6 +44,12 @@ export interface QuickActionPanelProps {
   onDelete?: () => void
   /** Whether the panel is open (used for auto-save on close in popover/sheet modes) */
   open?: boolean
+  /** Called when user clicks Cancel (resets changes, closes without saving) */
+  onCancel?: () => void
+  /** Called when user clicks Save (applies changes, closes) */
+  onSave?: () => void
+  /** Called when user wants to navigate to task detail (single task only) */
+  onNavigateToDetail?: () => void
   /** Hide recurrence icon (e.g. in bulk mode) */
   hideRecurrence?: boolean
 }
@@ -51,6 +67,9 @@ export function QuickActionPanel({
   onMoveToProject,
   onDelete,
   open = true,
+  onCancel,
+  onSave,
+  onNavigateToDetail,
   hideRecurrence = false,
 }: QuickActionPanelProps) {
   // Determine if we're in bulk mode (no single task, but multiple selected)
@@ -73,6 +92,8 @@ export function QuickActionPanel({
   const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
   const applyPreset = isBulkMode ? bulkHook.applyPreset : singleHook.applyPreset
   const applyIncrement = isBulkMode ? bulkHook.applyIncrement : singleHook.applyIncrement
+  const reset = isBulkMode ? bulkHook.reset : singleHook.reset
+  const workingDate = singleHook.workingDate
 
   const handleApply = useCallback(() => {
     if (isBulkMode) {
@@ -83,65 +104,88 @@ export function QuickActionPanel({
         onDateChangeRelative(result.deltaMinutes)
       }
     } else {
-      onDateChange(singleHook.workingDate)
+      onDateChange(workingDate)
     }
-  }, [isBulkMode, bulkHook, singleHook.workingDate, onDateChange, onDateChangeRelative])
+  }, [isBulkMode, bulkHook, workingDate, onDateChange, onDateChangeRelative])
 
-  // Auto-save on dismiss for popover/sheet modes:
-  // When `open` transitions from true to false, fire appropriate callback if dirty.
-  const handleApplyRef = useRef(handleApply)
+  // Auto-save on dismiss for popover/sheet modes when NOT using explicit save/cancel
+  // (legacy behavior when onSave/onCancel are not provided)
+  const workingDateRef = useRef(workingDate)
   const isDirtyRef = useRef(isDirty)
   useEffect(() => {
-    handleApplyRef.current = handleApply
+    workingDateRef.current = workingDate
     isDirtyRef.current = isDirty
-  }, [handleApply, isDirty])
+  }, [workingDate, isDirty])
 
   const prevOpenRef = useRef(open)
   useEffect(() => {
+    // Only auto-save if no explicit save/cancel handlers (legacy mode)
     if (
+      !onSave &&
+      !onCancel &&
       prevOpenRef.current &&
       !open &&
       isDirtyRef.current &&
       (mode === 'popover' || mode === 'sheet')
     ) {
-      handleApplyRef.current()
+      onDateChange(workingDateRef.current)
     }
     prevOpenRef.current = open
-  }, [open, mode])
+  }, [open, mode, onDateChange, onSave, onCancel])
 
-  const title = selectedCount
-    ? `${selectedCount} task${selectedCount !== 1 ? 's' : ''} selected`
-    : (task?.title ?? 'Set date')
+  const handleSave = useCallback(() => {
+    if (isDirty) {
+      handleApply()
+    }
+    onSave?.()
+  }, [isDirty, handleApply, onSave])
+
+  const handleCancel = useCallback(() => {
+    reset()
+    onCancel?.()
+  }, [reset, onCancel])
+
+  // Compute title: multiple tasks shows count, single task in bulk mode hides title (modal shows it)
+  // For inline/popover mode with single task, show the title
+  const title =
+    selectedCount && selectedCount > 1
+      ? `${selectedCount} tasks selected`
+      : selectedCount === 1
+        ? null // Single task in sheet mode - modal title shows task name
+        : (task?.title ?? 'Set date')
+
+  // Compute recurrence text for header (only show if task has rrule, not just "always visible")
+  const recurrenceText = (() => {
+    if (isBulkMode) return null // No recurrence display in bulk mode
+    const rrule = task?.rrule
+    if (!rrule) return null
+    return formatRRuleCompact(rrule)
+  })()
+
+  // Is this a single task? (not bulk mode)
+  const isSingleTask = !isBulkMode && !!task
 
   return (
     <div className="space-y-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{title}</p>
+          {title && <p className="truncate text-sm font-medium">{title}</p>}
           <p className="text-muted-foreground text-xs">
             <span>{headerText}</span>
             <span className="mx-1">&middot;</span>
             <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
+            {recurrenceText && (
+              <>
+                <span className="mx-1">&middot;</span>
+                <span>{recurrenceText}</span>
+              </>
+            )}
           </p>
         </div>
 
         {/* Action icons */}
         <div className="flex items-center gap-0.5">
-          {onPriorityChange && (
-            <>
-              <IconButton
-                icon={<ArrowUp className="size-4" />}
-                label="Priority up"
-                onClick={() => onPriorityChange(1)}
-              />
-              <IconButton
-                icon={<ArrowDown className="size-4" />}
-                label="Priority down"
-                onClick={() => onPriorityChange(-1)}
-              />
-            </>
-          )}
           {!hideRecurrence && onRecurrence && (
             <IconButton
               icon={<Repeat className="size-4" />}
@@ -149,7 +193,7 @@ export function QuickActionPanel({
               onClick={onRecurrence}
             />
           )}
-          {/* Disabled stubs */}
+          {/* Disabled stubs - always visible as separate buttons */}
           <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
           <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
           {onMoveToProject && (
@@ -166,6 +210,47 @@ export function QuickActionPanel({
               onClick={onDelete}
               destructive
             />
+          )}
+
+          {/* More menu - show when priority or task details available */}
+          {(onPriorityChange || (isSingleTask && onNavigateToDetail)) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label="More options"
+                  title="More options"
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onPriorityChange && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onClick={() => onPriorityChange(0)}>None</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onPriorityChange(1)}>Low</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onPriorityChange(2)}>
+                        Medium
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onPriorityChange(3)}>High</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onPriorityChange(4)}>
+                        Urgent
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+                {isSingleTask && onNavigateToDetail && (
+                  <DropdownMenuItem onClick={onNavigateToDetail}>
+                    <Info className="mr-2 size-4" />
+                    Task Details
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -208,10 +293,38 @@ export function QuickActionPanel({
           Apply
         </Button>
       )}
+
+      {/* Bottom action bar - Save/Reset/Cancel (popover/sheet with explicit handlers) */}
+      {mode !== 'inline' && onSave && onCancel && (
+        <div className="flex gap-2 border-t pt-3">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSave}
+            disabled={!isDirty}
+            className="flex-1"
+          >
+            Save
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reset}
+            disabled={!isDirty}
+            className="flex-1"
+          >
+            Reset
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleCancel} className="flex-1">
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
 
+/** Internal ref-forwarding wrapper for auto-save on dismiss */
 QuickActionPanel.displayName = 'QuickActionPanel'
 
 function GridButton({

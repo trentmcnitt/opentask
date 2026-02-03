@@ -69,7 +69,12 @@ export async function POST(request: NextRequest) {
           if (!action.until) {
             return badRequest('snooze action requires "until" field')
           }
-          const result = bulkSnooze({ userId: user.id, taskIds, until: action.until })
+          const result = bulkSnooze({
+            userId: user.id,
+            userTimezone: user.timezone,
+            taskIds,
+            until: action.until,
+          })
           results.push({ type: 'snooze', taskIds, count: result.tasksAffected })
           break
         }

@@ -223,11 +223,9 @@ function TaskFields({
   )
 
   const handlePriorityChange = useCallback(
-    (delta: 1 | -1) => {
-      const current = task.priority || 0
-      const next = Math.max(0, Math.min(4, current + delta))
-      if (next !== current) {
-        onFieldChange?.('priority', next)
+    (newPriority: number) => {
+      if (newPriority !== task.priority) {
+        onFieldChange?.('priority', newPriority)
       }
     },
     [task.priority, onFieldChange],

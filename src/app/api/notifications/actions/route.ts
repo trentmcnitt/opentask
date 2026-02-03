@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
         const until = new Date(Date.now() + 30 * 60 * 1000)
         const result = snoozeTask({
           userId: user.id,
+          userTimezone: user.timezone,
           taskId: task_id,
           until: until.toISOString(),
         })
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
         until.setMinutes(0, 0, 0)
         const result = snoozeTask({
           userId: user.id,
+          userTimezone: user.timezone,
           taskId: task_id,
           until: until.toISOString(),
         })
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
         until.setMinutes(0, 0, 0)
         const result = snoozeTask({
           userId: user.id,
+          userTimezone: user.timezone,
           taskId: task_id,
           until: until.toISOString(),
         })

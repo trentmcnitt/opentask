@@ -7,6 +7,7 @@ import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { incrementDailyStat } from '@/core/stats'
 
 export interface CreateTaskOptions {
   userId: number
@@ -115,6 +116,9 @@ export function createTask(options: CreateTaskOptions): Task {
 
     logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])
 
+    // Increment daily stats
+    incrementDailyStat(userId, 'tasks_created', userTimezone)
+
     return task
   })
 }
@@ -131,7 +135,8 @@ export function getTaskById(taskId: number): Task | null {
     SELECT id, user_id, project_id, title, done, done_at, priority, due_at,
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            snoozed_from, last_notified_at, deleted_at, archived_at, labels,
-           created_at, updated_at
+           completion_count, snooze_count, first_completed_at, last_completed_at,
+           meta_notes, created_at, updated_at
     FROM tasks WHERE id = ?
   `,
     )
@@ -243,7 +248,9 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.rrule, tasks.recurrence_mode, tasks.anchor_time,
            tasks.anchor_dow, tasks.anchor_dom, tasks.snoozed_from,
            tasks.last_notified_at, tasks.deleted_at, tasks.archived_at,
-           tasks.labels, tasks.created_at, tasks.updated_at
+           tasks.labels, tasks.completion_count, tasks.snooze_count,
+           tasks.first_completed_at, tasks.last_completed_at,
+           tasks.meta_notes, tasks.created_at, tasks.updated_at
     FROM tasks
     INNER JOIN projects ON tasks.project_id = projects.id
     WHERE ${conditions.join(' AND ')}
@@ -275,6 +282,11 @@ interface TaskRow {
   deleted_at: string | null
   archived_at: string | null
   labels: string
+  completion_count: number
+  snooze_count: number
+  first_completed_at: string | null
+  last_completed_at: string | null
+  meta_notes: string | null
   created_at: string
   updated_at: string
 }
@@ -299,6 +311,11 @@ function rowToTask(row: TaskRow): Task {
     deleted_at: row.deleted_at,
     archived_at: row.archived_at,
     labels: JSON.parse(row.labels),
+    completion_count: row.completion_count,
+    snooze_count: row.snooze_count,
+    first_completed_at: row.first_completed_at,
+    last_completed_at: row.last_completed_at,
+    meta_notes: row.meta_notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }

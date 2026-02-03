@@ -54,6 +54,7 @@ function useLongPress(onLongPress?: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const origin = useRef<{ x: number; y: number } | null>(null)
   const fired = useRef(false)
+  const lastPointerType = useRef<string>('mouse')
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -72,6 +73,9 @@ function useLongPress(onLongPress?: () => void) {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Always track pointer type for click handler (touch vs mouse behavior)
+      lastPointerType.current = e.pointerType
+
       if (!onLongPress) return
       fired.current = false
       origin.current = { x: e.clientX, y: e.clientY }
@@ -105,7 +109,10 @@ function useLongPress(onLongPress?: () => void) {
     return result
   }, [])
 
-  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel, didFire }
+  /** True if the last interaction was a touch (not mouse/pen) */
+  const wasTouch = useCallback(() => lastPointerType.current === 'touch', [])
+
+  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel, didFire, wasTouch }
 }
 
 interface TaskRowProps {
@@ -150,30 +157,43 @@ export function TaskRow({
     }
   }, [cancelLongPressRef, pointer.onPointerLeave])
 
+  /**
+   * Selection behavior by input type:
+   *
+   * | Context              | Input                   | Action                              |
+   * |----------------------|-------------------------|-------------------------------------|
+   * | Not in selection mode| Any click/tap           | selectOnly - select this task only  |
+   * | In selection mode    | Desktop plain click     | selectOnly - replace selection      |
+   * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection       |
+   * | In selection mode    | Desktop Shift+click     | rangeSelect - select range          |
+   * | In selection mode    | Mobile tap              | toggle - accumulate selection       |
+   *
+   * Rationale: Desktop users expect single-click to replace selection (like Finder/Explorer),
+   * with modifier keys for multi-select. Mobile users have no modifier keys, so tapping in
+   * selection mode accumulates by default - this matches iOS/Android conventions where you
+   * tap to check/uncheck items in a list.
+   */
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      // Suppress click that follows a long-press
       if (pointer.didFire()) {
         e.preventDefault()
         return
       }
 
-      // Clicking anywhere on the row (except interactive elements with stopPropagation)
-      // enters selection mode and selects this task
       if (!onSelectOnly) return
       e.preventDefault()
+
       if (e.shiftKey && onRangeSelect) {
-        // Shift+click: range select from anchor
         onRangeSelect()
       } else if ((e.metaKey || e.ctrlKey) && onSelect) {
-        // Cmd/Ctrl+click: toggle (accumulate selection)
+        onSelect()
+      } else if (isSelectionMode && pointer.wasTouch() && onSelect) {
         onSelect()
       } else {
-        // Plain click: select only this item (replaces selection)
         onSelectOnly()
       }
     },
-    [onSelect, onSelectOnly, onRangeSelect, pointer],
+    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, pointer],
   )
 
   const priorityIndicator = getPriorityIndicator(task.priority)

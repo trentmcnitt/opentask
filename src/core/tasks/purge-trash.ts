@@ -1,14 +1,21 @@
 /**
- * Trash purge - permanently deletes tasks trashed more than 30 days ago
+ * Trash purge - permanently deletes tasks trashed more than retention period
+ *
+ * Default retention is 30 days.
  */
 
 import { withTransaction } from '@/core/db'
 
-const RETENTION_DAYS = 30
+const DEFAULT_RETENTION_DAYS = 30
 
 export function purgeOldTrash(): number {
+  const retentionDays = parseInt(
+    process.env.OPENTASK_RETENTION_TRASH_DAYS || String(DEFAULT_RETENTION_DAYS),
+    10,
+  )
+
   const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS)
+  cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
   const cutoffIso = cutoffDate.toISOString()
 
   // Execute all deletes in a transaction
@@ -45,7 +52,7 @@ export function purgeOldTrash(): number {
 
   if (changes > 0) {
     console.log(
-      `[trash-purge] Permanently deleted ${changes} tasks trashed more than ${RETENTION_DAYS} days ago`,
+      `[trash-purge] Permanently deleted ${changes} tasks trashed more than ${retentionDays} days ago`,
     )
   }
 

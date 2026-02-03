@@ -12,6 +12,8 @@ export async function register() {
     const { initNotifications } = await import('@/core/notifications')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
+    const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
+    const { purgeOldStats } = await import('@/core/stats/purge')
 
     // Start notification service
     initNotifications()
@@ -36,6 +38,28 @@ export async function register() {
       }
     })
 
-    console.log('[cron] Scheduled daily cleanup jobs (3:00 AM undo purge, 3:30 AM trash purge)')
+    // Purge old completions daily at 4:00 AM
+    cron.schedule('0 4 * * *', () => {
+      console.log('[cron] Running completions purge')
+      try {
+        purgeOldCompletions()
+      } catch (err) {
+        console.error('[cron] Completions purge error:', err)
+      }
+    })
+
+    // Purge old daily stats weekly on Sunday at 4:30 AM
+    cron.schedule('30 4 * * 0', () => {
+      console.log('[cron] Running daily stats purge')
+      try {
+        purgeOldStats()
+      } catch (err) {
+        console.error('[cron] Daily stats purge error:', err)
+      }
+    })
+
+    console.log(
+      '[cron] Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday)',
+    )
   }
 }
