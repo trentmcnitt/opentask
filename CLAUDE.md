@@ -123,6 +123,7 @@ If an Authorization header is present but the token is invalid, return 401 immed
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
 - **Never suppress lint errors or warnings** (e.g., `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`) without explicit approval from the user. Fix the root cause instead. If a fix is genuinely impossible, ask the user before adding any suppression comment.
 - **No brittle fixes or tolerances.** Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should run like clockwork, not something mushy. Don't attempt hacky workarounds without understanding the real problem.
+- **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at-a-glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as features are built or worked on, whenever it seems prudent. It can save a lot of trouble and confusion when coming back to work on it.
 
 ## Architecture
 

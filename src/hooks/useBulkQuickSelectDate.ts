@@ -36,6 +36,8 @@ interface UseBulkQuickSelectDateResult {
   deltaMinutes: number
   /** Target time (for preset mode) */
   presetTime: string | null
+  /** Delta display string (e.g., "+30 min", "-1 hr") when in delta mode, null otherwise */
+  deltaDisplay: string | null
   /** Apply a preset time (absolute mode) */
   applyPreset: (hour: number, minute: number) => void
   /** Apply an increment (delta mode) */
@@ -201,6 +203,10 @@ export function useBulkQuickSelectDate({
   // Compute display values based on current state
   const isDirty = operationType !== null
 
+  // Compute delta display string for staged indicator
+  const deltaDisplay =
+    operationType === 'delta' && deltaMinutes !== 0 ? formatDeltaText(deltaMinutes) : null
+
   // Compute time-sensitive values fresh on each render (tick dependency ensures refresh)
   // This is intentionally outside useMemo so it updates when tick changes
   void tick // eslint sees tick as used for the auto-refresh interval
@@ -273,6 +279,7 @@ export function useBulkQuickSelectDate({
     operationType,
     deltaMinutes,
     presetTime,
+    deltaDisplay,
     applyPreset,
     applyIncrement,
     reset,

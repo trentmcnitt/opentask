@@ -156,7 +156,7 @@ export function SelectionActionSheet({
       onDelete={handleDelete}
       onSave={handleSave}
       onCancel={handleCancel}
-      hideRecurrence
+      onNavigateToDetail={selectedCount === 1 ? handleNavigateToDetail : undefined}
     />
   )
 

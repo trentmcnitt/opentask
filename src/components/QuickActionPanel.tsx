@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
-import { Repeat, Timer, Bell, FolderInput, Trash2, MoreHorizontal, Info } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { Repeat, Timer, Bell, Trash2, MoreHorizontal, Info, FolderInput } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,6 +17,8 @@ import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { PRESET_TIMES, INCREMENTS, DECREMENTS } from '@/lib/quick-select-dates'
+import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { PRIORITY_OPTIONS } from '@/lib/priority'
 import type { Task } from '@/types'
 
 export interface QuickActionPanelProps {
@@ -36,8 +38,8 @@ export interface QuickActionPanelProps {
   onDateChangeRelative?: (deltaMinutes: number) => void
   /** Called with absolute priority value (0=none, 1=low, 2=medium, 3=high, 4=urgent) */
   onPriorityChange?: (priority: number) => void
-  /** Called to open recurrence editor */
-  onRecurrence?: () => void
+  /** Called when rrule changes (inline mode with RecurrencePicker) */
+  onRruleChange?: (rrule: string | null) => void
   /** Called to open project picker */
   onMoveToProject?: () => void
   /** Called to delete task(s) */
@@ -50,8 +52,6 @@ export interface QuickActionPanelProps {
   onSave?: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: () => void
-  /** Hide recurrence icon (e.g. in bulk mode) */
-  hideRecurrence?: boolean
 }
 
 export function QuickActionPanel({
@@ -63,20 +63,28 @@ export function QuickActionPanel({
   onDateChange,
   onDateChangeRelative,
   onPriorityChange,
-  onRecurrence,
+  onRruleChange,
   onMoveToProject,
   onDelete,
   open = true,
   onCancel,
   onSave,
   onNavigateToDetail,
-  hideRecurrence = false,
 }: QuickActionPanelProps) {
-  // Determine if we're in bulk mode (no single task, but multiple selected)
-  const isBulkMode = !task && (selectedTasks?.length ?? 0) > 0
+  // Effective task: either passed directly, or single selected task via bulk path
+  const effectiveTask = task ?? (selectedTasks?.length === 1 ? selectedTasks[0] : null)
+
+  // Bulk mode = multiple tasks selected (not single task via bulk path)
+  const isBulkMode = !effectiveTask && (selectedTasks?.length ?? 0) > 0
+
+  // Single task mode (either direct or via bulk selection)
+  const isSingleTask = !!effectiveTask
+
+  // State for expandable recurrence picker (inline mode only)
+  const [editingRecurrence, setEditingRecurrence] = useState(false)
 
   // Single task mode hook
-  const dueAt = task?.due_at ?? null
+  const dueAt = effectiveTask?.due_at ?? null
   const singleHook = useQuickSelectDate({ dueAt, timezone })
 
   // Bulk mode hook
@@ -90,6 +98,7 @@ export function QuickActionPanel({
   const headerText = isBulkMode ? bulkHook.headerText : singleHook.headerText
   const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
   const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
+  const deltaDisplay = isBulkMode ? bulkHook.deltaDisplay : singleHook.deltaDisplay
   const applyPreset = isBulkMode ? bulkHook.applyPreset : singleHook.applyPreset
   const applyIncrement = isBulkMode ? bulkHook.applyIncrement : singleHook.applyIncrement
   const reset = isBulkMode ? bulkHook.reset : singleHook.reset
@@ -145,30 +154,32 @@ export function QuickActionPanel({
     onCancel?.()
   }, [reset, onCancel])
 
-  // Compute title: multiple tasks shows count, single task in bulk mode hides title (modal shows it)
+  // Compute title: multiple tasks shows count, single task in sheet mode hides title (modal shows it)
   // For inline/popover mode with single task, show the title
   const title =
     selectedCount && selectedCount > 1
       ? `${selectedCount} tasks selected`
       : selectedCount === 1
         ? null // Single task in sheet mode - modal title shows task name
-        : (task?.title ?? 'Set date')
+        : (effectiveTask?.title ?? 'Set date')
 
-  // Compute recurrence text for header (only show if task has rrule, not just "always visible")
+  // Compute recurrence text for header (only show if effectiveTask has rrule)
   const recurrenceText = (() => {
     if (isBulkMode) return null // No recurrence display in bulk mode
-    const rrule = task?.rrule
+    const rrule = effectiveTask?.rrule
     if (!rrule) return null
     return formatRRuleCompact(rrule)
   })()
 
-  // Is this a single task? (not bulk mode)
-  const isSingleTask = !isBulkMode && !!task
+  // Toggle recurrence picker (for inline mode)
+  const handleRecurrenceToggle = useCallback(() => {
+    setEditingRecurrence((prev) => !prev)
+  }, [])
 
   return (
     <div className="space-y-3">
       {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
+      <div className={cn('flex justify-between gap-2', title ? 'items-start' : 'items-center')}>
         <div className="min-w-0 flex-1">
           {title && <p className="truncate text-sm font-medium">{title}</p>}
           <p className="text-muted-foreground text-xs">
@@ -182,27 +193,26 @@ export function QuickActionPanel({
               </>
             )}
           </p>
+          {/* Staged delta indicator - show in blue when dirty with delta operation */}
+          {deltaDisplay && (
+            <p className="mt-0.5 text-xs font-medium text-blue-500">{deltaDisplay}</p>
+          )}
         </div>
 
         {/* Action icons */}
         <div className="flex items-center gap-0.5">
-          {!hideRecurrence && onRecurrence && (
+          {/* Recurrence button - only show for single task in inline mode with onRruleChange */}
+          {isSingleTask && mode === 'inline' && onRruleChange && (
             <IconButton
               icon={<Repeat className="size-4" />}
               label="Recurrence"
-              onClick={onRecurrence}
+              onClick={handleRecurrenceToggle}
+              active={editingRecurrence}
             />
           )}
           {/* Disabled stubs - always visible as separate buttons */}
           <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
           <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
-          {onMoveToProject && (
-            <IconButton
-              icon={<FolderInput className="size-4" />}
-              label="Move to project"
-              onClick={onMoveToProject}
-            />
-          )}
           {onDelete && (
             <IconButton
               icon={<Trash2 className="size-4" />}
@@ -212,8 +222,8 @@ export function QuickActionPanel({
             />
           )}
 
-          {/* More menu - show when priority or task details available */}
-          {(onPriorityChange || (isSingleTask && onNavigateToDetail)) && (
+          {/* More menu - show when priority, move to project, or task details available */}
+          {(onPriorityChange || onMoveToProject || (isSingleTask && onNavigateToDetail)) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -231,17 +241,23 @@ export function QuickActionPanel({
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
-                      <DropdownMenuItem onClick={() => onPriorityChange(0)}>None</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onPriorityChange(1)}>Low</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onPriorityChange(2)}>
-                        Medium
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onPriorityChange(3)}>High</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onPriorityChange(4)}>
-                        Urgent
-                      </DropdownMenuItem>
+                      {PRIORITY_OPTIONS.map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value}
+                          onClick={() => onPriorityChange(opt.value)}
+                          className={opt.color}
+                        >
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+                )}
+                {onMoveToProject && (
+                  <DropdownMenuItem onClick={onMoveToProject}>
+                    <FolderInput className="mr-2 size-4" />
+                    Move to Project
+                  </DropdownMenuItem>
                 )}
                 {isSingleTask && onNavigateToDetail && (
                   <DropdownMenuItem onClick={onNavigateToDetail}>
@@ -286,6 +302,13 @@ export function QuickActionPanel({
           />
         ))}
       </div>
+
+      {/* Expandable recurrence section (inline mode, single task only) */}
+      {mode === 'inline' && isSingleTask && editingRecurrence && onRruleChange && (
+        <div className="rounded-lg border p-3">
+          <RecurrencePicker value={effectiveTask?.rrule} onChange={onRruleChange} />
+        </div>
+      )}
 
       {/* Apply button (inline mode only) */}
       {mode === 'inline' && (
@@ -362,12 +385,14 @@ function IconButton({
   onClick,
   disabled = false,
   destructive = false,
+  active = false,
 }: {
   icon: React.ReactNode
   label: string
   onClick?: () => void
   disabled?: boolean
   destructive?: boolean
+  active?: boolean
 }) {
   return (
     <Button
@@ -377,6 +402,7 @@ function IconButton({
         'size-8',
         disabled && 'text-muted-foreground/40 cursor-not-allowed',
         destructive && 'hover:text-destructive',
+        active && 'bg-accent text-accent-foreground',
       )}
       onClick={disabled ? undefined : onClick}
       aria-label={label}

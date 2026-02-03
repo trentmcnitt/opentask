@@ -17,8 +17,8 @@ test.describe('Task detail', () => {
     // In editable mode, QuickActionPanel is shown with preset buttons
     // Look for elements that exist in the editable task detail view
     // Use exact match to avoid matching "Projects" in sidebar/bottom nav
-    await expect(page.getByText('Priority', { exact: true })).toBeVisible()
     await expect(page.getByText('Project', { exact: true })).toBeVisible()
+    await expect(page.getByText('Labels', { exact: true })).toBeVisible()
 
     // Navigate back
     await page.goBack()

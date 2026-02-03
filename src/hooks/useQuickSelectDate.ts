@@ -26,6 +26,8 @@ interface UseQuickSelectDateResult {
   relativeText: string
   /** Whether the working date is in the past */
   isPast: boolean
+  /** Delta display string (e.g., "+30 min", "-1 hr") when in delta mode, null otherwise */
+  deltaDisplay: string | null
   /** Snap to a preset time (next occurrence from now) */
   applyPreset: (hour: number, minute: number) => void
   /** Apply a minute-based or day-based increment */
@@ -107,11 +109,13 @@ export function useQuickSelectDate({
 
   // Compute relativeText based on operation type
   let relativeText: string
+  let deltaDisplay: string | null = null
   if (operationType === 'delta' && deltaMinutes !== 0) {
     // Delta mode: show "in 2h (snoozing +1h)" like bulk mode
     const relativeFromNow = formatRelativeTime(workingDate, now)
     const deltaStr = formatDeltaText(deltaMinutes)
     relativeText = `${relativeFromNow} (snoozing ${deltaStr})`
+    deltaDisplay = deltaStr
   } else {
     relativeText = formatRelativeTime(workingDate, now)
   }
@@ -122,6 +126,7 @@ export function useQuickSelectDate({
     headerText,
     relativeText,
     isPast,
+    deltaDisplay,
     applyPreset,
     applyIncrement,
     reset,

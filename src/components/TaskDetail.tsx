@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -18,8 +18,8 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { LabelPicker } from '@/components/LabelPicker'
-import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
 
@@ -35,14 +35,6 @@ interface TaskDetailProps {
   onDeleteNote?: (noteId: number) => void
   onDelete?: () => void
 }
-
-const PRIORITY_OPTIONS = [
-  { value: 0, label: 'None', color: 'text-muted-foreground' },
-  { value: 1, label: 'Low', color: 'text-blue-500' },
-  { value: 2, label: 'Medium', color: 'text-yellow-500' },
-  { value: 3, label: 'High', color: 'text-orange-500' },
-  { value: 4, label: 'Urgent', color: 'text-red-500' },
-]
 
 export function TaskDetail({
   task,
@@ -194,13 +186,12 @@ function TaskFields({
   onDelete?: () => void
   timezone: string
 }) {
-  const [editingRecurrence, setEditingRecurrence] = useState(false)
   const currentRruleRef = useRef(task.rrule)
   useEffect(() => {
     currentRruleRef.current = task.rrule
   }, [task.rrule])
   const isOverdue = task.due_at && new Date(task.due_at) < new Date()
-  const priority = PRIORITY_OPTIONS.find((p) => p.value === task.priority) || PRIORITY_OPTIONS[0]
+  const priority = getPriorityOption(task.priority)
 
   const handleRruleChange = useCallback(
     (value: string | null) => {
@@ -250,7 +241,7 @@ function TaskFields({
             mode="inline"
             onDateChange={handleDateChange}
             onPriorityChange={handlePriorityChange}
-            onRecurrence={() => setEditingRecurrence(!editingRecurrence)}
+            onRruleChange={handleRruleChange}
             onMoveToProject={projects.length > 1 ? handleMoveToProject : undefined}
             onDelete={onDelete}
           />
@@ -270,29 +261,10 @@ function TaskFields({
         </DetailField>
       )}
 
-      {/* Priority (read-only — editing via QuickActionPanel icons) */}
+      {/* Priority (read-only — editing via QuickActionPanel More menu) */}
       {!editable && (
         <DetailField label="Priority">
           <span className={priority.color}>{priority.label}</span>
-        </DetailField>
-      )}
-
-      {/* Priority buttons (editable, for fine-grained control) */}
-      {editable && (
-        <DetailField label="Priority">
-          <div className="flex flex-wrap gap-1">
-            {PRIORITY_OPTIONS.map((opt) => (
-              <Button
-                key={opt.value}
-                variant={task.priority === opt.value ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => onFieldChange?.('priority', opt.value)}
-                className={cn('text-xs', opt.color)}
-              >
-                {opt.label}
-              </Button>
-            ))}
-          </div>
         </DetailField>
       )}
 
@@ -331,70 +303,21 @@ function TaskFields({
         )}
       </DetailField>
 
-      <DetailField label="Recurrence">
-        {editable ? (
-          <div>
-            <button
-              type="button"
-              onClick={() => setEditingRecurrence(!editingRecurrence)}
-              className="hover:text-primary flex items-center gap-1 transition-colors"
-            >
-              <span>
-                {task.rrule ? formatRRule(task.rrule, task.anchor_time) : 'Add recurrence'}
-              </span>
-              {editingRecurrence ? (
-                <ChevronUp className="size-4" />
-              ) : (
-                <ChevronDown className="size-4" />
-              )}
-            </button>
-            {task.rrule && !editingRecurrence && (
-              <span className="text-muted-foreground ml-1 text-xs">
+      {/* Recurrence - read-only (editing via QuickActionPanel) */}
+      {!editable && (
+        <DetailField label="Recurrence">
+          {task.rrule ? (
+            <>
+              {formatRRule(task.rrule, task.anchor_time)}
+              <span className="text-muted-foreground ml-2 text-sm">
                 ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
               </span>
-            )}
-            {editingRecurrence && (
-              <div className="mt-2 space-y-3">
-                <div className="rounded-lg border p-3">
-                  <RecurrencePicker value={task.rrule} onChange={handleRruleChange} />
-                </div>
-                {task.rrule && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground text-sm">Mode:</span>
-                    <div className="flex gap-1">
-                      <Button
-                        variant={task.recurrence_mode !== 'from_completion' ? 'secondary' : 'ghost'}
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => onFieldChange?.('recurrence_mode', 'from_due')}
-                      >
-                        From due date
-                      </Button>
-                      <Button
-                        variant={task.recurrence_mode === 'from_completion' ? 'secondary' : 'ghost'}
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => onFieldChange?.('recurrence_mode', 'from_completion')}
-                      >
-                        From completion
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ) : task.rrule ? (
-          <>
-            {formatRRule(task.rrule, task.anchor_time)}
-            <span className="text-muted-foreground ml-2 text-sm">
-              ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
-            </span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">None</span>
-        )}
-      </DetailField>
+            </>
+          ) : (
+            <span className="text-muted-foreground">None</span>
+          )}
+        </DetailField>
+      )}
 
       {task.snoozed_from && (
         <DetailField label="Snoozed">
