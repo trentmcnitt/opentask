@@ -3,7 +3,8 @@
  *
  * POST /api/tasks/bulk/snooze - Snooze multiple tasks
  *
- * Body: { ids: [1, 2, 3, ...], until: "ISO8601 datetime" }
+ * Body (absolute mode): { ids: [1, 2, 3, ...], until: "ISO8601 datetime" }
+ * Body (relative mode): { ids: [1, 2, 3, ...], delta_minutes: 60 }
  */
 
 import { NextRequest } from 'next/server'
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       taskIds: input.ids,
       until: input.until,
+      deltaMinutes: input.delta_minutes,
     })
 
     return success({

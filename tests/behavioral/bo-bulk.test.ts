@@ -7,7 +7,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
-import { bulkDone } from '@/core/tasks/bulk'
+import { bulkDone, bulkSnooze } from '@/core/tasks/bulk'
 import { executeUndo, canUndo, getUndoHistory } from '@/core/undo'
 import { DateTime } from 'luxon'
 import {
@@ -326,5 +326,272 @@ describe('Bulk Operations Undo & Mixed Types', () => {
     expect(revertedOneOff.done).toBe(false)
     expect(revertedOneOff.done_at).toBeNull()
     expect(revertedOneOff.archived_at).toBeNull()
+  })
+})
+
+describe('Bulk Snooze Relative Mode', () => {
+  beforeEach(() => {
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * BS-001: Bulk snooze with delta adds minutes to each task's current due_at
+   */
+  test('BS-001: Relative snooze adds delta to each task individually', () => {
+    // Create tasks with different due dates
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 1',
+        due_at: localTime(8, 0), // Jan 15, 8:00 AM
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 2',
+        due_at: localTime(14, 30), // Jan 15, 2:30 PM
+      },
+    })
+
+    const task1OriginalDueAt = new Date(task1.due_at!)
+    const task2OriginalDueAt = new Date(task2.due_at!)
+
+    // Bulk snooze with delta of +90 minutes
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      taskIds: [task1.id, task2.id],
+      deltaMinutes: 90,
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    // Verify each task was snoozed by 90 minutes from its own due date
+    const updatedTask1 = getTaskById(task1.id)!
+    const updatedTask2 = getTaskById(task2.id)!
+
+    const task1NewDueAt = new Date(updatedTask1.due_at!)
+    const task2NewDueAt = new Date(updatedTask2.due_at!)
+
+    // Task 1: 8:00 AM + 90 min = 9:30 AM
+    expect(task1NewDueAt.getTime()).toBe(task1OriginalDueAt.getTime() + 90 * 60 * 1000)
+
+    // Task 2: 2:30 PM + 90 min = 4:00 PM
+    expect(task2NewDueAt.getTime()).toBe(task2OriginalDueAt.getTime() + 90 * 60 * 1000)
+
+    // Verify snoozed_from was set correctly
+    expect(updatedTask1.snoozed_from).toBe(task1.due_at)
+    expect(updatedTask2.snoozed_from).toBe(task2.due_at)
+  })
+
+  /**
+   * BS-002: Bulk snooze relative handles negative delta (going back in time)
+   */
+  test('BS-002: Relative snooze supports negative delta', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task',
+        due_at: localTime(14, 0), // 2:00 PM
+      },
+    })
+
+    const originalDueAt = new Date(task.due_at!)
+
+    // Snooze backwards by 30 minutes
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      taskIds: [task.id],
+      deltaMinutes: -30,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+
+    const updatedTask = getTaskById(task.id)!
+    const newDueAt = new Date(updatedTask.due_at!)
+
+    // 2:00 PM - 30 min = 1:30 PM
+    expect(newDueAt.getTime()).toBe(originalDueAt.getTime() - 30 * 60 * 1000)
+  })
+
+  /**
+   * BS-003: Tasks with null due_at use current time as base
+   */
+  test('BS-003: Relative snooze uses current time for tasks with null due_at', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task with no due date',
+        // No due_at
+      },
+    })
+
+    expect(task.due_at).toBeNull()
+
+    // Snooze by +60 minutes
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      taskIds: [task.id],
+      deltaMinutes: 60,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+
+    const updatedTask = getTaskById(task.id)!
+    const newDueAt = new Date(updatedTask.due_at!)
+    const expectedDueAt = new Date('2026-01-15T17:00:00Z') // 16:00 UTC + 60 min
+
+    expect(newDueAt.getTime()).toBe(expectedDueAt.getTime())
+    expect(updatedTask.snoozed_from).toBeNull() // Original was null
+  })
+
+  /**
+   * BS-004: Bulk snooze relative creates single undo entry
+   */
+  test('BS-004: Relative snooze creates single undo entry', () => {
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 1',
+        due_at: localTime(8, 0),
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 2',
+        due_at: localTime(9, 0),
+      },
+    })
+
+    const task1Original = task1.due_at
+    const task2Original = task2.due_at
+
+    // Bulk snooze
+    bulkSnooze({
+      userId: TEST_USER_ID,
+      taskIds: [task1.id, task2.id],
+      deltaMinutes: 60,
+    })
+
+    // Verify single undo entry
+    const history = getUndoHistory(TEST_USER_ID, 20)
+    const bulkSnoozeEntries = history.filter((e) => e.action === 'bulk_snooze')
+    expect(bulkSnoozeEntries.length).toBe(1)
+    expect(bulkSnoozeEntries[0].description).toBe('Snoozed 2 tasks')
+
+    // Undo should revert both
+    expect(canUndo(TEST_USER_ID)).toBe(true)
+    const undoResult = executeUndo(TEST_USER_ID)
+    expect(undoResult!.tasks_affected).toBe(2)
+
+    // Verify both reverted
+    const revertedTask1 = getTaskById(task1.id)!
+    const revertedTask2 = getTaskById(task2.id)!
+
+    expect(revertedTask1.due_at).toBe(task1Original)
+    expect(revertedTask2.due_at).toBe(task2Original)
+    expect(revertedTask1.snoozed_from).toBeNull()
+    expect(revertedTask2.snoozed_from).toBeNull()
+  })
+
+  /**
+   * BS-005: Absolute vs relative mode validation
+   */
+  test('BS-005: Cannot provide both until and deltaMinutes', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task',
+        due_at: localTime(8, 0),
+      },
+    })
+
+    expect(() =>
+      bulkSnooze({
+        userId: TEST_USER_ID,
+        taskIds: [task.id],
+        until: localTime(12, 0),
+        deltaMinutes: 60,
+      }),
+    ).toThrow('Cannot provide both until and deltaMinutes')
+  })
+
+  /**
+   * BS-006: Must provide either until or deltaMinutes
+   */
+  test('BS-006: Must provide either until or deltaMinutes', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task',
+        due_at: localTime(8, 0),
+      },
+    })
+
+    expect(() =>
+      bulkSnooze({
+        userId: TEST_USER_ID,
+        taskIds: [task.id],
+        // Neither until nor deltaMinutes provided
+      }),
+    ).toThrow('Either until or deltaMinutes must be provided')
+  })
+
+  /**
+   * BS-007: Absolute mode still works
+   */
+  test('BS-007: Absolute mode sets all tasks to same time', () => {
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 1',
+        due_at: localTime(8, 0),
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 2',
+        due_at: localTime(14, 0),
+      },
+    })
+
+    const targetTime = localTime(18, 0) // 6:00 PM
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      taskIds: [task1.id, task2.id],
+      until: targetTime,
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    // Both tasks should have the same due_at
+    const updatedTask1 = getTaskById(task1.id)!
+    const updatedTask2 = getTaskById(task2.id)!
+
+    expect(updatedTask1.due_at).toBe(targetTime)
+    expect(updatedTask2.due_at).toBe(targetTime)
   })
 })

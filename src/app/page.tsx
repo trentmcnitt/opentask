@@ -202,6 +202,29 @@ function useBulkActions(
     }
   }
 
+  const bulkSnoozeRelative = async (deltaMinutes: number) => {
+    const count = selection.selectedIds.size
+    try {
+      const res = await fetch('/api/tasks/bulk/snooze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: [...selection.selectedIds],
+          delta_minutes: deltaMinutes,
+        }),
+      })
+      if (!res.ok) throw new Error('Bulk snooze failed')
+      selection.clear()
+      fetchTasks()
+      showToast({
+        message: `${count} tasks snoozed`,
+        action: { label: 'Undo', onClick: handleUndo },
+      })
+    } catch {
+      showToast({ message: 'Snooze failed' })
+    }
+  }
+
   const bulkDelete = async () => {
     try {
       const res = await fetch('/api/tasks/bulk/delete', {
@@ -257,7 +280,7 @@ function useBulkActions(
     }
   }
 
-  return { bulkAction, bulkDelete, handleBulkMoveToProject, handleSearch }
+  return { bulkAction, bulkSnoozeRelative, bulkDelete, handleBulkMoveToProject, handleSearch }
 }
 
 function HomeContent() {
@@ -384,6 +407,11 @@ function HomeContent() {
     }).length
   }, [tasks])
 
+  // Compute selected tasks for bulk operations
+  const selectedTasks = useMemo(() => {
+    return tasks.filter((t) => selection.selectedIds.has(t.id))
+  }, [tasks, selection.selectedIds])
+
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
@@ -456,6 +484,7 @@ function HomeContent() {
       overdueCount={overdueCount}
       todayCount={todayCount}
       selection={selection}
+      selectedTasks={selectedTasks}
       snoozeTask={snoozeTask}
       showProjectPicker={showProjectPicker}
       actions={actions}
@@ -470,6 +499,7 @@ function HomeContent() {
       }}
       onSnoozeTask={setSnoozeTask}
       onBulkAction={bulk.bulkAction}
+      onBulkSnoozeRelative={bulk.bulkSnoozeRelative}
       onBulkDelete={bulk.bulkDelete}
       onBulkMoveToProject={bulk.handleBulkMoveToProject}
       onShowProjectPicker={setShowProjectPicker}
@@ -494,6 +524,7 @@ function DashboardView({
   overdueCount,
   todayCount,
   selection,
+  selectedTasks,
   snoozeTask,
   showProjectPicker,
   actions,
@@ -505,6 +536,7 @@ function DashboardView({
   onSearchClear,
   onSnoozeTask,
   onBulkAction,
+  onBulkSnoozeRelative,
   onBulkDelete,
   onBulkMoveToProject,
   onShowProjectPicker,
@@ -525,6 +557,7 @@ function DashboardView({
   overdueCount: number
   todayCount: number
   selection: ReturnType<typeof useSelection>
+  selectedTasks: Task[]
   snoozeTask: Task | null
   showProjectPicker: boolean
   actions: ReturnType<typeof useTaskActions>
@@ -536,6 +569,7 @@ function DashboardView({
   onSearchClear: () => void
   onSnoozeTask: (t: Task | null) => void
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => void
+  onBulkSnoozeRelative: (deltaMinutes: number) => Promise<void>
   onBulkDelete: () => void
   onBulkMoveToProject: (projectId: number) => void
   onShowProjectPicker: (show: boolean) => void
@@ -606,6 +640,7 @@ function DashboardView({
 
       <SelectionActionSheet
         selectedCount={selection.selectedIds.size}
+        selectedTasks={selectedTasks}
         onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
         onSnooze={(until) =>
           onBulkAction('/api/tasks/bulk/snooze', {
@@ -613,6 +648,7 @@ function DashboardView({
             until,
           })
         }
+        onSnoozeRelative={onBulkSnoozeRelative}
         onDelete={onBulkDelete}
         onPriorityChange={(delta) => {
           // Priority up: set to high (3), down: set to low (1)

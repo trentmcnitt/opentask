@@ -12,11 +12,17 @@ import {
 } from '@/components/ui/sheet'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
+import type { Task } from '@/types'
 
 interface SelectionActionSheetProps {
   selectedCount: number
+  /** The actual selected tasks (for showing their due dates in QuickActionPanel) */
+  selectedTasks: Task[]
   onDone: () => void
+  /** Called with absolute UTC time for preset operations */
   onSnooze: (until: string) => void
+  /** Called with delta minutes for increment operations */
+  onSnoozeRelative: (deltaMinutes: number) => void
   onDelete: () => void
   onPriorityChange: (delta: 1 | -1) => void
   onMoveToProject?: () => void
@@ -25,8 +31,10 @@ interface SelectionActionSheetProps {
 
 export function SelectionActionSheet({
   selectedCount,
+  selectedTasks,
   onDone,
   onSnooze,
+  onSnoozeRelative,
   onDelete,
   onPriorityChange,
   onMoveToProject,
@@ -41,6 +49,14 @@ export function SelectionActionSheet({
       setSheetOpen(false)
     },
     [onSnooze],
+  )
+
+  const handleDateChangeRelative = useCallback(
+    (deltaMinutes: number) => {
+      onSnoozeRelative(deltaMinutes)
+      setSheetOpen(false)
+    },
+    [onSnoozeRelative],
   )
 
   const handleDelete = useCallback(() => {
@@ -108,11 +124,13 @@ export function SelectionActionSheet({
           <div className="px-4 pb-4">
             <QuickActionPanel
               task={null}
+              selectedTasks={selectedTasks}
               selectedCount={selectedCount}
               timezone={timezone}
               mode="sheet"
               open={sheetOpen}
               onDateChange={handleDateChange}
+              onDateChangeRelative={handleDateChangeRelative}
               onPriorityChange={onPriorityChange}
               onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
               onDelete={handleDelete}

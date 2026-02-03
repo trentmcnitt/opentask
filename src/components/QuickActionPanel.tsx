@@ -5,20 +5,25 @@ import { ArrowUp, ArrowDown, Repeat, Timer, Bell, FolderInput, Trash2 } from 'lu
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
+import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { PRESET_TIMES, INCREMENTS, DECREMENTS } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
 
 export interface QuickActionPanelProps {
   /** Task(s) being acted on. Single task or null for bulk. */
   task: Task | null
+  /** Selected tasks for bulk mode (required when task is null and selectedCount > 0) */
+  selectedTasks?: Task[]
   /** Number of selected tasks (for bulk mode header) */
   selectedCount?: number
   /** User's IANA timezone */
   timezone: string
   /** "inline" shows Apply button; "popover"/"sheet" auto-saves on dismiss */
   mode: 'inline' | 'popover' | 'sheet'
-  /** Called with the final date when saving */
+  /** Called with the final date when saving (absolute mode) */
   onDateChange: (isoUtc: string) => void
+  /** Called with delta minutes when saving (relative mode, bulk only) */
+  onDateChangeRelative?: (deltaMinutes: number) => void
   /** Called on priority change (fires immediately) */
   onPriorityChange?: (delta: 1 | -1) => void
   /** Called to open recurrence editor */
@@ -35,10 +40,12 @@ export interface QuickActionPanelProps {
 
 export function QuickActionPanel({
   task,
+  selectedTasks,
   selectedCount,
   timezone,
   mode,
   onDateChange,
+  onDateChangeRelative,
   onPriorityChange,
   onRecurrence,
   onMoveToProject,
@@ -46,22 +53,48 @@ export function QuickActionPanel({
   open = true,
   hideRecurrence = false,
 }: QuickActionPanelProps) {
+  // Determine if we're in bulk mode (no single task, but multiple selected)
+  const isBulkMode = !task && (selectedTasks?.length ?? 0) > 0
+
+  // Single task mode hook
   const dueAt = task?.due_at ?? null
-  const { workingDate, isDirty, headerText, relativeText, isPast, applyPreset, applyIncrement } =
-    useQuickSelectDate({ dueAt, timezone })
+  const singleHook = useQuickSelectDate({ dueAt, timezone })
+
+  // Bulk mode hook
+  const bulkHook = useBulkQuickSelectDate({
+    tasks: selectedTasks ?? [],
+    timezone,
+  })
+
+  // Use the appropriate hook based on mode
+  const isDirty = isBulkMode ? bulkHook.isDirty : singleHook.isDirty
+  const headerText = isBulkMode ? bulkHook.headerText : singleHook.headerText
+  const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
+  const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
+  const applyPreset = isBulkMode ? bulkHook.applyPreset : singleHook.applyPreset
+  const applyIncrement = isBulkMode ? bulkHook.applyIncrement : singleHook.applyIncrement
 
   const handleApply = useCallback(() => {
-    onDateChange(workingDate)
-  }, [onDateChange, workingDate])
+    if (isBulkMode) {
+      const result = bulkHook.getResult()
+      if (result?.type === 'absolute') {
+        onDateChange(result.until)
+      } else if (result?.type === 'relative' && onDateChangeRelative) {
+        onDateChangeRelative(result.deltaMinutes)
+      }
+    } else {
+      onDateChange(singleHook.workingDate)
+    }
+  }, [isBulkMode, bulkHook, singleHook.workingDate, onDateChange, onDateChangeRelative])
 
   // Auto-save on dismiss for popover/sheet modes:
-  // When `open` transitions from true to false, fire onDateChange if dirty.
-  const workingDateRef = useRef(workingDate)
+  // When `open` transitions from true to false, fire appropriate callback if dirty.
+  const handleApplyRef = useRef(handleApply)
   const isDirtyRef = useRef(isDirty)
   useEffect(() => {
-    workingDateRef.current = workingDate
+    handleApplyRef.current = handleApply
     isDirtyRef.current = isDirty
-  }, [workingDate, isDirty])
+  }, [handleApply, isDirty])
 
   const prevOpenRef = useRef(open)
   useEffect(() => {
@@ -71,10 +104,10 @@ export function QuickActionPanel({
       isDirtyRef.current &&
       (mode === 'popover' || mode === 'sheet')
     ) {
-      onDateChange(workingDateRef.current)
+      handleApplyRef.current()
     }
     prevOpenRef.current = open
-  }, [open, mode, onDateChange])
+  }, [open, mode])
 
   const title = selectedCount
     ? `${selectedCount} task${selectedCount !== 1 ? 's' : ''} selected`
@@ -179,7 +212,6 @@ export function QuickActionPanel({
   )
 }
 
-/** Internal ref-forwarding wrapper for auto-save on dismiss */
 QuickActionPanel.displayName = 'QuickActionPanel'
 
 function GridButton({

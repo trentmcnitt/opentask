@@ -182,7 +182,10 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 export interface BulkSnoozeOptions {
   userId: number
   taskIds: number[]
-  until: string // ISO 8601 datetime
+  /** Absolute snooze target (ISO 8601 datetime) - all tasks set to this time */
+  until?: string
+  /** Relative snooze delta (minutes) - added to each task's current due_at */
+  deltaMinutes?: number
 }
 
 export interface BulkSnoozeResult {
@@ -193,24 +196,38 @@ export interface BulkSnoozeResult {
 /**
  * Bulk snooze
  *
- * Snoozes all specified tasks to the given time.
+ * Snoozes all specified tasks. Supports two modes:
+ * - Absolute (until): Sets all tasks to the same target time
+ * - Relative (deltaMinutes): Adds minutes to each task's current due_at
+ *
  * Follows same snoozed_from rules as single snooze.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
-  const { userId, taskIds, until } = options
+  const { userId, taskIds, until, deltaMinutes } = options
 
   if (taskIds.length === 0) {
     return { tasksAffected: 0, failedIds: [] }
   }
 
-  // Validate snooze target is a valid datetime
-  const snoozeTarget = new Date(until)
-  if (isNaN(snoozeTarget.getTime())) {
-    throw new Error('Invalid snooze target datetime')
+  // Validate that exactly one mode is specified
+  if (until === undefined && deltaMinutes === undefined) {
+    throw new Error('Either until or deltaMinutes must be provided')
+  }
+  if (until !== undefined && deltaMinutes !== undefined) {
+    throw new Error('Cannot provide both until and deltaMinutes')
+  }
+
+  // Validate absolute snooze target if provided
+  if (until !== undefined) {
+    const snoozeTarget = new Date(until)
+    if (isNaN(snoozeTarget.getTime())) {
+      throw new Error('Invalid snooze target datetime')
+    }
   }
   // Note: We allow snoozing to past times - tasks will just appear overdue immediately.
 
   const nowStr = nowUtc()
+  const nowDate = new Date()
 
   // Validate all tasks
   const tasks: Task[] = []
@@ -245,6 +262,18 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   return withTransaction((tx) => {
     for (const task of tasks) {
+      // Compute the new due_at based on mode
+      let newDueAt: string
+      if (until !== undefined) {
+        // Absolute mode: all tasks get the same target time
+        newDueAt = until
+      } else {
+        // Relative mode: add delta to each task's current due_at
+        // Tasks with null due_at use current time as base
+        const baseDueAt = task.due_at ? new Date(task.due_at) : nowDate
+        newDueAt = new Date(baseDueAt.getTime() + deltaMinutes! * 60 * 1000).toISOString()
+      }
+
       // Determine snoozed_from value
       const newSnoozedFrom = task.snoozed_from ?? task.due_at
 
@@ -254,12 +283,12 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         SET due_at = ?, snoozed_from = ?, updated_at = ?
         WHERE id = ?
       `,
-      ).run(until, newSnoozedFrom, nowStr, task.id)
+      ).run(newDueAt, newSnoozedFrom, nowStr, task.id)
 
       snapshots.push(
         createTaskSnapshot(
           { id: task.id, due_at: task.due_at, snoozed_from: task.snoozed_from },
-          { id: task.id, due_at: until, snoozed_from: newSnoozedFrom },
+          { id: task.id, due_at: newDueAt, snoozed_from: newSnoozedFrom },
           ['due_at', 'snoozed_from'],
         ),
       )

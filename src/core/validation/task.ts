@@ -92,11 +92,23 @@ export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
 
 /**
  * Bulk snooze input schema
+ *
+ * Supports two modes:
+ * - Absolute: { ids, until } - sets all tasks to the same time
+ * - Relative: { ids, delta_minutes } - adds minutes to each task's current due_at
  */
-export const bulkSnoozeSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
-  until: dateTimeString,
-})
+export const bulkSnoozeSchema = z
+  .object({
+    ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
+    until: dateTimeString.optional(),
+    delta_minutes: z.number().int().optional(),
+  })
+  .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
+    message: 'Either until or delta_minutes must be provided',
+  })
+  .refine((data) => !(data.until !== undefined && data.delta_minutes !== undefined), {
+    message: 'Cannot provide both until and delta_minutes',
+  })
 
 export type BulkSnoozeInput = z.infer<typeof bulkSnoozeSchema>
 
