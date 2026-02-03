@@ -116,6 +116,7 @@ interface TaskRowProps {
   isSelected?: boolean
   isSelectionMode?: boolean
   onSelect?: () => void
+  onSelectOnly?: () => void
   onRangeSelect?: () => void
   cancelLongPressRef?: React.MutableRefObject<(() => void) | null>
   onLabelClick?: (label: string) => void
@@ -130,6 +131,7 @@ export function TaskRow({
   isSelected = false,
   isSelectionMode = false,
   onSelect,
+  onSelectOnly,
   onRangeSelect,
   cancelLongPressRef,
   onLabelClick,
@@ -158,15 +160,20 @@ export function TaskRow({
 
       // Clicking anywhere on the row (except interactive elements with stopPropagation)
       // enters selection mode and selects this task
-      if (!onSelect) return
+      if (!onSelectOnly) return
       e.preventDefault()
       if (e.shiftKey && onRangeSelect) {
+        // Shift+click: range select from anchor
         onRangeSelect()
-      } else {
+      } else if ((e.metaKey || e.ctrlKey) && onSelect) {
+        // Cmd/Ctrl+click: toggle (accumulate selection)
         onSelect()
+      } else {
+        // Plain click: select only this item (replaces selection)
+        onSelectOnly()
       }
     },
-    [onSelect, onRangeSelect, pointer],
+    [onSelect, onSelectOnly, onRangeSelect, pointer],
   )
 
   const priorityIndicator = getPriorityIndicator(task.priority)

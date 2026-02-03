@@ -5,8 +5,14 @@ test.describe('Add task modal (mobile FAB)', () => {
     // Set mobile viewport to show the bottom tabs
     await page.setViewportSize({ width: 375, height: 812 })
 
+    // Reload to ensure mobile layout renders correctly after viewport change
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
     // The bottom nav Add button should be visible on mobile
-    const addButton = page.getByRole('button', { name: 'Add' })
+    // BottomTabs has md:hidden, so it's hidden on desktop and visible on mobile
+    // Use exact match to avoid matching "Open full add form" button
+    const addButton = page.getByRole('button', { name: 'Add', exact: true })
     await expect(addButton).toBeVisible({ timeout: 5000 })
 
     // Click the FAB

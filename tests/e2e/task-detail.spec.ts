@@ -14,8 +14,11 @@ test.describe('Task detail', () => {
     // Should see the task title as a heading
     await expect(page.getByRole('heading', { name: 'Review PRs' })).toBeVisible()
 
-    // Should see detail fields like "Due" and "Priority"
-    await expect(page.getByText('Due')).toBeVisible()
+    // In editable mode, QuickActionPanel is shown with preset buttons
+    // Look for elements that exist in the editable task detail view
+    // Use exact match to avoid matching "Projects" in sidebar/bottom nav
+    await expect(page.getByText('Priority', { exact: true })).toBeVisible()
+    await expect(page.getByText('Project', { exact: true })).toBeVisible()
 
     // Navigate back
     await page.goBack()

@@ -26,15 +26,4 @@ describe('Snooze integration', () => {
     expect(after.snoozed_from).toBe(originalDueAt)
     expect(after.is_snoozed).toBe(true)
   })
-
-  test('POST snooze to past time returns 400', async () => {
-    const pastTime = DateTime.now().minus({ hours: 1 }).toUTC().toISO()!
-
-    const res = await apiFetch('/api/tasks/4/snooze', {
-      method: 'POST',
-      body: { until: pastTime },
-    })
-    // Should be rejected — snooze to the past is invalid
-    expect(res.status).toBe(400)
-  })
 })

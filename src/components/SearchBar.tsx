@@ -57,11 +57,11 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
 
   return (
     // ml-auto keeps search right-aligned; flex-1 when active gives room for leftward growth
-    <div className="flex min-w-0 flex-1 items-center">
-      {/* Desktop: ml-auto + width transition = expands leftward from right edge */}
+    <div className="flex min-w-0 flex-1 items-center justify-end">
+      {/* Desktop: ml-4 (16px) for spacing from badges - matches 16px visual gap to clock icon */}
       <div
         className={cn(
-          'hidden flex-1 items-center transition-[width] duration-200 ease-in-out md:flex',
+          'ml-4 hidden flex-1 items-center transition-[width] duration-200 ease-in-out md:flex',
           isActive ? 'bg-background relative z-10' : '',
         )}
       >
@@ -93,7 +93,8 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
       </div>
 
       {/* Mobile: icon button, or absolute overlay when expanded */}
-      <div className="md:hidden">
+      {/* -mr-2.5 compensates for parent gap + extra space to match clock-hamburger spacing */}
+      <div className="-mr-2.5 md:hidden">
         {expanded ? (
           <div className="animate-fade-in bg-background absolute inset-y-0 right-14 left-4 z-20 flex items-center gap-1">
             <Input

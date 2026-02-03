@@ -29,6 +29,7 @@ const fallbackSelection: SelectionContextType = {
   toggle: () => {},
   rangeSelect: () => {},
   selectAll: () => {},
+  selectOnly: () => {},
   addAll: () => {},
   removeAll: () => {},
   clear: () => {},
@@ -194,6 +195,7 @@ export function TaskList({
                       isSelected={selection.selectedIds.has(task.id)}
                       isSelectionMode={selection.isSelectionMode}
                       onSelect={() => selection.toggle(task.id)}
+                      onSelectOnly={() => selection.selectOnly(task.id)}
                       onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
                       cancelLongPressRef={cancelRef}
                       onLabelClick={onLabelClick}

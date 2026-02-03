@@ -8,18 +8,22 @@ test.describe('Dashboard', () => {
   })
 
   test('toggle grouping mode changes layout', async ({ authenticatedPage: page }) => {
-    // Find and click the grouping toggle button
-    const toggleBtn = page.getByRole('button', { name: /group by/i })
-    await expect(toggleBtn).toBeVisible()
+    // The grouping toggle is now inside the hamburger menu
+    const menuBtn = page.getByRole('button', { name: 'Menu' })
+    await expect(menuBtn).toBeVisible()
 
-    // Click to switch grouping mode
-    await toggleBtn.click()
-    await expect(page.getByText('Buy groceries')).toBeVisible()
-
-    // Click again to switch back
-    await toggleBtn.click()
+    // Open menu and click "Group by" option
+    await menuBtn.click()
+    const groupByItem = page.getByRole('menuitem', { name: /group by/i })
+    await expect(groupByItem).toBeVisible()
+    await groupByItem.click()
 
     // Tasks should still be visible after toggling
+    await expect(page.getByText('Buy groceries')).toBeVisible()
+
+    // Toggle again
+    await menuBtn.click()
+    await page.getByRole('menuitem', { name: /group by/i }).click()
     await expect(page.getByText('Buy groceries')).toBeVisible()
   })
 })

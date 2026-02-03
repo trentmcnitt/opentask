@@ -93,6 +93,23 @@ export function useSelectionMode() {
     setIsSelectionMode(false)
   }, [])
 
+  // Select only this item (replaces selection, standard single-click behavior)
+  // If this item is already the only selected item, deselect and exit selection mode
+  const selectOnly = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      // If clicking the only selected item, deselect it and exit
+      if (prev.size === 1 && prev.has(id)) {
+        setAnchor(null)
+        setIsSelectionMode(false)
+        return new Set()
+      }
+      // Otherwise, select only this item
+      setAnchor(id)
+      setIsSelectionMode(true)
+      return new Set([id])
+    })
+  }, [])
+
   return {
     selectedIds,
     anchor,
@@ -100,6 +117,7 @@ export function useSelectionMode() {
     toggle,
     rangeSelect,
     selectAll,
+    selectOnly,
     addAll,
     removeAll,
     clear,
