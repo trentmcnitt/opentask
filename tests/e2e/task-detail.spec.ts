@@ -11,14 +11,13 @@ test.describe('Task detail', () => {
     // Should navigate to task detail page
     await page.waitForURL(/\/tasks\/\d+/, { timeout: 5000 })
 
-    // Should see the task title as a heading
-    await expect(page.getByRole('heading', { name: 'Review PRs' })).toBeVisible()
+    // Should see the task title (rendered as paragraph in QuickActionPanel)
+    await expect(page.getByText('Review PRs')).toBeVisible()
 
-    // In editable mode, QuickActionPanel is shown with preset buttons
-    // Look for elements that exist in the editable task detail view
-    // Use exact match to avoid matching "Projects" in sidebar/bottom nav
-    await expect(page.getByText('Project', { exact: true })).toBeVisible()
-    await expect(page.getByText('Labels', { exact: true })).toBeVisible()
+    // In editable mode, QuickActionPanel shows interactive buttons for task fields
+    // Verify project button (shows "Work" from seed data) and priority button are visible
+    await expect(page.getByRole('button', { name: 'Work' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'High' })).toBeVisible()
 
     // Navigate back
     await page.goBack()
@@ -32,10 +31,10 @@ test.describe('Task detail', () => {
     await taskLink.click()
     await page.waitForURL(/\/tasks\/\d+/, { timeout: 5000 })
 
-    // Click on the title heading to enter edit mode
-    const titleHeading = page.getByRole('heading', { name: 'Buy groceries' })
-    await expect(titleHeading).toBeVisible({ timeout: 3000 })
-    await titleHeading.click()
+    // Click on the title to enter edit mode (rendered as paragraph in QuickActionPanel)
+    const titleText = page.getByText('Buy groceries')
+    await expect(titleText).toBeVisible({ timeout: 3000 })
+    await titleText.click()
 
     // The title should become an editable textbox
     const titleInput = page.locator('input').first()
@@ -46,13 +45,13 @@ test.describe('Task detail', () => {
     await titleInput.press('Enter')
 
     // Verify the title updated
-    await expect(page.getByRole('heading', { name: 'Buy organic groceries' })).toBeVisible({
+    await expect(page.getByText('Buy organic groceries')).toBeVisible({
       timeout: 3000,
     })
 
     // Reload to verify persistence
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'Buy organic groceries' })).toBeVisible({
+    await expect(page.getByText('Buy organic groceries')).toBeVisible({
       timeout: 5000,
     })
   })

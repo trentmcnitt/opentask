@@ -25,6 +25,12 @@ interface QuickActionPopoverProps {
   onDateSave: (taskId: number, isoUtc: string) => void
   /** Called on priority change with absolute priority (0-4) */
   onPriorityChange?: (taskId: number, newPriority: number) => void
+  /** Called when recurrence changes */
+  onRruleChange?: (
+    taskId: number,
+    rrule: string | null,
+    recurrenceMode?: 'from_due' | 'from_completion',
+  ) => void
   /** Called to delete task */
   onDelete?: (taskId: number) => void
   /** Called to navigate to task detail page */
@@ -39,6 +45,7 @@ export function QuickActionPopover({
   onClose,
   onDateSave,
   onPriorityChange,
+  onRruleChange,
   onDelete,
   onNavigateToDetail,
   onMoveToProject,
@@ -110,6 +117,14 @@ export function QuickActionPopover({
     }
   }, [focusedTask, onDelete, onClose])
 
+  const handleRruleChange = useCallback(
+    (rrule: string | null, recurrenceMode?: 'from_due' | 'from_completion') => {
+      if (!focusedTask || !onRruleChange) return
+      onRruleChange(focusedTask.id, rrule, recurrenceMode)
+    },
+    [focusedTask, onRruleChange],
+  )
+
   // Handle dialog/sheet close - reset pending date
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
@@ -130,6 +145,7 @@ export function QuickActionPopover({
       mode={isMobile ? 'sheet' : 'popover'}
       onDateChange={handleDateChange}
       onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
+      onRruleChange={onRruleChange ? handleRruleChange : undefined}
       onDelete={onDelete ? handleDelete : undefined}
       onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
       onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}

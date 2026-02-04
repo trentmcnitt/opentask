@@ -132,7 +132,7 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 ### Source Layout
 
 - `src/core/` — Business logic (no UI): auth, db, tasks, recurrence, undo, validation, notifications, review
-- `src/components/` — React components (`TaskList.tsx`, `TaskRow.tsx`, `TaskDetail.tsx`, `SwipeableRow.tsx`, `SelectionProvider.tsx`, `AppLayout.tsx`, etc.). The "action panel" refers to `QuickActionPanel.tsx` — the grid of snooze/priority buttons used in task detail and the dashboard modal. The "selection bar" refers to `SelectionActionSheet.tsx` — the floating black bar with Done/Details/More buttons that appears when tasks are selected.
+- `src/components/` — React components (`TaskList.tsx`, `TaskRow.tsx`, `TaskDetail.tsx`, `SwipeableRow.tsx`, `SelectionProvider.tsx`, `AppLayout.tsx`, etc.). The "quick panel" refers to `QuickActionPanel.tsx` — the grid of snooze/priority buttons used in task detail and the dashboard modal. The "action bar" refers to `SelectionActionSheet.tsx` — the floating black bar with Done/Details/More buttons that appears when tasks are selected.
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
 - `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`)
 - `src/app/api/` — REST API routes with dual auth (session cookies + Bearer tokens)

@@ -80,7 +80,7 @@ export interface QuickActionPanelProps {
   /** Called with absolute priority value (0=none, 1=low, 2=medium, 3=high, 4=urgent) */
   onPriorityChange?: (priority: number) => void
   /** Called when rrule changes (inline mode with RecurrencePicker) */
-  onRruleChange?: (rrule: string | null) => void
+  onRruleChange?: (rrule: string | null, recurrenceMode?: 'from_due' | 'from_completion') => void
   /** Available projects for project picker popover (use with onProjectChange) */
   projects?: Project[]
   /** Called when project is changed via popover picker (requires projects prop) */
@@ -182,6 +182,9 @@ export function QuickActionPanel({
   const [pendingPriority, setPendingPriority] = useState<number | null>(null)
   const [pendingLabels, setPendingLabels] = useState<string[] | null>(null)
   const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
+  const [pendingRecurrenceMode, setPendingRecurrenceMode] = useState<
+    'from_due' | 'from_completion' | null
+  >(null)
   const [pendingProject, setPendingProject] = useState<number | null>(null)
 
   // Single task mode hook
@@ -228,6 +231,7 @@ export function QuickActionPanel({
     pendingPriority !== null ||
     pendingLabels !== null ||
     pendingRrule !== undefined ||
+    pendingRecurrenceMode !== null ||
     pendingProject !== null
   const isDirty = hasDateChanges || hasPendingChanges
 
@@ -310,9 +314,13 @@ export function QuickActionPanel({
       onLabelsChange?.(pendingLabels)
       setPendingLabels(null)
     }
-    if (pendingRrule !== undefined) {
-      onRruleChange?.(pendingRrule)
+    if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
+      // Pass both rrule and recurrence mode - use pending values if set, else current task values
+      const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
+      const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
+      onRruleChange?.(rrule, mode)
       setPendingRrule(undefined)
+      setPendingRecurrenceMode(null)
     }
     if (pendingProject !== null) {
       onProjectChange?.(pendingProject)
@@ -325,7 +333,10 @@ export function QuickActionPanel({
     pendingPriority,
     pendingLabels,
     pendingRrule,
+    pendingRecurrenceMode,
     pendingProject,
+    effectiveTask?.rrule,
+    effectiveTask?.recurrence_mode,
     onPriorityChange,
     onLabelsChange,
     onRruleChange,
@@ -354,6 +365,7 @@ export function QuickActionPanel({
     setPendingPriority(null)
     setPendingLabels(null)
     setPendingRrule(undefined)
+    setPendingRecurrenceMode(null)
     setPendingProject(null)
     onCancel?.()
   }, [reset, onCancel])
@@ -364,6 +376,7 @@ export function QuickActionPanel({
     setPendingPriority(null)
     setPendingLabels(null)
     setPendingRrule(undefined)
+    setPendingRecurrenceMode(null)
     setPendingProject(null)
   }, [reset])
 
@@ -393,7 +406,7 @@ export function QuickActionPanel({
       return formatBulkRecurrence(selectedTasks ?? [])
     }
     if (!displayRrule) return 'One time'
-    return formatRRuleCompact(displayRrule)
+    return formatRRuleCompact(displayRrule, effectiveTask?.anchor_time)
   })()
 
   // Determine if recurrence is "One time" for styling purposes
@@ -449,8 +462,10 @@ export function QuickActionPanel({
     if (pendingLabels !== null) {
       onLabelsChange?.(pendingLabels)
     }
-    if (pendingRrule !== undefined) {
-      onRruleChange?.(pendingRrule)
+    if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
+      const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
+      const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
+      onRruleChange?.(rrule, mode)
     }
     if (pendingProject !== null) {
       onProjectChange?.(pendingProject)
@@ -462,7 +477,10 @@ export function QuickActionPanel({
     pendingPriority,
     pendingLabels,
     pendingRrule,
+    pendingRecurrenceMode,
     pendingProject,
+    effectiveTask?.rrule,
+    effectiveTask?.recurrence_mode,
     onPriorityChange,
     onLabelsChange,
     onRruleChange,
@@ -555,9 +573,11 @@ export function QuickActionPanel({
                     className={cn(
                       'truncate font-medium',
                       titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
-                      onTitleChange && 'hover:text-primary cursor-pointer transition-colors',
+                      onTitleChange
+                        ? 'hover:text-primary cursor-pointer transition-colors'
+                        : 'select-text',
                     )}
-                    onClick={handleTitleClick}
+                    onClick={onTitleChange ? handleTitleClick : undefined}
                   >
                     {title}
                   </p>
@@ -580,14 +600,14 @@ export function QuickActionPanel({
               Completed
             </Badge>
           )}
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-xs select-text">
             <span>{headerText}</span>
             <span className="mx-1">&middot;</span>
             <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
           </p>
           {/* Recurrence summary line (with icon) - only in SelectionActionSheet mode */}
           {isSelectionSheetMode && recurrenceText && (
-            <p className="text-muted-foreground mt-0.5 text-xs">
+            <p className="text-muted-foreground mt-0.5 text-xs select-text">
               <Repeat className="mr-1 inline size-3" />
               {recurrenceText}
             </p>
@@ -597,7 +617,7 @@ export function QuickActionPanel({
           {!isSelectionSheetMode && recurrenceText && (
             <p
               className={cn(
-                'mt-1 text-xs',
+                'mt-1 text-xs select-text',
                 isOneTime ? 'text-muted-foreground/60' : 'text-muted-foreground',
               )}
             >
@@ -812,8 +832,8 @@ export function QuickActionPanel({
                 </span>
               ) : null
             })()}
-            {/* Recurrence button - show for single task in inline or popover mode with onRruleChange */}
-            {isSingleTask && (mode === 'inline' || mode === 'popover') && onRruleChange && (
+            {/* Recurrence button - show when onRruleChange is provided */}
+            {onRruleChange && (
               <IconButton
                 icon={<Repeat className="size-4" />}
                 label="Recurrence"
@@ -902,16 +922,21 @@ export function QuickActionPanel({
         ))}
       </div>
 
-      {/* Expandable recurrence section (inline/popover mode, single task only) */}
+      {/* Expandable recurrence section - shown when recurrence button is clicked */}
       {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}
-      {(mode === 'inline' || mode === 'popover') &&
-        isSingleTask &&
-        editingRecurrence &&
-        onRruleChange && (
-          <div className="rounded-lg border p-3">
-            <RecurrencePicker value={displayRrule} onChange={(val) => setPendingRrule(val)} />
-          </div>
-        )}
+      {editingRecurrence && onRruleChange && (
+        <div className="rounded-lg border p-3">
+          <RecurrencePicker
+            value={displayRrule}
+            recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
+            initialTime={effectiveTask?.anchor_time}
+            onChange={(rrule, mode) => {
+              setPendingRrule(rrule)
+              if (mode) setPendingRecurrenceMode(mode)
+            }}
+          />
+        </div>
+      )}
 
       {/* Apply button (inline mode only) */}
       {mode === 'inline' && (

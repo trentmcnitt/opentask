@@ -234,7 +234,43 @@ function useTaskActions(
     [setTasks, fetchTasks, handleUndo],
   )
 
-  return { handleDone, handleSnooze, handleUndo, handleRedo, handleQuickAdd, handlePriorityChange }
+  const handleRruleChange = useCallback(
+    async (
+      taskId: number,
+      rrule: string | null,
+      recurrenceMode?: 'from_due' | 'from_completion',
+    ) => {
+      const changes: Record<string, unknown> = { rrule }
+      if (recurrenceMode) changes.recurrence_mode = recurrenceMode
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changes),
+        })
+        if (!res.ok) throw new Error('Failed to update recurrence')
+        fetchTasks()
+        showToast({
+          message: rrule ? 'Recurrence updated' : 'Recurrence removed',
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+      } catch {
+        fetchTasks()
+      }
+    },
+    [fetchTasks, handleUndo],
+  )
+
+  return {
+    handleDone,
+    handleSnooze,
+    handleUndo,
+    handleRedo,
+    handleQuickAdd,
+    handlePriorityChange,
+    handleRruleChange,
+  }
 }
 
 function useBulkActions(
@@ -493,6 +529,15 @@ function HomeContent() {
       // Note: Does NOT call selection.selectOnly() - focus and selection are independent
     },
     [keyboard],
+  )
+
+  // Handler for desktop double-click: open QuickActionPopover for the task
+  const handleDoubleClick = useCallback(
+    (task: Task) => {
+      setFocusedTask(task)
+      setQuickActionOpen(true)
+    },
+    [setFocusedTask, setQuickActionOpen],
   )
 
   // Return focus to task list when keyboard shortcuts dialog closes (if there are selections).
@@ -873,6 +918,7 @@ function HomeContent() {
       onQuickActionClose={() => setQuickActionOpen(false)}
       onQuickActionDateSave={actions.handleSnooze}
       onQuickActionPriorityChange={actions.handlePriorityChange}
+      onQuickActionRruleChange={actions.handleRruleChange}
       onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
       onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
       keyboardFocusedId={keyboardFocusedId}
@@ -883,6 +929,7 @@ function HomeContent() {
       getSortOption={getSortOption}
       setSortOption={setSortOption}
       onActivate={handleActivate}
+      onDoubleClick={handleDoubleClick}
       showShortcutsDialog={showShortcutsDialog}
       onShortcutsDialogChange={setShowShortcutsDialog}
       onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
@@ -991,6 +1038,7 @@ function DashboardView({
   onQuickActionClose,
   onQuickActionDateSave,
   onQuickActionPriorityChange,
+  onQuickActionRruleChange,
   onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
@@ -1001,6 +1049,7 @@ function DashboardView({
   getSortOption,
   setSortOption,
   onActivate,
+  onDoubleClick,
   showShortcutsDialog,
   onShortcutsDialogChange,
   onShortcutsDialogCloseAutoFocus,
@@ -1042,6 +1091,11 @@ function DashboardView({
   onQuickActionClose: () => void
   onQuickActionDateSave: (taskId: number, until: string) => void
   onQuickActionPriorityChange: (taskId: number, newPriority: number) => void
+  onQuickActionRruleChange: (
+    taskId: number,
+    rrule: string | null,
+    recurrenceMode?: 'from_due' | 'from_completion',
+  ) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
   keyboardFocusedId: number | null
@@ -1052,6 +1106,7 @@ function DashboardView({
   getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
   setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
   onActivate: (taskId: number) => void
+  onDoubleClick: (task: Task) => void
   showShortcutsDialog: boolean
   onShortcutsDialogChange: (open: boolean) => void
   onShortcutsDialogCloseAutoFocus: (e: Event) => void
@@ -1132,6 +1187,7 @@ function DashboardView({
           getSortOption={getSortOption}
           setSortOption={setSortOption}
           onActivate={onActivate}
+          onDoubleClick={onDoubleClick}
         />
       </main>
 
@@ -1156,10 +1212,12 @@ function DashboardView({
         onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
-        onRecurrenceChange={(rrule) => {
+        onRecurrenceChange={(rrule, recurrenceMode) => {
+          const changes: Record<string, unknown> = { rrule }
+          if (recurrenceMode) changes.recurrence_mode = recurrenceMode
           onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
-            changes: { rrule },
+            changes,
           })
         }}
       />
@@ -1192,6 +1250,7 @@ function DashboardView({
         onClose={onQuickActionClose}
         onDateSave={onQuickActionDateSave}
         onPriorityChange={onQuickActionPriorityChange}
+        onRruleChange={onQuickActionRruleChange}
         onNavigateToDetail={onQuickActionNavigate}
       />
 

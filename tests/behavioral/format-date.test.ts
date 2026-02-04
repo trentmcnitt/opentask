@@ -208,8 +208,8 @@ describe('formatRRuleCompact', () => {
     expect(formatRRuleCompact('FREQ=DAILY')).toBe('Daily')
   })
 
-  test('daily with time (time stripped)', () => {
-    expect(formatRRuleCompact('FREQ=DAILY;BYHOUR=8;BYMINUTE=0')).toBe('Daily')
+  test('daily with time', () => {
+    expect(formatRRuleCompact('FREQ=DAILY;BYHOUR=8;BYMINUTE=0')).toBe('Daily at 8:00 AM')
   })
 
   test('every 3 days', () => {
@@ -276,7 +276,14 @@ describe('formatRRuleCompact', () => {
     expect(formatRRuleCompact('FREQ=WEEKLY')).toBe('Weekly')
   })
 
-  test('time parts are ignored (BYHOUR/BYMINUTE stripped)', () => {
-    expect(formatRRuleCompact('FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=9;BYMINUTE=0')).toBe('M, W, F')
+  test('weekly with time parts shows time', () => {
+    expect(formatRRuleCompact('FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=9;BYMINUTE=0')).toBe(
+      'M, W, F at 9:00 AM',
+    )
+  })
+
+  test('compact with anchor_time shows time', () => {
+    expect(formatRRuleCompact('FREQ=DAILY', '14:30')).toBe('Daily at 2:30 PM')
+    expect(formatRRuleCompact('FREQ=WEEKLY;BYDAY=FR', '09:00')).toBe('Fridays at 9:00 AM')
   })
 })
