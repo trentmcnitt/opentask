@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Repeat, Timer, Bell, Trash2, MoreHorizontal, Info, FolderInput } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +17,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
-import { formatRRuleCompact } from '@/lib/format-rrule'
+import { formatRRuleCompact, formatBulkRecurrence } from '@/lib/format-rrule'
 import { PRESET_TIMES, INCREMENTS, DECREMENTS } from '@/lib/quick-select-dates'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { PRIORITY_OPTIONS } from '@/lib/priority'
@@ -52,6 +54,17 @@ export interface QuickActionPanelProps {
   onSave?: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: () => void
+  /**
+   * Recurrence summary to display (for sheet mode where SelectionActionSheet
+   * computes it). If not provided, computes from task/selectedTasks.
+   */
+  recurrenceSummary?: string | null
+  /** Title size: 'compact' (default) or 'prominent' (larger for page context) */
+  titleVariant?: 'compact' | 'prominent'
+  /** Called when title is edited (makes title editable when provided) */
+  onTitleChange?: (title: string) => void
+  /** Show Completed badge when task.done is true */
+  showCompletedBadge?: boolean
 }
 
 export function QuickActionPanel({
@@ -70,6 +83,10 @@ export function QuickActionPanel({
   onCancel,
   onSave,
   onNavigateToDetail,
+  recurrenceSummary,
+  titleVariant = 'compact',
+  onTitleChange,
+  showCompletedBadge = false,
 }: QuickActionPanelProps) {
   // Effective task: either passed directly, or single selected task via bulk path
   const effectiveTask = task ?? (selectedTasks?.length === 1 ? selectedTasks[0] : null)
@@ -82,6 +99,10 @@ export function QuickActionPanel({
 
   // State for expandable recurrence picker (inline mode only)
   const [editingRecurrence, setEditingRecurrence] = useState(false)
+
+  // State for title editing
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -154,18 +175,30 @@ export function QuickActionPanel({
     onCancel?.()
   }, [reset, onCancel])
 
-  // Compute title: multiple tasks shows count, single task in sheet mode hides title (modal shows it)
-  // For inline/popover mode with single task, show the title
-  const title =
-    selectedCount && selectedCount > 1
-      ? `${selectedCount} tasks selected`
-      : selectedCount === 1
-        ? null // Single task in sheet mode - modal title shows task name
-        : (effectiveTask?.title ?? 'Set date')
+  // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
+  // (SnoozeSheet also uses sheet mode but doesn't pass selectedCount, so it still shows the title)
+  const isSelectionSheetMode = mode === 'sheet' && selectedCount !== undefined
 
-  // Compute recurrence text for header (only show if effectiveTask has rrule)
+  // Compute title:
+  // - SelectionActionSheet (sheet mode with selectedCount): hide title, modal shows it
+  // - SnoozeSheet (sheet mode without selectedCount): show task title
+  // - inline/popover: show count for bulk or task title
+  const title = isSelectionSheetMode
+    ? null
+    : selectedCount && selectedCount > 1
+      ? `${selectedCount} tasks selected`
+      : (effectiveTask?.title ?? 'Set date')
+
+  // Compute recurrence text for header display
+  // In SelectionActionSheet (sheet mode with selectedCount), use the recurrenceSummary prop
+  // In other modes, compute from effectiveTask or selectedTasks
   const recurrenceText = (() => {
-    if (isBulkMode) return null // No recurrence display in bulk mode
+    if (isSelectionSheetMode) {
+      return recurrenceSummary ?? null
+    }
+    if (isBulkMode) {
+      return formatBulkRecurrence(selectedTasks ?? [])
+    }
     const rrule = effectiveTask?.rrule
     if (!rrule) return null
     return formatRRuleCompact(rrule)
@@ -176,99 +209,169 @@ export function QuickActionPanel({
     setEditingRecurrence((prev) => !prev)
   }, [])
 
+  // Handle title editing
+  const handleTitleSave = useCallback(() => {
+    if (titleDraft.trim() && titleDraft.trim() !== effectiveTask?.title) {
+      onTitleChange?.(titleDraft.trim())
+    }
+    setEditingTitle(false)
+  }, [titleDraft, effectiveTask?.title, onTitleChange])
+
+  const handleTitleClick = useCallback(() => {
+    if (onTitleChange && effectiveTask) {
+      setTitleDraft(effectiveTask.title)
+      setEditingTitle(true)
+    }
+  }, [onTitleChange, effectiveTask])
+
+  // In SelectionActionSheet mode, the modal header renders quick-links
+  // In SnoozeSheet mode (sheet without selectedCount), we still show quick-links here
+  const showQuickLinks = !isSelectionSheetMode
+
   return (
     <div className="space-y-3">
       {/* Header row */}
       <div className={cn('flex justify-between gap-2', title ? 'items-start' : 'items-center')}>
         <div className="min-w-0 flex-1">
-          {title && <p className="truncate text-sm font-medium">{title}</p>}
+          {/* Title: editable when onTitleChange provided, otherwise static */}
+          {title && (
+            <>
+              {onTitleChange && editingTitle ? (
+                <Input
+                  type="text"
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleTitleSave()
+                    if (e.key === 'Escape') setEditingTitle(false)
+                  }}
+                  className={cn(
+                    'h-auto py-1',
+                    titleVariant === 'prominent' ? 'text-lg font-semibold' : 'text-sm font-medium',
+                  )}
+                  autoFocus
+                />
+              ) : (
+                <p
+                  className={cn(
+                    'truncate font-medium',
+                    titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
+                    onTitleChange && 'hover:text-primary cursor-pointer transition-colors',
+                  )}
+                  onClick={handleTitleClick}
+                >
+                  {title}
+                </p>
+              )}
+            </>
+          )}
+          {/* Completed badge - shown in popover/inline modes when task is done */}
+          {showCompletedBadge && effectiveTask?.done && (
+            <Badge
+              variant="secondary"
+              className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            >
+              Completed
+            </Badge>
+          )}
           <p className="text-muted-foreground text-xs">
             <span>{headerText}</span>
             <span className="mx-1">&middot;</span>
             <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
-            {recurrenceText && (
-              <>
-                <span className="mx-1">&middot;</span>
-                <span>{recurrenceText}</span>
-              </>
-            )}
           </p>
+          {/* Recurrence summary line (with icon) - only in SelectionActionSheet mode */}
+          {isSelectionSheetMode && recurrenceText && (
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              <Repeat className="mr-1 inline size-3" />
+              {recurrenceText}
+            </p>
+          )}
+          {/* Recurrence inline (without icon) - for non-SelectionActionSheet modes */}
+          {!isSelectionSheetMode && recurrenceText && (
+            <p className="text-muted-foreground text-xs">
+              <span className="mr-1">&middot;</span>
+              <span>{recurrenceText}</span>
+            </p>
+          )}
           {/* Staged delta indicator - show in blue when dirty with delta operation */}
           {deltaDisplay && (
             <p className="mt-0.5 text-xs font-medium text-blue-500">{deltaDisplay}</p>
           )}
         </div>
 
-        {/* Action icons */}
-        <div className="flex items-center gap-0.5">
-          {/* Recurrence button - only show for single task in inline mode with onRruleChange */}
-          {isSingleTask && mode === 'inline' && onRruleChange && (
-            <IconButton
-              icon={<Repeat className="size-4" />}
-              label="Recurrence"
-              onClick={handleRecurrenceToggle}
-              active={editingRecurrence}
-            />
-          )}
-          {/* Disabled stubs - always visible as separate buttons */}
-          <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
-          <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
-          {onDelete && (
-            <IconButton
-              icon={<Trash2 className="size-4" />}
-              label="Delete"
-              onClick={onDelete}
-              destructive
-            />
-          )}
+        {/* Action icons - only show when not in sheet mode */}
+        {showQuickLinks && (
+          <div className="flex items-center gap-0.5">
+            {/* Recurrence button - only show for single task in inline mode with onRruleChange */}
+            {isSingleTask && mode === 'inline' && onRruleChange && (
+              <IconButton
+                icon={<Repeat className="size-4" />}
+                label="Recurrence"
+                onClick={handleRecurrenceToggle}
+                active={editingRecurrence}
+              />
+            )}
+            {/* Disabled stubs - always visible as separate buttons */}
+            <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
+            <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
+            {onDelete && (
+              <IconButton
+                icon={<Trash2 className="size-4" />}
+                label="Delete"
+                onClick={onDelete}
+                destructive
+              />
+            )}
 
-          {/* More menu - show when priority, move to project, or task details available */}
-          {(onPriorityChange || onMoveToProject || (isSingleTask && onNavigateToDetail)) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label="More options"
-                  title="More options"
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {onPriorityChange && (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {PRIORITY_OPTIONS.map((opt) => (
-                        <DropdownMenuItem
-                          key={opt.value}
-                          onClick={() => onPriorityChange(opt.value)}
-                          className={opt.color}
-                        >
-                          {opt.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                )}
-                {onMoveToProject && (
-                  <DropdownMenuItem onClick={onMoveToProject}>
-                    <FolderInput className="mr-2 size-4" />
-                    Move to Project
-                  </DropdownMenuItem>
-                )}
-                {isSingleTask && onNavigateToDetail && (
-                  <DropdownMenuItem onClick={onNavigateToDetail}>
-                    <Info className="mr-2 size-4" />
-                    Task Details
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+            {/* More menu - show when priority, move to project, or task details available */}
+            {(onPriorityChange || onMoveToProject || (isSingleTask && onNavigateToDetail)) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    aria-label="More options"
+                    title="More options"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {onPriorityChange && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {PRIORITY_OPTIONS.map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.value}
+                            onClick={() => onPriorityChange(opt.value)}
+                            className={opt.color}
+                          >
+                            {opt.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {onMoveToProject && (
+                    <DropdownMenuItem onClick={onMoveToProject}>
+                      <FolderInput className="mr-2 size-4" />
+                      Move to Project
+                    </DropdownMenuItem>
+                  )}
+                  {isSingleTask && onNavigateToDetail && (
+                    <DropdownMenuItem onClick={onNavigateToDetail}>
+                      <Info className="mr-2 size-4" />
+                      Task Details
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 4x3 Date grid */}
@@ -366,6 +469,7 @@ function GridButton({
       className={cn(
         'rounded-lg border px-2 py-2.5 text-center text-sm font-medium transition-colors',
         'min-h-[44px]', // Apple HIG touch target
+        'whitespace-nowrap', // Prevent "12:00 PM" from wrapping on narrow screens
         'active:scale-[0.97]',
         variant === 'preset' && 'bg-card hover:bg-accent border-border',
         variant === 'increment' &&

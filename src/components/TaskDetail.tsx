@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -49,32 +48,9 @@ export function TaskDetail({
   onDelete,
 }: TaskDetailProps) {
   const timezone = useTimezone()
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft, setTitleDraft] = useState(task.title)
-
-  const handleTitleSave = () => {
-    if (titleDraft.trim() && titleDraft.trim() !== task.title) {
-      onFieldChange?.('title', titleDraft.trim())
-    }
-    setEditingTitle(false)
-  }
 
   return (
     <div className="space-y-6">
-      <TitleSection
-        task={task}
-        editable={editable}
-        editingTitle={editingTitle}
-        titleDraft={titleDraft}
-        onTitleDraftChange={setTitleDraft}
-        onTitleSave={handleTitleSave}
-        onEditTitle={() => {
-          setTitleDraft(task.title)
-          setEditingTitle(true)
-        }}
-        onDelete={onDelete}
-      />
-
       <TaskFields
         task={task}
         project={project}
@@ -93,76 +69,6 @@ export function TaskDetail({
         onDeleteNote={onDeleteNote}
         timezone={timezone}
       />
-    </div>
-  )
-}
-
-function TitleSection({
-  task,
-  editable,
-  editingTitle,
-  titleDraft,
-  onTitleDraftChange,
-  onTitleSave,
-  onEditTitle,
-  onDelete,
-}: {
-  task: Task
-  editable: boolean
-  editingTitle: boolean
-  titleDraft: string
-  onTitleDraftChange: (v: string) => void
-  onTitleSave: () => void
-  onEditTitle: () => void
-  onDelete?: () => void
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex-1">
-        {editable && editingTitle ? (
-          <Input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => onTitleDraftChange(e.target.value)}
-            onBlur={onTitleSave}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onTitleSave()
-            }}
-            className="h-auto py-1 text-2xl font-semibold"
-            autoFocus
-          />
-        ) : (
-          <h1
-            className={cn(
-              'text-2xl font-semibold',
-              editable && 'hover:text-primary cursor-pointer transition-colors',
-            )}
-            onClick={() => editable && onEditTitle()}
-          >
-            {task.title}
-          </h1>
-        )}
-        {task.done && (
-          <Badge
-            variant="secondary"
-            className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-          >
-            Completed
-          </Badge>
-        )}
-      </div>
-
-      {editable && onDelete && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onDelete}
-          className="text-muted-foreground hover:text-destructive"
-          aria-label="Delete task"
-        >
-          <Trash2 className="size-5" />
-        </Button>
-      )}
     </div>
   )
 }
@@ -230,20 +136,43 @@ function TaskFields({
     onFieldChange?.('project_id', projects[nextIdx].id)
   }, [projects, task.project_id, onFieldChange])
 
+  const handleTitleChange = useCallback(
+    (title: string) => {
+      onFieldChange?.('title', title)
+    },
+    [onFieldChange],
+  )
+
+  // For popover mode, onSave/onCancel are required to show the Save/Reset/Cancel buttons.
+  // The actual save happens via handleDateChange when QuickActionPanel's internal handleSave
+  // calls handleApply, which invokes onDateChange. These callbacks just enable the button pattern.
+  const handleSave = useCallback(() => {
+    // Date change is already applied via onDateChange callback
+  }, [])
+
+  const handleCancel = useCallback(() => {
+    // Reset is handled internally by QuickActionPanel
+  }, [])
+
   return (
     <div className="space-y-4">
-      {/* Quick Action Panel — positioned above notes for mobile thumb reach */}
+      {/* Quick Action Panel — title, date/time grid, and actions */}
       {editable && (
         <div className="rounded-lg border p-3">
           <QuickActionPanel
             task={task}
             timezone={timezone}
-            mode="inline"
+            mode="popover"
+            titleVariant="prominent"
+            showCompletedBadge
             onDateChange={handleDateChange}
             onPriorityChange={handlePriorityChange}
             onRruleChange={handleRruleChange}
             onMoveToProject={projects.length > 1 ? handleMoveToProject : undefined}
             onDelete={onDelete}
+            onTitleChange={handleTitleChange}
+            onSave={handleSave}
+            onCancel={handleCancel}
           />
         </div>
       )}

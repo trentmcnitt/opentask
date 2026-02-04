@@ -44,6 +44,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 1. Deploy to dev: `./scripts/deploy.sh dev` — do this immediately after the quick check passes, before reporting results
 2. **Playwright**: navigate to the affected page, take screenshots at both desktop (1280×800+) and mobile (375×812) viewports, confirm it renders correctly at each size
+   - **Always save screenshots to `.playwright-mcp/`** — this directory is gitignored. Use descriptive filenames like `.playwright-mcp/desktop-filters.png`, not bare filenames like `filters.png` which land in the project root.
 3. **Chrome DevTools MCP**: check for console errors/warnings and failed network requests
 4. **If interactive** (clicks, swipes, form submissions, state changes): test the actual user flow with Playwright — don't just look at a static screenshot
 5. If something looks wrong, fix it and re-deploy — iterate until it's right

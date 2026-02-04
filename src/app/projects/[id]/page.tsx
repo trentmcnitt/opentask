@@ -3,12 +3,73 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
+import { X } from 'lucide-react'
 import { TaskList } from '@/components/TaskList'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
+import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
+
+/**
+ * Combined filter bar for priority and label filters.
+ * Priority badges (square) appear first, then a gray separator, then label badges (pill).
+ */
+function FilterBar({
+  tasks,
+  selectedPriorities,
+  selectedLabels,
+  onTogglePriority,
+  onToggleLabel,
+  onClearAll,
+}: {
+  tasks: Task[]
+  selectedPriorities: number[]
+  selectedLabels: string[]
+  onTogglePriority: (priority: number) => void
+  onToggleLabel: (label: string) => void
+  onClearAll: () => void
+}) {
+  const hasPriorities = tasks.some((t) => t.priority !== undefined)
+  const hasLabels = tasks.some((t) => t.labels.length > 0)
+
+  if (!hasPriorities && !hasLabels) return null
+
+  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
+
+  return (
+    <div className="relative mb-4 flex items-center">
+      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
+        <PriorityFilterBar
+          tasks={tasks}
+          selectedPriorities={selectedPriorities}
+          onTogglePriority={onTogglePriority}
+        />
+
+        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+
+        <LabelFilterBar
+          tasks={tasks}
+          selectedLabels={selectedLabels}
+          onToggleLabel={onToggleLabel}
+        />
+      </div>
+
+      {hasSelection && (
+        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
+          <button
+            onClick={onClearAll}
+            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
+            aria-label="Clear all filters"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -21,6 +82,7 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
+  const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
 
@@ -32,14 +94,27 @@ export default function ProjectDetailPage() {
     )
   }, [])
 
-  const clearLabels = useCallback(() => {
+  const togglePriority = useCallback((priority: number) => {
+    setSelectedPriorities((prev) =>
+      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority],
+    )
+  }, [])
+
+  const clearAllFilters = useCallback(() => {
     setSelectedLabels([])
+    setSelectedPriorities([])
   }, [])
 
   const displayTasks = useMemo(() => {
-    if (selectedLabels.length === 0) return tasks
-    return tasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-  }, [tasks, selectedLabels])
+    let filtered = tasks
+    if (selectedLabels.length > 0) {
+      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
+    }
+    if (selectedPriorities.length > 0) {
+      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
+    }
+    return filtered
+  }, [tasks, selectedLabels, selectedPriorities])
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -160,11 +235,13 @@ export default function ProjectDetailPage() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        <LabelFilterBar
+        <FilterBar
           tasks={tasks}
+          selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
+          onTogglePriority={togglePriority}
           onToggleLabel={toggleLabel}
-          onClearAll={clearLabels}
+          onClearAll={clearAllFilters}
         />
         <TaskList
           tasks={displayTasks}

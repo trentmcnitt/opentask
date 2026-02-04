@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { TaskList } from '@/components/TaskList'
+import { X } from 'lucide-react'
+import { TaskList, buildTaskGroups } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
+import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
+import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
+import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
@@ -310,6 +314,7 @@ function HomeContent() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const selection = useSelection()
+  const timezone = useTimezone()
   const data = useFetchData(router)
   const {
     tasks,
@@ -329,12 +334,16 @@ function HomeContent() {
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
 
+  // Keyboard navigation state
+  const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
+
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
   const [grouping, setGrouping] = useState<GroupingMode>('project')
   const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
+  const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
 
   const toggleLabel = useCallback((label: string) => {
     setSelectedLabels((prev) =>
@@ -346,11 +355,80 @@ function HomeContent() {
     setSelectedLabels([])
   }, [])
 
+  const togglePriority = useCallback((priority: number) => {
+    setSelectedPriorities((prev) =>
+      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority],
+    )
+  }, [])
+
+  const clearPriorities = useCallback(() => {
+    setSelectedPriorities([])
+  }, [])
+
   const baseTasks = searchQuery ? searchResults : tasks
   const displayTasks = useMemo(() => {
-    if (selectedLabels.length === 0) return baseTasks
-    return baseTasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-  }, [baseTasks, selectedLabels])
+    let filtered = baseTasks
+    if (selectedLabels.length > 0) {
+      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
+    }
+    if (selectedPriorities.length > 0) {
+      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
+    }
+    return filtered
+  }, [baseTasks, selectedLabels, selectedPriorities])
+
+  // Build task groups for keyboard navigation
+  const effectiveGrouping = searchQuery ? 'time' : grouping
+  const taskGroups = useMemo(
+    () => buildTaskGroups(displayTasks, projects, effectiveGrouping, timezone),
+    [displayTasks, projects, effectiveGrouping, timezone],
+  )
+  const orderedIds = useMemo(
+    () => taskGroups.flatMap((g) => g.tasks.map((t) => t.id)),
+    [taskGroups],
+  )
+
+  // Keyboard completion handler
+  const handleKeyboardComplete = useCallback(
+    async (taskIds: number[]) => {
+      if (taskIds.length === 0) return
+
+      if (taskIds.length === 1) {
+        await actions.handleDone(taskIds[0])
+      } else {
+        // Bulk complete
+        const count = taskIds.length
+        try {
+          const res = await fetch('/api/tasks/bulk/done', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: taskIds }),
+          })
+          if (!res.ok) throw new Error('Bulk action failed')
+          fetchTasks()
+          showToast({
+            message: `${count} tasks completed`,
+            action: { label: 'Undo', onClick: actions.handleUndo },
+          })
+        } catch {
+          showToast({ message: 'Action failed' })
+        }
+      }
+    },
+    [actions, fetchTasks],
+  )
+
+  // Keyboard navigation hook - disabled when sheets/dialogs are open
+  const keyboardNavEnabled = !snoozeTask && !showProjectPicker && !quickActionOpen
+  const keyboard = useKeyboardNavigation({
+    orderedIds,
+    groups: taskGroups,
+    keyboardFocusedId,
+    setKeyboardFocusedId,
+    selection,
+    onComplete: handleKeyboardComplete,
+    enabled: keyboardNavEnabled,
+  })
 
   // Fetch saved grouping preference on mount
   useEffect(() => {
@@ -457,13 +535,7 @@ function HomeContent() {
     return () => window.removeEventListener('projects-reordered', handler)
   }, [fetchProjects])
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selection.isSelectionMode) selection.clear()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selection])
+  // Global Escape handler removed - keyboard navigation hook handles Escape now
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
@@ -514,6 +586,9 @@ function HomeContent() {
       selectedLabels={selectedLabels}
       onToggleLabel={toggleLabel}
       onClearLabels={clearLabels}
+      selectedPriorities={selectedPriorities}
+      onTogglePriority={togglePriority}
+      onClearPriorities={clearPriorities}
       onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
@@ -535,7 +610,76 @@ function HomeContent() {
       onQuickActionPriorityChange={actions.handlePriorityChange}
       onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
       onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
+      keyboardFocusedId={keyboardFocusedId}
+      isKeyboardActive={keyboard.isKeyboardActive}
+      onKeyDown={keyboard.handleKeyDown}
+      onListFocus={keyboard.handleFocus}
+      onListBlur={keyboard.handleBlur}
+      onMouseInteraction={keyboard.exitKeyboardMode}
     />
+  )
+}
+
+/**
+ * Combined filter bar for priority and label filters.
+ * Priority badges (square) appear first, then a gray separator, then label badges (pill).
+ * The separator only appears if both filter types have content.
+ */
+function FilterBar({
+  allTasks,
+  selectedPriorities,
+  selectedLabels,
+  onTogglePriority,
+  onToggleLabel,
+  onClearAll,
+}: {
+  allTasks: Task[]
+  selectedPriorities: number[]
+  selectedLabels: string[]
+  onTogglePriority: (priority: number) => void
+  onToggleLabel: (label: string) => void
+  onClearAll: () => void
+}) {
+  // Check if we have any priorities or labels to show
+  const hasPriorities = allTasks.some((t) => t.priority !== undefined)
+  const hasLabels = allTasks.some((t) => t.labels.length > 0)
+
+  if (!hasPriorities && !hasLabels) return null
+
+  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
+
+  return (
+    <div className="relative mb-4 flex items-center">
+      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
+        <PriorityFilterBar
+          tasks={allTasks}
+          selectedPriorities={selectedPriorities}
+          onTogglePriority={onTogglePriority}
+        />
+
+        {/* Gray vertical separator between priority and label filters */}
+        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+
+        <LabelFilterBar
+          tasks={allTasks}
+          selectedLabels={selectedLabels}
+          onToggleLabel={onToggleLabel}
+        />
+      </div>
+
+      {/* Clear button - sticky right end */}
+      {hasSelection && (
+        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
+          <button
+            onClick={onClearAll}
+            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
+            aria-label="Clear all filters"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -557,6 +701,9 @@ function DashboardView({
   selectedLabels,
   onToggleLabel,
   onClearLabels,
+  selectedPriorities,
+  onTogglePriority,
+  onClearPriorities,
   onGroupingChange,
   onSearch,
   onSearchClear,
@@ -575,6 +722,12 @@ function DashboardView({
   onQuickActionPriorityChange,
   onQuickActionNavigate,
   onNavigateToDetail,
+  keyboardFocusedId,
+  isKeyboardActive,
+  onKeyDown,
+  onListFocus,
+  onListBlur,
+  onMouseInteraction,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -593,6 +746,9 @@ function DashboardView({
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
   onClearLabels: () => void
+  selectedPriorities: number[]
+  onTogglePriority: (priority: number) => void
+  onClearPriorities: () => void
   onGroupingChange: (g: GroupingMode) => void
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -611,6 +767,12 @@ function DashboardView({
   onQuickActionPriorityChange: (taskId: number, newPriority: number) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
+  keyboardFocusedId: number | null
+  isKeyboardActive: boolean
+  onKeyDown: (e: React.KeyboardEvent) => void
+  onListFocus: () => void
+  onListBlur: () => void
+  onMouseInteraction: () => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -635,11 +797,16 @@ function DashboardView({
           }}
         />
 
-        <LabelFilterBar
-          tasks={allTasks}
+        <FilterBar
+          allTasks={allTasks}
+          selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
+          onTogglePriority={onTogglePriority}
           onToggleLabel={onToggleLabel}
-          onClearAll={onClearLabels}
+          onClearAll={() => {
+            onClearLabels()
+            onClearPriorities()
+          }}
         />
 
         {searchQuery && (
@@ -649,11 +816,17 @@ function DashboardView({
           </div>
         )}
 
-        {selectedLabels.length > 0 && (
+        {(selectedLabels.length > 0 || selectedPriorities.length > 0) && (
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
-            <button onClick={onClearLabels} className="text-foreground font-medium hover:underline">
-              Clear filter
+            <button
+              onClick={() => {
+                onClearLabels()
+                onClearPriorities()
+              }}
+              className="text-foreground font-medium hover:underline"
+            >
+              Clear filters
             </button>
           </div>
         )}
@@ -667,6 +840,12 @@ function DashboardView({
           onSwipeSnooze={actions.handleSnooze}
           onLabelClick={onToggleLabel}
           onTaskFocus={onTaskFocus}
+          keyboardFocusedId={keyboardFocusedId}
+          isKeyboardActive={isKeyboardActive}
+          onKeyDown={onKeyDown}
+          onListFocus={onListFocus}
+          onListBlur={onListBlur}
+          onMouseInteraction={onMouseInteraction}
         />
       </main>
 
@@ -691,6 +870,12 @@ function DashboardView({
         onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
+        onRecurrenceChange={(rrule) => {
+          onBulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { rrule },
+          })
+        }}
       />
 
       <SnoozeAllFab

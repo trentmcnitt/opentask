@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo } from 'react'
-import { X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -12,15 +11,14 @@ interface LabelFilterBarProps {
   tasks: Task[]
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
-  onClearAll: () => void
 }
 
-export function LabelFilterBar({
-  tasks,
-  selectedLabels,
-  onToggleLabel,
-  onClearAll,
-}: LabelFilterBarProps) {
+/**
+ * Renders label filter badges inline (no wrapper).
+ * Parent component handles layout and clear button.
+ * Uses pill-shaped badges (default rounded-full) to visually distinguish from square priority badges.
+ */
+export function LabelFilterBar({ tasks, selectedLabels, onToggleLabel }: LabelFilterBarProps) {
   const { labelConfig } = useLabelConfig()
 
   const labelCounts = useMemo(() => {
@@ -39,61 +37,44 @@ export function LabelFilterBar({
 
   if (labelCounts.length === 0) return null
 
-  const hasSelection = selectedLabels.length > 0
-
   return (
-    <div className="relative mb-4 flex items-center">
-      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
-        {labelCounts.map(([label, count]) => {
-          const isSelected = selectedLabels.includes(label)
-          const colorClasses = getLabelClasses(label, labelConfig)
+    <>
+      {labelCounts.map(([label, count]) => {
+        const isSelected = selectedLabels.includes(label)
+        const colorClasses = getLabelClasses(label, labelConfig)
 
-          // Predefined label with color
-          if (colorClasses) {
-            return (
-              <Badge
-                key={label}
-                className={cn(
-                  'flex-shrink-0 cursor-pointer border transition-colors select-none',
-                  isSelected
-                    ? `${colorClasses} border-transparent`
-                    : `bg-transparent ${colorClasses} border-current/20 hover:opacity-80`,
-                )}
-                onClick={() => onToggleLabel(label)}
-              >
-                <span>{label}</span>
-                <span className="ml-1 text-[10px] opacity-60">{count}</span>
-              </Badge>
-            )
-          }
-
-          // Ad-hoc label — neutral
+        // Predefined label with color
+        if (colorClasses) {
           return (
             <Badge
               key={label}
-              variant={isSelected ? 'default' : 'outline'}
-              className="flex-shrink-0 cursor-pointer select-none"
+              className={cn(
+                'flex-shrink-0 cursor-pointer border transition-colors select-none',
+                isSelected
+                  ? `${colorClasses} border-transparent`
+                  : `bg-transparent ${colorClasses} border-current/20 hover:opacity-80`,
+              )}
               onClick={() => onToggleLabel(label)}
             >
               <span>{label}</span>
               <span className="ml-1 text-[10px] opacity-60">{count}</span>
             </Badge>
           )
-        })}
-      </div>
+        }
 
-      {/* Clear button - sticky right end */}
-      {hasSelection && (
-        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
-          <button
-            onClick={onClearAll}
-            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-            aria-label="Clear label filters"
+        // Ad-hoc label — neutral
+        return (
+          <Badge
+            key={label}
+            variant={isSelected ? 'default' : 'outline'}
+            className="flex-shrink-0 cursor-pointer select-none"
+            onClick={() => onToggleLabel(label)}
           >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-    </div>
+            <span>{label}</span>
+            <span className="ml-1 text-[10px] opacity-60">{count}</span>
+          </Badge>
+        )
+      })}
+    </>
   )
 }

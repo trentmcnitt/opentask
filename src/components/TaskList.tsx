@@ -44,6 +44,18 @@ interface TaskListProps {
   onSwipeSnooze?: (taskId: number, until: string) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
+  /** Currently keyboard-focused task ID */
+  keyboardFocusedId?: number | null
+  /** Whether keyboard navigation is active */
+  isKeyboardActive?: boolean
+  /** Keyboard event handler for list container */
+  onKeyDown?: (e: React.KeyboardEvent) => void
+  /** Focus handler for list container */
+  onListFocus?: () => void
+  /** Blur handler for list container */
+  onListBlur?: () => void
+  /** Mouse interaction handler to exit keyboard mode */
+  onMouseInteraction?: () => void
 }
 
 // Sort tasks within a group
@@ -90,6 +102,12 @@ export function TaskList({
   onSwipeSnooze,
   onLabelClick,
   onTaskFocus,
+  keyboardFocusedId,
+  isKeyboardActive = false,
+  onKeyDown,
+  onListFocus,
+  onListBlur,
+  onMouseInteraction,
 }: TaskListProps) {
   const { getSortOption, setSortOption } = useGroupSort()
   const selection = useSelectionOptional() ?? fallbackSelection
@@ -130,7 +148,19 @@ export function TaskList({
   const hasUpcoming = grouping === 'time' && groups.some((g) => g.label !== 'Overdue')
 
   return (
-    <div className="space-y-6">
+    <div
+      role="listbox"
+      aria-label="Task list"
+      aria-activedescendant={
+        isKeyboardActive && keyboardFocusedId ? `task-row-${keyboardFocusedId}` : undefined
+      }
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onFocus={onListFocus}
+      onBlur={onListBlur}
+      onMouseDown={onMouseInteraction}
+      className="space-y-6 outline-none"
+    >
       {groups.map((group, groupIdx) => {
         const sortOption = getSortOption(group.label)
         const sortedTasks = sortTasks(group.tasks, sortOption)
@@ -200,6 +230,7 @@ export function TaskList({
                       cancelLongPressRef={cancelRef}
                       onLabelClick={onLabelClick}
                       onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
+                      isKeyboardFocused={isKeyboardActive && task.id === keyboardFocusedId}
                     />
                   </SwipeableRow>
                 )
@@ -217,7 +248,7 @@ function isTaskOverdue(task: Task): boolean {
   return new Date(task.due_at) < new Date()
 }
 
-interface TaskGroup {
+export interface TaskGroup {
   label: string
   tasks: Task[]
 }
@@ -413,4 +444,17 @@ function NowSeparator({ timezone }: { timezone: string }) {
       <div className="bg-border h-px flex-1" />
     </div>
   )
+}
+
+/**
+ * Build task groups from tasks array. Exported for use by keyboard navigation
+ * to compute orderedIds and find first task in group after completion.
+ */
+export function buildTaskGroups(
+  tasks: Task[],
+  projects: Project[],
+  grouping: GroupingMode,
+  timezone: string,
+): TaskGroup[] {
+  return grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
 }

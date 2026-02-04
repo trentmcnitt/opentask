@@ -1,7 +1,18 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { Check, X, FileText } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import {
+  Check,
+  X,
+  FileText,
+  Repeat,
+  Timer,
+  Bell,
+  Trash2,
+  MoreHorizontal,
+  FolderInput,
+  Info,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -17,8 +28,21 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { useTimezone } from '@/hooks/useTimezone'
+import { formatBulkRecurrence } from '@/lib/format-rrule'
+import { PRIORITY_OPTIONS } from '@/lib/priority'
+import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
 interface SelectionActionSheetProps {
@@ -37,6 +61,8 @@ interface SelectionActionSheetProps {
   onClear: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
+  /** Called when recurrence changes for selected tasks */
+  onRecurrenceChange?: (rrule: string | null) => void
 }
 
 export function SelectionActionSheet({
@@ -50,15 +76,31 @@ export function SelectionActionSheet({
   onMoveToProject,
   onClear,
   onNavigateToDetail,
+  onRecurrenceChange,
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(true)
+  const [showRecurrencePicker, setShowRecurrencePicker] = useState(false)
+  const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
 
   // Track pending date change
   const pendingDateRef = useRef<
     { type: 'absolute'; until: string } | { type: 'relative'; deltaMinutes: number } | null
   >(null)
+
+  // Compute bulk recurrence summary for display
+  const recurrenceSummary = useMemo(() => {
+    return formatBulkRecurrence(selectedTasks)
+  }, [selectedTasks])
+
+  // Get the effective rrule for the recurrence picker
+  // If all tasks have same rrule, use that; otherwise null
+  const effectiveRrule = useMemo(() => {
+    const rrules = selectedTasks.map((t) => t.rrule).filter(Boolean) as string[]
+    const unique = [...new Set(rrules)]
+    return unique.length === 1 ? unique[0] : null
+  }, [selectedTasks])
 
   // Detect mobile vs desktop
   useEffect(() => {
@@ -70,6 +112,8 @@ export function SelectionActionSheet({
 
   const openSheet = useCallback(() => {
     pendingDateRef.current = null
+    setPendingRrule(undefined)
+    setShowRecurrencePicker(false)
     setSheetOpen(true)
   }, [])
 
@@ -91,13 +135,19 @@ export function SelectionActionSheet({
         onSnoozeRelative(pendingDateRef.current.deltaMinutes)
       }
     }
+    // Apply pending recurrence change if any
+    if (pendingRrule !== undefined && onRecurrenceChange) {
+      onRecurrenceChange(pendingRrule)
+    }
     setSheetOpen(false)
     onClear() // Exit selection mode
-  }, [onSnooze, onSnoozeRelative, onClear])
+  }, [onSnooze, onSnoozeRelative, onClear, pendingRrule, onRecurrenceChange])
 
   // Cancel button: discard changes, close, keep selection
   const handleCancel = useCallback(() => {
     pendingDateRef.current = null
+    setPendingRrule(undefined)
+    setShowRecurrencePicker(false)
     setSheetOpen(false)
     // Keep selection mode active (don't call onClear)
   }, [])
@@ -123,8 +173,20 @@ export function SelectionActionSheet({
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
       pendingDateRef.current = null
+      setPendingRrule(undefined)
+      setShowRecurrencePicker(false)
     }
     setSheetOpen(open)
+  }, [])
+
+  // Toggle recurrence picker
+  const handleRecurrenceToggle = useCallback(() => {
+    setShowRecurrencePicker((prev) => !prev)
+  }, [])
+
+  // Handle recurrence change from picker
+  const handleRecurrenceChange = useCallback((rrule: string | null) => {
+    setPendingRrule(rrule)
   }, [])
 
   // Navigate to task detail (single task only)
@@ -142,22 +204,97 @@ export function SelectionActionSheet({
       ? selectedTasks[0].title
       : `${selectedCount} tasks selected`
 
+  // Quick-links component to render in modal header
+  const quickLinks = (
+    <div className="flex items-center gap-0.5">
+      {/* Recurrence button - opens picker inline */}
+      {onRecurrenceChange && (
+        <IconButton
+          icon={<Repeat className="size-4" />}
+          label="Recurrence"
+          onClick={handleRecurrenceToggle}
+          active={showRecurrencePicker}
+        />
+      )}
+      {/* Disabled stubs */}
+      <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
+      <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
+      {/* Delete button */}
+      <IconButton
+        icon={<Trash2 className="size-4" />}
+        label="Delete"
+        onClick={handleDelete}
+        destructive
+      />
+      {/* More menu with priority, move to project, task details */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="More options"
+            title="More options"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {PRIORITY_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => onPriorityChange(opt.value)}
+                  className={opt.color}
+                >
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          {onMoveToProject && (
+            <DropdownMenuItem onClick={handleMoveToProject}>
+              <FolderInput className="mr-2 size-4" />
+              Move to Project
+            </DropdownMenuItem>
+          )}
+          {selectedCount === 1 && onNavigateToDetail && (
+            <DropdownMenuItem onClick={handleNavigateToDetail}>
+              <Info className="mr-2 size-4" />
+              Task Details
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+
   const panelContent = (
-    <QuickActionPanel
-      task={null}
-      selectedTasks={selectedTasks}
-      selectedCount={selectedCount}
-      timezone={timezone}
-      mode="sheet"
-      onDateChange={handleDateChange}
-      onDateChangeRelative={handleDateChangeRelative}
-      onPriorityChange={onPriorityChange}
-      onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
-      onDelete={handleDelete}
-      onSave={handleSave}
-      onCancel={handleCancel}
-      onNavigateToDetail={selectedCount === 1 ? handleNavigateToDetail : undefined}
-    />
+    <div className="space-y-3">
+      <QuickActionPanel
+        task={null}
+        selectedTasks={selectedTasks}
+        selectedCount={selectedCount}
+        timezone={timezone}
+        mode="sheet"
+        onDateChange={handleDateChange}
+        onDateChangeRelative={handleDateChangeRelative}
+        onSave={handleSave}
+        onCancel={handleCancel}
+        recurrenceSummary={recurrenceSummary}
+      />
+      {/* Expandable recurrence picker */}
+      {showRecurrencePicker && onRecurrenceChange && (
+        <div className="rounded-lg border p-3">
+          <RecurrencePicker
+            value={pendingRrule !== undefined ? pendingRrule : effectiveRrule}
+            onChange={handleRecurrenceChange}
+          />
+        </div>
+      )}
+    </div>
   )
 
   return (
@@ -211,8 +348,9 @@ export function SelectionActionSheet({
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={handleOpenChange}>
           <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
-            <SheetHeader>
-              <SheetTitle>{modalTitle}</SheetTitle>
+            <SheetHeader className="flex-row items-center justify-between gap-2 pr-10">
+              <SheetTitle className="truncate">{modalTitle}</SheetTitle>
+              {quickLinks}
               <SheetDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
               </SheetDescription>
@@ -225,8 +363,9 @@ export function SelectionActionSheet({
         /* Desktop: centered dialog */
         <Dialog open={sheetOpen} onOpenChange={handleOpenChange}>
           <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4">
-            <DialogHeader>
-              <DialogTitle>{modalTitle}</DialogTitle>
+            <DialogHeader className="flex-row items-center justify-between gap-2 pr-8">
+              <DialogTitle className="truncate">{modalTitle}</DialogTitle>
+              {quickLinks}
               <DialogDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
               </DialogDescription>
@@ -236,5 +375,40 @@ export function SelectionActionSheet({
         </Dialog>
       )}
     </>
+  )
+}
+
+function IconButton({
+  icon,
+  label,
+  onClick,
+  disabled = false,
+  destructive = false,
+  active = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick?: () => void
+  disabled?: boolean
+  destructive?: boolean
+  active?: boolean
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn(
+        'size-8',
+        disabled && 'text-muted-foreground/40 cursor-not-allowed',
+        destructive && 'hover:text-destructive',
+        active && 'bg-accent text-accent-foreground',
+      )}
+      onClick={disabled ? undefined : onClick}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+    >
+      {icon}
+    </Button>
   )
 }

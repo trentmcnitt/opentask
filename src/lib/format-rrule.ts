@@ -266,3 +266,22 @@ function ordinal(n: number): string {
   const v = n % 100
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
+
+/**
+ * Format recurrence for bulk mode display.
+ *
+ * Returns:
+ * - null if no tasks have recurrence
+ * - The compact rrule text if all tasks have the same rrule
+ * - "mixed" if tasks have different rrules
+ */
+export function formatBulkRecurrence(tasks: { rrule?: string | null }[]): string | null {
+  const rrules = tasks.map((t) => t.rrule).filter(Boolean) as string[]
+  if (rrules.length === 0) return null
+
+  const unique = [...new Set(rrules)]
+  if (unique.length === 1) {
+    return formatRRuleCompact(unique[0])
+  }
+  return 'mixed'
+}

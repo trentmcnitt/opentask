@@ -128,6 +128,8 @@ interface TaskRowProps {
   cancelLongPressRef?: React.MutableRefObject<(() => void) | null>
   onLabelClick?: (label: string) => void
   onFocus?: () => void
+  /** True when this task has keyboard focus (via arrow navigation) */
+  isKeyboardFocused?: boolean
 }
 
 export function TaskRow({
@@ -143,6 +145,7 @@ export function TaskRow({
   cancelLongPressRef,
   onLabelClick,
   onFocus,
+  isKeyboardFocused = false,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig } = useLabelConfig()
@@ -204,6 +207,9 @@ export function TaskRow({
 
   return (
     <div
+      id={`task-row-${task.id}`}
+      role="option"
+      aria-selected={isSelected}
       onClick={handleClick}
       onMouseEnter={onFocus}
       onPointerDown={pointer.onPointerDown}
@@ -219,6 +225,10 @@ export function TaskRow({
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
+        // Keyboard focus ring (distinct from selection) - uses blue color for visibility
+        isKeyboardFocused && !isSelected && 'ring-2 ring-blue-500 ring-offset-2',
+        // When both keyboard focused and selected, add offset for distinction
+        isKeyboardFocused && isSelected && 'ring-offset-2',
       )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}
