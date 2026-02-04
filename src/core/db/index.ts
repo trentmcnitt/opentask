@@ -87,6 +87,13 @@ function runMigrations(database: Database.Database): void {
     database.exec("ALTER TABLE users ADD COLUMN label_config TEXT NOT NULL DEFAULT '[]'")
   }
 
+  // Migration: Add priority_display to users
+  if (!hasColumn('users', 'priority_display')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN priority_display TEXT NOT NULL DEFAULT \'{"trailingDot":true,"colorTitle":false,"rightBorder":false}\'',
+    )
+  }
+
   // Migration: Add per-task stats columns
   if (!hasColumn('tasks', 'completion_count')) {
     database.exec('ALTER TABLE tasks ADD COLUMN completion_count INTEGER NOT NULL DEFAULT 0')

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ntfy_server   TEXT,
   default_grouping TEXT NOT NULL DEFAULT 'project',
   label_config  TEXT NOT NULL DEFAULT '[]',
+  priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

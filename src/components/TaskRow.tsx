@@ -15,18 +15,6 @@ import { getLabelClasses } from '@/lib/label-colors'
 import type { Task, LabelConfig } from '@/types'
 
 /**
- * Priority indicator experiments - toggle these to try different combinations:
- * - SHOW_TRAILING_DOT: Show ● after title for Medium/Low priority
- * - COLOR_TITLE_TEXT: Color the task title based on priority
- * - SHOW_RIGHT_BORDER: Show colored right border based on priority
- */
-const PRIORITY_CONFIG = {
-  SHOW_TRAILING_DOT: true,
-  COLOR_TITLE_TEXT: false,
-  SHOW_RIGHT_BORDER: false,
-}
-
-/**
  * TaskRow visual reference — complete rendered examples:
  *
  *   Line 1: [priority] [title] [recurrence icon] [labels]
@@ -189,7 +177,7 @@ export function TaskRow({
   onActivate,
 }: TaskRowProps) {
   const timezone = useTimezone()
-  const { labelConfig } = useLabelConfig()
+  const { labelConfig, priorityDisplay } = useLabelConfig()
   // Long-press: range-select when already in selection mode, otherwise toggle
   const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
   const pointer = useLongPress(longPressAction)
@@ -281,9 +269,9 @@ export function TaskRow({
         'hover:border-border/80 transition-colors',
         isOverdue && 'border-l-destructive border-l-4',
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
-        // Right border for priority (experimental)
-        PRIORITY_CONFIG.SHOW_RIGHT_BORDER && priorityColors && 'border-r-4',
-        PRIORITY_CONFIG.SHOW_RIGHT_BORDER && priorityColors?.border,
+        // Right border for priority (user preference)
+        priorityDisplay.rightBorder && priorityColors && 'border-r-4',
+        priorityDisplay.rightBorder && priorityColors?.border,
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
@@ -336,7 +324,7 @@ export function TaskRow({
             <span
               className={cn(
                 'truncate font-medium',
-                PRIORITY_CONFIG.COLOR_TITLE_TEXT && priorityColors?.text,
+                priorityDisplay.colorTitle && priorityColors?.text,
               )}
             >
               {task.title}
@@ -346,7 +334,7 @@ export function TaskRow({
               href={`/tasks/${task.id}`}
               className={cn(
                 'truncate font-medium hover:underline',
-                PRIORITY_CONFIG.COLOR_TITLE_TEXT && priorityColors?.text,
+                priorityDisplay.colorTitle && priorityColors?.text,
               )}
               onClick={(e) => {
                 // Set keyboard focus (blue glow) before navigating
@@ -358,7 +346,7 @@ export function TaskRow({
             </Link>
           )}
 
-          {PRIORITY_CONFIG.SHOW_TRAILING_DOT && trailingPriorityIndicator && (
+          {priorityDisplay.trailingDot && trailingPriorityIndicator && (
             <span
               className={cn('-ml-1 flex-shrink-0 text-[10px]', trailingPriorityIndicator.color)}
               title={trailingPriorityIndicator.title}

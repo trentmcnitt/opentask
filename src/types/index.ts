@@ -7,6 +7,12 @@ export interface LabelConfig {
   color: LabelColor
 }
 
+export interface PriorityDisplayConfig {
+  trailingDot: boolean // Show ● after title for Medium/Low
+  colorTitle: boolean // Color task title based on priority
+  rightBorder: boolean // Show colored right border
+}
+
 export interface User {
   id: number
   email: string
@@ -17,6 +23,7 @@ export interface User {
   ntfy_server: string | null
   default_grouping: 'time' | 'project'
   label_config: LabelConfig[]
+  priority_display: PriorityDisplayConfig
   created_at: string
 }
 

@@ -8,17 +8,19 @@ import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useLabelConfig } from '@/components/LabelConfigProvider'
+import { useLabelConfig, usePriorityDisplay } from '@/components/LabelConfigProvider'
+import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
 import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
-import type { LabelColor, LabelConfig } from '@/types'
+import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const [defaultGrouping, setDefaultGrouping] = useState<'time' | 'project'>('project')
   const { labelConfig, setLabelConfig } = useLabelConfig()
+  const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -35,9 +37,12 @@ export default function SettingsPage() {
         if (data?.data?.label_config) {
           setLabelConfig(data.data.label_config)
         }
+        if (data?.data?.priority_display) {
+          setPriorityDisplay(data.data.priority_display)
+        }
       })
       .catch(() => {})
-  }, [status, setLabelConfig])
+  }, [status, setLabelConfig, setPriorityDisplay])
 
   const handleGroupingChange = async (value: 'time' | 'project') => {
     const prev = defaultGrouping
@@ -70,6 +75,24 @@ export default function SettingsPage() {
     } catch {
       setLabelConfig(prev)
       showToast({ message: 'Failed to save labels' })
+    }
+  }
+
+  const handlePriorityDisplayChange = async (key: keyof PriorityDisplayConfig, value: boolean) => {
+    const prev = priorityDisplay
+    const newConfig = { ...priorityDisplay, [key]: value }
+    setPriorityDisplay(newConfig)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority_display: newConfig }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setPriorityDisplay(prev)
+      showToast({ message: 'Failed to save preference' })
     }
   }
 
@@ -123,6 +146,57 @@ export default function SettingsPage() {
                 <option value="project">By project</option>
                 <option value="time">By time</option>
               </select>
+            </div>
+          </div>
+        </section>
+
+        {/* Priority Display */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Priority Display
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Configure how task priorities are shown in the task list.
+          </p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Show dot indicator</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Display a colored dot after Medium/Low priority task titles
+                </div>
+              </div>
+              <Switch
+                checked={priorityDisplay.trailingDot}
+                onCheckedChange={(checked) => handlePriorityDisplayChange('trailingDot', checked)}
+                aria-label="Show dot indicator"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Color task titles</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Color the task title text based on priority level
+                </div>
+              </div>
+              <Switch
+                checked={priorityDisplay.colorTitle}
+                onCheckedChange={(checked) => handlePriorityDisplayChange('colorTitle', checked)}
+                aria-label="Color task titles"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Show right border</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Display a colored right border based on priority
+                </div>
+              </div>
+              <Switch
+                checked={priorityDisplay.rightBorder}
+                onCheckedChange={(checked) => handlePriorityDisplayChange('rightBorder', checked)}
+                aria-label="Show right border"
+              />
             </div>
           </div>
         </section>

@@ -11,9 +11,15 @@ import { success, unauthorized, badRequest, handleError } from '@/lib/api-respon
 import { getDb } from '@/core/db'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
-import type { LabelConfig, LabelColor } from '@/types'
+import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project'] as const
+
+const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
+  trailingDot: true,
+  colorTitle: false,
+  rightBorder: false,
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,8 +28,10 @@ export async function GET(request: NextRequest) {
 
     const db = getDb()
     const row = db
-      .prepare('SELECT default_grouping, label_config FROM users WHERE id = ?')
-      .get(user.id) as { default_grouping: string; label_config: string } | undefined
+      .prepare('SELECT default_grouping, label_config, priority_display FROM users WHERE id = ?')
+      .get(user.id) as
+      | { default_grouping: string; label_config: string; priority_display: string }
+      | undefined
 
     let labelConfig: LabelConfig[] = []
     try {
@@ -32,9 +40,19 @@ export async function GET(request: NextRequest) {
       labelConfig = []
     }
 
+    let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
+    try {
+      priorityDisplay = row?.priority_display
+        ? JSON.parse(row.priority_display)
+        : DEFAULT_PRIORITY_DISPLAY
+    } catch {
+      priorityDisplay = DEFAULT_PRIORITY_DISPLAY
+    }
+
     return success({
       default_grouping: row?.default_grouping ?? 'project',
       label_config: labelConfig,
+      priority_display: priorityDisplay,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -69,6 +87,27 @@ function validateLabelConfig(input: unknown): LabelConfig[] | string {
   return result
 }
 
+function validatePriorityDisplay(input: unknown): PriorityDisplayConfig | string {
+  if (!input || typeof input !== 'object') {
+    return 'priority_display must be an object'
+  }
+  const obj = input as Record<string, unknown>
+  if (typeof obj.trailingDot !== 'boolean') {
+    return 'priority_display.trailingDot must be a boolean'
+  }
+  if (typeof obj.colorTitle !== 'boolean') {
+    return 'priority_display.colorTitle must be a boolean'
+  }
+  if (typeof obj.rightBorder !== 'boolean') {
+    return 'priority_display.rightBorder must be a boolean'
+  }
+  return {
+    trailingDot: obj.trailingDot,
+    colorTitle: obj.colorTitle,
+    rightBorder: obj.rightBorder,
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
@@ -87,7 +126,18 @@ export async function PATCH(request: NextRequest) {
       validatedLabelConfig = validated
     }
 
-    if (body.default_grouping === undefined && body.label_config === undefined) {
+    let validatedPriorityDisplay: PriorityDisplayConfig | undefined
+    if (body.priority_display !== undefined) {
+      const validated = validatePriorityDisplay(body.priority_display)
+      if (typeof validated === 'string') return badRequest(validated)
+      validatedPriorityDisplay = validated
+    }
+
+    if (
+      body.default_grouping === undefined &&
+      body.label_config === undefined &&
+      body.priority_display === undefined
+    ) {
       return badRequest('No preferences to update')
     }
 
@@ -105,13 +155,18 @@ export async function PATCH(request: NextRequest) {
       params.push(JSON.stringify(validatedLabelConfig))
     }
 
+    if (validatedPriorityDisplay !== undefined) {
+      updates.push('priority_display = ?')
+      params.push(JSON.stringify(validatedPriorityDisplay))
+    }
+
     params.push(user.id)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
     // Read back current state
     const row = db
-      .prepare('SELECT default_grouping, label_config FROM users WHERE id = ?')
-      .get(user.id) as { default_grouping: string; label_config: string }
+      .prepare('SELECT default_grouping, label_config, priority_display FROM users WHERE id = ?')
+      .get(user.id) as { default_grouping: string; label_config: string; priority_display: string }
 
     let labelConfig: LabelConfig[] = []
     try {
@@ -120,9 +175,17 @@ export async function PATCH(request: NextRequest) {
       labelConfig = []
     }
 
+    let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
+    try {
+      priorityDisplay = JSON.parse(row.priority_display)
+    } catch {
+      priorityDisplay = DEFAULT_PRIORITY_DISPLAY
+    }
+
     return success({
       default_grouping: row.default_grouping,
       label_config: labelConfig,
+      priority_display: priorityDisplay,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
