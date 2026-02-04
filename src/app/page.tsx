@@ -815,7 +815,6 @@ function DashboardView({
           tasks={allTasks}
           selectedLabels={selectedLabels}
           onToggleLabel={onToggleLabel}
-          onClearAll={onClearLabels}
         />
 
         {searchQuery && (
