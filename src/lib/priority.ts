@@ -4,7 +4,7 @@
  */
 export const PRIORITY_OPTIONS = [
   { value: 0, label: 'None', color: 'text-muted-foreground' },
-  { value: 1, label: 'Low', color: 'text-blue-500' },
+  { value: 1, label: 'Low', color: 'text-zinc-400' },
   { value: 2, label: 'Medium', color: 'text-yellow-500' },
   { value: 3, label: 'High', color: 'text-orange-500' },
   { value: 4, label: 'Urgent', color: 'text-red-500' },
@@ -31,9 +31,9 @@ export function getPriorityBadgeClasses(value: number, isSelected: boolean): str
       text: 'text-muted-foreground',
     },
     1: {
-      bg: 'bg-blue-500 text-white',
-      border: 'border-blue-500/30 text-blue-500',
-      text: 'text-blue-500',
+      bg: 'bg-zinc-500 text-white',
+      border: 'border-zinc-500/30 text-zinc-400',
+      text: 'text-zinc-400',
     },
     2: {
       bg: 'bg-yellow-500 text-white',

@@ -23,6 +23,7 @@ interface HeaderProps {
   taskCount: number
   overdueCount?: number
   todayCount?: number
+  snoozableOverdueCount?: number
   grouping?: GroupingMode
   onGroupingChange?: (mode: GroupingMode) => void
   onUndo: () => void
@@ -37,6 +38,7 @@ export function Header({
   taskCount,
   overdueCount = 0,
   todayCount = 0,
+  snoozableOverdueCount = 0,
   grouping = 'time',
   onGroupingChange,
   onUndo,
@@ -127,20 +129,24 @@ export function Header({
 
           {/* Action buttons: always fixed in place */}
           <div className="flex flex-shrink-0 items-center">
-            {/* Snooze all overdue button */}
-            {onSnoozeOverdue && overdueCount > 0 && (
+            {/* Snooze all overdue button - desktop only (mobile uses FAB) */}
+            {onSnoozeOverdue && snoozableOverdueCount > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={onSnoozeOverdue}
-                    aria-label="Snooze all overdue +1h"
+                    aria-label={`Snooze ${snoozableOverdueCount} overdue tasks +1h`}
+                    className="relative hidden md:inline-flex"
                   >
                     <Clock className="size-5" />
+                    <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-bold">
+                      {snoozableOverdueCount > 99 ? '99+' : snoozableOverdueCount}
+                    </span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Snooze all overdue +1h</TooltipContent>
+                <TooltipContent>Snooze {snoozableOverdueCount} overdue +1h</TooltipContent>
               </Tooltip>
             )}
 

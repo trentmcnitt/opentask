@@ -15,6 +15,18 @@ import { getLabelClasses } from '@/lib/label-colors'
 import type { Task, LabelConfig } from '@/types'
 
 /**
+ * Priority indicator experiments - toggle these to try different combinations:
+ * - SHOW_TRAILING_DOT: Show ● after title for Medium/Low priority
+ * - COLOR_TITLE_TEXT: Color the task title based on priority
+ * - SHOW_RIGHT_BORDER: Show colored right border based on priority
+ */
+const PRIORITY_CONFIG = {
+  SHOW_TRAILING_DOT: true,
+  COLOR_TITLE_TEXT: false,
+  SHOW_RIGHT_BORDER: false,
+}
+
+/**
  * TaskRow visual reference — complete rendered examples:
  *
  *   Line 1: [priority] [title] [recurrence icon] [labels]
@@ -205,8 +217,12 @@ export function TaskRow({
     [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, pointer],
   )
 
-  const priorityIndicator = getPriorityIndicator(task.priority)
-  const isSnoozed = !!task.snoozed_from
+  const leadingPriorityIndicator = getLeadingPriorityIndicator(task.priority)
+  const trailingPriorityIndicator = getTrailingPriorityIndicator(task.priority)
+  const priorityColors = getPriorityColors(task.priority)
+  // Only treat as "snoozed" if it's a recurring task - for one-off tasks,
+  // changing the due date is just changing the due date, not snoozing
+  const isSnoozed = !!task.snoozed_from && !!task.rrule
   const metaSegments = buildMetaSegments(task, timezone, isOverdue)
   const hasLabels = task.labels.length > 0
   const hasLine2 = metaSegments.length > 0
@@ -231,6 +247,9 @@ export function TaskRow({
         'hover:border-border/80 transition-colors',
         isOverdue && 'border-l-destructive border-l-4',
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
+        // Right border for priority (experimental)
+        PRIORITY_CONFIG.SHOW_RIGHT_BORDER && priorityColors && 'border-r-4',
+        PRIORITY_CONFIG.SHOW_RIGHT_BORDER && priorityColors?.border,
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
@@ -270,21 +289,31 @@ export function TaskRow({
       {/* Task content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {priorityIndicator && (
+          {leadingPriorityIndicator && (
             <span
-              className={cn('flex-shrink-0 text-sm font-bold', priorityIndicator.color)}
-              title={priorityIndicator.title}
+              className={cn('flex-shrink-0 text-sm font-bold', leadingPriorityIndicator.color)}
+              title={leadingPriorityIndicator.title}
             >
-              {priorityIndicator.icon}
+              {leadingPriorityIndicator.icon}
             </span>
           )}
 
           {isSelectionMode ? (
-            <span className="truncate font-medium">{task.title}</span>
+            <span
+              className={cn(
+                'truncate font-medium',
+                PRIORITY_CONFIG.COLOR_TITLE_TEXT && priorityColors?.text,
+              )}
+            >
+              {task.title}
+            </span>
           ) : (
             <Link
               href={`/tasks/${task.id}`}
-              className="truncate font-medium hover:underline"
+              className={cn(
+                'truncate font-medium hover:underline',
+                PRIORITY_CONFIG.COLOR_TITLE_TEXT && priorityColors?.text,
+              )}
               onClick={(e) => {
                 // Set keyboard focus (blue glow) before navigating
                 onActivate?.()
@@ -293,6 +322,15 @@ export function TaskRow({
             >
               {task.title}
             </Link>
+          )}
+
+          {PRIORITY_CONFIG.SHOW_TRAILING_DOT && trailingPriorityIndicator && (
+            <span
+              className={cn('-ml-1 flex-shrink-0 text-[10px]', trailingPriorityIndicator.color)}
+              title={trailingPriorityIndicator.title}
+            >
+              ●
+            </span>
           )}
 
           {task.rrule && (
@@ -403,7 +441,8 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     segments.push({ text: formatRRuleCompact(task.rrule) })
   }
 
-  if (task.snoozed_from) {
+  // Only show "snoozed from" for recurring tasks - for one-offs, it's just a due date change
+  if (task.snoozed_from && task.rrule) {
     const text = formatSnoozedFrom(task.snoozed_from, timezone)
     if (text) {
       segments.push({ text, className: 'text-blue-400' })
@@ -413,7 +452,31 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   return segments
 }
 
-function getPriorityIndicator(
+/**
+ * Priority color classes for different UI elements
+ */
+function getPriorityColors(priority: number): {
+  text: string
+  border: string
+} | null {
+  switch (priority) {
+    case 1:
+      return { text: 'text-zinc-400', border: 'border-r-zinc-400' }
+    case 2:
+      return { text: 'text-amber-500', border: 'border-r-amber-500' }
+    case 3:
+      return { text: 'text-orange-500', border: 'border-r-orange-500' }
+    case 4:
+      return { text: 'text-red-500', border: 'border-r-red-500' }
+    default:
+      return null
+  }
+}
+
+/**
+ * Leading priority indicator (before title) - only for high/urgent
+ */
+function getLeadingPriorityIndicator(
   priority: number,
 ): { icon: string; color: string; title: string } | null {
   switch (priority) {
@@ -421,6 +484,20 @@ function getPriorityIndicator(
       return { icon: '!', color: 'text-orange-500', title: 'High priority' }
     case 4:
       return { icon: '!!', color: 'text-red-500', title: 'Urgent priority' }
+    default:
+      return null
+  }
+}
+
+/**
+ * Trailing priority indicator (after title) - only for medium/low
+ */
+function getTrailingPriorityIndicator(priority: number): { color: string; title: string } | null {
+  switch (priority) {
+    case 1:
+      return { color: 'text-zinc-400', title: 'Low priority' }
+    case 2:
+      return { color: 'text-amber-500', title: 'Medium priority' }
     default:
       return null
   }

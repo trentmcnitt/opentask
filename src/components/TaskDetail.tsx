@@ -261,7 +261,8 @@ function TaskFields({
         </DetailField>
       )}
 
-      {task.snoozed_from && (
+      {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
+      {task.snoozed_from && task.rrule && (
         <DetailField label="Snoozed">
           <span className="text-blue-500">
             Originally due {formatDateTime(task.snoozed_from, timezone)}
