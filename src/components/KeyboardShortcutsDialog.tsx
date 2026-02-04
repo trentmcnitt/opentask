@@ -15,21 +15,23 @@ interface KeyboardShortcutsDialogProps {
   onCloseAutoFocus?: (e: Event) => void
 }
 
-function getShortcuts(cmdLabel: string) {
+function getShortcuts(cmdSymbol: string) {
   return [
-    { keys: ['Arrow Up', 'Arrow Down'], action: 'Move focus up/down' },
-    { keys: ['Shift', 'Arrow'], action: 'Extend selection' },
-    { keys: [cmdLabel, 'Arrow Up'], action: 'Jump to first task' },
-    { keys: [cmdLabel, 'Arrow Down'], action: 'Jump to last task' },
-    { keys: [cmdLabel, 'Shift', 'Arrow Up'], action: 'First in group (or prev group)' },
-    { keys: [cmdLabel, 'Shift', 'Arrow Down'], action: 'Last in group (or next group)' },
+    { keys: ['↑', '↓'], action: 'Move focus up/down' },
+    { keys: ['⇧', 'Arrow'], action: 'Extend selection' },
+    { keys: [cmdSymbol, '↑'], action: 'Jump to first task' },
+    { keys: [cmdSymbol, '↓'], action: 'Jump to last task' },
+    { keys: [cmdSymbol, '⇧', '↑'], action: 'First in group (or prev group)' },
+    { keys: [cmdSymbol, '⇧', '↓'], action: 'Last in group (or next group)' },
     { keys: ['Space'], action: 'Toggle selection' },
-    { keys: [cmdLabel, 'A'], action: 'Select/deselect all' },
-    { keys: [cmdLabel, 'Shift', 'A'], action: 'Select/deselect all in group' },
-    { keys: [cmdLabel, 'D'], action: 'Complete selected tasks' },
+    { keys: [cmdSymbol, 'A'], action: 'Select/deselect all' },
+    { keys: [cmdSymbol, '⇧', 'A'], action: 'Select/deselect all in group' },
+    { keys: [cmdSymbol, 'D'], action: 'Complete selected tasks' },
+    { keys: [cmdSymbol, 'Z'], action: 'Undo' },
+    { keys: [cmdSymbol, '⇧', 'Z'], action: 'Redo' },
     { keys: ['Home'], action: 'Jump to first task' },
     { keys: ['End'], action: 'Jump to last task' },
-    { keys: [cmdLabel, 'L'], action: 'Focus task list' },
+    { keys: [cmdSymbol, 'L'], action: 'Focus task list' },
     { keys: ['Esc'], action: 'Clear selection / exit keyboard mode' },
     { keys: ['?'], action: 'Show this help' },
   ]
@@ -43,7 +45,7 @@ export function KeyboardShortcutsDialog({
   const shortcuts = useMemo(() => {
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
-    return getShortcuts(isMac ? 'Cmd' : 'Ctrl')
+    return getShortcuts(isMac ? '⌘' : 'Ctrl')
   }, [])
 
   return (

@@ -388,7 +388,7 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 
 - `public/` files are included in the standalone bundle — no separate sync needed.
 - `data/` (the SQLite database) is never touched by deploys. Schema migrations run on app startup.
-- The standalone output embeds the build machine's absolute path in its directory structure. The script expects builds from `~/working_dir/opentask/`. If you clone the repo to a different path, update `STANDALONE_APP` in `deploy.sh`. The script validates this path on the server and fails early if it's wrong.
+- The standalone output embeds the build machine's absolute path in its directory structure. The deploy script auto-detects this path from the current working directory, so it works regardless of where the repo is cloned. The script validates the path on the server and fails early if something is wrong.
 - The deploy script creates `$DEPLOY_DIR/data/` on the server if it doesn't exist (safe for first deploys).
 
 **Server debugging:** `ssh admin@tk11.mcnitt.io` then `journalctl -u opentask-dev -f` (or `opentask` for prod) to tail logs. The SQLite database is at the path shown in the Environments table.

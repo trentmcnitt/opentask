@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { formatDueTimeParts, formatSnoozedFrom } from '@/lib/format-date'
+import { formatDueTimeParts, formatSnoozedFrom, formatDurationDelta } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 
 const TZ = 'America/Chicago'
@@ -151,6 +151,55 @@ describe('formatSnoozedFrom', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+})
+
+describe('formatDurationDelta', () => {
+  test('positive minutes', () => {
+    const from = new Date('2025-02-01T12:00:00Z').getTime()
+    const to = new Date('2025-02-01T12:30:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('+30m')
+  })
+
+  test('positive hours', () => {
+    const from = new Date('2025-02-01T12:00:00Z').getTime()
+    const to = new Date('2025-02-01T14:00:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('+2h')
+  })
+
+  test('positive hours and minutes', () => {
+    const from = new Date('2025-02-01T12:00:00Z').getTime()
+    const to = new Date('2025-02-01T14:30:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('+2h30m')
+  })
+
+  test('positive days', () => {
+    const from = new Date('2025-02-01T12:00:00Z').getTime()
+    const to = new Date('2025-02-03T12:00:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('+2d')
+  })
+
+  test('positive weeks', () => {
+    const from = new Date('2025-02-01T12:00:00Z').getTime()
+    const to = new Date('2025-02-08T12:00:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('+1w')
+  })
+
+  test('negative minutes (rescheduled earlier)', () => {
+    const from = new Date('2025-02-01T12:30:00Z').getTime()
+    const to = new Date('2025-02-01T12:00:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('-30m')
+  })
+
+  test('negative hours', () => {
+    const from = new Date('2025-02-01T14:00:00Z').getTime()
+    const to = new Date('2025-02-01T12:00:00Z').getTime()
+    expect(formatDurationDelta(from, to)).toBe('-2h')
+  })
+
+  test('zero difference', () => {
+    const time = new Date('2025-02-01T12:00:00Z').getTime()
+    expect(formatDurationDelta(time, time)).toBe('+0m')
   })
 })
 

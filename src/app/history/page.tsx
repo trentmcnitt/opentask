@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
+import { useTimezone } from '@/hooks/useTimezone'
+import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
   id: number
@@ -12,12 +15,21 @@ interface CompletionEntry {
   due_at_was: string | null
 }
 
+interface UndoSnapshot {
+  task_id: number
+  before_state: Partial<Task>
+  after_state: Partial<Task>
+  completion_id?: number
+}
+
 interface UndoEntry {
   id: number
-  action: string
+  action: UndoAction
   description: string | null
   created_at: string
   undone: boolean
+  fields_changed: string[]
+  snapshot: UndoSnapshot[]
 }
 
 type TabId = 'completions' | 'activity'
@@ -25,6 +37,7 @@ type TabId = 'completions' | 'activity'
 export default function HistoryPage() {
   const { status } = useSession()
   const router = useRouter()
+  const timezone = useTimezone()
   const [tab, setTab] = useState<TabId>('completions')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
   const [activities, setActivities] = useState<UndoEntry[]>([])
@@ -51,7 +64,7 @@ export default function HistoryPage() {
           const res = await fetch('/api/undo/history?limit=50')
           if (res.ok) {
             const data = await res.json()
-            setActivities(data.data?.actions || [])
+            setActivities(data.data?.history || [])
           }
         }
       } catch {
@@ -114,7 +127,9 @@ export default function HistoryPage() {
           />
         )}
 
-        {tab === 'activity' && <ActivityTab loading={loading} activities={activities} />}
+        {tab === 'activity' && (
+          <ActivityTab loading={loading} activities={activities} timezone={timezone} />
+        )}
       </main>
     </div>
   )
@@ -195,7 +210,223 @@ function CompletionsTab({
   )
 }
 
-function ActivityTab({ loading, activities }: { loading: boolean; activities: UndoEntry[] }) {
+/**
+ * Format priority value as human-readable string.
+ */
+function formatPriority(value: number | undefined): string {
+  switch (value) {
+    case 0:
+      return 'None'
+    case 1:
+      return 'Low'
+    case 2:
+      return 'Medium'
+    case 3:
+      return 'High'
+    case 4:
+      return 'Urgent'
+    default:
+      return 'None'
+  }
+}
+
+/**
+ * Format a rich activity description based on action type and snapshot data.
+ */
+function formatActivityDescription(entry: UndoEntry, timezone: string): string {
+  const { action, snapshot, fields_changed } = entry
+
+  // Get task title from snapshot (prefer before_state, fall back to after_state)
+  const firstSnapshot = snapshot[0]
+  const taskTitle =
+    firstSnapshot?.before_state?.title || firstSnapshot?.after_state?.title || 'task'
+  const truncatedTitle = taskTitle.length > 30 ? taskTitle.slice(0, 30) + '...' : taskTitle
+
+  // For bulk operations, show count
+  const isBulk = action.startsWith('bulk_')
+  const taskCount = snapshot.length
+
+  switch (action) {
+    case 'done':
+    case 'bulk_done':
+      if (isBulk) {
+        return `Completed ${taskCount} tasks`
+      }
+      return `Completed '${truncatedTitle}'`
+
+    case 'undone':
+      return `Marked '${truncatedTitle}' incomplete`
+
+    case 'snooze':
+    case 'bulk_snooze': {
+      if (isBulk) {
+        // For bulk snooze, show the delta from first task
+        const beforeDue = firstSnapshot?.before_state?.due_at
+        const afterDue = firstSnapshot?.after_state?.due_at
+        if (beforeDue && afterDue) {
+          const delta = formatDurationDelta(
+            new Date(beforeDue).getTime(),
+            new Date(afterDue).getTime(),
+          )
+          return `Snoozed ${taskCount} tasks ${delta}`
+        }
+        return `Snoozed ${taskCount} tasks`
+      }
+
+      // Single snooze - show duration and time change
+      const beforeDue = firstSnapshot?.before_state?.due_at
+      const afterDue = firstSnapshot?.after_state?.due_at
+      if (beforeDue && afterDue) {
+        const delta = formatDurationDelta(
+          new Date(beforeDue).getTime(),
+          new Date(afterDue).getTime(),
+        )
+        const fromTime = formatTimeInTimezone(beforeDue, timezone)
+        const toTime = formatTimeInTimezone(afterDue, timezone)
+        return `Snoozed '${truncatedTitle}' ${delta} (${fromTime} → ${toTime})`
+      }
+      return `Snoozed '${truncatedTitle}'`
+    }
+
+    case 'edit':
+    case 'bulk_edit': {
+      if (isBulk) {
+        // Show what fields were edited
+        const fieldList = formatFieldList(fields_changed)
+        return `Edited ${taskCount} tasks: ${fieldList}`
+      }
+
+      // Single edit - show field changes with values
+      const details = formatEditDetails(firstSnapshot, fields_changed, timezone)
+      if (details) {
+        return `Edited '${truncatedTitle}': ${details}`
+      }
+      return `Edited '${truncatedTitle}'`
+    }
+
+    case 'create':
+      return `Created '${truncatedTitle}'`
+
+    case 'delete':
+    case 'bulk_delete':
+      if (isBulk) {
+        return `Deleted ${taskCount} tasks`
+      }
+      return `Deleted '${truncatedTitle}'`
+
+    case 'restore':
+      return `Restored '${truncatedTitle}'`
+
+    default:
+      return entry.description || action
+  }
+}
+
+/**
+ * Format a list of field names for display.
+ */
+function formatFieldList(fields: string[]): string {
+  const displayNames: Record<string, string> = {
+    priority: 'priority',
+    title: 'title',
+    due_at: 'due date',
+    done: 'status',
+    project_id: 'project',
+    rrule: 'recurrence',
+    labels: 'labels',
+  }
+
+  return fields
+    .map((f) => displayNames[f] || f)
+    .slice(0, 3) // Limit to 3 fields
+    .join(', ')
+}
+
+/**
+ * Format edit details showing before/after values for changed fields.
+ */
+function formatEditDetails(
+  snapshot: UndoSnapshot | undefined,
+  fields: string[],
+  timezone: string,
+): string {
+  if (!snapshot) return ''
+
+  const { before_state, after_state } = snapshot
+  const parts: string[] = []
+
+  for (const field of fields) {
+    switch (field) {
+      case 'priority': {
+        const before = formatPriority(before_state.priority)
+        const after = formatPriority(after_state.priority)
+        if (before !== after) {
+          parts.push(`priority ${before}→${after}`)
+        }
+        break
+      }
+      case 'title': {
+        // Just indicate title changed, don't show old/new values
+        if (before_state.title !== after_state.title) {
+          parts.push('title')
+        }
+        break
+      }
+      case 'due_at': {
+        const beforeDue = before_state.due_at
+        const afterDue = after_state.due_at
+        if (beforeDue && afterDue) {
+          const fromTime = formatTimeInTimezone(beforeDue, timezone)
+          const toTime = formatTimeInTimezone(afterDue, timezone)
+          parts.push(`due ${fromTime}→${toTime}`)
+        } else if (!beforeDue && afterDue) {
+          parts.push('added due date')
+        } else if (beforeDue && !afterDue) {
+          parts.push('removed due date')
+        }
+        break
+      }
+      case 'done': {
+        if (before_state.done !== after_state.done) {
+          parts.push(after_state.done ? 'completed' : 'incomplete')
+        }
+        break
+      }
+      case 'labels': {
+        parts.push('labels')
+        break
+      }
+      case 'rrule': {
+        parts.push('recurrence')
+        break
+      }
+      // Skip internal fields that don't need display
+      case 'anchor_time':
+      case 'anchor_dow':
+      case 'anchor_dom':
+      case 'snoozed_from':
+      case 'updated_at':
+        break
+      default:
+        // For unhandled fields, just show the name
+        if (!field.startsWith('anchor_')) {
+          parts.push(field.replace(/_/g, ' '))
+        }
+    }
+  }
+
+  return parts.slice(0, 3).join(', ') // Limit to 3 details
+}
+
+function ActivityTab({
+  loading,
+  activities,
+  timezone,
+}: {
+  loading: boolean
+  activities: UndoEntry[]
+  timezone: string
+}) {
   return (
     <div>
       {loading ? (
@@ -213,7 +444,9 @@ function ActivityTab({ loading, activities }: { loading: boolean; activities: Un
                 {a.undone ? '○' : '●'}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{a.description || a.action}</p>
+                <p className="truncate text-sm font-medium">
+                  {formatActivityDescription(a, timezone)}
+                </p>
                 <p className="text-xs text-zinc-400">
                   {new Date(a.created_at).toLocaleString('en-US', {
                     month: 'short',

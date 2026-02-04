@@ -193,6 +193,38 @@ export default function ProjectDetailPage() {
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
 
+  // Global keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const cmdKey = isMac ? e.metaKey : e.ctrlKey
+
+      // Don't intercept when user is in an input, textarea, or contenteditable
+      const activeEl = document.activeElement
+      const isInInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl as HTMLElement)?.isContentEditable
+
+      // Cmd+Z: Undo (use ref to avoid stale closure)
+      if (cmdKey && e.key.toLowerCase() === 'z' && !e.shiftKey && !isInInput) {
+        e.preventDefault()
+        handleUndoRef.current?.()
+        return
+      }
+
+      // Cmd+Shift+Z: Redo (use ref to avoid stale closure)
+      if (cmdKey && e.key.toLowerCase() === 'z' && e.shiftKey && !isInInput) {
+        e.preventDefault()
+        handleRedoRef.current?.()
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   const handleDone = async (taskId: number) => {
     const task = tasks.find((t) => t.id === taskId)
     if (!task) return

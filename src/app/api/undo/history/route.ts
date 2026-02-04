@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
         tasks_affected: entry.snapshot.length,
         created_at: entry.created_at,
         undone: entry.undone,
+        fields_changed: entry.fields_changed,
+        snapshot: entry.snapshot,
       })),
       count: history.length,
     })

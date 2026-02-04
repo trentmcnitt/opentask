@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { FolderOpen, Clock, Undo2, Menu, Keyboard, Settings } from 'lucide-react'
+import { Clock, Undo2, Redo2, Menu, Keyboard, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -27,6 +27,7 @@ interface HeaderProps {
   grouping?: GroupingMode
   onGroupingChange?: (mode: GroupingMode) => void
   onUndo: () => void
+  onRedo: () => void
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   onSnoozeOverdue?: () => void
@@ -38,14 +39,18 @@ export function Header({
   overdueCount = 0,
   todayCount = 0,
   snoozableOverdueCount = 0,
-  grouping = 'time',
-  onGroupingChange,
+  // Grouping props - hidden but preserved for future use
+  grouping: _grouping = 'time',
+  onGroupingChange: _onGroupingChange,
   onUndo,
+  onRedo,
   onSearch,
   onSearchClear,
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
 }: HeaderProps) {
+  void _grouping
+  void _onGroupingChange
   const [searchExpanded, setSearchExpanded] = useState(false)
 
   return (
@@ -148,6 +153,18 @@ export function Header({
               </Tooltip>
             )}
 
+            {/* Mobile-only undo button */}
+            <div className="flex md:hidden">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={onUndo} aria-label="Undo">
+                    <Undo2 className="size-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Undo</TooltipContent>
+              </Tooltip>
+            </div>
+
             {/* Hamburger menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -156,26 +173,22 @@ export function Header({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {onGroupingChange && (
-                  <DropdownMenuItem
-                    onClick={() => onGroupingChange(grouping === 'time' ? 'project' : 'time')}
-                  >
-                    {grouping === 'time' ? (
-                      <FolderOpen className="size-4" />
-                    ) : (
-                      <Clock className="size-4" />
-                    )}
-                    Group by {grouping === 'time' ? 'project' : 'time'}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={onUndo}>
+                {/* Desktop-only: undo/redo in menu (mobile has header buttons) */}
+                <DropdownMenuItem onClick={onUndo} className="hidden md:flex">
                   <Undo2 className="size-4" />
                   Undo
+                  <span className="text-muted-foreground ml-auto text-xs">⌘Z</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRedo} className="hidden md:flex">
+                  <Redo2 className="size-4" />
+                  Redo
+                  <span className="text-muted-foreground ml-auto text-xs">⌘⇧Z</span>
                 </DropdownMenuItem>
                 {onShowKeyboardShortcuts && (
                   <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
                     <Keyboard className="size-4" />
-                    Keyboard shortcuts
+                    Shortcuts
+                    <span className="text-muted-foreground ml-auto text-xs">?</span>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />

@@ -533,6 +533,20 @@ function HomeContent() {
         return
       }
 
+      // Cmd+Z: Undo (works globally when not in input, even with dialogs open)
+      if (cmdKey && e.key.toLowerCase() === 'z' && !e.shiftKey && !isInInput) {
+        e.preventDefault()
+        actions.handleUndo()
+        return
+      }
+
+      // Cmd+Shift+Z: Redo (works globally when not in input, even with dialogs open)
+      if (cmdKey && e.key.toLowerCase() === 'z' && e.shiftKey && !isInInput) {
+        e.preventDefault()
+        actions.handleRedo()
+        return
+      }
+
       // Don't intercept other shortcuts when dialogs/sheets are open
       if (!keyboardNavEnabled) return
 
@@ -1052,6 +1066,7 @@ function DashboardView({
         grouping={grouping}
         onGroupingChange={onGroupingChange}
         onUndo={actions.handleUndo}
+        onRedo={actions.handleRedo}
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}

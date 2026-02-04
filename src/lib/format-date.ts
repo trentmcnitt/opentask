@@ -296,6 +296,56 @@ function formatTimeInZone(date: Date, timezone: string): string {
  * This is the inverse of toLocalDatetimeInput(): that function converts UTC → local display,
  * and this function converts local input → UTC for storage.
  */
+/**
+ * Format the duration between two timestamps as a delta string.
+ *
+ * @param fromMs - Start timestamp in milliseconds
+ * @param toMs - End timestamp in milliseconds
+ * @returns Delta string like "+30m", "+2h", "+1d", "-30m", etc.
+ */
+export function formatDurationDelta(fromMs: number, toMs: number): string {
+  const diffMs = toMs - fromMs
+  const sign = diffMs >= 0 ? '+' : '-'
+  const absDiffMs = Math.abs(diffMs)
+
+  const minutes = Math.floor(absDiffMs / 60000)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  const weeks = Math.floor(days / 7)
+
+  if (weeks >= 1) {
+    return `${sign}${weeks}w`
+  }
+  if (days >= 1) {
+    return `${sign}${days}d`
+  }
+  if (hours >= 1) {
+    const remainingMins = minutes % 60
+    if (remainingMins === 0) {
+      return `${sign}${hours}h`
+    }
+    return `${sign}${hours}h${remainingMins}m`
+  }
+  if (minutes >= 1) {
+    return `${sign}${minutes}m`
+  }
+  return `${sign}0m`
+}
+
+/**
+ * Format a time in a given timezone as "9:00 AM" style.
+ * Exported for use in activity formatting.
+ */
+export function formatTimeInTimezone(isoUtc: string, timezone: string): string {
+  const date = new Date(isoUtc)
+  return date.toLocaleTimeString('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
 export function parseLocalDatetimeInput(value: string, timezone: string): string {
   const [datePart, timePart] = value.split('T')
   const [year, month, day] = datePart.split('-').map(Number)

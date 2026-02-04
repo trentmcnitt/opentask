@@ -18,7 +18,8 @@ import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 export default function SettingsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [defaultGrouping, setDefaultGrouping] = useState<'time' | 'project'>('project')
+  // Default grouping state - hidden but preserved for future use
+  // const [defaultGrouping, setDefaultGrouping] = useState<'time' | 'project'>('project')
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
 
@@ -31,9 +32,10 @@ export default function SettingsPage() {
     fetch('/api/user/preferences')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.data?.default_grouping) {
-          setDefaultGrouping(data.data.default_grouping)
-        }
+        // Default grouping loading - hidden but preserved for future use
+        // if (data?.data?.default_grouping) {
+        //   setDefaultGrouping(data.data.default_grouping)
+        // }
         if (data?.data?.label_config) {
           setLabelConfig(data.data.label_config)
         }
@@ -44,22 +46,23 @@ export default function SettingsPage() {
       .catch(() => {})
   }, [status, setLabelConfig, setPriorityDisplay])
 
-  const handleGroupingChange = async (value: 'time' | 'project') => {
-    const prev = defaultGrouping
-    setDefaultGrouping(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ default_grouping: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
-    } catch {
-      setDefaultGrouping(prev)
-      showToast({ message: 'Failed to save preference' })
-    }
-  }
+  // handleGroupingChange - hidden but preserved for future use
+  // const handleGroupingChange = async (value: 'time' | 'project') => {
+  //   const prev = defaultGrouping
+  //   setDefaultGrouping(value)
+  //   try {
+  //     const res = await fetch('/api/user/preferences', {
+  //       method: 'PATCH',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({ default_grouping: value }),
+  //     })
+  //     if (!res.ok) throw new Error('Failed to save')
+  //     showToast({ message: 'Preference saved' })
+  //   } catch {
+  //     setDefaultGrouping(prev)
+  //     showToast({ message: 'Failed to save preference' })
+  //   }
+  // }
 
   const saveLabelConfig = async (newConfig: LabelConfig[]) => {
     const prev = labelConfig
@@ -130,7 +133,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Preferences */}
+        {/* Default Grouping preference - hidden but preserved for future use
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
             Preferences
@@ -149,6 +152,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+        */}
 
         {/* Priority Display */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
