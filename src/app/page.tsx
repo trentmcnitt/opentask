@@ -102,15 +102,49 @@ function useTaskActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
 ) {
+  // Use refs to break circular dependency between handleUndo and handleRedo
+  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
+
   const handleUndo = useCallback(async () => {
     try {
       const res = await fetch('/api/undo', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to undo')
+      if (!res.ok) {
+        showToast({ message: 'Nothing to undo' })
+        return
+      }
+      const data = await res.json()
       fetchTasks()
+      showToast({
+        message: `Undid: ${data.data.description}`,
+        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
+      })
     } catch {
       showToast({ message: 'Undo failed' })
     }
   }, [fetchTasks])
+
+  const handleRedo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/redo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to redo' })
+        return
+      }
+      const data = await res.json()
+      fetchTasks()
+      showToast({
+        message: `Redid: ${data.data.description}`,
+        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Redo failed' })
+    }
+  }, [fetchTasks])
+
+  // Keep refs up to date
+  handleUndoRef.current = handleUndo
+  handleRedoRef.current = handleRedo
 
   const handleDone = useCallback(
     async (taskId: number) => {
@@ -200,7 +234,7 @@ function useTaskActions(
     [setTasks, fetchTasks, handleUndo],
   )
 
-  return { handleDone, handleSnooze, handleUndo, handleQuickAdd, handlePriorityChange }
+  return { handleDone, handleSnooze, handleUndo, handleRedo, handleQuickAdd, handlePriorityChange }
 }
 
 function useBulkActions(
@@ -605,12 +639,14 @@ function HomeContent() {
       // Use keyboardFocusedId if available, otherwise first selected task
       const focusTarget = keyboardFocusedId ?? [...selection.selectedIds][0]
       if (focusTarget) {
-        // Small delay to let the dialog fully close
+        // Delay to let the dialog fully close and remove aria-hidden from ancestors.
+        // Without this delay, focusing the task row while aria-hidden is still present
+        // triggers a browser warning about blocked aria-hidden on focused elements.
         const timer = setTimeout(() => {
           setKeyboardFocusedId(focusTarget)
           keyboard.enterKeyboardMode()
           document.getElementById(`task-row-${focusTarget}`)?.focus()
-        }, 0)
+        }, 50)
         return () => clearTimeout(timer)
       }
     }

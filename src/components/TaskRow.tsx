@@ -67,6 +67,8 @@ function useLongPress(onLongPress?: () => void) {
   const origin = useRef<{ x: number; y: number } | null>(null)
   const fired = useRef(false)
   const lastPointerType = useRef<string>('mouse')
+  const lastClickTime = useRef(0)
+  const doubleClicked = useRef(false)
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -87,6 +89,15 @@ function useLongPress(onLongPress?: () => void) {
     (e: React.PointerEvent) => {
       // Always track pointer type for click handler (touch vs mouse behavior)
       lastPointerType.current = e.pointerType
+
+      // Double-click detection (mouse only — touch uses tap to select)
+      const now = Date.now()
+      if (e.pointerType === 'mouse' && now - lastClickTime.current < 300) {
+        doubleClicked.current = true
+      } else {
+        doubleClicked.current = false
+      }
+      lastClickTime.current = now
 
       if (!onLongPress) return
       fired.current = false
@@ -124,7 +135,22 @@ function useLongPress(onLongPress?: () => void) {
   /** True if the last interaction was a touch (not mouse/pen) */
   const wasTouch = useCallback(() => lastPointerType.current === 'touch', [])
 
-  return { onPointerDown, onPointerUp, onPointerMove, onPointerLeave: cancel, didFire, wasTouch }
+  /** True if this is a double-click (two clicks within 300ms) */
+  const didDoubleClick = useCallback(() => {
+    const result = doubleClicked.current
+    doubleClicked.current = false
+    return result
+  }, [])
+
+  return {
+    onPointerDown,
+    onPointerUp,
+    onPointerMove,
+    onPointerLeave: cancel,
+    didFire,
+    wasTouch,
+    didDoubleClick,
+  }
 }
 
 interface TaskRowProps {
@@ -181,6 +207,7 @@ export function TaskRow({
    * | Context              | Input                   | Action                                     |
    * |----------------------|-------------------------|--------------------------------------------|
    * | Not in selection mode| Desktop click           | activate - show blue glow only (no select) |
+   * | Not in selection mode| Desktop double-click    | selectOnly - enter selection mode          |
    * | Not in selection mode| Mobile tap              | selectOnly - enter selection mode          |
    * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
    * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
@@ -188,7 +215,8 @@ export function TaskRow({
    * | In selection mode    | Mobile tap              | toggle - accumulate selection              |
    *
    * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
-   * actually select. Mobile users have no keyboard, so tapping enters selection mode directly.
+   * actually select. Double-click or long-press enters selection mode on desktop.
+   * Mobile users have no keyboard, so tapping enters selection mode directly.
    * This separates "where you are" (focus/blue glow) from "what's selected" (checkboxes).
    */
   const handleClick = useCallback(
@@ -199,6 +227,12 @@ export function TaskRow({
       }
 
       e.preventDefault()
+
+      // Double-click enters selection mode (desktop alternative to long-press)
+      if (!isSelectionMode && pointer.didDoubleClick() && onSelectOnly) {
+        onSelectOnly()
+        return
+      }
 
       if (e.shiftKey && onRangeSelect) {
         onRangeSelect()

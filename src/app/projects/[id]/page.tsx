@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { X } from 'lucide-react'
@@ -149,14 +149,49 @@ export default function ProjectDetailPage() {
       .catch(() => {})
   }, [status, router, projectId, fetchTasks])
 
+  // Use refs to break circular dependency between handleUndo and handleRedo
+  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
+
   const handleUndo = async () => {
     try {
-      await fetch('/api/undo', { method: 'POST' })
+      const res = await fetch('/api/undo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to undo' })
+        return
+      }
+      const data = await res.json()
       fetchTasks()
+      showToast({
+        message: `Undid: ${data.data.description}`,
+        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
+      })
     } catch {
       showToast({ message: 'Undo failed' })
     }
   }
+
+  const handleRedo = async () => {
+    try {
+      const res = await fetch('/api/redo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to redo' })
+        return
+      }
+      const data = await res.json()
+      fetchTasks()
+      showToast({
+        message: `Redid: ${data.data.description}`,
+        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Redo failed' })
+    }
+  }
+
+  // Keep refs up to date
+  handleUndoRef.current = handleUndo
+  handleRedoRef.current = handleRedo
 
   const handleDone = async (taskId: number) => {
     const task = tasks.find((t) => t.id === taskId)

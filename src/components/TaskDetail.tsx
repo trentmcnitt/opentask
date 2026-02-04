@@ -10,6 +10,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { showToast } from '@/lib/toast'
 import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
@@ -171,7 +172,7 @@ function TaskFields({
   // The actual save happens via handleDateChange when QuickActionPanel's internal handleSave
   // calls handleApply, which invokes onDateChange. These callbacks just enable the button pattern.
   const handleSave = useCallback(() => {
-    // Date change is already applied via onDateChange callback
+    showToast({ message: 'Changes saved' })
   }, [])
 
   const handleCancel = useCallback(() => {

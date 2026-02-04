@@ -89,7 +89,27 @@ export default function TaskDetailPage() {
   const handleSaveAndLeave = useCallback(() => {
     saveRef.current?.()
     setShowLeaveConfirm(false)
-    showToast({ message: 'Changes saved' })
+    showToast({
+      message: 'Changes saved',
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          try {
+            const res = await fetch('/api/undo', { method: 'POST' })
+            if (!res.ok) {
+              showToast({ message: 'Undo failed' })
+              return
+            }
+            const data = await res.json()
+            showToast({ message: `Undid: ${data.data.description}` })
+            // Trigger a page refresh to show the undone state
+            window.location.reload()
+          } catch {
+            showToast({ message: 'Undo failed' })
+          }
+        },
+      },
+    })
     router.push('/')
   }, [router])
 
