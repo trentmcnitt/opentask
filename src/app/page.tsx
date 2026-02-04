@@ -17,6 +17,7 @@ import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
+import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
 import { showToast } from '@/lib/toast'
 import type { Task, Project } from '@/types'
 
@@ -295,6 +296,7 @@ function useBulkActions(
   }
 
   const handleSearch = async (query: string) => {
+    selection.clear() // Clear selection when search changes
     setSearchQuery(query)
     try {
       const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=500`)
@@ -332,6 +334,7 @@ function HomeContent() {
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
 
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
@@ -346,15 +349,20 @@ function HomeContent() {
   const [searchResults, setSearchResults] = useState<Task[]>([])
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
 
-  const toggleLabel = useCallback((label: string) => {
-    setSelectedLabels((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
-    )
-  }, [])
+  const toggleLabel = useCallback(
+    (label: string) => {
+      selection.clear() // Clear selection when filter changes
+      setSelectedLabels((prev) =>
+        prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+      )
+    },
+    [selection],
+  )
 
   const clearLabels = useCallback(() => {
+    selection.clear() // Clear selection when filter changes
     setSelectedLabels([])
-  }, [])
+  }, [selection])
 
   const baseTasks = searchQuery ? searchResults : tasks
   const displayTasks = useMemo(() => {
@@ -410,7 +418,8 @@ function HomeContent() {
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled = !snoozeTask && !showProjectPicker && !quickActionOpen
+  const keyboardNavEnabled =
+    !snoozeTask && !showProjectPicker && !quickActionOpen && !showShortcutsDialog
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -439,15 +448,22 @@ function HomeContent() {
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
       const cmdKey = isMac ? e.metaKey : e.ctrlKey
 
-      // Don't intercept when dialogs/sheets are open
-      if (!keyboardNavEnabled) return
-
       // Don't intercept when user is in an input, textarea, or contenteditable
       const activeEl = document.activeElement
       const isInInput =
         activeEl instanceof HTMLInputElement ||
         activeEl instanceof HTMLTextAreaElement ||
         (activeEl as HTMLElement)?.isContentEditable
+
+      // ?: Open keyboard shortcuts help dialog (works globally, even with dialogs open)
+      if (e.key === '?' && !isInInput) {
+        e.preventDefault()
+        setShowShortcutsDialog(true)
+        return
+      }
+
+      // Don't intercept other shortcuts when dialogs/sheets are open
+      if (!keyboardNavEnabled) return
 
       // Cmd+L: Always focus first task (works even in keyboard mode)
       if (cmdKey && e.key === 'l') {
@@ -669,6 +685,7 @@ function HomeContent() {
       onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
+        selection.clear() // Clear selection when search cleared
         setSearchQuery(null)
         setSearchResults([])
       }}
@@ -695,6 +712,8 @@ function HomeContent() {
       getSortOption={getSortOption}
       setSortOption={setSortOption}
       onActivate={handleActivate}
+      showShortcutsDialog={showShortcutsDialog}
+      onShortcutsDialogChange={setShowShortcutsDialog}
     />
   )
 }
@@ -743,6 +762,8 @@ function DashboardView({
   getSortOption,
   setSortOption,
   onActivate,
+  showShortcutsDialog,
+  onShortcutsDialogChange,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -787,6 +808,8 @@ function DashboardView({
   getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
   setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
   onActivate: (taskId: number) => void
+  showShortcutsDialog: boolean
+  onShortcutsDialogChange: (open: boolean) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -913,6 +936,8 @@ function DashboardView({
         onPriorityChange={onQuickActionPriorityChange}
         onNavigateToDetail={onQuickActionNavigate}
       />
+
+      <KeyboardShortcutsDialog open={showShortcutsDialog} onOpenChange={onShortcutsDialogChange} />
     </div>
   )
 }

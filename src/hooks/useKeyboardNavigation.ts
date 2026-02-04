@@ -75,15 +75,98 @@ export function useKeyboardNavigation({
   const lastEscapeTime = useRef<number>(0)
 
   // Find the first task in the same group as the given task ID
+  // Uses orderedIds to respect the current sort order
   const findFirstTaskInGroup = useCallback(
     (taskId: number): number | null => {
       for (const group of groups) {
         const taskInGroup = group.tasks.find((t) => t.id === taskId)
         if (taskInGroup && group.tasks.length > 0) {
-          return group.tasks[0].id
+          // Get all task IDs in this group
+          const groupTaskIds = new Set(group.tasks.map((t) => t.id))
+          // Find the first one that appears in orderedIds (respects sort order)
+          for (const id of orderedIds) {
+            if (groupTaskIds.has(id)) {
+              return id
+            }
+          }
         }
       }
       return orderedIds[0] ?? null
+    },
+    [groups, orderedIds],
+  )
+
+  // Find the last task in the same group as the given task ID
+  // Uses orderedIds to respect the current sort order
+  const findLastTaskInGroup = useCallback(
+    (taskId: number): number | null => {
+      for (const group of groups) {
+        const taskInGroup = group.tasks.find((t) => t.id === taskId)
+        if (taskInGroup && group.tasks.length > 0) {
+          // Get all task IDs in this group
+          const groupTaskIds = new Set(group.tasks.map((t) => t.id))
+          // Find the last one that appears in orderedIds (respects sort order)
+          for (let i = orderedIds.length - 1; i >= 0; i--) {
+            if (groupTaskIds.has(orderedIds[i])) {
+              return orderedIds[i]
+            }
+          }
+        }
+      }
+      return orderedIds[orderedIds.length - 1] ?? null
+    },
+    [groups, orderedIds],
+  )
+
+  // Get all task IDs in the current group (for Cmd+Shift+A)
+  const getTaskIdsInCurrentGroup = useCallback(
+    (taskId: number): number[] => {
+      for (const group of groups) {
+        if (group.tasks.some((t) => t.id === taskId)) {
+          const groupTaskIds = new Set(group.tasks.map((t) => t.id))
+          // Return in orderedIds order (respects sort)
+          return orderedIds.filter((id) => groupTaskIds.has(id))
+        }
+      }
+      return []
+    },
+    [groups, orderedIds],
+  )
+
+  // Find the first task in the next group (for Cmd+Ctrl+Down)
+  const findNextGroupFirstTask = useCallback(
+    (taskId: number): number | null => {
+      // Find current group index
+      const currentGroupIndex = groups.findIndex((g) => g.tasks.some((t) => t.id === taskId))
+      if (currentGroupIndex === -1 || currentGroupIndex >= groups.length - 1) return null
+
+      // Get next group's task IDs
+      const nextGroup = groups[currentGroupIndex + 1]
+      const groupTaskIds = new Set(nextGroup.tasks.map((t) => t.id))
+
+      // Find first task in orderedIds that belongs to next group
+      for (const id of orderedIds) {
+        if (groupTaskIds.has(id)) return id
+      }
+      return null
+    },
+    [groups, orderedIds],
+  )
+
+  // Find the last task in the previous group (for Cmd+Ctrl+Up)
+  const findPrevGroupLastTask = useCallback(
+    (taskId: number): number | null => {
+      const currentGroupIndex = groups.findIndex((g) => g.tasks.some((t) => t.id === taskId))
+      if (currentGroupIndex <= 0) return null
+
+      const prevGroup = groups[currentGroupIndex - 1]
+      const groupTaskIds = new Set(prevGroup.tasks.map((t) => t.id))
+
+      // Find last task in orderedIds that belongs to prev group
+      for (let i = orderedIds.length - 1; i >= 0; i--) {
+        if (groupTaskIds.has(orderedIds[i])) return orderedIds[i]
+      }
+      return null
     },
     [groups, orderedIds],
   )
@@ -169,6 +252,27 @@ export function useKeyboardNavigation({
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
             document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+          } else if (cmdKey && e.ctrlKey && keyboardFocusedId !== null) {
+            // Cmd+Ctrl+Down: Jump to first task of next group
+            const nextFirst = findNextGroupFirstTask(keyboardFocusedId)
+            if (nextFirst !== null) {
+              setKeyboardFocusedId(nextFirst)
+              document.getElementById(`task-row-${nextFirst}`)?.focus()
+            }
+          } else if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
+            // Cmd+Shift+Down: Jump to last task in current group
+            const lastInGroup = findLastTaskInGroup(keyboardFocusedId)
+            if (lastInGroup !== null) {
+              setKeyboardFocusedId(lastInGroup)
+              document.getElementById(`task-row-${lastInGroup}`)?.focus()
+            }
+          } else if (cmdKey) {
+            // Cmd+Down: Jump to last task in entire list
+            if (orderedIds.length > 0) {
+              const lastId = orderedIds[orderedIds.length - 1]
+              setKeyboardFocusedId(lastId)
+              document.getElementById(`task-row-${lastId}`)?.focus()
+            }
           } else if (e.shiftKey) {
             extendSelection('down')
           } else {
@@ -183,6 +287,26 @@ export function useKeyboardNavigation({
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
             document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+          } else if (cmdKey && e.ctrlKey && keyboardFocusedId !== null) {
+            // Cmd+Ctrl+Up: Jump to last task of previous group
+            const prevLast = findPrevGroupLastTask(keyboardFocusedId)
+            if (prevLast !== null) {
+              setKeyboardFocusedId(prevLast)
+              document.getElementById(`task-row-${prevLast}`)?.focus()
+            }
+          } else if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
+            // Cmd+Shift+Up: Jump to first task in current group
+            const firstInGroup = findFirstTaskInGroup(keyboardFocusedId)
+            if (firstInGroup !== null) {
+              setKeyboardFocusedId(firstInGroup)
+              document.getElementById(`task-row-${firstInGroup}`)?.focus()
+            }
+          } else if (cmdKey) {
+            // Cmd+Up: Jump to first task in entire list
+            if (orderedIds.length > 0) {
+              setKeyboardFocusedId(orderedIds[0])
+              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+            }
           } else if (e.shiftKey) {
             extendSelection('up')
           } else {
@@ -229,8 +353,20 @@ export function useKeyboardNavigation({
 
         case 'a':
         case 'A':
-          // Cmd/Ctrl+A toggles select all visible tasks
-          if (cmdKey) {
+          if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
+            // Cmd+Shift+A: Toggle select all in current group
+            e.preventDefault()
+            const groupIds = getTaskIdsInCurrentGroup(keyboardFocusedId)
+            if (groupIds.length > 0) {
+              const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
+              if (allSelected) {
+                selection.removeAll(groupIds)
+              } else {
+                selection.addAll(groupIds)
+              }
+            }
+          } else if (cmdKey) {
+            // Cmd/Ctrl+A toggles select all visible tasks
             e.preventDefault()
             const allSelected =
               orderedIds.length > 0 && orderedIds.every((id) => selection.selectedIds.has(id))
@@ -300,6 +436,10 @@ export function useKeyboardNavigation({
       extendSelection,
       onComplete,
       findFirstTaskInGroup,
+      findLastTaskInGroup,
+      getTaskIdsInCurrentGroup,
+      findNextGroupFirstTask,
+      findPrevGroupLastTask,
       isKeyboardActive,
     ],
   )
