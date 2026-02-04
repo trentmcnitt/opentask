@@ -56,8 +56,8 @@ export function LabelFilterBar({ tasks, selectedLabels, onToggleLabel }: LabelFi
               )}
               onClick={() => onToggleLabel(label)}
             >
-              <span>{label}</span>
-              <span className="ml-1 text-[10px] opacity-60">{count}</span>
+              <span className="leading-none">{label}</span>
+              <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
             </Badge>
           )
         }
@@ -70,8 +70,8 @@ export function LabelFilterBar({ tasks, selectedLabels, onToggleLabel }: LabelFi
             className="flex-shrink-0 cursor-pointer select-none"
             onClick={() => onToggleLabel(label)}
           >
-            <span>{label}</span>
-            <span className="ml-1 text-[10px] opacity-60">{count}</span>
+            <span className="leading-none">{label}</span>
+            <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
           </Badge>
         )
       })}

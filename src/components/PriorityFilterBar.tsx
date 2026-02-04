@@ -50,8 +50,8 @@ export function PriorityFilterBar({
             )}
             onClick={() => onTogglePriority(priority)}
           >
-            <span>{option.label}</span>
-            <span className="ml-1 text-[10px] opacity-60">{count}</span>
+            <span className="leading-none">{option.label}</span>
+            <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
           </Badge>
         )
       })}
