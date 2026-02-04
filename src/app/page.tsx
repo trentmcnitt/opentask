@@ -495,6 +495,24 @@ function HomeContent() {
     [keyboard],
   )
 
+  // Return focus to task list when keyboard shortcuts dialog closes (if there are selections).
+  // Using onCloseAutoFocus ensures this fires AFTER Radix removes aria-hidden from main,
+  // avoiding the "blocked aria-hidden on focused element" warning.
+  const handleShortcutsDialogCloseAutoFocus = useCallback(
+    (e: Event) => {
+      if (selection.isSelectionMode) {
+        const focusTarget = keyboardFocusedId ?? [...selection.selectedIds][0]
+        if (focusTarget) {
+          e.preventDefault()
+          setKeyboardFocusedId(focusTarget)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${focusTarget}`)?.focus()
+        }
+      }
+    },
+    [selection.isSelectionMode, selection.selectedIds, keyboardFocusedId, keyboard],
+  )
+
   // Global keyboard shortcuts for jumping into task list
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -630,34 +648,6 @@ function HomeContent() {
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
   }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection, taskGroups])
-
-  // Return focus to task list when shortcuts dialog closes (if there are selections)
-  // This ensures the existing Esc handler works for clearing selection
-  useEffect(() => {
-    if (!showShortcutsDialog && selection.isSelectionMode) {
-      // Dialog just closed and there are selections - return focus to task list
-      // Use keyboardFocusedId if available, otherwise first selected task
-      const focusTarget = keyboardFocusedId ?? [...selection.selectedIds][0]
-      if (focusTarget) {
-        // Delay to let the dialog fully close and remove aria-hidden from ancestors.
-        // Without this delay, focusing the task row while aria-hidden is still present
-        // triggers a browser warning about blocked aria-hidden on focused elements.
-        const timer = setTimeout(() => {
-          setKeyboardFocusedId(focusTarget)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${focusTarget}`)?.focus()
-        }, 50)
-        return () => clearTimeout(timer)
-      }
-    }
-  }, [
-    showShortcutsDialog,
-    selection.isSelectionMode,
-    selection.selectedIds,
-    keyboardFocusedId,
-    setKeyboardFocusedId,
-    keyboard,
-  ])
 
   // Exit keyboard mode when clicking outside the task list
   useEffect(() => {
@@ -881,6 +871,7 @@ function HomeContent() {
       onActivate={handleActivate}
       showShortcutsDialog={showShortcutsDialog}
       onShortcutsDialogChange={setShowShortcutsDialog}
+      onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
     />
   )
 }
@@ -998,6 +989,7 @@ function DashboardView({
   onActivate,
   showShortcutsDialog,
   onShortcutsDialogChange,
+  onShortcutsDialogCloseAutoFocus,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -1048,6 +1040,7 @@ function DashboardView({
   onActivate: (taskId: number) => void
   showShortcutsDialog: boolean
   onShortcutsDialogChange: (open: boolean) => void
+  onShortcutsDialogCloseAutoFocus: (e: Event) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -1061,7 +1054,6 @@ function DashboardView({
         onUndo={actions.handleUndo}
         onSearch={onSearch}
         onSearchClear={onSearchClear}
-        userName={session?.user?.name || undefined}
         onSnoozeOverdue={onSnoozeOverdue}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
       />
@@ -1188,7 +1180,11 @@ function DashboardView({
         onNavigateToDetail={onQuickActionNavigate}
       />
 
-      <KeyboardShortcutsDialog open={showShortcutsDialog} onOpenChange={onShortcutsDialogChange} />
+      <KeyboardShortcutsDialog
+        open={showShortcutsDialog}
+        onOpenChange={onShortcutsDialogChange}
+        onCloseAutoFocus={onShortcutsDialogCloseAutoFocus}
+      />
     </div>
   )
 }

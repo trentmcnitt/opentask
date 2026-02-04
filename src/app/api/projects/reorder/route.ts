@@ -28,24 +28,29 @@ export async function PATCH(request: NextRequest) {
 
     const db = getDb()
 
-    // Verify all projects belong to the user
+    // Filter to only owned projects (shared projects from other users are ignored)
     const placeholders = projectIds.map(() => '?').join(',')
     const ownedProjects = db
       .prepare(`SELECT id FROM projects WHERE id IN (${placeholders}) AND owner_id = ?`)
       .all(...projectIds, user.id) as { id: number }[]
 
-    if (ownedProjects.length !== projectIds.length) {
-      return badRequest('Some project IDs are invalid or not owned by you')
+    const ownedIds = new Set(ownedProjects.map((p) => p.id))
+
+    // Build ordered list of only owned projects, preserving the user's intended order
+    const ownedInOrder = projectIds.filter((id) => ownedIds.has(id))
+
+    if (ownedInOrder.length === 0) {
+      return badRequest('No valid owned projects to reorder')
     }
 
     withTransaction((txDb) => {
       const stmt = txDb.prepare('UPDATE projects SET sort_order = ? WHERE id = ? AND owner_id = ?')
-      for (let i = 0; i < projectIds.length; i++) {
-        stmt.run(i, projectIds[i], user.id)
+      for (let i = 0; i < ownedInOrder.length; i++) {
+        stmt.run(i, ownedInOrder[i], user.id)
       }
     })
 
-    return success({ reordered: projectIds.length })
+    return success({ reordered: ownedInOrder.length })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'PATCH /api/projects/reorder error:', err)

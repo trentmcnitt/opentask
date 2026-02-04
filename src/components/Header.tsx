@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { signOut } from 'next-auth/react'
-import { FolderOpen, Clock, Undo2, LogOut, Menu, Keyboard } from 'lucide-react'
+import Link from 'next/link'
+import { FolderOpen, Clock, Undo2, Menu, Keyboard, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -29,7 +29,6 @@ interface HeaderProps {
   onUndo: () => void
   onSearch?: (query: string) => void
   onSearchClear?: () => void
-  userName?: string
   onSnoozeOverdue?: () => void
   onShowKeyboardShortcuts?: () => void
 }
@@ -44,7 +43,6 @@ export function Header({
   onUndo,
   onSearch,
   onSearchClear,
-  userName,
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
 }: HeaderProps) {
@@ -180,15 +178,13 @@ export function Header({
                     Keyboard shortcuts
                   </DropdownMenuItem>
                 )}
-                {userName && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })}>
-                      <LogOut className="size-4" />
-                      Sign out ({userName})
-                    </DropdownMenuItem>
-                  </>
-                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <Settings className="size-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

@@ -12,6 +12,7 @@ import {
 interface KeyboardShortcutsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (e: Event) => void
 }
 
 function getShortcuts(cmdLabel: string) {
@@ -34,7 +35,11 @@ function getShortcuts(cmdLabel: string) {
   ]
 }
 
-export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcutsDialogProps) {
+export function KeyboardShortcutsDialog({
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+}: KeyboardShortcutsDialogProps) {
   const shortcuts = useMemo(() => {
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
@@ -43,7 +48,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
           <DialogDescription className="sr-only">
