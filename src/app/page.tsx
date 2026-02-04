@@ -3,8 +3,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { TaskList } from '@/components/TaskList'
+import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
+import { useGroupSort } from '@/hooks/useGroupSort'
+import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
+import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
@@ -310,6 +313,7 @@ function HomeContent() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const selection = useSelection()
+  const timezone = useTimezone()
   const data = useFetchData(router)
   const {
     tasks,
@@ -328,6 +332,12 @@ function HomeContent() {
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
+
+  // Keyboard navigation state
+  const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
+
+  // Sort state - lifted here so keyboard navigation can use the same order as display
+  const { getSortOption, setSortOption } = useGroupSort()
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
   const [grouping, setGrouping] = useState<GroupingMode>('project')
@@ -351,6 +361,154 @@ function HomeContent() {
     if (selectedLabels.length === 0) return baseTasks
     return baseTasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
   }, [baseTasks, selectedLabels])
+
+  // Build task groups for keyboard navigation
+  const effectiveGrouping = searchQuery ? 'time' : grouping
+  const taskGroups = useMemo(
+    () => buildTaskGroups(displayTasks, projects, effectiveGrouping, timezone),
+    [displayTasks, projects, effectiveGrouping, timezone],
+  )
+  // Apply per-group sorting to match the visual order in TaskList
+  const orderedIds = useMemo(
+    () =>
+      taskGroups.flatMap((g) => {
+        const sortOption = getSortOption(g.label)
+        const sortedTasks = sortTasks(g.tasks, sortOption)
+        return sortedTasks.map((t) => t.id)
+      }),
+    [taskGroups, getSortOption],
+  )
+
+  // Keyboard completion handler
+  const handleKeyboardComplete = useCallback(
+    async (taskIds: number[]) => {
+      if (taskIds.length === 0) return
+
+      if (taskIds.length === 1) {
+        await actions.handleDone(taskIds[0])
+      } else {
+        // Bulk complete
+        const count = taskIds.length
+        try {
+          const res = await fetch('/api/tasks/bulk/done', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: taskIds }),
+          })
+          if (!res.ok) throw new Error('Bulk action failed')
+          fetchTasks()
+          showToast({
+            message: `${count} tasks completed`,
+            action: { label: 'Undo', onClick: actions.handleUndo },
+          })
+        } catch {
+          showToast({ message: 'Action failed' })
+        }
+      }
+    },
+    [actions, fetchTasks],
+  )
+
+  // Keyboard navigation hook - disabled when sheets/dialogs are open
+  const keyboardNavEnabled = !snoozeTask && !showProjectPicker && !quickActionOpen
+  const keyboard = useKeyboardNavigation({
+    orderedIds,
+    groups: taskGroups,
+    keyboardFocusedId,
+    setKeyboardFocusedId,
+    selection,
+    onComplete: handleKeyboardComplete,
+    enabled: keyboardNavEnabled,
+  })
+
+  // Handler for desktop click: set keyboard focus (blue glow) without selecting
+  const handleActivate = useCallback(
+    (taskId: number) => {
+      setKeyboardFocusedId(taskId)
+      keyboard.enterKeyboardMode()
+      // Sync browser focus to match the visual blue glow
+      document.getElementById(`task-row-${taskId}`)?.focus()
+      // Note: Does NOT call selection.selectOnly() - focus and selection are independent
+    },
+    [keyboard],
+  )
+
+  // Global keyboard shortcuts for jumping into task list
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const cmdKey = isMac ? e.metaKey : e.ctrlKey
+
+      // Don't intercept when dialogs/sheets are open
+      if (!keyboardNavEnabled) return
+
+      // Don't intercept when user is in an input, textarea, or contenteditable
+      const activeEl = document.activeElement
+      const isInInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl as HTMLElement)?.isContentEditable
+
+      // Cmd+L: Always focus first task (works even in keyboard mode)
+      if (cmdKey && e.key === 'l') {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // ArrowDown: Focus first task (only when not in keyboard mode and not in input)
+      if (e.key === 'ArrowDown' && !keyboard.isKeyboardActive && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // ArrowUp: Focus last task (only when not in keyboard mode and not in input)
+      if (e.key === 'ArrowUp' && !keyboard.isKeyboardActive && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const lastTaskId = orderedIds[orderedIds.length - 1]
+          setKeyboardFocusedId(lastTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${lastTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
+      if (cmdKey && e.key === 'a' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
+          if (allSelected) {
+            selection.clear()
+          } else {
+            selection.selectAll(orderedIds)
+            // Enter keyboard mode if not already
+            if (!keyboard.isKeyboardActive) {
+              setKeyboardFocusedId(orderedIds[0])
+              keyboard.enterKeyboardMode()
+              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+            }
+          }
+        }
+        return
+      }
+    }
+
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection])
 
   // Fetch saved grouping preference on mount
   useEffect(() => {
@@ -457,13 +615,7 @@ function HomeContent() {
     return () => window.removeEventListener('projects-reordered', handler)
   }, [fetchProjects])
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selection.isSelectionMode) selection.clear()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selection])
+  // Global Escape handler removed - keyboard navigation hook handles Escape now
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
@@ -535,6 +687,14 @@ function HomeContent() {
       onQuickActionPriorityChange={actions.handlePriorityChange}
       onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
       onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
+      keyboardFocusedId={keyboardFocusedId}
+      isKeyboardActive={keyboard.isKeyboardActive}
+      onKeyDown={keyboard.handleKeyDown}
+      onListFocus={keyboard.handleFocus}
+      onListBlur={keyboard.handleBlur}
+      getSortOption={getSortOption}
+      setSortOption={setSortOption}
+      onActivate={handleActivate}
     />
   )
 }
@@ -575,6 +735,14 @@ function DashboardView({
   onQuickActionPriorityChange,
   onQuickActionNavigate,
   onNavigateToDetail,
+  keyboardFocusedId,
+  isKeyboardActive,
+  onKeyDown,
+  onListFocus,
+  onListBlur,
+  getSortOption,
+  setSortOption,
+  onActivate,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -611,6 +779,14 @@ function DashboardView({
   onQuickActionPriorityChange: (taskId: number, newPriority: number) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
+  keyboardFocusedId: number | null
+  isKeyboardActive: boolean
+  onKeyDown: (e: React.KeyboardEvent) => void
+  onListFocus: (e: React.FocusEvent) => void
+  onListBlur: (e: React.FocusEvent) => void
+  getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
+  setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
+  onActivate: (taskId: number) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -667,6 +843,14 @@ function DashboardView({
           onSwipeSnooze={actions.handleSnooze}
           onLabelClick={onToggleLabel}
           onTaskFocus={onTaskFocus}
+          keyboardFocusedId={keyboardFocusedId}
+          isKeyboardActive={isKeyboardActive}
+          onKeyDown={onKeyDown}
+          onListFocus={onListFocus}
+          onListBlur={onListBlur}
+          getSortOption={getSortOption}
+          setSortOption={setSortOption}
+          onActivate={onActivate}
         />
       </main>
 
@@ -691,6 +875,12 @@ function DashboardView({
         onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
+        onRecurrenceChange={(rrule) => {
+          onBulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { rrule },
+          })
+        }}
       />
 
       <SnoozeAllFab

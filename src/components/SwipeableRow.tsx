@@ -94,6 +94,7 @@ export function SwipeableRow({
     {
       axis: 'x',
       filterTaps: true,
+      pointer: { capture: false }, // Disable pointer capture to fix focus-related click issues
     },
   )
 
@@ -116,11 +117,11 @@ export function SwipeableRow({
 
       {/* Foreground content */}
       <div
-        {...bind()}
+        {...(disabled ? {} : bind())}
         style={{
           transform: `translateX(${offset}px)`,
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',
-          touchAction: 'pan-y',
+          touchAction: disabled ? undefined : 'pan-y',
         }}
       >
         {children}

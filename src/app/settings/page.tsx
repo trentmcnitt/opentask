@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
+import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
 import type { LabelColor, LabelConfig } from '@/types'
 
 export default function SettingsPage() {
@@ -157,6 +158,23 @@ export default function SettingsPage() {
               <span className="text-sm">Trash</span>
               <span className="text-xs text-zinc-400">&rsaquo;</span>
             </Link>
+          </div>
+        </section>
+
+        {/* About */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            About
+          </h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Version</span>
+              <span>0.1.0</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Build</span>
+              <span>{formatBuildDate(BUILD_ID)}</span>
+            </div>
           </div>
         </section>
 

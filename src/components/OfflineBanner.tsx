@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { WifiOff } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { BUILD_ID } from '@/lib/build-info'
 
 export function OfflineBanner() {
   const [offline, setOffline] = useState(
@@ -21,10 +22,10 @@ export function OfflineBanner() {
     }
   }, [])
 
-  // Register service worker
+  // Register service worker with build ID for cache invalidation
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      navigator.serviceWorker.register(`/sw.js?v=${BUILD_ID}`).catch(() => {
         // SW registration failed - non-critical
       })
     }

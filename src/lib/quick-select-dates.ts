@@ -248,3 +248,49 @@ export function formatDeltaText(deltaMinutes: number): string {
     return `${sign}${minutes}m`
   }
 }
+
+/** Smart button definitions for quick date selection */
+export const SMART_BUTTONS = [
+  { label: 'Now', type: 'now' as const },
+  { label: 'Next Hour', type: 'nextHour' as const },
+] as const
+
+/**
+ * Snap to the nearest 5-minute increment in the future.
+ * - 1:33 PM → 1:35 PM
+ * - 1:35 PM → 1:40 PM (rounds up if exactly on mark)
+ */
+export function snapToNearestFiveMinutes(now?: Date): string {
+  const reference = now ?? new Date()
+  const minutes = reference.getMinutes()
+  const remainder = minutes % 5
+  const addMinutes = remainder === 0 ? 5 : 5 - remainder
+  const result = new Date(reference.getTime())
+  result.setMinutes(minutes + addMinutes, 0, 0)
+  return result.toISOString()
+}
+
+/**
+ * Round up to the top of the next hour, or the hour after if past X:35.
+ * - 1:30 PM → 2:00 PM (minutes < 35)
+ * - 1:37 PM → 3:00 PM (minutes >= 35)
+ */
+export function snapToNextHour(now?: Date): string {
+  const reference = now ?? new Date()
+  const minutes = reference.getMinutes()
+  const result = new Date(reference.getTime())
+  result.setMinutes(0, 0, 0)
+  result.setHours(result.getHours() + (minutes >= 35 ? 2 : 1))
+  return result.toISOString()
+}
+
+/**
+ * Format time for smart button display (e.g., "1:35 PM")
+ */
+export function formatSmartButtonTime(isoUtc: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: timezone,
+  }).format(new Date(isoUtc))
+}

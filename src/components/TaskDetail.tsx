@@ -1,23 +1,14 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { LabelPicker } from '@/components/LabelPicker'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
@@ -34,6 +25,9 @@ interface TaskDetailProps {
   onAddNote?: (content: string) => void
   onDeleteNote?: (noteId: number) => void
   onDelete?: () => void
+  onMarkDone?: () => void
+  /** Called when QuickActionPanel dirty state changes (for navigation protection) */
+  onDirtyChange?: (isDirty: boolean) => void
 }
 
 export function TaskDetail({
@@ -47,34 +41,13 @@ export function TaskDetail({
   onAddNote,
   onDeleteNote,
   onDelete,
+  onMarkDone,
+  onDirtyChange,
 }: TaskDetailProps) {
   const timezone = useTimezone()
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft, setTitleDraft] = useState(task.title)
-
-  const handleTitleSave = () => {
-    if (titleDraft.trim() && titleDraft.trim() !== task.title) {
-      onFieldChange?.('title', titleDraft.trim())
-    }
-    setEditingTitle(false)
-  }
 
   return (
     <div className="space-y-6">
-      <TitleSection
-        task={task}
-        editable={editable}
-        editingTitle={editingTitle}
-        titleDraft={titleDraft}
-        onTitleDraftChange={setTitleDraft}
-        onTitleSave={handleTitleSave}
-        onEditTitle={() => {
-          setTitleDraft(task.title)
-          setEditingTitle(true)
-        }}
-        onDelete={onDelete}
-      />
-
       <TaskFields
         task={task}
         project={project}
@@ -83,6 +56,8 @@ export function TaskDetail({
         onFieldChange={onFieldChange}
         onSnooze={onSnooze}
         onDelete={onDelete}
+        onMarkDone={onMarkDone}
+        onDirtyChange={onDirtyChange}
         timezone={timezone}
       />
 
@@ -97,76 +72,6 @@ export function TaskDetail({
   )
 }
 
-function TitleSection({
-  task,
-  editable,
-  editingTitle,
-  titleDraft,
-  onTitleDraftChange,
-  onTitleSave,
-  onEditTitle,
-  onDelete,
-}: {
-  task: Task
-  editable: boolean
-  editingTitle: boolean
-  titleDraft: string
-  onTitleDraftChange: (v: string) => void
-  onTitleSave: () => void
-  onEditTitle: () => void
-  onDelete?: () => void
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex-1">
-        {editable && editingTitle ? (
-          <Input
-            type="text"
-            value={titleDraft}
-            onChange={(e) => onTitleDraftChange(e.target.value)}
-            onBlur={onTitleSave}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onTitleSave()
-            }}
-            className="h-auto py-1 text-2xl font-semibold"
-            autoFocus
-          />
-        ) : (
-          <h1
-            className={cn(
-              'text-2xl font-semibold',
-              editable && 'hover:text-primary cursor-pointer transition-colors',
-            )}
-            onClick={() => editable && onEditTitle()}
-          >
-            {task.title}
-          </h1>
-        )}
-        {task.done && (
-          <Badge
-            variant="secondary"
-            className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-          >
-            Completed
-          </Badge>
-        )}
-      </div>
-
-      {editable && onDelete && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onDelete}
-          className="text-muted-foreground hover:text-destructive"
-          aria-label="Delete task"
-        >
-          <Trash2 className="size-5" />
-        </Button>
-      )}
-    </div>
-  )
-}
-
 function TaskFields({
   task,
   project,
@@ -175,6 +80,8 @@ function TaskFields({
   onFieldChange,
   onSnooze,
   onDelete,
+  onMarkDone,
+  onDirtyChange,
   timezone,
 }: {
   task: Task
@@ -184,6 +91,8 @@ function TaskFields({
   onFieldChange?: (field: string, value: unknown) => void
   onSnooze?: (until: string) => void
   onDelete?: () => void
+  onMarkDone?: () => void
+  onDirtyChange?: (isDirty: boolean) => void
   timezone: string
 }) {
   const currentRruleRef = useRef(task.rrule)
@@ -222,28 +131,64 @@ function TaskFields({
     [task.priority, onFieldChange],
   )
 
-  const handleMoveToProject = useCallback(() => {
-    // Cycle to next project (simple approach for inline mode)
-    if (projects.length < 2) return
-    const currentIdx = projects.findIndex((p) => p.id === task.project_id)
-    const nextIdx = (currentIdx + 1) % projects.length
-    onFieldChange?.('project_id', projects[nextIdx].id)
-  }, [projects, task.project_id, onFieldChange])
+  const handleProjectChange = useCallback(
+    (projectId: number) => {
+      if (projectId !== task.project_id) {
+        onFieldChange?.('project_id', projectId)
+      }
+    },
+    [task.project_id, onFieldChange],
+  )
+
+  const handleLabelsChange = useCallback(
+    (labels: string[]) => {
+      onFieldChange?.('labels', labels)
+    },
+    [onFieldChange],
+  )
+
+  const handleTitleChange = useCallback(
+    (title: string) => {
+      onFieldChange?.('title', title)
+    },
+    [onFieldChange],
+  )
+
+  // For popover mode, onSave/onCancel are required to show the Save/Reset/Cancel buttons.
+  // The actual save happens via handleDateChange when QuickActionPanel's internal handleSave
+  // calls handleApply, which invokes onDateChange. These callbacks just enable the button pattern.
+  const handleSave = useCallback(() => {
+    // Date change is already applied via onDateChange callback
+  }, [])
+
+  const handleCancel = useCallback(() => {
+    // Reset is handled internally by QuickActionPanel
+  }, [])
 
   return (
     <div className="space-y-4">
-      {/* Quick Action Panel — positioned above notes for mobile thumb reach */}
+      {/* Quick Action Panel — title, date/time grid, and actions */}
       {editable && (
         <div className="rounded-lg border p-3">
           <QuickActionPanel
             task={task}
             timezone={timezone}
-            mode="inline"
+            mode="popover"
+            titleVariant="prominent"
+            showCompletedBadge
+            projectName={project?.name}
+            projects={projects}
             onDateChange={handleDateChange}
             onPriorityChange={handlePriorityChange}
             onRruleChange={handleRruleChange}
-            onMoveToProject={projects.length > 1 ? handleMoveToProject : undefined}
+            onProjectChange={projects.length > 0 ? handleProjectChange : undefined}
+            onLabelsChange={handleLabelsChange}
             onDelete={onDelete}
+            onMarkDone={onMarkDone}
+            onTitleChange={handleTitleChange}
+            onSave={handleSave}
+            onCancel={handleCancel}
+            onDirtyChange={onDirtyChange}
           />
         </div>
       )}
@@ -268,40 +213,23 @@ function TaskFields({
         </DetailField>
       )}
 
-      <DetailField label="Project">
-        {editable && projects.length > 0 ? (
-          <Select
-            value={task.project_id.toString()}
-            onValueChange={(value) => onFieldChange?.('project_id', parseInt(value))}
-          >
-            <SelectTrigger className="w-auto">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id.toString()}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
+      {/* Project - only show in read-only mode (editable mode uses QuickActionPanel) */}
+      {!editable && (
+        <DetailField label="Project">
           <span>{project?.name || 'Unknown'}</span>
-        )}
-      </DetailField>
+        </DetailField>
+      )}
 
-      <DetailField label="Labels">
-        {editable ? (
-          <LabelPicker
-            labels={task.labels}
-            onChange={(labels) => onFieldChange?.('labels', labels)}
-          />
-        ) : task.labels.length > 0 ? (
-          <ColoredLabels labels={task.labels} />
-        ) : (
-          <span className="text-muted-foreground">None</span>
-        )}
-      </DetailField>
+      {/* Labels - only show in read-only mode (editable mode uses QuickActionPanel) */}
+      {!editable && (
+        <DetailField label="Labels">
+          {task.labels.length > 0 ? (
+            <ColoredLabels labels={task.labels} />
+          ) : (
+            <span className="text-muted-foreground">None</span>
+          )}
+        </DetailField>
+      )}
 
       {/* Recurrence - read-only (editing via QuickActionPanel) */}
       {!editable && (
