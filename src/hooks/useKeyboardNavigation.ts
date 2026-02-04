@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useRef, useEffect } from 'react'
 import type { SelectionContextType } from '@/components/SelectionProvider'
-import { debugLog } from '@/lib/debug-log'
+import { debug } from '@/lib/logger'
 
 /**
  * Keyboard Navigation for Task List
@@ -151,7 +151,7 @@ export function useKeyboardNavigation({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      debugLog('keyboard-nav', 'handleKeyDown:', e.key, {
+      debug('keyboard-nav', 'handleKeyDown:', e.key, {
         enabled,
         keyboardFocusedId,
         isKeyboardActive,
@@ -194,7 +194,7 @@ export function useKeyboardNavigation({
           // Space toggles selection of focused task
           e.preventDefault()
           if (keyboardFocusedId !== null) {
-            debugLog('keyboard-nav', 'Space toggling selection for task:', keyboardFocusedId)
+            debug('keyboard-nav', 'Space toggling selection for task:', keyboardFocusedId)
             selection.toggle(keyboardFocusedId)
           }
           break
@@ -314,7 +314,7 @@ export function useKeyboardNavigation({
       const taskRowAncestor = target.closest('[id^="task-row-"]') as HTMLElement | null
       const taskIdFromAncestor = taskRowAncestor?.id?.replace('task-row-', '')
 
-      debugLog('keyboard-nav', 'handleFocus:', {
+      debug('keyboard-nav', 'handleFocus:', {
         target: targetId || target.className?.slice(0, 30),
         taskRowAncestor: taskRowAncestor?.id,
         isKeyboardActive,
@@ -322,13 +322,13 @@ export function useKeyboardNavigation({
 
       // If already in keyboard mode, nothing to do
       if (isKeyboardActive) {
-        debugLog('keyboard-nav', 'handleFocus: already in keyboard mode')
+        debug('keyboard-nav', 'handleFocus: already in keyboard mode')
         return
       }
 
       // If listbox itself receives focus (tabbing in), enter keyboard mode
       if (e.target === e.currentTarget) {
-        debugLog('keyboard-nav', 'handleFocus: listbox focused, entering keyboard mode')
+        debug('keyboard-nav', 'handleFocus: listbox focused, entering keyboard mode')
         setIsKeyboardActive(true)
         if (orderedIds.length > 0) {
           setKeyboardFocusedId(orderedIds[0])
@@ -343,7 +343,7 @@ export function useKeyboardNavigation({
           ? parseInt(targetId.replace('task-row-', ''))
           : parseInt(taskIdFromAncestor || '0')
         if (taskId && orderedIds.includes(taskId)) {
-          debugLog(
+          debug(
             'keyboard-nav',
             'handleFocus: focus inside task row, entering keyboard mode for task',
             taskId,
@@ -354,7 +354,7 @@ export function useKeyboardNavigation({
         }
       }
 
-      debugLog('keyboard-nav', 'handleFocus: ignoring focus on non-task element')
+      debug('keyboard-nav', 'handleFocus: ignoring focus on non-task element')
     },
     [orderedIds, setKeyboardFocusedId, isKeyboardActive],
   )
@@ -362,7 +362,7 @@ export function useKeyboardNavigation({
   const handleBlur = useCallback(
     (e: React.FocusEvent) => {
       const newFocusTarget = e.relatedTarget as HTMLElement | null
-      debugLog('keyboard-nav', 'handleBlur:', {
+      debug('keyboard-nav', 'handleBlur:', {
         target: (e.target as HTMLElement).id || (e.target as HTMLElement).className?.slice(0, 30),
         currentTarget: (e.currentTarget as HTMLElement).getAttribute('role'),
         relatedTarget: newFocusTarget?.id || newFocusTarget?.className?.slice(0, 30) || null,
@@ -377,11 +377,11 @@ export function useKeyboardNavigation({
       const isMovingInsideTaskRow = newFocusTarget?.closest('[id^="task-row-"]') != null
 
       if (isMovingToTaskRow || isMovingToListbox || isMovingInsideTaskRow) {
-        debugLog('keyboard-nav', 'handleBlur: focus staying within list, not exiting')
+        debug('keyboard-nav', 'handleBlur: focus staying within list, not exiting')
         return
       }
 
-      debugLog('keyboard-nav', 'handleBlur: exiting keyboard mode')
+      debug('keyboard-nav', 'handleBlur: exiting keyboard mode')
       // Focus is leaving task navigation - exit keyboard mode
       setIsKeyboardActive(false)
       setKeyboardFocusedId(null)

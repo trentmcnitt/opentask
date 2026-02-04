@@ -12,6 +12,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { markDone } from '@/core/tasks'
+import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('POST /api/tasks/:id/done error:', err)
+    log.error('api', 'POST /api/tasks/:id/done error:', err)
     return handleError(err)
   }
 }

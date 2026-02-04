@@ -11,6 +11,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkEdit } from '@/core/tasks'
 import { validateBulkEdit } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 
 export async function POST(request: NextRequest) {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof ZodError) {
       return handleZodError(err)
     }
-    console.error('POST /api/tasks/bulk/edit error:', err)
+    log.error('api', 'POST /api/tasks/bulk/edit error:', err)
     return handleError(err)
   }
 }

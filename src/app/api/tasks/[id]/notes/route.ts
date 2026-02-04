@@ -12,6 +12,7 @@ import { getTaskById, canUserAccessTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { validateNoteCreate } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { Note } from '@/types'
 import type { RouteContext } from '@/types/api'
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/tasks/:id/notes error:', err)
+    log.error('api', 'GET /api/tasks/:id/notes error:', err)
     return handleError(err)
   }
 }
@@ -111,6 +112,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)
+    log.error('api', 'POST /api/tasks/:id/notes error:', err)
     return handleError(err)
   }
 }

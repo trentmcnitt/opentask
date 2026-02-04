@@ -10,6 +10,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, badRequest, handleError } from '@/lib/api-response'
 import { getTaskById, canUserAccessTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 import type { Note } from '@/types'
 import type { NoteRouteContext } from '@/types/api'
 
@@ -68,7 +69,7 @@ export async function PATCH(request: NextRequest, context: NoteRouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('PATCH /api/tasks/:id/notes/:nid error:', err)
+    log.error('api', 'PATCH /api/tasks/:id/notes/:nid error:', err)
     return handleError(err)
   }
 }
@@ -117,7 +118,7 @@ export async function DELETE(request: NextRequest, context: NoteRouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('DELETE /api/tasks/:id/notes/:nid error:', err)
+    log.error('api', 'DELETE /api/tasks/:id/notes/:nid error:', err)
     return handleError(err)
   }
 }

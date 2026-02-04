@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb, withTransaction } from '@/core/db'
+import { log } from '@/lib/logger'
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -47,6 +48,7 @@ export async function PATCH(request: NextRequest) {
     return success({ reordered: projectIds.length })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
+    log.error('api', 'PATCH /api/projects/reorder error:', err)
     return handleError(err)
   }
 }

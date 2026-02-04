@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { createReviewSession } from '@/core/review/session'
+import { log } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/review error:', err)
+    log.error('api', 'GET /api/review error:', err)
     return handleError(err)
   }
 }

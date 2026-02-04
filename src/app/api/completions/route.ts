@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 interface CompletionRow {
   id: number
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/completions error:', err)
+    log.error('api', 'GET /api/completions error:', err)
     return handleError(err)
   }
 }

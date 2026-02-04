@@ -9,6 +9,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const DEFAULT_NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
 const DEFAULT_NTFY_TOPIC = process.env.NTFY_TOPIC || 'opentask'
@@ -203,7 +204,7 @@ export async function checkOverdueTasks(): Promise<void> {
       )
     }
   } catch (err) {
-    console.error('Overdue checker error:', err)
+    log.error('notifications', 'Overdue checker error:', err)
   }
 }
 
@@ -261,6 +262,6 @@ async function sendNtfyNotification(opts: NtfyOptions): Promise<void> {
       body: opts.message,
     })
   } catch (err) {
-    console.error('ntfy send error:', err)
+    log.error('notifications', 'ntfy send error:', err)
   }
 }

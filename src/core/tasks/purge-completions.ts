@@ -7,6 +7,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const DEFAULT_RETENTION_DAYS = 30
 
@@ -25,8 +26,9 @@ export function purgeOldCompletions(): number {
   const result = db.prepare(`DELETE FROM completions WHERE completed_at < ?`).run(cutoffIso)
 
   if (result.changes > 0) {
-    console.log(
-      `[completions-purge] Deleted ${result.changes} completion records older than ${retentionDays} days`,
+    log.info(
+      'cron',
+      `Deleted ${result.changes} completion records older than ${retentionDays} days`,
     )
   }
 

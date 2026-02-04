@@ -7,6 +7,7 @@ import { BottomTabs } from './BottomTabs'
 import { AddTaskForm } from './AddTaskForm'
 import { OfflineBanner } from './OfflineBanner'
 import { showToast } from '@/lib/toast'
+import { log } from '@/lib/logger'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
@@ -26,7 +27,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         })),
       )
     } catch (err) {
-      console.warn('Failed to fetch projects for sidebar:', err)
+      log.warn('ui', 'Failed to fetch projects for sidebar:', err)
     }
   }, [])
 

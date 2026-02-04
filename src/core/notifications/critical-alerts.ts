@@ -7,6 +7,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN || ''
 const PUSHOVER_USER = process.env.PUSHOVER_USER || ''
@@ -62,7 +63,7 @@ export async function checkCriticalTasks(): Promise<void> {
       )
     }
   } catch (err) {
-    console.error('Critical alerts error:', err)
+    log.error('notifications', 'Critical alerts error:', err)
   }
 }
 
@@ -78,7 +79,7 @@ async function sendCriticalNtfy(task: CriticalTask): Promise<void> {
       body: `Task "${task.title}" is overdue and marked critical! Due: ${task.due_at}`,
     })
   } catch (err) {
-    console.error('ntfy critical send error:', err)
+    log.error('notifications', 'ntfy critical send error:', err)
   }
 }
 
@@ -99,6 +100,6 @@ async function sendPushoverAlert(task: CriticalTask): Promise<void> {
       body: params,
     })
   } catch (err) {
-    console.error('Pushover send error:', err)
+    log.error('notifications', 'Pushover send error:', err)
   }
 }

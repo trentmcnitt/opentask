@@ -5,6 +5,7 @@
  */
 
 import { withTransaction } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const DEFAULT_RETENTION_DAYS = 30
 
@@ -51,8 +52,9 @@ export function purgeOldTrash(): number {
   })
 
   if (changes > 0) {
-    console.log(
-      `[trash-purge] Permanently deleted ${changes} tasks trashed more than ${retentionDays} days ago`,
+    log.info(
+      'cron',
+      `Permanently deleted ${changes} tasks trashed more than ${retentionDays} days ago`,
     )
   }
 

@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { executeRedo, canRedo } from '@/core/undo'
+import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('POST /api/redo error:', err)
+    log.error('api', 'POST /api/redo error:', err)
     return handleError(err)
   }
 }

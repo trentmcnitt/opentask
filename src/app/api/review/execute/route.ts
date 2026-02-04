@@ -19,6 +19,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError, conflict } from '@/lib/api-response'
 import { getReviewSession, resolveSeqNumbers, deleteReviewSession } from '@/core/review/session'
 import { bulkDone, bulkSnooze } from '@/core/tasks'
+import { log } from '@/lib/logger'
 
 interface ReviewAction {
   type: 'done' | 'snooze' | 'skip'
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('POST /api/review/execute error:', err)
+    log.error('api', 'POST /api/review/execute error:', err)
     return handleError(err)
   }
 }

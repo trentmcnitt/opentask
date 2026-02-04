@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { getUndoHistory } from '@/core/undo'
+import { log } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/undo/history error:', err)
+    log.error('api', 'GET /api/undo/history error:', err)
     return handleError(err)
   }
 }
