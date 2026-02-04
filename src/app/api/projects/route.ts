@@ -11,6 +11,7 @@ import { success, unauthorized, handleError, handleZodError } from '@/lib/api-re
 import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { validateProjectCreate } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { Project } from '@/types'
 
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/projects error:', err)
+    log.error('api', 'GET /api/projects error:', err)
     return handleError(err)
   }
 }
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)
+    log.error('api', 'POST /api/projects error:', err)
     return handleError(err)
   }
 }

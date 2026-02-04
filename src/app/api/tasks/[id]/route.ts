@@ -12,6 +12,7 @@ import { success, unauthorized, notFound, handleError, handleZodError } from '@/
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById, updateTask, deleteTask, canUserAccessTask } from '@/core/tasks'
 import { validateTaskUpdate } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/tasks/:id error:', err)
+    log.error('api', 'GET /api/tasks/:id error:', err)
     return handleError(err)
   }
 }
@@ -84,7 +85,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (err instanceof ZodError) {
       return handleZodError(err)
     }
-    console.error('PATCH /api/tasks/:id error:', err)
+    log.error('api', 'PATCH /api/tasks/:id error:', err)
     return handleError(err)
   }
 }
@@ -116,7 +117,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('DELETE /api/tasks/:id error:', err)
+    log.error('api', 'DELETE /api/tasks/:id error:', err)
     return handleError(err)
   }
 }

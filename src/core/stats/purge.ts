@@ -6,6 +6,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const DEFAULT_RETENTION_DAYS = 365
 
@@ -25,8 +26,9 @@ export function purgeOldStats(): number {
   const result = db.prepare(`DELETE FROM user_daily_stats WHERE date < ?`).run(cutoffDateStr)
 
   if (result.changes > 0) {
-    console.log(
-      `[stats-purge] Deleted ${result.changes} daily stats records older than ${retentionDays} days`,
+    log.info(
+      'cron',
+      `Deleted ${result.changes} daily stats records older than ${retentionDays} days`,
     )
   }
 

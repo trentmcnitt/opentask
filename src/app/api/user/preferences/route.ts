@@ -10,6 +10,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
+import { log } from '@/lib/logger'
 import type { LabelConfig, LabelColor } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project'] as const
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
+    log.error('api', 'GET /api/user/preferences error:', err)
     return handleError(err)
   }
 }
@@ -124,6 +126,7 @@ export async function PATCH(request: NextRequest) {
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
+    log.error('api', 'PATCH /api/user/preferences error:', err)
     return handleError(err)
   }
 }

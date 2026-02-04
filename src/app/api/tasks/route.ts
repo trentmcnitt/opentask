@@ -11,6 +11,7 @@ import { success, unauthorized, handleError, handleZodError } from '@/lib/api-re
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
 import { getTasks, createTask } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 
 export async function GET(request: NextRequest) {
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/tasks error:', err)
+    log.error('api', 'GET /api/tasks error:', err)
     return handleError(err)
   }
 }
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof ZodError) {
       return handleZodError(err)
     }
-    console.error('POST /api/tasks error:', err)
+    log.error('api', 'POST /api/tasks error:', err)
     return handleError(err)
   }
 }

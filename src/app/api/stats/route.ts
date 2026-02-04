@@ -10,6 +10,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getStatsSummary, getDailyStats } from '@/core/stats'
 import { DateTime } from 'luxon'
+import { log } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/stats error:', err)
+    log.error('api', 'GET /api/stats error:', err)
     return handleError(err)
   }
 }

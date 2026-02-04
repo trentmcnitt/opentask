@@ -10,6 +10,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { formatTasksResponse } from '@/lib/format-task'
 import { getTasks, emptyTrash } from '@/core/tasks'
+import { log } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('GET /api/trash error:', err)
+    log.error('api', 'GET /api/trash error:', err)
     return handleError(err)
   }
 }
@@ -60,7 +61,7 @@ export async function DELETE(request: NextRequest) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
     }
-    console.error('DELETE /api/trash error:', err)
+    log.error('api', 'DELETE /api/trash error:', err)
     return handleError(err)
   }
 }

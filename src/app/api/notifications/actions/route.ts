@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
+import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
         return badRequest(`Unknown action: ${action}`)
     }
   } catch (err) {
-    console.error('POST /api/notifications/actions error:', err)
+    log.error('api', 'POST /api/notifications/actions error:', err)
     return handleError(err)
   }
 }

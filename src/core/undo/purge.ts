@@ -5,6 +5,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 
 const DEFAULT_RETENTION_DAYS = 30
 
@@ -23,9 +24,7 @@ export function purgeOldUndoLogs(): number {
   const result = db.prepare(`DELETE FROM undo_log WHERE created_at < ?`).run(cutoffIso)
 
   if (result.changes > 0) {
-    console.log(
-      `[undo-purge] Deleted ${result.changes} undo log entries older than ${retentionDays} days`,
-    )
+    log.info('cron', `Deleted ${result.changes} undo log entries older than ${retentionDays} days`)
   }
 
   return result.changes

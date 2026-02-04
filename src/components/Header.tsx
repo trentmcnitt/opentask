@@ -50,19 +50,26 @@ export function Header({
     <TooltipProvider delayDuration={300}>
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
-          {/* Logo: opacity-only fade on mobile (no width collapse = no squish), always visible on desktop */}
-          <Image
-            src="/opentask-logo.png"
-            alt="OpenTask"
-            width={120}
-            height={36}
-            className={cn(
-              'h-7 w-auto flex-shrink-0 transition-opacity duration-200 md:h-9 dark:invert',
-              searchExpanded ? 'opacity-0 md:opacity-100' : '',
-            )}
-            unoptimized
-            priority
-          />
+          {/* Logo with build info popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Image
+                src="/opentask-logo.png"
+                alt="OpenTask"
+                width={120}
+                height={36}
+                className={cn(
+                  'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9 dark:invert',
+                  searchExpanded ? 'opacity-0 md:opacity-100' : '',
+                )}
+                unoptimized
+                priority
+              />
+            </PopoverTrigger>
+            <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
+              v{VERSION} · {formatBuildDate(BUILD_ID)}
+            </PopoverContent>
+          </Popover>
 
           {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
           <div className="flex min-w-0 flex-1 items-center">
@@ -168,10 +175,6 @@ export function Header({
                     </DropdownMenuItem>
                   </>
                 )}
-                <DropdownMenuSeparator />
-                <div className="text-muted-foreground px-2 py-1.5 text-center text-[11px]">
-                  v{VERSION} · {formatBuildDate(BUILD_ID)}
-                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

@@ -12,6 +12,7 @@ import { success, unauthorized, notFound, handleError, handleZodError } from '@/
 import { formatTaskResponse } from '@/lib/format-task'
 import { snoozeTask } from '@/core/tasks'
 import { validateSnooze } from '@/core/validation'
+import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (err instanceof ZodError) {
       return handleZodError(err)
     }
-    console.error('POST /api/tasks/:id/snooze error:', err)
+    log.error('api', 'POST /api/tasks/:id/snooze error:', err)
     return handleError(err)
   }
 }
