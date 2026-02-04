@@ -366,9 +366,13 @@ function formatEditDetails(
         break
       }
       case 'title': {
-        // Just indicate title changed, don't show old/new values
-        if (before_state.title !== after_state.title) {
-          parts.push('title')
+        const beforeTitle = before_state.title
+        const afterTitle = after_state.title
+        if (beforeTitle !== afterTitle && beforeTitle && afterTitle) {
+          // Truncate titles for display
+          const truncBefore = beforeTitle.length > 15 ? beforeTitle.slice(0, 15) + '…' : beforeTitle
+          const truncAfter = afterTitle.length > 15 ? afterTitle.slice(0, 15) + '…' : afterTitle
+          parts.push(`"${truncBefore}"→"${truncAfter}"`)
         }
         break
       }
@@ -393,11 +397,29 @@ function formatEditDetails(
         break
       }
       case 'labels': {
-        parts.push('labels')
+        const beforeLabels = before_state.labels || []
+        const afterLabels = after_state.labels || []
+        const added = afterLabels.filter((l) => !beforeLabels.includes(l))
+        const removed = beforeLabels.filter((l) => !afterLabels.includes(l))
+        if (added.length > 0 && removed.length === 0) {
+          parts.push(`+${added.join(', ')}`)
+        } else if (removed.length > 0 && added.length === 0) {
+          parts.push(`-${removed.join(', ')}`)
+        } else if (added.length > 0 || removed.length > 0) {
+          parts.push('labels')
+        }
         break
       }
       case 'rrule': {
-        parts.push('recurrence')
+        const beforeRrule = before_state.rrule
+        const afterRrule = after_state.rrule
+        if (!beforeRrule && afterRrule) {
+          parts.push('added recurrence')
+        } else if (beforeRrule && !afterRrule) {
+          parts.push('removed recurrence')
+        } else {
+          parts.push('changed recurrence')
+        }
         break
       }
       // Skip internal fields that don't need display
