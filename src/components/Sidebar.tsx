@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Circle, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
 import {
   SortableProjectList,
@@ -34,53 +35,62 @@ export function Sidebar({ projects = [], onAddClick, onReorderProjects }: Sideba
   return (
     <aside className="bg-muted/50 sticky top-0 hidden h-screen w-56 flex-shrink-0 flex-col border-r select-none md:flex">
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-        {navItems.map((item) => {
-          const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
-          const Icon = item.icon
+      <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3">
+        <div className="space-y-1">
+          {navItems.map((item) => {
+            const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+            const Icon = item.icon
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                isActive
-                  ? 'bg-accent text-accent-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-              )}
-            >
-              <Icon className="size-4" />
-              {item.label}
-            </Link>
-          )
-        })}
-
-        {/* Projects section */}
-        {projects.length > 0 && (
-          <div className="pt-4">
-            <h3 className="text-muted-foreground mb-1 px-3 text-xs font-semibold tracking-wider uppercase">
-              Projects
-            </h3>
-            {onReorderProjects ? (
-              <SortableProjectList
-                projects={projects}
-                onReorder={onReorderProjects}
-                renderItem={(project, dragHandle) => (
-                  <SidebarProjectItem
-                    project={project}
-                    pathname={pathname}
-                    dragHandle={dragHandle}
-                  />
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                  isActive
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                 )}
-              />
-            ) : (
-              projects.map((project) => (
-                <SidebarProjectItem key={project.id} project={project} pathname={pathname} />
-              ))
-            )}
-          </div>
-        )}
+              >
+                <Icon className="size-4" />
+                {item.label}
+              </Link>
+            )
+          })}
+
+          {/* Projects section */}
+          {projects.length > 0 && (
+            <div className="pt-4">
+              <h3 className="text-muted-foreground mb-1 px-3 text-xs font-semibold tracking-wider uppercase">
+                Projects
+              </h3>
+              {onReorderProjects ? (
+                <SortableProjectList
+                  projects={projects}
+                  onReorder={onReorderProjects}
+                  renderItem={(project, dragHandle) => (
+                    <SidebarProjectItem
+                      project={project}
+                      pathname={pathname}
+                      dragHandle={dragHandle}
+                    />
+                  )}
+                />
+              ) : (
+                projects.map((project) => (
+                  <SidebarProjectItem key={project.id} project={project} pathname={pathname} />
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Build info - at bottom of scrollable nav area */}
+        <div className="mt-auto pt-4 text-center">
+          <span className="text-muted-foreground/60 text-[11px]">
+            v{VERSION} · {formatBuildDate(BUILD_ID)}
+          </span>
+        </div>
       </nav>
 
       {/* Add Task button */}

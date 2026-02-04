@@ -4,6 +4,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { TaskDetail } from '@/components/TaskDetail'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import type { Task, Note, Project } from '@/types'
 
 function useNoteActions(taskId: string) {
@@ -52,6 +62,27 @@ export default function TaskDetailPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Track dirty state from QuickActionPanel for navigation protection
+  const [isDirty, setIsDirty] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    setIsDirty(dirty)
+  }, [])
+
+  const handleBackClick = useCallback(() => {
+    if (isDirty) {
+      setShowLeaveConfirm(true)
+    } else {
+      router.push('/')
+    }
+  }, [isDirty, router])
+
+  const handleConfirmLeave = useCallback(() => {
+    setShowLeaveConfirm(false)
+    router.push('/')
+  }, [router])
 
   const fetchTask = useCallback(async () => {
     try {
@@ -136,6 +167,26 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleMarkDone = async () => {
+    if (!task) return
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to mark done')
+
+      const data = await res.json()
+      if (data.data.was_recurring) {
+        // Recurring task: stay on page, show updated due date
+        setTask(data.data.task as Task)
+      } else {
+        // One-off task: go back to dashboard (task is archived)
+        router.push('/')
+      }
+    } catch {
+      fetchTask()
+    }
+  }
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -169,7 +220,7 @@ export default function TaskDetailPage() {
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
           <button
-            onClick={() => router.push('/')}
+            onClick={handleBackClick}
             className="-ml-2 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="Back to dashboard"
           >
@@ -203,8 +254,26 @@ export default function TaskDetailPage() {
           onSnooze={handleSnooze}
           onAddNote={handleAddNote}
           onDeleteNote={handleDeleteNote}
+          onMarkDone={handleMarkDone}
+          onDirtyChange={handleDirtyChange}
         />
       </main>
+
+      {/* Unsaved changes confirmation dialog */}
+      <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to leave? Your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Stay</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmLeave}>Leave</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

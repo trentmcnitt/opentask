@@ -32,9 +32,11 @@ interface UseQuickSelectDateResult {
   applyPreset: (hour: number, minute: number) => void
   /** Apply a minute-based or day-based increment */
   applyIncrement: (increment: { minutes: number | null; days?: number }) => void
+  /** Set an absolute target time directly (for smart buttons like "Now", "Next Hour") */
+  setAbsoluteTarget: (isoUtc: string) => void
   /** Reset working date to initial value */
   reset: () => void
-  /** Set working date directly */
+  /** Set working date directly (does not clear delta state - use setAbsoluteTarget for smart buttons) */
   setWorkingDate: (iso: string) => void
 }
 
@@ -92,6 +94,12 @@ export function useQuickSelectDate({
     [timezone],
   )
 
+  const setAbsoluteTarget = useCallback((isoUtc: string) => {
+    setWorkingDate(isoUtc)
+    setOperationType('preset')
+    setDeltaMinutes(0)
+  }, [])
+
   const reset = useCallback(() => {
     setWorkingDate(initialDate)
     setOperationType(null)
@@ -111,11 +119,9 @@ export function useQuickSelectDate({
   let relativeText: string
   let deltaDisplay: string | null = null
   if (operationType === 'delta' && deltaMinutes !== 0) {
-    // Delta mode: show "in 2h (snoozing +1h)" like bulk mode
-    const relativeFromNow = formatRelativeTime(workingDate, now)
-    const deltaStr = formatDeltaText(deltaMinutes)
-    relativeText = `${relativeFromNow} (snoozing ${deltaStr})`
-    deltaDisplay = deltaStr
+    // Delta mode: show relative time only; delta is displayed separately below
+    relativeText = formatRelativeTime(workingDate, now)
+    deltaDisplay = formatDeltaText(deltaMinutes)
   } else {
     relativeText = formatRelativeTime(workingDate, now)
   }
@@ -129,6 +135,7 @@ export function useQuickSelectDate({
     deltaDisplay,
     applyPreset,
     applyIncrement,
+    setAbsoluteTarget,
     reset,
     setWorkingDate,
   }

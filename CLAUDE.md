@@ -43,8 +43,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 **Any change that touches UI, components, styles, or client-side behavior is NOT complete until you have deployed to dev and verified it in the browser yourself.** Do not tell the user the work is done, suggest they verify, or ask if they'd like you to deploy. You must do it — every time, automatically, without being asked.
 
 1. Deploy to dev: `./scripts/deploy.sh dev` — do this immediately after the quick check passes, before reporting results
-2. **Playwright**: navigate to the affected page, take screenshots at both desktop (1280×800+) and mobile (375×812) viewports, confirm it renders correctly at each size
-   - **Always save screenshots to `.playwright-mcp/`** — this directory is gitignored. Use descriptive filenames like `.playwright-mcp/desktop-filters.png`, not bare filenames like `filters.png` which land in the project root.
+2. **Playwright**: navigate to the affected page, take screenshots at both desktop (1280×800+) and mobile (375×812) viewports, confirm it renders correctly at each size. Save screenshots to `.tmp/`.
 3. **Chrome DevTools MCP**: check for console errors/warnings and failed network requests
 4. **If interactive** (clicks, swipes, form submissions, state changes): test the actual user flow with Playwright — don't just look at a static screenshot
 5. If something looks wrong, fix it and re-deploy — iterate until it's right
@@ -56,7 +55,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 - [ ] Quick check passes (`npm run type-check && npm run lint && npm test`)
 - [ ] Deployed to dev via `./scripts/deploy.sh dev`
-- [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports
+- [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
 - [ ] Chrome DevTools MCP: no console errors/warnings, no failed network requests
 - [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
 - [ ] Fixes applied and re-deployed if anything looked wrong

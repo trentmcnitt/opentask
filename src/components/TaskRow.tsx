@@ -130,6 +130,8 @@ interface TaskRowProps {
   onFocus?: () => void
   /** True when this task has keyboard focus (via arrow navigation) */
   isKeyboardFocused?: boolean
+  /** Desktop click: just set keyboard focus (blue glow), no selection */
+  onActivate?: () => void
 }
 
 export function TaskRow({
@@ -146,6 +148,7 @@ export function TaskRow({
   onLabelClick,
   onFocus,
   isKeyboardFocused = false,
+  onActivate,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig } = useLabelConfig()
@@ -163,18 +166,18 @@ export function TaskRow({
   /**
    * Selection behavior by input type:
    *
-   * | Context              | Input                   | Action                              |
-   * |----------------------|-------------------------|-------------------------------------|
-   * | Not in selection mode| Any click/tap           | selectOnly - select this task only  |
-   * | In selection mode    | Desktop plain click     | selectOnly - replace selection      |
-   * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection       |
-   * | In selection mode    | Desktop Shift+click     | rangeSelect - select range          |
-   * | In selection mode    | Mobile tap              | toggle - accumulate selection       |
+   * | Context              | Input                   | Action                                     |
+   * |----------------------|-------------------------|--------------------------------------------|
+   * | Not in selection mode| Desktop click           | activate - show blue glow only (no select) |
+   * | Not in selection mode| Mobile tap              | selectOnly - enter selection mode          |
+   * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
+   * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
+   * | In selection mode    | Desktop Shift+click     | rangeSelect - select range                 |
+   * | In selection mode    | Mobile tap              | toggle - accumulate selection              |
    *
-   * Rationale: Desktop users expect single-click to replace selection (like Finder/Explorer),
-   * with modifier keys for multi-select. Mobile users have no modifier keys, so tapping in
-   * selection mode accumulates by default - this matches iOS/Android conventions where you
-   * tap to check/uncheck items in a list.
+   * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
+   * actually select. Mobile users have no keyboard, so tapping enters selection mode directly.
+   * This separates "where you are" (focus/blue glow) from "what's selected" (checkboxes).
    */
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -183,7 +186,6 @@ export function TaskRow({
         return
       }
 
-      if (!onSelectOnly) return
       e.preventDefault()
 
       if (e.shiftKey && onRangeSelect) {
@@ -192,11 +194,15 @@ export function TaskRow({
         onSelect()
       } else if (isSelectionMode && pointer.wasTouch() && onSelect) {
         onSelect()
-      } else {
+      } else if (isSelectionMode && onSelectOnly) {
         onSelectOnly()
+      } else if (pointer.wasTouch() && onSelectOnly) {
+        onSelectOnly()
+      } else if (onActivate) {
+        onActivate()
       }
     },
-    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, pointer],
+    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, pointer],
   )
 
   const priorityIndicator = getPriorityIndicator(task.priority)
@@ -210,8 +216,10 @@ export function TaskRow({
       id={`task-row-${task.id}`}
       role="option"
       aria-selected={isSelected}
+      tabIndex={-1}
       onClick={handleClick}
       onMouseEnter={onFocus}
+      onMouseDown={(e) => e.stopPropagation()} // Prevent triggering list's onMouseInteraction
       onPointerDown={pointer.onPointerDown}
       onPointerUp={pointer.onPointerUp}
       onPointerMove={pointer.onPointerMove}
@@ -225,10 +233,8 @@ export function TaskRow({
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
-        // Keyboard focus ring (distinct from selection) - uses blue color for visibility
-        isKeyboardFocused && !isSelected && 'ring-2 ring-blue-500 ring-offset-2',
-        // When both keyboard focused and selected, add offset for distinction
-        isKeyboardFocused && isSelected && 'ring-offset-2',
+        // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
+        isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
       )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}
@@ -279,7 +285,11 @@ export function TaskRow({
             <Link
               href={`/tasks/${task.id}`}
               className="truncate font-medium hover:underline"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                // Set keyboard focus (blue glow) before navigating
+                onActivate?.()
+                e.stopPropagation()
+              }}
             >
               {task.title}
             </Link>

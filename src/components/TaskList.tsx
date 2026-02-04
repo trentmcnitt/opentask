@@ -1,7 +1,7 @@
 'use client'
 
 // Selection integration via context
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
@@ -51,15 +51,19 @@ interface TaskListProps {
   /** Keyboard event handler for list container */
   onKeyDown?: (e: React.KeyboardEvent) => void
   /** Focus handler for list container */
-  onListFocus?: () => void
+  onListFocus?: (e: React.FocusEvent) => void
   /** Blur handler for list container */
-  onListBlur?: () => void
-  /** Mouse interaction handler to exit keyboard mode */
-  onMouseInteraction?: () => void
+  onListBlur?: (e: React.FocusEvent) => void
+  /** Optional: get sort option for a group (lifted from useGroupSort) */
+  getSortOption?: (groupLabel: string) => SortOption
+  /** Optional: set sort option for a group (lifted from useGroupSort) */
+  setSortOption?: (groupLabel: string, option: SortOption) => void
+  /** Desktop click: set keyboard focus (blue glow) without selecting */
+  onActivate?: (taskId: number) => void
 }
 
-// Sort tasks within a group
-function sortTasks(tasks: Task[], sortOption: SortOption): Task[] {
+// Sort tasks within a group - exported for use by keyboard navigation
+export function sortTasks(tasks: Task[], sortOption: SortOption): Task[] {
   const sorted = [...tasks]
   switch (sortOption) {
     case 'priority':
@@ -107,11 +111,25 @@ export function TaskList({
   onKeyDown,
   onListFocus,
   onListBlur,
-  onMouseInteraction,
+  getSortOption: getSortOptionProp,
+  setSortOption: setSortOptionProp,
+  onActivate,
 }: TaskListProps) {
-  const { getSortOption, setSortOption } = useGroupSort()
+  // Use props if provided (lifted state), otherwise use internal hook
+  const internalSort = useGroupSort()
+  const getSortOption = getSortOptionProp ?? internalSort.getSortOption
+  const setSortOption = setSortOptionProp ?? internalSort.setSortOption
   const selection = useSelectionOptional() ?? fallbackSelection
   const timezone = useTimezone()
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Focus the listbox when entering selection mode (e.g., when clicking a task)
+  // This ensures arrow keys work immediately after clicking a task
+  useEffect(() => {
+    if (selection.isSelectionMode && listRef.current) {
+      listRef.current.focus()
+    }
+  }, [selection.isSelectionMode])
 
   // Snooze +1h helper for swipe (must be before early return for hooks rules)
   const handleSwipeSnooze = useCallback(
@@ -149,6 +167,7 @@ export function TaskList({
 
   return (
     <div
+      ref={listRef}
       role="listbox"
       aria-label="Task list"
       aria-activedescendant={
@@ -158,7 +177,6 @@ export function TaskList({
       onKeyDown={onKeyDown}
       onFocus={onListFocus}
       onBlur={onListBlur}
-      onMouseDown={onMouseInteraction}
       className="space-y-6 outline-none"
     >
       {groups.map((group, groupIdx) => {
@@ -215,7 +233,7 @@ export function TaskList({
                     onSwipeRight={() => onDone(task.id)}
                     onSwipeLeft={() => handleSwipeSnooze(task)}
                     onDragStart={() => cancelRef.current?.()}
-                    disabled={selection.isSelectionMode}
+                    disabled={selection.isSelectionMode || isKeyboardActive}
                   >
                     <TaskRow
                       task={task}
@@ -231,6 +249,7 @@ export function TaskList({
                       onLabelClick={onLabelClick}
                       onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
                       isKeyboardFocused={isKeyboardActive && task.id === keyboardFocusedId}
+                      onActivate={onActivate ? () => onActivate(task.id) : undefined}
                     />
                   </SwipeableRow>
                 )

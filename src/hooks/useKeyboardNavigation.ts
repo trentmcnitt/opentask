@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useRef, useEffect } from 'react'
 import type { SelectionContextType } from '@/components/SelectionProvider'
+import { debugLog } from '@/lib/debug-log'
 
 /**
  * Keyboard Navigation for Task List
@@ -47,14 +48,16 @@ export interface UseKeyboardNavigationOptions {
 export interface UseKeyboardNavigationReturn {
   /** Key event handler for the list container */
   handleKeyDown: (e: React.KeyboardEvent) => void
-  /** Focus handler - focuses first task if none focused */
-  handleFocus: () => void
-  /** Blur handler */
-  handleBlur: () => void
+  /** Focus handler - enters keyboard mode when listbox itself receives focus */
+  handleFocus: (e: React.FocusEvent) => void
+  /** Blur handler - exits keyboard mode when focus leaves the list */
+  handleBlur: (e: React.FocusEvent) => void
   /** True when actively navigating via keyboard */
   isKeyboardActive: boolean
   /** Call when mouse interaction detected to exit keyboard mode */
   exitKeyboardMode: () => void
+  /** Call to enter keyboard mode (e.g., when clicking a task) */
+  enterKeyboardMode: () => void
 }
 
 export function useKeyboardNavigation({
@@ -85,7 +88,7 @@ export function useKeyboardNavigation({
     [groups, orderedIds],
   )
 
-  // Move focus to adjacent task
+  // Move focus only (arrow keys move focus, not selection)
   const moveFocus = useCallback(
     (direction: 'up' | 'down') => {
       if (orderedIds.length === 0) return
@@ -99,7 +102,11 @@ export function useKeyboardNavigation({
         nextIndex = currentIndex === -1 ? 0 : Math.max(currentIndex - 1, 0)
       }
 
-      setKeyboardFocusedId(orderedIds[nextIndex])
+      const nextId = orderedIds[nextIndex]
+      setKeyboardFocusedId(nextId)
+
+      // Sync browser focus to match the visual blue glow
+      document.getElementById(`task-row-${nextId}`)?.focus()
     },
     [orderedIds, keyboardFocusedId, setKeyboardFocusedId],
   )
@@ -135,12 +142,20 @@ export function useKeyboardNavigation({
       }
 
       setKeyboardFocusedId(nextId)
+
+      // Sync browser focus to match the visual blue glow
+      document.getElementById(`task-row-${nextId}`)?.focus()
     },
     [orderedIds, keyboardFocusedId, setKeyboardFocusedId, selection, moveFocus],
   )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      debugLog('keyboard-nav', 'handleKeyDown:', e.key, {
+        enabled,
+        keyboardFocusedId,
+        isKeyboardActive,
+      })
       if (!enabled) return
 
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
@@ -150,9 +165,10 @@ export function useKeyboardNavigation({
         case 'ArrowDown':
           e.preventDefault()
           setIsKeyboardActive(true)
-          // If no task is focused yet, focus the first one
+          // If no task is focused yet, just focus the first one (don't select)
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
+            document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
           } else if (e.shiftKey) {
             extendSelection('down')
           } else {
@@ -163,9 +179,10 @@ export function useKeyboardNavigation({
         case 'ArrowUp':
           e.preventDefault()
           setIsKeyboardActive(true)
-          // If no task is focused yet, focus the first one
+          // If no task is focused yet, just focus the first one (don't select)
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
+            document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
           } else if (e.shiftKey) {
             extendSelection('up')
           } else {
@@ -177,6 +194,7 @@ export function useKeyboardNavigation({
           // Space toggles selection of focused task
           e.preventDefault()
           if (keyboardFocusedId !== null) {
+            debugLog('keyboard-nav', 'Space toggling selection for task:', keyboardFocusedId)
             selection.toggle(keyboardFocusedId)
           }
           break
@@ -211,10 +229,16 @@ export function useKeyboardNavigation({
 
         case 'a':
         case 'A':
-          // Cmd/Ctrl+A selects all visible tasks
+          // Cmd/Ctrl+A toggles select all visible tasks
           if (cmdKey) {
             e.preventDefault()
-            selection.selectAll(orderedIds)
+            const allSelected =
+              orderedIds.length > 0 && orderedIds.every((id) => selection.selectedIds.has(id))
+            if (allSelected) {
+              selection.clear()
+            } else {
+              selection.selectAll(orderedIds)
+            }
           }
           break
 
@@ -223,6 +247,7 @@ export function useKeyboardNavigation({
           setIsKeyboardActive(true)
           if (orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
+            document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
           }
           break
 
@@ -230,7 +255,9 @@ export function useKeyboardNavigation({
           e.preventDefault()
           setIsKeyboardActive(true)
           if (orderedIds.length > 0) {
-            setKeyboardFocusedId(orderedIds[orderedIds.length - 1])
+            const lastId = orderedIds[orderedIds.length - 1]
+            setKeyboardFocusedId(lastId)
+            document.getElementById(`task-row-${lastId}`)?.focus()
           }
           break
 
@@ -247,10 +274,18 @@ export function useKeyboardNavigation({
             // Second Escape within 500ms: exit keyboard mode
             setIsKeyboardActive(false)
             setKeyboardFocusedId(null)
+            // Blur the currently focused element so focus leaves the list entirely
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur()
+            }
           } else {
             // Single Escape when no selection: exit keyboard mode
             setIsKeyboardActive(false)
             setKeyboardFocusedId(null)
+            // Blur the currently focused element so focus leaves the list entirely
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur()
+            }
           }
           break
       }
@@ -265,22 +300,102 @@ export function useKeyboardNavigation({
       extendSelection,
       onComplete,
       findFirstTaskInGroup,
+      isKeyboardActive,
     ],
   )
 
-  const handleFocus = useCallback(() => {
-    // Don't immediately enter keyboard mode on focus - wait for a keyboard event.
-    // This prevents mouse clicks from accidentally entering keyboard mode.
-    // The first arrow key press will set isKeyboardActive = true and focus a task.
-  }, [])
+  const handleFocus = useCallback(
+    (e: React.FocusEvent) => {
+      const target = e.target as HTMLElement
+      const targetId = target.id
+      const isTaskRow = targetId?.startsWith('task-row-')
 
-  const handleBlur = useCallback(() => {
-    // Don't immediately exit keyboard mode on blur - user might be clicking
-    // within the list. The exitKeyboardMode function handles mouse interactions.
-  }, [])
+      // Check if focus target is inside a task row (e.g., Done button, Link)
+      const taskRowAncestor = target.closest('[id^="task-row-"]') as HTMLElement | null
+      const taskIdFromAncestor = taskRowAncestor?.id?.replace('task-row-', '')
+
+      debugLog('keyboard-nav', 'handleFocus:', {
+        target: targetId || target.className?.slice(0, 30),
+        taskRowAncestor: taskRowAncestor?.id,
+        isKeyboardActive,
+      })
+
+      // If already in keyboard mode, nothing to do
+      if (isKeyboardActive) {
+        debugLog('keyboard-nav', 'handleFocus: already in keyboard mode')
+        return
+      }
+
+      // If listbox itself receives focus (tabbing in), enter keyboard mode
+      if (e.target === e.currentTarget) {
+        debugLog('keyboard-nav', 'handleFocus: listbox focused, entering keyboard mode')
+        setIsKeyboardActive(true)
+        if (orderedIds.length > 0) {
+          setKeyboardFocusedId(orderedIds[0])
+          document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+        }
+        return
+      }
+
+      // If focus is on or inside a task row, enter keyboard mode for that task
+      if (isTaskRow || taskRowAncestor) {
+        const taskId = isTaskRow
+          ? parseInt(targetId.replace('task-row-', ''))
+          : parseInt(taskIdFromAncestor || '0')
+        if (taskId && orderedIds.includes(taskId)) {
+          debugLog(
+            'keyboard-nav',
+            'handleFocus: focus inside task row, entering keyboard mode for task',
+            taskId,
+          )
+          setIsKeyboardActive(true)
+          setKeyboardFocusedId(taskId)
+          return
+        }
+      }
+
+      debugLog('keyboard-nav', 'handleFocus: ignoring focus on non-task element')
+    },
+    [orderedIds, setKeyboardFocusedId, isKeyboardActive],
+  )
+
+  const handleBlur = useCallback(
+    (e: React.FocusEvent) => {
+      const newFocusTarget = e.relatedTarget as HTMLElement | null
+      debugLog('keyboard-nav', 'handleBlur:', {
+        target: (e.target as HTMLElement).id || (e.target as HTMLElement).className?.slice(0, 30),
+        currentTarget: (e.currentTarget as HTMLElement).getAttribute('role'),
+        relatedTarget: newFocusTarget?.id || newFocusTarget?.className?.slice(0, 30) || null,
+      })
+
+      // Stay in keyboard mode if focus is moving to:
+      // 1. Another task row
+      // 2. The listbox itself (can happen when DOM changes, e.g., selection toggle)
+      // 3. An element inside a task row (e.g., Done button, Link)
+      const isMovingToTaskRow = newFocusTarget?.id?.startsWith('task-row-')
+      const isMovingToListbox = newFocusTarget === e.currentTarget
+      const isMovingInsideTaskRow = newFocusTarget?.closest('[id^="task-row-"]') != null
+
+      if (isMovingToTaskRow || isMovingToListbox || isMovingInsideTaskRow) {
+        debugLog('keyboard-nav', 'handleBlur: focus staying within list, not exiting')
+        return
+      }
+
+      debugLog('keyboard-nav', 'handleBlur: exiting keyboard mode')
+      // Focus is leaving task navigation - exit keyboard mode
+      setIsKeyboardActive(false)
+      setKeyboardFocusedId(null)
+    },
+    [setKeyboardFocusedId],
+  )
 
   const exitKeyboardMode = useCallback(() => {
     setIsKeyboardActive(false)
+    setKeyboardFocusedId(null)
+  }, [setKeyboardFocusedId])
+
+  const enterKeyboardMode = useCallback(() => {
+    setIsKeyboardActive(true)
   }, [])
 
   // Reset keyboard focus when orderedIds changes and current focus is no longer in list
@@ -298,5 +413,6 @@ export function useKeyboardNavigation({
     handleBlur,
     isKeyboardActive,
     exitKeyboardMode,
+    enterKeyboardMode,
   }
 }

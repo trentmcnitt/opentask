@@ -1,7 +1,9 @@
 // OpenTask Service Worker - Minimal offline detection
 // No mutation queuing, just detect offline and cache shell
 
-const CACHE_NAME = 'opentask-v1'
+// Extract build ID from registration URL (e.g., /sw.js?v=20260204-1430)
+const buildId = new URL(self.location.href).searchParams.get('v') || 'v1'
+const CACHE_NAME = `opentask-${buildId}`
 const SHELL_URLS = ['/', '/manifest.json']
 
 self.addEventListener('install', (event) => {

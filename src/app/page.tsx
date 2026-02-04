@@ -3,15 +3,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
-import { TaskList, buildTaskGroups } from '@/components/TaskList'
+import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
+import { useGroupSort } from '@/hooks/useGroupSort'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
-import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
@@ -337,13 +336,15 @@ function HomeContent() {
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
 
+  // Sort state - lifted here so keyboard navigation can use the same order as display
+  const { getSortOption, setSortOption } = useGroupSort()
+
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
   const [grouping, setGrouping] = useState<GroupingMode>('project')
   const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
-  const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
 
   const toggleLabel = useCallback((label: string) => {
     setSelectedLabels((prev) =>
@@ -355,27 +356,11 @@ function HomeContent() {
     setSelectedLabels([])
   }, [])
 
-  const togglePriority = useCallback((priority: number) => {
-    setSelectedPriorities((prev) =>
-      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority],
-    )
-  }, [])
-
-  const clearPriorities = useCallback(() => {
-    setSelectedPriorities([])
-  }, [])
-
   const baseTasks = searchQuery ? searchResults : tasks
   const displayTasks = useMemo(() => {
-    let filtered = baseTasks
-    if (selectedLabels.length > 0) {
-      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-    }
-    if (selectedPriorities.length > 0) {
-      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
-    }
-    return filtered
-  }, [baseTasks, selectedLabels, selectedPriorities])
+    if (selectedLabels.length === 0) return baseTasks
+    return baseTasks.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
+  }, [baseTasks, selectedLabels])
 
   // Build task groups for keyboard navigation
   const effectiveGrouping = searchQuery ? 'time' : grouping
@@ -383,9 +368,15 @@ function HomeContent() {
     () => buildTaskGroups(displayTasks, projects, effectiveGrouping, timezone),
     [displayTasks, projects, effectiveGrouping, timezone],
   )
+  // Apply per-group sorting to match the visual order in TaskList
   const orderedIds = useMemo(
-    () => taskGroups.flatMap((g) => g.tasks.map((t) => t.id)),
-    [taskGroups],
+    () =>
+      taskGroups.flatMap((g) => {
+        const sortOption = getSortOption(g.label)
+        const sortedTasks = sortTasks(g.tasks, sortOption)
+        return sortedTasks.map((t) => t.id)
+      }),
+    [taskGroups, getSortOption],
   )
 
   // Keyboard completion handler
@@ -429,6 +420,95 @@ function HomeContent() {
     onComplete: handleKeyboardComplete,
     enabled: keyboardNavEnabled,
   })
+
+  // Handler for desktop click: set keyboard focus (blue glow) without selecting
+  const handleActivate = useCallback(
+    (taskId: number) => {
+      setKeyboardFocusedId(taskId)
+      keyboard.enterKeyboardMode()
+      // Sync browser focus to match the visual blue glow
+      document.getElementById(`task-row-${taskId}`)?.focus()
+      // Note: Does NOT call selection.selectOnly() - focus and selection are independent
+    },
+    [keyboard],
+  )
+
+  // Global keyboard shortcuts for jumping into task list
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const cmdKey = isMac ? e.metaKey : e.ctrlKey
+
+      // Don't intercept when dialogs/sheets are open
+      if (!keyboardNavEnabled) return
+
+      // Don't intercept when user is in an input, textarea, or contenteditable
+      const activeEl = document.activeElement
+      const isInInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl as HTMLElement)?.isContentEditable
+
+      // Cmd+L: Always focus first task (works even in keyboard mode)
+      if (cmdKey && e.key === 'l') {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // ArrowDown: Focus first task (only when not in keyboard mode and not in input)
+      if (e.key === 'ArrowDown' && !keyboard.isKeyboardActive && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // ArrowUp: Focus last task (only when not in keyboard mode and not in input)
+      if (e.key === 'ArrowUp' && !keyboard.isKeyboardActive && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const lastTaskId = orderedIds[orderedIds.length - 1]
+          setKeyboardFocusedId(lastTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${lastTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
+      if (cmdKey && e.key === 'a' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
+          if (allSelected) {
+            selection.clear()
+          } else {
+            selection.selectAll(orderedIds)
+            // Enter keyboard mode if not already
+            if (!keyboard.isKeyboardActive) {
+              setKeyboardFocusedId(orderedIds[0])
+              keyboard.enterKeyboardMode()
+              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+            }
+          }
+        }
+        return
+      }
+    }
+
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection])
 
   // Fetch saved grouping preference on mount
   useEffect(() => {
@@ -586,9 +666,6 @@ function HomeContent() {
       selectedLabels={selectedLabels}
       onToggleLabel={toggleLabel}
       onClearLabels={clearLabels}
-      selectedPriorities={selectedPriorities}
-      onTogglePriority={togglePriority}
-      onClearPriorities={clearPriorities}
       onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
@@ -615,71 +692,10 @@ function HomeContent() {
       onKeyDown={keyboard.handleKeyDown}
       onListFocus={keyboard.handleFocus}
       onListBlur={keyboard.handleBlur}
-      onMouseInteraction={keyboard.exitKeyboardMode}
+      getSortOption={getSortOption}
+      setSortOption={setSortOption}
+      onActivate={handleActivate}
     />
-  )
-}
-
-/**
- * Combined filter bar for priority and label filters.
- * Priority badges (square) appear first, then a gray separator, then label badges (pill).
- * The separator only appears if both filter types have content.
- */
-function FilterBar({
-  allTasks,
-  selectedPriorities,
-  selectedLabels,
-  onTogglePriority,
-  onToggleLabel,
-  onClearAll,
-}: {
-  allTasks: Task[]
-  selectedPriorities: number[]
-  selectedLabels: string[]
-  onTogglePriority: (priority: number) => void
-  onToggleLabel: (label: string) => void
-  onClearAll: () => void
-}) {
-  // Check if we have any priorities or labels to show
-  const hasPriorities = allTasks.some((t) => t.priority !== undefined)
-  const hasLabels = allTasks.some((t) => t.labels.length > 0)
-
-  if (!hasPriorities && !hasLabels) return null
-
-  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
-
-  return (
-    <div className="relative mb-4 flex items-center">
-      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
-        <PriorityFilterBar
-          tasks={allTasks}
-          selectedPriorities={selectedPriorities}
-          onTogglePriority={onTogglePriority}
-        />
-
-        {/* Gray vertical separator between priority and label filters */}
-        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-
-        <LabelFilterBar
-          tasks={allTasks}
-          selectedLabels={selectedLabels}
-          onToggleLabel={onToggleLabel}
-        />
-      </div>
-
-      {/* Clear button - sticky right end */}
-      {hasSelection && (
-        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
-          <button
-            onClick={onClearAll}
-            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-            aria-label="Clear all filters"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -701,9 +717,6 @@ function DashboardView({
   selectedLabels,
   onToggleLabel,
   onClearLabels,
-  selectedPriorities,
-  onTogglePriority,
-  onClearPriorities,
   onGroupingChange,
   onSearch,
   onSearchClear,
@@ -727,7 +740,9 @@ function DashboardView({
   onKeyDown,
   onListFocus,
   onListBlur,
-  onMouseInteraction,
+  getSortOption,
+  setSortOption,
+  onActivate,
 }: {
   session: ReturnType<typeof useSession>['data']
   tasks: Task[]
@@ -746,9 +761,6 @@ function DashboardView({
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
   onClearLabels: () => void
-  selectedPriorities: number[]
-  onTogglePriority: (priority: number) => void
-  onClearPriorities: () => void
   onGroupingChange: (g: GroupingMode) => void
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -770,9 +782,11 @@ function DashboardView({
   keyboardFocusedId: number | null
   isKeyboardActive: boolean
   onKeyDown: (e: React.KeyboardEvent) => void
-  onListFocus: () => void
-  onListBlur: () => void
-  onMouseInteraction: () => void
+  onListFocus: (e: React.FocusEvent) => void
+  onListBlur: (e: React.FocusEvent) => void
+  getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
+  setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
+  onActivate: (taskId: number) => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -797,16 +811,11 @@ function DashboardView({
           }}
         />
 
-        <FilterBar
-          allTasks={allTasks}
-          selectedPriorities={selectedPriorities}
+        <LabelFilterBar
+          tasks={allTasks}
           selectedLabels={selectedLabels}
-          onTogglePriority={onTogglePriority}
           onToggleLabel={onToggleLabel}
-          onClearAll={() => {
-            onClearLabels()
-            onClearPriorities()
-          }}
+          onClearAll={onClearLabels}
         />
 
         {searchQuery && (
@@ -816,17 +825,11 @@ function DashboardView({
           </div>
         )}
 
-        {(selectedLabels.length > 0 || selectedPriorities.length > 0) && (
+        {selectedLabels.length > 0 && (
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
-            <button
-              onClick={() => {
-                onClearLabels()
-                onClearPriorities()
-              }}
-              className="text-foreground font-medium hover:underline"
-            >
-              Clear filters
+            <button onClick={onClearLabels} className="text-foreground font-medium hover:underline">
+              Clear filter
             </button>
           </div>
         )}
@@ -845,7 +848,9 @@ function DashboardView({
           onKeyDown={onKeyDown}
           onListFocus={onListFocus}
           onListBlur={onListBlur}
-          onMouseInteraction={onMouseInteraction}
+          getSortOption={getSortOption}
+          setSortOption={setSortOption}
+          onActivate={onActivate}
         />
       </main>
 

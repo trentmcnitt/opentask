@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import type { GroupingMode } from './TaskList'
 import { SearchBar } from './SearchBar'
 
@@ -167,6 +168,10 @@ export function Header({
                     </DropdownMenuItem>
                   </>
                 )}
+                <DropdownMenuSeparator />
+                <div className="text-muted-foreground px-2 py-1.5 text-center text-[11px]">
+                  v{VERSION} · {formatBuildDate(BUILD_ID)}
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

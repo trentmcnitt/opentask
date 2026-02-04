@@ -42,6 +42,8 @@ interface UseBulkQuickSelectDateResult {
   applyPreset: (hour: number, minute: number) => void
   /** Apply an increment (delta mode) */
   applyIncrement: (increment: { minutes: number | null; days?: number }) => void
+  /** Set an absolute target time directly (for smart buttons like "Now", "Next Hour") */
+  setAbsoluteTarget: (isoUtc: string) => void
   /** Reset to initial state */
   reset: () => void
   /** Get the result for API call */
@@ -184,6 +186,12 @@ export function useBulkQuickSelectDate({
     setDeltaMinutes((prev) => prev + minutesToAdd)
   }, [])
 
+  const setAbsoluteTarget = useCallback((isoUtc: string) => {
+    setOperationType('preset')
+    setPresetTime(isoUtc)
+    setDeltaMinutes(0)
+  }, [])
+
   const reset = useCallback(() => {
     setOperationType(null)
     setDeltaMinutes(0)
@@ -251,10 +259,8 @@ export function useBulkQuickSelectDate({
       const newTime = new Date(new Date(earliestDueAt).getTime() + deltaMinutes * 60 * 1000)
       const newTimeIso = newTime.toISOString()
       headerText = formatQuickSelectHeader(newTimeIso, timezone)
-      // Combined: "in 2h (snoozing +1h)" or "1h ago (snoozing +1h)"
-      const relativeFromNow = formatRelativeTime(newTimeIso, now)
-      const deltaStr = formatDeltaText(deltaMinutes)
-      relativeText = `${relativeFromNow} (snoozing ${deltaStr})`
+      // Show relative time only; delta is displayed separately below
+      relativeText = formatRelativeTime(newTimeIso, now)
       isPast = newTime < now
     } else {
       // Mixed dates: show original header with "+Xh from each"
@@ -282,6 +288,7 @@ export function useBulkQuickSelectDate({
     deltaDisplay,
     applyPreset,
     applyIncrement,
+    setAbsoluteTarget,
     reset,
     getResult,
   }
