@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { RecurrencePicker, type RecurrenceMode } from '@/components/RecurrencePicker'
 import { LabelPicker } from '@/components/LabelPicker'
 import { useTimezone } from '@/hooks/useTimezone'
 import { parseLocalDatetimeInput } from '@/lib/format-date'
@@ -38,6 +38,7 @@ function buildTaskBody(
   priority: string,
   labels: string[],
   rrule: string | null,
+  recurrenceMode: RecurrenceMode,
   timezone: string,
 ): Record<string, unknown> {
   const body: Record<string, unknown> = { title: title.trim() }
@@ -45,7 +46,10 @@ function buildTaskBody(
   if (projectId && projectId !== 'inbox') body.project_id = parseInt(projectId)
   if (parseInt(priority) > 0) body.priority = parseInt(priority)
   if (labels.length > 0) body.labels = labels
-  if (rrule) body.rrule = rrule
+  if (rrule) {
+    body.rrule = rrule
+    body.recurrence_mode = recurrenceMode
+  }
   return body
 }
 
@@ -57,6 +61,7 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
   const [priority, setPriority] = useState<string>('0')
   const [labels, setLabels] = useState<string[]>([])
   const [rrule, setRrule] = useState<string | null>(null)
+  const [recurrenceMode, setRecurrenceMode] = useState<RecurrenceMode>('from_due')
   const [showRecurrence, setShowRecurrence] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
@@ -65,8 +70,9 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
     titleRef.current?.focus()
   }, [])
 
-  const handleRruleChange = useCallback((value: string | null) => {
+  const handleRruleChange = useCallback((value: string | null, mode?: RecurrenceMode) => {
     setRrule(value)
+    if (mode) setRecurrenceMode(mode)
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,7 +81,16 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
 
     setSubmitting(true)
     try {
-      const body = buildTaskBody(title, dueAt, projectId, priority, labels, rrule, timezone)
+      const body = buildTaskBody(
+        title,
+        dueAt,
+        projectId,
+        priority,
+        labels,
+        rrule,
+        recurrenceMode,
+        timezone,
+      )
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,7 +206,11 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
             </button>
             {showRecurrence && (
               <div className="mt-1 rounded-lg border p-3">
-                <RecurrencePicker value={rrule} onChange={handleRruleChange} />
+                <RecurrencePicker
+                  value={rrule}
+                  recurrenceMode={recurrenceMode}
+                  onChange={handleRruleChange}
+                />
               </div>
             )}
           </div>

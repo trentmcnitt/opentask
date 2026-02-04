@@ -60,6 +60,8 @@ interface TaskListProps {
   setSortOption?: (groupLabel: string, option: SortOption) => void
   /** Desktop click: set keyboard focus (blue glow) without selecting */
   onActivate?: (taskId: number) => void
+  /** Desktop double-click: open QuickActionPanel */
+  onDoubleClick?: (task: Task) => void
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -114,6 +116,7 @@ export function TaskList({
   getSortOption: getSortOptionProp,
   setSortOption: setSortOptionProp,
   onActivate,
+  onDoubleClick,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -158,8 +161,11 @@ export function TaskList({
   const groups =
     grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
 
-  // Build ordered ID list for range-select
-  const orderedIds = groups.flatMap((g) => g.tasks.map((t) => t.id))
+  // Build ordered ID list for range-select, applying the same sort as rendering
+  const orderedIds = groups.flatMap((g) => {
+    const sortOption = getSortOption(g.label)
+    return sortTasks(g.tasks, sortOption).map((t) => t.id)
+  })
 
   // Determine if we should show the "now" separator
   const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
@@ -250,6 +256,7 @@ export function TaskList({
                       onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
                       isKeyboardFocused={isKeyboardActive && task.id === keyboardFocusedId}
                       onActivate={onActivate ? () => onActivate(task.id) : undefined}
+                      onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                     />
                   </SwipeableRow>
                 )

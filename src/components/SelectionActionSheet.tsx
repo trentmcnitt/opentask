@@ -62,7 +62,10 @@ interface SelectionActionSheetProps {
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
   /** Called when recurrence changes for selected tasks */
-  onRecurrenceChange?: (rrule: string | null) => void
+  onRecurrenceChange?: (
+    rrule: string | null,
+    recurrenceMode?: 'from_due' | 'from_completion',
+  ) => void
 }
 
 export function SelectionActionSheet({
@@ -83,6 +86,9 @@ export function SelectionActionSheet({
   const [isMobile, setIsMobile] = useState(true)
   const [showRecurrencePicker, setShowRecurrencePicker] = useState(false)
   const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
+  const [pendingRecurrenceMode, setPendingRecurrenceMode] = useState<
+    'from_due' | 'from_completion' | null
+  >(null)
 
   // Track pending date change
   const pendingDateRef = useRef<
@@ -113,6 +119,7 @@ export function SelectionActionSheet({
   const openSheet = useCallback(() => {
     pendingDateRef.current = null
     setPendingRrule(undefined)
+    setPendingRecurrenceMode(null)
     setShowRecurrencePicker(false)
     setSheetOpen(true)
   }, [])
@@ -137,16 +144,17 @@ export function SelectionActionSheet({
     }
     // Apply pending recurrence change if any
     if (pendingRrule !== undefined && onRecurrenceChange) {
-      onRecurrenceChange(pendingRrule)
+      onRecurrenceChange(pendingRrule, pendingRecurrenceMode ?? undefined)
     }
     setSheetOpen(false)
     onClear() // Exit selection mode
-  }, [onSnooze, onSnoozeRelative, onClear, pendingRrule, onRecurrenceChange])
+  }, [onSnooze, onSnoozeRelative, onClear, pendingRrule, pendingRecurrenceMode, onRecurrenceChange])
 
   // Cancel button: discard changes, close, keep selection
   const handleCancel = useCallback(() => {
     pendingDateRef.current = null
     setPendingRrule(undefined)
+    setPendingRecurrenceMode(null)
     setShowRecurrencePicker(false)
     setSheetOpen(false)
     // Keep selection mode active (don't call onClear)
@@ -174,6 +182,7 @@ export function SelectionActionSheet({
     if (!open) {
       pendingDateRef.current = null
       setPendingRrule(undefined)
+      setPendingRecurrenceMode(null)
       setShowRecurrencePicker(false)
     }
     setSheetOpen(open)
@@ -185,9 +194,13 @@ export function SelectionActionSheet({
   }, [])
 
   // Handle recurrence change from picker
-  const handleRecurrenceChange = useCallback((rrule: string | null) => {
-    setPendingRrule(rrule)
-  }, [])
+  const handleRecurrenceChange = useCallback(
+    (rrule: string | null, mode?: 'from_due' | 'from_completion') => {
+      setPendingRrule(rrule)
+      if (mode) setPendingRecurrenceMode(mode)
+    },
+    [],
+  )
 
   // Navigate to task detail (single task only)
   const handleNavigateToDetail = useCallback(() => {

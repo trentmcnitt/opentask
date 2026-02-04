@@ -158,6 +158,8 @@ interface TaskRowProps {
   isKeyboardFocused?: boolean
   /** Desktop click: just set keyboard focus (blue glow), no selection */
   onActivate?: () => void
+  /** Desktop double-click: open QuickActionPanel (alternative to entering selection mode) */
+  onDoubleClick?: () => void
 }
 
 export function TaskRow({
@@ -175,6 +177,7 @@ export function TaskRow({
   onFocus,
   isKeyboardFocused = false,
   onActivate,
+  onDoubleClick,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -195,7 +198,7 @@ export function TaskRow({
    * | Context              | Input                   | Action                                     |
    * |----------------------|-------------------------|--------------------------------------------|
    * | Not in selection mode| Desktop click           | activate - show blue glow only (no select) |
-   * | Not in selection mode| Desktop double-click    | selectOnly - enter selection mode          |
+   * | Not in selection mode| Desktop double-click    | onDoubleClick - open QuickActionPanel      |
    * | Not in selection mode| Mobile tap              | selectOnly - enter selection mode          |
    * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
    * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
@@ -203,8 +206,9 @@ export function TaskRow({
    * | In selection mode    | Mobile tap              | toggle - accumulate selection              |
    *
    * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
-   * actually select. Double-click or long-press enters selection mode on desktop.
-   * Mobile users have no keyboard, so tapping enters selection mode directly.
+   * actually select. Double-click opens QuickActionPanel for quick edits.
+   * Long-press enters selection mode on desktop. Mobile users have no keyboard,
+   * so tapping enters selection mode directly.
    * This separates "where you are" (focus/blue glow) from "what's selected" (checkboxes).
    */
   const handleClick = useCallback(
@@ -216,9 +220,9 @@ export function TaskRow({
 
       e.preventDefault()
 
-      // Double-click enters selection mode (desktop alternative to long-press)
-      if (!isSelectionMode && pointer.didDoubleClick() && onSelectOnly) {
-        onSelectOnly()
+      // Double-click opens QuickActionPanel (desktop quick edit)
+      if (!isSelectionMode && pointer.didDoubleClick() && onDoubleClick) {
+        onDoubleClick()
         return
       }
 
@@ -236,7 +240,7 @@ export function TaskRow({
         onActivate()
       }
     },
-    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, pointer],
+    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, onDoubleClick, pointer],
   )
 
   const leadingPriorityIndicator = getLeadingPriorityIndicator(task.priority)
@@ -460,7 +464,7 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   if (task.rrule) {
-    segments.push({ text: formatRRuleCompact(task.rrule) })
+    segments.push({ text: formatRRuleCompact(task.rrule, task.anchor_time) })
   }
 
   // Only show "snoozed from" for recurring tasks - for one-offs, it's just a due date change

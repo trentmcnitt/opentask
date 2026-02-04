@@ -6,7 +6,13 @@
 
 import { withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot, TaskUpdateInput } from '@/types'
-import { nowUtc, computeNextOccurrence, isRecurring } from '@/core/recurrence'
+import {
+  nowUtc,
+  computeNextOccurrence,
+  isRecurring,
+  deriveAnchorFields,
+  computeFirstOccurrence,
+} from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
@@ -399,7 +405,7 @@ export interface BulkEditResult {
  * Applies the same changes to all specified tasks.
  */
 export function bulkEdit(options: BulkEditOptions): BulkEditResult {
-  const { userId, taskIds, changes } = options
+  const { userId, userTimezone, taskIds, changes } = options
 
   if (taskIds.length === 0) {
     return { tasksAffected: 0, failedIds: [] }
@@ -476,6 +482,82 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         fieldsChanged.push('labels')
         beforeState.labels = task.labels
         afterState.labels = changes.labels
+      }
+
+      // Handle rrule changes - including anchor field derivation
+      if (changes.rrule !== undefined && changes.rrule !== task.rrule) {
+        setClauses.push('rrule = ?')
+        values.push(changes.rrule)
+        fieldsChanged.push('rrule')
+        beforeState.rrule = task.rrule
+        afterState.rrule = changes.rrule
+
+        if (changes.rrule === null) {
+          // Clearing recurrence - null out anchor fields
+          setClauses.push('anchor_time = NULL, anchor_dow = NULL, anchor_dom = NULL')
+          fieldsChanged.push('anchor_time', 'anchor_dow', 'anchor_dom')
+          beforeState.anchor_time = task.anchor_time
+          beforeState.anchor_dow = task.anchor_dow
+          beforeState.anchor_dom = task.anchor_dom
+          afterState.anchor_time = null
+          afterState.anchor_dow = null
+          afterState.anchor_dom = null
+        } else {
+          // Setting/changing recurrence - derive anchor fields from task's due_at
+          const dueAtForAnchors = task.due_at
+          const anchors = deriveAnchorFields(changes.rrule, dueAtForAnchors, userTimezone)
+
+          setClauses.push('anchor_time = ?')
+          values.push(anchors.anchor_time)
+          fieldsChanged.push('anchor_time')
+          beforeState.anchor_time = task.anchor_time
+          afterState.anchor_time = anchors.anchor_time
+
+          setClauses.push('anchor_dow = ?')
+          values.push(anchors.anchor_dow)
+          fieldsChanged.push('anchor_dow')
+          beforeState.anchor_dow = task.anchor_dow
+          afterState.anchor_dow = anchors.anchor_dow
+
+          setClauses.push('anchor_dom = ?')
+          values.push(anchors.anchor_dom)
+          fieldsChanged.push('anchor_dom')
+          beforeState.anchor_dom = task.anchor_dom
+          afterState.anchor_dom = anchors.anchor_dom
+
+          // Compute next due_at for the new rrule
+          const nextOccurrence = computeFirstOccurrence(
+            changes.rrule,
+            anchors.anchor_time,
+            userTimezone,
+          )
+          const nextDueAt = nextOccurrence.toISOString()
+          setClauses.push('due_at = ?')
+          values.push(nextDueAt)
+          fieldsChanged.push('due_at')
+          beforeState.due_at = task.due_at
+          afterState.due_at = nextDueAt
+
+          // Clear original_due_at when rrule changes (consistent with single-task behavior)
+          if (task.original_due_at) {
+            setClauses.push('original_due_at = NULL')
+            fieldsChanged.push('original_due_at')
+            beforeState.original_due_at = task.original_due_at
+            afterState.original_due_at = null
+          }
+        }
+      }
+
+      // Handle recurrence_mode changes
+      if (
+        changes.recurrence_mode !== undefined &&
+        changes.recurrence_mode !== task.recurrence_mode
+      ) {
+        setClauses.push('recurrence_mode = ?')
+        values.push(changes.recurrence_mode)
+        fieldsChanged.push('recurrence_mode')
+        beforeState.recurrence_mode = task.recurrence_mode
+        afterState.recurrence_mode = changes.recurrence_mode
       }
 
       if (fieldsChanged.length > 0) {

@@ -194,71 +194,76 @@ function formatDaysCompact(byDay: string[]): string {
 /**
  * Compact RRULE formatting for TaskRow's second line.
  *
- * Strips time info (time is already shown in the relative time portion).
  * Uses single-letter day abbreviations (M, Tu, W, Th, F, Sa, Su).
+ * Optionally includes time from anchorTime if provided.
  */
-export function formatRRuleCompact(rrule: string): string {
-  const parts = parseRRuleParts(rrule)
-  const freq = parts.FREQ?.toUpperCase()
-  const interval = parts.INTERVAL ? parseInt(parts.INTERVAL) : 1
-  const byDay = parts.BYDAY?.split(',') || []
-  const byMonthDay = parts.BYMONTHDAY?.split(',').map(Number) || []
+export function formatRRuleCompact(rrule: string, anchorTime?: string | null): string {
+  const { freq, interval, byDay, byMonthDay, timeStr } = parseForFormat(rrule, anchorTime)
 
   switch (freq) {
     case 'DAILY':
-      return formatDailyCompact(interval)
+      return formatDailyCompact(interval, timeStr)
     case 'WEEKLY':
-      return formatWeeklyCompact(interval, byDay)
+      return formatWeeklyCompact(interval, byDay, timeStr)
     case 'MONTHLY':
-      return formatMonthlyCompact(interval, byDay, byMonthDay)
+      return formatMonthlyCompact(interval, byDay, byMonthDay, timeStr)
     case 'YEARLY':
-      return formatYearlyCompact(interval)
+      return formatYearlyCompact(interval, timeStr)
     default:
       return rrule
   }
 }
 
-function formatDailyCompact(interval: number): string {
-  return interval === 1 ? 'Daily' : `Every ${interval} days`
+function formatDailyCompact(interval: number, timeStr: string): string {
+  const base = interval === 1 ? 'Daily' : `Every ${interval} days`
+  return `${base}${timeStr}`
 }
 
-function formatWeeklyCompact(interval: number, byDay: string[]): string {
+function formatWeeklyCompact(interval: number, byDay: string[], timeStr: string): string {
   if (byDay.length === 0) {
-    return interval === 1 ? 'Weekly' : `Every ${interval} weeks`
+    const base = interval === 1 ? 'Weekly' : `Every ${interval} weeks`
+    return `${base}${timeStr}`
   }
 
   const dayStr = formatDaysCompact(byDay)
 
   // "Daily", "Weekdays", "Weekends" are already complete
   if (dayStr === 'Daily' || dayStr === 'Weekdays' || dayStr === 'Weekends') {
-    return dayStr
+    return `${dayStr}${timeStr}`
   }
 
   if (interval === 1) {
     // Single day weekly: use plural natural form ("Fridays")
     if (byDay.length === 1) {
-      return PLURAL_DAY_NAMES[byDay[0].toUpperCase()] || dayStr
+      const base = PLURAL_DAY_NAMES[byDay[0].toUpperCase()] || dayStr
+      return `${base}${timeStr}`
     }
-    return dayStr
+    return `${dayStr}${timeStr}`
   }
 
-  return `Every ${interval} weeks on ${dayStr}`
+  return `Every ${interval} weeks on ${dayStr}${timeStr}`
 }
 
-function formatMonthlyCompact(interval: number, byDay: string[], byMonthDay: number[]): string {
+function formatMonthlyCompact(
+  interval: number,
+  byDay: string[],
+  byMonthDay: number[],
+  timeStr: string,
+): string {
   const prefix = interval === 1 ? 'Monthly' : `Every ${interval} months`
   if (byMonthDay.length > 0) {
-    return `${prefix} on the ${byMonthDay.map(ordinal).join(', ')}`
+    return `${prefix} on the ${byMonthDay.map(ordinal).join(', ')}${timeStr}`
   }
   if (byDay.length > 0) {
     const dayName = SHORT_DAY_NAMES[byDay[0].replace(/[^A-Z]/gi, '').toUpperCase()] || byDay[0]
-    return `${prefix} on ${dayName}`
+    return `${prefix} on ${dayName}${timeStr}`
   }
-  return prefix
+  return `${prefix}${timeStr}`
 }
 
-function formatYearlyCompact(interval: number): string {
-  return interval === 1 ? 'Yearly' : `Every ${interval} years`
+function formatYearlyCompact(interval: number, timeStr: string): string {
+  const base = interval === 1 ? 'Yearly' : `Every ${interval} years`
+  return `${base}${timeStr}`
 }
 
 function ordinal(n: number): string {
@@ -272,16 +277,21 @@ function ordinal(n: number): string {
  *
  * Returns:
  * - null if no tasks have recurrence
- * - The compact rrule text if all tasks have the same rrule
+ * - The compact rrule text (with time if all have same anchor_time) if all tasks have the same rrule
  * - "mixed" if tasks have different rrules
  */
-export function formatBulkRecurrence(tasks: { rrule?: string | null }[]): string | null {
-  const rrules = tasks.map((t) => t.rrule).filter(Boolean) as string[]
-  if (rrules.length === 0) return null
+export function formatBulkRecurrence(
+  tasks: { rrule?: string | null; anchor_time?: string | null }[],
+): string | null {
+  const recurringTasks = tasks.filter((t) => t.rrule)
+  if (recurringTasks.length === 0) return null
 
-  const unique = [...new Set(rrules)]
-  if (unique.length === 1) {
-    return formatRRuleCompact(unique[0])
+  const uniqueRrules = [...new Set(recurringTasks.map((t) => t.rrule))]
+  if (uniqueRrules.length === 1) {
+    // If all recurring tasks have the same anchor_time, include it
+    const uniqueAnchorTimes = [...new Set(recurringTasks.map((t) => t.anchor_time))]
+    const anchorTime = uniqueAnchorTimes.length === 1 ? uniqueAnchorTimes[0] : null
+    return formatRRuleCompact(uniqueRrules[0]!, anchorTime)
   }
   return 'mixed'
 }

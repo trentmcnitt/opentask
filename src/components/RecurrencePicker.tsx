@@ -13,6 +13,7 @@ import {
 
 type Frequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
 type EndType = 'never' | 'count' | 'date'
+export type RecurrenceMode = 'from_due' | 'from_completion'
 
 const DAYS_OF_WEEK = [
   { id: 'MO', label: 'M', full: 'Monday' },
@@ -24,6 +25,18 @@ const DAYS_OF_WEEK = [
   { id: 'SU', label: 'S', full: 'Sunday' },
 ]
 
+// Generate hour options (1-12)
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
+// Generate minute options (00, 15, 30, 45)
+const MINUTE_OPTIONS = [0, 15, 30, 45]
+
+function formatTime12Hour(hour: number, minute: number): string {
+  const period = hour >= 12 ? 'PM' : 'AM'
+  const h = hour % 12 || 12
+  const m = minute.toString().padStart(2, '0')
+  return `${h}:${m} ${period}`
+}
+
 function useRRuleBuilder(
   frequency: Frequency,
   interval: number,
@@ -32,6 +45,8 @@ function useRRuleBuilder(
   endType: EndType,
   endCount: number,
   endDate: string,
+  hour: number,
+  minute: number,
 ) {
   const rrule = useMemo(() => {
     if (frequency === 'NONE') return null
@@ -54,6 +69,10 @@ function useRRuleBuilder(
       }
     }
 
+    // Include time in RRULE
+    parts.push(`BYHOUR=${hour}`)
+    parts.push(`BYMINUTE=${minute}`)
+
     if (endType === 'count' && endCount > 0) {
       parts.push(`COUNT=${endCount}`)
     } else if (endType === 'date' && endDate) {
@@ -61,7 +80,7 @@ function useRRuleBuilder(
     }
 
     return parts.join(';')
-  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate])
+  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate, hour, minute])
 
   const previewText = useMemo(() => {
     if (frequency === 'NONE') return 'No repeat'
@@ -94,6 +113,9 @@ function useRRuleBuilder(
         break
     }
 
+    // Add time to preview
+    base += ` at ${formatTime12Hour(hour, minute)}`
+
     if (endType === 'count') {
       base += `, ${endCount} times`
     } else if (endType === 'date' && endDate) {
@@ -101,7 +123,7 @@ function useRRuleBuilder(
     }
 
     return base
-  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate])
+  }, [frequency, interval, selectedDays, monthDay, endType, endCount, endDate, hour, minute])
 
   return { rrule, previewText }
 }
@@ -161,13 +183,125 @@ function EndConditionPicker({
   )
 }
 
-interface RecurrencePickerProps {
-  value?: string | null
-  onChange: (rrule: string | null) => void
+function TimePicker({
+  hour,
+  minute,
+  onHourChange,
+  onMinuteChange,
+}: {
+  hour: number
+  minute: number
+  onHourChange: (h: number) => void
+  onMinuteChange: (m: number) => void
+}) {
+  // Convert 24h hour to 12h display
+  const displayHour = hour % 12 || 12
+  const isPM = hour >= 12
+
+  const handleHourChange = (newDisplayHour: number) => {
+    // Convert 12h back to 24h
+    let h24 = newDisplayHour
+    if (isPM && h24 !== 12) {
+      h24 += 12
+    } else if (!isPM && h24 === 12) {
+      h24 = 0
+    }
+    onHourChange(h24)
+  }
+
+  const handlePeriodChange = (newPeriod: 'AM' | 'PM') => {
+    const wasAM = hour < 12
+    const wantsPM = newPeriod === 'PM'
+    if (wasAM && wantsPM) {
+      onHourChange(hour === 0 ? 12 : hour + 12)
+    } else if (!wasAM && !wantsPM) {
+      onHourChange(hour === 12 ? 0 : hour - 12)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-sm">At</span>
+      <Select value={displayHour.toString()} onValueChange={(v) => handleHourChange(parseInt(v))}>
+        <SelectTrigger className="w-16">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {HOUR_OPTIONS.map((h) => (
+            <SelectItem key={h} value={h.toString()}>
+              {h}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-muted-foreground">:</span>
+      <Select value={minute.toString()} onValueChange={(v) => onMinuteChange(parseInt(v))}>
+        <SelectTrigger className="w-16">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {MINUTE_OPTIONS.map((m) => (
+            <SelectItem key={m} value={m.toString()}>
+              {m.toString().padStart(2, '0')}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={isPM ? 'PM' : 'AM'}
+        onValueChange={(v) => handlePeriodChange(v as 'AM' | 'PM')}
+      >
+        <SelectTrigger className="w-16">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="AM">AM</SelectItem>
+          <SelectItem value="PM">PM</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
 }
 
-export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
-  const initial = useMemo(() => parseInitialState(value), [value])
+function RecurrenceModePicker({
+  mode,
+  onChange,
+}: {
+  mode: RecurrenceMode
+  onChange: (mode: RecurrenceMode) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-sm">Schedule from</span>
+      <Select value={mode} onValueChange={(v) => onChange(v as RecurrenceMode)}>
+        <SelectTrigger className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="from_due">Due date</SelectItem>
+          <SelectItem value="from_completion">Completion</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export interface RecurrencePickerProps {
+  value?: string | null
+  /** Recurrence mode: 'from_due' (fixed schedule) or 'from_completion' (flexible) */
+  recurrenceMode?: RecurrenceMode
+  /** Initial time in HH:MM format for defaulting the time picker */
+  initialTime?: string | null
+  onChange: (rrule: string | null, recurrenceMode?: RecurrenceMode) => void
+}
+
+export function RecurrencePicker({
+  value,
+  recurrenceMode: initialRecurrenceMode = 'from_due',
+  initialTime,
+  onChange,
+}: RecurrencePickerProps) {
+  const initial = useMemo(() => parseInitialState(value, initialTime), [value, initialTime])
   const [frequency, setFrequency] = useState<Frequency>(initial.frequency)
   const [interval, setInterval] = useState(initial.interval)
   const [selectedDays, setSelectedDays] = useState<string[]>(initial.selectedDays)
@@ -175,11 +309,16 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
   const [endType, setEndType] = useState<EndType>(initial.endType)
   const [endCount, setEndCount] = useState(initial.endCount)
   const [endDate, setEndDate] = useState(initial.endDate)
+  const [hour, setHour] = useState(initial.hour)
+  const [minute, setMinute] = useState(initial.minute)
+  const [recurrenceMode, setRecurrenceMode] = useState<RecurrenceMode>(initialRecurrenceMode)
 
   const [prevValue, setPrevValue] = useState(value)
-  if (value !== prevValue) {
+  const [prevInitialTime, setPrevInitialTime] = useState(initialTime)
+  if (value !== prevValue || initialTime !== prevInitialTime) {
     setPrevValue(value)
-    const parsed = parseInitialState(value)
+    setPrevInitialTime(initialTime)
+    const parsed = parseInitialState(value, initialTime)
     setFrequency(parsed.frequency)
     setInterval(parsed.interval)
     setSelectedDays(parsed.selectedDays)
@@ -187,6 +326,8 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
     setEndType(parsed.endType)
     setEndCount(parsed.endCount)
     setEndDate(parsed.endDate)
+    setHour(parsed.hour)
+    setMinute(parsed.minute)
   }
 
   const { rrule, previewText } = useRRuleBuilder(
@@ -197,11 +338,13 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
     endType,
     endCount,
     endDate,
+    hour,
+    minute,
   )
 
   useEffect(() => {
-    onChange(rrule)
-  }, [rrule, onChange])
+    onChange(rrule, recurrenceMode)
+  }, [rrule, recurrenceMode, onChange])
 
   const toggleDay = (day: string) => {
     setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
@@ -284,6 +427,16 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
         </div>
       )}
 
+      {/* Time picker - shown when a frequency is selected */}
+      {frequency !== 'NONE' && (
+        <TimePicker hour={hour} minute={minute} onHourChange={setHour} onMinuteChange={setMinute} />
+      )}
+
+      {/* Recurrence mode selector */}
+      {frequency !== 'NONE' && (
+        <RecurrenceModePicker mode={recurrenceMode} onChange={setRecurrenceMode} />
+      )}
+
       {frequency !== 'NONE' && (
         <EndConditionPicker
           endType={endType}
@@ -295,12 +448,33 @@ export function RecurrencePicker({ value, onChange }: RecurrencePickerProps) {
         />
       )}
 
-      <div className="text-muted-foreground bg-muted rounded p-2 text-sm">{previewText}</div>
+      <div className="text-muted-foreground bg-muted rounded p-2 text-sm">
+        {previewText}
+        {frequency !== 'NONE' && (
+          <span className="mt-1 block text-xs opacity-75">
+            {recurrenceMode === 'from_completion'
+              ? 'Next occurrence schedules from when you complete this task'
+              : 'Next occurrence schedules from the due date (fixed schedule)'}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
 
-function parseInitialState(value: string | null | undefined) {
+function parseInitialState(value: string | null | undefined, initialTime?: string | null) {
+  // Default time: 9:00 AM, or parse from initialTime if provided
+  let defaultHour = 9
+  let defaultMinute = 0
+
+  if (initialTime) {
+    const [h, m] = initialTime.split(':').map(Number)
+    if (!isNaN(h) && !isNaN(m)) {
+      defaultHour = h
+      defaultMinute = m
+    }
+  }
+
   const defaults = {
     frequency: 'NONE' as Frequency,
     interval: 1,
@@ -309,11 +483,24 @@ function parseInitialState(value: string | null | undefined) {
     endType: 'never' as EndType,
     endCount: 10,
     endDate: '',
+    hour: defaultHour,
+    minute: defaultMinute,
   }
 
   if (!value) return defaults
 
   const parts = parseRRule(value)
+
+  // Parse time from RRULE if present, otherwise use defaults
+  let hour = defaults.hour
+  let minute = defaults.minute
+  if (parts.BYHOUR) {
+    hour = parseInt(parts.BYHOUR)
+  }
+  if (parts.BYMINUTE) {
+    minute = parseInt(parts.BYMINUTE)
+  }
+
   return {
     frequency: (parts.FREQ as Frequency) || defaults.frequency,
     interval: parts.INTERVAL ? parseInt(parts.INTERVAL) : defaults.interval,
@@ -325,7 +512,11 @@ function parseInitialState(value: string | null | undefined) {
       : defaults.monthDay,
     endType: parts.COUNT ? 'count' : parts.UNTIL ? 'date' : defaults.endType,
     endCount: parts.COUNT ? parseInt(parts.COUNT) : defaults.endCount,
-    endDate: parts.UNTIL ? parts.UNTIL.slice(0, 10) : defaults.endDate,
+    endDate: parts.UNTIL
+      ? `${parts.UNTIL.slice(0, 4)}-${parts.UNTIL.slice(4, 6)}-${parts.UNTIL.slice(6, 8)}`
+      : defaults.endDate,
+    hour,
+    minute,
   }
 }
 

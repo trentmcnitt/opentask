@@ -126,9 +126,14 @@ function TaskFields({
   const priority = getPriorityOption(task.priority)
 
   const handleRruleChange = useCallback(
-    (value: string | null) => {
-      if (value === currentRruleRef.current) return
-      onFieldChange?.('rrule', value)
+    (value: string | null, recurrenceMode?: 'from_due' | 'from_completion') => {
+      // Only update fields that actually changed
+      if (value !== currentRruleRef.current) {
+        onFieldChange?.('rrule', value)
+      }
+      if (recurrenceMode) {
+        onFieldChange?.('recurrence_mode', recurrenceMode)
+      }
     },
     [onFieldChange],
   )
