@@ -252,19 +252,20 @@ export function useKeyboardNavigation({
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
             document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
-          } else if (cmdKey && e.ctrlKey && keyboardFocusedId !== null) {
-            // Cmd+Ctrl+Down: Jump to first task of next group
-            const nextFirst = findNextGroupFirstTask(keyboardFocusedId)
-            if (nextFirst !== null) {
-              setKeyboardFocusedId(nextFirst)
-              document.getElementById(`task-row-${nextFirst}`)?.focus()
-            }
           } else if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
-            // Cmd+Shift+Down: Jump to last task in current group
+            // Cmd+Shift+Down: Jump to last task in current group, or first of next group if already there
             const lastInGroup = findLastTaskInGroup(keyboardFocusedId)
-            if (lastInGroup !== null) {
+            if (lastInGroup !== null && lastInGroup !== keyboardFocusedId) {
+              // Not at end of group yet - jump to end
               setKeyboardFocusedId(lastInGroup)
               document.getElementById(`task-row-${lastInGroup}`)?.focus()
+            } else {
+              // Already at end of group - wrap to first of next group
+              const nextFirst = findNextGroupFirstTask(keyboardFocusedId)
+              if (nextFirst !== null) {
+                setKeyboardFocusedId(nextFirst)
+                document.getElementById(`task-row-${nextFirst}`)?.focus()
+              }
             }
           } else if (cmdKey) {
             // Cmd+Down: Jump to last task in entire list
@@ -287,19 +288,20 @@ export function useKeyboardNavigation({
           if (keyboardFocusedId === null && orderedIds.length > 0) {
             setKeyboardFocusedId(orderedIds[0])
             document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
-          } else if (cmdKey && e.ctrlKey && keyboardFocusedId !== null) {
-            // Cmd+Ctrl+Up: Jump to last task of previous group
-            const prevLast = findPrevGroupLastTask(keyboardFocusedId)
-            if (prevLast !== null) {
-              setKeyboardFocusedId(prevLast)
-              document.getElementById(`task-row-${prevLast}`)?.focus()
-            }
           } else if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
-            // Cmd+Shift+Up: Jump to first task in current group
+            // Cmd+Shift+Up: Jump to first task in current group, or last of previous group if already there
             const firstInGroup = findFirstTaskInGroup(keyboardFocusedId)
-            if (firstInGroup !== null) {
+            if (firstInGroup !== null && firstInGroup !== keyboardFocusedId) {
+              // Not at start of group yet - jump to start
               setKeyboardFocusedId(firstInGroup)
               document.getElementById(`task-row-${firstInGroup}`)?.focus()
+            } else {
+              // Already at start of group - wrap to last of previous group
+              const prevLast = findPrevGroupLastTask(keyboardFocusedId)
+              if (prevLast !== null) {
+                setKeyboardFocusedId(prevLast)
+                document.getElementById(`task-row-${prevLast}`)?.focus()
+              }
             }
           } else if (cmdKey) {
             // Cmd+Up: Jump to first task in entire list
@@ -353,16 +355,19 @@ export function useKeyboardNavigation({
 
         case 'a':
         case 'A':
-          if (cmdKey && e.shiftKey && keyboardFocusedId !== null) {
-            // Cmd+Shift+A: Toggle select all in current group
+          if (cmdKey && e.shiftKey) {
+            // Cmd+Shift+A: Toggle select all in current group (or first group if nothing focused)
             e.preventDefault()
-            const groupIds = getTaskIdsInCurrentGroup(keyboardFocusedId)
-            if (groupIds.length > 0) {
-              const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
-              if (allSelected) {
-                selection.removeAll(groupIds)
-              } else {
-                selection.addAll(groupIds)
+            const targetTaskId = keyboardFocusedId ?? orderedIds[0]
+            if (targetTaskId !== undefined) {
+              const groupIds = getTaskIdsInCurrentGroup(targetTaskId)
+              if (groupIds.length > 0) {
+                const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
+                if (allSelected) {
+                  selection.removeAll(groupIds)
+                } else {
+                  selection.addAll(groupIds)
+                }
               }
             }
           } else if (cmdKey) {

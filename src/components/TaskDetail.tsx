@@ -13,6 +13,8 @@ import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
+import { Textarea } from '@/components/ui/textarea'
+import { Pencil } from 'lucide-react'
 
 interface TaskDetailProps {
   task: Task
@@ -28,6 +30,10 @@ interface TaskDetailProps {
   onMarkDone?: () => void
   /** Called when QuickActionPanel dirty state changes (for navigation protection) */
   onDirtyChange?: (isDirty: boolean) => void
+  /** Called when meta_notes is saved */
+  onMetaNotesSave?: (value: string | null) => void
+  /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
+  saveRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function TaskDetail({
@@ -43,6 +49,8 @@ export function TaskDetail({
   onDelete,
   onMarkDone,
   onDirtyChange,
+  onMetaNotesSave,
+  saveRef,
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
@@ -58,6 +66,7 @@ export function TaskDetail({
         onDelete={onDelete}
         onMarkDone={onMarkDone}
         onDirtyChange={onDirtyChange}
+        saveRef={saveRef}
         timezone={timezone}
       />
 
@@ -68,6 +77,8 @@ export function TaskDetail({
         onDeleteNote={onDeleteNote}
         timezone={timezone}
       />
+
+      <MetaNotesSection metaNotes={task.meta_notes} onSave={onMetaNotesSave} />
     </div>
   )
 }
@@ -82,6 +93,7 @@ function TaskFields({
   onDelete,
   onMarkDone,
   onDirtyChange,
+  saveRef,
   timezone,
 }: {
   task: Task
@@ -93,6 +105,7 @@ function TaskFields({
   onDelete?: () => void
   onMarkDone?: () => void
   onDirtyChange?: (isDirty: boolean) => void
+  saveRef?: React.MutableRefObject<(() => void) | null>
   timezone: string
 }) {
   const currentRruleRef = useRef(task.rrule)
@@ -189,6 +202,7 @@ function TaskFields({
             onSave={handleSave}
             onCancel={handleCancel}
             onDirtyChange={onDirtyChange}
+            saveRef={saveRef}
           />
         </div>
       )}
@@ -259,6 +273,75 @@ function TaskFields({
 
       {task.updated_at !== task.created_at && (
         <DetailField label="Updated">{formatDateTime(task.updated_at, timezone)}</DetailField>
+      )}
+    </div>
+  )
+}
+
+/**
+ * MetaNotesSection displays AI-generated notes with its own edit toggle.
+ * The section is always visible and the edit button is independent of the page's editable state.
+ * This allows users to view and modify AI notes at any time.
+ */
+function MetaNotesSection({
+  metaNotes,
+  onSave,
+}: {
+  metaNotes: string | null
+  onSave?: (value: string | null) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(metaNotes ?? '')
+
+  const handleStartEdit = () => {
+    setDraft(metaNotes ?? '') // Initialize draft with current value when entering edit mode
+    setIsEditing(true)
+  }
+
+  const handleSave = () => {
+    const trimmed = draft.trim()
+    onSave?.(trimmed || null) // Save null if empty
+    setIsEditing(false)
+  }
+
+  const handleCancel = () => {
+    setIsEditing(false)
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
+          AI Notes
+        </h2>
+        {!isEditing && onSave && (
+          <Button variant="ghost" size="sm" onClick={handleStartEdit} className="h-7 w-7 p-0">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+
+      {isEditing ? (
+        <div className="space-y-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Add AI-generated notes..."
+            className="min-h-[100px]"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSave}>
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleCancel}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : metaNotes ? (
+        <div className="bg-muted/50 rounded-md p-3 text-sm whitespace-pre-wrap">{metaNotes}</div>
+      ) : (
+        <p className="text-muted-foreground text-sm italic">No AI notes</p>
       )}
     </div>
   )

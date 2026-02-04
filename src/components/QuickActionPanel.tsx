@@ -116,6 +116,8 @@ export interface QuickActionPanelProps {
   projectName?: string
   /** Called when dirty state changes (for navigation protection in parent) */
   onDirtyChange?: (isDirty: boolean) => void
+  /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
+  saveRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function QuickActionPanel({
@@ -144,6 +146,7 @@ export function QuickActionPanel({
   onMarkDone,
   projectName,
   onDirtyChange,
+  saveRef,
 }: QuickActionPanelProps) {
   // Effective task: either passed directly, or single selected task via bulk path
   const effectiveTask = task ?? (selectedTasks?.length === 1 ? selectedTasks[0] : null)
@@ -329,6 +332,21 @@ export function QuickActionPanel({
     onProjectChange,
     onSave,
   ])
+
+  // Expose handleSave to parent via saveRef for external triggering (e.g., navigation dialog)
+  const handleSaveRef = useRef(handleSave)
+  useEffect(() => {
+    handleSaveRef.current = handleSave
+  }, [handleSave])
+
+  useEffect(() => {
+    if (saveRef) {
+      saveRef.current = () => handleSaveRef.current()
+      return () => {
+        saveRef.current = null
+      }
+    }
+  }, [saveRef])
 
   const handleCancel = useCallback(() => {
     reset()

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { signOut } from 'next-auth/react'
-import { FolderOpen, Clock, Undo2, LogOut, Menu } from 'lucide-react'
+import { FolderOpen, Clock, Undo2, LogOut, Menu, Keyboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -30,6 +30,7 @@ interface HeaderProps {
   onSearchClear?: () => void
   userName?: string
   onSnoozeOverdue?: () => void
+  onShowKeyboardShortcuts?: () => void
 }
 
 export function Header({
@@ -43,12 +44,13 @@ export function Header({
   onSearchClear,
   userName,
   onSnoozeOverdue,
+  onShowKeyboardShortcuts,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
 
   return (
     <TooltipProvider delayDuration={300}>
-      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
         <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
           {/* Logo with build info popover */}
           <Popover>
@@ -166,6 +168,12 @@ export function Header({
                   <Undo2 className="size-4" />
                   Undo
                 </DropdownMenuItem>
+                {onShowKeyboardShortcuts && (
+                  <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
+                    <Keyboard className="size-4" />
+                    Keyboard shortcuts
+                  </DropdownMenuItem>
+                )}
                 {userName && (
                   <>
                     <DropdownMenuSeparator />

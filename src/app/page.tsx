@@ -501,8 +501,60 @@ function HomeContent() {
         return
       }
 
+      // Home: Focus first task (works globally, even when not in keyboard mode)
+      if (e.key === 'Home' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // End: Focus last task (works globally, even when not in keyboard mode)
+      if (e.key === 'End' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const lastTaskId = orderedIds[orderedIds.length - 1]
+          setKeyboardFocusedId(lastTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${lastTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // Cmd+Shift+A: Select all tasks in first group (works globally)
+      // This intercepts the browser's tab search shortcut
+      if (cmdKey && e.shiftKey && e.key.toLowerCase() === 'a' && !isInInput) {
+        e.preventDefault()
+        if (taskGroups.length > 0 && orderedIds.length > 0) {
+          // Get first group's task IDs (in sorted order)
+          const firstGroup = taskGroups[0]
+          const firstGroupTaskIds = new Set(firstGroup.tasks.map((t) => t.id))
+          const groupIds = orderedIds.filter((id) => firstGroupTaskIds.has(id))
+
+          if (groupIds.length > 0) {
+            const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
+            if (allSelected) {
+              selection.removeAll(groupIds)
+            } else {
+              selection.addAll(groupIds)
+              // Enter keyboard mode if not already
+              if (!keyboard.isKeyboardActive) {
+                setKeyboardFocusedId(groupIds[0])
+                keyboard.enterKeyboardMode()
+                document.getElementById(`task-row-${groupIds[0]}`)?.focus()
+              }
+            }
+          }
+        }
+        return
+      }
+
       // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
-      if (cmdKey && e.key === 'a' && !isInInput) {
+      if (cmdKey && e.key.toLowerCase() === 'a' && !isInInput) {
         e.preventDefault()
         if (orderedIds.length > 0) {
           const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
@@ -524,7 +576,53 @@ function HomeContent() {
 
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection])
+  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection, taskGroups])
+
+  // Return focus to task list when shortcuts dialog closes (if there are selections)
+  // This ensures the existing Esc handler works for clearing selection
+  useEffect(() => {
+    if (!showShortcutsDialog && selection.isSelectionMode) {
+      // Dialog just closed and there are selections - return focus to task list
+      // Use keyboardFocusedId if available, otherwise first selected task
+      const focusTarget = keyboardFocusedId ?? [...selection.selectedIds][0]
+      if (focusTarget) {
+        // Small delay to let the dialog fully close
+        const timer = setTimeout(() => {
+          setKeyboardFocusedId(focusTarget)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${focusTarget}`)?.focus()
+        }, 0)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [
+    showShortcutsDialog,
+    selection.isSelectionMode,
+    selection.selectedIds,
+    keyboardFocusedId,
+    setKeyboardFocusedId,
+    keyboard,
+  ])
+
+  // Exit keyboard mode when clicking outside the task list
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Only handle if keyboard mode is active
+      if (!keyboard.isKeyboardActive) return
+
+      const target = e.target as HTMLElement
+      // Check if click is inside the task list (listbox or any task row)
+      const isInsideTaskList =
+        target.closest('[role="listbox"]') !== null || target.closest('[id^="task-row-"]') !== null
+
+      if (!isInsideTaskList) {
+        keyboard.exitKeyboardMode()
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [keyboard])
 
   // Fetch saved grouping preference on mount
   useEffect(() => {
@@ -824,6 +922,7 @@ function DashboardView({
         onSearchClear={onSearchClear}
         userName={session?.user?.name || undefined}
         onSnoozeOverdue={onSnoozeOverdue}
+        onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">

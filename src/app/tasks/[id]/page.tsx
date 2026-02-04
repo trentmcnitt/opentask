@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { TaskDetail } from '@/components/TaskDetail'
@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Note, Project } from '@/types'
+import { showToast } from '@/lib/toast'
 
 function useNoteActions(taskId: string) {
   const [notes, setNotes] = useState<Note[]>([])
@@ -66,6 +67,7 @@ export default function TaskDetailPage() {
   // Track dirty state from QuickActionPanel for navigation protection
   const [isDirty, setIsDirty] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  const saveRef = useRef<(() => void) | null>(null)
 
   const handleDirtyChange = useCallback((dirty: boolean) => {
     setIsDirty(dirty)
@@ -81,6 +83,13 @@ export default function TaskDetailPage() {
 
   const handleConfirmLeave = useCallback(() => {
     setShowLeaveConfirm(false)
+    router.push('/')
+  }, [router])
+
+  const handleSaveAndLeave = useCallback(() => {
+    saveRef.current?.()
+    setShowLeaveConfirm(false)
+    showToast({ message: 'Changes saved' })
     router.push('/')
   }, [router])
 
@@ -187,6 +196,24 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleMetaNotesSave = async (value: string | null) => {
+    if (!task) return
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meta_notes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to update meta notes')
+
+      const data = await res.json()
+      setTask(data.data as Task)
+    } catch {
+      fetchTask()
+    }
+  }
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -256,6 +283,8 @@ export default function TaskDetailPage() {
           onDeleteNote={handleDeleteNote}
           onMarkDone={handleMarkDone}
           onDirtyChange={handleDirtyChange}
+          onMetaNotesSave={handleMetaNotesSave}
+          saveRef={saveRef}
         />
       </main>
 
@@ -265,12 +294,15 @@ export default function TaskDetailPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved changes. Are you sure you want to leave? Your changes will be lost.
+              You have unsaved changes. What would you like to do?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Stay</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmLeave}>Leave</AlertDialogAction>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="outline" onClick={handleConfirmLeave}>
+              Don&apos;t Save
+            </AlertDialogAction>
+            <AlertDialogAction onClick={handleSaveAndLeave}>Save</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

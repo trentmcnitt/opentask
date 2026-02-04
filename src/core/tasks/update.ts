@@ -109,6 +109,10 @@ function collectFieldChanges(task: Task, input: TaskUpdateInput, userId: number)
     }
   }
 
+  if (input.meta_notes !== undefined && input.meta_notes !== task.meta_notes) {
+    trackField(diff, 'meta_notes', task.meta_notes, input.meta_notes)
+  }
+
   return diff
 }
 
