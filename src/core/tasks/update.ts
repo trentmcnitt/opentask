@@ -9,6 +9,7 @@ import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc, deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
 
 export interface UpdateTaskOptions {
@@ -116,6 +117,38 @@ function collectFieldChanges(task: Task, input: TaskUpdateInput, userId: number)
   return diff
 }
 
+/**
+ * Apply snooze-related field updates when due_at changes (without rrule change).
+ *
+ * This centralizes snooze logic in the PATCH endpoint so all task edits
+ * (including due_at changes) create ONE undo entry.
+ *
+ * - Sets original_due_at if not already set (preserve existing)
+ * - ALWAYS increments snooze_count (new behavior)
+ * - Increments daily snooze stats
+ */
+function applySnoozeLogic(diff: FieldDiff, task: Task, userId: number, userTimezone: string): void {
+  // Set original_due_at if not already set (preserve existing)
+  if (task.original_due_at === null && task.due_at !== null) {
+    diff.setClauses.push('original_due_at = ?')
+    diff.values.push(task.due_at)
+    diff.fieldsChanged.push('original_due_at')
+    diff.beforeState.original_due_at = null
+    diff.afterState.original_due_at = task.due_at
+  }
+
+  // ALWAYS increment snooze_count (changed behavior - every snooze increments)
+  const newSnoozeCount = task.snooze_count + 1
+  diff.setClauses.push('snooze_count = ?')
+  diff.values.push(newSnoozeCount)
+  diff.fieldsChanged.push('snooze_count')
+  diff.beforeState.snooze_count = task.snooze_count
+  diff.afterState.snooze_count = newSnoozeCount
+
+  // Increment daily stats on every snooze
+  incrementDailyStat(userId, 'snoozes', userTimezone)
+}
+
 function applyAnchorUpdates(
   diff: FieldDiff,
   task: Task,
@@ -154,13 +187,13 @@ function applyAnchorUpdates(
   }
   diff.afterState.anchor_dom = anchors.anchor_dom
 
-  if (task.snoozed_from) {
-    diff.setClauses.push('snoozed_from = NULL')
-    if (!diff.fieldsChanged.includes('snoozed_from')) {
-      diff.fieldsChanged.push('snoozed_from')
-      diff.beforeState.snoozed_from = task.snoozed_from
+  if (task.original_due_at) {
+    diff.setClauses.push('original_due_at = NULL')
+    if (!diff.fieldsChanged.includes('original_due_at')) {
+      diff.fieldsChanged.push('original_due_at')
+      diff.beforeState.original_due_at = task.original_due_at
     }
-    diff.afterState.snoozed_from = null
+    diff.afterState.original_due_at = null
   }
 
   if (input.due_at === undefined) {
@@ -198,6 +231,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   }
 
   applyAnchorUpdates(diff, task, input, userTimezone)
+
+  // Apply snooze logic if due_at is changing AND rrule is NOT changing AND task had a due_at
+  // This ensures snooze tracking when user changes due_at via PATCH
+  const dueAtChanging = input.due_at !== undefined && input.due_at !== task.due_at
+  const isSnoozeScenario = dueAtChanging && !diff.rruleChanged && task.due_at !== null
+
+  if (isSnoozeScenario) {
+    applySnoozeLogic(diff, task, userId, userTimezone)
+  }
 
   diff.setClauses.push('updated_at = ?')
   diff.values.push(nowUtc())

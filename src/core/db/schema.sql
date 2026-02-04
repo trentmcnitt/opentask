@@ -44,8 +44,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   anchor_dow    INTEGER,
   anchor_dom    INTEGER,
 
-  -- Snooze (first-class concept)
-  snoozed_from  TEXT,
+  -- Snooze tracking (stores the original due_at when task is first snoozed)
+  original_due_at  TEXT,
 
   -- Soft delete and archive
   deleted_at    TEXT,

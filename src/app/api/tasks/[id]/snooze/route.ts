@@ -43,7 +43,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return success({
       task: formatTaskResponse(result.task),
       previous_due_at: result.previousDueAt,
-      snoozed_from: result.snoozedFrom,
+      original_due_at: result.originalDueAt,
     })
   } catch (err) {
     if (err instanceof AuthError) {

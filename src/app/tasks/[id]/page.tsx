@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Note, Project } from '@/types'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { showToast } from '@/lib/toast'
 
 function useNoteActions(taskId: string) {
@@ -234,6 +235,63 @@ export default function TaskDetailPage() {
     }
   }
 
+  /**
+   * Batched save handler: sends all changed fields in a SINGLE PATCH request.
+   * This creates ONE undo entry instead of separate entries for each field change.
+   *
+   * All changes (including due_at) now go through PATCH. The server's updateTask
+   * automatically applies snooze logic when due_at changes without rrule change.
+   */
+  const handleSaveAll = async (changes: QuickActionPanelChanges) => {
+    if (!task) return
+
+    // Build the patch payload, only including fields that actually changed
+    const patch: Record<string, unknown> = {}
+
+    if (changes.title !== undefined && changes.title !== task.title) {
+      patch.title = changes.title
+    }
+    if (changes.priority !== undefined && changes.priority !== task.priority) {
+      patch.priority = changes.priority
+    }
+    if (changes.labels !== undefined) {
+      // Compare arrays - only include if different
+      const currentLabels = task.labels || []
+      const newLabels = changes.labels
+      if (
+        newLabels.length !== currentLabels.length ||
+        newLabels.some((l, i) => l !== currentLabels[i])
+      ) {
+        patch.labels = newLabels
+      }
+    }
+    if (changes.rrule !== undefined && changes.rrule !== task.rrule) {
+      patch.rrule = changes.rrule
+    }
+    if (changes.project_id !== undefined && changes.project_id !== task.project_id) {
+      patch.project_id = changes.project_id
+    }
+    // due_at is now handled by PATCH directly - snooze logic is applied server-side
+    if (changes.due_at !== undefined && changes.due_at !== task.due_at) {
+      patch.due_at = changes.due_at
+    }
+
+    if (Object.keys(patch).length === 0) return
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error('Failed to update')
+      const data = await res.json()
+      setTask(data.data as Task)
+    } catch {
+      fetchTask()
+    }
+  }
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -305,6 +363,7 @@ export default function TaskDetailPage() {
           onDirtyChange={handleDirtyChange}
           onMetaNotesSave={handleMetaNotesSave}
           saveRef={saveRef}
+          onSaveAll={handleSaveAll}
         />
       </main>
 

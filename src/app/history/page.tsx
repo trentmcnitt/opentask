@@ -426,7 +426,8 @@ function formatEditDetails(
       case 'anchor_time':
       case 'anchor_dow':
       case 'anchor_dom':
-      case 'snoozed_from':
+      case 'snoozed_from': // legacy field name
+      case 'original_due_at': // current field name
       case 'updated_at':
         break
       default:

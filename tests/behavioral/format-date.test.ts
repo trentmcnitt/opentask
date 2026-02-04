@@ -1,11 +1,11 @@
 /**
  * Pure function tests for date and RRULE formatting utilities.
  *
- * No DB, no HTTP — tests formatDueTimeParts, formatSnoozedFrom, and formatRRuleCompact.
+ * No DB, no HTTP — tests formatDueTimeParts, formatOriginalDueAt, and formatRRuleCompact.
  */
 
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { formatDueTimeParts, formatSnoozedFrom, formatDurationDelta } from '@/lib/format-date'
+import { formatDueTimeParts, formatOriginalDueAt, formatDurationDelta } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 
 const TZ = 'America/Chicago'
@@ -130,22 +130,22 @@ describe('formatDueTimeParts', () => {
   })
 })
 
-describe('formatSnoozedFrom', () => {
-  test('returns null for future snoozed_from', () => {
+describe('formatOriginalDueAt', () => {
+  test('returns null for future original_due_at', () => {
     vi.setSystemTime(new Date('2025-02-05T12:00:00Z'))
-    const result = formatSnoozedFrom('2025-02-06T12:00:00Z', TZ)
+    const result = formatOriginalDueAt('2025-02-06T12:00:00Z', TZ)
     expect(result).toBeNull()
   })
 
   test('within 7 days shows weekday', () => {
     vi.setSystemTime(new Date('2025-02-05T12:00:00Z')) // Wednesday
-    const result = formatSnoozedFrom('2025-02-03T12:00:00Z', TZ) // Monday
+    const result = formatOriginalDueAt('2025-02-03T12:00:00Z', TZ) // Monday
     expect(result).toBe('snoozed from Mon')
   })
 
   test('older than 7 days shows month and day', () => {
     vi.setSystemTime(new Date('2025-02-05T12:00:00Z'))
-    const result = formatSnoozedFrom('2025-01-22T12:00:00Z', TZ) // Jan 22
+    const result = formatOriginalDueAt('2025-01-22T12:00:00Z', TZ) // Jan 22
     expect(result).toBe('snoozed from Jan 22')
   })
 

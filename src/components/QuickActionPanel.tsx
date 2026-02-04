@@ -62,6 +62,19 @@ import type { Task, Project } from '@/types'
  * - The isDirty indicator (blue left border + enabled Save button) shows when changes exist
  */
 
+/**
+ * Changes object for batched save - all fields that can be changed in the panel.
+ * Used by onSaveAll to send all changes in a single API call.
+ */
+export interface QuickActionPanelChanges {
+  title?: string
+  priority?: number
+  labels?: string[]
+  rrule?: string | null
+  project_id?: number
+  due_at?: string
+}
+
 export interface QuickActionPanelProps {
   /** Task(s) being acted on. Single task or null for bulk. */
   task: Task | null
@@ -118,6 +131,12 @@ export interface QuickActionPanelProps {
   onDirtyChange?: (isDirty: boolean) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
   saveRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Batched save callback - when provided, all changes are collected and sent
+   * in a single call instead of individual callbacks. This enables atomic saves
+   * with a single undo entry. Falls back to individual callbacks if not provided.
+   */
+  onSaveAll?: (changes: QuickActionPanelChanges) => void
 }
 
 export function QuickActionPanel({
@@ -147,6 +166,7 @@ export function QuickActionPanel({
   projectName,
   onDirtyChange,
   saveRef,
+  onSaveAll,
 }: QuickActionPanelProps) {
   // Effective task: either passed directly, or single selected task via bulk path
   const effectiveTask = task ?? (selectedTasks?.length === 1 ? selectedTasks[0] : null)
@@ -183,6 +203,10 @@ export function QuickActionPanel({
   const [pendingLabels, setPendingLabels] = useState<string[] | null>(null)
   const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
   const [pendingProject, setPendingProject] = useState<number | null>(null)
+  // pendingTitle stages title changes (previously auto-saved on blur)
+  const [pendingTitle, setPendingTitle] = useState<string | null>(null)
+  // pendingDueAt stages date changes for batched save (only used when onSaveAll provided)
+  const [pendingDueAt, setPendingDueAt] = useState<string | null>(null)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -223,12 +247,18 @@ export function QuickActionPanel({
   const displayProject = pendingProject ?? effectiveTask?.project_id
 
   // Use the appropriate hook based on mode
-  const hasDateChanges = isBulkMode ? bulkHook.isDirty : singleHook.isDirty
+  // When onSaveAll is provided, date changes are also staged via pendingDueAt
+  const hasDateChanges = onSaveAll
+    ? pendingDueAt !== null
+    : isBulkMode
+      ? bulkHook.isDirty
+      : singleHook.isDirty
   const hasPendingChanges =
     pendingPriority !== null ||
     pendingLabels !== null ||
     pendingRrule !== undefined ||
-    pendingProject !== null
+    pendingProject !== null ||
+    pendingTitle !== null
   const isDirty = hasDateChanges || hasPendingChanges
 
   // Notify parent of dirty state changes for navigation protection
@@ -258,6 +288,7 @@ export function QuickActionPanel({
     [isBulkMode, bulkHook, singleHook],
   )
 
+  // Apply date changes - when onSaveAll provided, stage the change for batched save
   const handleApply = useCallback(() => {
     if (isBulkMode) {
       const result = bulkHook.getResult()
@@ -266,10 +297,13 @@ export function QuickActionPanel({
       } else if (result?.type === 'relative' && onDateChangeRelative) {
         onDateChangeRelative(result.deltaMinutes)
       }
+    } else if (onSaveAll) {
+      // Stage date change for batched save (single task mode with onSaveAll)
+      setPendingDueAt(workingDate)
     } else {
       onDateChange(workingDate)
     }
-  }, [isBulkMode, bulkHook, workingDate, onDateChange, onDateChangeRelative])
+  }, [isBulkMode, bulkHook, workingDate, onDateChange, onDateChangeRelative, onSaveAll])
 
   // Auto-save on dismiss for popover/sheet modes when NOT using explicit save/cancel
   // (legacy behavior when onSave/onCancel are not provided)
@@ -297,35 +331,82 @@ export function QuickActionPanel({
   }, [open, mode, onDateChange, onSave, onCancel])
 
   const handleSave = useCallback(() => {
-    // Apply date changes if any
-    if (hasDateChanges) {
-      handleApply()
-    }
-    // Apply all pending field changes
-    if (pendingPriority !== null) {
-      onPriorityChange?.(pendingPriority)
+    if (onSaveAll) {
+      // Batched save mode: collect all changes and send in one call
+      const changes: QuickActionPanelChanges = {}
+
+      if (pendingTitle !== null) {
+        changes.title = pendingTitle
+      }
+      if (pendingPriority !== null) {
+        changes.priority = pendingPriority
+      }
+      if (pendingLabels !== null) {
+        changes.labels = pendingLabels
+      }
+      if (pendingRrule !== undefined) {
+        changes.rrule = pendingRrule
+      }
+      if (pendingProject !== null) {
+        changes.project_id = pendingProject
+      }
+      // For date changes, use pendingDueAt if staged, otherwise check hook state
+      if (pendingDueAt !== null) {
+        changes.due_at = pendingDueAt
+      } else if (singleHook.isDirty) {
+        // Date was changed via hook but not yet staged - include it
+        changes.due_at = singleHook.workingDate
+      }
+
+      // Only call onSaveAll if there are actual changes
+      if (Object.keys(changes).length > 0) {
+        onSaveAll(changes)
+      }
+
+      // Clear all pending state
+      setPendingTitle(null)
       setPendingPriority(null)
-    }
-    if (pendingLabels !== null) {
-      onLabelsChange?.(pendingLabels)
       setPendingLabels(null)
-    }
-    if (pendingRrule !== undefined) {
-      onRruleChange?.(pendingRrule)
       setPendingRrule(undefined)
-    }
-    if (pendingProject !== null) {
-      onProjectChange?.(pendingProject)
       setPendingProject(null)
+      setPendingDueAt(null)
+      singleHook.reset()
+    } else {
+      // Individual callbacks mode (backward compatibility)
+      // Apply date changes if any
+      if (hasDateChanges) {
+        handleApply()
+      }
+      // Apply all pending field changes
+      if (pendingPriority !== null) {
+        onPriorityChange?.(pendingPriority)
+        setPendingPriority(null)
+      }
+      if (pendingLabels !== null) {
+        onLabelsChange?.(pendingLabels)
+        setPendingLabels(null)
+      }
+      if (pendingRrule !== undefined) {
+        onRruleChange?.(pendingRrule)
+        setPendingRrule(undefined)
+      }
+      if (pendingProject !== null) {
+        onProjectChange?.(pendingProject)
+        setPendingProject(null)
+      }
     }
     onSave?.()
   }, [
-    hasDateChanges,
-    handleApply,
+    onSaveAll,
+    pendingTitle,
     pendingPriority,
     pendingLabels,
     pendingRrule,
     pendingProject,
+    pendingDueAt,
+    singleHook,
+    hasDateChanges,
+    handleApply,
     onPriorityChange,
     onLabelsChange,
     onRruleChange,
@@ -351,20 +432,24 @@ export function QuickActionPanel({
   const handleCancel = useCallback(() => {
     reset()
     // Clear all pending changes
+    setPendingTitle(null)
     setPendingPriority(null)
     setPendingLabels(null)
     setPendingRrule(undefined)
     setPendingProject(null)
+    setPendingDueAt(null)
     onCancel?.()
   }, [reset, onCancel])
 
   // Reset handler for the Reset button - clears all pending changes
   const handleReset = useCallback(() => {
     reset()
+    setPendingTitle(null)
     setPendingPriority(null)
     setPendingLabels(null)
     setPendingRrule(undefined)
     setPendingProject(null)
+    setPendingDueAt(null)
   }, [reset])
 
   // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
@@ -375,11 +460,13 @@ export function QuickActionPanel({
   // - SelectionActionSheet (sheet mode with selectedCount): hide title, modal shows it
   // - SnoozeSheet (sheet mode without selectedCount): show task title
   // - inline/popover: show count for bulk or task title
+  // When pendingTitle exists, show it instead of the task's current title
+  const displayTitle = pendingTitle ?? effectiveTask?.title
   const title = isSelectionSheetMode
     ? null
     : selectedCount && selectedCount > 1
       ? `${selectedCount} tasks selected`
-      : (effectiveTask?.title ?? 'Set date')
+      : (displayTitle ?? 'Set date')
 
   // Compute recurrence text for header display
   // In SelectionActionSheet (sheet mode with selectedCount), use the recurrenceSummary prop
@@ -404,20 +491,29 @@ export function QuickActionPanel({
     setEditingRecurrence((prev) => !prev)
   }, [])
 
-  // Handle title editing
+  // Handle title editing - stages the change when onSaveAll is provided,
+  // otherwise falls back to immediate save via onTitleChange
   const handleTitleSave = useCallback(() => {
-    if (titleDraft.trim() && titleDraft.trim() !== effectiveTask?.title) {
-      onTitleChange?.(titleDraft.trim())
+    const trimmed = titleDraft.trim()
+    if (trimmed && trimmed !== effectiveTask?.title) {
+      if (onSaveAll) {
+        // Stage the title change for batched save
+        setPendingTitle(trimmed)
+      } else {
+        // Fall back to immediate save
+        onTitleChange?.(trimmed)
+      }
     }
     setEditingTitle(false)
-  }, [titleDraft, effectiveTask?.title, onTitleChange])
+  }, [titleDraft, effectiveTask?.title, onTitleChange, onSaveAll])
 
   const handleTitleClick = useCallback(() => {
-    if (onTitleChange && effectiveTask) {
-      setTitleDraft(effectiveTask.title)
+    if ((onTitleChange || onSaveAll) && effectiveTask) {
+      // Use pendingTitle if it exists, otherwise use task's current title
+      setTitleDraft(pendingTitle ?? effectiveTask.title)
       setEditingTitle(true)
     }
-  }, [onTitleChange, effectiveTask])
+  }, [onTitleChange, onSaveAll, effectiveTask, pendingTitle])
 
   // Mark Done handlers
   const handleDoneClick = useCallback(() => {
@@ -438,31 +534,52 @@ export function QuickActionPanel({
 
   const handleSaveAndDone = useCallback(() => {
     setShowDoneConfirm(false)
-    // Apply date changes if any
-    if (hasDateChanges) {
-      handleApply()
-    }
-    // Apply all pending field changes
-    if (pendingPriority !== null) {
-      onPriorityChange?.(pendingPriority)
-    }
-    if (pendingLabels !== null) {
-      onLabelsChange?.(pendingLabels)
-    }
-    if (pendingRrule !== undefined) {
-      onRruleChange?.(pendingRrule)
-    }
-    if (pendingProject !== null) {
-      onProjectChange?.(pendingProject)
+    if (onSaveAll) {
+      // Batched save mode
+      const changes: QuickActionPanelChanges = {}
+      if (pendingTitle !== null) changes.title = pendingTitle
+      if (pendingPriority !== null) changes.priority = pendingPriority
+      if (pendingLabels !== null) changes.labels = pendingLabels
+      if (pendingRrule !== undefined) changes.rrule = pendingRrule
+      if (pendingProject !== null) changes.project_id = pendingProject
+      if (pendingDueAt !== null) {
+        changes.due_at = pendingDueAt
+      } else if (singleHook.isDirty) {
+        changes.due_at = singleHook.workingDate
+      }
+      if (Object.keys(changes).length > 0) {
+        onSaveAll(changes)
+      }
+    } else {
+      // Individual callbacks mode
+      if (hasDateChanges) {
+        handleApply()
+      }
+      if (pendingPriority !== null) {
+        onPriorityChange?.(pendingPriority)
+      }
+      if (pendingLabels !== null) {
+        onLabelsChange?.(pendingLabels)
+      }
+      if (pendingRrule !== undefined) {
+        onRruleChange?.(pendingRrule)
+      }
+      if (pendingProject !== null) {
+        onProjectChange?.(pendingProject)
+      }
     }
     onMarkDone?.()
   }, [
-    hasDateChanges,
-    handleApply,
+    onSaveAll,
+    pendingTitle,
     pendingPriority,
     pendingLabels,
     pendingRrule,
     pendingProject,
+    pendingDueAt,
+    singleHook,
+    hasDateChanges,
+    handleApply,
     onPriorityChange,
     onLabelsChange,
     onRruleChange,
@@ -530,10 +647,10 @@ export function QuickActionPanel({
       {/* Header row */}
       <div className={cn('flex justify-between gap-2', title ? 'items-start' : 'items-center')}>
         <div className="min-w-0 flex-1">
-          {/* Title: editable when onTitleChange provided, otherwise static */}
+          {/* Title: editable when onTitleChange or onSaveAll provided, otherwise static */}
           {title && (
             <>
-              {onTitleChange && editingTitle ? (
+              {(onTitleChange || onSaveAll) && editingTitle ? (
                 <Input
                   type="text"
                   value={titleDraft}
@@ -555,7 +672,8 @@ export function QuickActionPanel({
                     className={cn(
                       'truncate font-medium',
                       titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
-                      onTitleChange && 'hover:text-primary cursor-pointer transition-colors',
+                      (onTitleChange || onSaveAll) &&
+                        'hover:text-primary cursor-pointer transition-colors',
                     )}
                     onClick={handleTitleClick}
                   >
@@ -612,7 +730,8 @@ export function QuickActionPanel({
           {effectiveTask && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {/* Priority picker (clickable) - plain text styling for alignment */}
-              {onPriorityChange ? (
+              {/* Show picker when onPriorityChange OR onSaveAll is provided */}
+              {onPriorityChange || onSaveAll ? (
                 <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
                   <PopoverTrigger asChild>
                     <button
@@ -656,7 +775,8 @@ export function QuickActionPanel({
               )}
 
               {/* Labels with inline editing - uses displayLabels (pending or current) */}
-              {onLabelsChange ? (
+              {/* Show editable labels when onLabelsChange OR onSaveAll is provided */}
+              {onLabelsChange || onSaveAll ? (
                 <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
                   {displayLabels.map((label) => {
                     const colorClasses = getLabelClasses(label, labelConfig)

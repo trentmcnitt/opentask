@@ -7,7 +7,7 @@ describe('Snooze integration', () => {
     await resetTestData()
   })
 
-  test('POST snooze changes due_at and sets snoozed_from', async () => {
+  test('POST snooze changes due_at and sets original_due_at', async () => {
     const beforeRes = await apiFetch('/api/tasks/1')
     const before = (await beforeRes.json()).data
     const originalDueAt = before.due_at
@@ -23,7 +23,7 @@ describe('Snooze integration', () => {
     const afterRes = await apiFetch('/api/tasks/1')
     const after = (await afterRes.json()).data
     expect(after.due_at).toBe(futureTime)
-    expect(after.snoozed_from).toBe(originalDueAt)
+    expect(after.original_due_at).toBe(originalDueAt)
     expect(after.is_snoozed).toBe(true)
   })
 })

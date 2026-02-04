@@ -253,12 +253,13 @@ function formatTodayFuture(due: Date, now: Date, time: string): DueTimeParts {
 
 /**
  * "snoozed from Tue" or "snoozed from Jan 30" for snooze context in TaskRow.
+ * Named formatOriginalDueAt to match the field name, but displays as "snoozed from".
  */
-export function formatSnoozedFrom(isoUtc: string, timezone: string): string | null {
+export function formatOriginalDueAt(isoUtc: string, timezone: string): string | null {
   const snoozedDate = new Date(isoUtc)
   const now = new Date()
 
-  // Only render if snoozed_from is in the past
+  // Only render if original_due_at is in the past
   if (snoozedDate > now) return null
 
   const diffMs = now.getTime() - snoozedDate.getTime()

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { formatDueTimeParts, formatSnoozedFrom } from '@/lib/format-date'
+import { formatDueTimeParts, formatOriginalDueAt } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
@@ -244,7 +244,7 @@ export function TaskRow({
   const priorityColors = getPriorityColors(task.priority)
   // Only treat as "snoozed" if it's a recurring task - for one-off tasks,
   // changing the due date is just changing the due date, not snoozing
-  const isSnoozed = !!task.snoozed_from && !!task.rrule
+  const isSnoozed = !!task.original_due_at && !!task.rrule
   const metaSegments = buildMetaSegments(task, timezone, isOverdue)
   const hasLabels = task.labels.length > 0
   const hasLine2 = metaSegments.length > 0
@@ -464,8 +464,8 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   // Only show "snoozed from" for recurring tasks - for one-offs, it's just a due date change
-  if (task.snoozed_from && task.rrule) {
-    const text = formatSnoozedFrom(task.snoozed_from, timezone)
+  if (task.original_due_at && task.rrule) {
+    const text = formatOriginalDueAt(task.original_due_at, timezone)
     if (text) {
       segments.push({ text, className: 'text-blue-400' })
     }

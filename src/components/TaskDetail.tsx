@@ -9,7 +9,7 @@ import { formatDateTime } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { showToast } from '@/lib/toast'
 import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
@@ -35,6 +35,11 @@ interface TaskDetailProps {
   onMetaNotesSave?: (value: string | null) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
   saveRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Batched save handler: receives all changed fields and saves them in one request.
+   * This creates a single undo entry instead of multiple entries for each field change.
+   */
+  onSaveAll?: (changes: QuickActionPanelChanges) => void
 }
 
 export function TaskDetail({
@@ -52,6 +57,7 @@ export function TaskDetail({
   onDirtyChange,
   onMetaNotesSave,
   saveRef,
+  onSaveAll,
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
@@ -69,6 +75,7 @@ export function TaskDetail({
         onDirtyChange={onDirtyChange}
         saveRef={saveRef}
         timezone={timezone}
+        onSaveAll={onSaveAll}
       />
 
       <NotesSection
@@ -96,6 +103,7 @@ function TaskFields({
   onDirtyChange,
   saveRef,
   timezone,
+  onSaveAll,
 }: {
   task: Task
   project?: Project
@@ -108,6 +116,7 @@ function TaskFields({
   onDirtyChange?: (isDirty: boolean) => void
   saveRef?: React.MutableRefObject<(() => void) | null>
   timezone: string
+  onSaveAll?: (changes: QuickActionPanelChanges) => void
 }) {
   const currentRruleRef = useRef(task.rrule)
   useEffect(() => {
@@ -168,12 +177,17 @@ function TaskFields({
     [onFieldChange],
   )
 
-  // For popover mode, onSave/onCancel are required to show the Save/Reset/Cancel buttons.
-  // The actual save happens via handleDateChange when QuickActionPanel's internal handleSave
-  // calls handleApply, which invokes onDateChange. These callbacks just enable the button pattern.
-  const handleSave = useCallback(() => {
-    showToast({ message: 'Changes saved' })
-  }, [])
+  /**
+   * Batched save handler wrapper: delegates to parent's onSaveAll and shows toast.
+   * The actual PATCH request is handled by the page component.
+   */
+  const handleSaveAllWrapper = useCallback(
+    (changes: QuickActionPanelChanges) => {
+      onSaveAll?.(changes)
+      showToast({ message: 'Changes saved' })
+    },
+    [onSaveAll],
+  )
 
   const handleCancel = useCallback(() => {
     // Reset is handled internally by QuickActionPanel
@@ -193,14 +207,17 @@ function TaskFields({
             projectName={project?.name}
             projects={projects}
             onDateChange={handleDateChange}
-            onPriorityChange={handlePriorityChange}
-            onRruleChange={handleRruleChange}
-            onProjectChange={projects.length > 0 ? handleProjectChange : undefined}
-            onLabelsChange={handleLabelsChange}
+            onSaveAll={onSaveAll ? handleSaveAllWrapper : undefined}
+            onPriorityChange={onSaveAll ? undefined : handlePriorityChange}
+            onRruleChange={onSaveAll ? undefined : handleRruleChange}
+            onProjectChange={
+              onSaveAll ? undefined : projects.length > 0 ? handleProjectChange : undefined
+            }
+            onLabelsChange={onSaveAll ? undefined : handleLabelsChange}
+            onTitleChange={onSaveAll ? undefined : handleTitleChange}
             onDelete={onDelete}
             onMarkDone={onMarkDone}
-            onTitleChange={handleTitleChange}
-            onSave={handleSave}
+            onSave={() => {}}
             onCancel={handleCancel}
             onDirtyChange={onDirtyChange}
             saveRef={saveRef}
@@ -263,10 +280,10 @@ function TaskFields({
       )}
 
       {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
-      {task.snoozed_from && task.rrule && (
+      {task.original_due_at && task.rrule && (
         <DetailField label="Snoozed">
           <span className="text-blue-500">
-            Originally due {formatDateTime(task.snoozed_from, timezone)}
+            Originally due {formatDateTime(task.original_due_at, timezone)}
           </span>
         </DetailField>
       )}

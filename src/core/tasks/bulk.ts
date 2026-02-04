@@ -116,7 +116,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
         tx.prepare(
           `
           UPDATE tasks
-          SET due_at = ?, snoozed_from = NULL,
+          SET due_at = ?, original_due_at = NULL,
               completion_count = ?, first_completed_at = ?, last_completed_at = ?,
               updated_at = ?
           WHERE id = ?
@@ -134,7 +134,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
         const afterState: Partial<Task> & { _completion?: unknown } = {
           id: task.id,
           due_at: nextDueAt,
-          snoozed_from: null,
+          original_due_at: null,
           completion_count: newCompletionCount,
           first_completed_at: newFirstCompletedAt,
           last_completed_at: newLastCompletedAt,
@@ -151,7 +151,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
           before_state: {
             id: task.id,
             due_at: task.due_at,
-            snoozed_from: task.snoozed_from,
+            original_due_at: task.original_due_at,
             completion_count: task.completion_count,
             first_completed_at: task.first_completed_at,
             last_completed_at: task.last_completed_at,
@@ -219,9 +219,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     const baseStatsFields = ['completion_count', 'first_completed_at', 'last_completed_at']
     const fieldsChanged =
       recurringCount > 0 && oneOffCount > 0
-        ? ['due_at', 'snoozed_from', 'done', 'done_at', 'archived_at', ...baseStatsFields]
+        ? ['due_at', 'original_due_at', 'done', 'done_at', 'archived_at', ...baseStatsFields]
         : recurringCount > 0
-          ? ['due_at', 'snoozed_from', ...baseStatsFields]
+          ? ['due_at', 'original_due_at', ...baseStatsFields]
           : ['done', 'done_at', 'archived_at', ...baseStatsFields]
 
     logAction(userId, 'bulk_done', `Marked ${tasks.length} tasks done`, fieldsChanged, snapshots)
@@ -260,7 +260,7 @@ export interface BulkSnoozeResult {
  * - Absolute (until): Sets all tasks to the same target time
  * - Relative (deltaMinutes): Adds minutes to each task's current due_at
  *
- * Follows same snoozed_from rules as single snooze.
+ * Follows same original_due_at rules as single snooze.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes } = options
@@ -320,10 +320,6 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const snapshots: UndoSnapshot[] = []
 
-  // Track first snooze info for stats and fieldsChanged
-  let anyFirstSnooze = false
-  let firstSnoozeCount = 0
-
   return withTransaction((tx) => {
     for (const task of tasks) {
       // Compute the new due_at based on mode
@@ -338,58 +334,45 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         newDueAt = new Date(baseDueAt.getTime() + deltaMinutes! * 60 * 1000).toISOString()
       }
 
-      // Determine snoozed_from value
-      const newSnoozedFrom = task.snoozed_from ?? task.due_at
+      // Set original_due_at if not already set (preserve existing)
+      const newOriginalDueAt = task.original_due_at ?? task.due_at
 
-      // Only increment snooze_count on first snooze
-      const isFirstSnooze = task.snoozed_from === null
-      const newSnoozeCount = isFirstSnooze ? task.snooze_count + 1 : task.snooze_count
-      if (isFirstSnooze) {
-        anyFirstSnooze = true
-        firstSnoozeCount++
-      }
+      // ALWAYS increment snooze_count (changed behavior - every snooze increments)
+      const newSnoozeCount = task.snooze_count + 1
 
       tx.prepare(
         `
         UPDATE tasks
-        SET due_at = ?, snoozed_from = ?, snooze_count = ?, updated_at = ?
+        SET due_at = ?, original_due_at = ?, snooze_count = ?, updated_at = ?
         WHERE id = ?
       `,
-      ).run(newDueAt, newSnoozedFrom, newSnoozeCount, nowStr, task.id)
+      ).run(newDueAt, newOriginalDueAt, newSnoozeCount, nowStr, task.id)
 
-      // Build snapshot - include snooze_count if it changed
-      const fieldsChanged = ['due_at', 'snoozed_from']
+      // Build snapshot - always include snooze_count since it always changes
+      const fieldsChanged = ['due_at', 'original_due_at', 'snooze_count']
       const beforeState: Partial<Task> & { id: number } = {
         id: task.id,
         due_at: task.due_at,
-        snoozed_from: task.snoozed_from,
+        original_due_at: task.original_due_at,
+        snooze_count: task.snooze_count,
       }
       const afterState: Partial<Task> & { id: number } = {
         id: task.id,
         due_at: newDueAt,
-        snoozed_from: newSnoozedFrom,
-      }
-
-      if (isFirstSnooze) {
-        fieldsChanged.push('snooze_count')
-        beforeState.snooze_count = task.snooze_count
-        afterState.snooze_count = newSnoozeCount
+        original_due_at: newOriginalDueAt,
+        snooze_count: newSnoozeCount,
       }
 
       snapshots.push(createTaskSnapshot(beforeState, afterState, fieldsChanged))
     }
 
-    // Include snooze_count in fieldsChanged if any task had its first snooze
-    const allFieldsChanged = anyFirstSnooze
-      ? ['due_at', 'snoozed_from', 'snooze_count']
-      : ['due_at', 'snoozed_from']
+    // snooze_count always changes now
+    const allFieldsChanged = ['due_at', 'original_due_at', 'snooze_count']
 
     logAction(userId, 'bulk_snooze', `Snoozed ${tasks.length} tasks`, allFieldsChanged, snapshots)
 
-    // Increment daily stats for all first snoozes
-    if (firstSnoozeCount > 0) {
-      incrementDailyStat(userId, 'snoozes', userTimezone, firstSnoozeCount)
-    }
+    // Increment daily stats for ALL snoozes (every snooze counts now)
+    incrementDailyStat(userId, 'snoozes', userTimezone, tasks.length)
 
     return {
       tasksAffected: tasks.length,

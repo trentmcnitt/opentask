@@ -27,7 +27,7 @@ export interface MarkDoneResult {
 /**
  * Mark a task as done
  *
- * For recurring tasks: advances due_at to next occurrence, clears snoozed_from
+ * For recurring tasks: advances due_at to next occurrence, clears original_due_at
  * For one-off tasks: sets done=1, archived_at=now
  */
 export function markDone(options: MarkDoneOptions): MarkDoneResult {
@@ -103,11 +103,11 @@ function markRecurringDone(
 
     const completionId = Number(completionResult.lastInsertRowid)
 
-    // Update task: advance due_at, clear snoozed_from, update completion stats
+    // Update task: advance due_at, clear original_due_at, update completion stats
     tx.prepare(
       `
       UPDATE tasks
-      SET due_at = ?, snoozed_from = NULL,
+      SET due_at = ?, original_due_at = NULL,
           completion_count = ?, first_completed_at = ?, last_completed_at = ?,
           updated_at = ?
       WHERE id = ?
@@ -118,7 +118,7 @@ function markRecurringDone(
     const afterState: Partial<Task> & { _completion?: unknown } = {
       id: task.id,
       due_at: nextDueAt,
-      snoozed_from: null,
+      original_due_at: null,
       completion_count: newCompletionCount,
       first_completed_at: newFirstCompletedAt,
       last_completed_at: newLastCompletedAt,
@@ -135,7 +135,7 @@ function markRecurringDone(
       before_state: {
         id: task.id,
         due_at: task.due_at,
-        snoozed_from: task.snoozed_from,
+        original_due_at: task.original_due_at,
         completion_count: task.completion_count,
         first_completed_at: task.first_completed_at,
         last_completed_at: task.last_completed_at,
@@ -147,7 +147,7 @@ function markRecurringDone(
     // Log to undo
     const fieldsChanged = [
       'due_at',
-      'snoozed_from',
+      'original_due_at',
       'completion_count',
       'first_completed_at',
       'last_completed_at',

@@ -18,7 +18,7 @@ export function formatTaskResponse(task: Task): FormattedTask {
   return {
     ...task,
     is_recurring: task.rrule !== null,
-    is_snoozed: task.snoozed_from !== null,
+    is_snoozed: task.original_due_at !== null,
   }
 }
 

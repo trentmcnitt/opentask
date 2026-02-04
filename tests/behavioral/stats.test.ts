@@ -137,7 +137,7 @@ describe('Per-Task Stats Tests', () => {
     expect(result2.task.last_completed_at).not.toBe(firstLastCompletedAt)
   })
 
-  test('snooze_count increments only on first snooze', () => {
+  test('snooze_count increments on EVERY snooze', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -159,7 +159,7 @@ describe('Per-Task Stats Tests', () => {
 
     expect(result.task.snooze_count).toBe(1)
 
-    // Re-snooze (second snooze on same "snooze session")
+    // Second snooze - should ALSO increment (new behavior)
     const result2 = snoozeTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -167,8 +167,8 @@ describe('Per-Task Stats Tests', () => {
       until: localTime(16, 0),
     })
 
-    // Should NOT increment (re-snooze)
-    expect(result2.task.snooze_count).toBe(1)
+    // Should increment on every snooze
+    expect(result2.task.snooze_count).toBe(2)
   })
 
   test('undo decrements completion_count', () => {
@@ -239,7 +239,7 @@ describe('Per-Task Stats Tests', () => {
     expect(updated2.completion_count).toBe(1)
   })
 
-  test('bulk snooze increments snooze_count only for first snooze', () => {
+  test('bulk snooze increments snooze_count for every snooze', () => {
     const task1 = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -280,8 +280,8 @@ describe('Per-Task Stats Tests', () => {
     const updated1 = getTaskById(task1.id)!
     const updated2 = getTaskById(task2.id)!
 
-    // task1 was already snoozed, so count should stay 1
-    expect(updated1.snooze_count).toBe(1)
+    // task1 was already snoozed, bulk snooze increments again (new behavior)
+    expect(updated1.snooze_count).toBe(2)
     // task2 is getting its first snooze, so count should be 1
     expect(updated2.snooze_count).toBe(1)
   })
@@ -343,7 +343,7 @@ describe('Daily Stats Tests', () => {
     expect(afterSummary.today?.completions).toBe(beforeCompletions + 1)
   })
 
-  test('daily stats increment on first snooze only', () => {
+  test('daily stats increment on every snooze', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -367,7 +367,7 @@ describe('Daily Stats Tests', () => {
     const afterFirstSnooze = getStatsSummary(TEST_USER_ID, TEST_TIMEZONE)
     expect(afterFirstSnooze.today?.snoozes).toBe(beforeSnoozes + 1)
 
-    // Re-snooze
+    // Re-snooze - should increment again (new behavior)
     snoozeTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -376,8 +376,8 @@ describe('Daily Stats Tests', () => {
     })
 
     const afterReSnooze = getStatsSummary(TEST_USER_ID, TEST_TIMEZONE)
-    // Should not increment again
-    expect(afterReSnooze.today?.snoozes).toBe(beforeSnoozes + 1)
+    // Should increment on every snooze
+    expect(afterReSnooze.today?.snoozes).toBe(beforeSnoozes + 2)
   })
 
   test('getDailyStats returns stats for date range', () => {

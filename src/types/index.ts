@@ -53,8 +53,8 @@ export interface Task {
   anchor_dow: number | null // 0=Mon..6=Sun
   anchor_dom: number | null // 1-31
 
-  // Snooze
-  snoozed_from: string | null
+  // Snooze tracking (stores the original due_at when task is first snoozed)
+  original_due_at: string | null
 
   // Notifications
   last_notified_at: string | null

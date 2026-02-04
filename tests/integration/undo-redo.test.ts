@@ -132,19 +132,19 @@ describe('Undo/Redo integration', () => {
     await snoozeTask(1, snoozeUntil)
 
     const snoozed = await getTask(1)
-    expect(snoozed.snoozed_from).not.toBeNull()
+    expect(snoozed.original_due_at).not.toBeNull()
     expect(snoozed.due_at).not.toBe(originalDueAt)
 
-    // Undo
+    // Undo - snooze now delegates to updateTask, so action is 'edit'
     const undoRes = await undo()
     expect(undoRes.status).toBe(200)
     const undoData = (await undoRes.json()).data
-    expect(undoData.undone_action).toBe('snooze')
+    expect(undoData.undone_action).toBe('edit')
 
     // Verify restored
     const after = await getTask(1)
     expect(after.due_at).toBe(originalDueAt)
-    expect(after.snoozed_from).toBeNull()
+    expect(after.original_due_at).toBeNull()
   })
 
   // ─── Basic redo ─────────────────────────────────────────────────
@@ -280,7 +280,7 @@ describe('Undo/Redo multi-level & edge cases', () => {
     await undo() // undo snooze
     const afterUndoSnooze = await getTask(5)
     expect(afterUndoSnooze.due_at).toBe(orig5.due_at)
-    expect(afterUndoSnooze.snoozed_from).toBeNull()
+    expect(afterUndoSnooze.original_due_at).toBeNull()
 
     await undo() // undo edit
     expect((await getTask(1)).title).toBe(orig1.title)
@@ -298,7 +298,7 @@ describe('Undo/Redo multi-level & edge cases', () => {
     // Snooze should still be undone
     const task5 = await getTask(5)
     expect(task5.due_at).toBe(orig5.due_at)
-    expect(task5.snoozed_from).toBeNull()
+    expect(task5.original_due_at).toBeNull()
   })
 
   // ─── Redo invalidation ─────────────────────────────────────────
@@ -369,7 +369,7 @@ describe('Undo/Redo multi-level & edge cases', () => {
     expect(afterUndoEdit.title).toBe('Morning routine') // title restored
     expect(afterUndoEdit.due_at).toBe(afterDone.due_at) // due_at still advanced
 
-    // Undo action 1 (the done) — surgical: only due_at/snoozed_from fields
+    // Undo action 1 (the done) — surgical: only due_at/original_due_at fields
     await undo()
     const afterUndoDone = await getTask(2)
     expect(afterUndoDone.due_at).toBe(orig.due_at) // due_at restored

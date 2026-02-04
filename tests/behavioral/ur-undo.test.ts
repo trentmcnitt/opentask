@@ -49,14 +49,14 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
     rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
     recurrence_mode: 'from_due',
     anchor_time: '08:00',
-    snoozed_from: null,
+    original_due_at: null,
     labels: '[]',
     ...overrides,
   }
 
   const result = db
     .prepare(
-      `INSERT INTO tasks (user_id, project_id, title, done, priority, due_at, rrule, recurrence_mode, anchor_time, snoozed_from, labels)
+      `INSERT INTO tasks (user_id, project_id, title, done, priority, due_at, rrule, recurrence_mode, anchor_time, original_due_at, labels)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
@@ -69,7 +69,7 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
       defaults.rrule,
       defaults.recurrence_mode,
       defaults.anchor_time,
-      defaults.snoozed_from,
+      defaults.original_due_at,
       defaults.labels,
     )
 
@@ -80,7 +80,7 @@ function getTask(db: ReturnType<typeof getDb>, taskId: number) {
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as {
     id: number
     due_at: string | null
-    snoozed_from: string | null
+    original_due_at: string | null
     done: number
     done_at: string | null
     archived_at: string | null
@@ -104,17 +104,17 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
     resetDb()
   })
 
-  test('undoing a recurring mark-done restores due_at and snoozed_from', () => {
+  test('undoing a recurring mark-done restores due_at and original_due_at', () => {
     // Create a recurring task
     const taskId = createTestTask(db, {
       due_at: '2026-01-31T14:00:00Z', // Today at 8 AM Chicago
-      snoozed_from: null,
+      original_due_at: null,
       rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
     })
 
     const beforeTask = getTask(db, taskId)
     expect(beforeTask.due_at).toBe('2026-01-31T14:00:00Z')
-    expect(beforeTask.snoozed_from).toBeNull()
+    expect(beforeTask.original_due_at).toBeNull()
 
     // Simulate mark done - advance due_at
     const newDueAt = '2026-02-01T14:00:00Z' // Tomorrow at 8 AM
@@ -127,8 +127,8 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
       1,
       'done',
       'Marked task done',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'original_due_at'])],
     )
 
     // Verify after state
@@ -145,7 +145,7 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
     // Verify task is restored
     const taskAfterUndo = getTask(db, taskId)
     expect(taskAfterUndo.due_at).toBe('2026-01-31T14:00:00Z')
-    expect(taskAfterUndo.snoozed_from).toBeNull()
+    expect(taskAfterUndo.original_due_at).toBeNull()
   })
 })
 
@@ -216,16 +216,16 @@ describe('UR-003: Undo Snooze', () => {
     resetDb()
   })
 
-  test('undoing a snooze restores due_at and snoozed_from', () => {
+  test('undoing a snooze restores due_at and original_due_at', () => {
     const taskId = createTestTask(db, {
       due_at: '2026-01-31T14:00:00Z', // 8 AM Chicago
-      snoozed_from: null,
+      original_due_at: null,
     })
 
     const beforeTask = getTask(db, taskId)
 
     // Simulate snooze
-    db.prepare('UPDATE tasks SET due_at = ?, snoozed_from = ? WHERE id = ?').run(
+    db.prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?').run(
       '2026-01-31T20:00:00Z', // Snoozed to 2 PM
       '2026-01-31T14:00:00Z', // Original 8 AM
       taskId,
@@ -238,8 +238,8 @@ describe('UR-003: Undo Snooze', () => {
       1,
       'snooze',
       'Snoozed task',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'original_due_at'])],
     )
 
     // Execute undo
@@ -250,7 +250,7 @@ describe('UR-003: Undo Snooze', () => {
     // Verify task is restored
     const taskAfterUndo = getTask(db, taskId)
     expect(taskAfterUndo.due_at).toBe('2026-01-31T14:00:00Z')
-    expect(taskAfterUndo.snoozed_from).toBeNull()
+    expect(taskAfterUndo.original_due_at).toBeNull()
   })
 })
 
@@ -269,12 +269,12 @@ describe('UR-004: Undo Is Surgical', () => {
     const taskId = createTestTask(db, {
       title: 'Original Title',
       due_at: '2026-01-31T14:00:00Z',
-      snoozed_from: null,
+      original_due_at: null,
     })
 
     const beforeTask = getTask(db, taskId)
 
-    // Action 1: Mark done (changes due_at, snoozed_from)
+    // Action 1: Mark done (changes due_at, original_due_at)
     db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
 
     const afterDone = getTask(db, taskId)
@@ -283,8 +283,8 @@ describe('UR-004: Undo Is Surgical', () => {
       1,
       'done',
       'Marked task done',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(beforeTask, afterDone, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(beforeTask, afterDone, ['due_at', 'original_due_at'])],
     )
 
     // Action 2: Edit title (separate edit, not logged to undo for this test)
@@ -339,13 +339,13 @@ describe('UR-005: Undo Bulk Done', () => {
 
       snapshots.push({
         task_id: taskIds[i],
-        before_state: { id: taskIds[i], due_at: beforeTasks[i].due_at, snoozed_from: null },
-        after_state: { id: taskIds[i], due_at: newDueAt, snoozed_from: null },
+        before_state: { id: taskIds[i], due_at: beforeTasks[i].due_at, original_due_at: null },
+        after_state: { id: taskIds[i], due_at: newDueAt, original_due_at: null },
       })
     }
 
     // Log as single bulk action
-    logAction(1, 'bulk_done', 'Marked 5 tasks done', ['due_at', 'snoozed_from'], snapshots)
+    logAction(1, 'bulk_done', 'Marked 5 tasks done', ['due_at', 'original_due_at'], snapshots)
 
     // Single undo should reverse all
     const result = executeUndo(1)
@@ -390,8 +390,8 @@ describe('UR-006: Redo After Undo', () => {
       1,
       'done',
       'Marked task done',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'original_due_at'])],
     )
 
     // Undo
@@ -432,8 +432,8 @@ describe('UR-007: New Action Clears Redo Stack', () => {
       1,
       'done',
       'Action 1',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(beforeTask, afterTask, ['due_at', 'original_due_at'])],
     )
 
     // Undo action 1
@@ -442,7 +442,7 @@ describe('UR-007: New Action Clears Redo Stack', () => {
 
     // New action: Snooze
     const taskBeforeSnooze = getTask(db, taskId)
-    db.prepare('UPDATE tasks SET due_at = ?, snoozed_from = ? WHERE id = ?').run(
+    db.prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?').run(
       '2026-01-31T20:00:00Z',
       '2026-01-31T14:00:00Z',
       taskId,
@@ -452,8 +452,8 @@ describe('UR-007: New Action Clears Redo Stack', () => {
       1,
       'snooze',
       'Snooze action',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(taskBeforeSnooze, taskAfterSnooze, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(taskBeforeSnooze, taskAfterSnooze, ['due_at', 'original_due_at'])],
     )
 
     // Redo should no longer be available (new action cleared it)
@@ -500,8 +500,8 @@ describe('UR-008: Per-User Isolation', () => {
       1,
       'done',
       'User 1 action',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(before1, after1, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(before1, after1, ['due_at', 'original_due_at'])],
     )
 
     // User 2 marks their task done
@@ -512,8 +512,8 @@ describe('UR-008: Per-User Isolation', () => {
       2,
       'done',
       'User 2 action',
-      ['due_at', 'snoozed_from'],
-      [createTaskSnapshot(before2, after2, ['due_at', 'snoozed_from'])],
+      ['due_at', 'original_due_at'],
+      [createTaskSnapshot(before2, after2, ['due_at', 'original_due_at'])],
     )
 
     // User 1 can undo their action

@@ -1,18 +1,17 @@
 /**
  * Snooze operation
  *
- * First-class snooze with snoozed_from tracking.
- * - First snooze: saves original due_at to snoozed_from
- * - Re-snooze: preserves original snoozed_from
+ * Thin wrapper around updateTask that applies snooze-specific validation.
+ * The actual snooze logic (original_due_at tracking, snooze_count increment)
+ * is handled by updateTask when due_at changes without rrule change.
  */
 
 import { withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
-import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
-import { canUserAccessTask } from './update'
+import { canUserAccessTask, updateTask } from './update'
 
 export interface SnoozeTaskOptions {
   userId: number
@@ -24,25 +23,25 @@ export interface SnoozeTaskOptions {
 export interface SnoozeResult {
   task: Task
   previousDueAt: string | null
-  snoozedFrom: string | null
+  originalDueAt: string | null
 }
 
 /**
  * Snooze a task to a future time
  *
- * - First snooze: saves original due_at to snoozed_from
- * - Re-snooze: preserves existing snoozed_from (the original)
+ * This is a thin wrapper around updateTask that:
+ * 1. Validates snooze-specific preconditions (not done, not trashed)
+ * 2. Delegates to updateTask which handles snooze logic internally
  */
 export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   const { userId, userTimezone, taskId, until } = options
 
-  // Get current task state
+  // Pre-validation (snooze-specific checks)
   const task = getTaskById(taskId)
   if (!task) {
     throw new Error('Task not found')
   }
 
-  // Verify user has access
   if (!canUserAccessTask(userId, task)) {
     throw new Error('Access denied')
   }
@@ -63,69 +62,21 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     throw new Error('Cannot snooze trashed task')
   }
 
-  const nowStr = nowUtc()
   const previousDueAt = task.due_at
 
-  // Determine snoozed_from value:
-  // - First snooze (snoozed_from is NULL): save current due_at to snoozed_from
-  // - Re-snooze (snoozed_from already set): keep existing snoozed_from
-  const newSnoozedFrom = task.snoozed_from ?? task.due_at
-
-  // Only increment snooze_count on first snooze (when snoozed_from goes from null to a value)
-  const isFirstSnooze = task.snoozed_from === null
-  const newSnoozeCount = isFirstSnooze ? task.snooze_count + 1 : task.snooze_count
-
-  // Execute snooze and undo log in a transaction
-  return withTransaction((db) => {
-    // Update task
-    db.prepare(
-      `
-      UPDATE tasks
-      SET due_at = ?, snoozed_from = ?, snooze_count = ?, updated_at = ?
-      WHERE id = ?
-    `,
-    ).run(until, newSnoozedFrom, newSnoozeCount, nowStr, taskId)
-
-    // Build snapshot - only include snooze_count if it changed
-    const fieldsChanged = ['due_at', 'snoozed_from']
-    const beforeState: Partial<Task> & { id: number } = {
-      id: taskId,
-      due_at: task.due_at,
-      snoozed_from: task.snoozed_from,
-    }
-    const afterState: Partial<Task> & { id: number } = {
-      id: taskId,
-      due_at: until,
-      snoozed_from: newSnoozedFrom,
-    }
-
-    if (isFirstSnooze) {
-      fieldsChanged.push('snooze_count')
-      beforeState.snooze_count = task.snooze_count
-      afterState.snooze_count = newSnoozeCount
-    }
-
-    // Log to undo
-    const snapshot = createTaskSnapshot(beforeState, afterState, fieldsChanged)
-    logAction(userId, 'snooze', `Snoozed "${task.title}"`, fieldsChanged, [snapshot])
-
-    // Increment daily stats only on first snooze
-    if (isFirstSnooze) {
-      incrementDailyStat(userId, 'snoozes', userTimezone)
-    }
-
-    // Return updated task
-    const updatedTask = getTaskById(taskId)
-    if (!updatedTask) {
-      throw new Error('Failed to retrieve updated task')
-    }
-
-    return {
-      task: updatedTask,
-      previousDueAt,
-      snoozedFrom: newSnoozedFrom,
-    }
+  // Delegate to updateTask - it handles snooze logic internally
+  const { task: updatedTask } = updateTask({
+    userId,
+    userTimezone,
+    taskId,
+    input: { due_at: until },
   })
+
+  return {
+    task: updatedTask,
+    previousDueAt,
+    originalDueAt: updatedTask.original_due_at,
+  }
 }
 
 /**
@@ -146,35 +97,35 @@ export function clearSnooze(options: { userId: number; taskId: number }): Task {
   }
 
   // Must be snoozed
-  if (!task.snoozed_from) {
+  if (!task.original_due_at) {
     throw new Error('Task is not snoozed')
   }
 
   const nowStr = nowUtc()
-  const originalDueAt = task.snoozed_from
+  const originalDueAt = task.original_due_at
 
   // Execute update and undo log in a transaction
   return withTransaction((tx) => {
-    // Restore original due_at, clear snoozed_from
+    // Restore original due_at, clear original_due_at
     tx.prepare(
       `
       UPDATE tasks
-      SET due_at = ?, snoozed_from = NULL, updated_at = ?
+      SET due_at = ?, original_due_at = NULL, updated_at = ?
       WHERE id = ?
     `,
     ).run(originalDueAt, nowStr, taskId)
 
     // Log to undo (this is like a reverse snooze)
     const snapshot = createTaskSnapshot(
-      { id: taskId, due_at: task.due_at, snoozed_from: task.snoozed_from },
-      { id: taskId, due_at: originalDueAt, snoozed_from: null },
-      ['due_at', 'snoozed_from'],
+      { id: taskId, due_at: task.due_at, original_due_at: task.original_due_at },
+      { id: taskId, due_at: originalDueAt, original_due_at: null },
+      ['due_at', 'original_due_at'],
     )
     logAction(
       userId,
       'snooze',
       `Cleared snooze on "${task.title}"`,
-      ['due_at', 'snoozed_from'],
+      ['due_at', 'original_due_at'],
       [snapshot],
     )
 

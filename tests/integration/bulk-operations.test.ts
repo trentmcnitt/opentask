@@ -95,9 +95,9 @@ describe('Bulk snooze integration', () => {
     expect(after7.due_at).toBe(targetTime)
     expect(after8.due_at).toBe(targetTime)
 
-    // Verify snoozed_from was set
-    expect(after7.snoozed_from).toBe(before7.due_at)
-    expect(after8.snoozed_from).toBe(before8.due_at)
+    // Verify original_due_at was set
+    expect(after7.original_due_at).toBe(before7.due_at)
+    expect(after8.original_due_at).toBe(before8.due_at)
   })
 
   test('POST bulk/snooze with delta_minutes adds to each task', async () => {

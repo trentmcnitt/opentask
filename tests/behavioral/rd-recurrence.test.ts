@@ -48,7 +48,7 @@ function getLocalDow(date: Date): number {
 
 describe('RD-001: Snooze Does Not Affect Recurrence', () => {
   test('snoozing a task does not modify rrule or anchor fields', () => {
-    // This is a state/behavior test - snooze only changes due_at and snoozed_from
+    // This is a state/behavior test - snooze only changes due_at and original_due_at
     // The recurrence engine doesn't handle snooze - it just computes next occurrence
     // So we verify that deriveAnchorFields returns consistent results
 

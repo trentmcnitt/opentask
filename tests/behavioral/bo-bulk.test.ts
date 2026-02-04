@@ -390,9 +390,9 @@ describe('Bulk Snooze Relative Mode', () => {
     // Task 2: 2:30 PM + 90 min = 4:00 PM
     expect(task2NewDueAt.getTime()).toBe(task2OriginalDueAt.getTime() + 90 * 60 * 1000)
 
-    // Verify snoozed_from was set correctly
-    expect(updatedTask1.snoozed_from).toBe(task1.due_at)
-    expect(updatedTask2.snoozed_from).toBe(task2.due_at)
+    // Verify original_due_at was set correctly
+    expect(updatedTask1.original_due_at).toBe(task1.due_at)
+    expect(updatedTask2.original_due_at).toBe(task2.due_at)
   })
 
   /**
@@ -457,7 +457,7 @@ describe('Bulk Snooze Relative Mode', () => {
     const expectedDueAt = new Date('2026-01-15T17:00:00Z') // 16:00 UTC + 60 min
 
     expect(newDueAt.getTime()).toBe(expectedDueAt.getTime())
-    expect(updatedTask.snoozed_from).toBeNull() // Original was null
+    expect(updatedTask.original_due_at).toBeNull() // Original was null
   })
 
   /**
@@ -510,8 +510,8 @@ describe('Bulk Snooze Relative Mode', () => {
 
     expect(revertedTask1.due_at).toBe(task1Original)
     expect(revertedTask2.due_at).toBe(task2Original)
-    expect(revertedTask1.snoozed_from).toBeNull()
-    expect(revertedTask2.snoozed_from).toBeNull()
+    expect(revertedTask1.original_due_at).toBeNull()
+    expect(revertedTask2.original_due_at).toBeNull()
   })
 
   /**
