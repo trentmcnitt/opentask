@@ -130,7 +130,7 @@ export function TaskList({
   // This ensures arrow keys work immediately after clicking a task
   useEffect(() => {
     if (selection.isSelectionMode && listRef.current) {
-      listRef.current.focus()
+      listRef.current.focus({ preventScroll: true })
     }
   }, [selection.isSelectionMode])
 
@@ -239,7 +239,7 @@ export function TaskList({
                     onSwipeRight={() => onDone(task.id)}
                     onSwipeLeft={() => handleSwipeSnooze(task)}
                     onDragStart={() => cancelRef.current?.()}
-                    disabled={selection.isSelectionMode || isKeyboardActive}
+                    disabled={selection.isSelectionMode}
                   >
                     <TaskRow
                       task={task}

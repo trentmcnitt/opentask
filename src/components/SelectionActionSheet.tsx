@@ -447,9 +447,10 @@ export function SelectionActionSheet({
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={handleOpenChange}>
           <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
-            <SheetHeader className="flex-row items-center justify-between gap-2 pr-10">
+            <SheetHeader className="flex flex-col gap-2 pr-10">
+              {/* Quick links first on mobile for better touch access */}
+              <div className="order-first">{quickLinks}</div>
               <SheetTitle className="truncate">{modalTitle}</SheetTitle>
-              {quickLinks}
               <SheetDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
               </SheetDescription>

@@ -241,6 +241,7 @@ export function TaskRow({
         onActivate?.()
       } else if (pointer.wasTouch() && onSelectOnly) {
         onSelectOnly()
+        onActivate?.()
       } else if (onActivate) {
         onActivate()
       }
