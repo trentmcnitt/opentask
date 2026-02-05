@@ -10,6 +10,7 @@
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 
 const DEFAULT_NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
 const DEFAULT_NTFY_TOPIC = process.env.NTFY_TOPIC || 'opentask'
@@ -98,8 +99,8 @@ export async function checkOverdueTasks(): Promise<void> {
       const ntfyTopic = settings.ntfy_topic || DEFAULT_NTFY_TOPIC
 
       // Group by priority for notification formatting
-      const urgent = tasks.filter((t) => t.priority >= 3)
-      const normal = tasks.filter((t) => t.priority < 3)
+      const urgent = tasks.filter((t) => t.priority >= HIGH_PRIORITY_THRESHOLD)
+      const normal = tasks.filter((t) => t.priority < HIGH_PRIORITY_THRESHOLD)
 
       let message = ''
       if (urgent.length > 0) {

@@ -19,6 +19,7 @@ import {
   collectFieldChanges,
   type FieldChangesInput,
 } from './helpers'
+import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 
 export interface BulkDoneOptions {
   userId: number
@@ -127,6 +128,25 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   })
 }
 
+/**
+ * Filter high/urgent tasks from mixed-priority selections during snooze operations.
+ *
+ * High (3) and urgent (4) tasks are skipped when a selection contains both
+ * high/urgent AND lower-priority tasks. They are allowed when:
+ * - Selected individually (single task)
+ * - In a group containing only high/urgent tasks (all priority >= 3)
+ */
+function filterMixedPriorityForSnooze(tasks: Task[]): { eligible: Task[]; skippedCount: number } {
+  if (tasks.length <= 1) return { eligible: tasks, skippedCount: 0 }
+  const hasHighUrgent = tasks.some((t) => (t.priority ?? 0) >= HIGH_PRIORITY_THRESHOLD)
+  const hasLower = tasks.some((t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD)
+  if (hasHighUrgent && hasLower) {
+    const eligible = tasks.filter((t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD)
+    return { eligible, skippedCount: tasks.length - eligible.length }
+  }
+  return { eligible: tasks, skippedCount: 0 }
+}
+
 export interface BulkSnoozeOptions {
   userId: number
   userTimezone: string
@@ -139,6 +159,7 @@ export interface BulkSnoozeOptions {
 
 export interface BulkSnoozeResult {
   tasksAffected: number
+  tasksSkipped: number
   failedIds: number[]
 }
 
@@ -155,7 +176,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, failedIds: [] }
+    return { tasksAffected: 0, tasksSkipped: 0, failedIds: [] }
   }
 
   // Validate that exactly one mode is specified
@@ -207,10 +228,16 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
   }
 
+  // Skip high/urgent tasks in mixed-priority selections
+  const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
+  if (eligible.length === 0) {
+    return { tasksAffected: 0, tasksSkipped: skippedCount, failedIds: [] }
+  }
+
   const snapshots: UndoSnapshot[] = []
 
   return withTransaction((tx) => {
-    for (const task of tasks) {
+    for (const task of eligible) {
       // Compute the new due_at based on mode
       let newDueAt: string
       if (until !== undefined) {
@@ -262,19 +289,20 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     let bulkSnoozeDesc: string
     if (until !== undefined) {
       const target = formatSnoozeTarget(until, userTimezone)
-      bulkSnoozeDesc = `Snoozed ${tasks.length} tasks to ${target}`
+      bulkSnoozeDesc = `Snoozed ${eligible.length} tasks to ${target}`
     } else {
       const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
-      bulkSnoozeDesc = `Snoozed ${tasks.length} tasks (${delta})`
+      bulkSnoozeDesc = `Snoozed ${eligible.length} tasks (${delta})`
     }
 
     logAction(userId, 'bulk_snooze', bulkSnoozeDesc, allFieldsChanged, snapshots)
 
     // Increment daily stats for ALL snoozes (every snooze counts now)
-    incrementDailyStat(userId, 'snoozes', userTimezone, tasks.length)
+    incrementDailyStat(userId, 'snoozes', userTimezone, eligible.length)
 
     return {
-      tasksAffected: tasks.length,
+      tasksAffected: eligible.length,
+      tasksSkipped: skippedCount,
       failedIds: [],
     }
   })
@@ -292,6 +320,7 @@ export interface BulkEditOptions {
 
 export interface BulkEditResult {
   tasksAffected: number
+  tasksSkipped: number
   failedIds: number[]
 }
 
@@ -304,11 +333,11 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const { userId, userTimezone, taskIds, changes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, failedIds: [] }
+    return { tasksAffected: 0, tasksSkipped: 0, failedIds: [] }
   }
 
   // Validate all tasks first
-  const tasks: Task[] = []
+  let tasks: Task[] = []
   const failedIds: number[] = []
 
   for (const taskId of taskIds) {
@@ -330,6 +359,20 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
   if (failedIds.length > 0) {
     throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
+  }
+
+  // Skip high/urgent tasks in mixed-priority selections when editing due_at (snooze scenario).
+  // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
+  // set (even to null), the due_at change is part of a schedule change, not a snooze.
+  let snoozeSkippedCount = 0
+  const isSnoozeEdit = changes.due_at !== undefined && changes.rrule === undefined
+  if (isSnoozeEdit) {
+    const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
+    tasks = eligible
+    snoozeSkippedCount = skippedCount
+    if (tasks.length === 0) {
+      return { tasksAffected: 0, tasksSkipped: snoozeSkippedCount, failedIds: [] }
+    }
   }
 
   const nowStr = nowUtc()
@@ -404,6 +447,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
     return {
       tasksAffected: snapshots.length,
+      tasksSkipped: snoozeSkippedCount,
       failedIds: [],
     }
   })

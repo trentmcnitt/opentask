@@ -32,6 +32,10 @@ export default function Home() {
   )
 }
 
+function taskWord(n: number) {
+  return n === 1 ? 'task' : 'tasks'
+}
+
 function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow'): string {
   const now = new Date()
   if (option === '+1h') {
@@ -157,10 +161,14 @@ function useBulkActions(
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error('Bulk action failed')
+      const responseData = await res.json()
+      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
+      const tasksAffected = responseData.data?.tasks_affected ?? count
       selection.clear()
       fetchTasks()
+      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
       showToast({
-        message: `${count} tasks updated`,
+        message: `${tasksAffected} ${taskWord(tasksAffected)} updated${skippedMsg}`,
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
@@ -169,7 +177,6 @@ function useBulkActions(
   }
 
   const bulkSnoozeRelative = async (deltaMinutes: number) => {
-    const count = selection.selectedIds.size
     try {
       const res = await fetch('/api/tasks/bulk/snooze', {
         method: 'POST',
@@ -180,10 +187,14 @@ function useBulkActions(
         }),
       })
       if (!res.ok) throw new Error('Bulk snooze failed')
+      const responseData = await res.json()
+      const tasksAffected = responseData.data?.tasks_affected ?? 0
+      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
       selection.clear()
       fetchTasks()
+      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
       showToast({
-        message: `${count} tasks snoozed`,
+        message: `${tasksAffected} ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
@@ -226,7 +237,7 @@ function useBulkActions(
       selection.clear()
       fetchTasks()
       showToast({
-        message: `${count} tasks moved`,
+        message: `${count} ${taskWord(count)} moved`,
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
@@ -367,7 +378,7 @@ function HomeContent() {
           if (!res.ok) throw new Error('Bulk action failed')
           fetchTasks()
           showToast({
-            message: `${count} tasks completed`,
+            message: `${count} ${taskWord(count)} completed`,
             action: { label: 'Undo', onClick: actions.handleUndo },
           })
         } catch {
@@ -624,15 +635,15 @@ function HomeContent() {
     setGrouping(mode)
   }, [])
 
-  // Snooze all overdue tasks in the current filtered view (respects label/search filters)
+  // Snooze all overdue tasks in the current filtered view (respects label/search filters).
+  // Sends all overdue task IDs to the server — the server's filterMixedPriorityForSnooze
+  // handles skipping high/urgent tasks in mixed-priority groups.
   const handleSnoozeAllOverdue = useCallback(async () => {
     const now = new Date()
     const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
-    const eligible = overdueTasks.filter((t) => (t.priority || 0) <= 2)
-    const skipped = overdueTasks.length - eligible.length
 
-    if (eligible.length === 0) {
-      showToast({ message: 'No snoozable overdue tasks' })
+    if (overdueTasks.length === 0) {
+      showToast({ message: 'No overdue tasks' })
       return
     }
 
@@ -640,13 +651,16 @@ function HomeContent() {
       const res = await fetch('/api/tasks/bulk/snooze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: eligible.map((t) => t.id), until: getSnoozeTime('+1h') }),
+        body: JSON.stringify({ ids: overdueTasks.map((t) => t.id), until: getSnoozeTime('+1h') }),
       })
       if (!res.ok) throw new Error('Snooze failed')
+      const responseData = await res.json()
+      const tasksAffected = responseData.data?.tasks_affected ?? 0
+      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
       fetchTasks()
-      const skippedMsg = skipped > 0 ? ` (${skipped} high/urgent skipped)` : ''
+      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
       showToast({
-        message: `Snoozed ${eligible.length} overdue tasks +1h${skippedMsg}`,
+        message: `${tasksAffected} overdue ${taskWord(tasksAffected)} snoozed +1h${skippedMsg}`,
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
     } catch {
@@ -668,13 +682,11 @@ function HomeContent() {
     return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
   }, [tasks])
 
-  // Count of snoozable overdue tasks from the filtered view (respects label/search filters)
-  // Tasks with priority > 2 (high/urgent) are excluded from snooze-all operations
+  // Count of overdue tasks from the filtered view (respects label/search filters).
+  // All overdue tasks are counted — the server handles priority-based filtering.
   const snoozableOverdueCount = useMemo(() => {
     const now = new Date()
-    return displayTasks.filter(
-      (t) => t.due_at && new Date(t.due_at) < now && (t.priority || 0) <= 2,
-    ).length
+    return displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
   }, [displayTasks])
 
   const todayCount = useMemo(() => {

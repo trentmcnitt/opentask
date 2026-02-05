@@ -1091,3 +1091,280 @@ describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
     expect(getTaskById(task.id)!.labels).toEqual(['Work', 'Personal'])
   })
 })
+
+/**
+ * Snooze Protection for High/Urgent Tasks (SP-001 through SP-006)
+ *
+ * High (3) and urgent (4) priority tasks are automatically skipped during
+ * bulk snooze when the selection is "mixed" (contains both high/urgent AND
+ * lower-priority tasks). They CAN be snoozed when selected individually or
+ * when the group contains only high/urgent tasks.
+ */
+describe('Snooze Protection for High/Urgent Tasks', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * SP-001: Mixed selection skips high/urgent tasks during bulk snooze
+   */
+  test('SP-001: Mixed selection skips high/urgent tasks', () => {
+    const lowTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(8, 0), priority: 1 },
+    })
+    const medTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task', due_at: localTime(9, 0), priority: 2 },
+    })
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(10, 0), priority: 3 },
+    })
+    const urgentTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent task', due_at: localTime(11, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [lowTask.id, medTask.id, highTask.id, urgentTask.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(2)
+
+    // Low and medium tasks were snoozed
+    const updatedLow = getTaskById(lowTask.id)!
+    const updatedMed = getTaskById(medTask.id)!
+    expect(updatedLow.due_at).toBe(localTime(18, 0))
+    expect(updatedMed.due_at).toBe(localTime(18, 0))
+
+    // High and urgent tasks were NOT snoozed
+    const updatedHigh = getTaskById(highTask.id)!
+    const updatedUrgent = getTaskById(urgentTask.id)!
+    expect(updatedHigh.due_at).toBe(localTime(10, 0))
+    expect(updatedUrgent.due_at).toBe(localTime(11, 0))
+  })
+
+  /**
+   * SP-002: All high/urgent selection — no skipping
+   */
+  test('SP-002: All high/urgent tasks are snoozed when no lower-priority tasks present', () => {
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(8, 0), priority: 3 },
+    })
+    const urgentTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent task', due_at: localTime(9, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [highTask.id, urgentTask.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(18, 0))
+  })
+
+  /**
+   * SP-003: All lower priority — no skipping
+   */
+  test('SP-003: All lower-priority tasks are snoozed without skipping', () => {
+    const unsetTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Unset task', due_at: localTime(8, 0) },
+    })
+    const lowTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(9, 0), priority: 1 },
+    })
+    const medTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task', due_at: localTime(10, 0), priority: 2 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [unsetTask.id, lowTask.id, medTask.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(3)
+    expect(result.tasksSkipped).toBe(0)
+  })
+
+  /**
+   * SP-004: Single high/urgent task — allowed
+   */
+  test('SP-004: Single high/urgent task is allowed to be snoozed', () => {
+    const urgentTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent task', due_at: localTime(8, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [urgentTask.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(0)
+
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(18, 0))
+  })
+
+  /**
+   * SP-005: Mixed selection + bulkEdit with due_at applies same filtering
+   */
+  test('SP-005: bulkEdit with due_at skips high/urgent in mixed selection', () => {
+    const lowTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(8, 0), priority: 1 },
+    })
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(9, 0), priority: 3 },
+    })
+
+    const newDueAt = localTime(18, 0, 1) // Tomorrow 6 PM
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [lowTask.id, highTask.id],
+      changes: { due_at: newDueAt },
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
+
+    // Low task was updated
+    expect(getTaskById(lowTask.id)!.due_at).toBe(newDueAt)
+
+    // High task was NOT updated
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(9, 0))
+  })
+
+  /**
+   * SP-006: bulkEdit with non-snooze changes ignores priority filtering
+   */
+  test('SP-006: bulkEdit with non-snooze changes does not skip high/urgent', () => {
+    const lowTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(8, 0), priority: 1 },
+    })
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(9, 0), priority: 3 },
+    })
+
+    // Changing priority (not a snooze) — should NOT skip
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [lowTask.id, highTask.id],
+      changes: { priority: 2 },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+
+    expect(getTaskById(lowTask.id)!.priority).toBe(2)
+    expect(getTaskById(highTask.id)!.priority).toBe(2)
+  })
+
+  /**
+   * SP-007: bulkEdit with due_at when all tasks are high/urgent — allowed
+   */
+  test('SP-007: bulkEdit with due_at allows all-high/urgent selection', () => {
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(8, 0), priority: 3 },
+    })
+    const urgentTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent task', due_at: localTime(9, 0), priority: 4 },
+    })
+
+    const newDueAt = localTime(18, 0, 1) // Tomorrow 6 PM
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [highTask.id, urgentTask.id],
+      changes: { due_at: newDueAt },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+
+    expect(getTaskById(highTask.id)!.due_at).toBe(newDueAt)
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(newDueAt)
+  })
+
+  /**
+   * SP-008: bulkEdit with due_at + rrule bypasses priority filtering
+   *
+   * When rrule is present in the changes, the due_at change is part of a schedule
+   * change (not a snooze), so priority filtering does not apply.
+   */
+  test('SP-008: bulkEdit with due_at + rrule does not apply snooze protection', () => {
+    const lowTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(8, 0), priority: 1 },
+    })
+    const highTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(9, 0), priority: 3 },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [lowTask.id, highTask.id],
+      changes: {
+        due_at: localTime(18, 0, 1),
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      },
+    })
+
+    // Since rrule is present, isSnoozeEdit=false, so all tasks proceed
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+  })
+})
