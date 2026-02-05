@@ -23,7 +23,7 @@ export function FilterBar({
   onToggleLabel: (label: string) => void
   onClearAll: () => void
 }) {
-  const hasPriorities = tasks.some((t) => t.priority !== undefined)
+  const hasPriorities = tasks.some((t) => t.priority > 0)
   const hasLabels = tasks.some((t) => t.labels.length > 0)
 
   if (!hasPriorities && !hasLabels) return null

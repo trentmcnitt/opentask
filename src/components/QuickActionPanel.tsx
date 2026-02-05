@@ -575,17 +575,18 @@ export function QuickActionPanel({
 
   const handleDiscardAndDone = useCallback(() => {
     setShowDoneConfirm(false)
+    resetAllPending()
     reset()
     onMarkDone?.()
-  }, [reset, onMarkDone])
+  }, [resetAllPending, reset, onMarkDone])
 
-  const handleSaveAndDone = useCallback(() => {
+  const handleSaveAndDone = useCallback(async () => {
     setShowDoneConfirm(false)
     if (onSaveAll) {
       // Batched save mode
       const changes = collectPendingChanges()
       if (Object.keys(changes).length > 0) {
-        onSaveAll(changes)
+        await onSaveAll(changes)
       }
     } else {
       // Individual callbacks mode

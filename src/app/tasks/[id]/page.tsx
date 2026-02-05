@@ -118,6 +118,8 @@ export default function TaskDetailPage() {
       })
     } catch {
       showToast({ message: 'Save failed' })
+      setShowLeaveConfirm(false)
+      return
     }
     setShowLeaveConfirm(false)
     router.push('/')
