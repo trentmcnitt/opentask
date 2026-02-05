@@ -10,7 +10,10 @@ import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { showToast } from '@/lib/toast'
+import { formatChangesToast } from '@/lib/format-toast'
+import { saveTaskChanges } from '@/lib/save-task-changes'
 import type { Task } from '@/types'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 
 /**
  * Combined filter bar for priority and label filters.
@@ -264,6 +267,27 @@ export default function ProjectDetailPage() {
     }
   }
 
+  const handleSaveAllChanges = async (taskId: number, changes: QuickActionPanelChanges) => {
+    // Optimistic update — apply all visible field changes in a single state update
+    const optimistic: Partial<Task> = {}
+    if (changes.priority !== undefined) optimistic.priority = changes.priority
+    if (changes.due_at !== undefined) optimistic.due_at = changes.due_at
+    if (Object.keys(optimistic).length > 0) {
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...optimistic } : t)))
+    }
+
+    try {
+      await saveTaskChanges(taskId, changes)
+      fetchTasks()
+      showToast({
+        message: formatChangesToast(changes),
+        action: { label: 'Undo', onClick: handleUndo },
+      })
+    } catch {
+      fetchTasks()
+    }
+  }
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -331,7 +355,7 @@ export default function ProjectDetailPage() {
         focusedTask={focusedTask}
         open={quickActionOpen}
         onClose={() => setQuickActionOpen(false)}
-        onDateSave={handleSnooze}
+        onSaveAll={handleSaveAllChanges}
       />
     </div>
   )

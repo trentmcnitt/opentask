@@ -28,6 +28,7 @@ import type { Task, Note, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
+import { formatChangesToast } from '@/lib/format-toast'
 
 function useNoteActions(taskId: string) {
   const [notes, setNotes] = useState<Note[]>([])
@@ -238,42 +239,6 @@ export default function TaskDetailPage() {
     fetchTask()
   }, [status, router, fetchTask])
 
-  const handleFieldChange = async (field: string, value: unknown) => {
-    if (!task) return
-
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value }),
-      })
-      if (!res.ok) throw new Error('Failed to update')
-
-      const data = await res.json()
-      setTask(data.data as Task)
-    } catch {
-      fetchTask()
-    }
-  }
-
-  const handleSnooze = async (until: string) => {
-    if (!task) return
-
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/snooze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ until }),
-      })
-      if (!res.ok) throw new Error('Failed to snooze')
-
-      const data = await res.json()
-      setTask(data.data.task as Task)
-    } catch {
-      fetchTask()
-    }
-  }
-
   const handleMarkDone = async () => {
     if (!task) return
 
@@ -325,6 +290,10 @@ export default function TaskDetailPage() {
     try {
       const updatedTask = await saveTaskChanges(taskId, changes)
       setTask(updatedTask)
+      showToast({
+        message: formatChangesToast(changes),
+        action: { label: 'Undo', onClick: handleUndo },
+      })
     } catch {
       fetchTask()
     }
@@ -423,8 +392,6 @@ export default function TaskDetailPage() {
             project={project}
             projects={projects}
             editable
-            onFieldChange={handleFieldChange}
-            onSnooze={handleSnooze}
             onAddNote={handleAddNote}
             onDeleteNote={handleDeleteNote}
             onMarkDone={handleMarkDone}

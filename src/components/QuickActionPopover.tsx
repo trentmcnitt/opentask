@@ -16,27 +16,12 @@ interface QuickActionPopoverProps {
   open: boolean
   /** Close handler */
   onClose: () => void
-  /**
-   * Batched save callback - when provided, all changes are sent in a single call
-   * instead of individual callbacks. This creates one undo entry and one toast.
-   */
-  onSaveAll?: (taskId: number, changes: QuickActionPanelChanges) => void
-  /** Called to save the date change (snooze or patch) - legacy, used when onSaveAll not provided */
-  onDateSave: (taskId: number, isoUtc: string) => void
-  /** Called on priority change with absolute priority (0-4) - legacy, used when onSaveAll not provided */
-  onPriorityChange?: (taskId: number, newPriority: number) => void
-  /** Called when recurrence changes - legacy, used when onSaveAll not provided */
-  onRruleChange?: (
-    taskId: number,
-    rrule: string | null,
-    recurrenceMode?: 'from_due' | 'from_completion',
-  ) => void
+  /** Batched save callback - all changes are sent in a single call */
+  onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
   /** Called to delete task */
   onDelete?: (taskId: number) => void
   /** Called to navigate to task detail page */
   onNavigateToDetail?: (taskId: number) => void
-  /** Called to open project picker for task */
-  onMoveToProject?: (taskId: number) => void
 }
 
 export function QuickActionPopover({
@@ -44,19 +29,11 @@ export function QuickActionPopover({
   open,
   onClose,
   onSaveAll,
-  onDateSave,
-  onPriorityChange,
-  onRruleChange,
   onDelete,
   onNavigateToDetail,
-  onMoveToProject,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
   const [isMobile, setIsMobile] = useState(false)
-  // Track pending date change - use state keyed by open+taskId to auto-reset
-  const [pendingDate, setPendingDate] = useState<string | null>(null)
-  // Track the task ID we last had a pending date for, to reset when task changes
-  const lastTaskIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 640)
@@ -65,51 +42,11 @@ export function QuickActionPopover({
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Track date changes but don't save immediately
-  const handleDateChange = useCallback(
-    (isoUtc: string) => {
-      // If task changed since last pending date, this will naturally overwrite
-      setPendingDate(isoUtc)
-      lastTaskIdRef.current = focusedTask?.id ?? null
-    },
-    [focusedTask?.id],
-  )
-
-  // Save button: apply pending date change and close
-  const handleSave = useCallback(() => {
-    // Only save if pending date is for the current task
-    if (focusedTask && pendingDate && lastTaskIdRef.current === focusedTask.id) {
-      onDateSave(focusedTask.id, pendingDate)
-    }
-    setPendingDate(null)
-    onClose()
-  }, [focusedTask, pendingDate, onDateSave, onClose])
-
-  // Cancel button: discard changes and close
-  const handleCancel = useCallback(() => {
-    setPendingDate(null)
-    onClose()
-  }, [onClose])
-
-  const handlePriorityChange = useCallback(
-    (priority: number) => {
-      if (!focusedTask || !onPriorityChange) return
-      onPriorityChange(focusedTask.id, priority)
-    },
-    [focusedTask, onPriorityChange],
-  )
-
   const handleNavigateToDetail = useCallback(() => {
     if (!focusedTask || !onNavigateToDetail) return
     onNavigateToDetail(focusedTask.id)
     onClose()
   }, [focusedTask, onNavigateToDetail, onClose])
-
-  const handleMoveToProject = useCallback(() => {
-    if (!focusedTask || !onMoveToProject) return
-    onMoveToProject(focusedTask.id)
-    onClose()
-  }, [focusedTask, onMoveToProject, onClose])
 
   const handleDelete = useCallback(() => {
     if (focusedTask && onDelete) {
@@ -118,30 +55,28 @@ export function QuickActionPopover({
     }
   }, [focusedTask, onDelete, onClose])
 
-  const handleRruleChange = useCallback(
-    (rrule: string | null, recurrenceMode?: 'from_due' | 'from_completion') => {
-      if (!focusedTask || !onRruleChange) return
-      onRruleChange(focusedTask.id, rrule, recurrenceMode)
-    },
-    [focusedTask, onRruleChange],
-  )
-
   // Batched save handler - wraps onSaveAll with taskId and closes the popover
   const handleSaveAll = useCallback(
     (changes: QuickActionPanelChanges) => {
-      if (!focusedTask || !onSaveAll) return
+      if (!focusedTask) return
       onSaveAll(focusedTask.id, changes)
-      setPendingDate(null)
       onClose()
     },
     [focusedTask, onSaveAll, onClose],
   )
 
-  // Handle dialog/sheet close - reset pending date
+  const handleSave = useCallback(() => {
+    onClose()
+  }, [onClose])
+
+  const handleCancel = useCallback(() => {
+    onClose()
+  }, [onClose])
+
+  // Handle dialog/sheet close
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (!newOpen) {
-        setPendingDate(null)
         onClose()
       }
     },
@@ -153,9 +88,7 @@ export function QuickActionPopover({
 
   if (!focusedTask) return null
 
-  // When onSaveAll is provided, use batched mode - pass onSaveAll to QuickActionPanel
-  // and disable individual change callbacks (priority, rrule)
-  const panel = onSaveAll ? (
+  const panel = (
     <div
       className={cn(
         'rounded-lg border p-3',
@@ -163,38 +96,15 @@ export function QuickActionPopover({
       )}
     >
       <QuickActionPanel
+        key={focusedTask.updated_at}
         task={focusedTask}
         timezone={timezone}
         mode={isMobile ? 'sheet' : 'popover'}
         titleVariant="prominent"
-        onDateChange={handleDateChange}
+        onDateChange={() => {}}
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
-        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
-        onSave={handleSave}
-        onCancel={handleCancel}
-        onDirtyChange={setIsPanelDirty}
-      />
-    </div>
-  ) : (
-    <div
-      className={cn(
-        'rounded-lg border p-3',
-        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-      )}
-    >
-      <QuickActionPanel
-        task={focusedTask}
-        timezone={timezone}
-        mode={isMobile ? 'sheet' : 'popover'}
-        titleVariant="prominent"
-        onDateChange={handleDateChange}
-        onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
-        onRruleChange={onRruleChange ? handleRruleChange : undefined}
-        onDelete={onDelete ? handleDelete : undefined}
-        onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
-        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
         onSave={handleSave}
         onCancel={handleCancel}
         onDirtyChange={setIsPanelDirty}

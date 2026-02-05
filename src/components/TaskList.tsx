@@ -99,14 +99,18 @@ export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = fals
   return sorted
 }
 
-/**
- * Direction-aware labels for the sort button.
- * Each sort option has a default and reversed label.
- */
-const SORT_LABELS: Record<SortOption, { default: string; reversed: string }> = {
-  priority: { default: 'Highest', reversed: 'Lowest' },
+/** Labels shown on the compact sort button — direction-aware. */
+const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string }> = {
+  priority: { default: 'Priority ↓', reversed: 'Priority ↑' },
   title: { default: 'A-Z', reversed: 'Z-A' },
   age: { default: 'Newest', reversed: 'Oldest' },
+}
+
+/** Labels shown in the dropdown menu items. */
+const SORT_MENU_LABELS: Record<SortOption, string> = {
+  priority: 'Priority',
+  title: 'A-Z',
+  age: 'Date added',
 }
 
 export function TaskList({
@@ -435,7 +439,9 @@ function SortDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const isTouchRef = useRef(false)
-  const label = reversed ? SORT_LABELS[sortOption].reversed : SORT_LABELS[sortOption].default
+  const label = reversed
+    ? SORT_BUTTON_LABELS[sortOption].reversed
+    : SORT_BUTTON_LABELS[sortOption].default
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -465,10 +471,10 @@ function SortDropdown({
         {(['priority', 'title', 'age'] as const).map((option) => {
           const isActive = sortOption === option
           const itemLabel =
-            isActive && reversed ? SORT_LABELS[option].reversed : SORT_LABELS[option].default
+            isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
           // Selecting the active option will toggle direction, so show what it will become
           const hint = isActive
-            ? `→ ${reversed ? SORT_LABELS[option].default : SORT_LABELS[option].reversed}`
+            ? `→ ${reversed ? SORT_BUTTON_LABELS[option].default : SORT_BUTTON_LABELS[option].reversed}`
             : null
           return (
             <DropdownMenuItem

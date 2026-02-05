@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +10,6 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
-import { showToast } from '@/lib/toast'
 import { getPriorityOption } from '@/lib/priority'
 import type { Task, Note, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
@@ -23,8 +22,6 @@ interface TaskDetailProps {
   project?: Project
   projects?: Project[]
   editable?: boolean
-  onFieldChange?: (field: string, value: unknown) => void
-  onSnooze?: (until: string) => void
   onAddNote?: (content: string) => void
   onDeleteNote?: (noteId: number) => void
   onDelete?: () => void
@@ -48,8 +45,6 @@ export function TaskDetail({
   project,
   projects = [],
   editable = false,
-  onFieldChange,
-  onSnooze,
   onAddNote,
   onDeleteNote,
   onDelete,
@@ -61,63 +56,6 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
-  return (
-    <div className="space-y-6">
-      <TaskFields
-        task={task}
-        project={project}
-        projects={projects}
-        editable={editable}
-        onFieldChange={onFieldChange}
-        onSnooze={onSnooze}
-        onDelete={onDelete}
-        onMarkDone={onMarkDone}
-        onDirtyChange={onDirtyChange}
-        saveRef={saveRef}
-        timezone={timezone}
-        onSaveAll={onSaveAll}
-      />
-
-      <NotesSection
-        notes={notes}
-        editable={editable}
-        onAddNote={onAddNote}
-        onDeleteNote={onDeleteNote}
-        timezone={timezone}
-      />
-
-      <MetaNotesSection metaNotes={task.meta_notes} onSave={onMetaNotesSave} />
-    </div>
-  )
-}
-
-function TaskFields({
-  task,
-  project,
-  projects,
-  editable,
-  onFieldChange,
-  onSnooze,
-  onDelete,
-  onMarkDone,
-  onDirtyChange,
-  saveRef,
-  timezone,
-  onSaveAll,
-}: {
-  task: Task
-  project?: Project
-  projects: Project[]
-  editable: boolean
-  onFieldChange?: (field: string, value: unknown) => void
-  onSnooze?: (until: string) => void
-  onDelete?: () => void
-  onMarkDone?: () => void
-  onDirtyChange?: (isDirty: boolean) => void
-  saveRef?: React.MutableRefObject<(() => void) | null>
-  timezone: string
-  onSaveAll?: (changes: QuickActionPanelChanges) => void
-}) {
   // Track dirty state locally for border indicator, while also propagating to parent
   const [isDirty, setIsDirty] = useState(false)
   const handleDirtyChange = useCallback(
@@ -128,191 +66,122 @@ function TaskFields({
     [onDirtyChange],
   )
 
-  const currentRruleRef = useRef(task.rrule)
-  useEffect(() => {
-    currentRruleRef.current = task.rrule
-  }, [task.rrule])
   const isOverdue = task.due_at && new Date(task.due_at) < new Date()
   const priority = getPriorityOption(task.priority)
 
-  const handleRruleChange = useCallback(
-    (value: string | null, recurrenceMode?: 'from_due' | 'from_completion') => {
-      // Only update fields that actually changed
-      if (value !== currentRruleRef.current) {
-        onFieldChange?.('rrule', value)
-      }
-      if (recurrenceMode) {
-        onFieldChange?.('recurrence_mode', recurrenceMode)
-      }
-    },
-    [onFieldChange],
-  )
-
-  const handleDateChange = useCallback(
-    (isoUtc: string) => {
-      // Use snooze endpoint if task already has a due_at, PATCH otherwise
-      if (task.due_at && onSnooze) {
-        onSnooze(isoUtc)
-      } else {
-        onFieldChange?.('due_at', isoUtc)
-      }
-    },
-    [task.due_at, onSnooze, onFieldChange],
-  )
-
-  const handlePriorityChange = useCallback(
-    (newPriority: number) => {
-      if (newPriority !== task.priority) {
-        onFieldChange?.('priority', newPriority)
-      }
-    },
-    [task.priority, onFieldChange],
-  )
-
-  const handleProjectChange = useCallback(
-    (projectId: number) => {
-      if (projectId !== task.project_id) {
-        onFieldChange?.('project_id', projectId)
-      }
-    },
-    [task.project_id, onFieldChange],
-  )
-
-  const handleLabelsChange = useCallback(
-    (labels: string[]) => {
-      onFieldChange?.('labels', labels)
-    },
-    [onFieldChange],
-  )
-
-  const handleTitleChange = useCallback(
-    (title: string) => {
-      onFieldChange?.('title', title)
-    },
-    [onFieldChange],
-  )
-
-  /**
-   * Batched save handler wrapper: delegates to parent's onSaveAll and shows toast.
-   * The actual PATCH request is handled by the page component.
-   */
-  const handleSaveAllWrapper = useCallback(
-    (changes: QuickActionPanelChanges) => {
-      onSaveAll?.(changes)
-      showToast({ message: 'Changes saved' })
-    },
-    [onSaveAll],
-  )
-
-  const handleCancel = useCallback(() => {
-    // Reset is handled internally by QuickActionPanel
-  }, [])
-
   return (
-    <div className="space-y-4">
-      {/* Quick Action Panel — title, date/time grid, and actions */}
-      {editable && (
-        <div
-          className={cn(
-            'rounded-lg border p-3',
-            isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
-          )}
-        >
-          <QuickActionPanel
-            task={task}
-            timezone={timezone}
-            mode="popover"
-            titleVariant="prominent"
-            showCompletedBadge
-            projectName={project?.name}
-            projects={projects}
-            onDateChange={handleDateChange}
-            onSaveAll={onSaveAll ? handleSaveAllWrapper : undefined}
-            onPriorityChange={onSaveAll ? undefined : handlePriorityChange}
-            onRruleChange={onSaveAll ? undefined : handleRruleChange}
-            onProjectChange={
-              onSaveAll ? undefined : projects.length > 0 ? handleProjectChange : undefined
-            }
-            onLabelsChange={onSaveAll ? undefined : handleLabelsChange}
-            onTitleChange={onSaveAll ? undefined : handleTitleChange}
-            onDelete={onDelete}
-            onMarkDone={onMarkDone}
-            onSave={() => {}}
-            onCancel={handleCancel}
-            onDirtyChange={handleDirtyChange}
-            saveRef={saveRef}
-          />
-        </div>
-      )}
-
-      {/* Read-only due date display */}
-      {!editable && (
-        <DetailField label="Due">
-          <span className={cn(isOverdue && 'text-destructive font-medium')}>
-            {task.due_at ? (
-              formatDateTime(task.due_at, timezone)
-            ) : (
-              <span className="text-muted-foreground">No due date</span>
+    <div className="space-y-6">
+      <div className="space-y-4">
+        {/* Quick Action Panel — title, date/time grid, and actions */}
+        {editable && onSaveAll && (
+          <div
+            className={cn(
+              'rounded-lg border p-3',
+              isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
             )}
-          </span>
-        </DetailField>
-      )}
+          >
+            <QuickActionPanel
+              key={task.updated_at}
+              task={task}
+              timezone={timezone}
+              mode="popover"
+              titleVariant="prominent"
+              showCompletedBadge
+              projectName={project?.name}
+              projects={projects}
+              onDateChange={() => {}}
+              onSaveAll={onSaveAll}
+              onDelete={onDelete}
+              onMarkDone={onMarkDone}
+              onSave={() => {}}
+              onCancel={() => {}}
+              onDirtyChange={handleDirtyChange}
+              saveRef={saveRef}
+            />
+          </div>
+        )}
 
-      {/* Priority (read-only — editing via QuickActionPanel More menu) */}
-      {!editable && (
-        <DetailField label="Priority">
-          <span className={priority.color}>{priority.label}</span>
-        </DetailField>
-      )}
+        {/* Read-only due date display */}
+        {!editable && (
+          <DetailField label="Due">
+            <span className={cn(isOverdue && 'text-destructive font-medium')}>
+              {task.due_at ? (
+                formatDateTime(task.due_at, timezone)
+              ) : (
+                <span className="text-muted-foreground">No due date</span>
+              )}
+            </span>
+          </DetailField>
+        )}
 
-      {/* Project - only show in read-only mode (editable mode uses QuickActionPanel) */}
-      {!editable && (
-        <DetailField label="Project">
-          <span>{project?.name || 'Unknown'}</span>
-        </DetailField>
-      )}
+        {/* Priority (read-only — editing via QuickActionPanel More menu) */}
+        {!editable && (
+          <DetailField label="Priority">
+            <span className={priority.color}>{priority.label}</span>
+          </DetailField>
+        )}
 
-      {/* Labels - only show in read-only mode (editable mode uses QuickActionPanel) */}
-      {!editable && (
-        <DetailField label="Labels">
-          {task.labels.length > 0 ? (
-            <ColoredLabels labels={task.labels} />
-          ) : (
-            <span className="text-muted-foreground">None</span>
-          )}
-        </DetailField>
-      )}
+        {/* Project - only show in read-only mode (editable mode uses QuickActionPanel) */}
+        {!editable && (
+          <DetailField label="Project">
+            <span>{project?.name || 'Unknown'}</span>
+          </DetailField>
+        )}
 
-      {/* Recurrence - read-only (editing via QuickActionPanel) */}
-      {!editable && (
-        <DetailField label="Recurrence">
-          {task.rrule ? (
-            <>
-              {formatRRule(task.rrule, task.anchor_time)}
-              <span className="text-muted-foreground ml-2 text-sm">
-                ({task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'})
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">None</span>
-          )}
-        </DetailField>
-      )}
+        {/* Labels - only show in read-only mode (editable mode uses QuickActionPanel) */}
+        {!editable && (
+          <DetailField label="Labels">
+            {task.labels.length > 0 ? (
+              <ColoredLabels labels={task.labels} />
+            ) : (
+              <span className="text-muted-foreground">None</span>
+            )}
+          </DetailField>
+        )}
 
-      {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
-      {task.original_due_at && task.rrule && (
-        <DetailField label="Snoozed">
-          <span className="text-blue-500">
-            Originally due {formatDateTime(task.original_due_at, timezone)}
-          </span>
-        </DetailField>
-      )}
+        {/* Recurrence - read-only (editing via QuickActionPanel) */}
+        {!editable && (
+          <DetailField label="Recurrence">
+            {task.rrule ? (
+              <>
+                {formatRRule(task.rrule, task.anchor_time)}
+                <span className="text-muted-foreground ml-2 text-sm">
+                  (
+                  {task.recurrence_mode === 'from_completion' ? 'from completion' : 'from due date'}
+                  )
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">None</span>
+            )}
+          </DetailField>
+        )}
 
-      <DetailField label="Created">{formatDateTime(task.created_at, timezone)}</DetailField>
+        {/* Only show "Snoozed" for recurring tasks - for one-offs, it's just a due date change */}
+        {task.original_due_at && task.rrule && (
+          <DetailField label="Snoozed">
+            <span className="text-blue-500">
+              Originally due {formatDateTime(task.original_due_at, timezone)}
+            </span>
+          </DetailField>
+        )}
 
-      {task.updated_at !== task.created_at && (
-        <DetailField label="Updated">{formatDateTime(task.updated_at, timezone)}</DetailField>
-      )}
+        <DetailField label="Created">{formatDateTime(task.created_at, timezone)}</DetailField>
+
+        {task.updated_at !== task.created_at && (
+          <DetailField label="Updated">{formatDateTime(task.updated_at, timezone)}</DetailField>
+        )}
+      </div>
+
+      <NotesSection
+        notes={notes}
+        editable={editable}
+        onAddNote={onAddNote}
+        onDeleteNote={onDeleteNote}
+        timezone={timezone}
+      />
+
+      <MetaNotesSection metaNotes={task.meta_notes} onSave={onMetaNotesSave} />
     </div>
   )
 }

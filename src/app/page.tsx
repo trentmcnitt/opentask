@@ -219,72 +219,16 @@ function useTaskActions(
     [fetchTasks, onViewTask],
   )
 
-  const handlePriorityChange = useCallback(
-    async (taskId: number, newPriority: number) => {
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, priority: newPriority } : t)))
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ priority: newPriority }),
-        })
-        if (!res.ok) throw new Error('Failed to update priority')
-        fetchTasks()
-        showToast({
-          message: 'Priority updated',
-          action: { label: 'Undo', onClick: handleUndo },
-        })
-      } catch {
-        fetchTasks()
-      }
-    },
-    [setTasks, fetchTasks, handleUndo],
-  )
-
-  const handleRruleChange = useCallback(
-    async (
-      taskId: number,
-      rrule: string | null,
-      recurrenceMode?: 'from_due' | 'from_completion',
-    ) => {
-      const changes: Record<string, unknown> = { rrule }
-      if (recurrenceMode) changes.recurrence_mode = recurrenceMode
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(changes),
-        })
-        if (!res.ok) throw new Error('Failed to update recurrence')
-        fetchTasks()
-        showToast({
-          message: rrule ? 'Recurrence updated' : 'Recurrence removed',
-          action: { label: 'Undo', onClick: handleUndo },
-        })
-      } catch {
-        fetchTasks()
-      }
-    },
-    [fetchTasks, handleUndo],
-  )
-
   // Batched save handler for QuickActionPopover - sends all changes in a single API call
   // This creates one undo entry and shows one toast for all changes made in the panel
   const handleSaveAllChanges = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
-      // Optimistic update for priority (the most visible change)
-      if (changes.priority !== undefined) {
-        setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? { ...t, priority: changes.priority! } : t)),
-        )
-      }
-      // Optimistic update for due_at if present
-      if (changes.due_at !== undefined) {
-        setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? { ...t, due_at: changes.due_at! } : t)),
-        )
+      // Optimistic update — batch all changed fields into a single state update
+      const optimistic: Partial<Task> = {}
+      if (changes.priority !== undefined) optimistic.priority = changes.priority
+      if (changes.due_at !== undefined) optimistic.due_at = changes.due_at
+      if (Object.keys(optimistic).length > 0) {
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...optimistic } : t)))
       }
 
       try {
@@ -308,8 +252,6 @@ function useTaskActions(
     handleUndo,
     handleRedo,
     handleQuickAdd,
-    handlePriorityChange,
-    handleRruleChange,
     handleSaveAllChanges,
   }
 }
@@ -962,7 +904,6 @@ function HomeContent() {
       onTaskFocus={setFocusedTask}
       onQuickActionClose={() => setQuickActionOpen(false)}
       onQuickActionSaveAll={actions.handleSaveAllChanges}
-      onQuickActionDateSave={actions.handleSnooze}
       onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
       onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
       keyboardFocusedId={keyboardFocusedId}
@@ -1081,7 +1022,6 @@ function DashboardView({
   onTaskFocus,
   onQuickActionClose,
   onQuickActionSaveAll,
-  onQuickActionDateSave,
   onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
@@ -1133,7 +1073,6 @@ function DashboardView({
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
   onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
-  onQuickActionDateSave: (taskId: number, until: string) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
   keyboardFocusedId: number | null
@@ -1329,7 +1268,6 @@ function DashboardView({
         open={quickActionOpen}
         onClose={onQuickActionClose}
         onSaveAll={onQuickActionSaveAll}
-        onDateSave={onQuickActionDateSave}
         onNavigateToDetail={onQuickActionNavigate}
       />
 
