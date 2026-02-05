@@ -5,13 +5,18 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
-import type { Task, UndoSnapshot, TaskUpdateInput } from '@/types'
+import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
-import { computeMarkDone, executeMarkDone, collectFieldChanges } from './helpers'
+import {
+  computeMarkDone,
+  executeMarkDone,
+  collectFieldChanges,
+  type FieldChangesInput,
+} from './helpers'
 
 export interface BulkDoneOptions {
   userId: number
@@ -263,11 +268,14 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   })
 }
 
+/** Type alias for bulk edit changes — same as FieldChangesInput (TaskUpdateInput + label operations) */
+export type BulkEditChanges = FieldChangesInput
+
 export interface BulkEditOptions {
   userId: number
   userTimezone: string
   taskIds: number[]
-  changes: TaskUpdateInput
+  changes: BulkEditChanges
 }
 
 export interface BulkEditResult {

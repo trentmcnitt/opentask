@@ -9,6 +9,12 @@ import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 
+/** Extended input type that supports additive/subtractive label operations */
+export type FieldChangesInput = TaskUpdateInput & {
+  labels_add?: string[]
+  labels_remove?: string[]
+}
+
 export interface FieldChangeData {
   setClauses: string[]
   values: unknown[]
@@ -20,7 +26,7 @@ export interface FieldChangeData {
 
 export interface CollectFieldChangesOptions {
   task: Task
-  input: TaskUpdateInput
+  input: FieldChangesInput
   userId: number
   userTimezone: string
   /** Current date for overdue detection. Defaults to new Date() */
@@ -93,7 +99,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 function collectBasicFields(
   data: FieldChangeData,
   task: Task,
-  input: TaskUpdateInput,
+  input: FieldChangesInput,
   userId: number,
   skipProjectValidation: boolean,
 ): void {
@@ -130,6 +136,30 @@ function collectBasicFields(
       data.beforeState.labels = task.labels
       data.afterState.labels = input.labels
     }
+  } else if (input.labels_add !== undefined || input.labels_remove !== undefined) {
+    // Additive/subtractive label operations (used by bulk edit)
+    let newLabelsArray = [...task.labels]
+    if (input.labels_add) {
+      for (const label of input.labels_add) {
+        if (!newLabelsArray.some((l) => l.toLowerCase() === label.toLowerCase())) {
+          newLabelsArray.push(label)
+        }
+      }
+    }
+    if (input.labels_remove) {
+      const removeSet = new Set(input.labels_remove.map((l) => l.toLowerCase()))
+      newLabelsArray = newLabelsArray.filter((l) => !removeSet.has(l.toLowerCase()))
+    }
+    const labelsChanged =
+      newLabelsArray.length !== task.labels.length ||
+      !newLabelsArray.every((l, i) => task.labels[i] === l)
+    if (labelsChanged) {
+      data.setClauses.push('labels = ?')
+      data.values.push(JSON.stringify(newLabelsArray))
+      data.fieldsChanged.push('labels')
+      data.beforeState.labels = task.labels
+      data.afterState.labels = newLabelsArray
+    }
   }
 
   if (input.recurrence_mode !== undefined && input.recurrence_mode !== task.recurrence_mode) {
@@ -149,7 +179,7 @@ function collectBasicFields(
 function collectRruleChanges(
   data: FieldChangeData,
   task: Task,
-  input: TaskUpdateInput,
+  input: FieldChangesInput,
   userTimezone: string,
   now: Date,
 ): boolean {
@@ -246,7 +276,7 @@ function collectRruleChanges(
 function collectDueAtChanges(
   data: FieldChangeData,
   task: Task,
-  input: TaskUpdateInput,
+  input: FieldChangesInput,
   rruleChanged: boolean,
 ): void {
   // If rrule changed, due_at was handled there (if auto-computed)

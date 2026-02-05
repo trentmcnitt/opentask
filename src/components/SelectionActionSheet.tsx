@@ -33,17 +33,14 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { IconButton } from '@/components/ui/icon-button'
 import { useTimezone } from '@/hooks/useTimezone'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
-import { PRIORITY_OPTIONS } from '@/lib/priority'
-import { cn } from '@/lib/utils'
-import type { Task } from '@/types'
+import { computeCommonLabels } from '@/lib/bulk-utils'
+import type { Task, Project } from '@/types'
 
 interface SelectionActionSheetProps {
   selectedCount: number
@@ -66,6 +63,14 @@ interface SelectionActionSheetProps {
     rrule: string | null,
     recurrenceMode?: 'from_due' | 'from_completion',
   ) => void
+  /** Available projects for project picker (enables inline project selection) */
+  projects?: Project[]
+  /** Called when labels are added (bulk add) */
+  onLabelsAdd?: (labels: string[]) => void
+  /** Called when labels are removed (bulk remove) */
+  onLabelsRemove?: (labels: string[]) => void
+  /** Called when project is changed via inline picker */
+  onProjectChange?: (projectId: number) => void
 }
 
 export function SelectionActionSheet({
@@ -80,6 +85,10 @@ export function SelectionActionSheet({
   onClear,
   onNavigateToDetail,
   onRecurrenceChange,
+  projects,
+  onLabelsAdd,
+  onLabelsRemove,
+  onProjectChange,
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -89,6 +98,12 @@ export function SelectionActionSheet({
   const [pendingRecurrenceMode, setPendingRecurrenceMode] = useState<
     'from_due' | 'from_completion' | null
   >(null)
+
+  // Pending state for priority, labels, project (staged until Save)
+  const [pendingPriority, setPendingPriority] = useState<number | null>(null)
+  const [pendingLabelsAdd, setPendingLabelsAdd] = useState<string[]>([])
+  const [pendingLabelsRemove, setPendingLabelsRemove] = useState<string[]>([])
+  const [pendingProject, setPendingProject] = useState<number | null>(null)
 
   // Track pending date change
   const pendingDateRef = useRef<
@@ -116,13 +131,21 @@ export function SelectionActionSheet({
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  const openSheet = useCallback(() => {
+  const clearPendingState = useCallback(() => {
     pendingDateRef.current = null
     setPendingRrule(undefined)
     setPendingRecurrenceMode(null)
+    setPendingPriority(null)
+    setPendingLabelsAdd([])
+    setPendingLabelsRemove([])
+    setPendingProject(null)
     setShowRecurrencePicker(false)
-    setSheetOpen(true)
   }, [])
+
+  const openSheet = useCallback(() => {
+    clearPendingState()
+    setSheetOpen(true)
+  }, [clearPendingState])
 
   // Track date changes but don't apply immediately
   const handleDateChange = useCallback((isoUtc: string) => {
@@ -146,30 +169,52 @@ export function SelectionActionSheet({
     if (pendingRrule !== undefined && onRecurrenceChange) {
       onRecurrenceChange(pendingRrule, pendingRecurrenceMode ?? undefined)
     }
+    // Apply pending priority change
+    if (pendingPriority !== null) {
+      onPriorityChange(pendingPriority)
+    }
+    // Apply pending label changes (add/remove)
+    if (pendingLabelsAdd.length > 0 && onLabelsAdd) {
+      onLabelsAdd(pendingLabelsAdd)
+    }
+    if (pendingLabelsRemove.length > 0 && onLabelsRemove) {
+      onLabelsRemove(pendingLabelsRemove)
+    }
+    // Apply pending project change
+    if (pendingProject !== null && onProjectChange) {
+      onProjectChange(pendingProject)
+    }
     setSheetOpen(false)
     onClear() // Exit selection mode
-  }, [onSnooze, onSnoozeRelative, onClear, pendingRrule, pendingRecurrenceMode, onRecurrenceChange])
+  }, [
+    onSnooze,
+    onSnoozeRelative,
+    onClear,
+    pendingRrule,
+    pendingRecurrenceMode,
+    onRecurrenceChange,
+    pendingPriority,
+    onPriorityChange,
+    pendingLabelsAdd,
+    onLabelsAdd,
+    pendingLabelsRemove,
+    onLabelsRemove,
+    pendingProject,
+    onProjectChange,
+  ])
 
   // Cancel button: discard changes, close, keep selection
   const handleCancel = useCallback(() => {
-    pendingDateRef.current = null
-    setPendingRrule(undefined)
-    setPendingRecurrenceMode(null)
-    setShowRecurrencePicker(false)
+    clearPendingState()
     setSheetOpen(false)
     // Keep selection mode active (don't call onClear)
-  }, [])
+  }, [clearPendingState])
 
   const handleDelete = useCallback(() => {
     onDelete()
     setSheetOpen(false)
     onClear() // Exit selection mode
   }, [onDelete, onClear])
-
-  // Done button on floating bar (outside sheet)
-  const handleFloatingDone = useCallback(() => {
-    onDone()
-  }, [onDone])
 
   const handleMoveToProject = useCallback(() => {
     onMoveToProject?.()
@@ -178,15 +223,13 @@ export function SelectionActionSheet({
   }, [onMoveToProject, onClear])
 
   // On dismiss without explicit save/cancel: keep selection, don't apply changes
-  const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) {
-      pendingDateRef.current = null
-      setPendingRrule(undefined)
-      setPendingRecurrenceMode(null)
-      setShowRecurrencePicker(false)
-    }
-    setSheetOpen(open)
-  }, [])
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) clearPendingState()
+      setSheetOpen(open)
+    },
+    [clearPendingState],
+  )
 
   // Toggle recurrence picker
   const handleRecurrenceToggle = useCallback(() => {
@@ -201,6 +244,59 @@ export function SelectionActionSheet({
     },
     [],
   )
+
+  // Handle priority change from QuickActionPanel (stages change until Save)
+  const handlePriorityChange = useCallback((priority: number) => {
+    setPendingPriority(priority)
+  }, [])
+
+  // Compute bulk common labels (intersection of labels across all selected tasks)
+  // This is the baseline for computing add/remove operations
+  const bulkCommonLabels = useMemo(() => computeCommonLabels(selectedTasks), [selectedTasks])
+
+  /**
+   * Label diffing architecture for bulk operations:
+   *
+   * QuickActionPanel displays `bulkCommonLabels` (labels shared by ALL selected tasks).
+   * When the user adds/removes labels in the UI, QuickActionPanel passes the complete
+   * new label set to this handler. We then compute the diff:
+   *
+   *   - toAdd: labels in newLabels but not in bulkCommonLabels
+   *   - toRemove: labels in bulkCommonLabels but not in newLabels
+   *
+   * The bulk edit API uses ADDITIVE mode (labels_add/labels_remove), which preserves
+   * each task's existing labels while applying the add/remove operations. This means:
+   *
+   *   - Adding "Work" adds it to all selected tasks (even if some already have it)
+   *   - Removing "Work" removes it from all selected tasks (preserving other labels)
+   *
+   * Example: Tasks A has ["Work", "Personal"], Task B has ["Work"]
+   *   - bulkCommonLabels = ["Work"]
+   *   - User adds "Urgent": toAdd=["Urgent"], toRemove=[]
+   *     -> A becomes ["Work", "Personal", "Urgent"], B becomes ["Work", "Urgent"]
+   *   - User removes "Work": toAdd=[], toRemove=["Work"]
+   *     -> A becomes ["Personal"], B becomes []
+   *
+   * Note: Labels not in the intersection cannot be removed via this UI (they only
+   * appear on some tasks, not all). This is intentional - it prevents accidentally
+   * removing labels the user can't see in the bulk view.
+   */
+  const handleLabelsChange = useCallback(
+    (newLabels: string[]) => {
+      // Labels to add: in newLabels but not in bulkCommonLabels
+      const toAdd = newLabels.filter((l) => !bulkCommonLabels.includes(l))
+      // Labels to remove: in bulkCommonLabels but not in newLabels
+      const toRemove = bulkCommonLabels.filter((l) => !newLabels.includes(l))
+      setPendingLabelsAdd(toAdd)
+      setPendingLabelsRemove(toRemove)
+    },
+    [bulkCommonLabels],
+  )
+
+  // Handle project change from QuickActionPanel (stages change until Save)
+  const handleProjectChange = useCallback((projectId: number) => {
+    setPendingProject(projectId)
+  }, [])
 
   // Navigate to task detail (single task only)
   const handleNavigateToDetail = useCallback(() => {
@@ -239,7 +335,7 @@ export function SelectionActionSheet({
         onClick={handleDelete}
         destructive
       />
-      {/* More menu with priority, move to project, task details */}
+      {/* More menu with move to project, task details */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -253,20 +349,6 @@ export function SelectionActionSheet({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {PRIORITY_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => onPriorityChange(opt.value)}
-                  className={opt.color}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
           {onMoveToProject && (
             <DropdownMenuItem onClick={handleMoveToProject}>
               <FolderInput className="mr-2 size-4" />
@@ -297,6 +379,10 @@ export function SelectionActionSheet({
         onSave={handleSave}
         onCancel={handleCancel}
         recurrenceSummary={recurrenceSummary}
+        onPriorityChange={handlePriorityChange}
+        onLabelsChange={handleLabelsChange}
+        projects={projects}
+        onProjectChange={handleProjectChange}
       />
       {/* Expandable recurrence picker */}
       {showRecurrencePicker && onRecurrenceChange && (
@@ -326,7 +412,7 @@ export function SelectionActionSheet({
           <Button
             size="sm"
             variant="secondary"
-            onClick={handleFloatingDone}
+            onClick={onDone}
             className="bg-green-600 text-white hover:bg-green-700"
           >
             <Check className="mr-1 size-4" />
@@ -388,40 +474,5 @@ export function SelectionActionSheet({
         </Dialog>
       )}
     </>
-  )
-}
-
-function IconButton({
-  icon,
-  label,
-  onClick,
-  disabled = false,
-  destructive = false,
-  active = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick?: () => void
-  disabled?: boolean
-  destructive?: boolean
-  active?: boolean
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={cn(
-        'size-8',
-        disabled && 'text-muted-foreground/40 cursor-not-allowed',
-        destructive && 'hover:text-destructive',
-        active && 'bg-accent text-accent-foreground',
-      )}
-      onClick={disabled ? undefined : onClick}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-    >
-      {icon}
-    </Button>
   )
 }

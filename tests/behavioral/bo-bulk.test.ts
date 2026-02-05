@@ -8,7 +8,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
-import { bulkDone, bulkSnooze, bulkEdit } from '@/core/tasks/bulk'
+import { bulkDone, bulkSnooze, bulkEdit, type BulkEditChanges } from '@/core/tasks/bulk'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { executeUndo, canUndo, getUndoHistory } from '@/core/undo'
 import { DateTime } from 'luxon'
@@ -877,5 +877,217 @@ describe('Bulk Edit Snooze & Recurrence', () => {
     expect(updatedTask1.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
     expect(updatedTask1.anchor_time).toBe('10:00')
     expect(updatedTask1.anchor_dow).toBe(0) // Monday
+  })
+})
+
+/**
+ * Bulk Edit Labels — Additive/Subtractive Tests (BL-001 through BL-007)
+ *
+ * Tests labels_add and labels_remove in bulkEdit, verifying case-insensitive
+ * dedup, proper undo snapshots, and interaction with full labels replacement.
+ */
+describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * BL-001: labels_add adds labels to tasks
+   */
+  test('BL-001: labels_add adds labels to multiple tasks', () => {
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task 1', labels: ['Work'] },
+    })
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task 2', labels: ['Personal'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task1.id, task2.id],
+      changes: { labels_add: ['Urgent'] } as BulkEditChanges,
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    const updated1 = getTaskById(task1.id)!
+    const updated2 = getTaskById(task2.id)!
+
+    // Each task retains its existing labels and gets the new one
+    expect(updated1.labels).toEqual(['Work', 'Urgent'])
+    expect(updated2.labels).toEqual(['Personal', 'Urgent'])
+  })
+
+  /**
+   * BL-002: labels_add is case-insensitive (no duplicates)
+   */
+  test('BL-002: labels_add skips labels already present (case-insensitive)', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task', labels: ['Work', 'Personal'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: { labels_add: ['work', 'New'] } as BulkEditChanges,
+    })
+
+    // Only 'New' should be added since 'work' matches 'Work' case-insensitively
+    expect(result.tasksAffected).toBe(1)
+
+    const updated = getTaskById(task.id)!
+    expect(updated.labels).toEqual(['Work', 'Personal', 'New'])
+  })
+
+  /**
+   * BL-003: labels_remove removes matching labels (case-insensitive)
+   */
+  test('BL-003: labels_remove removes labels case-insensitively', () => {
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task 1', labels: ['Work', 'Personal', 'Urgent'] },
+    })
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task 2', labels: ['work', 'Other'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task1.id, task2.id],
+      changes: { labels_remove: ['Work'] } as BulkEditChanges,
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    const updated1 = getTaskById(task1.id)!
+    const updated2 = getTaskById(task2.id)!
+
+    expect(updated1.labels).toEqual(['Personal', 'Urgent'])
+    expect(updated2.labels).toEqual(['Other']) // 'work' removed case-insensitively
+  })
+
+  /**
+   * BL-004: labels_add and labels_remove combined
+   */
+  test('BL-004: labels_add and labels_remove combined in single operation', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task', labels: ['Work', 'Low'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: { labels_add: ['Urgent'], labels_remove: ['Low'] } as BulkEditChanges,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+
+    const updated = getTaskById(task.id)!
+    expect(updated.labels).toEqual(['Work', 'Urgent'])
+  })
+
+  /**
+   * BL-005: Full labels replacement takes precedence over labels_add/labels_remove
+   *
+   * When `labels` is provided alongside labels_add/labels_remove,
+   * the full replacement wins (labels_add/labels_remove are in an else-if branch).
+   */
+  test('BL-005: Full labels replacement takes precedence', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task', labels: ['Work', 'Personal'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: {
+        labels: ['New'],
+        labels_add: ['Extra'],
+      } as BulkEditChanges,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+
+    const updated = getTaskById(task.id)!
+    // Full replacement wins - labels_add ignored
+    expect(updated.labels).toEqual(['New'])
+  })
+
+  /**
+   * BL-006: Proper undo snapshots for labels_add
+   */
+  test('BL-006: Undo restores original labels after labels_add', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task', labels: ['Work'] },
+    })
+
+    bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: { labels_add: ['Urgent'] } as BulkEditChanges,
+    })
+
+    // Verify label was added
+    expect(getTaskById(task.id)!.labels).toEqual(['Work', 'Urgent'])
+
+    // Undo
+    expect(canUndo(TEST_USER_ID)).toBe(true)
+    const undoResult = executeUndo(TEST_USER_ID)
+    expect(undoResult).not.toBeNull()
+    expect(undoResult!.tasks_affected).toBe(1)
+
+    // Labels should be restored
+    expect(getTaskById(task.id)!.labels).toEqual(['Work'])
+  })
+
+  /**
+   * BL-007: No-op when adding labels already present on all tasks
+   */
+  test('BL-007: No-op when all labels already present', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Task', labels: ['Work', 'Personal'] },
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: { labels_add: ['Work', 'Personal'] } as BulkEditChanges,
+    })
+
+    // No actual changes - tasksAffected should be 0
+    expect(result.tasksAffected).toBe(0)
+
+    // Labels unchanged
+    expect(getTaskById(task.id)!.labels).toEqual(['Work', 'Personal'])
   })
 })

@@ -11,4 +11,8 @@ export { executeMarkDone } from './execute-mark-done'
 export type { ExecuteMarkDoneResult } from './execute-mark-done'
 
 export { collectFieldChanges } from './collect-field-changes'
-export type { FieldChangeData, CollectFieldChangesOptions } from './collect-field-changes'
+export type {
+  FieldChangeData,
+  FieldChangesInput,
+  CollectFieldChangesOptions,
+} from './collect-field-changes'

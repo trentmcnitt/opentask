@@ -424,7 +424,7 @@ function useBulkActions(
 }
 
 function HomeContent() {
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const router = useRouter()
   const selection = useSelection()
   const timezone = useTimezone()
@@ -917,7 +917,6 @@ function HomeContent() {
 
   return (
     <DashboardView
-      session={session}
       tasks={displayTasks}
       allTasks={baseTasks}
       projects={projects}
@@ -1040,7 +1039,6 @@ function FilterBar({
 }
 
 function DashboardView({
-  session,
   tasks,
   allTasks,
   projects,
@@ -1092,7 +1090,6 @@ function DashboardView({
   onShortcutsDialogChange,
   onShortcutsDialogCloseAutoFocus,
 }: {
-  session: ReturnType<typeof useSession>['data']
   tasks: Task[]
   allTasks: Task[]
   projects: Project[]
@@ -1251,6 +1248,25 @@ function DashboardView({
           onBulkAction('/api/tasks/bulk/edit', {
             ids: [...selection.selectedIds],
             changes,
+          })
+        }}
+        projects={projects}
+        onLabelsAdd={(labels) => {
+          onBulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { labels_add: labels },
+          })
+        }}
+        onLabelsRemove={(labels) => {
+          onBulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { labels_remove: labels },
+          })
+        }}
+        onProjectChange={(projectId) => {
+          onBulkAction('/api/tasks/bulk/edit', {
+            ids: [...selection.selectedIds],
+            changes: { project_id: projectId },
           })
         }}
       />

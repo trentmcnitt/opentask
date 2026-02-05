@@ -115,10 +115,18 @@ export type BulkSnoozeInput = z.infer<typeof bulkSnoozeSchema>
 
 /**
  * Bulk edit input schema
+ *
+ * For labels, supports three modes:
+ * - labels: Replaces labels entirely (existing behavior)
+ * - labels_add: Adds labels to each task's existing labels
+ * - labels_remove: Removes labels from each task's existing labels
  */
 export const bulkEditSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
-  changes: taskUpdateSchema,
+  changes: taskUpdateSchema.extend({
+    labels_add: labels.optional(),
+    labels_remove: labels.optional(),
+  }),
 })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>

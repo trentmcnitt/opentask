@@ -94,10 +94,27 @@ function useRRuleBuilder(
       case 'WEEKLY':
         base = interval === 1 ? 'Every week' : `Every ${interval} weeks`
         if (selectedDays.length > 0) {
-          const dayNames = selectedDays.map(
-            (d) => DAYS_OF_WEEK.find((day) => day.id === d)?.full || d,
-          )
-          base += ` on ${dayNames.join(', ')}`
+          // Check for weekdays (Mon-Fri) and weekends (Sat-Sun) shortcuts
+          const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
+          const weekend = ['SA', 'SU']
+          const isWeekdays =
+            selectedDays.length === 5 &&
+            weekdays.every((d) => selectedDays.includes(d)) &&
+            !selectedDays.includes('SA') &&
+            !selectedDays.includes('SU')
+          const isWeekends =
+            selectedDays.length === 2 && weekend.every((d) => selectedDays.includes(d))
+
+          if (isWeekdays) {
+            base = 'Weekdays'
+          } else if (isWeekends) {
+            base = 'Weekends'
+          } else {
+            const dayNames = selectedDays.map(
+              (d) => DAYS_OF_WEEK.find((day) => day.id === d)?.full || d,
+            )
+            base += ` on ${dayNames.join(', ')}`
+          }
         }
         break
       case 'MONTHLY':
@@ -223,7 +240,7 @@ function TimePicker({
     <div className="flex items-center gap-2">
       <span className="text-muted-foreground text-sm">At</span>
       <Select value={displayHour.toString()} onValueChange={(v) => handleHourChange(parseInt(v))}>
-        <SelectTrigger className="w-16">
+        <SelectTrigger className="w-[72px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -236,7 +253,7 @@ function TimePicker({
       </Select>
       <span className="text-muted-foreground">:</span>
       <Select value={minute.toString()} onValueChange={(v) => onMinuteChange(parseInt(v))}>
-        <SelectTrigger className="w-16">
+        <SelectTrigger className="w-[72px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -251,7 +268,7 @@ function TimePicker({
         value={isPM ? 'PM' : 'AM'}
         onValueChange={(v) => handlePeriodChange(v as 'AM' | 'PM')}
       >
-        <SelectTrigger className="w-16">
+        <SelectTrigger className="w-[72px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

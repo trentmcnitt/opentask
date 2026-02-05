@@ -31,6 +31,7 @@ export type {
   BulkDoneResult,
   BulkSnoozeOptions,
   BulkSnoozeResult,
+  BulkEditChanges,
   BulkEditOptions,
   BulkEditResult,
   BulkDeleteOptions,

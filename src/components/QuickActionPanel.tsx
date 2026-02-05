@@ -52,6 +52,8 @@ import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatDateTime } from '@/lib/format-date'
+import { IconButton } from '@/components/ui/icon-button'
+import { computeCommonLabels, computeCommonPriority } from '@/lib/bulk-utils'
 import type { Task, Project } from '@/types'
 
 /**
@@ -242,12 +244,24 @@ export function QuickActionPanel({
     }
   }, [timezone, tick])
 
+  // Bulk common value computations - intersection of values across selected tasks
+  const bulkCommonLabels = useMemo(
+    () => (isBulkMode ? computeCommonLabels(selectedTasks ?? []) : []),
+    [isBulkMode, selectedTasks],
+  )
+  const bulkCommonPriority = useMemo(
+    () => (isBulkMode ? computeCommonPriority(selectedTasks ?? []) : null),
+    [isBulkMode, selectedTasks],
+  )
+
   // Computed display values - show pending changes or fall back to current task values
+  // In bulk mode, fall through to bulk common values when no pending change and no effectiveTask
   // useMemo for displayLabels to avoid triggering re-renders in useCallback dependencies
-  const displayPriority = pendingPriority ?? effectiveTask?.priority ?? 0
+  const displayPriority =
+    pendingPriority ?? effectiveTask?.priority ?? (isBulkMode ? (bulkCommonPriority ?? 0) : 0)
   const displayLabels = useMemo(
-    () => pendingLabels ?? effectiveTask?.labels ?? [],
-    [pendingLabels, effectiveTask?.labels],
+    () => pendingLabels ?? effectiveTask?.labels ?? (isBulkMode ? bulkCommonLabels : []),
+    [pendingLabels, effectiveTask?.labels, isBulkMode, bulkCommonLabels],
   )
   const displayRrule = pendingRrule !== undefined ? pendingRrule : effectiveTask?.rrule
   const displayProject = pendingProject ?? effectiveTask?.project_id
@@ -690,7 +704,12 @@ export function QuickActionPanel({
   const showQuickLinks = !isSelectionSheetMode
 
   return (
-    <div className={cn('space-y-3', isDirty && 'border-l-4 border-blue-500 pl-3')}>
+    <div
+      className={cn(
+        'space-y-3 border-l-4 pl-3',
+        isDirty ? 'border-blue-500' : 'border-transparent',
+      )}
+    >
       {/* Header row */}
       <div className={cn('flex justify-between gap-2', title ? 'items-start' : 'items-center')}>
         <div className="min-w-0 flex-1">
@@ -780,8 +799,8 @@ export function QuickActionPanel({
           {deltaDisplay && (
             <p className="mt-0.5 text-xs font-medium text-blue-500">{deltaDisplay}</p>
           )}
-          {/* Priority & Labels row - always show for single task */}
-          {effectiveTask && (
+          {/* Priority & Labels row - show for single task and bulk mode */}
+          {(effectiveTask || isBulkMode) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {/* Priority picker (clickable) - plain text styling for alignment */}
               {/* Show picker when onPriorityChange OR onSaveAll is provided */}
@@ -1193,40 +1212,5 @@ function GridButton({
     >
       {label}
     </button>
-  )
-}
-
-function IconButton({
-  icon,
-  label,
-  onClick,
-  disabled = false,
-  destructive = false,
-  active = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick?: () => void
-  disabled?: boolean
-  destructive?: boolean
-  active?: boolean
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={cn(
-        'size-8',
-        disabled && 'text-muted-foreground/40 cursor-not-allowed',
-        destructive && 'hover:text-destructive',
-        active && 'bg-accent text-accent-foreground',
-      )}
-      onClick={disabled ? undefined : onClick}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-    >
-      {icon}
-    </Button>
   )
 }
