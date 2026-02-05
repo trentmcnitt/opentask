@@ -6,15 +6,7 @@
  */
 
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-
-const FIELD_LABELS: Record<string, string> = {
-  title: 'title',
-  priority: 'priority',
-  labels: 'labels',
-  rrule: 'recurrence',
-  project_id: 'project',
-  due_at: 'due date',
-}
+import { FIELD_LABELS } from '@/lib/field-labels'
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -38,7 +30,9 @@ export function formatChangesToast(changes: QuickActionPanelChanges): string {
     if (field === 'rrule') {
       return changes.rrule ? 'Recurrence updated' : 'Recurrence removed'
     }
-    if (field === 'due_at') return 'Task snoozed'
+    if (field === 'due_at') {
+      return changes.due_at === null ? 'Due date cleared' : 'Due date updated'
+    }
     return `${capitalize(FIELD_LABELS[field] || field)} updated`
   }
 

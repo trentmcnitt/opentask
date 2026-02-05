@@ -10,6 +10,7 @@ import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
 
@@ -64,7 +65,18 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       data.afterState as Partial<Task> & { id: number },
       data.fieldsChanged,
     )
-    logAction(userId, 'edit', `Edited "${task.title}"`, data.fieldsChanged, [snapshot])
+    logAction(
+      userId,
+      'edit',
+      formatEditDescription(task.title, data.fieldsChanged, {
+        isSnooze: data.isSnoozeScenario,
+        beforeState: data.beforeState,
+        afterState: data.afterState,
+        userTimezone,
+      }),
+      data.fieldsChanged,
+      [snapshot],
+    )
 
     // Increment snooze stats if this was a snooze operation
     if (data.isSnoozeScenario) {

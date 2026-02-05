@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
 import { useGroupSort } from '@/hooks/useGroupSort'
@@ -11,8 +10,7 @@ import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
-import { LabelFilterBar } from '@/components/LabelFilterBar'
-import { PriorityFilterBar } from '@/components/PriorityFilterBar'
+import { FilterBar } from '@/components/FilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
@@ -21,10 +19,10 @@ import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
 import { showToast } from '@/lib/toast'
-import { formatChangesToast } from '@/lib/format-toast'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-import { saveTaskChanges } from '@/lib/save-task-changes'
+import { useTaskActions } from '@/hooks/useTaskActions'
+import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 
 export default function Home() {
   return (
@@ -100,102 +98,22 @@ function useFetchData(router: ReturnType<typeof useRouter>) {
   }
 }
 
-function useTaskActions(
+/**
+ * Dashboard-specific wrapper around the shared useTaskActions hook.
+ * Adds handleQuickAdd which is dashboard-only (not needed by project or task detail pages).
+ */
+function useDashboardActions(
   fetchTasks: () => Promise<void>,
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
-) {
-  // Use refs to break circular dependency between handleUndo and handleRedo
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
-  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
-
-  const handleUndo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/undo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to undo' })
-        return
-      }
-      const data = await res.json()
-      fetchTasks()
-      showToast({
-        message: `Undid: ${data.data.description}`,
-        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Undo failed' })
-    }
-  }, [fetchTasks])
-
-  const handleRedo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/redo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to redo' })
-        return
-      }
-      const data = await res.json()
-      fetchTasks()
-      showToast({
-        message: `Redid: ${data.data.description}`,
-        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Redo failed' })
-    }
-  }, [fetchTasks])
-
-  // Keep refs up to date
-  handleUndoRef.current = handleUndo
-  handleRedoRef.current = handleRedo
-
-  const handleDone = useCallback(
-    async (taskId: number) => {
-      const task = tasks.find((t) => t.id === taskId)
-      if (!task) return
-
-      if (!task.rrule) {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId))
-      }
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
-        if (!res.ok) throw new Error('Failed to mark done')
-        const data = await res.json()
-        if (data.data?.task?.rrule) {
-          setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
-        }
-        showToast({
-          message: task.rrule ? 'Task advanced' : 'Task completed',
-          action: { label: 'Undo', onClick: handleUndo },
-        })
-      } catch {
-        fetchTasks()
-      }
-    },
-    [tasks, setTasks, fetchTasks, handleUndo],
-  )
-
-  const handleSnooze = useCallback(
-    async (taskId: number, until: string) => {
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}/snooze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ until }),
-        })
-        if (!res.ok) throw new Error('Failed to snooze')
-        fetchTasks()
-        showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
-      } catch {
-        fetchTasks()
-      }
-    },
-    [setTasks, fetchTasks, handleUndo],
-  )
+): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<void> } {
+  const actions = useTaskActions({
+    mode: 'list',
+    onRefresh: fetchTasks,
+    tasks,
+    setTasks,
+  }) as ListTaskActionsReturn
 
   const handleQuickAdd = useCallback(
     async (title: string) => {
@@ -219,41 +137,7 @@ function useTaskActions(
     [fetchTasks, onViewTask],
   )
 
-  // Batched save handler for QuickActionPopover - sends all changes in a single API call
-  // This creates one undo entry and shows one toast for all changes made in the panel
-  const handleSaveAllChanges = useCallback(
-    async (taskId: number, changes: QuickActionPanelChanges) => {
-      // Optimistic update — batch all changed fields into a single state update
-      const optimistic: Partial<Task> = {}
-      if (changes.priority !== undefined) optimistic.priority = changes.priority
-      if (changes.due_at !== undefined) optimistic.due_at = changes.due_at
-      if (Object.keys(optimistic).length > 0) {
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...optimistic } : t)))
-      }
-
-      try {
-        await saveTaskChanges(taskId, changes)
-        fetchTasks()
-        showToast({
-          message: formatChangesToast(changes),
-          action: { label: 'Undo', onClick: handleUndo },
-        })
-      } catch {
-        // Revert optimistic updates on failure
-        fetchTasks()
-      }
-    },
-    [setTasks, fetchTasks, handleUndo],
-  )
-
-  return {
-    handleDone,
-    handleSnooze,
-    handleUndo,
-    handleRedo,
-    handleQuickAdd,
-    handleSaveAllChanges,
-  }
+  return { ...actions, handleQuickAdd }
 }
 
 function useBulkActions(
@@ -387,7 +271,7 @@ function HomeContent() {
     setFocusedTask(task)
     setQuickActionOpen(true)
   }, [])
-  const actions = useTaskActions(fetchTasks, tasks, setTasks, handleViewTask)
+  const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
 
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
@@ -923,69 +807,6 @@ function HomeContent() {
   )
 }
 
-/**
- * Combined filter bar for priority and label filters.
- * Priority badges (square) appear first, then a gray separator, then label badges (pill).
- * The separator only appears if both filter types have content.
- */
-function FilterBar({
-  allTasks,
-  selectedPriorities,
-  selectedLabels,
-  onTogglePriority,
-  onToggleLabel,
-  onClearAll,
-}: {
-  allTasks: Task[]
-  selectedPriorities: number[]
-  selectedLabels: string[]
-  onTogglePriority: (priority: number) => void
-  onToggleLabel: (label: string) => void
-  onClearAll: () => void
-}) {
-  // Check if we have any priorities or labels to show
-  const hasPriorities = allTasks.some((t) => t.priority !== undefined)
-  const hasLabels = allTasks.some((t) => t.labels.length > 0)
-
-  if (!hasPriorities && !hasLabels) return null
-
-  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
-
-  return (
-    <div className="relative mb-4 flex items-center">
-      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
-        <PriorityFilterBar
-          tasks={allTasks}
-          selectedPriorities={selectedPriorities}
-          onTogglePriority={onTogglePriority}
-        />
-
-        {/* Gray vertical separator between priority and label filters */}
-        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-
-        <LabelFilterBar
-          tasks={allTasks}
-          selectedLabels={selectedLabels}
-          onToggleLabel={onToggleLabel}
-        />
-      </div>
-
-      {/* Clear button - sticky right end */}
-      {hasSelection && (
-        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
-          <button
-            onClick={onClearAll}
-            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-            aria-label="Clear all filters"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function DashboardView({
   tasks,
   allTasks,
@@ -1051,7 +872,7 @@ function DashboardView({
   selectedTasks: Task[]
   snoozeTask: Task | null
   showProjectPicker: boolean
-  actions: ReturnType<typeof useTaskActions>
+  actions: ReturnType<typeof useDashboardActions>
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
   onClearLabels: () => void
@@ -1115,7 +936,7 @@ function DashboardView({
         />
 
         <FilterBar
-          allTasks={allTasks}
+          tasks={allTasks}
           selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
           onTogglePriority={onTogglePriority}

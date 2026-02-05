@@ -25,10 +25,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Note, Project } from '@/types'
-import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
-import { formatChangesToast } from '@/lib/format-toast'
+import { useTaskActions } from '@/hooks/useTaskActions'
+import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 
 function useNoteActions(taskId: string) {
   const [notes, setNotes] = useState<Note[]>([])
@@ -80,7 +80,7 @@ export default function TaskDetailPage() {
   // Track dirty state from QuickActionPanel for navigation protection
   const [isDirty, setIsDirty] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
-  const saveRef = useRef<(() => void) | null>(null)
+  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
 
   const handleDirtyChange = useCallback((dirty: boolean) => {
     setIsDirty(dirty)
@@ -99,30 +99,27 @@ export default function TaskDetailPage() {
     router.push('/')
   }, [router])
 
-  const handleSaveAndLeave = useCallback(() => {
-    saveRef.current?.()
-    setShowLeaveConfirm(false)
-    showToast({
-      message: 'Changes saved',
-      action: {
-        label: 'Undo',
-        onClick: async () => {
-          try {
-            const res = await fetch('/api/undo', { method: 'POST' })
-            if (!res.ok) {
-              showToast({ message: 'Undo failed' })
-              return
-            }
-            const data = await res.json()
-            showToast({ message: `Undid: ${data.data.description}` })
-            // Trigger a page refresh to show the undone state
+  // Use a ref to access the shared undo handler in the save-and-leave callback,
+  // since actions is created after this callback in the hook order.
+  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+
+  const handleSaveAndLeave = useCallback(async () => {
+    try {
+      await saveRef.current?.()
+      showToast({
+        message: 'Changes saved',
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await handleUndoRef.current?.()
             window.location.reload()
-          } catch {
-            showToast({ message: 'Undo failed' })
-          }
+          },
         },
-      },
-    })
+      })
+    } catch {
+      showToast({ message: 'Save failed' })
+    }
+    setShowLeaveConfirm(false)
     router.push('/')
   }, [router])
 
@@ -164,72 +161,6 @@ export default function TaskDetailPage() {
     }
   }, [taskId, router, setNotes])
 
-  // Undo/Redo handlers - use refs to break circular dependency
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
-  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
-
-  const handleUndo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/undo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to undo' })
-        return
-      }
-      const data = await res.json()
-      fetchTask()
-      showToast({
-        message: `Undid: ${data.data.description}`,
-        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Undo failed' })
-    }
-  }, [fetchTask])
-
-  const handleRedo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/redo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to redo' })
-        return
-      }
-      const data = await res.json()
-      fetchTask()
-      showToast({
-        message: `Redid: ${data.data.description}`,
-        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Redo failed' })
-    }
-  }, [fetchTask])
-
-  // Keep refs up to date
-  handleUndoRef.current = handleUndo
-  handleRedoRef.current = handleRedo
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const cmdKey = e.metaKey || e.ctrlKey
-      const isInInput =
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target instanceof HTMLElement && e.target.isContentEditable)
-
-      if (cmdKey && e.key.toLowerCase() === 'z' && !isInInput) {
-        e.preventDefault()
-        if (e.shiftKey) {
-          handleRedo()
-        } else {
-          handleUndo()
-        }
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [handleUndo, handleRedo])
-
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
@@ -239,25 +170,19 @@ export default function TaskDetailPage() {
     fetchTask()
   }, [status, router, fetchTask])
 
-  const handleMarkDone = async () => {
-    if (!task) return
+  const actions = useTaskActions({
+    mode: 'single',
+    onRefresh: fetchTask,
+    task,
+    taskId,
+    setTask,
+    onCompletedNavigation: () => router.push('/'),
+  }) as SingleTaskActionsReturn
 
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to mark done')
+  useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
-      const data = await res.json()
-      if (data.data.was_recurring) {
-        // Recurring task: stay on page, show updated due date
-        setTask(data.data.task as Task)
-      } else {
-        // One-off task: go back to dashboard (task is archived)
-        router.push('/')
-      }
-    } catch {
-      fetchTask()
-    }
-  }
+  // Keep handleSaveAndLeave's undo ref in sync with the shared handler
+  handleUndoRef.current = actions.handleUndo
 
   const handleMetaNotesSave = async (value: string | null) => {
     if (!task) return
@@ -277,25 +202,18 @@ export default function TaskDetailPage() {
     }
   }
 
-  /**
-   * Batched save handler: sends all changed fields in a SINGLE PATCH request.
-   * This creates ONE undo entry instead of separate entries for each field change.
-   *
-   * All changes (including due_at) now go through PATCH. The server's updateTask
-   * automatically applies snooze logic when due_at changes without rrule change.
-   */
-  const handleSaveAll = async (changes: QuickActionPanelChanges) => {
-    if (!task || Object.keys(changes).length === 0) return
-
+  const handleDelete = async () => {
+    if (!task) return
     try {
-      const updatedTask = await saveTaskChanges(taskId, changes)
-      setTask(updatedTask)
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
       showToast({
-        message: formatChangesToast(changes),
-        action: { label: 'Undo', onClick: handleUndo },
+        message: 'Task moved to trash',
+        action: { label: 'Undo', onClick: actions.handleUndo },
       })
+      router.push('/')
     } catch {
-      fetchTask()
+      showToast({ message: 'Delete failed' })
     }
   }
 
@@ -349,7 +267,7 @@ export default function TaskDetailPage() {
             {/* Undo button */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleUndo} aria-label="Undo">
+                <Button variant="ghost" size="icon" onClick={actions.handleUndo} aria-label="Undo">
                   <Undo2 className="size-5" />
                 </Button>
               </TooltipTrigger>
@@ -359,7 +277,7 @@ export default function TaskDetailPage() {
             {/* Redo button */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={handleRedo} aria-label="Redo">
+                <Button variant="ghost" size="icon" onClick={actions.handleRedo} aria-label="Redo">
                   <Redo2 className="size-5" />
                 </Button>
               </TooltipTrigger>
@@ -394,11 +312,12 @@ export default function TaskDetailPage() {
             editable
             onAddNote={handleAddNote}
             onDeleteNote={handleDeleteNote}
-            onMarkDone={handleMarkDone}
+            onDelete={handleDelete}
+            onMarkDone={actions.handleDone}
             onDirtyChange={handleDirtyChange}
             onMetaNotesSave={handleMetaNotesSave}
             saveRef={saveRef}
-            onSaveAll={handleSaveAll}
+            onSaveAll={actions.handleSaveAllChanges}
           />
         </main>
 

@@ -93,7 +93,7 @@ export interface QuickActionPanelProps {
   /** "inline" shows Apply button; "popover"/"sheet" show Save/Cancel when dirty */
   mode: 'inline' | 'popover' | 'sheet'
   /** Called with the final date when saving (absolute mode) */
-  onDateChange: (isoUtc: string) => void
+  onDateChange?: (isoUtc: string) => void
   /** Called with delta minutes when saving (relative mode, bulk only) */
   onDateChangeRelative?: (deltaMinutes: number) => void
   /** Called with absolute priority value (0=none, 1=low, 2=medium, 3=high, 4=urgent) */
@@ -136,13 +136,13 @@ export interface QuickActionPanelProps {
   /** Called when dirty state changes (for navigation protection in parent) */
   onDirtyChange?: (isDirty: boolean) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
-  saveRef?: React.MutableRefObject<(() => void) | null>
+  saveRef?: React.MutableRefObject<(() => Promise<void> | void) | null>
   /**
    * Batched save callback - when provided, all changes are collected and sent
    * in a single call instead of individual callbacks. This enables atomic saves
    * with a single undo entry. Falls back to individual callbacks if not provided.
    */
-  onSaveAll?: (changes: QuickActionPanelChanges) => void
+  onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
 }
 
 export function QuickActionPanel({
@@ -332,7 +332,7 @@ export function QuickActionPanel({
     if (isBulkMode) {
       const result = bulkHook.getResult()
       if (result?.type === 'absolute') {
-        onDateChange(result.until)
+        onDateChange?.(result.until)
       } else if (result?.type === 'relative' && onDateChangeRelative) {
         onDateChangeRelative(result.deltaMinutes)
       }
@@ -340,7 +340,7 @@ export function QuickActionPanel({
       // Stage date change for batched save (single task mode with onSaveAll)
       setPendingDueAt(workingDate)
     } else {
-      onDateChange(workingDate)
+      onDateChange?.(workingDate)
     }
   }, [isBulkMode, bulkHook, workingDate, onDateChange, onDateChangeRelative, onSaveAll])
 
@@ -364,70 +364,72 @@ export function QuickActionPanel({
       isDirtyRef.current &&
       (mode === 'popover' || mode === 'sheet')
     ) {
-      onDateChange(workingDateRef.current)
+      onDateChange?.(workingDateRef.current)
     }
     prevOpenRef.current = open
   }, [open, mode, onDateChange, onSave, onCancel])
 
-  const handleSave = useCallback(() => {
+  // Collect all pending changes into a single QuickActionPanelChanges object.
+  // Used by both handleSave and handleSaveAndDone to avoid duplicating the collection logic.
+  const collectPendingChanges = useCallback((): QuickActionPanelChanges => {
+    const changes: QuickActionPanelChanges = {}
+    if (pendingTitle !== null) changes.title = pendingTitle
+    if (pendingPriority !== null) changes.priority = pendingPriority
+    if (pendingLabels !== null) changes.labels = pendingLabels
+    if (pendingDueAtCleared) {
+      changes.due_at = null
+      changes.rrule = null
+    } else {
+      if (pendingRrule !== undefined) changes.rrule = pendingRrule
+      if (pendingDueAt !== null) {
+        changes.due_at = pendingDueAt
+      } else if (singleHook.isDirty) {
+        changes.due_at = singleHook.workingDate
+      }
+    }
+    if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
+    if (pendingProject !== null) changes.project_id = pendingProject
+    return changes
+  }, [
+    pendingTitle,
+    pendingPriority,
+    pendingLabels,
+    pendingDueAtCleared,
+    pendingRrule,
+    pendingDueAt,
+    singleHook.isDirty,
+    singleHook.workingDate,
+    pendingRecurrenceMode,
+    pendingProject,
+  ])
+
+  // Reset all pending state back to initial values.
+  // Used by handleSave, handleCancel, and handleReset to avoid duplicating the reset logic.
+  const resetAllPending = useCallback(() => {
+    setPendingTitle(null)
+    setPendingPriority(null)
+    setPendingLabels(null)
+    setPendingRrule(undefined)
+    setPendingRecurrenceMode(null)
+    setPendingProject(null)
+    setPendingDueAt(null)
+    setPendingDueAtCleared(false)
+  }, [])
+
+  const handleSave = useCallback(async () => {
     if (onSaveAll) {
       // Batched save mode: collect all changes and send in one call
-      const changes: QuickActionPanelChanges = {}
-
-      if (pendingTitle !== null) {
-        changes.title = pendingTitle
-      }
-      if (pendingPriority !== null) {
-        changes.priority = pendingPriority
-      }
-      if (pendingLabels !== null) {
-        changes.labels = pendingLabels
-      }
-      // Handle cleared due date: set both due_at and rrule to null
-      if (pendingDueAtCleared) {
-        changes.due_at = null
-        changes.rrule = null
-      } else {
-        if (pendingRrule !== undefined) {
-          changes.rrule = pendingRrule
-        }
-        // For date changes, use pendingDueAt if staged, otherwise check hook state
-        if (pendingDueAt !== null) {
-          changes.due_at = pendingDueAt
-        } else if (singleHook.isDirty) {
-          // Date was changed via hook but not yet staged - include it
-          changes.due_at = singleHook.workingDate
-        }
-      }
-      if (pendingRecurrenceMode !== null) {
-        changes.recurrence_mode = pendingRecurrenceMode
-      }
-      if (pendingProject !== null) {
-        changes.project_id = pendingProject
-      }
-
-      // Only call onSaveAll if there are actual changes
+      const changes = collectPendingChanges()
       if (Object.keys(changes).length > 0) {
-        onSaveAll(changes)
+        await onSaveAll(changes)
       }
-
-      // Clear all pending state
-      setPendingTitle(null)
-      setPendingPriority(null)
-      setPendingLabels(null)
-      setPendingRrule(undefined)
-      setPendingRecurrenceMode(null)
-      setPendingProject(null)
-      setPendingDueAt(null)
-      setPendingDueAtCleared(false)
+      resetAllPending()
       singleHook.reset()
     } else {
       // Individual callbacks mode (backward compatibility)
-      // Apply date changes if any
       if (hasDateChanges) {
         handleApply()
       }
-      // Apply all pending field changes
       if (pendingPriority !== null) {
         onPriorityChange?.(pendingPriority)
         setPendingPriority(null)
@@ -437,10 +439,9 @@ export function QuickActionPanel({
         setPendingLabels(null)
       }
       if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
-        // Pass both rrule and recurrence mode - use pending values if set, else current task values
         const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
-        const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
-        onRruleChange?.(rrule, mode)
+        const resolvedRecurrenceMode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
+        onRruleChange?.(rrule, resolvedRecurrenceMode)
         setPendingRrule(undefined)
         setPendingRecurrenceMode(null)
       }
@@ -452,15 +453,14 @@ export function QuickActionPanel({
     onSave?.()
   }, [
     onSaveAll,
-    pendingTitle,
+    collectPendingChanges,
+    resetAllPending,
+    singleHook,
     pendingPriority,
     pendingLabels,
     pendingRrule,
     pendingRecurrenceMode,
     pendingProject,
-    pendingDueAt,
-    pendingDueAtCleared,
-    singleHook,
     hasDateChanges,
     handleApply,
     effectiveTask?.rrule,
@@ -489,30 +489,15 @@ export function QuickActionPanel({
 
   const handleCancel = useCallback(() => {
     reset()
-    // Clear all pending changes
-    setPendingTitle(null)
-    setPendingPriority(null)
-    setPendingLabels(null)
-    setPendingRrule(undefined)
-    setPendingRecurrenceMode(null)
-    setPendingProject(null)
-    setPendingDueAt(null)
-    setPendingDueAtCleared(false)
+    resetAllPending()
     onCancel?.()
-  }, [reset, onCancel])
+  }, [reset, resetAllPending, onCancel])
 
   // Reset handler for the Reset button - clears all pending changes
   const handleReset = useCallback(() => {
     reset()
-    setPendingTitle(null)
-    setPendingPriority(null)
-    setPendingLabels(null)
-    setPendingRrule(undefined)
-    setPendingRecurrenceMode(null)
-    setPendingProject(null)
-    setPendingDueAt(null)
-    setPendingDueAtCleared(false)
-  }, [reset])
+    resetAllPending()
+  }, [reset, resetAllPending])
 
   // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
   // (SnoozeSheet also uses sheet mode but doesn't pass selectedCount, so it still shows the title)
@@ -598,24 +583,7 @@ export function QuickActionPanel({
     setShowDoneConfirm(false)
     if (onSaveAll) {
       // Batched save mode
-      const changes: QuickActionPanelChanges = {}
-      if (pendingTitle !== null) changes.title = pendingTitle
-      if (pendingPriority !== null) changes.priority = pendingPriority
-      if (pendingLabels !== null) changes.labels = pendingLabels
-      // Handle cleared due date: set both due_at and rrule to null
-      if (pendingDueAtCleared) {
-        changes.due_at = null
-        changes.rrule = null
-      } else {
-        if (pendingRrule !== undefined) changes.rrule = pendingRrule
-        if (pendingDueAt !== null) {
-          changes.due_at = pendingDueAt
-        } else if (singleHook.isDirty) {
-          changes.due_at = singleHook.workingDate
-        }
-      }
-      if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
-      if (pendingProject !== null) changes.project_id = pendingProject
+      const changes = collectPendingChanges()
       if (Object.keys(changes).length > 0) {
         onSaveAll(changes)
       }
@@ -632,8 +600,8 @@ export function QuickActionPanel({
       }
       if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
         const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
-        const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
-        onRruleChange?.(rrule, mode)
+        const resolvedRecurrenceMode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
+        onRruleChange?.(rrule, resolvedRecurrenceMode)
       }
       if (pendingProject !== null) {
         onProjectChange?.(pendingProject)
@@ -642,15 +610,12 @@ export function QuickActionPanel({
     onMarkDone?.()
   }, [
     onSaveAll,
-    pendingTitle,
+    collectPendingChanges,
     pendingPriority,
     pendingLabels,
     pendingRrule,
     pendingRecurrenceMode,
     pendingProject,
-    pendingDueAt,
-    pendingDueAtCleared,
-    singleHook,
     hasDateChanges,
     handleApply,
     effectiveTask?.rrule,

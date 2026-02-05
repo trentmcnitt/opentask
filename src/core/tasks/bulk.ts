@@ -9,6 +9,7 @@ import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { formatBulkEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import {
@@ -379,7 +380,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       logAction(
         userId,
         'bulk_edit',
-        `Edited ${snapshots.length} tasks`,
+        formatBulkEditDescription(snapshots.length, Array.from(allFieldsChanged)),
         Array.from(allFieldsChanged),
         snapshots,
       )

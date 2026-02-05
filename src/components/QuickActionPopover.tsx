@@ -101,7 +101,6 @@ export function QuickActionPopover({
         timezone={timezone}
         mode={isMobile ? 'sheet' : 'popover'}
         titleVariant="prominent"
-        onDateChange={() => {}}
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}

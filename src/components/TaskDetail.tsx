@@ -31,7 +31,7 @@ interface TaskDetailProps {
   /** Called when meta_notes is saved */
   onMetaNotesSave?: (value: string | null) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
-  saveRef?: React.MutableRefObject<(() => void) | null>
+  saveRef?: React.MutableRefObject<(() => Promise<void> | void) | null>
   /**
    * Batched save handler: receives all changed fields and saves them in one request.
    * This creates a single undo entry instead of multiple entries for each field change.
@@ -89,7 +89,6 @@ export function TaskDetail({
               showCompletedBadge
               projectName={project?.name}
               projects={projects}
-              onDateChange={() => {}}
               onSaveAll={onSaveAll}
               onDelete={onDelete}
               onMarkDone={onMarkDone}

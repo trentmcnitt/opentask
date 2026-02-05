@@ -1,78 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
-import { X } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { TaskList } from '@/components/TaskList'
-import { LabelFilterBar } from '@/components/LabelFilterBar'
-import { PriorityFilterBar } from '@/components/PriorityFilterBar'
+import { FilterBar } from '@/components/FilterBar'
 import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
-import { showToast } from '@/lib/toast'
-import { formatChangesToast } from '@/lib/format-toast'
-import { saveTaskChanges } from '@/lib/save-task-changes'
 import type { Task } from '@/types'
-import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-
-/**
- * Combined filter bar for priority and label filters.
- * Priority badges (square) appear first, then a gray separator, then label badges (pill).
- */
-function FilterBar({
-  tasks,
-  selectedPriorities,
-  selectedLabels,
-  onTogglePriority,
-  onToggleLabel,
-  onClearAll,
-}: {
-  tasks: Task[]
-  selectedPriorities: number[]
-  selectedLabels: string[]
-  onTogglePriority: (priority: number) => void
-  onToggleLabel: (label: string) => void
-  onClearAll: () => void
-}) {
-  const hasPriorities = tasks.some((t) => t.priority !== undefined)
-  const hasLabels = tasks.some((t) => t.labels.length > 0)
-
-  if (!hasPriorities && !hasLabels) return null
-
-  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
-
-  return (
-    <div className="relative mb-4 flex items-center">
-      <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
-        <PriorityFilterBar
-          tasks={tasks}
-          selectedPriorities={selectedPriorities}
-          onTogglePriority={onTogglePriority}
-        />
-
-        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-
-        <LabelFilterBar
-          tasks={tasks}
-          selectedLabels={selectedLabels}
-          onToggleLabel={onToggleLabel}
-        />
-      </div>
-
-      {hasSelection && (
-        <div className="from-background pointer-events-none absolute right-0 flex items-center bg-gradient-to-l from-50% to-transparent pl-4">
-          <button
-            onClick={onClearAll}
-            className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-            aria-label="Clear all filters"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+import { useTaskActions } from '@/hooks/useTaskActions'
+import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -152,141 +92,23 @@ export default function ProjectDetailPage() {
       .catch(() => {})
   }, [status, router, projectId, fetchTasks])
 
-  // Use refs to break circular dependency between handleUndo and handleRedo
-  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
-  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
+  const actions = useTaskActions({
+    mode: 'list',
+    onRefresh: fetchTasks,
+    tasks,
+    setTasks,
+  }) as ListTaskActionsReturn
 
-  const handleUndo = async () => {
-    try {
-      const res = await fetch('/api/undo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to undo' })
-        return
-      }
-      const data = await res.json()
-      fetchTasks()
-      showToast({
-        message: `Undid: ${data.data.description}`,
-        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Undo failed' })
-    }
-  }
+  useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
-  const handleRedo = async () => {
-    try {
-      const res = await fetch('/api/redo', { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to redo' })
-        return
-      }
-      const data = await res.json()
-      fetchTasks()
-      showToast({
-        message: `Redid: ${data.data.description}`,
-        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Redo failed' })
-    }
-  }
-
-  // Keep refs up to date
-  handleUndoRef.current = handleUndo
-  handleRedoRef.current = handleRedo
-
-  // Global keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-      const cmdKey = isMac ? e.metaKey : e.ctrlKey
-
-      // Don't intercept when user is in an input, textarea, or contenteditable
-      const activeEl = document.activeElement
-      const isInInput =
-        activeEl instanceof HTMLInputElement ||
-        activeEl instanceof HTMLTextAreaElement ||
-        (activeEl as HTMLElement)?.isContentEditable
-
-      // Cmd+Z: Undo (use ref to avoid stale closure)
-      if (cmdKey && e.key.toLowerCase() === 'z' && !e.shiftKey && !isInInput) {
-        e.preventDefault()
-        handleUndoRef.current?.()
-        return
-      }
-
-      // Cmd+Shift+Z: Redo (use ref to avoid stale closure)
-      if (cmdKey && e.key.toLowerCase() === 'z' && e.shiftKey && !isInInput) {
-        e.preventDefault()
-        handleRedoRef.current?.()
-        return
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  const handleDone = async (taskId: number) => {
-    const task = tasks.find((t) => t.id === taskId)
-    if (!task) return
-    if (!task.rrule) {
-      setTasks((prev) => prev.filter((t) => t.id !== taskId))
-    }
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed')
-      const data = await res.json()
-      if (data.data?.task?.rrule) {
-        setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
-      }
-      showToast({
-        message: task.rrule ? 'Task advanced' : 'Task completed',
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      fetchTasks()
-    }
-  }
-
-  const handleSnooze = async (taskId: number, until: string) => {
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
-    setSnoozeTask(null)
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/snooze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ until }),
-      })
-      if (!res.ok) throw new Error('Failed')
-      fetchTasks()
-      showToast({ message: 'Task snoozed', action: { label: 'Undo', onClick: handleUndo } })
-    } catch {
-      fetchTasks()
-    }
-  }
-
-  const handleSaveAllChanges = async (taskId: number, changes: QuickActionPanelChanges) => {
-    // Optimistic update — apply all visible field changes in a single state update
-    const optimistic: Partial<Task> = {}
-    if (changes.priority !== undefined) optimistic.priority = changes.priority
-    if (changes.due_at !== undefined) optimistic.due_at = changes.due_at
-    if (Object.keys(optimistic).length > 0) {
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...optimistic } : t)))
-    }
-
-    try {
-      await saveTaskChanges(taskId, changes)
-      fetchTasks()
-      showToast({
-        message: formatChangesToast(changes),
-        action: { label: 'Undo', onClick: handleUndo },
-      })
-    } catch {
-      fetchTasks()
-    }
-  }
+  // Wrap snooze to also close the snooze sheet
+  const handleSnooze = useCallback(
+    (taskId: number, until: string) => {
+      setSnoozeTask(null)
+      actions.handleSnooze(taskId, until)
+    },
+    [actions.handleSnooze],
+  )
 
   if (status === 'loading' || loading) {
     return (
@@ -298,30 +120,19 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => router.push('/projects')}
-            className="-ml-2 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label="Back to projects"
+            className="-ml-2"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M19 12H5" />
-              <path d="M12 19l-7-7 7-7" />
-            </svg>
-          </button>
+            <ChevronLeft className="size-5" />
+          </Button>
           <h1 className="text-xl font-semibold">{projectName || 'Project'}</h1>
-          <span className="text-sm text-zinc-500">{tasks.length} tasks</span>
+          <span className="text-muted-foreground text-sm">{tasks.length} tasks</span>
         </div>
       </header>
 
@@ -336,7 +147,7 @@ export default function ProjectDetailPage() {
         />
         <TaskList
           tasks={displayTasks}
-          onDone={handleDone}
+          onDone={actions.handleDone}
           onSnooze={(task) => setSnoozeTask(task)}
           onLabelClick={toggleLabel}
           onTaskFocus={setFocusedTask}
@@ -355,7 +166,7 @@ export default function ProjectDetailPage() {
         focusedTask={focusedTask}
         open={quickActionOpen}
         onClose={() => setQuickActionOpen(false)}
-        onSaveAll={handleSaveAllChanges}
+        onSaveAll={actions.handleSaveAllChanges}
       />
     </div>
   )
