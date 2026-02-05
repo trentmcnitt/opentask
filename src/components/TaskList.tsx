@@ -56,6 +56,8 @@ interface TaskListProps {
   onListBlur?: (e: React.FocusEvent) => void
   /** Optional: get sort option for a group (lifted from useGroupSort) */
   getSortOption?: (groupLabel: string) => SortOption
+  /** Optional: get reversed state for a group (lifted from useGroupSort) */
+  getReversed?: (groupLabel: string) => boolean
   /** Optional: set sort option for a group (lifted from useGroupSort) */
   setSortOption?: (groupLabel: string, option: SortOption) => void
   /** Desktop click: set keyboard focus (blue glow) without selecting */
@@ -65,38 +67,46 @@ interface TaskListProps {
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
-export function sortTasks(tasks: Task[], sortOption: SortOption): Task[] {
+export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = false): Task[] {
   const sorted = [...tasks]
   switch (sortOption) {
     case 'priority':
-      // Higher priority first (4=urgent, 0=unset), then by due date
+      // Default: highest first (4=urgent, 0=unset), then by due date
       sorted.sort((a, b) => {
         const priorityDiff = (b.priority || 0) - (a.priority || 0)
-        if (priorityDiff !== 0) return priorityDiff
+        if (priorityDiff !== 0) return reversed ? -priorityDiff : priorityDiff
         const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
         return aDue - bDue
       })
       break
     case 'title':
-      sorted.sort((a, b) => a.title.localeCompare(b.title))
+      sorted.sort((a, b) => {
+        const cmp = a.title.localeCompare(b.title)
+        return reversed ? -cmp : cmp
+      })
       break
     case 'age':
-      // Oldest first (by created_at)
+      // Default: newest first (reversed = oldest first)
       sorted.sort((a, b) => {
         const aCreated = a.created_at ? new Date(a.created_at).getTime() : Infinity
         const bCreated = b.created_at ? new Date(b.created_at).getTime() : Infinity
-        return aCreated - bCreated
+        const cmp = bCreated - aCreated
+        return reversed ? -cmp : cmp
       })
       break
   }
   return sorted
 }
 
-const SORT_LABELS: Record<SortOption, string> = {
-  priority: 'Priority',
-  title: 'A-Z',
-  age: 'Oldest',
+/**
+ * Direction-aware labels for the sort button.
+ * Each sort option has a default and reversed label.
+ */
+const SORT_LABELS: Record<SortOption, { default: string; reversed: string }> = {
+  priority: { default: 'Highest', reversed: 'Lowest' },
+  title: { default: 'A-Z', reversed: 'Z-A' },
+  age: { default: 'Newest', reversed: 'Oldest' },
 }
 
 export function TaskList({
@@ -114,6 +124,7 @@ export function TaskList({
   onListFocus,
   onListBlur,
   getSortOption: getSortOptionProp,
+  getReversed: getReversedProp,
   setSortOption: setSortOptionProp,
   onActivate,
   onDoubleClick,
@@ -121,6 +132,7 @@ export function TaskList({
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
   const getSortOption = getSortOptionProp ?? internalSort.getSortOption
+  const getReversed = getReversedProp ?? internalSort.getReversed
   const setSortOption = setSortOptionProp ?? internalSort.setSortOption
   const selection = useSelectionOptional() ?? fallbackSelection
   const timezone = useTimezone()
@@ -164,7 +176,8 @@ export function TaskList({
   // Build ordered ID list for range-select, applying the same sort as rendering
   const orderedIds = groups.flatMap((g) => {
     const sortOption = getSortOption(g.label)
-    return sortTasks(g.tasks, sortOption).map((t) => t.id)
+    const reversed = getReversed(g.label)
+    return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
   })
 
   // Determine if we should show the "now" separator
@@ -187,7 +200,8 @@ export function TaskList({
     >
       {groups.map((group, groupIdx) => {
         const sortOption = getSortOption(group.label)
-        const sortedTasks = sortTasks(group.tasks, sortOption)
+        const reversed = getReversed(group.label)
+        const sortedTasks = sortTasks(group.tasks, sortOption, reversed)
 
         return (
           <section key={group.label}>
@@ -227,6 +241,7 @@ export function TaskList({
               </div>
               <SortDropdown
                 sortOption={sortOption}
+                reversed={reversed}
                 onSort={(option) => setSortOption(group.label, option)}
               />
             </div>
@@ -411,13 +426,16 @@ function GroupCheckbox({
 
 function SortDropdown({
   sortOption,
+  reversed,
   onSort,
 }: {
   sortOption: SortOption
+  reversed: boolean
   onSort: (option: SortOption) => void
 }) {
   const [open, setOpen] = useState(false)
   const isTouchRef = useRef(false)
+  const label = reversed ? SORT_LABELS[sortOption].reversed : SORT_LABELS[sortOption].default
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -440,13 +458,33 @@ function SortDropdown({
           }}
         >
           <ArrowUpDown className="mr-1 size-3" />
-          {SORT_LABELS[sortOption]}
+          {label}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => onSort('priority')}>Priority</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSort('title')}>Title (A-Z)</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSort('age')}>Age (oldest first)</DropdownMenuItem>
+        {(['priority', 'title', 'age'] as const).map((option) => {
+          const isActive = sortOption === option
+          const itemLabel =
+            isActive && reversed ? SORT_LABELS[option].reversed : SORT_LABELS[option].default
+          // Selecting the active option will toggle direction, so show what it will become
+          const hint = isActive
+            ? `→ ${reversed ? SORT_LABELS[option].default : SORT_LABELS[option].reversed}`
+            : null
+          return (
+            <DropdownMenuItem
+              key={option}
+              onClick={() => onSort(option)}
+              className={isActive ? 'font-semibold' : ''}
+            >
+              {itemLabel}
+              {hint && (
+                <span className="text-muted-foreground ml-auto pl-3 text-[10px] font-normal">
+                  {hint}
+                </span>
+              )}
+            </DropdownMenuItem>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -296,8 +296,9 @@ function collectDueAtChanges(
 
   trackField(data, 'due_at', task.due_at, input.due_at)
 
-  // Apply snooze logic if task had a previous due_at
-  if (task.due_at !== null) {
+  // Apply snooze logic if task had a previous due_at and is being moved to a new date
+  // (not when clearing due_at to null — that's not a snooze)
+  if (task.due_at !== null && input.due_at !== null) {
     data.isSnoozeScenario = true
 
     // Set original_due_at if not already set (preserve existing)

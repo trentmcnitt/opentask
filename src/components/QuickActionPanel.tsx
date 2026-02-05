@@ -908,7 +908,8 @@ export function QuickActionPanel({
             </Badge>
           )}
           <p className="text-muted-foreground text-xs select-text">
-            {pendingDueAtCleared ? (
+            {pendingDueAtCleared ||
+            (!effectiveTask?.due_at && !singleHook.isDirty && pendingDueAt === null) ? (
               <span className="font-medium text-blue-500">No due date</span>
             ) : (
               <>

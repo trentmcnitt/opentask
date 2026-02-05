@@ -24,6 +24,7 @@ import { showToast } from '@/lib/toast'
 import { formatChangesToast } from '@/lib/format-toast'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { saveTaskChanges } from '@/lib/save-task-changes'
 
 export default function Home() {
   return (
@@ -103,6 +104,7 @@ function useTaskActions(
   fetchTasks: () => Promise<void>,
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
+  onViewTask: (task: Task) => void,
 ) {
   // Use refs to break circular dependency between handleUndo and handleRedo
   const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
@@ -204,13 +206,17 @@ function useTaskActions(
           body: JSON.stringify({ title }),
         })
         if (!res.ok) throw new Error('Failed to create task')
+        const { data: task } = await res.json()
         fetchTasks()
-        showToast({ message: 'Task added' })
+        showToast({
+          message: 'Task added',
+          action: { label: 'View', onClick: () => onViewTask(task) },
+        })
       } catch {
         showToast({ message: 'Failed to add task' })
       }
     },
-    [fetchTasks],
+    [fetchTasks, onViewTask],
   )
 
   const handlePriorityChange = useCallback(
@@ -282,12 +288,7 @@ function useTaskActions(
       }
 
       try {
-        const res = await fetch(`/api/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(changes),
-        })
-        if (!res.ok) throw new Error('Failed to update task')
+        await saveTaskChanges(taskId, changes)
         fetchTasks()
         showToast({
           message: formatChangesToast(changes),
@@ -440,7 +441,11 @@ function HomeContent() {
     fetchTasks,
     fetchProjects,
   } = data
-  const actions = useTaskActions(fetchTasks, tasks, setTasks)
+  const handleViewTask = useCallback((task: Task) => {
+    setFocusedTask(task)
+    setQuickActionOpen(true)
+  }, [])
+  const actions = useTaskActions(fetchTasks, tasks, setTasks, handleViewTask)
 
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
@@ -452,7 +457,7 @@ function HomeContent() {
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
 
   // Sort state - lifted here so keyboard navigation can use the same order as display
-  const { getSortOption, setSortOption } = useGroupSort()
+  const { getSortOption, getReversed, setSortOption } = useGroupSort()
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
   const [grouping, setGrouping] = useState<GroupingMode>('project')
@@ -510,10 +515,11 @@ function HomeContent() {
     () =>
       taskGroups.flatMap((g) => {
         const sortOption = getSortOption(g.label)
-        const sortedTasks = sortTasks(g.tasks, sortOption)
+        const reversed = getReversed(g.label)
+        const sortedTasks = sortTasks(g.tasks, sortOption, reversed)
         return sortedTasks.map((t) => t.id)
       }),
-    [taskGroups, getSortOption],
+    [taskGroups, getSortOption, getReversed],
   )
 
   // Keyboard completion handler
@@ -965,6 +971,7 @@ function HomeContent() {
       onListFocus={keyboard.handleFocus}
       onListBlur={keyboard.handleBlur}
       getSortOption={getSortOption}
+      getReversed={getReversed}
       setSortOption={setSortOption}
       onActivate={handleActivate}
       onDoubleClick={handleDoubleClick}
@@ -1083,6 +1090,7 @@ function DashboardView({
   onListFocus,
   onListBlur,
   getSortOption,
+  getReversed,
   setSortOption,
   onActivate,
   onDoubleClick,
@@ -1134,6 +1142,7 @@ function DashboardView({
   onListFocus: (e: React.FocusEvent) => void
   onListBlur: (e: React.FocusEvent) => void
   getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
+  getReversed: (groupLabel: string) => boolean
   setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
   onActivate: (taskId: number) => void
   onDoubleClick: (task: Task) => void
@@ -1236,6 +1245,7 @@ function DashboardView({
           onListFocus={onListFocus}
           onListBlur={onListBlur}
           getSortOption={getSortOption}
+          getReversed={getReversed}
           setSortOption={setSortOption}
           onActivate={onActivate}
           onDoubleClick={onDoubleClick}

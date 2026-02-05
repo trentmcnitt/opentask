@@ -636,4 +636,78 @@ describe('Snooze Validation Tests', () => {
     expect(dueAtDt.hour).toBe(9)
     expect(dueAtDt.minute).toBe(0)
   })
+
+  /**
+   * SN-013: Clearing due_at to null is NOT a snooze
+   *
+   * When a user clears the due date (sets due_at to null), it should NOT
+   * increment snooze_count or set original_due_at — clearing is a different
+   * action from moving to a new date.
+   */
+  test('SN-013: clearing due_at to null does not increment snooze_count', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task with due date',
+        due_at: futureLocalTime(14, 0),
+      },
+    })
+
+    expect(task.due_at).not.toBeNull()
+    expect(task.snooze_count).toBe(0)
+    expect(task.original_due_at).toBeNull()
+
+    // Clear due_at and rrule to null
+    const { task: updated } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { due_at: null, rrule: null },
+    })
+
+    expect(updated.due_at).toBeNull()
+    expect(updated.snooze_count).toBe(0)
+    expect(updated.original_due_at).toBeNull()
+  })
+
+  /**
+   * SN-014: Clearing due_at on a previously-snoozed task does not add another snooze
+   *
+   * Even if a task was already snoozed (snooze_count > 0), clearing due_at
+   * should not increment snooze_count further.
+   */
+  test('SN-014: clearing due_at on snoozed task does not add another snooze', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Snoozed task',
+        due_at: futureLocalTime(9, 0),
+      },
+    })
+
+    // Snooze once (move to a new date)
+    const { task: snoozed } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { due_at: futureLocalTime(14, 0) },
+    })
+
+    expect(snoozed.snooze_count).toBe(1)
+    expect(snoozed.original_due_at).not.toBeNull()
+
+    // Now clear due_at
+    const { task: cleared } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: snoozed.id,
+      input: { due_at: null, rrule: null },
+    })
+
+    expect(cleared.due_at).toBeNull()
+    // snooze_count should stay at 1, not increment to 2
+    expect(cleared.snooze_count).toBe(1)
+  })
 })

@@ -5,12 +5,19 @@ import { useState, useCallback } from 'react'
 export type SortOption = 'priority' | 'title' | 'age'
 
 interface GroupSortState {
-  [groupLabel: string]: SortOption
+  [groupLabel: string]: { sort: SortOption; reversed: boolean }
 }
 
 /**
  * Session-only sort state per group header.
- * Default sort is priority (highest first).
+ * Tracks both the sort field and direction (reversed or not).
+ *
+ * Default directions:
+ *   - priority: highest first (reversed = lowest first)
+ *   - title: A-Z (reversed = Z-A)
+ *   - age: newest first (reversed = oldest first)
+ *
+ * Selecting the same sort option again toggles the direction.
  * State resets on page refresh.
  */
 export function useGroupSort() {
@@ -18,21 +25,33 @@ export function useGroupSort() {
 
   const getSortOption = useCallback(
     (groupLabel: string): SortOption => {
-      return sortByGroup[groupLabel] || 'priority'
+      return sortByGroup[groupLabel]?.sort || 'priority'
+    },
+    [sortByGroup],
+  )
+
+  const getReversed = useCallback(
+    (groupLabel: string): boolean => {
+      return sortByGroup[groupLabel]?.reversed ?? false
     },
     [sortByGroup],
   )
 
   const setSortOption = useCallback((groupLabel: string, option: SortOption) => {
-    setSortByGroup((prev) => ({
-      ...prev,
-      [groupLabel]: option,
-    }))
+    setSortByGroup((prev) => {
+      const current = prev[groupLabel]
+      // If selecting the same sort, toggle direction
+      if (current?.sort === option) {
+        return { ...prev, [groupLabel]: { sort: option, reversed: !current.reversed } }
+      }
+      // New sort option — use default direction (not reversed)
+      return { ...prev, [groupLabel]: { sort: option, reversed: false } }
+    })
   }, [])
 
   const cycleSortOption = useCallback(
     (groupLabel: string) => {
-      const current = sortByGroup[groupLabel] || 'priority'
+      const current = sortByGroup[groupLabel]?.sort || 'priority'
       const next: SortOption =
         current === 'priority' ? 'title' : current === 'title' ? 'age' : 'priority'
       setSortOption(groupLabel, next)
@@ -42,6 +61,7 @@ export function useGroupSort() {
 
   return {
     getSortOption,
+    getReversed,
     setSortOption,
     cycleSortOption,
   }
