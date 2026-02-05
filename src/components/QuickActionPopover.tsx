@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
+import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
 interface QuickActionPopoverProps {
@@ -153,37 +154,56 @@ export function QuickActionPopover({
     [onClose],
   )
 
+  // Track dirty state from QuickActionPanel for visual indicator
+  const [isPanelDirty, setIsPanelDirty] = useState(false)
+
   if (!focusedTask) return null
 
   // When onSaveAll is provided, use batched mode - pass onSaveAll to QuickActionPanel
   // and disable individual change callbacks (priority, rrule)
   const panel = onSaveAll ? (
-    <QuickActionPanel
-      task={focusedTask}
-      timezone={timezone}
-      mode={isMobile ? 'sheet' : 'popover'}
-      onDateChange={handleDateChange}
-      onSaveAll={handleSaveAll}
-      onDelete={onDelete ? handleDelete : undefined}
-      onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
-      onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
-      onSave={handleSave}
-      onCancel={handleCancel}
-    />
+    <div
+      className={cn(
+        'rounded-lg border p-3',
+        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+      )}
+    >
+      <QuickActionPanel
+        task={focusedTask}
+        timezone={timezone}
+        mode={isMobile ? 'sheet' : 'popover'}
+        onDateChange={handleDateChange}
+        onSaveAll={handleSaveAll}
+        onDelete={onDelete ? handleDelete : undefined}
+        onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
+        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
+        onSave={handleSave}
+        onCancel={handleCancel}
+        onDirtyChange={setIsPanelDirty}
+      />
+    </div>
   ) : (
-    <QuickActionPanel
-      task={focusedTask}
-      timezone={timezone}
-      mode={isMobile ? 'sheet' : 'popover'}
-      onDateChange={handleDateChange}
-      onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
-      onRruleChange={onRruleChange ? handleRruleChange : undefined}
-      onDelete={onDelete ? handleDelete : undefined}
-      onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
-      onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
-      onSave={handleSave}
-      onCancel={handleCancel}
-    />
+    <div
+      className={cn(
+        'rounded-lg border p-3',
+        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+      )}
+    >
+      <QuickActionPanel
+        task={focusedTask}
+        timezone={timezone}
+        mode={isMobile ? 'sheet' : 'popover'}
+        onDateChange={handleDateChange}
+        onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
+        onRruleChange={onRruleChange ? handleRruleChange : undefined}
+        onDelete={onDelete ? handleDelete : undefined}
+        onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
+        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
+        onSave={handleSave}
+        onCancel={handleCancel}
+        onDirtyChange={setIsPanelDirty}
+      />
+    </div>
   )
 
   if (isMobile) {

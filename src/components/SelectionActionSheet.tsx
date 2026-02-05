@@ -40,6 +40,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { useTimezone } from '@/hooks/useTimezone'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { computeCommonLabels } from '@/lib/bulk-utils'
+import { cn } from '@/lib/utils'
 import type { Task, Project } from '@/types'
 
 interface SelectionActionSheetProps {
@@ -298,6 +299,9 @@ export function SelectionActionSheet({
     setPendingProject(projectId)
   }, [])
 
+  // Track dirty state from QuickActionPanel for visual indicator
+  const [isPanelDirty, setIsPanelDirty] = useState(false)
+
   // Navigate to task detail (single task only)
   const handleNavigateToDetail = useCallback(() => {
     if (selectedCount === 1 && selectedTasks[0] && onNavigateToDetail) {
@@ -367,7 +371,12 @@ export function SelectionActionSheet({
   )
 
   const panelContent = (
-    <div className="space-y-3">
+    <div
+      className={cn(
+        'space-y-3 rounded-lg border p-3',
+        isPanelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+      )}
+    >
       <QuickActionPanel
         task={null}
         selectedTasks={selectedTasks}
@@ -383,6 +392,7 @@ export function SelectionActionSheet({
         onLabelsChange={handleLabelsChange}
         projects={projects}
         onProjectChange={handleProjectChange}
+        onDirtyChange={setIsPanelDirty}
       />
       {/* Expandable recurrence picker */}
       {showRecurrencePicker && onRecurrenceChange && (

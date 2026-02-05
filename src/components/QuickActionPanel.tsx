@@ -288,9 +288,9 @@ export function QuickActionPanel({
   }, [pendingRrule, effectiveTask])
 
   // Use the appropriate hook based on mode
-  // When onSaveAll is provided, date changes are also staged via pendingDueAt
+  // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook
   const hasDateChanges = onSaveAll
-    ? pendingDueAt !== null
+    ? pendingDueAt !== null || singleHook.isDirty
     : isBulkMode
       ? bulkHook.isDirty
       : singleHook.isDirty
@@ -704,12 +704,7 @@ export function QuickActionPanel({
   const showQuickLinks = !isSelectionSheetMode
 
   return (
-    <div
-      className={cn(
-        'space-y-3 border-l-4 pl-3',
-        isDirty ? 'border-blue-500' : 'border-transparent',
-      )}
-    >
+    <div className="space-y-3">
       {/* Header row */}
       <div className={cn('flex justify-between gap-2', title ? 'items-start' : 'items-center')}>
         <div className="min-w-0 flex-1">

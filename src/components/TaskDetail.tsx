@@ -118,6 +118,16 @@ function TaskFields({
   timezone: string
   onSaveAll?: (changes: QuickActionPanelChanges) => void
 }) {
+  // Track dirty state locally for border indicator, while also propagating to parent
+  const [isDirty, setIsDirty] = useState(false)
+  const handleDirtyChange = useCallback(
+    (dirty: boolean) => {
+      setIsDirty(dirty)
+      onDirtyChange?.(dirty)
+    },
+    [onDirtyChange],
+  )
+
   const currentRruleRef = useRef(task.rrule)
   useEffect(() => {
     currentRruleRef.current = task.rrule
@@ -202,7 +212,12 @@ function TaskFields({
     <div className="space-y-4">
       {/* Quick Action Panel — title, date/time grid, and actions */}
       {editable && (
-        <div className="rounded-lg border p-3">
+        <div
+          className={cn(
+            'rounded-lg border p-3',
+            isDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+          )}
+        >
           <QuickActionPanel
             task={task}
             timezone={timezone}
@@ -224,7 +239,7 @@ function TaskFields({
             onMarkDone={onMarkDone}
             onSave={() => {}}
             onCancel={handleCancel}
-            onDirtyChange={onDirtyChange}
+            onDirtyChange={handleDirtyChange}
             saveRef={saveRef}
           />
         </div>

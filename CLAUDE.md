@@ -65,6 +65,11 @@ Backend/logic-only changes with no UI touchpoint do not need browser verificatio
 
 **Dev login credentials** are in `.secrets` at the project root. Read that file to get the username and password before logging in via Playwright.
 
+**Dirty state navigation warning**: The task detail page (and any page with QuickActionPanel) has a `beforeunload` handler that triggers a browser "Leave site?" confirmation dialog when there are unsaved changes. When using Playwright for browser testing:
+
+1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
+2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
+
 ## Critical Requirements
 
 These rules prevent data-loss bugs and security issues. Violating them breaks undo, causes data inconsistencies, or creates auth bypasses.
