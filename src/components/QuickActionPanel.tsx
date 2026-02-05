@@ -12,6 +12,7 @@ import {
   X,
   Plus,
   ChevronDown,
+  XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,8 +47,8 @@ import {
   snapToNextHour,
   formatSmartButtonTime,
 } from '@/lib/quick-select-dates'
-import { RRule } from 'rrule'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
+import { computeRecurrencePreview } from '@/lib/recurrence-preview'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -77,7 +78,7 @@ export interface QuickActionPanelChanges {
   rrule?: string | null
   recurrence_mode?: 'from_due' | 'from_completion'
   project_id?: number
-  due_at?: string
+  due_at?: string | null
 }
 
 export interface QuickActionPanelProps {
@@ -215,6 +216,8 @@ export function QuickActionPanel({
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
   // pendingDueAt stages date changes for batched save (only used when onSaveAll provided)
   const [pendingDueAt, setPendingDueAt] = useState<string | null>(null)
+  // pendingDueAtCleared tracks when user wants to clear the due date (and recurrence)
+  const [pendingDueAtCleared, setPendingDueAtCleared] = useState(false)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -276,16 +279,9 @@ export function QuickActionPanel({
     const isOverdue = effectiveTask.due_at && new Date(effectiveTask.due_at) < new Date()
     if (isOverdue) return null
 
-    try {
-      // Compute next occurrence using the pending rrule
-      const rule = RRule.fromString(pendingRrule)
-      const next = rule.after(new Date())
-      return next?.toISOString() ?? null
-    } catch {
-      // Invalid rrule - don't show preview
-      return null
-    }
-  }, [pendingRrule, effectiveTask])
+    // Use timezone-aware preview computation (mirrors server-side "naive local" approach)
+    return computeRecurrencePreview(pendingRrule, timezone)
+  }, [pendingRrule, effectiveTask, timezone])
 
   // Use the appropriate hook based on mode
   // When onSaveAll is provided, date changes are also staged via pendingDueAt
@@ -300,7 +296,8 @@ export function QuickActionPanel({
     pendingRrule !== undefined ||
     pendingRecurrenceMode !== null ||
     pendingProject !== null ||
-    pendingTitle !== null
+    pendingTitle !== null ||
+    pendingDueAtCleared
   const isDirty = hasDateChanges || hasPendingChanges
 
   // Notify parent of dirty state changes for navigation protection
@@ -386,21 +383,27 @@ export function QuickActionPanel({
       if (pendingLabels !== null) {
         changes.labels = pendingLabels
       }
-      if (pendingRrule !== undefined) {
-        changes.rrule = pendingRrule
+      // Handle cleared due date: set both due_at and rrule to null
+      if (pendingDueAtCleared) {
+        changes.due_at = null
+        changes.rrule = null
+      } else {
+        if (pendingRrule !== undefined) {
+          changes.rrule = pendingRrule
+        }
+        // For date changes, use pendingDueAt if staged, otherwise check hook state
+        if (pendingDueAt !== null) {
+          changes.due_at = pendingDueAt
+        } else if (singleHook.isDirty) {
+          // Date was changed via hook but not yet staged - include it
+          changes.due_at = singleHook.workingDate
+        }
       }
       if (pendingRecurrenceMode !== null) {
         changes.recurrence_mode = pendingRecurrenceMode
       }
       if (pendingProject !== null) {
         changes.project_id = pendingProject
-      }
-      // For date changes, use pendingDueAt if staged, otherwise check hook state
-      if (pendingDueAt !== null) {
-        changes.due_at = pendingDueAt
-      } else if (singleHook.isDirty) {
-        // Date was changed via hook but not yet staged - include it
-        changes.due_at = singleHook.workingDate
       }
 
       // Only call onSaveAll if there are actual changes
@@ -416,6 +419,7 @@ export function QuickActionPanel({
       setPendingRecurrenceMode(null)
       setPendingProject(null)
       setPendingDueAt(null)
+      setPendingDueAtCleared(false)
       singleHook.reset()
     } else {
       // Individual callbacks mode (backward compatibility)
@@ -455,6 +459,7 @@ export function QuickActionPanel({
     pendingRecurrenceMode,
     pendingProject,
     pendingDueAt,
+    pendingDueAtCleared,
     singleHook,
     hasDateChanges,
     handleApply,
@@ -492,6 +497,7 @@ export function QuickActionPanel({
     setPendingRecurrenceMode(null)
     setPendingProject(null)
     setPendingDueAt(null)
+    setPendingDueAtCleared(false)
     onCancel?.()
   }, [reset, onCancel])
 
@@ -505,6 +511,7 @@ export function QuickActionPanel({
     setPendingRecurrenceMode(null)
     setPendingProject(null)
     setPendingDueAt(null)
+    setPendingDueAtCleared(false)
   }, [reset])
 
   // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
@@ -595,14 +602,20 @@ export function QuickActionPanel({
       if (pendingTitle !== null) changes.title = pendingTitle
       if (pendingPriority !== null) changes.priority = pendingPriority
       if (pendingLabels !== null) changes.labels = pendingLabels
-      if (pendingRrule !== undefined) changes.rrule = pendingRrule
+      // Handle cleared due date: set both due_at and rrule to null
+      if (pendingDueAtCleared) {
+        changes.due_at = null
+        changes.rrule = null
+      } else {
+        if (pendingRrule !== undefined) changes.rrule = pendingRrule
+        if (pendingDueAt !== null) {
+          changes.due_at = pendingDueAt
+        } else if (singleHook.isDirty) {
+          changes.due_at = singleHook.workingDate
+        }
+      }
       if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
       if (pendingProject !== null) changes.project_id = pendingProject
-      if (pendingDueAt !== null) {
-        changes.due_at = pendingDueAt
-      } else if (singleHook.isDirty) {
-        changes.due_at = singleHook.workingDate
-      }
       if (Object.keys(changes).length > 0) {
         onSaveAll(changes)
       }
@@ -636,6 +649,7 @@ export function QuickActionPanel({
     pendingRecurrenceMode,
     pendingProject,
     pendingDueAt,
+    pendingDueAtCleared,
     singleHook,
     hasDateChanges,
     handleApply,
@@ -766,9 +780,15 @@ export function QuickActionPanel({
             </Badge>
           )}
           <p className="text-muted-foreground text-xs select-text">
-            <span>{headerText}</span>
-            <span className="mx-1">&middot;</span>
-            <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
+            {pendingDueAtCleared ? (
+              <span className="font-medium text-blue-500">No due date</span>
+            ) : (
+              <>
+                <span>{headerText}</span>
+                <span className="mx-1">&middot;</span>
+                <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
+              </>
+            )}
           </p>
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
           {previewDueAt && (
@@ -955,7 +975,10 @@ export function QuickActionPanel({
             {(() => {
               const displayProjectObj = projects?.find((p) => p.id === displayProject)
               const displayProjectName = displayProjectObj?.name ?? projectName
-              return displayProjectName && onProjectChange && projects && projects.length > 0 ? (
+              return displayProjectName &&
+                (onProjectChange || onSaveAll) &&
+                projects &&
+                projects.length > 0 ? (
                 // Inline popover with project list
                 <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
                   <PopoverTrigger asChild>
@@ -1094,6 +1117,24 @@ export function QuickActionPanel({
           />
         ))}
       </div>
+
+      {/* Clear button - shown for single task mode when task has due date or recurrence */}
+      {isSingleTask && (effectiveTask?.due_at || effectiveTask?.rrule) && !pendingDueAtCleared && (
+        <button
+          type="button"
+          onClick={() => {
+            setPendingDueAtCleared(true)
+            // Also stage clearing recurrence if present
+            if (effectiveTask?.rrule) {
+              setPendingRrule(null)
+            }
+          }}
+          className="text-muted-foreground hover:text-destructive flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed py-2 text-sm transition-colors"
+        >
+          <XCircle className="size-4" />
+          Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
+        </button>
+      )}
 
       {/* Expandable recurrence section - shown when recurrence button is clicked */}
       {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}

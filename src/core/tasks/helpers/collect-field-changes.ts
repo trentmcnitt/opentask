@@ -280,8 +280,18 @@ function collectDueAtChanges(
   rruleChanged: boolean,
 ): void {
   // If rrule changed, due_at was handled there (if auto-computed)
-  // Only process due_at here if it's an explicit change without rrule change
-  if (rruleChanged) return
+  // Special case: when clearing rrule to null AND due_at to null together,
+  // we need to process the explicit due_at=null here since collectRruleChanges
+  // does not auto-compute due_at when clearing rrule.
+  if (rruleChanged) {
+    // Only process due_at if:
+    // 1. rrule is being cleared to null, AND
+    // 2. due_at is explicitly being set to null, AND
+    // 3. due_at wasn't already processed by collectRruleChanges
+    const isClearingRruleAndDueAt =
+      input.rrule === null && input.due_at === null && data.afterState.due_at === undefined
+    if (!isClearingRruleAndDueAt) return
+  }
   if (input.due_at === undefined || input.due_at === task.due_at) return
 
   trackField(data, 'due_at', task.due_at, input.due_at)

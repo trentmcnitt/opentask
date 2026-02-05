@@ -35,8 +35,8 @@ test.describe('Snooze', () => {
     await expect(dialog).toBeVisible({ timeout: 3000 })
 
     // Verify preset time buttons are visible (use exact match within dialog)
-    await expect(dialog.getByRole('button', { name: '9:00 AM' })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '12:00 PM' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '9:00 AM', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '12:00 PM', exact: true })).toBeVisible()
 
     // Verify increment buttons are visible
     await expect(dialog.getByRole('button', { name: '+30 min' })).toBeVisible()

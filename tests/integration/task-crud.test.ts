@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from 'vitest'
+import { describe, test, expect, beforeAll, beforeEach } from 'vitest'
 import { apiFetch, resetTestData } from './helpers'
 
 describe('Task CRUD integration', () => {
@@ -112,5 +112,121 @@ describe('Task CRUD integration', () => {
     const restoredTask = list.find((t: { id: number }) => t.id === task.id)
     expect(restoredTask).not.toBeUndefined()
     expect(restoredTask.id).toBe(task.id)
+  })
+})
+
+describe('Task clear due date', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('PATCH with due_at: null clears the due date', async () => {
+    // Create task with due date
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title: 'Task with due date',
+        due_at: '2026-02-10T15:00:00Z',
+        project_id: 1,
+      },
+    })
+    expect(createRes.status).toBe(201)
+    const created = (await createRes.json()).data
+
+    // Clear due date
+    const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { due_at: null },
+    })
+    expect(patchRes.status).toBe(200)
+    const patched = (await patchRes.json()).data
+    expect(patched.due_at).toBeNull()
+  })
+
+  test('PATCH with due_at: null and rrule: null clears both', async () => {
+    // Create recurring task
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title: 'Recurring task',
+        due_at: '2026-02-10T15:00:00Z',
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        project_id: 1,
+      },
+    })
+    expect(createRes.status).toBe(201)
+    const created = (await createRes.json()).data
+    expect(created.rrule).toBeTruthy()
+
+    // Clear both due_at and rrule
+    const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { due_at: null, rrule: null },
+    })
+    expect(patchRes.status).toBe(200)
+    const patched = (await patchRes.json()).data
+    expect(patched.due_at).toBeNull()
+    expect(patched.rrule).toBeNull()
+  })
+
+  test('undo clear due_at restores original date', async () => {
+    // Create task with due date
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title: 'Task to clear',
+        due_at: '2026-02-10T15:00:00Z',
+        project_id: 1,
+      },
+    })
+    const created = (await createRes.json()).data
+    const originalDueAt = created.due_at
+
+    // Clear due date
+    await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { due_at: null },
+    })
+    const cleared = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+    expect(cleared.due_at).toBeNull()
+
+    // Undo
+    const undoRes = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undoRes.status).toBe(200)
+
+    // Verify restored
+    const restored = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+    expect(restored.due_at).toBe(originalDueAt)
+  })
+
+  test('undo clear due_at and rrule restores both', async () => {
+    // Create recurring task
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title: 'Recurring to clear',
+        due_at: '2026-02-10T15:00:00Z',
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        project_id: 1,
+      },
+    })
+    const created = (await createRes.json()).data
+    const originalDueAt = created.due_at
+    const originalRrule = created.rrule
+
+    // Clear both
+    await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { due_at: null, rrule: null },
+    })
+
+    // Undo
+    const undoRes = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undoRes.status).toBe(200)
+
+    // Verify both restored
+    const restored = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+    expect(restored.due_at).toBe(originalDueAt)
+    expect(restored.rrule).toBe(originalRrule)
   })
 })

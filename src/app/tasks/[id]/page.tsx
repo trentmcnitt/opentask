@@ -3,7 +3,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
+import Link from 'next/link'
+import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -151,6 +161,72 @@ export default function TaskDetailPage() {
       setLoading(false)
     }
   }, [taskId, router, setNotes])
+
+  // Undo/Redo handlers - use refs to break circular dependency
+  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
+
+  const handleUndo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/undo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to undo' })
+        return
+      }
+      const data = await res.json()
+      fetchTask()
+      showToast({
+        message: `Undid: ${data.data.description}`,
+        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Undo failed' })
+    }
+  }, [fetchTask])
+
+  const handleRedo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/redo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to redo' })
+        return
+      }
+      const data = await res.json()
+      fetchTask()
+      showToast({
+        message: `Redid: ${data.data.description}`,
+        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Redo failed' })
+    }
+  }, [fetchTask])
+
+  // Keep refs up to date
+  handleUndoRef.current = handleUndo
+  handleRedoRef.current = handleRedo
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const cmdKey = e.metaKey || e.ctrlKey
+      const isInInput =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+
+      if (cmdKey && e.key.toLowerCase() === 'z' && !isInInput) {
+        e.preventDefault()
+        if (e.shiftKey) {
+          handleRedo()
+        } else {
+          handleUndo()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleUndo, handleRedo])
 
   useEffect(() => {
     if (status === 'loading') return
@@ -321,70 +397,101 @@ export default function TaskDetailPage() {
   const project = projects.find((p) => p.id === task.project_id)
 
   return (
-    <div className="flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
-          <button
-            onClick={handleBackClick}
-            className="-ml-2 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="Back to dashboard"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+    <TooltipProvider delayDuration={300}>
+      <div className="flex-1">
+        <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+          <div className="mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3">
+            {/* Back button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBackClick}
+              aria-label="Back to dashboard"
+              className="-ml-2"
             >
-              <path d="M19 12H5" />
-              <path d="M12 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h1 className="truncate text-lg font-semibold">Task Details</h1>
-        </div>
-      </header>
+              <ChevronLeft className="size-5" />
+            </Button>
 
-      <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        <TaskDetail
-          task={task}
-          notes={notes}
-          project={project}
-          projects={projects}
-          editable
-          onFieldChange={handleFieldChange}
-          onSnooze={handleSnooze}
-          onAddNote={handleAddNote}
-          onDeleteNote={handleDeleteNote}
-          onMarkDone={handleMarkDone}
-          onDirtyChange={handleDirtyChange}
-          onMetaNotesSave={handleMetaNotesSave}
-          saveRef={saveRef}
-          onSaveAll={handleSaveAll}
-        />
-      </main>
+            {/* Title - takes remaining space */}
+            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">Task Details</h1>
 
-      {/* Unsaved changes confirmation dialog */}
-      <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-            <AlertDialogDescription>
-              You have unsaved changes. What would you like to do?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="outline" onClick={handleConfirmLeave}>
-              Don&apos;t Save
-            </AlertDialogAction>
-            <AlertDialogAction onClick={handleSaveAndLeave}>Save</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+            {/* Undo button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleUndo} aria-label="Undo">
+                  <Undo2 className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Undo (⌘Z)</TooltipContent>
+            </Tooltip>
+
+            {/* Redo button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleRedo} aria-label="Redo">
+                  <Redo2 className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Redo (⌘⇧Z)</TooltipContent>
+            </Tooltip>
+
+            {/* Hamburger menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Menu">
+                  <Menu className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <Settings className="size-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-2xl px-4 py-6">
+          <TaskDetail
+            task={task}
+            notes={notes}
+            project={project}
+            projects={projects}
+            editable
+            onFieldChange={handleFieldChange}
+            onSnooze={handleSnooze}
+            onAddNote={handleAddNote}
+            onDeleteNote={handleDeleteNote}
+            onMarkDone={handleMarkDone}
+            onDirtyChange={handleDirtyChange}
+            onMetaNotesSave={handleMetaNotesSave}
+            saveRef={saveRef}
+            onSaveAll={handleSaveAll}
+          />
+        </main>
+
+        {/* Unsaved changes confirmation dialog */}
+        <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+              <AlertDialogDescription>
+                You have unsaved changes. What would you like to do?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="outline" onClick={handleConfirmLeave}>
+                Don&apos;t Save
+              </AlertDialogAction>
+              <AlertDialogAction onClick={handleSaveAndLeave}>Save</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </TooltipProvider>
   )
 }

@@ -44,10 +44,13 @@ test.describe('Task detail', () => {
     await titleInput.fill('Buy organic groceries')
     await titleInput.press('Enter')
 
-    // Verify the title updated
+    // Verify the title shows in the UI (staged but not yet saved)
     await expect(page.getByText('Buy organic groceries')).toBeVisible({
       timeout: 3000,
     })
+
+    // Click Save to persist the change
+    await page.getByRole('button', { name: 'Save' }).click()
 
     // Reload to verify persistence
     await page.reload()

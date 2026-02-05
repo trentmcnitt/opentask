@@ -153,7 +153,7 @@ export function Header({
               </Tooltip>
             )}
 
-            {/* Mobile-only undo button */}
+            {/* Mobile-only undo/redo buttons */}
             <div className="flex md:hidden">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -162,6 +162,14 @@ export function Header({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Undo</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={onRedo} aria-label="Redo">
+                    <Redo2 className="size-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Redo</TooltipContent>
               </Tooltip>
             </div>
 

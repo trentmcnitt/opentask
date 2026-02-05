@@ -226,14 +226,19 @@ export function TaskRow({
         return
       }
 
+      // In selection mode, also move keyboard focus (blue glow) to the clicked task
       if (e.shiftKey && onRangeSelect) {
         onRangeSelect()
+        onActivate?.()
       } else if ((e.metaKey || e.ctrlKey) && onSelect) {
         onSelect()
+        onActivate?.()
       } else if (isSelectionMode && pointer.wasTouch() && onSelect) {
         onSelect()
+        onActivate?.()
       } else if (isSelectionMode && onSelectOnly) {
         onSelectOnly()
+        onActivate?.()
       } else if (pointer.wasTouch() && onSelectOnly) {
         onSelectOnly()
       } else if (onActivate) {
@@ -269,7 +274,10 @@ export function TaskRow({
       onPointerCancel={pointer.onPointerUp}
       className={cn(
         'group flex items-center gap-3 rounded-lg p-3 select-none',
-        'bg-card border',
+        // min-h-[62px] matches the natural height when snooze button is present:
+        // snooze button (36px h-9) + padding (24px) + border (2px) = 62px
+        // This prevents single-line tasks from shrinking when entering selection mode.
+        'bg-card min-h-[62px] border',
         'hover:border-border/80 transition-colors',
         isOverdue && 'border-l-destructive border-l-4',
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
@@ -289,7 +297,7 @@ export function TaskRow({
           onCheckedChange={() => onSelect?.()}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Select "${task.title}"`}
-          className="size-6"
+          className="h-6 w-6 flex-shrink-0"
         />
       ) : (
         <button
