@@ -1,7 +1,11 @@
 /**
- * Snooze Behavioral Tests (SN-001 through SN-010)
+ * Snooze Behavioral Tests (SN-001 through SN-012)
  *
  * Tests the snooze system with original_due_at tracking.
+ *
+ * SN-001 to SN-005: Core snooze behavior
+ * SN-006 to SN-010: Snooze tracking and undo
+ * SN-011 to SN-012: Snooze tracking cleared on rrule change
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
@@ -507,5 +511,129 @@ describe('Snooze Validation Tests', () => {
 
     // Snooze logic should NOT have been applied
     expect(updatedTask.snooze_count).toBe(0)
+  })
+
+  /**
+   * SN-011: Snoozed task + rrule change clears snooze tracking
+   *
+   * When a snoozed task's rrule is changed, the snooze tracking is cleared.
+   * This is because changing the recurrence schedule establishes a new baseline,
+   * making the original snooze tracking irrelevant.
+   *
+   * Task: snoozed (original_due_at set, snooze_count=2)
+   * Action: Change rrule
+   * Result: original_due_at=NULL (cleared), anchors re-derived, snooze_count unchanged
+   */
+  test('SN-011: Snoozed task + rrule change clears snooze tracking', () => {
+    // Create recurring task
+    const originalDueAt = futureLocalTime(8, 0, 1)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Daily task',
+        due_at: originalDueAt,
+        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+      },
+    })
+
+    // Snooze twice to get snooze_count=2
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(14, 0, 1),
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(16, 0, 1),
+    })
+
+    // Verify snoozed state
+    const snoozedTask = getTaskById(task.id)!
+    expect(snoozedTask.original_due_at).toBe(originalDueAt)
+    expect(snoozedTask.snooze_count).toBe(2)
+
+    // Change rrule from daily to weekly
+    const { task: updatedTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    // Snooze tracking should be cleared (new schedule = new baseline)
+    expect(updatedTask.original_due_at).toBeNull()
+
+    // snooze_count is NOT reset (it's a lifetime stat)
+    expect(updatedTask.snooze_count).toBe(2)
+
+    // Anchors should be re-derived from new rrule
+    expect(updatedTask.anchor_time).toBe('09:00')
+    expect(updatedTask.anchor_dow).toBe(0) // Monday
+  })
+
+  /**
+   * SN-012: Add rrule to snoozed one-off task clears snooze tracking
+   *
+   * When converting a snoozed one-off task to recurring by adding an rrule,
+   * the snooze tracking is cleared and due_at is computed to next occurrence.
+   *
+   * Task: one-off, snoozed (original_due_at set, snooze_count=1)
+   * Action: Add rrule to make it recurring
+   * Result: original_due_at=NULL, due_at computed to next occurrence
+   */
+  test('SN-012: Add rrule to snoozed one-off task clears snooze tracking', () => {
+    // Create one-off task
+    const originalDueAt = futureLocalTime(8, 0, 1)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'One-off task',
+        due_at: originalDueAt,
+      },
+    })
+
+    expect(task.rrule).toBeNull()
+
+    // Snooze the task
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(14, 0, 1),
+    })
+
+    // Verify snoozed state
+    const snoozedTask = getTaskById(task.id)!
+    expect(snoozedTask.original_due_at).toBe(originalDueAt)
+    expect(snoozedTask.snooze_count).toBe(1)
+
+    // Add rrule to convert to recurring
+    const { task: updatedTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    // Snooze tracking should be cleared (converting to recurring = new baseline)
+    expect(updatedTask.original_due_at).toBeNull()
+
+    // snooze_count preserved (lifetime stat)
+    expect(updatedTask.snooze_count).toBe(1)
+
+    // Task is now recurring
+    expect(updatedTask.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
+    expect(updatedTask.anchor_time).toBe('09:00')
+
+    // due_at should be auto-computed to next occurrence
+    // (not the snoozed 2 PM, but computed from rrule)
+    const dueAtDt = DateTime.fromISO(updatedTask.due_at!).setZone(TEST_TIMEZONE)
+    expect(dueAtDt.hour).toBe(9)
+    expect(dueAtDt.minute).toBe(0)
   })
 })

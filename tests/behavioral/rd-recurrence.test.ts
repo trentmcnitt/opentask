@@ -1,10 +1,12 @@
 /**
- * Behavioral tests for Recurrence Anti-Drift (RD-001 through RD-010)
+ * Behavioral tests for Recurrence Anti-Drift (RD-001 through RD-013)
  *
  * These tests verify the core recurrence computation logic specified in SPEC.md.
+ * RD-001 to RD-010: Core recurrence computation
+ * RD-011 to RD-013: Recurrence changes via task updates
  */
 
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
   computeNextOccurrence,
@@ -12,6 +14,15 @@ import {
   deriveAnchorFields,
   RRulePatterns,
 } from '@/core/recurrence'
+import { createTask } from '@/core/tasks'
+import { updateTask } from '@/core/tasks/update'
+import {
+  setupTestDb,
+  teardownTestDb,
+  localTime,
+  TEST_USER_ID,
+  TEST_TIMEZONE,
+} from '../helpers/setup'
 
 const TIMEZONE = 'America/Chicago'
 
@@ -429,5 +440,162 @@ describe('Biweekly patterns', () => {
     // Since we completed on a Monday after 10 AM, next should be at least 1 week away
     expect(nextLocal.month).toBe(2) // February
     expect([2, 9]).toContain(nextLocal.day) // Either Feb 2 or Feb 9
+  })
+})
+
+/**
+ * RD-011 to RD-013: Recurrence changes via task updates
+ *
+ * These tests verify behavior when rrule is changed via updateTask,
+ * particularly around overdue tasks and due_at handling.
+ */
+describe('Recurrence Changes via Task Update', () => {
+  beforeEach(() => {
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * RD-011: Overdue task + rrule change keeps due_at unchanged
+   *
+   * When changing the rrule of an overdue task, the due_at is preserved.
+   * This prevents the task from "escaping" overdue status by silently
+   * jumping to the future when only the schedule is changing.
+   *
+   * Task: due_at=yesterday (OVERDUE), rrule=FREQ=DAILY
+   * Action: Change rrule to FREQ=WEEKLY
+   * Result: due_at unchanged (still overdue), original_due_at cleared
+   */
+  test('RD-011: Overdue task + rrule change keeps due_at unchanged', () => {
+    // Create task that is already overdue (due yesterday at 8 AM)
+    const yesterdayDueAt = localTime(8, 0, -1) // Yesterday at 8 AM
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Overdue daily task',
+        due_at: yesterdayDueAt,
+        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+      },
+    })
+
+    // Verify task is overdue
+    expect(new Date(task.due_at!).getTime()).toBeLessThan(Date.now())
+
+    // Change rrule from daily to weekly
+    const { task: updatedTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    // due_at should be UNCHANGED (still yesterday, still overdue)
+    expect(updatedTask.due_at).toBe(yesterdayDueAt)
+    expect(new Date(updatedTask.due_at!).getTime()).toBeLessThan(Date.now())
+
+    // Anchors should be re-derived from new rrule
+    expect(updatedTask.anchor_time).toBe('09:00')
+    expect(updatedTask.anchor_dow).toBe(0) // Monday
+  })
+
+  /**
+   * RD-012: Non-overdue task + rrule change auto-computes due_at
+   *
+   * When changing the rrule of a non-overdue task (due_at in the future),
+   * due_at is automatically computed to the next occurrence of the new pattern.
+   *
+   * Task: due_at=tomorrow, rrule=FREQ=DAILY
+   * Action: Change rrule to FREQ=WEEKLY
+   * Result: due_at auto-computed to next occurrence
+   */
+  test('RD-012: Non-overdue task + rrule change auto-computes due_at', () => {
+    // Create task due tomorrow at 8 AM (not overdue)
+    const tomorrowDueAt = localTime(8, 0, 1) // Tomorrow at 8 AM
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Future daily task',
+        due_at: tomorrowDueAt,
+        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+      },
+    })
+
+    // Verify task is NOT overdue
+    expect(new Date(task.due_at!).getTime()).toBeGreaterThan(Date.now())
+
+    // Change rrule from daily to weekly at 9 AM
+    const { task: updatedTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    // due_at should be auto-computed to next occurrence
+    // NOT the original tomorrow 8 AM
+    expect(updatedTask.due_at).not.toBe(tomorrowDueAt)
+
+    // Should be at the new anchor time (9:00)
+    const dueAtDt = DateTime.fromISO(updatedTask.due_at!).setZone(TEST_TIMEZONE)
+    expect(dueAtDt.hour).toBe(9)
+    expect(dueAtDt.minute).toBe(0)
+
+    // Should be on a Monday
+    expect(dueAtDt.weekday).toBe(1) // Monday in Luxon
+  })
+
+  /**
+   * RD-013: Task with null due_at + rrule change computes first occurrence
+   *
+   * When adding an rrule to a task that has no due_at, the due_at is
+   * computed as the first occurrence from now.
+   *
+   * Task: no due_at
+   * Action: Add rrule
+   * Result: due_at computed from now
+   */
+  test('RD-013: Task with null due_at + rrule change computes first occurrence', () => {
+    // Create task with no due date
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'No due date task',
+        // No due_at, no rrule
+      },
+    })
+
+    expect(task.due_at).toBeNull()
+    expect(task.rrule).toBeNull()
+
+    // Add rrule
+    const { task: updatedTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+    })
+
+    // due_at should now be set (computed as first occurrence)
+    expect(updatedTask.due_at).not.toBeNull()
+
+    // Should be at the anchor time
+    const dueAtDt = DateTime.fromISO(updatedTask.due_at!).setZone(TEST_TIMEZONE)
+    expect(dueAtDt.hour).toBe(9)
+    expect(dueAtDt.minute).toBe(0)
+
+    // Should be in the future (next occurrence at 9 AM)
+    expect(new Date(updatedTask.due_at!).getTime()).toBeGreaterThan(Date.now())
+
+    // Anchors should be derived
+    expect(updatedTask.anchor_time).toBe('09:00')
   })
 })

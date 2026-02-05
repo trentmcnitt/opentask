@@ -1,13 +1,15 @@
 /**
- * Bulk Operations Behavioral Tests (BO-001 through BO-005)
+ * Bulk Operations Behavioral Tests (BO-001 through BO-005, BE-001 through BE-004)
  *
  * Tests bulk operations with atomicity and undo integration.
+ * BE tests focus on bulkEdit snooze and recurrence behavior.
  */
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
-import { bulkDone, bulkSnooze } from '@/core/tasks/bulk'
+import { bulkDone, bulkSnooze, bulkEdit } from '@/core/tasks/bulk'
+import { snoozeTask } from '@/core/tasks/snooze'
 import { executeUndo, canUndo, getUndoHistory } from '@/core/undo'
 import { DateTime } from 'luxon'
 import {
@@ -600,5 +602,280 @@ describe('Bulk Snooze Relative Mode', () => {
 
     expect(updatedTask1.due_at).toBe(targetTime)
     expect(updatedTask2.due_at).toBe(targetTime)
+  })
+})
+
+/**
+ * Bulk Edit Snooze and Recurrence Tests (BE-001 through BE-004)
+ *
+ * Tests bulkEdit behavior with due_at and rrule changes,
+ * verifying snooze logic and recurrence handling.
+ */
+describe('Bulk Edit Snooze & Recurrence', () => {
+  beforeEach(() => {
+    // Freeze time to Jan 15, 2026 at 10am Chicago (16:00 UTC)
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * BE-001: bulkEdit with due_at changes applies snooze logic
+   *
+   * When bulkEdit is called with only due_at changes (no rrule change),
+   * snooze logic is applied: original_due_at is set, snooze_count incremented.
+   *
+   * Action: bulkEdit with { due_at: tomorrow } on multiple tasks
+   * Result: original_due_at set, snooze_count incremented for each
+   */
+  test('BE-001: bulkEdit with due_at changes applies snooze logic', () => {
+    // Create multiple tasks with different due dates
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 1',
+        due_at: localTime(8, 0), // Today 8 AM
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Task 2',
+        due_at: localTime(14, 0), // Today 2 PM
+      },
+    })
+
+    // Verify initial state
+    expect(task1.original_due_at).toBeNull()
+    expect(task1.snooze_count).toBe(0)
+    expect(task2.original_due_at).toBeNull()
+    expect(task2.snooze_count).toBe(0)
+
+    const originalTask1DueAt = task1.due_at
+    const originalTask2DueAt = task2.due_at
+
+    // Bulk edit with due_at change (this is effectively a snooze)
+    const newDueAt = localTime(18, 0, 1) // Tomorrow 6 PM
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task1.id, task2.id],
+      changes: { due_at: newDueAt },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    // Verify snooze logic was applied
+    const updatedTask1 = getTaskById(task1.id)!
+    const updatedTask2 = getTaskById(task2.id)!
+
+    // due_at changed
+    expect(updatedTask1.due_at).toBe(newDueAt)
+    expect(updatedTask2.due_at).toBe(newDueAt)
+
+    // original_due_at captured the original values
+    expect(updatedTask1.original_due_at).toBe(originalTask1DueAt)
+    expect(updatedTask2.original_due_at).toBe(originalTask2DueAt)
+
+    // snooze_count incremented
+    expect(updatedTask1.snooze_count).toBe(1)
+    expect(updatedTask2.snooze_count).toBe(1)
+  })
+
+  /**
+   * BE-002: bulkEdit with due_at + rrule does NOT apply snooze logic
+   *
+   * When bulkEdit includes both due_at and rrule changes, snooze logic
+   * is NOT applied because rrule change takes precedence (schedule change).
+   *
+   * Action: bulkEdit with { due_at: tomorrow, rrule: 'FREQ=DAILY' }
+   * Result: snooze_count NOT incremented (rrule takes precedence)
+   */
+  test('BE-002: bulkEdit with due_at + rrule does NOT apply snooze logic', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'One-off task',
+        due_at: localTime(8, 0), // Today 8 AM
+      },
+    })
+
+    expect(task.snooze_count).toBe(0)
+
+    // Bulk edit with both due_at and rrule
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task.id],
+      changes: {
+        due_at: localTime(18, 0, 1), // Tomorrow 6 PM
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      },
+    })
+
+    expect(result.tasksAffected).toBe(1)
+
+    const updatedTask = getTaskById(task.id)!
+
+    // rrule change takes precedence - snooze logic NOT applied
+    expect(updatedTask.snooze_count).toBe(0)
+
+    // Task is now recurring
+    expect(updatedTask.rrule).toBe('FREQ=DAILY;BYHOUR=9;BYMINUTE=0')
+  })
+
+  /**
+   * BE-003: bulkEdit rrule change clears snooze tracking
+   *
+   * When bulkEdit changes rrule on snoozed tasks, snooze tracking
+   * (original_due_at) is cleared since the schedule change establishes
+   * a new baseline.
+   *
+   * Task: multiple snoozed tasks
+   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY' }
+   * Result: original_due_at=NULL for all
+   */
+  test('BE-003: bulkEdit rrule change clears snooze tracking', () => {
+    // Create recurring tasks and snooze them
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Daily task 1',
+        due_at: localTime(8, 0, 1), // Tomorrow 8 AM
+        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Daily task 2',
+        due_at: localTime(9, 0, 1), // Tomorrow 9 AM
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      },
+    })
+
+    // Snooze both tasks
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task1.id,
+      until: localTime(14, 0, 1), // Tomorrow 2 PM
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task2.id,
+      until: localTime(15, 0, 1), // Tomorrow 3 PM
+    })
+
+    // Verify snoozed state
+    const snoozedTask1 = getTaskById(task1.id)!
+    const snoozedTask2 = getTaskById(task2.id)!
+    expect(snoozedTask1.original_due_at).not.toBeNull()
+    expect(snoozedTask2.original_due_at).not.toBeNull()
+    expect(snoozedTask1.snooze_count).toBe(1)
+    expect(snoozedTask2.snooze_count).toBe(1)
+
+    // Bulk edit to change rrule
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task1.id, task2.id],
+      changes: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0' },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    // Snooze tracking should be cleared
+    const updatedTask1 = getTaskById(task1.id)!
+    const updatedTask2 = getTaskById(task2.id)!
+
+    expect(updatedTask1.original_due_at).toBeNull()
+    expect(updatedTask2.original_due_at).toBeNull()
+
+    // snooze_count preserved (lifetime stat)
+    expect(updatedTask1.snooze_count).toBe(1)
+    expect(updatedTask2.snooze_count).toBe(1)
+
+    // New rrule applied
+    expect(updatedTask1.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
+    expect(updatedTask2.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
+  })
+
+  /**
+   * BE-004: bulkEdit rrule change on overdue tasks preserves due_at
+   *
+   * When bulkEdit changes rrule on overdue tasks, due_at is preserved
+   * (not auto-computed) so tasks remain overdue.
+   *
+   * Task: multiple overdue tasks
+   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY' }
+   * Result: due_at unchanged (all still overdue)
+   */
+  test('BE-004: bulkEdit rrule change on overdue tasks preserves due_at', () => {
+    // Create overdue tasks (due yesterday)
+    const yesterdayDueAt1 = localTime(8, 0, -1) // Yesterday 8 AM
+    const yesterdayDueAt2 = localTime(9, 0, -1) // Yesterday 9 AM
+
+    const task1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Overdue task 1',
+        due_at: yesterdayDueAt1,
+        rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
+      },
+    })
+
+    const task2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Overdue task 2',
+        due_at: yesterdayDueAt2,
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      },
+    })
+
+    // Verify tasks are overdue
+    expect(new Date(task1.due_at!).getTime()).toBeLessThan(Date.now())
+    expect(new Date(task2.due_at!).getTime()).toBeLessThan(Date.now())
+
+    // Bulk edit to change rrule
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [task1.id, task2.id],
+      changes: { rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0' },
+    })
+
+    expect(result.tasksAffected).toBe(2)
+
+    // due_at should be UNCHANGED (still overdue)
+    const updatedTask1 = getTaskById(task1.id)!
+    const updatedTask2 = getTaskById(task2.id)!
+
+    expect(updatedTask1.due_at).toBe(yesterdayDueAt1)
+    expect(updatedTask2.due_at).toBe(yesterdayDueAt2)
+
+    // Still overdue
+    expect(new Date(updatedTask1.due_at!).getTime()).toBeLessThan(Date.now())
+    expect(new Date(updatedTask2.due_at!).getTime()).toBeLessThan(Date.now())
+
+    // New rrule and anchors applied
+    expect(updatedTask1.rrule).toBe('FREQ=WEEKLY;BYDAY=MO;BYHOUR=10;BYMINUTE=0')
+    expect(updatedTask1.anchor_time).toBe('10:00')
+    expect(updatedTask1.anchor_dow).toBe(0) // Monday
   })
 })
