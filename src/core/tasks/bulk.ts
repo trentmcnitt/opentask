@@ -4,19 +4,14 @@
  * All bulk operations execute as a single transaction and produce a single undo entry.
  */
 
-import { withTransaction } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot, TaskUpdateInput } from '@/types'
-import {
-  nowUtc,
-  computeNextOccurrence,
-  isRecurring,
-  deriveAnchorFields,
-  computeFirstOccurrence,
-} from '@/core/recurrence'
+import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
+import { computeMarkDone, executeMarkDone, collectFieldChanges } from './helpers'
 
 export interface BulkDoneOptions {
   userId: number
@@ -47,7 +42,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0, failedIds: [] }
   }
 
-  const now = new Date()
+  const completedAt = new Date()
   const nowStr = nowUtc()
 
   // Validate all tasks exist and user has access before starting transaction
@@ -86,138 +81,19 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 
   return withTransaction((tx) => {
     for (const task of tasks) {
-      // Compute new stats values (same for both recurring and one-off)
-      const newCompletionCount = task.completion_count + 1
-      const newFirstCompletedAt = task.first_completed_at ?? nowStr
-      const newLastCompletedAt = nowStr
+      // Compute state changes using shared helper
+      const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
 
-      if (isRecurring(task.rrule)) {
-        // Recurring task: advance to next occurrence
+      // Track counts
+      if (computation.type === 'recurring') {
         recurringCount++
-
-        const nextOccurrence = computeNextOccurrence({
-          rrule: task.rrule!,
-          recurrenceMode: task.recurrence_mode,
-          anchorTime: task.anchor_time,
-          timezone: userTimezone,
-          completedAt: now,
-        })
-
-        const nextDueAt = nextOccurrence.toISOString()
-        const prevDueAt = task.due_at
-
-        // Create completion record
-        const completionResult = tx
-          .prepare(
-            `
-            INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
-            VALUES (?, ?, ?, ?, ?)
-          `,
-          )
-          .run(task.id, userId, nowStr, prevDueAt, nextDueAt)
-
-        const completionId = Number(completionResult.lastInsertRowid)
-
-        // Update task with stats
-        tx.prepare(
-          `
-          UPDATE tasks
-          SET due_at = ?, original_due_at = NULL,
-              completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-              updated_at = ?
-          WHERE id = ?
-        `,
-        ).run(
-          nextDueAt,
-          newCompletionCount,
-          newFirstCompletedAt,
-          newLastCompletedAt,
-          nowStr,
-          task.id,
-        )
-
-        // Build snapshot with completion data and stats
-        const afterState: Partial<Task> & { _completion?: unknown } = {
-          id: task.id,
-          due_at: nextDueAt,
-          original_due_at: null,
-          completion_count: newCompletionCount,
-          first_completed_at: newFirstCompletedAt,
-          last_completed_at: newLastCompletedAt,
-          _completion: {
-            user_id: userId,
-            completed_at: nowStr,
-            due_at_was: prevDueAt,
-            due_at_next: nextDueAt,
-          },
-        }
-
-        snapshots.push({
-          task_id: task.id,
-          before_state: {
-            id: task.id,
-            due_at: task.due_at,
-            original_due_at: task.original_due_at,
-            completion_count: task.completion_count,
-            first_completed_at: task.first_completed_at,
-            last_completed_at: task.last_completed_at,
-          },
-          after_state: afterState,
-          completion_id: completionId,
-        })
       } else {
-        // One-off task: archive
         oneOffCount++
-
-        tx.prepare(
-          `
-          UPDATE tasks
-          SET done = 1, done_at = ?, archived_at = ?,
-              completion_count = ?, first_completed_at = ?, last_completed_at = ?,
-              updated_at = ?
-          WHERE id = ?
-        `,
-        ).run(
-          nowStr,
-          nowStr,
-          newCompletionCount,
-          newFirstCompletedAt,
-          newLastCompletedAt,
-          nowStr,
-          task.id,
-        )
-
-        snapshots.push(
-          createTaskSnapshot(
-            {
-              id: task.id,
-              done: false,
-              done_at: null,
-              archived_at: null,
-              completion_count: task.completion_count,
-              first_completed_at: task.first_completed_at,
-              last_completed_at: task.last_completed_at,
-            },
-            {
-              id: task.id,
-              done: true,
-              done_at: nowStr,
-              archived_at: nowStr,
-              completion_count: newCompletionCount,
-              first_completed_at: newFirstCompletedAt,
-              last_completed_at: newLastCompletedAt,
-            },
-            [
-              'done',
-              'done_at',
-              'archived_at',
-              'completion_count',
-              'first_completed_at',
-              'last_completed_at',
-            ],
-          ),
-        )
       }
+
+      // Execute database operations using shared helper
+      const { snapshot } = executeMarkDone(tx, task, computation, userId, nowStr)
+      snapshots.push(snapshot)
     }
 
     // Single undo entry for entire batch (BO-004)
@@ -445,7 +321,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   return withTransaction((tx) => {
     // Validate project access once before processing tasks
     if (changes.project_id !== undefined) {
-      const project = tx
+      const db = getDb()
+      const project = db
         .prepare('SELECT owner_id, shared FROM projects WHERE id = ?')
         .get(changes.project_id) as { owner_id: number; shared: number } | undefined
       if (!project || (project.owner_id !== userId && project.shared !== 1)) {
@@ -454,171 +331,39 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     }
 
     for (const task of tasks) {
-      const setClauses: string[] = []
-      const values: unknown[] = []
-      const fieldsChanged: string[] = []
-      const beforeState: Partial<Task> = { id: task.id }
-      const afterState: Partial<Task> = { id: task.id }
+      // Collect field changes using shared helper
+      const data = collectFieldChanges({
+        task,
+        input: changes,
+        userId,
+        userTimezone,
+        now: nowDate,
+        skipProjectValidation: true, // Already validated above
+      })
 
-      // Apply each change
-      if (changes.priority !== undefined && changes.priority !== task.priority) {
-        setClauses.push('priority = ?')
-        values.push(changes.priority)
-        fieldsChanged.push('priority')
-        beforeState.priority = task.priority
-        afterState.priority = changes.priority
-      }
+      if (data.fieldsChanged.length > 0) {
+        // Add updated_at and task ID for WHERE clause
+        data.setClauses.push('updated_at = ?')
+        data.values.push(nowStr)
+        data.values.push(task.id)
 
-      if (changes.project_id !== undefined && changes.project_id !== task.project_id) {
-        setClauses.push('project_id = ?')
-        values.push(changes.project_id)
-        fieldsChanged.push('project_id')
-        beforeState.project_id = task.project_id
-        afterState.project_id = changes.project_id
-      }
-
-      if (changes.labels !== undefined) {
-        const newLabels = JSON.stringify(changes.labels)
-        setClauses.push('labels = ?')
-        values.push(newLabels)
-        fieldsChanged.push('labels')
-        beforeState.labels = task.labels
-        afterState.labels = changes.labels
-      }
-
-      // Handle rrule changes - including anchor field derivation
-      if (changes.rrule !== undefined && changes.rrule !== task.rrule) {
-        setClauses.push('rrule = ?')
-        values.push(changes.rrule)
-        fieldsChanged.push('rrule')
-        beforeState.rrule = task.rrule
-        afterState.rrule = changes.rrule
-
-        if (changes.rrule === null) {
-          // Clearing recurrence - null out anchor fields
-          setClauses.push('anchor_time = NULL, anchor_dow = NULL, anchor_dom = NULL')
-          fieldsChanged.push('anchor_time', 'anchor_dow', 'anchor_dom')
-          beforeState.anchor_time = task.anchor_time
-          beforeState.anchor_dow = task.anchor_dow
-          beforeState.anchor_dom = task.anchor_dom
-          afterState.anchor_time = null
-          afterState.anchor_dow = null
-          afterState.anchor_dom = null
-        } else {
-          // Setting/changing recurrence - derive anchor fields from task's due_at
-          const dueAtForAnchors = task.due_at
-          const anchors = deriveAnchorFields(changes.rrule, dueAtForAnchors, userTimezone)
-
-          setClauses.push('anchor_time = ?')
-          values.push(anchors.anchor_time)
-          fieldsChanged.push('anchor_time')
-          beforeState.anchor_time = task.anchor_time
-          afterState.anchor_time = anchors.anchor_time
-
-          setClauses.push('anchor_dow = ?')
-          values.push(anchors.anchor_dow)
-          fieldsChanged.push('anchor_dow')
-          beforeState.anchor_dow = task.anchor_dow
-          afterState.anchor_dow = anchors.anchor_dow
-
-          setClauses.push('anchor_dom = ?')
-          values.push(anchors.anchor_dom)
-          fieldsChanged.push('anchor_dom')
-          beforeState.anchor_dom = task.anchor_dom
-          afterState.anchor_dom = anchors.anchor_dom
-
-          // Only auto-compute due_at if:
-          // 1. User didn't explicitly pass due_at
-          // 2. Task is NOT overdue (due_at is in the future or null)
-          // If overdue, keep current due_at - only the schedule changes
-          const isOverdue = task.due_at && new Date(task.due_at) < nowDate
-          if (changes.due_at === undefined && !isOverdue) {
-            // Compute next due_at for the new rrule
-            const nextOccurrence = computeFirstOccurrence(
-              changes.rrule,
-              anchors.anchor_time,
-              userTimezone,
-            )
-            const nextDueAt = nextOccurrence.toISOString()
-            setClauses.push('due_at = ?')
-            values.push(nextDueAt)
-            fieldsChanged.push('due_at')
-            beforeState.due_at = task.due_at
-            afterState.due_at = nextDueAt
-          }
-
-          // Clear original_due_at when rrule changes (consistent with single-task behavior)
-          if (task.original_due_at) {
-            setClauses.push('original_due_at = NULL')
-            fieldsChanged.push('original_due_at')
-            beforeState.original_due_at = task.original_due_at
-            afterState.original_due_at = null
-          }
-        }
-      }
-
-      // Handle recurrence_mode changes
-      if (
-        changes.recurrence_mode !== undefined &&
-        changes.recurrence_mode !== task.recurrence_mode
-      ) {
-        setClauses.push('recurrence_mode = ?')
-        values.push(changes.recurrence_mode)
-        fieldsChanged.push('recurrence_mode')
-        beforeState.recurrence_mode = task.recurrence_mode
-        afterState.recurrence_mode = changes.recurrence_mode
-      }
-
-      // Handle due_at changes with snooze detection
-      // Only apply snooze logic if due_at is changing AND rrule is NOT changing AND task had a due_at
-      const rruleChanging = changes.rrule !== undefined && changes.rrule !== task.rrule
-      if (changes.due_at !== undefined && changes.due_at !== task.due_at && !rruleChanging) {
-        setClauses.push('due_at = ?')
-        values.push(changes.due_at)
-        fieldsChanged.push('due_at')
-        beforeState.due_at = task.due_at
-        afterState.due_at = changes.due_at
-
-        // Apply snooze logic if task had a previous due_at
-        if (task.due_at !== null) {
-          // Set original_due_at if not already set (preserve existing)
-          const newOriginalDueAt = task.original_due_at ?? task.due_at
-          setClauses.push('original_due_at = ?')
-          values.push(newOriginalDueAt)
-          fieldsChanged.push('original_due_at')
-          beforeState.original_due_at = task.original_due_at
-          afterState.original_due_at = newOriginalDueAt
-
-          // ALWAYS increment snooze_count (consistent with single-task behavior)
-          const newSnoozeCount = task.snooze_count + 1
-          setClauses.push('snooze_count = ?')
-          values.push(newSnoozeCount)
-          fieldsChanged.push('snooze_count')
-          beforeState.snooze_count = task.snooze_count
-          afterState.snooze_count = newSnoozeCount
-
-          // Track for daily stats increment at the end
-          totalSnoozedCount++
-        }
-      }
-
-      if (fieldsChanged.length > 0) {
-        setClauses.push('updated_at = ?')
-        values.push(nowStr)
-        values.push(task.id)
-
-        const sql = `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`
-        tx.prepare(sql).run(...values)
+        const sql = `UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`
+        tx.prepare(sql).run(...data.values)
 
         snapshots.push(
           createTaskSnapshot(
-            beforeState as Partial<Task> & { id: number },
-            afterState as Partial<Task> & { id: number },
-            fieldsChanged,
+            data.beforeState as Partial<Task> & { id: number },
+            data.afterState as Partial<Task> & { id: number },
+            data.fieldsChanged,
           ),
         )
 
-        fieldsChanged.forEach((f) => allFieldsChanged.add(f))
+        data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
+
+        // Track snooze count for stats (handled at end)
+        if (data.isSnoozeScenario) {
+          totalSnoozedCount++
+        }
       }
     }
 
