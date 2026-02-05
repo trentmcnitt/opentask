@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
 
     return success({
       tasks_affected: result.tasksAffected,
+      tasks_skipped: result.tasksSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {
