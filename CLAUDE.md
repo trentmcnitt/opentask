@@ -112,7 +112,7 @@ If an Authorization header is present but the token is invalid, return 401 immed
 - Other source files: kebab-case (`api-response.ts`, `critical-alerts.ts`)
 - Types/interfaces: PascalCase (`Task`, `AuthUser`, `UpdateTaskOptions`)
 - DB columns: snake_case (`due_at`, `created_at`, `anchor_dow`)
-- API fields: snake_case (`project_id`, `snoozed_from`)
+- API fields: snake_case (`project_id`, `original_due_at`)
 
 ### Coding Rules
 
