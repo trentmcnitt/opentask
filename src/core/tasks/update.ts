@@ -24,6 +24,7 @@ export interface UpdateTaskOptions {
 export interface UpdateTaskResult {
   task: Task
   fieldsChanged: string[]
+  description: string
 }
 
 /**
@@ -48,13 +49,23 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   })
 
   if (data.setClauses.length === 0) {
-    return { task, fieldsChanged: [] }
+    return { task, fieldsChanged: [], description: '' }
   }
 
   // Add updated_at and task ID for WHERE clause
   data.setClauses.push('updated_at = ?')
   data.values.push(nowUtc())
   data.values.push(taskId)
+
+  // Look up project name if project_id changed
+  let projectName: string | undefined
+  if (data.fieldsChanged.includes('project_id') && data.afterState.project_id) {
+    const db = getDb()
+    const project = db
+      .prepare('SELECT name FROM projects WHERE id = ?')
+      .get(data.afterState.project_id) as { name: string } | undefined
+    if (project) projectName = project.name
+  }
 
   return withTransaction((db) => {
     const sql = `UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`
@@ -65,18 +76,14 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       data.afterState as Partial<Task> & { id: number },
       data.fieldsChanged,
     )
-    logAction(
-      userId,
-      'edit',
-      formatEditDescription(task.title, data.fieldsChanged, {
-        isSnooze: data.isSnoozeScenario,
-        beforeState: data.beforeState,
-        afterState: data.afterState,
-        userTimezone,
-      }),
-      data.fieldsChanged,
-      [snapshot],
-    )
+    const description = formatEditDescription(task.title, data.fieldsChanged, {
+      isSnooze: data.isSnoozeScenario,
+      beforeState: data.beforeState,
+      afterState: data.afterState,
+      userTimezone,
+      projectName,
+    })
+    logAction(userId, 'edit', description, data.fieldsChanged, [snapshot])
 
     // Increment snooze stats if this was a snooze operation
     if (data.isSnoozeScenario) {
@@ -86,7 +93,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     const updatedTask = getTaskById(taskId)
     if (!updatedTask) throw new Error('Failed to retrieve updated task')
 
-    return { task: updatedTask, fieldsChanged: data.fieldsChanged }
+    return { task: updatedTask, fieldsChanged: data.fieldsChanged, description }
   })
 }
 

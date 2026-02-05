@@ -10,7 +10,6 @@ import {
 import type { Task } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { showToast } from '@/lib/toast'
-import { formatChangesToast } from '@/lib/format-toast'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 
 /**
@@ -180,10 +179,10 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       }
 
       try {
-        await saveTaskChanges(taskId, changes)
+        const { description } = await saveTaskChanges(taskId, changes)
         cfg.onRefresh()
         showToast({
-          message: formatChangesToast(changes),
+          message: description || 'Changes saved',
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
       } catch {
@@ -198,10 +197,10 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     if (cfg.mode !== 'single' || !cfg.task || Object.keys(changes).length === 0) return
 
     try {
-      const updatedTask = await saveTaskChanges(cfg.taskId, changes)
+      const { task: updatedTask, description } = await saveTaskChanges(cfg.taskId, changes)
       cfg.setTask(updatedTask)
       showToast({
-        message: formatChangesToast(changes),
+        message: description || 'Changes saved',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {

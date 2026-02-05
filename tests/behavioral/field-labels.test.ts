@@ -1,5 +1,5 @@
 /**
- * Tests for field-labels.ts — shared field labels and undo/redo description formatters.
+ * Tests for field-labels.ts — shared field labels and unified toast description formatters.
  *
  * Pure function tests (no DB, no HTTP) plus integration-level tests that verify
  * undo descriptions flow through updateTask() correctly.
@@ -11,6 +11,7 @@ import {
   formatSnoozeTarget,
   formatEditDescription,
   formatBulkEditDescription,
+  truncateTitle,
 } from '@/lib/field-labels'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 import { updateTask } from '@/core/tasks/update'
@@ -18,6 +19,28 @@ import { getDb } from '@/core/db'
 import { executeUndo } from '@/core/undo'
 
 const TZ = 'America/Chicago'
+
+describe('truncateTitle', () => {
+  test('short title unchanged', () => {
+    expect(truncateTitle('Buy groceries')).toBe('Buy groceries')
+  })
+
+  test('exactly maxLen unchanged', () => {
+    expect(truncateTitle('12345678901234567890')).toBe('12345678901234567890')
+  })
+
+  test('longer than maxLen truncated with ellipsis', () => {
+    expect(truncateTitle('This is a very long task title')).toBe('This is a very lo...')
+  })
+
+  test('custom maxLen', () => {
+    expect(truncateTitle('Buy groceries now', 16)).toBe('Buy groceries...')
+  })
+
+  test('custom maxLen short enough', () => {
+    expect(truncateTitle('Short', 16)).toBe('Short')
+  })
+})
 
 describe('formatFieldSummary', () => {
   test('single user-facing field', () => {
@@ -81,7 +104,49 @@ describe('formatSnoozeTarget', () => {
 })
 
 describe('formatEditDescription', () => {
-  test('snooze only', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // --- Priority fragments ---
+
+  test('priority set from None', () => {
+    const result = formatEditDescription('Buy groceries', ['priority'], {
+      isSnooze: false,
+      beforeState: { id: 1, priority: 0 },
+      afterState: { id: 1, priority: 3 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Priority set to High \u2014 "Buy groceries"')
+  })
+
+  test('priority change between values', () => {
+    const result = formatEditDescription('Buy groceries', ['priority'], {
+      isSnooze: false,
+      beforeState: { id: 1, priority: 2 },
+      afterState: { id: 1, priority: 3 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Priority Medium \u2192 High \u2014 "Buy groceries"')
+  })
+
+  test('priority cleared', () => {
+    const result = formatEditDescription('Buy groceries', ['priority'], {
+      isSnooze: false,
+      beforeState: { id: 1, priority: 3 },
+      afterState: { id: 1, priority: 0 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Priority cleared \u2014 "Buy groceries"')
+  })
+
+  // --- Snooze fragments ---
+
+  test('snooze with delta', () => {
     const result = formatEditDescription(
       'Buy groceries',
       ['due_at', 'original_due_at', 'snooze_count'],
@@ -92,12 +157,10 @@ describe('formatEditDescription', () => {
         userTimezone: TZ,
       },
     )
-    // Should start with Snoozed and include a target
-    expect(result).toMatch(/^Snoozed "Buy groceries" to /)
+    expect(result).toBe('Snoozed to Mon 9:00 AM (+4d) \u2014 "Buy groceries"')
   })
 
   test('snooze + priority change', () => {
-    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     const result = formatEditDescription(
       'Buy groceries',
       ['due_at', 'original_due_at', 'snooze_count', 'priority'],
@@ -108,55 +171,171 @@ describe('formatEditDescription', () => {
         userTimezone: TZ,
       },
     )
-    expect(result).toMatch(/^Snoozed "Buy groceries" to /)
+    expect(result).toContain('Snoozed to Mon 9:00 AM (+4d)')
     expect(result).toContain('Priority Medium \u2192 High')
-    vi.useRealTimers()
+    expect(result).toContain('\u2014 "Buy groceries"')
   })
 
-  test('priority only shows from/to', () => {
-    const result = formatEditDescription('Buy groceries', ['priority'], {
+  // --- Due date (non-snooze) ---
+
+  test('due date set (non-snooze)', () => {
+    const result = formatEditDescription('Buy groceries', ['due_at'], {
       isSnooze: false,
-      beforeState: { id: 1, priority: 2 },
-      afterState: { id: 1, priority: 3 },
+      beforeState: { id: 1, due_at: null },
+      afterState: { id: 1, due_at: '2026-01-19T15:00:00Z' },
       userTimezone: TZ,
     })
-    expect(result).toBe('Priority Medium \u2192 High on "Buy groceries"')
+    expect(result).toBe('Due date set \u2014 "Buy groceries"')
   })
 
-  test('priority + other fields', () => {
-    const result = formatEditDescription('Buy groceries', ['priority', 'rrule', 'anchor_time'], {
+  test('due date cleared', () => {
+    const result = formatEditDescription('Buy groceries', ['due_at'], {
       isSnooze: false,
-      beforeState: { id: 1, priority: 1 },
-      afterState: { id: 1, priority: 4 },
+      beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z' },
+      afterState: { id: 1, due_at: null },
       userTimezone: TZ,
     })
-    expect(result).toBe('Priority Low \u2192 Urgent, updated recurrence on "Buy groceries"')
+    expect(result).toBe('Due date cleared \u2014 "Buy groceries"')
   })
 
-  test('single non-priority field', () => {
+  // --- Recurrence fragments ---
+
+  test('recurrence set', () => {
     const result = formatEditDescription('Buy groceries', ['rrule', 'anchor_time', 'anchor_dow'], {
       isSnooze: false,
-      beforeState: { id: 1 },
-      afterState: { id: 1 },
+      beforeState: { id: 1, rrule: null },
+      afterState: { id: 1, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', anchor_time: '09:00' },
       userTimezone: TZ,
     })
-    expect(result).toBe('Updated recurrence on "Buy groceries"')
+    expect(result).toBe('Recurrence set to Daily at 9:00 AM \u2014 "Buy groceries"')
   })
 
-  test('two non-priority fields', () => {
-    const result = formatEditDescription('Buy groceries', ['rrule', 'meta_notes'], {
+  test('recurrence changed', () => {
+    const result = formatEditDescription('Buy groceries', ['rrule', 'anchor_time', 'anchor_dow'], {
+      isSnooze: false,
+      beforeState: { id: 1, rrule: 'FREQ=DAILY' },
+      afterState: { id: 1, rrule: 'FREQ=WEEKLY;BYDAY=MO', anchor_time: '09:00' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Recurrence set to Mondays at 9:00 AM \u2014 "Buy groceries"')
+  })
+
+  test('recurrence cleared', () => {
+    const result = formatEditDescription(
+      'Buy groceries',
+      ['rrule', 'anchor_time', 'anchor_dow', 'anchor_dom'],
+      {
+        isSnooze: false,
+        beforeState: { id: 1, rrule: 'FREQ=DAILY' },
+        afterState: { id: 1, rrule: null },
+        userTimezone: TZ,
+      },
+    )
+    expect(result).toBe('Recurrence cleared \u2014 "Buy groceries"')
+  })
+
+  // --- Project fragment ---
+
+  test('project change with name', () => {
+    const result = formatEditDescription('Buy groceries', ['project_id'], {
+      isSnooze: false,
+      beforeState: { id: 1, project_id: 1 },
+      afterState: { id: 1, project_id: 2 },
+      userTimezone: TZ,
+      projectName: 'Work',
+    })
+    expect(result).toBe('Moved to Work \u2014 "Buy groceries"')
+  })
+
+  test('project change without name', () => {
+    const result = formatEditDescription('Buy groceries', ['project_id'], {
+      isSnooze: false,
+      beforeState: { id: 1, project_id: 1 },
+      afterState: { id: 1, project_id: 2 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Project updated \u2014 "Buy groceries"')
+  })
+
+  // --- Title rename ---
+
+  test('title rename', () => {
+    const result = formatEditDescription('New title', ['title'], {
+      isSnooze: false,
+      beforeState: { id: 1, title: 'Old title' },
+      afterState: { id: 1, title: 'New title' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Renamed "Old title" \u2192 "New title"')
+  })
+
+  test('title rename with truncation', () => {
+    const result = formatEditDescription('A very long new title here', ['title'], {
+      isSnooze: false,
+      beforeState: { id: 1, title: 'A very long old title here' },
+      afterState: { id: 1, title: 'A very long new title here' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Renamed "A very long o..." \u2192 "A very long n..."')
+  })
+
+  // --- Labels and notes ---
+
+  test('labels updated', () => {
+    const result = formatEditDescription('Buy groceries', ['labels'], {
       isSnooze: false,
       beforeState: { id: 1 },
       afterState: { id: 1 },
       userTimezone: TZ,
     })
-    expect(result).toBe('Updated recurrence and notes on "Buy groceries"')
+    expect(result).toBe('Labels updated \u2014 "Buy groceries"')
   })
 
-  test('many fields', () => {
+  test('notes updated', () => {
+    const result = formatEditDescription('Buy groceries', ['meta_notes'], {
+      isSnooze: false,
+      beforeState: { id: 1 },
+      afterState: { id: 1 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Notes updated \u2014 "Buy groceries"')
+  })
+
+  // --- Two-field combos ---
+
+  test('snooze + priority (two fields)', () => {
     const result = formatEditDescription(
       'Buy groceries',
-      ['title', 'priority', 'rrule', 'due_at'],
+      ['due_at', 'original_due_at', 'snooze_count', 'priority'],
+      {
+        isSnooze: true,
+        beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z', priority: 0 },
+        afterState: { id: 1, due_at: '2026-01-16T15:00:00Z', priority: 3 },
+        userTimezone: TZ,
+      },
+    )
+    // Two user-facing fields: due_at + priority → fragment, fragment — title
+    expect(result).toContain('Snoozed to tomorrow 9:00 AM (+1d)')
+    expect(result).toContain('Priority set to High')
+    expect(result).toContain('\u2014 "Buy groceries"')
+  })
+
+  test('recurrence + notes (two fields)', () => {
+    const result = formatEditDescription('Buy groceries', ['rrule', 'anchor_time', 'meta_notes'], {
+      isSnooze: false,
+      beforeState: { id: 1 },
+      afterState: { id: 1, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', anchor_time: '09:00' },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Recurrence set to Daily at 9:00 AM, Notes updated \u2014 "Buy groceries"')
+  })
+
+  // --- Three+ fields ---
+
+  test('three+ fields uses field names', () => {
+    const result = formatEditDescription(
+      'Buy groceries',
+      ['priority', 'due_at', 'rrule', 'anchor_time'],
       {
         isSnooze: false,
         beforeState: { id: 1, priority: 0 },
@@ -164,10 +343,26 @@ describe('formatEditDescription', () => {
         userTimezone: TZ,
       },
     )
-    // Priority + 3 others = priority fragment + "updated 3 fields"
-    expect(result).toContain('Priority None \u2192 Medium')
-    expect(result).toContain('on "Buy groceries"')
+    expect(result).toBe('Updated priority, due date, and recurrence \u2014 "Buy groceries"')
   })
+
+  // --- Title truncation in em-dash descriptions ---
+
+  test('long title truncated in description', () => {
+    const result = formatEditDescription(
+      'This is a very long task title that should be truncated',
+      ['priority'],
+      {
+        isSnooze: false,
+        beforeState: { id: 1, priority: 2 },
+        afterState: { id: 1, priority: 3 },
+        userTimezone: TZ,
+      },
+    )
+    expect(result).toContain('"This is a very lo..."')
+  })
+
+  // --- Fallback ---
 
   test('fallback when only internal fields changed', () => {
     const result = formatEditDescription('Buy groceries', ['anchor_time', 'anchor_dow'], {
@@ -213,7 +408,7 @@ describe('Integration: undo description enrichment', () => {
     teardownTestDb()
   })
 
-  test('priority change undo description includes from/to values', () => {
+  test('priority change description uses new format', () => {
     updateTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -225,10 +420,33 @@ describe('Integration: undo description enrichment', () => {
     const log = db
       .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(TEST_USER_ID) as { description: string }
-    expect(log.description).toBe('Priority Medium \u2192 Urgent on "Test Task"')
+    expect(log.description).toBe('Priority Medium \u2192 Urgent \u2014 "Test Task"')
   })
 
-  test('snooze undo description includes target time', () => {
+  test('priority set from None uses "set to" format', () => {
+    // First clear priority to None
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: 1,
+      input: { priority: 0 },
+    })
+    // Then set to High
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: 1,
+      input: { priority: 3 },
+    })
+
+    const db = getDb()
+    const log = db
+      .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { description: string }
+    expect(log.description).toBe('Priority set to High \u2014 "Test Task"')
+  })
+
+  test('snooze description includes target and delta', () => {
     // Snooze to tomorrow 9:00 AM Chicago = Jan 16 15:00 UTC
     updateTask({
       userId: TEST_USER_ID,
@@ -241,7 +459,17 @@ describe('Integration: undo description enrichment', () => {
     const log = db
       .prepare('SELECT description FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(TEST_USER_ID) as { description: string }
-    expect(log.description).toBe('Snoozed "Test Task" to tomorrow 9:00 AM')
+    expect(log.description).toBe('Snoozed to tomorrow 9:00 AM (+1d) \u2014 "Test Task"')
+  })
+
+  test('updateTask returns description', () => {
+    const result = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: 1,
+      input: { priority: 4 },
+    })
+    expect(result.description).toBe('Priority Medium \u2192 Urgent \u2014 "Test Task"')
   })
 
   test('undo restores previous state after enriched description', () => {

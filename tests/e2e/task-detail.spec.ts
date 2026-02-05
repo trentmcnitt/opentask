@@ -51,7 +51,7 @@ test.describe('Task detail', () => {
 
     // Click Save to persist the change, wait for the save toast before reloading
     await page.getByRole('button', { name: 'Save' }).click()
-    await expect(page.getByText('Title updated')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Renamed', { exact: false })).toBeVisible({ timeout: 5000 })
 
     // Reload to verify persistence
     await page.reload()

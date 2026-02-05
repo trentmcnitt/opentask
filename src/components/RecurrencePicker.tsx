@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -359,9 +359,24 @@ export function RecurrencePicker({
     minute,
   )
 
+  // Store onChange in a ref so the effect only fires when rrule/recurrenceMode actually
+  // change — not when the parent re-renders and passes a new closure reference.
+  const onChangeRef = useRef(onChange)
   useEffect(() => {
-    onChange(rrule, recurrenceMode)
-  }, [rrule, recurrenceMode, onChange])
+    onChangeRef.current = onChange
+  }, [onChange])
+
+  // Skip the initial onChange call on mount — the reconstructed rrule represents the
+  // same value the parent already has. Without this guard, opening the recurrence panel
+  // immediately marks the form dirty even though the user hasn't changed anything.
+  const hasMounted = useRef(false)
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true
+      return
+    }
+    onChangeRef.current(rrule, recurrenceMode)
+  }, [rrule, recurrenceMode])
 
   const toggleDay = (day: string) => {
     setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))

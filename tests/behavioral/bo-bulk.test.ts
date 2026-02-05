@@ -499,7 +499,7 @@ describe('Bulk Snooze Relative Mode', () => {
     const history = getUndoHistory(TEST_USER_ID, 20)
     const bulkSnoozeEntries = history.filter((e) => e.action === 'bulk_snooze')
     expect(bulkSnoozeEntries.length).toBe(1)
-    expect(bulkSnoozeEntries[0].description).toBe('Snoozed 2 tasks')
+    expect(bulkSnoozeEntries[0].description).toBe('Snoozed 2 tasks (+1h)')
 
     // Undo should revert both
     expect(canUndo(TEST_USER_ID)).toBe(true)

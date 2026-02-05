@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const body = await request.json()
     const input = validateTaskUpdate(body)
 
-    const { task, fieldsChanged } = updateTask({
+    const { task, fieldsChanged, description } = updateTask({
       userId: user.id,
       userTimezone: user.timezone,
       taskId,
@@ -77,6 +77,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return success({
       ...formatTaskResponse(task),
       fields_changed: fieldsChanged,
+      description,
     })
   } catch (err) {
     if (err instanceof AuthError) {

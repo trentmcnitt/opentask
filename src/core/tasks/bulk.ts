@@ -9,7 +9,8 @@ import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
-import { formatBulkEditDescription } from '@/lib/field-labels'
+import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
+import { formatDurationDelta } from '@/lib/format-date'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import {
@@ -257,7 +258,17 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     // snooze_count always changes now
     const allFieldsChanged = ['due_at', 'original_due_at', 'snooze_count']
 
-    logAction(userId, 'bulk_snooze', `Snoozed ${tasks.length} tasks`, allFieldsChanged, snapshots)
+    // Build enriched bulk snooze description
+    let bulkSnoozeDesc: string
+    if (until !== undefined) {
+      const target = formatSnoozeTarget(until, userTimezone)
+      bulkSnoozeDesc = `Snoozed ${tasks.length} tasks to ${target}`
+    } else {
+      const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
+      bulkSnoozeDesc = `Snoozed ${tasks.length} tasks (${delta})`
+    }
+
+    logAction(userId, 'bulk_snooze', bulkSnoozeDesc, allFieldsChanged, snapshots)
 
     // Increment daily stats for ALL snoozes (every snooze counts now)
     incrementDailyStat(userId, 'snoozes', userTimezone, tasks.length)
