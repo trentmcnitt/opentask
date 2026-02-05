@@ -284,9 +284,9 @@ export function QuickActionPanel({
   }, [pendingRrule, effectiveTask, timezone])
 
   // Use the appropriate hook based on mode
-  // When onSaveAll is provided, date changes are also staged via pendingDueAt
+  // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook
   const hasDateChanges = onSaveAll
-    ? pendingDueAt !== null
+    ? pendingDueAt !== null || singleHook.isDirty
     : isBulkMode
       ? bulkHook.isDirty
       : singleHook.isDirty

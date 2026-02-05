@@ -92,6 +92,11 @@ Any change that touches UI, components, styles, or client-side behavior is not c
 
 Backend/logic-only changes with no UI touchpoint do not need browser verification — passing tests are sufficient.
 
+**Dirty state navigation warning**: The task detail page (and any page with QuickActionPanel) has a `beforeunload` handler that triggers a browser "Leave site?" confirmation dialog when there are unsaved changes. When using Playwright for browser testing:
+
+1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
+2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
+
 ## Conventions
 
 ### Naming
