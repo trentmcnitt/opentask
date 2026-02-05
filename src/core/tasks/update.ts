@@ -196,7 +196,12 @@ function applyAnchorUpdates(
     diff.afterState.original_due_at = null
   }
 
-  if (input.due_at === undefined) {
+  // Only auto-compute due_at if:
+  // 1. User didn't explicitly pass due_at
+  // 2. Task is NOT overdue (due_at is in the future or null)
+  // If overdue, keep current due_at - only the schedule changes
+  const isOverdue = task.due_at && new Date(task.due_at) < new Date()
+  if (input.due_at === undefined && !isOverdue) {
     const nextOccurrence = computeFirstOccurrence(diff.newRRule, anchors.anchor_time, userTimezone)
     const nextDueAt = nextOccurrence.toISOString()
 

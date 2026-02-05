@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import type { Task } from '@/types'
 
@@ -21,11 +21,16 @@ interface QuickActionPopoverProps {
   open: boolean
   /** Close handler */
   onClose: () => void
-  /** Called to save the date change (snooze or patch) */
+  /**
+   * Batched save callback - when provided, all changes are sent in a single call
+   * instead of individual callbacks. This creates one undo entry and one toast.
+   */
+  onSaveAll?: (taskId: number, changes: QuickActionPanelChanges) => void
+  /** Called to save the date change (snooze or patch) - legacy, used when onSaveAll not provided */
   onDateSave: (taskId: number, isoUtc: string) => void
-  /** Called on priority change with absolute priority (0-4) */
+  /** Called on priority change with absolute priority (0-4) - legacy, used when onSaveAll not provided */
   onPriorityChange?: (taskId: number, newPriority: number) => void
-  /** Called when recurrence changes */
+  /** Called when recurrence changes - legacy, used when onSaveAll not provided */
   onRruleChange?: (
     taskId: number,
     rrule: string | null,
@@ -43,6 +48,7 @@ export function QuickActionPopover({
   focusedTask,
   open,
   onClose,
+  onSaveAll,
   onDateSave,
   onPriorityChange,
   onRruleChange,
@@ -125,6 +131,17 @@ export function QuickActionPopover({
     [focusedTask, onRruleChange],
   )
 
+  // Batched save handler - wraps onSaveAll with taskId and closes the popover
+  const handleSaveAll = useCallback(
+    (changes: QuickActionPanelChanges) => {
+      if (!focusedTask || !onSaveAll) return
+      onSaveAll(focusedTask.id, changes)
+      setPendingDate(null)
+      onClose()
+    },
+    [focusedTask, onSaveAll, onClose],
+  )
+
   // Handle dialog/sheet close - reset pending date
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
@@ -138,7 +155,22 @@ export function QuickActionPopover({
 
   if (!focusedTask) return null
 
-  const panel = (
+  // When onSaveAll is provided, use batched mode - pass onSaveAll to QuickActionPanel
+  // and disable individual change callbacks (priority, rrule)
+  const panel = onSaveAll ? (
+    <QuickActionPanel
+      task={focusedTask}
+      timezone={timezone}
+      mode={isMobile ? 'sheet' : 'popover'}
+      onDateChange={handleDateChange}
+      onSaveAll={handleSaveAll}
+      onDelete={onDelete ? handleDelete : undefined}
+      onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
+      onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
+      onSave={handleSave}
+      onCancel={handleCancel}
+    />
+  ) : (
     <QuickActionPanel
       task={focusedTask}
       timezone={timezone}

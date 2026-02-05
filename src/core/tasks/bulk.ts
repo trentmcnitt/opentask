@@ -437,8 +437,10 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   }
 
   const nowStr = nowUtc()
+  const nowDate = new Date()
   const snapshots: UndoSnapshot[] = []
   const allFieldsChanged = new Set<string>()
+  let totalSnoozedCount = 0
 
   return withTransaction((tx) => {
     // Validate project access once before processing tasks
@@ -525,18 +527,25 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
           beforeState.anchor_dom = task.anchor_dom
           afterState.anchor_dom = anchors.anchor_dom
 
-          // Compute next due_at for the new rrule
-          const nextOccurrence = computeFirstOccurrence(
-            changes.rrule,
-            anchors.anchor_time,
-            userTimezone,
-          )
-          const nextDueAt = nextOccurrence.toISOString()
-          setClauses.push('due_at = ?')
-          values.push(nextDueAt)
-          fieldsChanged.push('due_at')
-          beforeState.due_at = task.due_at
-          afterState.due_at = nextDueAt
+          // Only auto-compute due_at if:
+          // 1. User didn't explicitly pass due_at
+          // 2. Task is NOT overdue (due_at is in the future or null)
+          // If overdue, keep current due_at - only the schedule changes
+          const isOverdue = task.due_at && new Date(task.due_at) < nowDate
+          if (changes.due_at === undefined && !isOverdue) {
+            // Compute next due_at for the new rrule
+            const nextOccurrence = computeFirstOccurrence(
+              changes.rrule,
+              anchors.anchor_time,
+              userTimezone,
+            )
+            const nextDueAt = nextOccurrence.toISOString()
+            setClauses.push('due_at = ?')
+            values.push(nextDueAt)
+            fieldsChanged.push('due_at')
+            beforeState.due_at = task.due_at
+            afterState.due_at = nextDueAt
+          }
 
           // Clear original_due_at when rrule changes (consistent with single-task behavior)
           if (task.original_due_at) {
@@ -558,6 +567,39 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         fieldsChanged.push('recurrence_mode')
         beforeState.recurrence_mode = task.recurrence_mode
         afterState.recurrence_mode = changes.recurrence_mode
+      }
+
+      // Handle due_at changes with snooze detection
+      // Only apply snooze logic if due_at is changing AND rrule is NOT changing AND task had a due_at
+      const rruleChanging = changes.rrule !== undefined && changes.rrule !== task.rrule
+      if (changes.due_at !== undefined && changes.due_at !== task.due_at && !rruleChanging) {
+        setClauses.push('due_at = ?')
+        values.push(changes.due_at)
+        fieldsChanged.push('due_at')
+        beforeState.due_at = task.due_at
+        afterState.due_at = changes.due_at
+
+        // Apply snooze logic if task had a previous due_at
+        if (task.due_at !== null) {
+          // Set original_due_at if not already set (preserve existing)
+          const newOriginalDueAt = task.original_due_at ?? task.due_at
+          setClauses.push('original_due_at = ?')
+          values.push(newOriginalDueAt)
+          fieldsChanged.push('original_due_at')
+          beforeState.original_due_at = task.original_due_at
+          afterState.original_due_at = newOriginalDueAt
+
+          // ALWAYS increment snooze_count (consistent with single-task behavior)
+          const newSnoozeCount = task.snooze_count + 1
+          setClauses.push('snooze_count = ?')
+          values.push(newSnoozeCount)
+          fieldsChanged.push('snooze_count')
+          beforeState.snooze_count = task.snooze_count
+          afterState.snooze_count = newSnoozeCount
+
+          // Track for daily stats increment at the end
+          totalSnoozedCount++
+        }
       }
 
       if (fieldsChanged.length > 0) {
@@ -588,6 +630,11 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         Array.from(allFieldsChanged),
         snapshots,
       )
+    }
+
+    // Increment daily snooze stats if any tasks were snoozed
+    if (totalSnoozedCount > 0) {
+      incrementDailyStat(userId, 'snoozes', userTimezone, totalSnoozedCount)
     }
 
     return {

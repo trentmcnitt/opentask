@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
+import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -459,32 +462,209 @@ function ActivityTab({
       ) : (
         <div className="space-y-2">
           {activities.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
-            >
-              <span className={a.undone ? 'text-zinc-400' : 'text-blue-500'}>
-                {a.undone ? '○' : '●'}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {formatActivityDescription(a, timezone)}
-                </p>
-                <p className="text-xs text-zinc-400">
-                  {new Date(a.created_at).toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                  })}
-                  {a.undone && ' (undone)'}
-                </p>
-              </div>
-            </div>
+            <ExpandableActivityItem key={a.id} activity={a} timezone={timezone} />
           ))}
         </div>
       )}
     </div>
   )
+}
+
+/**
+ * Expandable activity item with chevron to show/hide full details.
+ * Collapsed: shows truncated description with chevron
+ * Expanded: shows full description, field badges, and before/after values
+ */
+function ExpandableActivityItem({ activity, timezone }: { activity: UndoEntry; timezone: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasDetails = activity.snapshot.length > 0 || activity.fields_changed.length > 0
+
+  return (
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+      {/* Header - always visible, clickable if has details */}
+      <button
+        onClick={() => hasDetails && setExpanded(!expanded)}
+        className={cn(
+          'flex w-full items-center gap-3 p-3 text-left',
+          hasDetails && 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900',
+        )}
+        disabled={!hasDetails}
+        type="button"
+      >
+        {hasDetails ? (
+          expanded ? (
+            <ChevronDown className="size-4 flex-shrink-0 text-zinc-400" />
+          ) : (
+            <ChevronRight className="size-4 flex-shrink-0 text-zinc-400" />
+          )
+        ) : (
+          <span className="size-4 flex-shrink-0" />
+        )}
+
+        <span className={activity.undone ? 'text-zinc-400' : 'text-blue-500'}>
+          {activity.undone ? '○' : '●'}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className={cn('text-sm font-medium', !expanded && 'truncate')}>
+            {formatActivityDescription(activity, timezone)}
+          </p>
+          <p className="text-xs text-zinc-400">
+            {new Date(activity.created_at).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })}
+            {activity.undone && ' (undone)'}
+          </p>
+        </div>
+      </button>
+
+      {/* Expanded details */}
+      {expanded && hasDetails && (
+        <div className="border-t border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <ActivityDetails activity={activity} timezone={timezone} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Shows detailed information about an activity entry:
+ * - Fields changed badges
+ * - Before/after values for each changed field
+ * - For bulk operations: task count and first few task titles
+ */
+function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone: string }) {
+  const { snapshot, fields_changed } = activity
+  const isBulk = activity.action.startsWith('bulk_')
+
+  // Filter out internal fields that shouldn't be shown to users
+  const displayFields = fields_changed.filter(
+    (f) =>
+      !['anchor_time', 'anchor_dow', 'anchor_dom', 'updated_at', 'original_due_at'].includes(f),
+  )
+
+  return (
+    <div className="space-y-3 text-sm">
+      {/* Fields changed badges */}
+      {displayFields.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-zinc-500">Changed:</span>
+          {displayFields.map((field) => (
+            <Badge key={field} variant="secondary" className="text-xs">
+              {formatFieldName(field)}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* For bulk operations, show affected task titles */}
+      {isBulk && snapshot.length > 0 && (
+        <div className="text-xs text-zinc-500">
+          <span className="font-medium">{snapshot.length} tasks:</span>{' '}
+          {snapshot
+            .slice(0, 5)
+            .map((s) => s.before_state?.title || s.after_state?.title || `#${s.task_id}`)
+            .join(', ')}
+          {snapshot.length > 5 && ` +${snapshot.length - 5} more`}
+        </div>
+      )}
+
+      {/* For single task, show before/after details */}
+      {!isBulk && snapshot.length === 1 && (
+        <div className="space-y-1.5">
+          {displayFields.map((field) => {
+            const detail = formatFieldDetail(snapshot[0], field, timezone)
+            if (!detail) return null
+            return (
+              <div key={field} className="flex gap-2 text-xs">
+                <span className="font-medium text-zinc-600 dark:text-zinc-400">
+                  {formatFieldName(field)}:
+                </span>
+                <span className="text-zinc-500">{detail}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Format a field name for display (e.g., 'due_at' -> 'Due date')
+ */
+function formatFieldName(field: string): string {
+  const names: Record<string, string> = {
+    priority: 'Priority',
+    title: 'Title',
+    due_at: 'Due date',
+    done: 'Status',
+    project_id: 'Project',
+    rrule: 'Recurrence',
+    labels: 'Labels',
+    done_at: 'Done at',
+    archived_at: 'Archived',
+    deleted_at: 'Deleted',
+    snooze_count: 'Snooze count',
+    recurrence_mode: 'Recurrence mode',
+  }
+  return names[field] || field.replace(/_/g, ' ')
+}
+
+/**
+ * Format a single field's before/after values for display
+ */
+function formatFieldDetail(snapshot: UndoSnapshot, field: string, timezone: string): string | null {
+  const { before_state, after_state } = snapshot
+
+  switch (field) {
+    case 'priority': {
+      const before = formatPriority(before_state.priority)
+      const after = formatPriority(after_state.priority)
+      return `${before} → ${after}`
+    }
+    case 'title': {
+      const before = before_state.title ?? '(none)'
+      const after = after_state.title ?? '(none)'
+      const truncBefore = before.length > 25 ? before.slice(0, 25) + '…' : before
+      const truncAfter = after.length > 25 ? after.slice(0, 25) + '…' : after
+      return `"${truncBefore}" → "${truncAfter}"`
+    }
+    case 'due_at': {
+      const before = before_state.due_at
+        ? formatTimeInTimezone(before_state.due_at, timezone)
+        : '(none)'
+      const after = after_state.due_at
+        ? formatTimeInTimezone(after_state.due_at, timezone)
+        : '(none)'
+      return `${before} → ${after}`
+    }
+    case 'done': {
+      const before = before_state.done ? 'Done' : 'Not done'
+      const after = after_state.done ? 'Done' : 'Not done'
+      return `${before} → ${after}`
+    }
+    case 'labels': {
+      const before = (before_state.labels || []).join(', ') || '(none)'
+      const after = (after_state.labels || []).join(', ') || '(none)'
+      return `${before} → ${after}`
+    }
+    case 'rrule': {
+      const before = before_state.rrule ? 'Has recurrence' : 'None'
+      const after = after_state.rrule ? 'Has recurrence' : 'None'
+      return `${before} → ${after}`
+    }
+    case 'snooze_count': {
+      const before = before_state.snooze_count ?? 0
+      const after = after_state.snooze_count ?? 0
+      return `${before} → ${after}`
+    }
+    default:
+      return null
+  }
 }

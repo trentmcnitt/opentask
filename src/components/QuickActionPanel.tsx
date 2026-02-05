@@ -46,10 +46,12 @@ import {
   snapToNextHour,
   formatSmartButtonTime,
 } from '@/lib/quick-select-dates'
+import { RRule } from 'rrule'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
+import { formatDateTime } from '@/lib/format-date'
 import type { Task, Project } from '@/types'
 
 /**
@@ -249,6 +251,27 @@ export function QuickActionPanel({
   )
   const displayRrule = pendingRrule !== undefined ? pendingRrule : effectiveTask?.rrule
   const displayProject = pendingProject ?? effectiveTask?.project_id
+
+  // Preview of new due_at when changing recurrence for non-overdue tasks
+  // This helps users understand what date the task will move to with the new schedule
+  const previewDueAt = useMemo(() => {
+    // Only show preview when user is actively changing recurrence
+    if (pendingRrule === undefined || !pendingRrule || !effectiveTask) return null
+
+    // Don't preview for overdue tasks - they stay overdue until dealt with
+    const isOverdue = effectiveTask.due_at && new Date(effectiveTask.due_at) < new Date()
+    if (isOverdue) return null
+
+    try {
+      // Compute next occurrence using the pending rrule
+      const rule = RRule.fromString(pendingRrule)
+      const next = rule.after(new Date())
+      return next?.toISOString() ?? null
+    } catch {
+      // Invalid rrule - don't show preview
+      return null
+    }
+  }, [pendingRrule, effectiveTask])
 
   // Use the appropriate hook based on mode
   // When onSaveAll is provided, date changes are also staged via pendingDueAt
@@ -728,6 +751,12 @@ export function QuickActionPanel({
             <span className="mx-1">&middot;</span>
             <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
           </p>
+          {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
+          {previewDueAt && (
+            <p className="mt-0.5 text-xs font-medium text-blue-500">
+              → {formatDateTime(previewDueAt, timezone)}
+            </p>
+          )}
           {/* Recurrence summary line (with icon) - only in SelectionActionSheet mode */}
           {isSelectionSheetMode && recurrenceText && (
             <p className="text-muted-foreground mt-0.5 text-xs select-text">
@@ -957,8 +986,8 @@ export function QuickActionPanel({
                 </span>
               ) : null
             })()}
-            {/* Recurrence button - show when onRruleChange is provided */}
-            {onRruleChange && (
+            {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
+            {(onRruleChange || onSaveAll) && (
               <IconButton
                 icon={<Repeat className="size-4" />}
                 label="Recurrence"
@@ -1049,7 +1078,7 @@ export function QuickActionPanel({
 
       {/* Expandable recurrence section - shown when recurrence button is clicked */}
       {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}
-      {editingRecurrence && onRruleChange && (
+      {editingRecurrence && (onRruleChange || onSaveAll) && (
         <div className="rounded-lg border p-3">
           <RecurrencePicker
             value={displayRrule}

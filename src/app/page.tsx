@@ -21,7 +21,9 @@ import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
 import { showToast } from '@/lib/toast'
+import { formatChangesToast } from '@/lib/format-toast'
 import type { Task, Project } from '@/types'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 
 export default function Home() {
   return (
@@ -262,6 +264,43 @@ function useTaskActions(
     [fetchTasks, handleUndo],
   )
 
+  // Batched save handler for QuickActionPopover - sends all changes in a single API call
+  // This creates one undo entry and shows one toast for all changes made in the panel
+  const handleSaveAllChanges = useCallback(
+    async (taskId: number, changes: QuickActionPanelChanges) => {
+      // Optimistic update for priority (the most visible change)
+      if (changes.priority !== undefined) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, priority: changes.priority! } : t)),
+        )
+      }
+      // Optimistic update for due_at if present
+      if (changes.due_at !== undefined) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, due_at: changes.due_at! } : t)),
+        )
+      }
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changes),
+        })
+        if (!res.ok) throw new Error('Failed to update task')
+        fetchTasks()
+        showToast({
+          message: formatChangesToast(changes),
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+      } catch {
+        // Revert optimistic updates on failure
+        fetchTasks()
+      }
+    },
+    [setTasks, fetchTasks, handleUndo],
+  )
+
   return {
     handleDone,
     handleSnooze,
@@ -270,6 +309,7 @@ function useTaskActions(
     handleQuickAdd,
     handlePriorityChange,
     handleRruleChange,
+    handleSaveAllChanges,
   }
 }
 
@@ -916,9 +956,8 @@ function HomeContent() {
       quickActionOpen={quickActionOpen}
       onTaskFocus={setFocusedTask}
       onQuickActionClose={() => setQuickActionOpen(false)}
+      onQuickActionSaveAll={actions.handleSaveAllChanges}
       onQuickActionDateSave={actions.handleSnooze}
-      onQuickActionPriorityChange={actions.handlePriorityChange}
-      onQuickActionRruleChange={actions.handleRruleChange}
       onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
       onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
       keyboardFocusedId={keyboardFocusedId}
@@ -1036,9 +1075,8 @@ function DashboardView({
   quickActionOpen,
   onTaskFocus,
   onQuickActionClose,
+  onQuickActionSaveAll,
   onQuickActionDateSave,
-  onQuickActionPriorityChange,
-  onQuickActionRruleChange,
   onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
@@ -1089,13 +1127,8 @@ function DashboardView({
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
+  onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
   onQuickActionDateSave: (taskId: number, until: string) => void
-  onQuickActionPriorityChange: (taskId: number, newPriority: number) => void
-  onQuickActionRruleChange: (
-    taskId: number,
-    rrule: string | null,
-    recurrenceMode?: 'from_due' | 'from_completion',
-  ) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
   keyboardFocusedId: number | null
@@ -1248,9 +1281,8 @@ function DashboardView({
         focusedTask={focusedTask}
         open={quickActionOpen}
         onClose={onQuickActionClose}
+        onSaveAll={onQuickActionSaveAll}
         onDateSave={onQuickActionDateSave}
-        onPriorityChange={onQuickActionPriorityChange}
-        onRruleChange={onQuickActionRruleChange}
         onNavigateToDetail={onQuickActionNavigate}
       />
 
