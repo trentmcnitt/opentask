@@ -1178,6 +1178,27 @@ function DashboardView({
           }}
         />
 
+        {tasks.length > 0 && (
+          <div className="mb-4">
+            <button
+              onClick={() => {
+                const allSelected =
+                  tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                if (allSelected) {
+                  selection.clear()
+                } else {
+                  selection.selectAll(tasks.map((t) => t.id))
+                }
+              }}
+              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            >
+              {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                ? 'Select None'
+                : 'Select All'}
+            </button>
+          </div>
+        )}
+
         {searchQuery && (
           <div className="mb-4 text-sm text-zinc-500">
             {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;

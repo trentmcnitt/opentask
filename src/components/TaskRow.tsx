@@ -199,7 +199,7 @@ export function TaskRow({
    * |----------------------|-------------------------|--------------------------------------------|
    * | Not in selection mode| Desktop click           | activate - show blue glow only (no select) |
    * | Not in selection mode| Desktop double-click    | onDoubleClick - open QuickActionPanel      |
-   * | Not in selection mode| Mobile tap              | selectOnly - enter selection mode          |
+   * | Not in selection mode| Mobile tap              | onDoubleClick - open QuickActionPanel      |
    * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
    * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
    * | In selection mode    | Desktop Shift+click     | rangeSelect - select range                 |
@@ -207,8 +207,8 @@ export function TaskRow({
    *
    * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
    * actually select. Double-click opens QuickActionPanel for quick edits.
-   * Long-press enters selection mode on desktop. Mobile users have no keyboard,
-   * so tapping enters selection mode directly.
+   * Long-press enters selection mode on both desktop and mobile. Mobile tap opens
+   * the QuickActionPanel (same as desktop double-click) for quick edits.
    * This separates "where you are" (focus/blue glow) from "what's selected" (checkboxes).
    */
   const handleClick = useCallback(
@@ -239,9 +239,8 @@ export function TaskRow({
       } else if (isSelectionMode && onSelectOnly) {
         onSelectOnly()
         onActivate?.()
-      } else if (pointer.wasTouch() && onSelectOnly) {
-        onSelectOnly()
-        onActivate?.()
+      } else if (pointer.wasTouch() && onDoubleClick) {
+        onDoubleClick()
       } else if (onActivate) {
         onActivate()
       }

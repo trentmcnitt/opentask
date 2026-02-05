@@ -94,19 +94,22 @@ export function Header({
                   aria-label="Task counts"
                   tabIndex={0}
                 >
-                  <span className="bg-muted text-muted-foreground inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none">
+                  <span className="bg-muted text-muted-foreground hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex">
                     {taskCount}
                   </span>
                   {overdueCount > 0 && (
-                    <span className="bg-destructive/15 text-destructive inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none">
+                    <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex">
                       {overdueCount}
                     </span>
                   )}
-                  {todayCount > 0 && (
-                    <span className="bg-primary/15 text-primary inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none">
-                      {todayCount}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      'bg-primary/15 text-primary inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none',
+                      todayCount === 0 && 'md:hidden',
+                    )}
+                  >
+                    {todayCount}
+                  </span>
                 </div>
               </PopoverTrigger>
               <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>

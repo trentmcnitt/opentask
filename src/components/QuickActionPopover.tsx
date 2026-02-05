@@ -3,13 +3,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
@@ -172,6 +166,7 @@ export function QuickActionPopover({
         task={focusedTask}
         timezone={timezone}
         mode={isMobile ? 'sheet' : 'popover'}
+        titleVariant="prominent"
         onDateChange={handleDateChange}
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
@@ -193,6 +188,7 @@ export function QuickActionPopover({
         task={focusedTask}
         timezone={timezone}
         mode={isMobile ? 'sheet' : 'popover'}
+        titleVariant="prominent"
         onDateChange={handleDateChange}
         onPriorityChange={onPriorityChange ? handlePriorityChange : undefined}
         onRruleChange={onRruleChange ? handleRruleChange : undefined}
@@ -209,15 +205,17 @@ export function QuickActionPopover({
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
-          <SheetHeader>
+        <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
+          {/* Accessibility: Radix Dialog requires a title — hide it visually */}
+          <VisuallyHidden>
             <SheetTitle>Quick Actions</SheetTitle>
-            <SheetDescription className="sr-only">
-              Adjust date, priority, and other task settings
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-4">{panel}</div>
-          <div className="h-6 sm:hidden" />
+            <SheetDescription>Adjust date, priority, and other task settings</SheetDescription>
+          </VisuallyHidden>
+          {/* Drag handle */}
+          <div className="flex justify-center pt-3 pb-1">
+            <div className="bg-muted-foreground/30 h-1 w-10 rounded-full" />
+          </div>
+          <div className="px-4 pb-2">{panel}</div>
         </SheetContent>
       </Sheet>
     )

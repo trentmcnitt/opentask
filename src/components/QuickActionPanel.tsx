@@ -718,18 +718,13 @@ export function QuickActionPanel({
   const showQuickLinks = !isSelectionSheetMode
 
   return (
-    <div
-      className={cn(
-        'space-y-3 border-l-4 pl-3',
-        isDirty ? 'border-blue-500' : 'border-transparent',
-      )}
-    >
+    <div className="space-y-3">
       {/* Header section - responsive: stacked on mobile, side-by-side on desktop */}
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-3">
         {/* Action icons - first on mobile (order-first), last on desktop (md:order-last) */}
         {/* Only show when not in sheet mode */}
         {showQuickLinks && (
-          <div className="order-first flex items-center gap-1.5 md:order-last">
+          <div className="order-first flex items-center gap-1.5 self-end md:order-last">
             {/* Project badge with optional picker - inline popover or external picker */}
             {/* Show display project name (pending or current from prop) */}
             {(() => {
