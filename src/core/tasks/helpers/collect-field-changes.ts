@@ -169,6 +169,13 @@ function collectBasicFields(
   if (input.meta_notes !== undefined && input.meta_notes !== task.meta_notes) {
     trackField(data, 'meta_notes', task.meta_notes, input.meta_notes)
   }
+
+  if (
+    input.auto_snooze_minutes !== undefined &&
+    input.auto_snooze_minutes !== task.auto_snooze_minutes
+  ) {
+    trackField(data, 'auto_snooze_minutes', task.auto_snooze_minutes, input.auto_snooze_minutes)
+  }
 }
 
 /**

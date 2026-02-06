@@ -17,8 +17,8 @@ export function initNotifications(): void {
 
   log.info('notifications', 'Starting notification service')
 
-  // Check for overdue tasks every 30 minutes
-  cron.schedule('*/30 * * * *', async () => {
+  // Check for overdue tasks every minute (per-task intervals handle repeat frequency)
+  cron.schedule('* * * * *', async () => {
     log.info('notifications', 'Running overdue check')
     await checkOverdueTasks()
   })

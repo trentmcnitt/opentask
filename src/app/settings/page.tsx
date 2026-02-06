@@ -8,7 +8,11 @@ import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useLabelConfig, usePriorityDisplay } from '@/components/LabelConfigProvider'
+import {
+  useLabelConfig,
+  usePriorityDisplay,
+  useAutoSnoozeDefault,
+} from '@/components/LabelConfigProvider'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
@@ -20,6 +24,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
+  const { autoSnoozeDefault, setAutoSnoozeDefault } = useAutoSnoozeDefault()
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -56,6 +61,23 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved' })
     } catch {
       setPriorityDisplay(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
+
+  const handleAutoSnoozeChange = async (value: number) => {
+    const prev = autoSnoozeDefault
+    setAutoSnoozeDefault(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_snooze_minutes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setAutoSnoozeDefault(prev)
       showToast({ message: 'Failed to save preference' })
     }
   }
@@ -142,6 +164,33 @@ export default function SettingsPage() {
                 aria-label="Show right border"
               />
             </div>
+          </div>
+        </section>
+
+        {/* Notifications */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Notifications
+          </h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm">Auto-snooze interval</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                How often to repeat notifications for overdue tasks
+              </div>
+            </div>
+            <select
+              value={autoSnoozeDefault}
+              onChange={(e) => handleAutoSnoozeChange(Number(e.target.value))}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value={1}>1 min</option>
+              <option value={5}>5 min</option>
+              <option value={10}>10 min</option>
+              <option value={15}>15 min</option>
+              <option value={30}>30 min</option>
+              <option value={60}>1 hour</option>
+            </select>
           </div>
         </section>
 

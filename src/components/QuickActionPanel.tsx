@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Repeat,
   Timer,
+  TimerOff,
   Bell,
   Trash2,
   MoreHorizontal,
@@ -50,10 +51,11 @@ import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
 import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
-import { useLabelConfig } from '@/components/LabelConfigProvider'
+import { useLabelConfig, useAutoSnoozeDefault } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatDateTime, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
+import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import type { Task, Project } from '@/types'
 
@@ -79,6 +81,7 @@ export interface QuickActionPanelChanges {
   recurrence_mode?: 'from_due' | 'from_completion'
   project_id?: number
   due_at?: string | null
+  auto_snooze_minutes?: number | null
 }
 
 export interface QuickActionPanelProps {
@@ -202,6 +205,7 @@ export function QuickActionPanel({
   const [showLabelDropdown, setShowLabelDropdown] = useState(false)
   const labelWrapperRef = useRef<HTMLDivElement>(null)
   const { labelConfig } = useLabelConfig()
+  const { autoSnoozeDefault } = useAutoSnoozeDefault()
 
   // Staged changes state - all changes are staged until Save is clicked
   // undefined means "no change" for rrule (to distinguish from null = "remove recurrence")
@@ -218,6 +222,9 @@ export function QuickActionPanel({
   const [pendingDueAt, setPendingDueAt] = useState<string | null>(null)
   // pendingDueAtCleared tracks when user wants to clear the due date (and recurrence)
   const [pendingDueAtCleared, setPendingDueAtCleared] = useState(false)
+  // pendingAutoSnooze: undefined = no change, null = default, 0 = off, positive = custom
+  const [pendingAutoSnooze, setPendingAutoSnooze] = useState<number | null | undefined>(undefined)
+  const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -312,7 +319,8 @@ export function QuickActionPanel({
     pendingRecurrenceMode !== null ||
     pendingProject !== null ||
     pendingTitle !== null ||
-    pendingDueAtCleared
+    pendingDueAtCleared ||
+    pendingAutoSnooze !== undefined
   const isDirty = hasDateChanges || hasPendingChanges
 
   // Recurrence is invalid when FREQ=WEEKLY has no BYDAY in from_due mode.
@@ -471,6 +479,7 @@ export function QuickActionPanel({
     }
     if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
     if (pendingProject !== null) changes.project_id = pendingProject
+    if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     return changes
   }, [
     pendingTitle,
@@ -483,6 +492,7 @@ export function QuickActionPanel({
     singleHook.workingDate,
     pendingRecurrenceMode,
     pendingProject,
+    pendingAutoSnooze,
   ])
 
   // Reset all pending state back to initial values.
@@ -496,6 +506,7 @@ export function QuickActionPanel({
     setPendingProject(null)
     setPendingDueAt(null)
     setPendingDueAtCleared(false)
+    setPendingAutoSnooze(undefined)
   }, [])
 
   // Shared save logic: applies all pending changes via either batched or individual callbacks.
@@ -1060,12 +1071,64 @@ export function QuickActionPanel({
                   active={editingRecurrence}
                 />
               )}
-              <IconButton
-                icon={<Timer className="size-4" />}
-                label="Auto-snooze interval"
-                badge={15}
-                disabled
-              />
+              {/* Auto-snooze picker — per-task notification repeat interval */}
+              {(() => {
+                const effectiveAutoSnooze =
+                  pendingAutoSnooze !== undefined
+                    ? pendingAutoSnooze
+                    : (effectiveTask?.auto_snooze_minutes ?? null)
+                const isOff = effectiveAutoSnooze === 0
+                const isDefault = effectiveAutoSnooze === null
+                const effectiveMinutes = isDefault
+                  ? autoSnoozeDefault
+                  : (effectiveAutoSnooze ?? autoSnoozeDefault)
+                // In bulk mode with mixed values, show dash indicator
+                const isMixedAutoSnooze =
+                  isBulkMode &&
+                  pendingAutoSnooze === undefined &&
+                  selectedTasks &&
+                  selectedTasks.length > 1 &&
+                  !selectedTasks.every(
+                    (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
+                  )
+
+                return (
+                  <AutoSnoozePicker
+                    value={effectiveAutoSnooze}
+                    userDefault={autoSnoozeDefault}
+                    onChange={setPendingAutoSnooze}
+                    open={autoSnoozePopoverOpen}
+                    onOpenChange={setAutoSnoozePopoverOpen}
+                  >
+                    {isOff ? (
+                      <div>
+                        <IconButton
+                          icon={<TimerOff className="size-4" />}
+                          label="Auto-snooze off"
+                          onClick={() => setAutoSnoozePopoverOpen(true)}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAutoSnoozePopoverOpen(true)}
+                        className={cn(
+                          'flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors',
+                          isDefault
+                            ? 'text-muted-foreground/60 hover:bg-accent'
+                            : 'bg-blue-500 text-white hover:bg-blue-600',
+                        )}
+                        title={`Auto-snooze: ${isMixedAutoSnooze ? 'mixed' : formatAutoSnoozeLabel(effectiveMinutes)}`}
+                      >
+                        <Timer className="size-4" />
+                        <span>
+                          {isMixedAutoSnooze ? '\u2014' : formatAutoSnoozeLabel(effectiveMinutes)}
+                        </span>
+                      </button>
+                    )}
+                  </AutoSnoozePicker>
+                )
+              })()}
               <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
               {onDelete && (
                 <IconButton

@@ -44,6 +44,7 @@ export interface Task {
 
   // Notifications
   last_notified_at: string | null
+  auto_snooze_minutes: number | null
 
   // Soft delete and archive
   deleted_at: string | null
