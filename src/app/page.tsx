@@ -492,14 +492,78 @@ function HomeContent() {
         return
       }
 
-      // Home/End and Cmd+A/Cmd+Shift+A are handled by the keyboard navigation hook
-      // (useKeyboardNavigation) when the list has focus. ArrowDown/ArrowUp above
-      // handle entry into keyboard mode from outside the list.
+      // Home: Focus first task (works globally, even when not in keyboard mode)
+      if (e.key === 'Home' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const firstTaskId = orderedIds[0]
+          setKeyboardFocusedId(firstTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${firstTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // End: Focus last task (works globally, even when not in keyboard mode)
+      if (e.key === 'End' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const lastTaskId = orderedIds[orderedIds.length - 1]
+          setKeyboardFocusedId(lastTaskId)
+          keyboard.enterKeyboardMode()
+          document.getElementById(`task-row-${lastTaskId}`)?.focus()
+        }
+        return
+      }
+
+      // Cmd+Shift+A: Select all tasks in first group (works globally)
+      if (cmdKey && e.shiftKey && e.key.toLowerCase() === 'a' && !isInInput) {
+        e.preventDefault()
+        if (taskGroups.length > 0 && orderedIds.length > 0) {
+          const firstGroup = taskGroups[0]
+          const firstGroupTaskIds = new Set(firstGroup.tasks.map((t) => t.id))
+          const groupIds = orderedIds.filter((id) => firstGroupTaskIds.has(id))
+
+          if (groupIds.length > 0) {
+            const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
+            if (allSelected) {
+              selection.removeAll(groupIds)
+            } else {
+              selection.addAll(groupIds)
+              if (!keyboard.isKeyboardActive) {
+                setKeyboardFocusedId(groupIds[0])
+                keyboard.enterKeyboardMode()
+                document.getElementById(`task-row-${groupIds[0]}`)?.focus()
+              }
+            }
+          }
+        }
+        return
+      }
+
+      // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
+      if (cmdKey && e.key.toLowerCase() === 'a' && !isInInput) {
+        e.preventDefault()
+        if (orderedIds.length > 0) {
+          const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
+          if (allSelected) {
+            selection.clear()
+          } else {
+            selection.selectAll(orderedIds)
+            if (!keyboard.isKeyboardActive) {
+              setKeyboardFocusedId(orderedIds[0])
+              keyboard.enterKeyboardMode()
+              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+            }
+          }
+        }
+        return
+      }
     }
 
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId])
+  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection, taskGroups])
 
   // Exit keyboard mode when clicking outside the task list
   useEffect(() => {

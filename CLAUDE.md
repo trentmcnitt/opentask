@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+OpenTask is a self-hosted task management PWA. This file is the authoritative reference for contributing to this codebase.
+
 ## Commands
 
 ```bash
@@ -24,9 +26,9 @@ npm run db:migrate-due   # Data migration from the "Due" app
 
 These rules prevent data-loss bugs and security issues. Violating the undo or transaction rules can cause data loss; violating the auth rule can create security bypasses.
 
-### Undo logging and transactions
+### Every mutation must be atomic and logged for undo
 
-Every task mutation must be logged for undo, and the mutation + log write must be atomic. Core mutation functions in `src/core/tasks/` handle both `logAction()` and `withTransaction()` internally. Route handlers call the core function directly — they do not call `logAction()` or `withTransaction()` themselves.
+Every task mutation must be logged for undo, and the mutation + log write must be atomic. Core mutation functions in `src/core/tasks/` handle both `logAction()` and `withTransaction()` internally. Route handlers call the core mutation function directly — they do not call `logAction()` or `withTransaction()` themselves.
 
 If you create a **new core mutation function**, follow the existing pattern:
 
@@ -37,113 +39,37 @@ withTransaction((db) => {
 })
 ```
 
-Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to build the before/after snapshot. The `completionId` parameter is only needed when completing a recurring task — it links the `task_completions` row to the undo snapshot (see `completeTask()` in `src/core/tasks/` for the pattern).
+Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to build the before/after snapshot. The `completionId` parameter is only needed when completing a recurring task — it links the `task_completions` row to the undo snapshot (see `markDone()` in `src/core/tasks/mark-done.ts` for the pattern).
 
-### Soft deletes
+### All deletions must be soft deletes
 
 All task deletions are soft-deletes (set `deleted_at`). The only hard-delete operation is "Empty Trash," which permanently deletes data, cannot be undone, and must require explicit user confirmation.
 
-### Auth security
+### Reject invalid tokens immediately
 
 If an Authorization header is present but the token is invalid, return 401 immediately — never fall through to session auth. See the [Authentication](#authentication) section for the full decision table.
 
-### UI verification is mandatory
+### UI changes require browser verification
 
-Any UI change must be deployed to dev and verified in the browser before reporting the work as done — see the [UI Verification](#ui-verification) checklist.
-
-## Development Workflow
-
-After completing a code change, run the quick check:
-
-```bash
-npm run type-check && npm run lint && npm test
-```
-
-### When to Run Which Tests
-
-Rows are additive — if a change spans multiple categories, run the union of all applicable test suites. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
-
-| Change type                                   | What to run                                                                                                     |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| All changes (minimum)                         | `npm run type-check && npm run lint && npm test`                                                                |
-| API routes, core logic, validation, auth      | Above + `npm run test:integration`                                                                              |
-| UI components, hooks, styles, client behavior | Above + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                       |
-| Rapid iteration within a UI verification loop | Quick check between deploys is sufficient; full checklist applies to the final version before reporting results |
-| Production deploy                             | All test suites (see [Deployment](#deployment) section)                                                         |
-
-Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
-Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
-
-### UI Verification
-
-Any change that touches UI, components, styles, or client-side behavior is not complete until you have deployed to dev and verified it in the browser yourself. Do not tell the user the work is done, suggest they verify, or ask if they'd like you to deploy — you deploy it, you verify it, you report what you found.
-
-**Dev login credentials** are in `.secrets` at the project root. Read that file before logging in via Playwright.
-
-**UI change is not done until every box is checked:**
-
-- [ ] Quick check passes (`npm run type-check && npm run lint && npm test`)
-- [ ] Deployed to dev via `./scripts/deploy.sh dev`
-- [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
-- [ ] Chrome DevTools MCP (Model Context Protocol): no console errors/warnings, no failed network requests
-- [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
-- [ ] Fixes applied and re-deployed if anything looked wrong
-- [ ] Dev link shared with results: https://tasks-dev.tk11.mcnitt.io
-
-Backend/logic-only changes with no UI touchpoint do not need browser verification — passing tests are sufficient.
-
-**Dirty state navigation warning**: The task detail page (and any page with QuickActionPanel) has a `beforeunload` handler that triggers a browser "Leave site?" confirmation dialog when there are unsaved changes. When using Playwright for browser testing:
-
-1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
-2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
-
-## Conventions
-
-### Naming
-
-- Import alias: `@/` maps to `src/`
-- React components: PascalCase (`AddTaskForm.tsx`, `TaskRow.tsx`)
-- Other source files: kebab-case (`api-response.ts`, `critical-alerts.ts`)
-- Types/interfaces: PascalCase (`Task`, `AuthUser`, `UpdateTaskOptions`)
-- DB columns: snake_case (`due_at`, `created_at`, `anchor_dow`)
-- API fields: snake_case (`project_id`, `original_due_at`)
-
-### Coding Rules
-
-- Store all dates as UTC in the database. API responses and UI code must convert to the user's timezone (available as `AuthUser.timezone`).
-- All mutation endpoints use PATCH, not PUT — the handler updates only fields present in the request body.
-- `priority` values:
-
-  | Value | Meaning |
-  | ----- | ------- |
-  | 0     | Unset   |
-  | 1     | Low     |
-  | 2     | Medium  |
-  | 3     | High    |
-  | 4     | Urgent  |
-
-- When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
-- **Never suppress lint errors or warnings** (e.g., `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`) without explicit approval from the user. Fix the root cause instead. If a fix is genuinely impossible, ask the user before adding any suppression comment.
-- **No brittle fixes or tolerances.** Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops.
-- **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at a glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as you build or modify features — when in doubt, err on the side of documenting.
+Any UI change must be deployed to dev and verified in the browser before reporting the work as done — see the [UI verification](#ui-verification) checklist.
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA with iOS optimization. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. See `docs/SPEC.md` for product requirements and feature scope.
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA with iOS optimization and minimal offline detection (`public/sw.js` caches the app shell for navigation fallback; no offline data access or mutation queuing). Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. See `docs/SPEC.md` for product requirements and `docs/ROADMAP.md` for planned features.
 
-### Source Layout
+### Source layout
 
 - `src/core/` — Business logic (no UI): auth, db, tasks, recurrence, undo, validation, notifications, review, stats
-- `src/components/` — React components (key files listed below; see directory for full inventory)
+- `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
 - `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
 - `src/app/api/` — REST API routes with dual auth (session cookies + Bearer tokens)
 - `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], projects, projects/[id], settings, history, archive, trash
-- `src/lib/` — Utilities (key files: `api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
+- `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
 
-#### UI Vocabulary
+### UI vocabulary
 
 | Term        | Component                                 | Description                                                                 |
 | ----------- | ----------------------------------------- | --------------------------------------------------------------------------- |
@@ -153,17 +79,21 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 ### Database
 
 - **Singleton**: Access via `getDb()` from `@/core/db`
-- **Schema**: `src/core/db/schema.sql` — the server applies it idempotently when `getDb()` is first called
+- **Schema**: `src/core/db/schema.sql` — applied idempotently when `getDb()` is first called
 - **Config**: `OPENTASK_DB_PATH` env var (default: `data/tasks.db`). See `.env.example` for all env vars.
-- **Mode**: WAL (write-ahead logging) for concurrent read performance, 5-second busy timeout (retries on lock contention), foreign keys enforced
+- **Mode**: WAL (write-ahead logging) for concurrent read performance, 5-second busy timeout (waits for locks to release before failing), foreign keys enforced
 - **Operations**: All synchronous (better-sqlite3)
-- **JSON columns**: Labels and undo snapshots stored as TEXT; parse/serialize in application code
-- **Schema changes**:
-  - Modify `src/core/db/schema.sql` directly
-  - Only additive changes (new tables, new columns with defaults) apply idempotently
-  - For destructive changes (rename/remove columns), add an `ALTER TABLE` migration in `initializeSchema()` in `src/core/db/index.ts`
-  - To test schema changes from scratch, delete the local `data/tasks.db` file
-  - The app runs schema migrations on startup — remote databases apply changes automatically on restart
+- **JSON columns**: Labels and undo snapshots are stored as TEXT; parse/serialize in application code
+
+**Schema changes:**
+
+| Change type                                   | Where to make it                               | Notes                                |
+| --------------------------------------------- | ---------------------------------------------- | ------------------------------------ |
+| Additive (new table, new column with default) | `src/core/db/schema.sql`                       | Applied idempotently on startup      |
+| Destructive (rename/remove column)            | `initializeSchema()` in `src/core/db/index.ts` | Add explicit `ALTER TABLE` migration |
+| Test from scratch                             | Delete local `data/tasks.db`                   | Forces full schema rebuild           |
+
+Remote databases apply schema changes automatically on the next restart.
 
 ### Authentication
 
@@ -182,11 +112,86 @@ Dual authentication checked in order:
 - `requireAuth(request)` — Returns `AuthUser` or throws `AuthError`. Preferred for new endpoints.
 - `getAuthUser(request)` — Returns `AuthUser | null`. Use when you want to customize the error response. Most existing route handlers use this with a manual null check.
 
-`AuthUser` shape: `{ id, email, name, timezone }`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' }`.
+
+## Domain Reference
+
+### Priority values
+
+| Value | Meaning |
+| ----- | ------- |
+| 0     | Unset   |
+| 1     | Low     |
+| 2     | Medium  |
+| 3     | High    |
+| 4     | Urgent  |
+
+### Recurrence and snooze
+
+- RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEKLY;BYDAY=MO`) stored in `task.rrule`
+- Anchor fields preserve the intended local time across DST transitions (e.g., a task due at 9 AM stays at 9 AM local time when clocks change):
+  - `anchor_time` — time of day
+  - `anchor_dow` — day of week
+  - `anchor_dom` — day of month
+- `computeNextOccurrence()` in `src/core/recurrence/` handles timezone-aware advancement
+- Recurring tasks **advance in place**: completing a daily task moves `due_at` forward and leaves `done=0`
+- One-off (non-recurring) tasks: when completed, the app sets `done=1` and `archived_at` to the current time
+
+**Snooze** sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
+
+**Important**: Updating `rrule` also re-derives `anchor_*` fields and may recompute `due_at`. When logging this for undo, include all derived fields in `fieldsChanged` so undo restores the complete prior state:
+
+```ts
+const fieldsChanged = ['rrule', 'anchor_time', 'anchor_dow', 'anchor_dom', 'due_at']
+```
+
+### Undo system
+
+Functions from `@/core/undo`:
+
+- `logAction(userId, action, description, fieldsChanged, snapshots)` — log a mutation for undo
+- `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build an `UndoSnapshot` (use this for all mutation logging)
+- `executeUndo(userId)` — restores the task to `before_state` from the most recent undoable action
+- `executeRedo(userId)` — re-applies `after_state` from the most recent undone action
+
+Undo history is per-user and works as a stack (last action undone first).
+
+**Special case**: Undoing a task creation soft-deletes the task (sets `deleted_at`) rather than permanently deleting it.
+
+### Purge modules
+
+Automatic data cleanup modules run on a schedule via cron jobs started in `src/instrumentation.ts`:
+
+- `src/core/undo/purge.ts` — prunes old undo log entries
+- `src/core/stats/purge.ts` — cleans up stale stats data
+- `src/core/tasks/purge-completions.ts` — removes old task completion records
+- `src/core/tasks/purge-trash.ts` — permanently deletes tasks that have been in trash past the retention period
+
+## Conventions
+
+### Naming
+
+- Import alias: `@/` maps to `src/`
+- React components: PascalCase (`AddTaskForm.tsx`, `TaskRow.tsx`)
+- Other source files: kebab-case (`api-response.ts`, `critical-alerts.ts`)
+- Types/interfaces: PascalCase (`Task`, `AuthUser`, `UpdateTaskOptions`)
+- DB columns: snake_case (`due_at`, `created_at`, `anchor_dow`)
+- API fields: snake_case (`project_id`, `original_due_at`)
+
+### Coding rules
+
+- Store all dates as UTC in the database. API responses and UI code must convert dates to the user's timezone (available as `AuthUser.timezone`).
+- All mutation endpoints use PATCH, not PUT — the handler updates only fields present in the request body.
+- When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
+- **Never suppress lint errors or warnings** (e.g., `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`) without explicit approval from the user. Fix the root cause instead. If a fix is genuinely impossible, ask the user before adding any suppression comment.
+- **No brittle fixes or tolerances.** Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops.
+- **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at a glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as you build or modify features — when in doubt, err on the side of documenting.
 
 ## API Reference
 
-### Route Handler Pattern
+### Route handler pattern
+
+The example below uses `getAuthUser` for historical reasons. New endpoints should use `requireAuth`, which throws `AuthError` on failure and eliminates the manual null check.
 
 Typical route handler (from `src/app/api/tasks/[id]/route.ts`):
 
@@ -223,7 +228,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 Note: `updateTask()` handles its own transaction and undo logging internally — the route handler does not call `withTransaction()` or `logAction()` directly.
 
-### New Endpoint Checklist
+### New endpoint checklist
 
 Follow the pattern above, and verify:
 
@@ -232,8 +237,8 @@ Follow the pattern above, and verify:
 - [ ] Validate request body with validation functions from `@/core/validation` (`validateTaskCreate`, `validateTaskUpdate`, etc. — these call Zod `.parse()` internally)
 - [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`
 - [ ] Use PATCH for updates (not PUT)
-- [ ] If mutation, ensure the core function calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
-- [ ] If mutation, ensure the core function uses `withTransaction()`
+- [ ] If mutation, ensure the core mutation function calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
+- [ ] If mutation, ensure the core mutation function uses `withTransaction()`
 - [ ] Return using response helpers (`success()`, `badRequest()`, `notFound()`, etc.)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
 
@@ -241,48 +246,69 @@ Response helpers from `@/lib/api-response`: `success()`, `badRequest()`, `unauth
 
 Success format: `{ data: ... }` — Error format: `{ error, code, details? }`
 
-## Domain Reference
+## Development Workflow
 
-### Recurrence and Snooze
+After completing a code change, run the quick check:
 
-- RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEKLY;BYDAY=MO`) stored in `task.rrule`
-- Anchor fields preserve the intended local time across DST transitions (e.g., a task due at 9 AM stays at 9 AM local time when clocks change):
-  - `anchor_time` — time of day
-  - `anchor_dow` — day of week
-  - `anchor_dom` — day of month
-- `computeNextOccurrence()` in `src/core/recurrence/` handles timezone-aware advancement
-- Recurring tasks **advance in place**: completing a daily task moves `due_at` forward and leaves `done=0`
-- One-off (non-recurring) tasks: when completed, the app sets `done=1` and `archived_at` to the current time
-
-**Snooze** sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
-
-**Important**: Updating `rrule` also re-derives `anchor_*` fields and may recompute `due_at`. When logging this for undo, include all derived fields in `fieldsChanged` so undo restores the complete prior state:
-
-```ts
-const fieldsChanged = ['rrule', 'anchor_time', 'anchor_dow', 'anchor_dom', 'due_at']
+```bash
+npm run type-check && npm run lint && npm test
 ```
 
-### Undo System
+### When to run which tests
 
-The app logs every mutation to `undo_log` with a snapshot containing only the fields that changed.
+If a change spans multiple rows in this table, combine the test suites from all matching rows. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
 
-Functions from `@/core/undo`:
+| Change type                                   | What to run                                                                                                     |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| All changes (minimum)                         | `npm run type-check && npm run lint && npm test`                                                                |
+| API routes, core logic, validation, auth      | Above + `npm run test:integration`                                                                              |
+| UI components, hooks, styles, client behavior | Above + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                       |
+| Rapid iteration within a UI verification loop | Quick check between deploys is sufficient; full checklist applies to the final version before reporting results |
+| Production deploy                             | All test suites (see [Deployment](#deployment) section)                                                         |
 
-- `logAction(userId, action, description, fieldsChanged, snapshots)` — log mutation for undo
-- `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build an `UndoSnapshot` (use this for all mutation logging)
-- `createSnapshot(task, fieldsChanged)` — lower-level utility called by `createTaskSnapshot` internally; rarely needed directly
-- `executeUndo(userId)` — restores the task to `before_state` from the most recent undoable action
-- `executeRedo(userId)` — re-applies `after_state` from the most recent undone action
+Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
+Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
-Undo history is per-user and works as a stack (last action undone first).
+### Pre-existing test failures
 
-**Special case**: Undoing a task creation soft-deletes the task (sets `deleted_at`) rather than permanently deleting it.
+If a test fails that is unrelated to your current change, report it to the user before proceeding. Do not silently skip failing tests.
+
+### UI verification
+
+Any change that touches UI, components, styles, or client-side behavior is not complete until you have deployed to dev and verified it in the browser yourself. Do not tell the user the work is done, suggest they verify, or ask if they'd like you to deploy — you deploy it, you verify it, you report what you found.
+
+During iterative UI verification deploys to dev, committing between each deploy is not required. Commit once the final verified version is ready, then re-deploy from the clean commit.
+
+**Dev login credentials** are in `.secrets` at the project root. Read that file before logging in via Playwright.
+
+**UI change is not done until every box is checked:**
+
+- [ ] Quick check passes (`npm run type-check && npm run lint && npm test`)
+- [ ] Deployed to dev via `./scripts/deploy.sh dev`
+- [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
+- [ ] Chrome DevTools MCP (Model Context Protocol): no console errors/warnings, no failed network requests
+- [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
+- [ ] Fixes applied and re-deployed if anything looked wrong
+- [ ] Dev link shared with results: https://tasks-dev.tk11.mcnitt.io
+
+Backend/logic-only changes with no UI touchpoint do not need browser verification — passing tests are sufficient.
+
+**Dirty state navigation warning**: The task detail page (and any page with QuickActionPanel) has a `beforeunload` handler that triggers a browser "Leave site?" confirmation dialog when there are unsaved changes. When using Playwright for browser testing:
+
+1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
+2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
+
+### Tooling
+
+- **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npm run format`), ESLint errors (fix the code, do not suppress).
+- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). Run `npm run format` to format all files.
+- **Git remote**: Forgejo (self-hosted Git forge) at `git.tk11.mcnitt.io` (use `tea` CLI for repo operations, not `gh`).
 
 ## Testing
 
 Three test levels, with JSON results written to `test-results/`:
 
-### Behavioral Tests
+### Behavioral tests
 
 Location: `tests/behavioral/`
 
@@ -290,7 +316,7 @@ Behavioral tests exercise core logic with no HTTP or UI. Each file calls `setupT
 
 Helper: `tests/helpers/setup.ts`
 
-### Integration Tests
+### Integration tests
 
 Location: `tests/integration/`
 
@@ -300,7 +326,7 @@ Call `resetTestData()` between test files — this calls `POST /api/test/reset`,
 
 Helpers: `tests/integration/helpers.ts`, `tests/integration/globalSetup.ts`
 
-### E2E Tests
+### E2E tests
 
 Location: `tests/e2e/`
 
@@ -308,11 +334,11 @@ Playwright with headless Chromium. Uses separate DB (`data/test-e2e.db`). The `a
 
 Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 
-### Test Data Seeding
+### Test data seeding
 
 `scripts/seed-test.ts` seeds deterministic test data for integration and E2E tests. The `npm run db:seed` command (which runs `scripts/seed.ts`) seeds the development database with initial users and projects.
 
-### Time-Based Testing
+### Time-based testing
 
 Tests must be **time-agnostic** — they should pass regardless of when they run. Use these patterns:
 
@@ -332,7 +358,8 @@ describe('My tests', () => {
   })
 
   test('task completion advances due date', () => {
-    // localTime(8, 0) now creates Jan 15 at 8am — 2 hours in the past
+    // localTime(8, 0) creates Jan 15 at 8am — 2 hours in the past
+    // (localTime is from tests/helpers/setup.ts)
     // Tests are deterministic regardless of actual wall-clock time
   })
 })
@@ -350,7 +377,7 @@ const tomorrow5pm = DateTime.now().plus({ days: 1 }).set({ hour: 17 })
 
 See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts` for examples.
 
-## Environments & Deployment
+## Environments and Deployment
 
 |         | Production                  | Development                     | Local          |
 | ------- | --------------------------- | ------------------------------- | -------------- |
@@ -362,15 +389,11 @@ See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts
 
 Remote instances run behind Caddy reverse proxy on Ubuntu 24.04. Server: `ssh admin@tk11.mcnitt.io`.
 
+The deploy script also supports a `dev2` environment (`/opt/opentask-dev2`, service `opentask-dev2`) for additional testing.
+
 ### Deployment
 
 Commit all changes before deploying — the rollback strategy depends on checking out a previous commit. If there are uncommitted changes and you need to deploy, ask the user to confirm a commit first. This overrides the general "only commit when explicitly instructed" rule for deployment safety.
-
-**Local development:**
-
-```bash
-npm run dev
-```
 
 **Remote deployment (dev or prod):**
 
@@ -387,12 +410,6 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 
 **Server debugging:** `ssh admin@tk11.mcnitt.io` then `journalctl -u opentask-dev -f` (or `opentask` for prod) to tail logs.
 
-**Rollback:** Check out the previous commit and re-deploy.
+**Rollback:** Find the last good commit with `git log`, revert with `git revert HEAD` (or check out the target commit), then re-deploy with `./scripts/deploy.sh <target>`.
 
 **First-time server setup:** The deploy script assumes the systemd service already exists. For a new environment, create a systemd unit file on the server (use `opentask-dev.service` as a template) and run `systemctl enable` before the first deploy.
-
-### Tooling
-
-- **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`.
-- **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). Run `npm run format` to format all files.
-- **Git remote**: Forgejo (self-hosted Git forge) at `git.tk11.mcnitt.io` (use `tea` CLI for repo operations, not `gh`).
