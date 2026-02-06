@@ -5,6 +5,8 @@ import {
   initWorkingDate,
   formatQuickSelectHeader,
   formatRelativeTime,
+  formatDeltaText,
+  snapToNextHour,
 } from '@/lib/quick-select-dates'
 
 const TZ = 'America/Chicago' // UTC-6 (CST) / UTC-5 (CDT)
@@ -248,5 +250,146 @@ describe('preset + increment composition', () => {
     const plusOne = adjustDate(working, { minutes: 1 }, TZ)
     // 18:56 — close to "now + 1 min"
     expect(new Date(plusOne).toISOString()).toBe('2025-02-03T18:56:00.000Z')
+  })
+})
+
+describe('formatDeltaText', () => {
+  it('formats positive minutes', () => {
+    expect(formatDeltaText(30)).toBe('+30m')
+  })
+
+  it('formats negative minutes', () => {
+    expect(formatDeltaText(-5)).toBe('-5m')
+  })
+
+  it('formats positive hours', () => {
+    expect(formatDeltaText(60)).toBe('+1h')
+  })
+
+  it('formats negative hours', () => {
+    expect(formatDeltaText(-120)).toBe('-2h')
+  })
+
+  it('formats hours and minutes', () => {
+    expect(formatDeltaText(90)).toBe('+1h 30m')
+  })
+
+  it('formats negative hours and minutes', () => {
+    expect(formatDeltaText(-90)).toBe('-1h 30m')
+  })
+
+  it('formats exact day boundary', () => {
+    expect(formatDeltaText(1440)).toBe('+1d')
+  })
+
+  it('formats negative day', () => {
+    expect(formatDeltaText(-1440)).toBe('-1d')
+  })
+
+  it('formats days and hours', () => {
+    // 25 hours = 1d 1h
+    expect(formatDeltaText(1500)).toBe('+1d 1h')
+  })
+
+  it('formats multi-day with hours', () => {
+    // 50 hours = 2d 2h
+    expect(formatDeltaText(3000)).toBe('+2d 2h')
+  })
+
+  it('formats 1 minute', () => {
+    expect(formatDeltaText(1)).toBe('+1m')
+  })
+
+  it('formats zero as +0m', () => {
+    // Edge case: callers guard against this, but documenting the behavior
+    expect(formatDeltaText(0)).toBe('+0m')
+  })
+})
+
+describe('snapToNextHour', () => {
+  it('rounds to next hour when minutes < 35', () => {
+    // 1:30 PM → 2:00 PM
+    const now = new Date('2025-02-03T19:30:00.000Z') // 1:30 PM CST
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T20:00:00.000Z')
+  })
+
+  it('skips to hour after next when minutes >= 35', () => {
+    // 1:37 PM → 3:00 PM
+    const now = new Date('2025-02-03T19:37:00.000Z') // 1:37 PM CST
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T21:00:00.000Z')
+  })
+
+  it('skips to hour after next at exactly minute 35', () => {
+    // 1:35 PM → 3:00 PM (>= 35 threshold)
+    const now = new Date('2025-02-03T19:35:00.000Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T21:00:00.000Z')
+  })
+
+  it('rounds to next hour at minute 34', () => {
+    // 1:34 PM → 2:00 PM (< 35 threshold)
+    const now = new Date('2025-02-03T19:34:00.000Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T20:00:00.000Z')
+  })
+
+  it('rounds to next hour at minute 0', () => {
+    // Exactly on the hour → next hour
+    const now = new Date('2025-02-03T19:00:00.000Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T20:00:00.000Z')
+  })
+
+  it('handles near-midnight rollover (minutes < 35)', () => {
+    // 11:30 PM → 12:00 AM next day
+    const now = new Date('2025-02-03T23:30:00.000Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-04T00:00:00.000Z')
+  })
+
+  it('handles near-midnight rollover (minutes >= 35)', () => {
+    // 11:40 PM → 1:00 AM next day
+    const now = new Date('2025-02-03T23:40:00.000Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-04T01:00:00.000Z')
+  })
+
+  it('zeroes out seconds and milliseconds', () => {
+    const now = new Date('2025-02-03T19:15:45.123Z')
+    const result = snapToNextHour(now)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T20:00:00.000Z')
+  })
+})
+
+describe('adjustDate DST fall-back', () => {
+  // Nov 2, 2025 is fall-back in America/Chicago (CDT->CST).
+  // Clocks fall back at 2:00 AM CDT → 1:00 AM CST, so the 1:00-2:00 AM
+  // wall-clock hour occurs twice. Calendar-day arithmetic should preserve
+  // wall-clock time and pick the correct offset on the destination day.
+
+  it('+1 day across fall-back preserves wall-clock time', () => {
+    // 9 AM CDT on Nov 1 = 14:00 UTC
+    const preFallBack = '2025-11-01T14:00:00.000Z'
+    const result = adjustDate(preFallBack, { minutes: null, days: 1 }, TZ)
+    // 9 AM CST on Nov 2 = 15:00 UTC (offset changed from -5 to -6)
+    expect(new Date(result).toISOString()).toBe('2025-11-02T15:00:00.000Z')
+  })
+
+  it('-1 day across fall-back preserves wall-clock time', () => {
+    // 9 AM CST on Nov 2 = 15:00 UTC
+    const postFallBack = '2025-11-02T15:00:00.000Z'
+    const result = adjustDate(postFallBack, { minutes: null, days: -1 }, TZ)
+    // 9 AM CDT on Nov 1 = 14:00 UTC (offset changed from -6 to -5)
+    expect(new Date(result).toISOString()).toBe('2025-11-01T14:00:00.000Z')
+  })
+
+  it('+1 day across fall-back at a non-ambiguous evening time', () => {
+    // 8 PM CDT on Nov 1 = 01:00 UTC Nov 2 (CDT = UTC-5)
+    const eveningBeforeFallBack = '2025-11-02T01:00:00.000Z'
+    const result = adjustDate(eveningBeforeFallBack, { minutes: null, days: 1 }, TZ)
+    // 8 PM CST on Nov 2 = 02:00 UTC Nov 3 (CST = UTC-6, offset shifted)
+    expect(new Date(result).toISOString()).toBe('2025-11-03T02:00:00.000Z')
   })
 })

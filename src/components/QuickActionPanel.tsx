@@ -45,7 +45,6 @@ import {
   SMART_BUTTONS,
   snapToNearestFiveMinutes,
   snapToNextHour,
-  formatSmartButtonTime,
 } from '@/lib/quick-select-dates'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
@@ -53,7 +52,7 @@ import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { formatDateTime } from '@/lib/format-date'
+import { formatDateTime, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import type { Task, Project } from '@/types'
@@ -240,8 +239,8 @@ export function QuickActionPanel({
   // Compute smart button labels with time preview
   const smartButtonLabels = useMemo(() => {
     void tick // Force recalculation on tick
-    const nowTime = formatSmartButtonTime(snapToNearestFiveMinutes(), timezone)
-    const nextHourTime = formatSmartButtonTime(snapToNextHour(), timezone)
+    const nowTime = formatTimeInTimezone(snapToNearestFiveMinutes(), timezone)
+    const nextHourTime = formatTimeInTimezone(snapToNextHour(), timezone)
     return {
       now: `Now · ${nowTime}`,
       nextHour: `Next Hour · ${nextHourTime}`,
@@ -499,15 +498,14 @@ export function QuickActionPanel({
     setPendingDueAtCleared(false)
   }, [])
 
-  const handleSave = useCallback(async () => {
+  // Shared save logic: applies all pending changes via either batched or individual callbacks.
+  // Used by both handleSave and handleSaveAndDone to avoid duplicating the dispatch logic.
+  const applyAllPendingChanges = useCallback(async () => {
     if (onSaveAll) {
-      // Batched save mode: collect all changes and send in one call
       const changes = collectPendingChanges()
       if (Object.keys(changes).length > 0) {
         await onSaveAll(changes)
       }
-      resetAllPending()
-      singleHook.reset()
     } else {
       // Individual callbacks mode (backward compatibility)
       if (hasDateChanges) {
@@ -515,30 +513,22 @@ export function QuickActionPanel({
       }
       if (pendingPriority !== null) {
         onPriorityChange?.(pendingPriority)
-        setPendingPriority(null)
       }
       if (pendingLabels !== null) {
         onLabelsChange?.(pendingLabels)
-        setPendingLabels(null)
       }
       if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
         const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
         const resolvedRecurrenceMode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
         onRruleChange?.(rrule, resolvedRecurrenceMode)
-        setPendingRrule(undefined)
-        setPendingRecurrenceMode(null)
       }
       if (pendingProject !== null) {
         onProjectChange?.(pendingProject)
-        setPendingProject(null)
       }
     }
-    onSave?.()
   }, [
     onSaveAll,
     collectPendingChanges,
-    resetAllPending,
-    singleHook,
     pendingPriority,
     pendingLabels,
     pendingRrule,
@@ -552,8 +542,14 @@ export function QuickActionPanel({
     onLabelsChange,
     onRruleChange,
     onProjectChange,
-    onSave,
   ])
+
+  const handleSave = useCallback(async () => {
+    await applyAllPendingChanges()
+    resetAllPending()
+    singleHook.reset()
+    onSave?.()
+  }, [applyAllPendingChanges, resetAllPending, singleHook, onSave])
 
   // Expose handleSave to parent via saveRef for external triggering (e.g., navigation dialog)
   const handleSaveRef = useRef(handleSave)
@@ -665,51 +661,9 @@ export function QuickActionPanel({
 
   const handleSaveAndDone = useCallback(async () => {
     setShowDoneConfirm(false)
-    if (onSaveAll) {
-      // Batched save mode
-      const changes = collectPendingChanges()
-      if (Object.keys(changes).length > 0) {
-        await onSaveAll(changes)
-      }
-    } else {
-      // Individual callbacks mode
-      if (hasDateChanges) {
-        handleApply()
-      }
-      if (pendingPriority !== null) {
-        onPriorityChange?.(pendingPriority)
-      }
-      if (pendingLabels !== null) {
-        onLabelsChange?.(pendingLabels)
-      }
-      if (pendingRrule !== undefined || pendingRecurrenceMode !== null) {
-        const rrule = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
-        const resolvedRecurrenceMode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode
-        onRruleChange?.(rrule, resolvedRecurrenceMode)
-      }
-      if (pendingProject !== null) {
-        onProjectChange?.(pendingProject)
-      }
-    }
+    await applyAllPendingChanges()
     onMarkDone?.()
-  }, [
-    onSaveAll,
-    collectPendingChanges,
-    pendingPriority,
-    pendingLabels,
-    pendingRrule,
-    pendingRecurrenceMode,
-    pendingProject,
-    hasDateChanges,
-    handleApply,
-    effectiveTask?.rrule,
-    effectiveTask?.recurrence_mode,
-    onPriorityChange,
-    onLabelsChange,
-    onRruleChange,
-    onProjectChange,
-    onMarkDone,
-  ])
+  }, [applyAllPendingChanges, onMarkDone])
 
   // Label editing handlers - stage changes instead of applying immediately
   const addLabel = useCallback(
@@ -761,11 +715,6 @@ export function QuickActionPanel({
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty])
-
-  // Always show action buttons — previously hidden in SelectionActionSheet mode
-  // where the modal header rendered its own copy, but that duplication caused
-  // an inconsistent layout between single-task and multi-select modes.
-  const showQuickLinks = true
 
   return (
     <div className="space-y-3">
@@ -1043,131 +992,129 @@ export function QuickActionPanel({
             )}
 
             {/* Action icons — right-aligned on the priority/labels row */}
-            {showQuickLinks && (
-              <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Project badge with optional picker - inline popover or external picker */}
-                {/* Show display project name (pending or current from prop) */}
-                {(() => {
-                  const displayProjectObj = projects?.find((p) => p.id === displayProject)
-                  const displayProjectName = displayProjectObj?.name ?? projectName
-                  return displayProjectName &&
-                    (onProjectChange || onSaveAll) &&
-                    projects &&
-                    projects.length > 0 ? (
-                    // Inline popover with project list
-                    <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
-                      <PopoverTrigger asChild>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {/* Project badge with optional picker - inline popover or external picker */}
+              {/* Show display project name (pending or current from prop) */}
+              {(() => {
+                const displayProjectObj = projects?.find((p) => p.id === displayProject)
+                const displayProjectName = displayProjectObj?.name ?? projectName
+                return displayProjectName &&
+                  (onProjectChange || onSaveAll) &&
+                  projects &&
+                  projects.length > 0 ? (
+                  // Inline popover with project list
+                  <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                      >
+                        {displayProjectName}
+                        <ChevronDown className="size-3 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1" align="end">
+                      {projects.map((p) => (
                         <button
+                          key={p.id}
                           type="button"
-                          className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
-                        >
-                          {displayProjectName}
-                          <ChevronDown className="size-3 opacity-50" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-48 p-1" align="end">
-                        {projects.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={cn(
-                              'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors',
-                              'hover:bg-accent',
-                              displayProject === p.id && 'bg-accent',
-                            )}
-                            onClick={() => {
-                              setPendingProject(p.id)
-                              setProjectPopoverOpen(false)
-                            }}
-                          >
-                            <span className="bg-primary size-2 rounded-full" />
-                            {p.name}
-                          </button>
-                        ))}
-                      </PopoverContent>
-                    </Popover>
-                  ) : displayProjectName && onMoveToProject ? (
-                    // Clickable badge that opens external picker
-                    <button
-                      type="button"
-                      onClick={onMoveToProject}
-                      className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
-                    >
-                      {displayProjectName}
-                      <ChevronDown className="size-3 opacity-50" />
-                    </button>
-                  ) : displayProjectName ? (
-                    // Read-only badge
-                    <span className="bg-muted text-muted-foreground shrink-0 rounded px-2 py-0.5 text-xs">
-                      {displayProjectName}
-                    </span>
-                  ) : null
-                })()}
-                {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
-                {(onRruleChange || onSaveAll) && (
-                  <IconButton
-                    icon={<Repeat className="size-4" />}
-                    label="Recurrence"
-                    onClick={handleRecurrenceToggle}
-                    active={editingRecurrence}
-                  />
-                )}
-                <IconButton
-                  icon={<Timer className="size-4" />}
-                  label="Auto-snooze interval"
-                  badge={15}
-                  disabled
-                />
-                <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
-                {onDelete && (
-                  <IconButton
-                    icon={<Trash2 className="size-4" />}
-                    label="Delete"
-                    onClick={onDelete}
-                    destructive
-                  />
-                )}
-
-                {/* More menu - consolidates disabled features and task details */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      aria-label="More options"
-                      title="More options"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                    {/* Clear due date - only for single task with due_at or rrule */}
-                    {isSingleTask &&
-                      (effectiveTask?.due_at || effectiveTask?.rrule) &&
-                      !pendingDueAtCleared && (
-                        <DropdownMenuItem
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors',
+                            'hover:bg-accent',
+                            displayProject === p.id && 'bg-accent',
+                          )}
                           onClick={() => {
-                            setPendingDueAtCleared(true)
-                            if (effectiveTask?.rrule) {
-                              setPendingRrule(null)
-                            }
+                            setPendingProject(p.id)
+                            setProjectPopoverOpen(false)
                           }}
                         >
-                          <XCircle className="mr-2 size-4" />
-                          Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
-                        </DropdownMenuItem>
-                      )}
-                    {isSingleTask && onNavigateToDetail && (
-                      <DropdownMenuItem onClick={onNavigateToDetail}>
-                        <Info className="mr-2 size-4" />
-                        Task Details
+                          <span className="bg-primary size-2 rounded-full" />
+                          {p.name}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                ) : displayProjectName && onMoveToProject ? (
+                  // Clickable badge that opens external picker
+                  <button
+                    type="button"
+                    onClick={onMoveToProject}
+                    className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                  >
+                    {displayProjectName}
+                    <ChevronDown className="size-3 opacity-50" />
+                  </button>
+                ) : displayProjectName ? (
+                  // Read-only badge
+                  <span className="bg-muted text-muted-foreground shrink-0 rounded px-2 py-0.5 text-xs">
+                    {displayProjectName}
+                  </span>
+                ) : null
+              })()}
+              {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
+              {(onRruleChange || onSaveAll) && (
+                <IconButton
+                  icon={<Repeat className="size-4" />}
+                  label="Recurrence"
+                  onClick={handleRecurrenceToggle}
+                  active={editingRecurrence}
+                />
+              )}
+              <IconButton
+                icon={<Timer className="size-4" />}
+                label="Auto-snooze interval"
+                badge={15}
+                disabled
+              />
+              <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
+              {onDelete && (
+                <IconButton
+                  icon={<Trash2 className="size-4" />}
+                  label="Delete"
+                  onClick={onDelete}
+                  destructive
+                />
+              )}
+
+              {/* More menu - consolidates disabled features and task details */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    aria-label="More options"
+                    title="More options"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
+                  {/* Clear due date - only for single task with due_at or rrule */}
+                  {isSingleTask &&
+                    (effectiveTask?.due_at || effectiveTask?.rrule) &&
+                    !pendingDueAtCleared && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setPendingDueAtCleared(true)
+                          if (effectiveTask?.rrule) {
+                            setPendingRrule(null)
+                          }
+                        }}
+                      >
+                        <XCircle className="mr-2 size-4" />
+                        Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
                       </DropdownMenuItem>
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
+                  {isSingleTask && onNavigateToDetail && (
+                    <DropdownMenuItem onClick={onNavigateToDetail}>
+                      <Info className="mr-2 size-4" />
+                      Task Details
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       </div>

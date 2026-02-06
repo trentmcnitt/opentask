@@ -6,6 +6,7 @@ import {
   formatDeltaText,
   snapToNextPreset,
   adjustDate,
+  getDayLabel,
 } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
 
@@ -49,20 +50,6 @@ interface UseBulkQuickSelectDateResult {
   reset: () => void
   /** Get the result for API call */
   getResult: () => OperationResult | null
-}
-
-/**
- * Get the day label for a date: "Today", "Tomorrow", "Yesterday", or short weekday
- */
-function getDayLabel(dt: DateTime, timezone: string): string {
-  const now = DateTime.now().setZone(timezone)
-  const target = dt.setZone(timezone)
-
-  if (target.hasSame(now, 'day')) return 'Today'
-  if (target.hasSame(now.plus({ days: 1 }), 'day')) return 'Tomorrow'
-  if (target.hasSame(now.minus({ days: 1 }), 'day')) return 'Yesterday'
-
-  return target.toFormat('EEE') // Mon, Tue, etc.
 }
 
 /**
@@ -120,15 +107,17 @@ function computeInitialDisplay(
   const dateTimes = dueDates.map((d) => DateTime.fromISO(d, { zone: timezone }))
   const sortedDueDates = [...dueDates].sort()
   const earliest = sortedDueDates[0]
-  const earliestDt = DateTime.fromISO(earliest, { zone: timezone })
-
   // Check if all are on the same calendar day
   const allSameDay = dateTimes.every((dt) => dt.hasSame(dateTimes[0], 'day'))
 
   if (allSameDay) {
     // Same day, different times: "Today, —" or "Tomorrow, —"
-    const dayLabel = getDayLabel(earliestDt, timezone)
-    const datePart = earliestDt.toFormat('LLL d') // "Feb 3"
+    const dayLabel = getDayLabel(earliest, timezone)
+    const datePart = new Date(earliest).toLocaleDateString('en-US', {
+      timeZone: timezone,
+      month: 'short',
+      day: 'numeric',
+    })
     return {
       headerText: `${dayLabel}, ${datePart}, —`,
       hasMixedDates: true,

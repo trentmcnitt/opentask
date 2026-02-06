@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { useTimezone } from '@/hooks/useTimezone'
 
 interface ArchivedTask {
   id: number
@@ -19,6 +20,7 @@ interface Project {
 export default function ArchivePage() {
   const { status } = useSession()
   const router = useRouter()
+  const timezone = useTimezone()
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -136,6 +138,7 @@ export default function ArchivePage() {
                       {projectName && <span>{projectName} · </span>}
                       {task.done_at
                         ? `Completed ${new Date(task.done_at).toLocaleDateString('en-US', {
+                            timeZone: timezone,
                             month: 'short',
                             day: 'numeric',
                           })}`

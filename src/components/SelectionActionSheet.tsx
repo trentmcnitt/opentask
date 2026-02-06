@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { computeCommonLabels } from '@/lib/bulk-utils'
 import { cn } from '@/lib/utils'
@@ -77,7 +78,7 @@ export function SelectionActionSheet({
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [isMobile, setIsMobile] = useState(true)
+  const isMobile = useIsMobile()
 
   // Pending state for priority, labels, project (staged until Save)
   // These use refs instead of state because they're only read synchronously in handleSave.
@@ -98,14 +99,6 @@ export function SelectionActionSheet({
   const recurrenceSummary = useMemo(() => {
     return formatBulkRecurrence(selectedTasks)
   }, [selectedTasks])
-
-  // Detect mobile vs desktop
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 640)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   const clearPendingState = useCallback(() => {
     pendingDateRef.current = null

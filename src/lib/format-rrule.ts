@@ -25,7 +25,7 @@ const SHORT_DAY_NAMES: Record<string, string> = {
   SU: 'Sun',
 }
 
-function formatTime(hour: number, minute: number): string {
+export function formatTime(hour: number, minute: number): string {
   const period = hour >= 12 ? 'PM' : 'AM'
   const h = hour % 12 || 12
   const m = minute.toString().padStart(2, '0')

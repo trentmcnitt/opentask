@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { formatTime } from '@/lib/format-rrule'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -29,13 +30,6 @@ const DAYS_OF_WEEK = [
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
 // Generate minute options (00, 15, 30, 45)
 const MINUTE_OPTIONS = [0, 15, 30, 45]
-
-function formatTime12Hour(hour: number, minute: number): string {
-  const period = hour >= 12 ? 'PM' : 'AM'
-  const h = hour % 12 || 12
-  const m = minute.toString().padStart(2, '0')
-  return `${h}:${m} ${period}`
-}
 
 function useRRuleBuilder(
   frequency: Frequency,
@@ -131,7 +125,7 @@ function useRRuleBuilder(
     }
 
     // Add time to preview
-    base += ` at ${formatTime12Hour(hour, minute)}`
+    base += ` at ${formatTime(hour, minute)}`
 
     if (endType === 'count') {
       base += `, ${endCount} times`

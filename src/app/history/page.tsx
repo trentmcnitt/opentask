@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
+import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
+import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -127,6 +129,7 @@ export default function HistoryPage() {
             setDate={setDate}
             loading={loading}
             completions={completions}
+            timezone={timezone}
           />
         )}
 
@@ -143,11 +146,13 @@ function CompletionsTab({
   setDate,
   loading,
   completions,
+  timezone,
 }: {
   date: string
   setDate: (d: string) => void
   loading: boolean
   completions: CompletionEntry[]
+  timezone: string
 }) {
   return (
     <div>
@@ -199,6 +204,7 @@ function CompletionsTab({
                 <p className="truncate text-sm font-medium">{c.task_title}</p>
                 <p className="text-xs text-zinc-400">
                   {new Date(c.completed_at).toLocaleTimeString('en-US', {
+                    timeZone: timezone,
                     hour: 'numeric',
                     minute: '2-digit',
                     hour12: true,
@@ -217,20 +223,7 @@ function CompletionsTab({
  * Format priority value as human-readable string.
  */
 function formatPriority(value: number | undefined): string {
-  switch (value) {
-    case 0:
-      return 'None'
-    case 1:
-      return 'Low'
-    case 2:
-      return 'Medium'
-    case 3:
-      return 'High'
-    case 4:
-      return 'Urgent'
-    default:
-      return 'None'
-  }
+  return getPriorityOption(value ?? 0).label
 }
 
 /**
@@ -243,7 +236,7 @@ function formatActivityDescription(entry: UndoEntry, timezone: string): string {
   const firstSnapshot = snapshot[0]
   const taskTitle =
     firstSnapshot?.before_state?.title || firstSnapshot?.after_state?.title || 'task'
-  const truncatedTitle = taskTitle.length > 30 ? taskTitle.slice(0, 30) + '...' : taskTitle
+  const truncatedTitle = truncateTitle(taskTitle, 30)
 
   // For bulk operations, show count
   const isBulk = action.startsWith('bulk_')
@@ -329,15 +322,7 @@ function formatActivityDescription(entry: UndoEntry, timezone: string): string {
  * Format a list of field names for display.
  */
 function formatFieldList(fields: string[]): string {
-  const displayNames: Record<string, string> = {
-    priority: 'priority',
-    title: 'title',
-    due_at: 'due date',
-    done: 'status',
-    project_id: 'project',
-    rrule: 'recurrence',
-    labels: 'labels',
-  }
+  const displayNames: Record<string, string> = { ...FIELD_LABELS, done: 'status' }
 
   return fields
     .map((f) => displayNames[f] || f)
@@ -511,6 +496,7 @@ function ExpandableActivityItem({ activity, timezone }: { activity: UndoEntry; t
           </p>
           <p className="text-xs text-zinc-400">
             {new Date(activity.created_at).toLocaleString('en-US', {
+              timeZone: timezone,
               month: 'short',
               day: 'numeric',
               hour: 'numeric',
@@ -599,21 +585,17 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
  * Format a field name for display (e.g., 'due_at' -> 'Due date')
  */
 function formatFieldName(field: string): string {
-  const names: Record<string, string> = {
-    priority: 'Priority',
-    title: 'Title',
-    due_at: 'Due date',
+  // Extra fields not in FIELD_LABELS
+  const extras: Record<string, string> = {
     done: 'Status',
-    project_id: 'Project',
-    rrule: 'Recurrence',
-    labels: 'Labels',
     done_at: 'Done at',
     archived_at: 'Archived',
     deleted_at: 'Deleted',
     snooze_count: 'Snooze count',
-    recurrence_mode: 'Recurrence mode',
   }
-  return names[field] || field.replace(/_/g, ' ')
+  const label = FIELD_LABELS[field] || extras[field]
+  if (label) return label.charAt(0).toUpperCase() + label.slice(1)
+  return field.replace(/_/g, ' ')
 }
 
 /**

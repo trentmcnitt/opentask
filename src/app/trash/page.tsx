@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { useTimezone } from '@/hooks/useTimezone'
 
 interface TrashedTask {
   id: number
@@ -65,6 +66,7 @@ function EmptyTrashConfirm({
 export default function TrashPage() {
   const { status } = useSession()
   const router = useRouter()
+  const timezone = useTimezone()
   const [tasks, setTasks] = useState<TrashedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -182,6 +184,7 @@ export default function TrashPage() {
                         {projectName && <span>{projectName} · </span>}
                         {task.deleted_at
                           ? `Deleted ${new Date(task.deleted_at).toLocaleDateString('en-US', {
+                              timeZone: timezone,
                               month: 'short',
                               day: 'numeric',
                             })}`

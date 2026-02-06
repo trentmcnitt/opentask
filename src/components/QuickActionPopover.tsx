@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -33,14 +34,7 @@ export function QuickActionPopover({
   onNavigateToDetail,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 640)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
+  const isMobile = useIsMobile()
 
   const handleNavigateToDetail = useCallback(() => {
     if (!focusedTask || !onNavigateToDetail) return

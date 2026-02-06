@@ -140,17 +140,28 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
 }
 
 /**
+ * Get the day label for a date: "Today", "Tomorrow", "Yesterday", or short weekday (e.g., "Mon").
+ */
+export function getDayLabel(isoUtc: string, timezone: string): string {
+  const date = new Date(isoUtc)
+  const { todayStart, tomorrowStart, dayAfterTomorrowStart } = getTimezoneDayBoundaries(timezone)
+  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
+
+  if (date >= yesterdayStart && date < todayStart) return 'Yesterday'
+  if (date >= todayStart && date < tomorrowStart) return 'Today'
+  if (date >= tomorrowStart && date < dayAfterTomorrowStart) return 'Tomorrow'
+
+  return date.toLocaleString('en-US', { timeZone: timezone, weekday: 'short' })
+}
+
+/**
  * Format the header line for the Quick Action Panel.
  * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM"
  */
 export function formatQuickSelectHeader(isoUtc: string, timezone: string): string {
   const date = new Date(isoUtc)
-  const { todayStart, tomorrowStart, dayAfterTomorrowStart } = getTimezoneDayBoundaries(timezone)
+  const dayLabel = getDayLabel(isoUtc, timezone)
 
-  // Determine yesterday boundary
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
-
-  // Format the time portion
   const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,
     hour: 'numeric',
@@ -158,28 +169,11 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
     hour12: true,
   })
 
-  // Format the date portion (month + day)
   const datePart = date.toLocaleString('en-US', {
     timeZone: timezone,
     month: 'short',
     day: 'numeric',
   })
-
-  // Determine the day label
-  let dayLabel: string
-  if (date >= yesterdayStart && date < todayStart) {
-    dayLabel = 'Yesterday'
-  } else if (date >= todayStart && date < tomorrowStart) {
-    dayLabel = 'Today'
-  } else if (date >= tomorrowStart && date < dayAfterTomorrowStart) {
-    dayLabel = 'Tomorrow'
-  } else {
-    // Use weekday for other days
-    dayLabel = date.toLocaleString('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-    })
-  }
 
   return `${dayLabel}, ${datePart}, ${timePart}`
 }
@@ -277,15 +271,4 @@ export function snapToNextHour(now?: Date): string {
   result.setMinutes(0, 0, 0)
   result.setHours(result.getHours() + (minutes >= 35 ? 2 : 1))
   return result.toISOString()
-}
-
-/**
- * Format time for smart button display (e.g., "1:35 PM")
- */
-export function formatSmartButtonTime(isoUtc: string, timezone: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: timezone,
-  }).format(new Date(isoUtc))
 }

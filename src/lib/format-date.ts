@@ -291,13 +291,6 @@ function formatTimeInZone(date: Date, timezone: string): string {
 }
 
 /**
- * Parse a datetime-local input value ("YYYY-MM-DDTHH:MM") as the user's timezone
- * and return a UTC ISO string.
- *
- * This is the inverse of toLocalDatetimeInput(): that function converts UTC → local display,
- * and this function converts local input → UTC for storage.
- */
-/**
  * Format the duration between two timestamps as a delta string.
  *
  * @param fromMs - Start timestamp in milliseconds
@@ -335,16 +328,10 @@ export function formatDurationDelta(fromMs: number, toMs: number): string {
 
 /**
  * Format a time in a given timezone as "9:00 AM" style.
- * Exported for use in activity formatting.
+ * Exported for use in activity formatting and anywhere a timezone-aware time string is needed.
  */
 export function formatTimeInTimezone(isoUtc: string, timezone: string): string {
-  const date = new Date(isoUtc)
-  return date.toLocaleTimeString('en-US', {
-    timeZone: timezone,
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
+  return formatTimeInZone(new Date(isoUtc), timezone)
 }
 
 export function parseLocalDatetimeInput(value: string, timezone: string): string {
