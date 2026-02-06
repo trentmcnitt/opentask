@@ -309,6 +309,8 @@ export interface RecurrencePickerProps {
   recurrenceMode?: RecurrenceMode
   /** Initial time in HH:MM format for defaulting the time picker */
   initialTime?: string | null
+  /** RRULE day abbreviation (e.g., 'WE') to auto-select when switching to Weekly with no days */
+  defaultDayOfWeek?: string
   onChange: (rrule: string | null, recurrenceMode?: RecurrenceMode) => void
 }
 
@@ -316,6 +318,7 @@ export function RecurrencePicker({
   value,
   recurrenceMode: initialRecurrenceMode = 'from_due',
   initialTime,
+  defaultDayOfWeek,
   onChange,
 }: RecurrencePickerProps) {
   const initial = useMemo(() => parseInitialState(value, initialTime), [value, initialTime])
@@ -382,10 +385,31 @@ export function RecurrencePicker({
     setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
   }
 
+  // Auto-select the task's due date day when switching to Weekly with no days selected
+  const handleFrequencyChange = (newFreq: Frequency) => {
+    setFrequency(newFreq)
+    if (newFreq === 'WEEKLY' && selectedDays.length === 0 && defaultDayOfWeek) {
+      setSelectedDays([defaultDayOfWeek])
+    }
+  }
+
+  // When switching from from_completion back to from_due, auto-populate day if empty
+  const handleRecurrenceModeChange = (newMode: RecurrenceMode) => {
+    setRecurrenceMode(newMode)
+    if (
+      newMode === 'from_due' &&
+      frequency === 'WEEKLY' &&
+      selectedDays.length === 0 &&
+      defaultDayOfWeek
+    ) {
+      setSelectedDays([defaultDayOfWeek])
+    }
+  }
+
   return (
     <div className="space-y-4 overflow-hidden">
       <div className="flex flex-wrap items-center gap-4">
-        <Select value={frequency} onValueChange={(v) => setFrequency(v as Frequency)}>
+        <Select value={frequency} onValueChange={handleFrequencyChange}>
           <SelectTrigger className="w-32">
             <SelectValue />
           </SelectTrigger>
@@ -419,7 +443,10 @@ export function RecurrencePicker({
         )}
       </div>
 
-      {frequency === 'WEEKLY' && (
+      {/* Day-of-week buttons: hidden in from_completion mode since the server schedules
+          N weeks from the completion date, ignoring BYDAY. Selected days are preserved in
+          state so they reappear if the user switches back to from_due. */}
+      {frequency === 'WEEKLY' && recurrenceMode !== 'from_completion' && (
         <div className="flex flex-wrap gap-1">
           {DAYS_OF_WEEK.map((day) => (
             <Button
@@ -434,6 +461,9 @@ export function RecurrencePicker({
               {day.label}
             </Button>
           ))}
+          {selectedDays.length === 0 && (
+            <p className="text-destructive w-full text-xs">Select at least one day</p>
+          )}
         </div>
       )}
 
@@ -466,7 +496,7 @@ export function RecurrencePicker({
 
       {/* Recurrence mode selector */}
       {frequency !== 'NONE' && (
-        <RecurrenceModePicker mode={recurrenceMode} onChange={setRecurrenceMode} />
+        <RecurrenceModePicker mode={recurrenceMode} onChange={handleRecurrenceModeChange} />
       )}
 
       {frequency !== 'NONE' && (

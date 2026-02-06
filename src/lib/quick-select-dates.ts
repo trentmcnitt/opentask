@@ -129,19 +129,14 @@ export function adjustDate(
 /**
  * Initialize the working date for a task.
  * - If the task has a due_at, use that.
- * - Otherwise, round up to the next full hour from now + 1 hour.
+ * - Otherwise, snap to the nearest 5-minute boundary (close to "now").
+ *   Presets ignore this value (they snap to next occurrence), and the UI
+ *   shows "No due date" until the user presses a button, so using a
+ *   near-now value gives intuitive results for increment buttons (+1 min, etc.).
  */
 export function initWorkingDate(dueAt: string | null, now?: Date): string {
   if (dueAt) return dueAt
-
-  const reference = now ?? new Date()
-  const future = new Date(reference.getTime() + 60 * 60 * 1000)
-  // Round up to next hour
-  if (future.getMinutes() > 0 || future.getSeconds() > 0) {
-    future.setMinutes(0, 0, 0)
-    future.setHours(future.getHours() + 1)
-  }
-  return future.toISOString()
+  return snapToNearestFiveMinutes(now)
 }
 
 /**

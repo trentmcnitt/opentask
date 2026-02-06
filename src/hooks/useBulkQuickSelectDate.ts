@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { DateTime } from 'luxon'
 import {
   formatQuickSelectHeader,
   formatRelativeTime,
   formatDeltaText,
   snapToNextPreset,
+  adjustDate,
 } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
 
@@ -153,6 +154,7 @@ export function useBulkQuickSelectDate({
   const [operationType, setOperationType] = useState<OperationType>(null)
   const [deltaMinutes, setDeltaMinutes] = useState(0)
   const [presetTime, setPresetTime] = useState<string | null>(null)
+  const presetTimeRef = useRef<string | null>(null)
 
   // Compute initial display state from tasks
   const initialDisplay = useMemo(() => computeInitialDisplay(tasks, timezone), [tasks, timezone])
@@ -163,7 +165,16 @@ export function useBulkQuickSelectDate({
     return () => clearInterval(interval)
   }, [])
 
-  // Reset when tasks change
+  // Keep ref in sync with state — the ref is needed for synchronous reads
+  // in callbacks (applyIncrement), while state drives re-renders.
+  useEffect(() => {
+    presetTimeRef.current = presetTime
+  }, [presetTime])
+
+  // Reset when tasks change.
+  // Note: presetTimeRef is cleared by the useEffect above when presetTime goes to null.
+  // This is safe because applyIncrement can only be called from user events (click handlers),
+  // which run after React commits and fires effects.
   const [prevTaskIds, setPrevTaskIds] = useState(() => tasks.map((t) => t.id).join(','))
   const currentTaskIds = tasks.map((t) => t.id).join(',')
   if (currentTaskIds !== prevTaskIds) {
@@ -178,29 +189,47 @@ export function useBulkQuickSelectDate({
       const target = snapToNextPreset(hour, minute, timezone)
       setOperationType('preset')
       setPresetTime(target)
+      presetTimeRef.current = target
       setDeltaMinutes(0)
     },
     [timezone],
   )
 
-  const applyIncrement = useCallback((increment: { minutes: number | null; days?: number }) => {
-    setOperationType('delta')
-    setPresetTime(null)
+  const applyIncrement = useCallback(
+    (increment: { minutes: number | null; days?: number }) => {
+      const currentPreset = presetTimeRef.current
 
-    // Convert day-based increments to minutes for accumulation
-    let minutesToAdd: number
-    if (increment.minutes === null && increment.days) {
-      minutesToAdd = increment.days * 24 * 60
-    } else {
-      minutesToAdd = increment.minutes ?? 0
-    }
+      if (currentPreset) {
+        // Increment on top of the active preset — stays in 'preset' mode.
+        // adjustDate handles both minute-based and day-based increments
+        // (day-based uses calendar-day arithmetic to preserve wall-clock time across DST).
+        const newTime = adjustDate(currentPreset, increment, timezone)
+        setPresetTime(newTime)
+        presetTimeRef.current = newTime
+        setOperationType('preset')
+        // deltaMinutes stays at 0 — not used in preset mode
+        return
+      }
 
-    setDeltaMinutes((prev) => prev + minutesToAdd)
-  }, [])
+      // No preset active — pure delta mode
+      setOperationType('delta')
+
+      let minutesToAdd: number
+      if (increment.minutes === null && increment.days) {
+        minutesToAdd = increment.days * 24 * 60
+      } else {
+        minutesToAdd = increment.minutes ?? 0
+      }
+
+      setDeltaMinutes((prev) => prev + minutesToAdd)
+    },
+    [timezone],
+  )
 
   const setAbsoluteTarget = useCallback((isoUtc: string) => {
     setOperationType('preset')
     setPresetTime(isoUtc)
+    presetTimeRef.current = isoUtc
     setDeltaMinutes(0)
   }, [])
 
@@ -208,6 +237,7 @@ export function useBulkQuickSelectDate({
     setOperationType(null)
     setDeltaMinutes(0)
     setPresetTime(null)
+    presetTimeRef.current = null
   }, [])
 
   const getResult = useCallback((): OperationResult | null => {

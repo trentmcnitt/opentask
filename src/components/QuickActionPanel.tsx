@@ -49,6 +49,7 @@ import {
 } from '@/lib/quick-select-dates'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
+import { DateTime } from 'luxon'
 import { PRIORITY_OPTIONS, getPriorityOption } from '@/lib/priority'
 import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -290,6 +291,14 @@ export function QuickActionPanel({
     return computeRecurrencePreview(pendingRrule, timezone)
   }, [pendingRrule, effectiveTask, timezone])
 
+  // Compute RRULE day abbreviation from task's due date for auto-selecting in RecurrencePicker
+  const defaultDayOfWeek = useMemo(() => {
+    if (!effectiveTask?.due_at) return undefined
+    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
+    const weekday = DateTime.fromISO(effectiveTask.due_at).setZone(timezone).weekday // 1=Mon..7=Sun
+    return RRULE_DAYS[weekday - 1]
+  }, [effectiveTask, timezone])
+
   // Use the appropriate hook based on mode
   // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook
   const hasDateChanges = onSaveAll
@@ -306,6 +315,24 @@ export function QuickActionPanel({
     pendingTitle !== null ||
     pendingDueAtCleared
   const isDirty = hasDateChanges || hasPendingChanges
+
+  // Recurrence is invalid when FREQ=WEEKLY has no BYDAY in from_due mode.
+  // Only check when the user has the recurrence picker open or modified the rrule,
+  // so existing legacy data without BYDAY doesn't block unrelated edits.
+  const isRecurrenceInvalid = useMemo(() => {
+    if (!editingRecurrence && pendingRrule === undefined) return false
+    const rruleToCheck = pendingRrule !== undefined ? pendingRrule : (effectiveTask?.rrule ?? null)
+    if (!rruleToCheck) return false
+    const mode = pendingRecurrenceMode ?? effectiveTask?.recurrence_mode ?? 'from_due'
+    if (mode === 'from_completion') return false
+    return rruleToCheck.includes('FREQ=WEEKLY') && !rruleToCheck.includes('BYDAY=')
+  }, [
+    editingRecurrence,
+    pendingRrule,
+    pendingRecurrenceMode,
+    effectiveTask?.rrule,
+    effectiveTask?.recurrence_mode,
+  ])
 
   // Notify parent of dirty state changes for navigation protection
   useEffect(() => {
@@ -328,8 +355,8 @@ export function QuickActionPanel({
     : !effectiveTask?.due_at
 
   // Only show delta when task originally had a due date. When due_at is null,
-  // initWorkingDate generates a default (next hour) and showing a delta from that
-  // would be confusing. Also suppress in bulk mixed-date delta mode since
+  // initWorkingDate generates a near-now default (5-min snap) and showing a delta
+  // from that would be confusing. Also suppress in bulk mixed-date delta mode since
   // relativeText already shows "+Xh from each".
   const hadOriginalDueAt = isBulkMode
     ? (selectedTasks ?? []).some((t) => t.due_at !== null)
@@ -353,6 +380,34 @@ export function QuickActionPanel({
       }
     },
     [isBulkMode, bulkHook, singleHook],
+  )
+
+  // Wrapper handlers that clear pendingDueAtCleared before delegating to date buttons.
+  // Without this, clicking "Clear due date" then a preset/increment button leaves
+  // pendingDueAtCleared=true, causing collectPendingChanges() to short-circuit and
+  // ignore the new date selection.
+  const handlePresetClick = useCallback(
+    (hour: number, minute: number) => {
+      setPendingDueAtCleared(false)
+      applyPreset(hour, minute)
+    },
+    [applyPreset],
+  )
+
+  const handleIncrementClick = useCallback(
+    (inc: { minutes: number | null; days?: number }) => {
+      setPendingDueAtCleared(false)
+      applyIncrement(inc)
+    },
+    [applyIncrement],
+  )
+
+  const handleSmartButtonClick = useCallback(
+    (type: 'now' | 'nextHour') => {
+      setPendingDueAtCleared(false)
+      handleSmartButton(type)
+    },
+    [handleSmartButton],
   )
 
   // Apply date changes - when onSaveAll provided, stage the change for batched save
@@ -1086,7 +1141,7 @@ export function QuickActionPanel({
                       <MoreHorizontal className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
                     {/* Clear due date - only for single task with due_at or rrule */}
                     {isSingleTask &&
                       (effectiveTask?.due_at || effectiveTask?.rrule) &&
@@ -1124,7 +1179,7 @@ export function QuickActionPanel({
           <GridButton
             key={preset.label}
             label={preset.label}
-            onClick={() => applyPreset(preset.hour, preset.minute)}
+            onClick={() => handlePresetClick(preset.hour, preset.minute)}
           />
         ))}
 
@@ -1133,7 +1188,7 @@ export function QuickActionPanel({
           <GridButton
             key={inc.label}
             label={inc.label}
-            onClick={() => applyIncrement(inc)}
+            onClick={() => handleIncrementClick(inc)}
             variant="increment"
           />
         ))}
@@ -1143,7 +1198,7 @@ export function QuickActionPanel({
           <GridButton
             key={dec.label}
             label={dec.label}
-            onClick={() => applyIncrement(dec)}
+            onClick={() => handleIncrementClick(dec)}
             variant="decrement"
           />
         ))}
@@ -1153,7 +1208,7 @@ export function QuickActionPanel({
           <GridButton
             key={btn.type}
             label={smartButtonLabels[btn.type]}
-            onClick={() => handleSmartButton(btn.type)}
+            onClick={() => handleSmartButtonClick(btn.type)}
             variant="smart"
             span={2}
           />
@@ -1168,6 +1223,7 @@ export function QuickActionPanel({
             value={displayRrule}
             recurrenceMode={pendingRecurrenceMode ?? effectiveTask?.recurrence_mode}
             initialTime={effectiveTask?.anchor_time}
+            defaultDayOfWeek={defaultDayOfWeek}
             onChange={(rrule, mode) => {
               setPendingRrule(rrule)
               if (mode) setPendingRecurrenceMode(mode)
@@ -1178,19 +1234,24 @@ export function QuickActionPanel({
 
       {/* Apply button (inline mode only) */}
       {mode === 'inline' && (
-        <Button onClick={handleApply} disabled={!isDirty} className="w-full" size="sm">
+        <Button
+          onClick={handleApply}
+          disabled={!isDirty || isRecurrenceInvalid}
+          className="w-full"
+          size="sm"
+        >
           Apply
         </Button>
       )}
 
       {/* Bottom action bar - Save/Reset/Done/Cancel (popover/sheet with explicit handlers) */}
       {mode !== 'inline' && onSave && onCancel && (
-        <div className="flex gap-2 border-t pt-3">
+        <div className="flex gap-2 border-t pt-3 select-none">
           <Button
             variant="default"
             size="sm"
             onClick={handleSave}
-            disabled={!isDirty}
+            disabled={!isDirty || isRecurrenceInvalid}
             className="flex-1"
           >
             Save

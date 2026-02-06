@@ -106,18 +106,18 @@ describe('initWorkingDate', () => {
     expect(initWorkingDate(dueAt)).toBe(dueAt)
   })
 
-  it('returns now + ~1 hour rounded up to next hour when no due_at', () => {
+  it('returns near-now time snapped to 5-minute boundary when no due_at', () => {
     const now = new Date('2025-02-03T14:23:00.000Z')
     const result = initWorkingDate(null, now)
-    // 14:23 + 1h = 15:23, rounded up to 16:00
-    expect(new Date(result).toISOString()).toBe('2025-02-03T16:00:00.000Z')
+    // 14:23 → snapped to 14:25 (next 5-minute mark)
+    expect(new Date(result).toISOString()).toBe('2025-02-03T14:25:00.000Z')
   })
 
-  it('handles exact hour boundary', () => {
+  it('snaps forward when exactly on a 5-minute mark', () => {
     const now = new Date('2025-02-03T14:00:00.000Z')
     const result = initWorkingDate(null, now)
-    // 14:00 + 1h = 15:00, already on the hour
-    expect(new Date(result).toISOString()).toBe('2025-02-03T15:00:00.000Z')
+    // Exactly on the mark → snap to 14:05
+    expect(new Date(result).toISOString()).toBe('2025-02-03T14:05:00.000Z')
   })
 })
 
@@ -199,5 +199,54 @@ describe('formatRelativeTime', () => {
     const now = new Date('2025-02-03T15:00:30.000Z')
     const recent = '2025-02-03T15:00:00.000Z'
     expect(formatRelativeTime(recent, now)).toBe('just now')
+  })
+})
+
+describe('preset + increment composition', () => {
+  // These tests verify that adjustDate can chain increments on top of preset values,
+  // which is the core mechanism for Bug 1 (bulk preset→increment dropping the preset).
+
+  it('preset 12 PM + 1 hour = 1 PM', () => {
+    // 12 PM CST = 18:00 UTC
+    const preset = snapToNextPreset(12, 0, TZ, new Date('2025-02-03T14:00:00.000Z'))
+    expect(new Date(preset).toISOString()).toBe('2025-02-03T18:00:00.000Z')
+
+    const result = adjustDate(preset, { minutes: 60 }, TZ)
+    // 1 PM CST = 19:00 UTC
+    expect(new Date(result).toISOString()).toBe('2025-02-03T19:00:00.000Z')
+  })
+
+  it('preset 12 PM - 5 min = 11:55 AM', () => {
+    const preset = snapToNextPreset(12, 0, TZ, new Date('2025-02-03T14:00:00.000Z'))
+    const result = adjustDate(preset, { minutes: -5 }, TZ)
+    // 11:55 AM CST = 17:55 UTC
+    expect(new Date(result).toISOString()).toBe('2025-02-03T17:55:00.000Z')
+  })
+
+  it('preset 12 PM + 1 day = 12 PM tomorrow', () => {
+    const preset = snapToNextPreset(12, 0, TZ, new Date('2025-02-03T14:00:00.000Z'))
+    const result = adjustDate(preset, { minutes: null, days: 1 }, TZ)
+    // Feb 4, 12 PM CST = 18:00 UTC
+    expect(new Date(result).toISOString()).toBe('2025-02-04T18:00:00.000Z')
+  })
+
+  it('chains multiple increments: preset 12 PM + 1h + 30m - 5m = 1:25 PM', () => {
+    const preset = snapToNextPreset(12, 0, TZ, new Date('2025-02-03T14:00:00.000Z'))
+    const step1 = adjustDate(preset, { minutes: 60 }, TZ)
+    const step2 = adjustDate(step1, { minutes: 30 }, TZ)
+    const step3 = adjustDate(step2, { minutes: -5 }, TZ)
+    // 1:25 PM CST = 19:25 UTC
+    expect(new Date(step3).toISOString()).toBe('2025-02-03T19:25:00.000Z')
+  })
+
+  it('initWorkingDate + increment gives near-now result for no-due-date tasks', () => {
+    const now = new Date('2025-02-03T18:53:00.000Z') // 12:53 PM CST
+    const working = initWorkingDate(null, now)
+    // Should be 18:55 (snapped to 5-min), not ~20:00 (old hour-roundup)
+    expect(new Date(working).toISOString()).toBe('2025-02-03T18:55:00.000Z')
+
+    const plusOne = adjustDate(working, { minutes: 1 }, TZ)
+    // 18:56 — close to "now + 1 min"
+    expect(new Date(plusOne).toISOString()).toBe('2025-02-03T18:56:00.000Z')
   })
 })
