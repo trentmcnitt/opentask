@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import type { SelectionContextType } from '@/components/SelectionProvider'
 import { debug } from '@/lib/logger'
 
@@ -70,9 +70,6 @@ export function useKeyboardNavigation({
   enabled = true,
 }: UseKeyboardNavigationOptions): UseKeyboardNavigationReturn {
   const [isKeyboardActive, setIsKeyboardActive] = useState(false)
-
-  // Track consecutive escape presses
-  const lastEscapeTime = useRef<number>(0)
 
   // Find the first task in the same group as the given task ID
   // Uses orderedIds to respect the current sort order
@@ -358,6 +355,7 @@ export function useKeyboardNavigation({
           if (cmdKey && e.shiftKey) {
             // Cmd+Shift+A: Toggle select all in current group (or first group if nothing focused)
             e.preventDefault()
+            setIsKeyboardActive(true)
             const targetTaskId = keyboardFocusedId ?? orderedIds[0]
             if (targetTaskId !== undefined) {
               const groupIds = getTaskIdsInCurrentGroup(targetTaskId)
@@ -367,18 +365,29 @@ export function useKeyboardNavigation({
                   selection.removeAll(groupIds)
                 } else {
                   selection.addAll(groupIds)
+                  // Focus first task in group if not already focused
+                  if (keyboardFocusedId === null) {
+                    setKeyboardFocusedId(groupIds[0])
+                    document.getElementById(`task-row-${groupIds[0]}`)?.focus()
+                  }
                 }
               }
             }
           } else if (cmdKey) {
             // Cmd/Ctrl+A toggles select all visible tasks
             e.preventDefault()
+            setIsKeyboardActive(true)
             const allSelected =
               orderedIds.length > 0 && orderedIds.every((id) => selection.selectedIds.has(id))
             if (allSelected) {
               selection.clear()
             } else {
               selection.selectAll(orderedIds)
+              // Focus first task if not already focused
+              if (keyboardFocusedId === null && orderedIds.length > 0) {
+                setKeyboardFocusedId(orderedIds[0])
+                document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
+              }
             }
           }
           break
@@ -404,26 +413,11 @@ export function useKeyboardNavigation({
 
         case 'Escape':
           e.preventDefault()
-          const now = Date.now()
-          const timeSinceLastEscape = now - lastEscapeTime.current
-          lastEscapeTime.current = now
-
           if (selection.isSelectionMode) {
-            // First Escape: clear selection
             selection.clear()
-          } else if (timeSinceLastEscape < 500) {
-            // Second Escape within 500ms: exit keyboard mode
-            setIsKeyboardActive(false)
-            setKeyboardFocusedId(null)
-            // Blur the currently focused element so focus leaves the list entirely
-            if (document.activeElement instanceof HTMLElement) {
-              document.activeElement.blur()
-            }
           } else {
-            // Single Escape when no selection: exit keyboard mode
             setIsKeyboardActive(false)
             setKeyboardFocusedId(null)
-            // Blur the currently focused element so focus leaves the list entirely
             if (document.activeElement instanceof HTMLElement) {
               document.activeElement.blur()
             }

@@ -21,6 +21,33 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   rightBorder: false,
 }
 
+/**
+ * Parse label_config and priority_display JSON columns from a preferences row,
+ * returning typed values with safe fallbacks.
+ */
+function parsePreferencesRow(row: { label_config: string; priority_display: string }): {
+  labelConfig: LabelConfig[]
+  priorityDisplay: PriorityDisplayConfig
+} {
+  let labelConfig: LabelConfig[] = []
+  try {
+    labelConfig = row.label_config ? JSON.parse(row.label_config) : []
+  } catch {
+    labelConfig = []
+  }
+
+  let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
+  try {
+    priorityDisplay = row.priority_display
+      ? JSON.parse(row.priority_display)
+      : DEFAULT_PRIORITY_DISPLAY
+  } catch {
+    priorityDisplay = DEFAULT_PRIORITY_DISPLAY
+  }
+
+  return { labelConfig, priorityDisplay }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
@@ -33,21 +60,9 @@ export async function GET(request: NextRequest) {
       | { default_grouping: string; label_config: string; priority_display: string }
       | undefined
 
-    let labelConfig: LabelConfig[] = []
-    try {
-      labelConfig = row?.label_config ? JSON.parse(row.label_config) : []
-    } catch {
-      labelConfig = []
-    }
-
-    let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
-    try {
-      priorityDisplay = row?.priority_display
-        ? JSON.parse(row.priority_display)
-        : DEFAULT_PRIORITY_DISPLAY
-    } catch {
-      priorityDisplay = DEFAULT_PRIORITY_DISPLAY
-    }
+    const { labelConfig, priorityDisplay } = parsePreferencesRow(
+      row ?? { label_config: '', priority_display: '' },
+    )
 
     return success({
       default_grouping: row?.default_grouping ?? 'project',
@@ -168,19 +183,7 @@ export async function PATCH(request: NextRequest) {
       .prepare('SELECT default_grouping, label_config, priority_display FROM users WHERE id = ?')
       .get(user.id) as { default_grouping: string; label_config: string; priority_display: string }
 
-    let labelConfig: LabelConfig[] = []
-    try {
-      labelConfig = JSON.parse(row.label_config)
-    } catch {
-      labelConfig = []
-    }
-
-    let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
-    try {
-      priorityDisplay = JSON.parse(row.priority_display)
-    } catch {
-      priorityDisplay = DEFAULT_PRIORITY_DISPLAY
-    }
+    const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
 
     return success({
       default_grouping: row.default_grouping,

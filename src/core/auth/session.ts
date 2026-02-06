@@ -7,6 +7,7 @@
 import bcrypt from 'bcrypt'
 import { getDb } from '@/core/db'
 import type { AuthUser } from '@/types'
+import { toAuthUser } from './helpers'
 
 /**
  * Validate credentials and return the user
@@ -52,13 +53,7 @@ export async function validateCredentials(
     return null
   }
 
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    timezone: row.timezone,
-    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
-  }
+  return toAuthUser(row)
 }
 
 /**
@@ -85,11 +80,5 @@ export function getUserById(id: number): AuthUser | null {
     return null
   }
 
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    timezone: row.timezone,
-    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
-  }
+  return toAuthUser(row)
 }

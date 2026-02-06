@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { formatTime } from '@/lib/format-rrule'
+import { formatTime, parseRRuleParts } from '@/lib/format-rrule'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -545,7 +545,7 @@ function parseInitialState(value: string | null | undefined, initialTime?: strin
 
   if (!value) return defaults
 
-  const parts = parseRRule(value)
+  const parts = parseRRuleParts(value)
 
   // Parse time from RRULE if present, otherwise use defaults
   let hour = defaults.hour
@@ -574,16 +574,4 @@ function parseInitialState(value: string | null | undefined, initialTime?: strin
     hour,
     minute,
   }
-}
-
-function parseRRule(rrule: string): Record<string, string> {
-  const parts: Record<string, string> = {}
-  const cleaned = rrule.replace(/^RRULE:/i, '')
-  for (const part of cleaned.split(';')) {
-    const [key, value] = part.split('=')
-    if (key && value) {
-      parts[key.toUpperCase()] = value
-    }
-  }
-  return parts
 }

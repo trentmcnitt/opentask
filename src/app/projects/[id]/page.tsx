@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
@@ -13,6 +13,7 @@ import type { Task } from '@/types'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
+import { useFilterState } from '@/hooks/useFilterState'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -24,40 +25,19 @@ export default function ProjectDetailPage() {
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(true)
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
-  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
-  const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
 
-  const toggleLabel = useCallback((label: string) => {
-    setSelectedLabels((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
-    )
-  }, [])
-
-  const togglePriority = useCallback((priority: number) => {
-    setSelectedPriorities((prev) =>
-      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority],
-    )
-  }, [])
-
-  const clearAllFilters = useCallback(() => {
-    setSelectedLabels([])
-    setSelectedPriorities([])
-  }, [])
-
-  const displayTasks = useMemo(() => {
-    let filtered = tasks
-    if (selectedLabels.length > 0) {
-      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-    }
-    if (selectedPriorities.length > 0) {
-      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
-    }
-    return filtered
-  }, [tasks, selectedLabels, selectedPriorities])
+  const {
+    selectedLabels,
+    selectedPriorities,
+    toggleLabel,
+    togglePriority,
+    clearAllFilters,
+    filteredTasks: displayTasks,
+  } = useFilterState({ tasks })
 
   const fetchTasks = useCallback(async () => {
     try {

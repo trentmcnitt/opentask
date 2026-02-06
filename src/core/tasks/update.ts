@@ -19,6 +19,8 @@ export interface UpdateTaskOptions {
   userTimezone: string
   taskId: number
   input: TaskUpdateInput
+  /** Pre-fetched task to avoid redundant DB lookups (caller must have already validated access) */
+  prefetchedTask?: Task
 }
 
 export interface UpdateTaskResult {
@@ -34,12 +36,15 @@ export interface UpdateTaskResult {
  * Returns the updated task and list of changed fields.
  */
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
-  const { userId, userTimezone, taskId, input } = options
+  const { userId, userTimezone, taskId, input, prefetchedTask } = options
 
-  const task = getTaskById(taskId)
+  const task = prefetchedTask ?? getTaskById(taskId)
   if (!task) throw new Error('Task not found')
-  if (!canUserAccessTask(userId, task)) throw new Error('Access denied')
-  if (task.deleted_at) throw new Error('Cannot edit trashed task')
+  if (!prefetchedTask) {
+    // Only validate access if caller didn't pre-validate
+    if (!canUserAccessTask(userId, task)) throw new Error('Access denied')
+    if (task.deleted_at) throw new Error('Cannot edit trashed task')
+  }
 
   const data = collectFieldChanges({
     task,

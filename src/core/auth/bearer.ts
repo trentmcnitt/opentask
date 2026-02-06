@@ -6,6 +6,7 @@
 
 import { getDb } from '@/core/db'
 import type { AuthUser } from '@/types'
+import { toAuthUser } from './helpers'
 
 /**
  * Validate a Bearer token and return the associated user
@@ -37,13 +38,7 @@ export function validateBearerToken(token: string): AuthUser | null {
     return null
   }
 
-  return {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-    timezone: row.timezone,
-    default_grouping: (row.default_grouping === 'time' ? 'time' : 'project') as 'time' | 'project',
-  }
+  return toAuthUser(row)
 }
 
 /**

@@ -18,51 +18,12 @@ import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 export default function SettingsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  // Default grouping state - hidden but preserved for future use
-  // const [defaultGrouping, setDefaultGrouping] = useState<'time' | 'project'>('project')
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
-
-  useEffect(() => {
-    if (status !== 'authenticated') return
-    fetch('/api/user/preferences')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        // Default grouping loading - hidden but preserved for future use
-        // if (data?.data?.default_grouping) {
-        //   setDefaultGrouping(data.data.default_grouping)
-        // }
-        if (data?.data?.label_config) {
-          setLabelConfig(data.data.label_config)
-        }
-        if (data?.data?.priority_display) {
-          setPriorityDisplay(data.data.priority_display)
-        }
-      })
-      .catch(() => {})
-  }, [status, setLabelConfig, setPriorityDisplay])
-
-  // handleGroupingChange - hidden but preserved for future use
-  // const handleGroupingChange = async (value: 'time' | 'project') => {
-  //   const prev = defaultGrouping
-  //   setDefaultGrouping(value)
-  //   try {
-  //     const res = await fetch('/api/user/preferences', {
-  //       method: 'PATCH',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify({ default_grouping: value }),
-  //     })
-  //     if (!res.ok) throw new Error('Failed to save')
-  //     showToast({ message: 'Preference saved' })
-  //   } catch {
-  //     setDefaultGrouping(prev)
-  //     showToast({ message: 'Failed to save preference' })
-  //   }
-  // }
 
   const saveLabelConfig = async (newConfig: LabelConfig[]) => {
     const prev = labelConfig
@@ -109,7 +70,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
@@ -132,27 +93,6 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
-
-        {/* Default Grouping preference - hidden but preserved for future use
-        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-            Preferences
-          </h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">Default grouping</span>
-              <select
-                value={defaultGrouping}
-                onChange={(e) => handleGroupingChange(e.target.value as 'time' | 'project')}
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                <option value="project">By project</option>
-                <option value="time">By time</option>
-              </select>
-            </div>
-          </div>
-        </section>
-        */}
 
         {/* Priority Display */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">

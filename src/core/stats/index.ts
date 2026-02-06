@@ -102,7 +102,7 @@ export function getStatsSummary(userId: number, userTimezone: string): StatsSumm
   const weekAgoStr = userNow.minus({ days: 7 }).toFormat('yyyy-MM-dd')
   const monthAgoStr = userNow.minus({ days: 30 }).toFormat('yyyy-MM-dd')
 
-  // Get today's stats
+  // Get today's stats (needs full row for DailyStat type)
   const today = db
     .prepare(
       `
@@ -113,64 +113,53 @@ export function getStatsSummary(userId: number, userTimezone: string): StatsSumm
     )
     .get(userId, todayStr) as DailyStat | undefined
 
-  // Get week aggregate
-  const weekStats = db
+  // Get week, month, and all-time aggregates in a single query using CASE WHEN
+  const aggregates = db
     .prepare(
       `
     SELECT
-      COALESCE(SUM(completions), 0) as completions,
-      COALESCE(SUM(tasks_created), 0) as tasks_created,
-      COALESCE(SUM(snoozes), 0) as snoozes
-    FROM user_daily_stats
-    WHERE user_id = ? AND date >= ?
-  `,
-    )
-    .get(userId, weekAgoStr) as { completions: number; tasks_created: number; snoozes: number }
-
-  // Get month aggregate
-  const monthStats = db
-    .prepare(
-      `
-    SELECT
-      COALESCE(SUM(completions), 0) as completions,
-      COALESCE(SUM(tasks_created), 0) as tasks_created,
-      COALESCE(SUM(snoozes), 0) as snoozes
-    FROM user_daily_stats
-    WHERE user_id = ? AND date >= ?
-  `,
-    )
-    .get(userId, monthAgoStr) as { completions: number; tasks_created: number; snoozes: number }
-
-  // Get all-time aggregate
-  const allTimeStats = db
-    .prepare(
-      `
-    SELECT
-      COALESCE(SUM(completions), 0) as completions,
-      COALESCE(SUM(tasks_created), 0) as tasks_created,
-      COALESCE(SUM(snoozes), 0) as snoozes
+      COALESCE(SUM(CASE WHEN date >= ? THEN completions END), 0) as week_completions,
+      COALESCE(SUM(CASE WHEN date >= ? THEN tasks_created END), 0) as week_tasks_created,
+      COALESCE(SUM(CASE WHEN date >= ? THEN snoozes END), 0) as week_snoozes,
+      COALESCE(SUM(CASE WHEN date >= ? THEN completions END), 0) as month_completions,
+      COALESCE(SUM(CASE WHEN date >= ? THEN tasks_created END), 0) as month_tasks_created,
+      COALESCE(SUM(CASE WHEN date >= ? THEN snoozes END), 0) as month_snoozes,
+      COALESCE(SUM(completions), 0) as all_completions,
+      COALESCE(SUM(tasks_created), 0) as all_tasks_created,
+      COALESCE(SUM(snoozes), 0) as all_snoozes
     FROM user_daily_stats
     WHERE user_id = ?
   `,
     )
-    .get(userId) as { completions: number; tasks_created: number; snoozes: number }
+    // Parameters: weekAgoStr ×3 (completions, tasks_created, snoozes), monthAgoStr ×3, userId
+    .get(weekAgoStr, weekAgoStr, weekAgoStr, monthAgoStr, monthAgoStr, monthAgoStr, userId) as {
+    week_completions: number
+    week_tasks_created: number
+    week_snoozes: number
+    month_completions: number
+    month_tasks_created: number
+    month_snoozes: number
+    all_completions: number
+    all_tasks_created: number
+    all_snoozes: number
+  }
 
   return {
     today: today ?? null,
     week: {
-      completions: weekStats.completions,
-      tasks_created: weekStats.tasks_created,
-      snoozes: weekStats.snoozes,
+      completions: aggregates.week_completions,
+      tasks_created: aggregates.week_tasks_created,
+      snoozes: aggregates.week_snoozes,
     },
     month: {
-      completions: monthStats.completions,
-      tasks_created: monthStats.tasks_created,
-      snoozes: monthStats.snoozes,
+      completions: aggregates.month_completions,
+      tasks_created: aggregates.month_tasks_created,
+      snoozes: aggregates.month_snoozes,
     },
     all_time: {
-      completions: allTimeStats.completions,
-      tasks_created: allTimeStats.tasks_created,
-      snoozes: allTimeStats.snoozes,
+      completions: aggregates.all_completions,
+      tasks_created: aggregates.all_tasks_created,
+      snoozes: aggregates.all_snoozes,
     },
   }
 }

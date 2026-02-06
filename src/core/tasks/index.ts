@@ -13,7 +13,7 @@ export { updateTask, canUserAccessTask } from './update'
 export type { UpdateTaskOptions, UpdateTaskResult } from './update'
 
 // Delete
-export { deleteTask, restoreTask, permanentlyDeleteTask, emptyTrash } from './delete'
+export { deleteTask, restoreTask, emptyTrash } from './delete'
 export type { DeleteTaskOptions, RestoreTaskOptions } from './delete'
 
 // Mark done
@@ -21,7 +21,7 @@ export { markDone, markUndone } from './mark-done'
 export type { MarkDoneOptions, MarkDoneResult } from './mark-done'
 
 // Snooze
-export { snoozeTask, clearSnooze } from './snooze'
+export { snoozeTask } from './snooze'
 export type { SnoozeTaskOptions, SnoozeResult } from './snooze'
 
 // Bulk operations

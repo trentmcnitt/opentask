@@ -22,16 +22,8 @@ import { nowUtc } from '@/core/recurrence'
 import { validateProjectUpdate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
+import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 import type { RouteContext } from '@/types/api'
-
-interface ProjectRow {
-  id: number
-  name: string
-  owner_id: number
-  shared: number
-  sort_order: number
-  created_at: string
-}
 
 function getProjectById(projectId: number): ProjectRow | null {
   const db = getDb()
@@ -71,14 +63,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return notFound('Project not found', { project_id: projectId })
     }
 
-    return success({
-      id: project.id,
-      name: project.name,
-      owner_id: project.owner_id,
-      shared: project.shared === 1,
-      sort_order: project.sort_order,
-      created_at: project.created_at,
-    })
+    return success(formatProjectResponse(project))
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)
@@ -134,14 +119,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (updates.length === 0) {
-      return success({
-        id: project.id,
-        name: project.name,
-        owner_id: project.owner_id,
-        shared: project.shared === 1,
-        sort_order: project.sort_order,
-        created_at: project.created_at,
-      })
+      return success(formatProjectResponse(project))
     }
 
     values.push(projectId)
@@ -151,14 +129,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const updated = getProjectById(projectId)!
 
-    return success({
-      id: updated.id,
-      name: updated.name,
-      owner_id: updated.owner_id,
-      shared: updated.shared === 1,
-      sort_order: updated.sort_order,
-      created_at: updated.created_at,
-    })
+    return success(formatProjectResponse(updated))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)

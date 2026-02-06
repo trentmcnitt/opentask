@@ -13,20 +13,6 @@ export interface PriorityDisplayConfig {
   rightBorder: boolean // Show colored right border
 }
 
-export interface User {
-  id: number
-  email: string
-  name: string
-  password_hash: string
-  timezone: string
-  ntfy_topic: string | null
-  ntfy_server: string | null
-  default_grouping: 'time' | 'project'
-  label_config: LabelConfig[]
-  priority_display: PriorityDisplayConfig
-  created_at: string
-}
-
 export interface Project {
   id: number
   name: string
@@ -81,23 +67,6 @@ export interface Note {
   id: number
   task_id: number
   content: string
-  created_at: string
-}
-
-export interface Completion {
-  id: number
-  task_id: number
-  user_id: number
-  completed_at: string
-  due_at_was: string | null
-  due_at_next: string | null
-}
-
-export interface ApiToken {
-  id: number
-  user_id: number
-  token: string
-  name: string
   created_at: string
 }
 
@@ -171,14 +140,6 @@ export type {
   BulkDeleteInput,
 } from '@/core/validation/task'
 
-// API response types
-export interface ApiResponse<T> {
-  data?: T
-  error?: string
-  code?: ErrorCode
-  details?: Record<string, unknown>
-}
-
 export type ErrorCode =
   | 'VALIDATION_ERROR'
   | 'NOT_FOUND'
@@ -197,21 +158,6 @@ export interface RedoResult {
   redone_action: UndoAction
   description: string | null
   tasks_affected: number
-}
-
-// Task list filters
-export interface TaskFilters {
-  project?: number
-  done?: boolean
-  overdue?: boolean
-  recurring?: boolean
-  one_off?: boolean
-  search?: string
-  label?: string
-  trashed?: boolean
-  archived?: boolean
-  limit?: number
-  offset?: number
 }
 
 // Auth types

@@ -114,44 +114,6 @@ export function restoreTask(options: RestoreTaskOptions): Task {
 }
 
 /**
- * Permanently delete a task (from trash)
- * This is irreversible!
- */
-export function permanentlyDeleteTask(options: DeleteTaskOptions): void {
-  const { userId, taskId } = options
-
-  // Get current task state
-  const task = getTaskById(taskId)
-  if (!task) {
-    throw new Error('Task not found')
-  }
-
-  // Verify user has access
-  if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
-  }
-
-  // Can only permanently delete trashed tasks
-  if (!task.deleted_at) {
-    throw new Error('Can only permanently delete trashed tasks')
-  }
-
-  // Execute all deletes in a transaction
-  withTransaction((tx) => {
-    // Delete completions for this task
-    tx.prepare('DELETE FROM completions WHERE task_id = ?').run(taskId)
-
-    // Delete notes for this task
-    tx.prepare('DELETE FROM notes WHERE task_id = ?').run(taskId)
-
-    // Permanently delete the task
-    tx.prepare('DELETE FROM tasks WHERE id = ?').run(taskId)
-  })
-
-  // No undo for permanent delete
-}
-
-/**
  * Empty trash for a user (permanently delete all trashed tasks)
  */
 export function emptyTrash(userId: number): number {
@@ -173,13 +135,13 @@ export function emptyTrash(userId: number): number {
     return 0
   }
 
-  // Delete all tasks and their related records in a transaction
+  // Batch delete all tasks and their related records in a transaction
+  const ids = trashedTasks.map((t) => t.id)
+  const placeholders = ids.map(() => '?').join(',')
   withTransaction((tx) => {
-    for (const task of trashedTasks) {
-      tx.prepare('DELETE FROM completions WHERE task_id = ?').run(task.id)
-      tx.prepare('DELETE FROM notes WHERE task_id = ?').run(task.id)
-      tx.prepare('DELETE FROM tasks WHERE id = ?').run(task.id)
-    }
+    tx.prepare(`DELETE FROM completions WHERE task_id IN (${placeholders})`).run(...ids)
+    tx.prepare(`DELETE FROM notes WHERE task_id IN (${placeholders})`).run(...ids)
+    tx.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids)
   })
 
   return trashedTasks.length

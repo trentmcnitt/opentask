@@ -7,10 +7,12 @@
 import { NextRequest } from 'next/server'
 import { auth } from '@/app/api/auth/[...nextauth]/auth'
 import { extractBearerToken, validateBearerToken } from './bearer'
+import { toAuthUser } from './helpers'
 import type { AuthUser } from '@/types'
 
 export { validateBearerToken, extractBearerToken } from './bearer'
 export { validateCredentials, getUserById } from './session'
+export { toAuthUser } from './helpers'
 
 /**
  * Get the authenticated user from a request
@@ -44,13 +46,13 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
     // Cast through unknown to handle NextAuth's User type not having our custom fields
     const user = session.user as unknown as AuthUser & { id?: string | number }
     if (user.id) {
-      return {
+      return toAuthUser({
         id: typeof user.id === 'string' ? parseInt(user.id, 10) : user.id,
         email: user.email || '',
         name: user.name || '',
         timezone: user.timezone || 'America/Chicago',
-        default_grouping: user.default_grouping === 'time' ? 'time' : 'project',
-      }
+        default_grouping: user.default_grouping || 'project',
+      })
     }
   }
 

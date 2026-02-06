@@ -4,17 +4,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
+import type { Project } from '@/types'
 
 interface TrashedTask {
   id: number
   title: string
   project_id: number
   deleted_at: string | null
-}
-
-interface Project {
-  id: number
-  name: string
 }
 
 function EmptyTrashConfirm({
@@ -147,7 +143,7 @@ export default function TrashPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Trash</h1>
         </div>

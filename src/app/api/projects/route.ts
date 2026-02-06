@@ -13,7 +13,7 @@ import { nowUtc } from '@/core/recurrence'
 import { validateProjectCreate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
-import type { Project } from '@/types'
+import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,24 +34,10 @@ export async function GET(request: NextRequest) {
       ORDER BY sort_order ASC, name ASC
     `,
       )
-      .all(user.id) as Array<{
-      id: number
-      name: string
-      owner_id: number
-      shared: number
-      sort_order: number
-      created_at: string
-    }>
+      .all(user.id) as ProjectRow[]
 
     // Transform to API format
-    const formattedProjects: Project[] = projects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      owner_id: p.owner_id,
-      shared: p.shared === 1,
-      sort_order: p.sort_order,
-      created_at: p.created_at,
-    }))
+    const formattedProjects = projects.map(formatProjectResponse)
 
     return success({
       projects: formattedProjects,
@@ -106,17 +92,7 @@ export async function POST(request: NextRequest) {
       created_at: string
     }
 
-    return success(
-      {
-        id: project.id,
-        name: project.name,
-        owner_id: project.owner_id,
-        shared: project.shared === 1,
-        sort_order: project.sort_order,
-        created_at: project.created_at,
-      },
-      201,
-    )
+    return success(formatProjectResponse(project), 201)
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     if (err instanceof ZodError) return handleZodError(err)

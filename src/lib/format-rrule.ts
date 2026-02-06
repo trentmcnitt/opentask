@@ -32,7 +32,7 @@ export function formatTime(hour: number, minute: number): string {
   return `${h}:${m} ${period}`
 }
 
-function parseRRuleParts(rrule: string): Record<string, string> {
+export function parseRRuleParts(rrule: string): Record<string, string> {
   const parts: Record<string, string> = {}
   // Remove RRULE: prefix if present
   const cleaned = rrule.replace(/^RRULE:/i, '')

@@ -21,6 +21,51 @@ import {
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 
+interface ValidateBulkTasksOptions {
+  /** Skip tasks that are done AND non-recurring (used by bulkDone) */
+  excludeDoneNonRecurring?: boolean
+  /** Skip tasks that are done (used by bulkSnooze) */
+  excludeDone?: boolean
+}
+
+/**
+ * Validate and load tasks for bulk operations.
+ *
+ * Verifies each task exists, belongs to the user, and is not deleted.
+ * Additional filters can be applied via options. Throws if any task is invalid.
+ */
+function validateBulkTasks(
+  taskIds: number[],
+  userId: number,
+  options: ValidateBulkTasksOptions = {},
+): Task[] {
+  const tasks: Task[] = []
+  const failedIds: number[] = []
+
+  for (const taskId of taskIds) {
+    const task = getTaskById(taskId)
+    if (!task || !canUserAccessTask(userId, task) || task.deleted_at) {
+      failedIds.push(taskId)
+      continue
+    }
+    if (options.excludeDoneNonRecurring && task.done && !isRecurring(task.rrule)) {
+      failedIds.push(taskId)
+      continue
+    }
+    if (options.excludeDone && task.done) {
+      failedIds.push(taskId)
+      continue
+    }
+    tasks.push(task)
+  }
+
+  if (failedIds.length > 0) {
+    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
+  }
+
+  return tasks
+}
+
 export interface BulkDoneOptions {
   userId: number
   userTimezone: string
@@ -53,35 +98,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const completedAt = new Date()
   const nowStr = nowUtc()
 
-  // Validate all tasks exist and user has access before starting transaction
-  const tasks: Task[] = []
-  const failedIds: number[] = []
-
-  for (const taskId of taskIds) {
-    const task = getTaskById(taskId)
-    if (!task) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (!canUserAccessTask(userId, task)) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.deleted_at) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.done && !isRecurring(task.rrule)) {
-      failedIds.push(taskId)
-      continue
-    }
-    tasks.push(task)
-  }
-
-  // If any task is invalid, fail the entire batch (BO-002: atomic)
-  if (failedIds.length > 0) {
-    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
-  }
+  // Validate all tasks exist and user has access before starting transaction (BO-002: atomic)
+  const tasks = validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true })
 
   const snapshots: UndoSnapshot[] = []
   let recurringCount = 0
@@ -199,34 +217,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const nowStr = nowUtc()
   const nowDate = new Date()
 
-  // Validate all tasks
-  const tasks: Task[] = []
-  const failedIds: number[] = []
-
-  for (const taskId of taskIds) {
-    const task = getTaskById(taskId)
-    if (!task) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (!canUserAccessTask(userId, task)) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.done) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.deleted_at) {
-      failedIds.push(taskId)
-      continue
-    }
-    tasks.push(task)
-  }
-
-  if (failedIds.length > 0) {
-    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
-  }
+  const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
   // Skip high/urgent tasks in mixed-priority selections
   const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
@@ -336,30 +327,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     return { tasksAffected: 0, tasksSkipped: 0, failedIds: [] }
   }
 
-  // Validate all tasks first
-  let tasks: Task[] = []
-  const failedIds: number[] = []
-
-  for (const taskId of taskIds) {
-    const task = getTaskById(taskId)
-    if (!task) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (!canUserAccessTask(userId, task)) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.deleted_at) {
-      failedIds.push(taskId)
-      continue
-    }
-    tasks.push(task)
-  }
-
-  if (failedIds.length > 0) {
-    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
-  }
+  let tasks = validateBulkTasks(taskIds, userId)
 
   // Skip high/urgent tasks in mixed-priority selections when editing due_at (snooze scenario).
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
@@ -474,32 +442,7 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   }
 
   const nowStr = nowUtc()
-
-  // Validate all tasks
-  const tasks: Task[] = []
-  const failedIds: number[] = []
-
-  for (const taskId of taskIds) {
-    const task = getTaskById(taskId)
-    if (!task) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (!canUserAccessTask(userId, task)) {
-      failedIds.push(taskId)
-      continue
-    }
-    if (task.deleted_at) {
-      failedIds.push(taskId)
-      continue
-    }
-    tasks.push(task)
-  }
-
-  if (failedIds.length > 0) {
-    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
-  }
-
+  const tasks = validateBulkTasks(taskIds, userId)
   const snapshots: UndoSnapshot[] = []
 
   return withTransaction((tx) => {

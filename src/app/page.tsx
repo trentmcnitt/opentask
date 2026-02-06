@@ -23,6 +23,8 @@ import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
+import { useFilterState } from '@/hooks/useFilterState'
 
 export default function Home() {
   return (
@@ -283,6 +285,7 @@ function HomeContent() {
     setQuickActionOpen(true)
   }, [])
   const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
+  useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
   const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
@@ -303,48 +306,25 @@ function HomeContent() {
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
   const [grouping, setGrouping] = useState<GroupingMode>('project')
-  const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
-  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
-  const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
-
-  const toggleLabel = useCallback(
-    (label: string) => {
-      selection.clear() // Clear selection when filter changes
-      setSelectedLabels((prev) =>
-        prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
-      )
-    },
-    [selection],
-  )
-
-  const clearLabels = useCallback(() => {
-    selection.clear() // Clear selection when filter changes
-    setSelectedLabels([])
-  }, [selection])
-
-  const togglePriority = useCallback((priority: number) => {
-    setSelectedPriorities((prev) =>
-      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority],
-    )
-  }, [])
-
-  const clearPriorities = useCallback(() => {
-    setSelectedPriorities([])
-  }, [])
 
   const baseTasks = searchQuery ? searchResults : tasks
-  const displayTasks = useMemo(() => {
-    let filtered = baseTasks
-    if (selectedLabels.length > 0) {
-      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-    }
-    if (selectedPriorities.length > 0) {
-      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
-    }
-    return filtered
-  }, [baseTasks, selectedLabels, selectedPriorities])
+  const onLabelToggle = useCallback(() => selection.clear(), [selection])
+  const {
+    selectedLabels,
+    selectedPriorities,
+    toggleLabel,
+    togglePriority,
+    clearAllFilters,
+    filteredTasks: displayTasks,
+  } = useFilterState({ tasks: baseTasks, onLabelToggle })
+
+  // Wrap clearAllFilters to also clear selection (matching original clearLabels behavior)
+  const handleClearFilters = useCallback(() => {
+    selection.clear()
+    clearAllFilters()
+  }, [selection, clearAllFilters])
 
   // Build task groups for keyboard navigation
   const effectiveGrouping = searchQuery ? 'time' : grouping
@@ -466,19 +446,7 @@ function HomeContent() {
         return
       }
 
-      // Cmd+Z: Undo (works globally when not in input, even with dialogs open)
-      if (cmdKey && e.key.toLowerCase() === 'z' && !e.shiftKey && !isInInput) {
-        e.preventDefault()
-        actions.handleUndo()
-        return
-      }
-
-      // Cmd+Shift+Z: Redo (works globally when not in input, even with dialogs open)
-      if (cmdKey && e.key.toLowerCase() === 'z' && e.shiftKey && !isInInput) {
-        e.preventDefault()
-        actions.handleRedo()
-        return
-      }
+      // Undo/redo handled by useUndoRedoShortcuts hook
 
       // Don't intercept other shortcuts when dialogs/sheets are open
       if (!keyboardNavEnabled) return
@@ -519,82 +487,14 @@ function HomeContent() {
         return
       }
 
-      // Home: Focus first task (works globally, even when not in keyboard mode)
-      if (e.key === 'Home' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const firstTaskId = orderedIds[0]
-          setKeyboardFocusedId(firstTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${firstTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // End: Focus last task (works globally, even when not in keyboard mode)
-      if (e.key === 'End' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const lastTaskId = orderedIds[orderedIds.length - 1]
-          setKeyboardFocusedId(lastTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${lastTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // Cmd+Shift+A: Select all tasks in first group (works globally)
-      // This intercepts the browser's tab search shortcut
-      if (cmdKey && e.shiftKey && e.key.toLowerCase() === 'a' && !isInInput) {
-        e.preventDefault()
-        if (taskGroups.length > 0 && orderedIds.length > 0) {
-          // Get first group's task IDs (in sorted order)
-          const firstGroup = taskGroups[0]
-          const firstGroupTaskIds = new Set(firstGroup.tasks.map((t) => t.id))
-          const groupIds = orderedIds.filter((id) => firstGroupTaskIds.has(id))
-
-          if (groupIds.length > 0) {
-            const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
-            if (allSelected) {
-              selection.removeAll(groupIds)
-            } else {
-              selection.addAll(groupIds)
-              // Enter keyboard mode if not already
-              if (!keyboard.isKeyboardActive) {
-                setKeyboardFocusedId(groupIds[0])
-                keyboard.enterKeyboardMode()
-                document.getElementById(`task-row-${groupIds[0]}`)?.focus()
-              }
-            }
-          }
-        }
-        return
-      }
-
-      // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
-      if (cmdKey && e.key.toLowerCase() === 'a' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
-          if (allSelected) {
-            selection.clear()
-          } else {
-            selection.selectAll(orderedIds)
-            // Enter keyboard mode if not already
-            if (!keyboard.isKeyboardActive) {
-              setKeyboardFocusedId(orderedIds[0])
-              keyboard.enterKeyboardMode()
-              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
-            }
-          }
-        }
-        return
-      }
+      // Home/End and Cmd+A/Cmd+Shift+A are handled by the keyboard navigation hook
+      // (useKeyboardNavigation) when the list has focus. ArrowDown/ArrowUp above
+      // handle entry into keyboard mode from outside the list.
     }
 
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection, taskGroups])
+  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId])
 
   // Exit keyboard mode when clicking outside the task list
   useEffect(() => {
@@ -624,21 +524,13 @@ function HomeContent() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (cancelled || !data?.data?.default_grouping) return
-        // Only apply if user hasn't manually toggled yet
-        if (!hasToggledGrouping.current) {
-          setGrouping(data.data.default_grouping)
-        }
+        setGrouping(data.data.default_grouping)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [status])
-
-  const handleGroupingChange = useCallback((mode: GroupingMode) => {
-    hasToggledGrouping.current = true
-    setGrouping(mode)
-  }, [])
 
   // Snooze all overdue tasks in the current filtered view (respects label/search filters).
   // Sends all overdue task IDs to the server — the server's filterMixedPriorityForSnooze
@@ -782,11 +674,9 @@ function HomeContent() {
       actions={actions}
       selectedLabels={selectedLabels}
       onToggleLabel={toggleLabel}
-      onClearLabels={clearLabels}
+      onClearFilters={handleClearFilters}
       selectedPriorities={selectedPriorities}
       onTogglePriority={togglePriority}
-      onClearPriorities={clearPriorities}
-      onGroupingChange={handleGroupingChange}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
         selection.clear() // Clear selection when search cleared
@@ -842,11 +732,9 @@ function DashboardView({
   actions,
   selectedLabels,
   onToggleLabel,
-  onClearLabels,
+  onClearFilters,
   selectedPriorities,
   onTogglePriority,
-  onClearPriorities,
-  onGroupingChange,
   onSearch,
   onSearchClear,
   onSnoozeTask,
@@ -894,11 +782,9 @@ function DashboardView({
   actions: ReturnType<typeof useDashboardActions>
   selectedLabels: string[]
   onToggleLabel: (label: string) => void
-  onClearLabels: () => void
+  onClearFilters: () => void
   selectedPriorities: number[]
   onTogglePriority: (priority: number) => void
-  onClearPriorities: () => void
-  onGroupingChange: (g: GroupingMode) => void
   onSearch: (q: string) => void
   onSearchClear: () => void
   onSnoozeTask: (t: Task | null) => void
@@ -937,8 +823,6 @@ function DashboardView({
         overdueCount={overdueCount}
         todayCount={todayCount}
         snoozableOverdueCount={snoozableOverdueCount}
-        grouping={grouping}
-        onGroupingChange={onGroupingChange}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
         onSearch={onSearch}
@@ -961,10 +845,7 @@ function DashboardView({
           selectedLabels={selectedLabels}
           onTogglePriority={onTogglePriority}
           onToggleLabel={onToggleLabel}
-          onClearAll={() => {
-            onClearPriorities()
-            onClearLabels()
-          }}
+          onClearAll={onClearFilters}
         />
 
         {tasks.length > 0 && (
@@ -999,10 +880,7 @@ function DashboardView({
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
             <button
-              onClick={() => {
-                onClearPriorities()
-                onClearLabels()
-              }}
+              onClick={onClearFilters}
               className="text-foreground font-medium hover:underline"
             >
               Clear filter

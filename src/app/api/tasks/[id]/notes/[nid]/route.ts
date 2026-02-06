@@ -7,10 +7,12 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
 import { getTaskById, canUserAccessTask } from '@/core/tasks'
+import { validateNoteCreate } from '@/core/validation'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { ZodError } from 'zod'
 import type { Note } from '@/types'
 import type { NoteRouteContext } from '@/types/api'
 
@@ -51,12 +53,7 @@ export async function PATCH(request: NextRequest, context: NoteRouteContext) {
       return notFound('Note not found', { note_id: noteId })
     }
 
-    const body = await request.json()
-    const content = body.content
-
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
-      return badRequest('Note content is required')
-    }
+    const { content } = validateNoteCreate(await request.json())
 
     db.prepare('UPDATE notes SET content = ? WHERE id = ?').run(content.trim(), noteId)
 
@@ -66,9 +63,8 @@ export async function PATCH(request: NextRequest, context: NoteRouteContext) {
 
     return success(updated)
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
+    if (err instanceof AuthError) return unauthorized(err.message)
+    if (err instanceof ZodError) return handleZodError(err)
     log.error('api', 'PATCH /api/tasks/:id/notes/:nid error:', err)
     return handleError(err)
   }

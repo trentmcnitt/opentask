@@ -92,7 +92,7 @@ export default function HistoryPage() {
 
   return (
     <div className="flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/80">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">History</h1>
         </div>

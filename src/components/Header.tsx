@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
-import type { GroupingMode } from './TaskList'
 import { SearchBar } from './SearchBar'
 
 interface HeaderProps {
@@ -24,8 +23,6 @@ interface HeaderProps {
   overdueCount?: number
   todayCount?: number
   snoozableOverdueCount?: number
-  grouping?: GroupingMode
-  onGroupingChange?: (mode: GroupingMode) => void
   onUndo: () => void
   onRedo: () => void
   onSearch?: (query: string) => void
@@ -39,9 +36,6 @@ export function Header({
   overdueCount = 0,
   todayCount = 0,
   snoozableOverdueCount = 0,
-  // Grouping props - hidden but preserved for future use
-  grouping: _grouping = 'time',
-  onGroupingChange: _onGroupingChange,
   onUndo,
   onRedo,
   onSearch,
@@ -49,8 +43,6 @@ export function Header({
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
 }: HeaderProps) {
-  void _grouping
-  void _onGroupingChange
   const [searchExpanded, setSearchExpanded] = useState(false)
 
   return (

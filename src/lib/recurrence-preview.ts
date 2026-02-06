@@ -12,6 +12,7 @@
 
 import { RRule } from 'rrule'
 import { DateTime } from 'luxon'
+import { parseRRuleParts } from './format-rrule'
 
 /**
  * Parse RRULE components from a string
@@ -27,51 +28,36 @@ interface RRuleComponents {
 }
 
 function parseRRuleComponents(rrule: string): RRuleComponents {
-  const parts = rrule.split(';')
-  const result: RRuleComponents = { freq: 'DAILY' }
+  const parts = parseRRuleParts(rrule)
+  const result: RRuleComponents = {
+    freq: (parts.FREQ?.toUpperCase() as RRuleComponents['freq']) || 'DAILY',
+  }
 
-  for (const part of parts) {
-    const [key, value] = part.split('=')
+  if (parts.INTERVAL) result.interval = parseInt(parts.INTERVAL, 10)
+  if (parts.BYHOUR) result.byhour = parseInt(parts.BYHOUR, 10)
+  if (parts.BYMINUTE) result.byminute = parseInt(parts.BYMINUTE, 10)
+  if (parts.BYSETPOS) result.bysetpos = parseInt(parts.BYSETPOS, 10)
 
-    switch (key.toUpperCase()) {
-      case 'FREQ':
-        result.freq = value.toUpperCase() as RRuleComponents['freq']
-        break
-      case 'INTERVAL':
-        result.interval = parseInt(value, 10)
-        break
-      case 'BYHOUR':
-        result.byhour = parseInt(value, 10)
-        break
-      case 'BYMINUTE':
-        result.byminute = parseInt(value, 10)
-        break
-      case 'BYDAY': {
-        const dayMap: Record<string, number> = {
-          MO: 0,
-          TU: 1,
-          WE: 2,
-          TH: 3,
-          FR: 4,
-          SA: 5,
-          SU: 6,
-        }
-        const days = value.split(',').map((d) => {
-          const dayCode = d.replace(/^-?\d*/, '').toUpperCase()
-          return dayMap[dayCode]
-        })
-        result.byday = days.filter((d) => d !== undefined)
-        break
-      }
-      case 'BYMONTHDAY': {
-        const monthdays = value.split(',').map((d) => parseInt(d, 10))
-        result.bymonthday = monthdays[0]
-        break
-      }
-      case 'BYSETPOS':
-        result.bysetpos = parseInt(value, 10)
-        break
+  if (parts.BYDAY) {
+    const dayMap: Record<string, number> = {
+      MO: 0,
+      TU: 1,
+      WE: 2,
+      TH: 3,
+      FR: 4,
+      SA: 5,
+      SU: 6,
     }
+    const days = parts.BYDAY.split(',').map((d) => {
+      const dayCode = d.replace(/^-?\d*/, '').toUpperCase()
+      return dayMap[dayCode]
+    })
+    result.byday = days.filter((d) => d !== undefined)
+  }
+
+  if (parts.BYMONTHDAY) {
+    const monthdays = parts.BYMONTHDAY.split(',').map((d) => parseInt(d, 10))
+    result.bymonthday = monthdays[0]
   }
 
   return result

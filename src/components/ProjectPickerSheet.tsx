@@ -3,11 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-
-interface Project {
-  id: number
-  name: string
-}
+import type { Project } from '@/types'
 
 interface ProjectPickerSheetProps {
   projects: Project[]
