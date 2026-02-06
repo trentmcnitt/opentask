@@ -39,6 +39,11 @@ export default function ProjectDetailPage() {
     filteredTasks: displayTasks,
   } = useFilterState({ tasks })
 
+  // Clear filters when navigating between projects (App Router reuses this component instance)
+  useEffect(() => {
+    clearAllFilters()
+  }, [projectId, clearAllFilters])
+
   const fetchTasks = useCallback(async () => {
     try {
       const res = await fetch(`/api/tasks?project=${projectId}&limit=500`)

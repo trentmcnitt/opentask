@@ -76,7 +76,6 @@ export interface BulkDoneResult {
   tasksAffected: number
   recurringCount: number
   oneOffCount: number
-  failedIds: number[]
 }
 
 /**
@@ -92,7 +91,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const { userId, userTimezone, taskIds } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0, failedIds: [] }
+    return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0 }
   }
 
   const completedAt = new Date()
@@ -141,7 +140,6 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       tasksAffected: tasks.length,
       recurringCount,
       oneOffCount,
-      failedIds: [],
     }
   })
 }
@@ -178,7 +176,6 @@ export interface BulkSnoozeOptions {
 export interface BulkSnoozeResult {
   tasksAffected: number
   tasksSkipped: number
-  failedIds: number[]
 }
 
 /**
@@ -194,7 +191,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0, failedIds: [] }
+    return { tasksAffected: 0, tasksSkipped: 0 }
   }
 
   // Validate that exactly one mode is specified
@@ -222,7 +219,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   // Skip high/urgent tasks in mixed-priority selections
   const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
   if (eligible.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: skippedCount, failedIds: [] }
+    return { tasksAffected: 0, tasksSkipped: skippedCount }
   }
 
   const snapshots: UndoSnapshot[] = []
@@ -294,7 +291,6 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     return {
       tasksAffected: eligible.length,
       tasksSkipped: skippedCount,
-      failedIds: [],
     }
   })
 }
@@ -312,7 +308,6 @@ export interface BulkEditOptions {
 export interface BulkEditResult {
   tasksAffected: number
   tasksSkipped: number
-  failedIds: number[]
 }
 
 /**
@@ -324,7 +319,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const { userId, userTimezone, taskIds, changes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0, failedIds: [] }
+    return { tasksAffected: 0, tasksSkipped: 0 }
   }
 
   let tasks = validateBulkTasks(taskIds, userId)
@@ -339,7 +334,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     tasks = eligible
     snoozeSkippedCount = skippedCount
     if (tasks.length === 0) {
-      return { tasksAffected: 0, tasksSkipped: snoozeSkippedCount, failedIds: [] }
+      return { tasksAffected: 0, tasksSkipped: snoozeSkippedCount }
     }
   }
 
@@ -416,7 +411,6 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     return {
       tasksAffected: snapshots.length,
       tasksSkipped: snoozeSkippedCount,
-      failedIds: [],
     }
   })
 }
@@ -428,7 +422,6 @@ export interface BulkDeleteOptions {
 
 export interface BulkDeleteResult {
   tasksAffected: number
-  failedIds: number[]
 }
 
 /**
@@ -438,7 +431,7 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   const { userId, taskIds } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, failedIds: [] }
+    return { tasksAffected: 0 }
   }
 
   const nowStr = nowUtc()
@@ -466,7 +459,6 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
 
     return {
       tasksAffected: tasks.length,
-      failedIds: [],
     }
   })
 }

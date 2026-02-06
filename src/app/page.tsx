@@ -18,6 +18,7 @@ import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
+import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -38,7 +39,7 @@ function taskWord(n: number) {
   return n === 1 ? 'task' : 'tasks'
 }
 
-function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow'): string {
+function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow', timezone: string): string {
   const now = new Date()
   if (option === '+1h') {
     const t = new Date(now.getTime() + 60 * 60 * 1000)
@@ -50,10 +51,14 @@ function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow'): string {
     t.setMinutes(0, 0, 0)
     return t.toISOString()
   }
-  const t = new Date(now)
-  t.setDate(t.getDate() + 1)
-  t.setHours(9, 0, 0, 0)
-  return t.toISOString()
+  // Use Luxon with the user's configured timezone so "tomorrow at 9 AM" targets
+  // the correct moment even when the browser timezone differs from the account timezone.
+  return DateTime.now()
+    .setZone(timezone)
+    .plus({ days: 1 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()!
 }
 
 function useFetchData(router: ReturnType<typeof useRouter>) {
@@ -548,7 +553,10 @@ function HomeContent() {
       const res = await fetch('/api/tasks/bulk/snooze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: overdueTasks.map((t) => t.id), until: getSnoozeTime('+1h') }),
+        body: JSON.stringify({
+          ids: overdueTasks.map((t) => t.id),
+          until: getSnoozeTime('+1h', timezone),
+        }),
       })
       if (!res.ok) throw new Error('Snooze failed')
       const responseData = await res.json()
@@ -563,7 +571,7 @@ function HomeContent() {
     } catch {
       showToast({ message: 'Snooze failed' })
     }
-  }, [displayTasks, fetchTasks, actions.handleUndo])
+  }, [displayTasks, fetchTasks, actions.handleUndo, timezone])
 
   const bulk = useBulkActions(
     selection,
@@ -788,10 +796,10 @@ function DashboardView({
   onSearch: (q: string) => void
   onSearchClear: () => void
   onSnoozeTask: (t: Task | null) => void
-  onBulkAction: (endpoint: string, body: Record<string, unknown>) => void
+  onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
   onBulkSnoozeRelative: (deltaMinutes: number) => Promise<void>
-  onBulkDelete: () => void
-  onBulkMoveToProject: (projectId: number) => void
+  onBulkDelete: () => Promise<void>
+  onBulkMoveToProject: (projectId: number) => Promise<void>
   onShowProjectPicker: (show: boolean) => void
   onSnoozeOverdue: () => void
   focusedTask: Task | null

@@ -142,6 +142,11 @@ export function emptyTrash(userId: number): number {
     tx.prepare(`DELETE FROM completions WHERE task_id IN (${placeholders})`).run(...ids)
     tx.prepare(`DELETE FROM notes WHERE task_id IN (${placeholders})`).run(...ids)
     tx.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids)
+    // Note: undo_log entries referencing these task IDs are intentionally NOT cleaned up.
+    // Task IDs are embedded in the JSON `snapshot` column (not a direct column), so there's
+    // no simple DELETE WHERE task_id IN (...). This is harmless: executeUndo() handles missing
+    // tasks gracefully (the UPDATE is a no-op on non-existent rows), and orphaned entries are
+    // just stale data that don't affect correctness.
   })
 
   return trashedTasks.length

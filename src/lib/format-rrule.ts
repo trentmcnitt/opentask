@@ -278,7 +278,7 @@ function ordinal(n: number): string {
  * Returns:
  * - null if no tasks have recurrence
  * - The compact rrule text (with time if all have same anchor_time) if all tasks have the same rrule
- * - "mixed" if tasks have different rrules
+ * - '—' (em-dash) if tasks have different rrules
  */
 export function formatBulkRecurrence(
   tasks: { rrule?: string | null; anchor_time?: string | null }[],
