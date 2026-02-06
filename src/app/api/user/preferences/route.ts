@@ -28,9 +28,16 @@ export async function GET(request: NextRequest) {
 
     const db = getDb()
     const row = db
-      .prepare('SELECT default_grouping, label_config, priority_display FROM users WHERE id = ?')
+      .prepare(
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes FROM users WHERE id = ?',
+      )
       .get(user.id) as
-      | { default_grouping: string; label_config: string; priority_display: string }
+      | {
+          default_grouping: string
+          label_config: string
+          priority_display: string
+          auto_snooze_minutes: number
+        }
       | undefined
 
     let labelConfig: LabelConfig[] = []
@@ -53,6 +60,7 @@ export async function GET(request: NextRequest) {
       default_grouping: row?.default_grouping ?? 'project',
       label_config: labelConfig,
       priority_display: priorityDisplay,
+      auto_snooze_minutes: row?.auto_snooze_minutes ?? 30,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -133,10 +141,20 @@ export async function PATCH(request: NextRequest) {
       validatedPriorityDisplay = validated
     }
 
+    let validatedAutoSnooze: number | undefined
+    if (body.auto_snooze_minutes !== undefined) {
+      const val = body.auto_snooze_minutes
+      if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440) {
+        return badRequest('auto_snooze_minutes must be an integer between 1 and 1440')
+      }
+      validatedAutoSnooze = val
+    }
+
     if (
       body.default_grouping === undefined &&
       body.label_config === undefined &&
-      body.priority_display === undefined
+      body.priority_display === undefined &&
+      body.auto_snooze_minutes === undefined
     ) {
       return badRequest('No preferences to update')
     }
@@ -160,13 +178,25 @@ export async function PATCH(request: NextRequest) {
       params.push(JSON.stringify(validatedPriorityDisplay))
     }
 
+    if (validatedAutoSnooze !== undefined) {
+      updates.push('auto_snooze_minutes = ?')
+      params.push(validatedAutoSnooze)
+    }
+
     params.push(user.id)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
     // Read back current state
     const row = db
-      .prepare('SELECT default_grouping, label_config, priority_display FROM users WHERE id = ?')
-      .get(user.id) as { default_grouping: string; label_config: string; priority_display: string }
+      .prepare(
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes FROM users WHERE id = ?',
+      )
+      .get(user.id) as {
+      default_grouping: string
+      label_config: string
+      priority_display: string
+      auto_snooze_minutes: number
+    }
 
     let labelConfig: LabelConfig[] = []
     try {
@@ -186,6 +216,7 @@ export async function PATCH(request: NextRequest) {
       default_grouping: row.default_grouping,
       label_config: labelConfig,
       priority_display: priorityDisplay,
+      auto_snooze_minutes: row.auto_snooze_minutes,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

@@ -15,7 +15,6 @@ import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 const DEFAULT_NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
 const DEFAULT_NTFY_TOPIC = process.env.NTFY_TOPIC || 'opentask'
 const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
-const NOTIFICATION_COOLDOWN_MINUTES = 30
 
 interface OverdueTask {
   id: number
@@ -24,6 +23,8 @@ interface OverdueTask {
   priority: number
   user_id: number
   last_notified_at: string | null
+  auto_snooze_minutes: number | null
+  user_auto_snooze_minutes: number
 }
 
 interface UserNotificationSettings {
@@ -37,26 +38,37 @@ export async function checkOverdueTasks(): Promise<void> {
   try {
     const db = getDb()
     const now = new Date()
-    const cooldownCutoff = new Date(now.getTime() - NOTIFICATION_COOLDOWN_MINUTES * 60 * 1000)
 
-    // Get overdue tasks that haven't been notified within the cooldown period
+    // Get overdue tasks eligible for notification.
+    // Per-task interval: COALESCE(task.auto_snooze_minutes, user.auto_snooze_minutes).
+    // - last_notified_at IS NULL: initial notification (always send)
+    // - effective interval > 0 AND cooldown elapsed: repeat notification
+    // - effective interval = 0 AND already notified: excluded (one-shot)
     const overdueTasks = db
       .prepare(
         `
-        SELECT t.id, t.title, t.due_at, t.priority, t.user_id, t.last_notified_at
+        SELECT t.id, t.title, t.due_at, t.priority, t.user_id, t.last_notified_at,
+               t.auto_snooze_minutes, u.auto_snooze_minutes as user_auto_snooze_minutes
         FROM tasks t
         INNER JOIN projects p ON t.project_id = p.id
+        INNER JOIN users u ON t.user_id = u.id
         WHERE t.done = 0
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
           AND t.due_at IS NOT NULL
           AND t.due_at < datetime('now')
-          AND (t.last_notified_at IS NULL OR t.last_notified_at < ?)
+          AND (
+            t.last_notified_at IS NULL
+            OR (
+              COALESCE(t.auto_snooze_minutes, u.auto_snooze_minutes) > 0
+              AND t.last_notified_at < datetime('now', '-' || COALESCE(t.auto_snooze_minutes, u.auto_snooze_minutes) || ' minutes')
+            )
+          )
         ORDER BY t.due_at ASC
         LIMIT 50
       `,
       )
-      .all(cooldownCutoff.toISOString()) as OverdueTask[]
+      .all() as OverdueTask[]
 
     if (overdueTasks.length === 0) return
 

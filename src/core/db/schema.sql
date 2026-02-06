@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   default_grouping TEXT NOT NULL DEFAULT 'project',
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
+  auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -54,8 +55,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Labels (JSON array of strings)
   labels        TEXT NOT NULL DEFAULT '[]',
 
-  -- Notification tracking (30-min cooldown)
+  -- Notification tracking
   last_notified_at TEXT,
+  auto_snooze_minutes INTEGER,
 
   -- Per-task stats (survive beyond completions retention)
   completion_count   INTEGER NOT NULL DEFAULT 0,

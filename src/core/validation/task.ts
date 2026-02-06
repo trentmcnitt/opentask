@@ -32,6 +32,11 @@ const recurrenceMode = z.enum(['from_due', 'from_completion'])
 const labels = z.array(z.string())
 
 /**
+ * Auto-snooze minutes: null = use user default, 0 = off, 1-1440 = custom minutes
+ */
+const autoSnoozeMinutes = z.number().int().min(0).max(1440).nullable()
+
+/**
  * RRULE string validator
  * Validates that the string is a valid RFC 5545 RRULE or null
  */
@@ -52,6 +57,7 @@ export const taskCreateSchema = z.object({
   project_id: z.number().int().positive().optional(),
   priority: priority.default(0).optional(),
   labels: labels.default([]).optional(),
+  auto_snooze_minutes: autoSnoozeMinutes.optional(),
 })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
@@ -69,6 +75,7 @@ export const taskUpdateSchema = z.object({
   priority: priority.optional(),
   labels: labels.optional(),
   meta_notes: z.string().max(5000, 'Meta notes too long').nullable().optional(),
+  auto_snooze_minutes: autoSnoozeMinutes.optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>

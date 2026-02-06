@@ -134,7 +134,8 @@ export function getTaskById(taskId: number): Task | null {
       `
     SELECT id, user_id, project_id, title, done, done_at, priority, due_at,
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-           original_due_at, last_notified_at, deleted_at, archived_at, labels,
+           original_due_at, last_notified_at, auto_snooze_minutes,
+           deleted_at, archived_at, labels,
            completion_count, snooze_count, first_completed_at, last_completed_at,
            meta_notes, created_at, updated_at
     FROM tasks WHERE id = ?
@@ -247,7 +248,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.done_at, tasks.priority, tasks.due_at,
            tasks.rrule, tasks.recurrence_mode, tasks.anchor_time,
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
-           tasks.last_notified_at, tasks.deleted_at, tasks.archived_at,
+           tasks.last_notified_at, tasks.auto_snooze_minutes,
+           tasks.deleted_at, tasks.archived_at,
            tasks.labels, tasks.completion_count, tasks.snooze_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.meta_notes, tasks.created_at, tasks.updated_at
@@ -279,6 +281,7 @@ interface TaskRow {
   anchor_dom: number | null
   original_due_at: string | null
   last_notified_at: string | null
+  auto_snooze_minutes: number | null
   deleted_at: string | null
   archived_at: string | null
   labels: string
@@ -308,6 +311,7 @@ function rowToTask(row: TaskRow): Task {
     anchor_dom: row.anchor_dom,
     original_due_at: row.original_due_at,
     last_notified_at: row.last_notified_at,
+    auto_snooze_minutes: row.auto_snooze_minutes,
     deleted_at: row.deleted_at,
     archived_at: row.archived_at,
     labels: JSON.parse(row.labels),

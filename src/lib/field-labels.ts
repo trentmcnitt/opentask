@@ -28,6 +28,7 @@ export const FIELD_LABELS: Record<string, string> = {
   due_at: 'due date',
   meta_notes: 'notes',
   recurrence_mode: 'recurrence mode',
+  auto_snooze_minutes: 'auto-snooze',
 }
 
 /**
@@ -215,6 +216,8 @@ function buildFieldFragment(
       return 'Labels updated'
     case 'meta_notes':
       return 'Notes updated'
+    case 'auto_snooze_minutes':
+      return buildAutoSnoozeFragment(beforeState, afterState)
     default:
       return null
   }
@@ -312,4 +315,24 @@ function buildTitleFragment(
   const oldTitle = typeof beforeState.title === 'string' ? beforeState.title : '?'
   const newTitle = typeof afterState.title === 'string' ? afterState.title : '?'
   return `Renamed "${truncateTitle(oldTitle, 16)}" \u2192 "${truncateTitle(newTitle, 16)}"`
+}
+
+/**
+ * Auto-snooze fragment:
+ * - null (default): "Auto-snooze set to default"
+ * - 0 (off): "Auto-snooze turned off"
+ * - positive: "Auto-snooze set to 15m" / "Auto-snooze set to 1h"
+ */
+function buildAutoSnoozeFragment(
+  _beforeState: Partial<Record<string, unknown>>,
+  afterState: Partial<Record<string, unknown>>,
+): string {
+  const after = afterState.auto_snooze_minutes
+  if (after === null || after === undefined) return 'Auto-snooze set to default'
+  if (after === 0) return 'Auto-snooze turned off'
+  if (typeof after === 'number') {
+    const label = after >= 60 ? `${after / 60}h` : `${after}m`
+    return `Auto-snooze set to ${label}`
+  }
+  return 'Auto-snooze updated'
 }

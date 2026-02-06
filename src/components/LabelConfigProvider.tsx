@@ -15,6 +15,8 @@ interface LabelConfigContextValue {
   setLabelConfig: (config: LabelConfig[]) => void
   priorityDisplay: PriorityDisplayConfig
   setPriorityDisplay: (config: PriorityDisplayConfig) => void
+  autoSnoozeDefault: number
+  setAutoSnoozeDefault: (minutes: number) => void
 }
 
 const LabelConfigContext = createContext<LabelConfigContextValue>({
@@ -22,6 +24,8 @@ const LabelConfigContext = createContext<LabelConfigContextValue>({
   setLabelConfig: () => {},
   priorityDisplay: DEFAULT_PRIORITY_DISPLAY,
   setPriorityDisplay: () => {},
+  autoSnoozeDefault: 30,
+  setAutoSnoozeDefault: () => {},
 })
 
 export function LabelConfigProvider({ children }: { children: React.ReactNode }) {
@@ -29,6 +33,7 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
   const [labelConfig, setLabelConfigState] = useState<LabelConfig[]>([])
   const [priorityDisplay, setPriorityDisplayState] =
     useState<PriorityDisplayConfig>(DEFAULT_PRIORITY_DISPLAY)
+  const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -41,6 +46,9 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         if (data?.data?.priority_display) {
           setPriorityDisplayState(data.data.priority_display)
         }
+        if (data?.data?.auto_snooze_minutes) {
+          setAutoSnoozeDefaultState(data.data.auto_snooze_minutes)
+        }
       })
       .catch(() => {})
   }, [status])
@@ -52,6 +60,8 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         setLabelConfig: setLabelConfigState,
         priorityDisplay,
         setPriorityDisplay: setPriorityDisplayState,
+        autoSnoozeDefault,
+        setAutoSnoozeDefault: setAutoSnoozeDefaultState,
       }}
     >
       {children}
@@ -66,4 +76,9 @@ export function useLabelConfig() {
 export function usePriorityDisplay() {
   const { priorityDisplay, setPriorityDisplay } = useContext(LabelConfigContext)
   return { priorityDisplay, setPriorityDisplay }
+}
+
+export function useAutoSnoozeDefault() {
+  const { autoSnoozeDefault, setAutoSnoozeDefault } = useContext(LabelConfigContext)
+  return { autoSnoozeDefault, setAutoSnoozeDefault }
 }

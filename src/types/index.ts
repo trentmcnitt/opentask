@@ -24,6 +24,7 @@ export interface User {
   default_grouping: 'time' | 'project'
   label_config: LabelConfig[]
   priority_display: PriorityDisplayConfig
+  auto_snooze_minutes: number
   created_at: string
 }
 
@@ -58,6 +59,7 @@ export interface Task {
 
   // Notifications
   last_notified_at: string | null
+  auto_snooze_minutes: number | null
 
   // Soft delete and archive
   deleted_at: string | null
