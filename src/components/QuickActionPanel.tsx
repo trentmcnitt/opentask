@@ -54,7 +54,7 @@ import { useLabelConfig } from '@/components/LabelConfigProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatDateTime } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
-import { computeCommonLabels, computeCommonPriority } from '@/lib/bulk-utils'
+import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import type { Task, Project } from '@/types'
 
 /**
@@ -257,6 +257,13 @@ export function QuickActionPanel({
     [isBulkMode, selectedTasks],
   )
 
+  // Mixed-value indicators for bulk mode
+  const isMixedPriority = isBulkMode && bulkCommonPriority === null && pendingPriority === null
+  const isMixedLabels = useMemo(
+    () => (isBulkMode ? hasLabelVariations(selectedTasks ?? []) : false),
+    [isBulkMode, selectedTasks],
+  )
+
   // Computed display values - show pending changes or fall back to current task values
   // In bulk mode, fall through to bulk common values when no pending change and no effectiveTask
   // useMemo for displayLabels to avoid triggering re-renders in useCallback dependencies
@@ -309,6 +316,27 @@ export function QuickActionPanel({
   const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
   const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
   const deltaDisplay = isBulkMode ? bulkHook.deltaDisplay : singleHook.deltaDisplay
+
+  // Whether the date specifically has changed (separate from overall isDirty which includes
+  // priority, labels, etc.). Used for blue styling on the due date line.
+  const isDateDirty = isBulkMode ? bulkHook.isDirty : singleHook.isDirty
+
+  // Whether ALL tasks genuinely have no due date — used for the "No due date" display.
+  // In bulk mode, only show "No due date" when every task lacks a date.
+  const allNoDueDate = isBulkMode
+    ? (selectedTasks ?? []).every((t) => !t.due_at)
+    : !effectiveTask?.due_at
+
+  // Only show delta when task originally had a due date. When due_at is null,
+  // initWorkingDate generates a default (next hour) and showing a delta from that
+  // would be confusing. Also suppress in bulk mixed-date delta mode since
+  // relativeText already shows "+Xh from each".
+  const hadOriginalDueAt = isBulkMode
+    ? (selectedTasks ?? []).some((t) => t.due_at !== null)
+    : !!effectiveTask?.due_at
+  const isMixedDateDelta =
+    isBulkMode && bulkHook.hasMixedDates && bulkHook.operationType === 'delta'
+  const effectiveDeltaDisplay = hadOriginalDueAt && !isMixedDateDelta ? deltaDisplay : null
   const applyPreset = isBulkMode ? bulkHook.applyPreset : singleHook.applyPreset
   const applyIncrement = isBulkMode ? bulkHook.applyIncrement : singleHook.applyIncrement
   const reset = isBulkMode ? bulkHook.reset : singleHook.reset
@@ -679,16 +707,16 @@ export function QuickActionPanel({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty])
 
-  // In SelectionActionSheet mode, the modal header renders quick-links
-  // In SnoozeSheet mode (sheet without selectedCount), we still show quick-links here
-  const showQuickLinks = !isSelectionSheetMode
+  // Always show action buttons — previously hidden in SelectionActionSheet mode
+  // where the modal header rendered its own copy, but that duplication caused
+  // an inconsistent layout between single-task and multi-select modes.
+  const showQuickLinks = true
 
   return (
     <div className="space-y-3">
-      {/* Header section - always horizontal: title left, action buttons right */}
-      <div className="flex items-start justify-between gap-3">
-        {/* Title and metadata section */}
-        <div className="min-w-0 flex-1">
+      {/* Header section — stacked: metadata on top (full width), priority+actions row below */}
+      <div>
+        <div className="min-w-0">
           {/* Title: editable when onTitleChange or onSaveAll provided, otherwise static */}
           {title && (
             <>
@@ -741,15 +769,32 @@ export function QuickActionPanel({
               Completed
             </Badge>
           )}
-          <p className="text-muted-foreground text-xs select-text">
-            {pendingDueAtCleared ||
-            (!effectiveTask?.due_at && !singleHook.isDirty && pendingDueAt === null) ? (
-              <span className="font-medium text-blue-500">No due date</span>
+          <p className="text-xs select-text">
+            {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
+              <span
+                className={cn(
+                  'font-medium',
+                  pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
+                )}
+              >
+                No due date
+              </span>
             ) : (
               <>
-                <span>{headerText}</span>
-                <span className="mx-1">&middot;</span>
-                <span className={cn(isPast && 'text-destructive font-medium')}>{relativeText}</span>
+                <span
+                  className={cn(isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground')}
+                >
+                  {headerText}
+                </span>
+                <span className="text-muted-foreground mx-1">&middot;</span>
+                <span
+                  className={cn(isPast ? 'text-destructive font-medium' : 'text-muted-foreground')}
+                >
+                  {relativeText}
+                </span>
+                {effectiveDeltaDisplay && (
+                  <span className="ml-1 font-medium text-blue-500">({effectiveDeltaDisplay})</span>
+                )}
               </>
             )}
           </p>
@@ -778,288 +823,298 @@ export function QuickActionPanel({
               {recurrenceText}
             </p>
           )}
-          {/* Staged delta indicator - show in blue when dirty with delta operation */}
-          {deltaDisplay && (
-            <p className="mt-0.5 text-xs font-medium text-blue-500">{deltaDisplay}</p>
-          )}
-          {/* Priority & Labels row - show for single task and bulk mode */}
-          {(effectiveTask || isBulkMode) && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {/* Priority picker (clickable) - plain text styling for alignment */}
-              {/* Show picker when onPriorityChange OR onSaveAll is provided */}
-              {onPriorityChange || onSaveAll ? (
-                <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={cn(
-                        'flex items-center gap-0.5 text-xs font-medium',
-                        getPriorityOption(displayPriority).color,
-                      )}
-                    >
-                      {getPriorityOption(displayPriority).label}
-                      <ChevronDown className="size-3 opacity-50" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-32 p-1" align="start">
-                    {PRIORITY_OPTIONS.map((opt) => (
+          {/* Priority, Labels & Action icons row */}
+          <div className="mt-1.5 flex items-center gap-1.5">
+            {(effectiveTask || isBulkMode) && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {/* Priority picker (clickable) - plain text styling for alignment */}
+                {/* Show picker when onPriorityChange OR onSaveAll is provided */}
+                {onPriorityChange || onSaveAll ? (
+                  <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
+                    <PopoverTrigger asChild>
                       <button
-                        key={opt.value}
                         type="button"
                         className={cn(
-                          'flex w-full items-center rounded px-2 py-1.5 text-sm transition-colors',
-                          'hover:bg-accent',
-                          opt.color,
-                          displayPriority === opt.value && 'bg-accent',
+                          'flex items-center gap-0.5 text-xs font-medium',
+                          isMixedPriority
+                            ? 'text-muted-foreground'
+                            : getPriorityOption(displayPriority).color,
                         )}
-                        onClick={() => {
-                          setPendingPriority(opt.value)
-                          setPriorityPopoverOpen(false)
-                        }}
                       >
-                        {opt.label}
+                        {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
+                        <ChevronDown className="size-3 opacity-50" />
                       </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                <span
-                  className={cn('text-xs font-medium', getPriorityOption(displayPriority).color)}
-                >
-                  {getPriorityOption(displayPriority).label}
-                </span>
-              )}
+                    </PopoverTrigger>
+                    <PopoverContent className="w-32 p-1" align="start">
+                      {PRIORITY_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={cn(
+                            'flex w-full items-center rounded px-2 py-1.5 text-sm transition-colors',
+                            'hover:bg-accent',
+                            opt.color,
+                            displayPriority === opt.value && 'bg-accent',
+                          )}
+                          onClick={() => {
+                            setPendingPriority(opt.value)
+                            setPriorityPopoverOpen(false)
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span
+                    className={cn(
+                      'text-xs font-medium',
+                      isMixedPriority
+                        ? 'text-muted-foreground'
+                        : getPriorityOption(displayPriority).color,
+                    )}
+                  >
+                    {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
+                  </span>
+                )}
 
-              {/* Labels with inline editing - uses displayLabels (pending or current) */}
-              {/* Show editable labels when onLabelsChange OR onSaveAll is provided */}
-              {onLabelsChange || onSaveAll ? (
-                <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
-                  {displayLabels.map((label) => {
-                    const colorClasses = getLabelClasses(label, labelConfig)
-                    return (
-                      <Badge
-                        key={label}
-                        variant={colorClasses ? undefined : 'secondary'}
-                        className={cn(
-                          'gap-0.5 pr-1 text-xs',
-                          colorClasses && `${colorClasses} border-0`,
-                        )}
+                {/* Labels with inline editing - uses displayLabels (pending or current) */}
+                {/* Show editable labels when onLabelsChange OR onSaveAll is provided */}
+                {onLabelsChange || onSaveAll ? (
+                  <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
+                    {displayLabels.map((label) => {
+                      const colorClasses = getLabelClasses(label, labelConfig)
+                      return (
+                        <Badge
+                          key={label}
+                          variant={colorClasses ? undefined : 'secondary'}
+                          className={cn(
+                            'gap-0.5 pr-1 text-xs',
+                            colorClasses && `${colorClasses} border-0`,
+                          )}
+                        >
+                          {label}
+                          <button
+                            type="button"
+                            onClick={() => removeLabel(label)}
+                            className="hover:text-destructive ml-0.5"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </Badge>
+                      )
+                    })}
+                    {/* Mixed labels indicator - shows when label sets differ across selected tasks */}
+                    {isMixedLabels && (
+                      <span className="text-muted-foreground text-xs font-medium">—</span>
+                    )}
+                    {/* Add label button with inline input */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowLabelDropdown(true)}
+                        className="border-muted-foreground/30 text-muted-foreground/50 hover:border-muted-foreground/50 hover:text-muted-foreground flex size-5 items-center justify-center rounded border border-dashed transition-colors"
                       >
-                        {label}
+                        <Plus className="size-3" />
+                      </button>
+                      {showLabelDropdown && (
+                        <div className="bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 w-40 rounded-md border p-2 shadow-md">
+                          <Input
+                            type="text"
+                            value={labelInput}
+                            onChange={(e) => setLabelInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                if (labelInput.trim()) addLabel(labelInput)
+                              }
+                              if (e.key === 'Escape') setShowLabelDropdown(false)
+                            }}
+                            className="h-7 text-xs"
+                            placeholder="Add label..."
+                            autoFocus
+                          />
+                          {labelSuggestions.length > 0 && (
+                            <div className="mt-1 max-h-32 overflow-y-auto">
+                              {labelSuggestions.map((c) => {
+                                const colorClasses = getLabelClasses(c.name, labelConfig)
+                                return (
+                                  <button
+                                    key={c.name}
+                                    type="button"
+                                    className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1 text-sm"
+                                    onClick={() => addLabel(c.name)}
+                                  >
+                                    <Badge
+                                      variant={colorClasses ? undefined : 'secondary'}
+                                      className={cn(
+                                        'text-xs',
+                                        colorClasses && `${colorClasses} border-0`,
+                                      )}
+                                    >
+                                      {c.name}
+                                    </Badge>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Read-only labels - use displayLabels for consistency */
+                  <>
+                    {displayLabels.map((label) => {
+                      const colorClasses = getLabelClasses(label, labelConfig)
+                      return (
+                        <Badge
+                          key={label}
+                          variant={colorClasses ? undefined : 'secondary'}
+                          className={cn('text-xs', colorClasses && `${colorClasses} border-0`)}
+                        >
+                          {label}
+                        </Badge>
+                      )
+                    })}
+                    {isMixedLabels && (
+                      <span className="text-muted-foreground text-xs font-medium">—</span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Action icons — right-aligned on the priority/labels row */}
+            {showQuickLinks && (
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {/* Project badge with optional picker - inline popover or external picker */}
+                {/* Show display project name (pending or current from prop) */}
+                {(() => {
+                  const displayProjectObj = projects?.find((p) => p.id === displayProject)
+                  const displayProjectName = displayProjectObj?.name ?? projectName
+                  return displayProjectName &&
+                    (onProjectChange || onSaveAll) &&
+                    projects &&
+                    projects.length > 0 ? (
+                    // Inline popover with project list
+                    <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
+                      <PopoverTrigger asChild>
                         <button
                           type="button"
-                          onClick={() => removeLabel(label)}
-                          className="hover:text-destructive ml-0.5"
+                          className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
                         >
-                          <X className="size-3" />
+                          {displayProjectName}
+                          <ChevronDown className="size-3 opacity-50" />
                         </button>
-                      </Badge>
-                    )
-                  })}
-                  {/* Add label button with inline input */}
-                  <div className="relative">
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-1" align="end">
+                        {projects.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={cn(
+                              'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors',
+                              'hover:bg-accent',
+                              displayProject === p.id && 'bg-accent',
+                            )}
+                            onClick={() => {
+                              setPendingProject(p.id)
+                              setProjectPopoverOpen(false)
+                            }}
+                          >
+                            <span className="bg-primary size-2 rounded-full" />
+                            {p.name}
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+                  ) : displayProjectName && onMoveToProject ? (
+                    // Clickable badge that opens external picker
                     <button
                       type="button"
-                      onClick={() => setShowLabelDropdown(true)}
-                      className="border-muted-foreground/30 text-muted-foreground/50 hover:border-muted-foreground/50 hover:text-muted-foreground flex size-5 items-center justify-center rounded border border-dashed transition-colors"
-                    >
-                      <Plus className="size-3" />
-                    </button>
-                    {showLabelDropdown && (
-                      <div className="bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 w-40 rounded-md border p-2 shadow-md">
-                        <Input
-                          type="text"
-                          value={labelInput}
-                          onChange={(e) => setLabelInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              if (labelInput.trim()) addLabel(labelInput)
-                            }
-                            if (e.key === 'Escape') setShowLabelDropdown(false)
-                          }}
-                          className="h-7 text-xs"
-                          placeholder="Add label..."
-                          autoFocus
-                        />
-                        {labelSuggestions.length > 0 && (
-                          <div className="mt-1 max-h-32 overflow-y-auto">
-                            {labelSuggestions.map((c) => {
-                              const colorClasses = getLabelClasses(c.name, labelConfig)
-                              return (
-                                <button
-                                  key={c.name}
-                                  type="button"
-                                  className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1 text-sm"
-                                  onClick={() => addLabel(c.name)}
-                                >
-                                  <Badge
-                                    variant={colorClasses ? undefined : 'secondary'}
-                                    className={cn(
-                                      'text-xs',
-                                      colorClasses && `${colorClasses} border-0`,
-                                    )}
-                                  >
-                                    {c.name}
-                                  </Badge>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* Read-only labels - use displayLabels for consistency */
-                displayLabels.map((label) => {
-                  const colorClasses = getLabelClasses(label, labelConfig)
-                  return (
-                    <Badge
-                      key={label}
-                      variant={colorClasses ? undefined : 'secondary'}
-                      className={cn('text-xs', colorClasses && `${colorClasses} border-0`)}
-                    >
-                      {label}
-                    </Badge>
-                  )
-                })
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Action icons — only show when not in sheet mode */}
-        {showQuickLinks && (
-          <div className="flex items-center gap-1.5 self-end">
-            {/* Project badge with optional picker - inline popover or external picker */}
-            {/* Show display project name (pending or current from prop) */}
-            {(() => {
-              const displayProjectObj = projects?.find((p) => p.id === displayProject)
-              const displayProjectName = displayProjectObj?.name ?? projectName
-              return displayProjectName &&
-                (onProjectChange || onSaveAll) &&
-                projects &&
-                projects.length > 0 ? (
-                // Inline popover with project list
-                <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
+                      onClick={onMoveToProject}
                       className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
                     >
                       {displayProjectName}
                       <ChevronDown className="size-3 opacity-50" />
                     </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-48 p-1" align="end">
-                    {projects.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors',
-                          'hover:bg-accent',
-                          displayProject === p.id && 'bg-accent',
-                        )}
-                        onClick={() => {
-                          setPendingProject(p.id)
-                          setProjectPopoverOpen(false)
-                        }}
-                      >
-                        <span className="bg-primary size-2 rounded-full" />
-                        {p.name}
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              ) : displayProjectName && onMoveToProject ? (
-                // Clickable badge that opens external picker
-                <button
-                  type="button"
-                  onClick={onMoveToProject}
-                  className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
-                >
-                  {displayProjectName}
-                  <ChevronDown className="size-3 opacity-50" />
-                </button>
-              ) : displayProjectName ? (
-                // Read-only badge
-                <span className="bg-muted text-muted-foreground shrink-0 rounded px-2 py-0.5 text-xs">
-                  {displayProjectName}
-                </span>
-              ) : null
-            })()}
-            {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
-            {(onRruleChange || onSaveAll) && (
-              <IconButton
-                icon={<Repeat className="size-4" />}
-                label="Recurrence"
-                onClick={handleRecurrenceToggle}
-                active={editingRecurrence}
-              />
-            )}
-            {onDelete && (
-              <IconButton
-                icon={<Trash2 className="size-4" />}
-                label="Delete"
-                onClick={onDelete}
-                destructive
-              />
-            )}
-
-            {/* More menu - consolidates disabled features and task details */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label="More options"
-                  title="More options"
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/* Clear due date - only for single task with due_at or rrule */}
-                {isSingleTask &&
-                  (effectiveTask?.due_at || effectiveTask?.rrule) &&
-                  !pendingDueAtCleared && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setPendingDueAtCleared(true)
-                        if (effectiveTask?.rrule) {
-                          setPendingRrule(null)
-                        }
-                      }}
-                    >
-                      <XCircle className="mr-2 size-4" />
-                      Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
-                    </DropdownMenuItem>
-                  )}
-                {isSingleTask && onNavigateToDetail && (
-                  <DropdownMenuItem onClick={onNavigateToDetail}>
-                    <Info className="mr-2 size-4" />
-                    Task Details
-                  </DropdownMenuItem>
+                  ) : displayProjectName ? (
+                    // Read-only badge
+                    <span className="bg-muted text-muted-foreground shrink-0 rounded px-2 py-0.5 text-xs">
+                      {displayProjectName}
+                    </span>
+                  ) : null
+                })()}
+                {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
+                {(onRruleChange || onSaveAll) && (
+                  <IconButton
+                    icon={<Repeat className="size-4" />}
+                    label="Recurrence"
+                    onClick={handleRecurrenceToggle}
+                    active={editingRecurrence}
+                  />
                 )}
-                {/* Disabled stubs moved to More menu */}
-                <DropdownMenuItem disabled>
-                  <Timer className="mr-2 size-4" />
-                  Auto-snooze interval
-                  <span className="text-muted-foreground ml-auto text-xs">Soon</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <Bell className="mr-2 size-4" />
-                  Critical alert
-                  <span className="text-muted-foreground ml-auto text-xs">Soon</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <IconButton
+                  icon={<Timer className="size-4" />}
+                  label="Auto-snooze interval"
+                  badge={15}
+                  disabled
+                />
+                <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
+                {onDelete && (
+                  <IconButton
+                    icon={<Trash2 className="size-4" />}
+                    label="Delete"
+                    onClick={onDelete}
+                    destructive
+                  />
+                )}
+
+                {/* More menu - consolidates disabled features and task details */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      aria-label="More options"
+                      title="More options"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {/* Clear due date - only for single task with due_at or rrule */}
+                    {isSingleTask &&
+                      (effectiveTask?.due_at || effectiveTask?.rrule) &&
+                      !pendingDueAtCleared && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setPendingDueAtCleared(true)
+                            if (effectiveTask?.rrule) {
+                              setPendingRrule(null)
+                            }
+                          }}
+                        >
+                          <XCircle className="mr-2 size-4" />
+                          Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
+                        </DropdownMenuItem>
+                      )}
+                    {isSingleTask && onNavigateToDetail && (
+                      <DropdownMenuItem onClick={onNavigateToDetail}>
+                        <Info className="mr-2 size-4" />
+                        Task Details
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* 4x3 Date grid */}

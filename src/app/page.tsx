@@ -289,6 +289,7 @@ function HomeContent() {
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+  const bulkSheetOpenRef = useRef<(() => void) | null>(null)
 
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
@@ -296,7 +297,11 @@ function HomeContent() {
   // Sort state - lifted here so keyboard navigation can use the same order as display
   const { getSortOption, getReversed, setSortOption } = useGroupSort()
 
-  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
+  useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
+    isSelectionMode: selection.isSelectionMode,
+    selectedCount: selection.selectedIds.size,
+    openBulkSheet: () => bulkSheetOpenRef.current?.(),
+  })
   const [grouping, setGrouping] = useState<GroupingMode>('project')
   const hasToggledGrouping = useRef(false)
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
@@ -815,6 +820,7 @@ function HomeContent() {
       showShortcutsDialog={showShortcutsDialog}
       onShortcutsDialogChange={setShowShortcutsDialog}
       onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
+      bulkSheetOpenRef={bulkSheetOpenRef}
     />
   )
 }
@@ -870,6 +876,7 @@ function DashboardView({
   showShortcutsDialog,
   onShortcutsDialogChange,
   onShortcutsDialogCloseAutoFocus,
+  bulkSheetOpenRef,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -921,6 +928,7 @@ function DashboardView({
   showShortcutsDialog: boolean
   onShortcutsDialogChange: (open: boolean) => void
   onShortcutsDialogCloseAutoFocus: (e: Event) => void
+  bulkSheetOpenRef: React.MutableRefObject<(() => void) | null>
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -1027,6 +1035,7 @@ function DashboardView({
       <SelectionActionSheet
         selectedCount={selection.selectedIds.size}
         selectedTasks={selectedTasks}
+        sheetOpenRef={bulkSheetOpenRef}
         onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
         onSnooze={(until) =>
           onBulkAction('/api/tasks/bulk/snooze', {

@@ -80,6 +80,7 @@ function computeInitialDisplay(
   allSame: boolean
 } {
   const dueDates = tasks.map((t) => t.due_at).filter((d): d is string => d !== null)
+  const hasNullDates = dueDates.length < tasks.length
 
   if (dueDates.length === 0) {
     return {
@@ -87,6 +88,17 @@ function computeInitialDisplay(
       hasMixedDates: false,
       earliestDueAt: null,
       allSame: true,
+    }
+  }
+
+  // If some tasks have dates and some don't, it's always mixed
+  if (hasNullDates) {
+    const sorted = [...dueDates].sort()
+    return {
+      headerText: '—',
+      hasMixedDates: true,
+      earliestDueAt: sorted[0],
+      allSame: false,
     }
   }
 
@@ -211,9 +223,24 @@ export function useBulkQuickSelectDate({
   // Compute display values based on current state
   const isDirty = operationType !== null
 
-  // Compute delta display string for staged indicator
-  const deltaDisplay =
-    operationType === 'delta' && deltaMinutes !== 0 ? formatDeltaText(deltaMinutes) : null
+  // Compute delta display string for staged indicator.
+  // For same-date tasks: show delta for both preset and relative operations.
+  // For mixed-date tasks: only show delta for relative operations (relative info in relativeText).
+  let deltaDisplay: string | null = null
+  if (operationType === 'delta' && deltaMinutes !== 0) {
+    deltaDisplay = formatDeltaText(deltaMinutes)
+  } else if (
+    operationType === 'preset' &&
+    presetTime &&
+    initialDisplay.allSame &&
+    initialDisplay.earliestDueAt
+  ) {
+    const diffMs = new Date(presetTime).getTime() - new Date(initialDisplay.earliestDueAt).getTime()
+    const diffMinutes = Math.round(diffMs / 60000)
+    if (diffMinutes !== 0) {
+      deltaDisplay = formatDeltaText(diffMinutes)
+    }
+  }
 
   // Compute time-sensitive values fresh on each render (tick dependency ensures refresh)
   // This is intentionally outside useMemo so it updates when tick changes
@@ -232,10 +259,10 @@ export function useBulkQuickSelectDate({
         isPast: new Date(earliestDueAt) < now,
       }
     }
-    // Mixed dates - just show relative time of earliest, no "Earliest:" prefix
+    // Mixed dates - show "Earliest:" prefix so users know it's not all tasks
     const dueDates = tasks.map((t) => t.due_at).filter((d): d is string => d !== null)
     return {
-      relativeText: formatRelativeTime(earliestDueAt, now),
+      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, now)}`,
       isPast: hasMixedDates && dueDates.some((d) => new Date(d) < now),
     }
   }

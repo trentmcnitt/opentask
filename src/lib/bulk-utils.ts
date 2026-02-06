@@ -15,6 +15,16 @@ export function computeCommonLabels(tasks: Task[]): string[] {
 }
 
 /**
+ * Returns true if any task has different labels from any other task.
+ * Used to show a "—" mixed indicator alongside common labels.
+ */
+export function hasLabelVariations(tasks: Task[]): boolean {
+  if (tasks.length <= 1) return false
+  const first = JSON.stringify([...tasks[0].labels].sort())
+  return tasks.some((t) => JSON.stringify([...t.labels].sort()) !== first)
+}
+
+/**
  * Computes the common priority across all tasks.
  * Returns the priority if ALL tasks share the same value, otherwise null.
  */

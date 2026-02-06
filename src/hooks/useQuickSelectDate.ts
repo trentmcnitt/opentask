@@ -13,8 +13,6 @@ interface UseQuickSelectDateOptions {
   timezone: string
 }
 
-type OperationType = 'preset' | 'delta' | null
-
 interface UseQuickSelectDateResult {
   /** Current working date (UTC ISO string) */
   workingDate: string
@@ -22,11 +20,11 @@ interface UseQuickSelectDateResult {
   isDirty: boolean
   /** Formatted header text: "Mon, Feb 2 at 6:50 PM" */
   headerText: string
-  /** Formatted relative text: "in 26 mins" or "3h ago" or "in 2h (snoozing +1h)" */
+  /** Formatted relative text: "in 26 mins" or "3h ago" */
   relativeText: string
   /** Whether the working date is in the past */
   isPast: boolean
-  /** Delta display string (e.g., "+30 min", "-1 hr") when in delta mode, null otherwise */
+  /** Delta display string (e.g., "+30 min", "-1 hr") computed from initialDate vs workingDate, null when not dirty */
   deltaDisplay: string | null
   /** Snap to a preset time (next occurrence from now) */
   applyPreset: (hour: number, minute: number) => void
@@ -36,7 +34,7 @@ interface UseQuickSelectDateResult {
   setAbsoluteTarget: (isoUtc: string) => void
   /** Reset working date to initial value */
   reset: () => void
-  /** Set working date directly (does not clear delta state - use setAbsoluteTarget for smart buttons) */
+  /** Set working date directly */
   setWorkingDate: (iso: string) => void
 }
 
@@ -48,8 +46,6 @@ export function useQuickSelectDate({
   const [workingDate, setWorkingDate] = useState(() => initWorkingDate(dueAt))
   const [tick, setTick] = useState(0)
   const [prevDueAt, setPrevDueAt] = useState(dueAt)
-  const [operationType, setOperationType] = useState<OperationType>(null)
-  const [deltaMinutes, setDeltaMinutes] = useState(0)
 
   // Reset when the task's due_at changes externally
   if (dueAt !== prevDueAt) {
@@ -57,8 +53,6 @@ export function useQuickSelectDate({
     const newInitial = initWorkingDate(dueAt)
     setInitialDate(newInitial)
     setWorkingDate(newInitial)
-    setOperationType(null)
-    setDeltaMinutes(0)
   }
 
   // Auto-refresh relative time every 15 seconds
@@ -70,8 +64,6 @@ export function useQuickSelectDate({
   const applyPreset = useCallback(
     (hour: number, minute: number) => {
       setWorkingDate(snapToNextPreset(hour, minute, timezone))
-      setOperationType('preset')
-      setDeltaMinutes(0)
     },
     [timezone],
   )
@@ -79,31 +71,16 @@ export function useQuickSelectDate({
   const applyIncrement = useCallback(
     (increment: { minutes: number | null; days?: number }) => {
       setWorkingDate((prev) => adjustDate(prev, increment, timezone))
-      setOperationType('delta')
-
-      // Convert day-based increments to minutes for accumulation
-      let minutesToAdd: number
-      if (increment.minutes === null && increment.days) {
-        minutesToAdd = increment.days * 24 * 60
-      } else {
-        minutesToAdd = increment.minutes ?? 0
-      }
-
-      setDeltaMinutes((prev) => prev + minutesToAdd)
     },
     [timezone],
   )
 
   const setAbsoluteTarget = useCallback((isoUtc: string) => {
     setWorkingDate(isoUtc)
-    setOperationType('preset')
-    setDeltaMinutes(0)
   }, [])
 
   const reset = useCallback(() => {
     setWorkingDate(initialDate)
-    setOperationType(null)
-    setDeltaMinutes(0)
   }, [initialDate])
 
   const isDirty = workingDate !== initialDate
@@ -115,15 +92,18 @@ export function useQuickSelectDate({
   const headerText = formatQuickSelectHeader(workingDate, timezone)
   const isPast = new Date(workingDate) < now
 
-  // Compute relativeText based on operation type
-  let relativeText: string
+  const relativeText = formatRelativeTime(workingDate, now)
+
+  // Compute delta from actual difference between initialDate and workingDate.
+  // This works for all change types (preset, relative, smart buttons) and
+  // accumulates correctly from the original date, not from each button press.
   let deltaDisplay: string | null = null
-  if (operationType === 'delta' && deltaMinutes !== 0) {
-    // Delta mode: show relative time only; delta is displayed separately below
-    relativeText = formatRelativeTime(workingDate, now)
-    deltaDisplay = formatDeltaText(deltaMinutes)
-  } else {
-    relativeText = formatRelativeTime(workingDate, now)
+  if (isDirty) {
+    const diffMs = new Date(workingDate).getTime() - new Date(initialDate).getTime()
+    const diffMinutes = Math.round(diffMs / 60000)
+    if (diffMinutes !== 0) {
+      deltaDisplay = formatDeltaText(diffMinutes)
+    }
   }
 
   return {

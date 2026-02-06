@@ -293,5 +293,5 @@ export function formatBulkRecurrence(
     const anchorTime = uniqueAnchorTimes.length === 1 ? uniqueAnchorTimes[0] : null
     return formatRRuleCompact(uniqueRrules[0]!, anchorTime)
   }
-  return 'mixed'
+  return '—'
 }

@@ -1,18 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import {
-  Check,
-  X,
-  FileText,
-  Repeat,
-  Timer,
-  Bell,
-  Trash2,
-  MoreHorizontal,
-  FolderInput,
-  Info,
-} from 'lucide-react'
+import { Check, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -28,15 +17,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
-import { RecurrencePicker } from '@/components/RecurrencePicker'
-import { IconButton } from '@/components/ui/icon-button'
 import { useTimezone } from '@/hooks/useTimezone'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { computeCommonLabels } from '@/lib/bulk-utils'
@@ -72,6 +53,8 @@ interface SelectionActionSheetProps {
   onLabelsRemove?: (labels: string[]) => void
   /** Called when project is changed via inline picker */
   onProjectChange?: (projectId: number) => void
+  /** Ref populated with openSheet function for external triggering (e.g., Cmd+S shortcut) */
+  sheetOpenRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function SelectionActionSheet({
@@ -90,21 +73,21 @@ export function SelectionActionSheet({
   onLabelsAdd,
   onLabelsRemove,
   onProjectChange,
+  sheetOpenRef,
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(true)
-  const [showRecurrencePicker, setShowRecurrencePicker] = useState(false)
-  const [pendingRrule, setPendingRrule] = useState<string | null | undefined>(undefined)
-  const [pendingRecurrenceMode, setPendingRecurrenceMode] = useState<
-    'from_due' | 'from_completion' | null
-  >(null)
 
   // Pending state for priority, labels, project (staged until Save)
-  const [pendingPriority, setPendingPriority] = useState<number | null>(null)
-  const [pendingLabelsAdd, setPendingLabelsAdd] = useState<string[]>([])
-  const [pendingLabelsRemove, setPendingLabelsRemove] = useState<string[]>([])
-  const [pendingProject, setPendingProject] = useState<number | null>(null)
+  // These use refs instead of state because they're only read synchronously in handleSave.
+  // Using useState caused a bug: React batches state updates, so when QuickActionPanel's
+  // individual-callbacks path called setPendingX then onSave in sequence, handleSave
+  // would read the stale (pre-update) values and silently drop the changes.
+  const pendingPriorityRef = useRef<number | null>(null)
+  const pendingLabelsAddRef = useRef<string[]>([])
+  const pendingLabelsRemoveRef = useRef<string[]>([])
+  const pendingProjectRef = useRef<number | null>(null)
 
   // Track pending date change
   const pendingDateRef = useRef<
@@ -114,14 +97,6 @@ export function SelectionActionSheet({
   // Compute bulk recurrence summary for display
   const recurrenceSummary = useMemo(() => {
     return formatBulkRecurrence(selectedTasks)
-  }, [selectedTasks])
-
-  // Get the effective rrule for the recurrence picker
-  // If all tasks have same rrule, use that; otherwise null
-  const effectiveRrule = useMemo(() => {
-    const rrules = selectedTasks.map((t) => t.rrule).filter(Boolean) as string[]
-    const unique = [...new Set(rrules)]
-    return unique.length === 1 ? unique[0] : null
   }, [selectedTasks])
 
   // Detect mobile vs desktop
@@ -134,19 +109,26 @@ export function SelectionActionSheet({
 
   const clearPendingState = useCallback(() => {
     pendingDateRef.current = null
-    setPendingRrule(undefined)
-    setPendingRecurrenceMode(null)
-    setPendingPriority(null)
-    setPendingLabelsAdd([])
-    setPendingLabelsRemove([])
-    setPendingProject(null)
-    setShowRecurrencePicker(false)
+    pendingPriorityRef.current = null
+    pendingLabelsAddRef.current = []
+    pendingLabelsRemoveRef.current = []
+    pendingProjectRef.current = null
   }, [])
 
   const openSheet = useCallback(() => {
     clearPendingState()
     setSheetOpen(true)
   }, [clearPendingState])
+
+  // Expose openSheet to parent via ref for external triggering (e.g., Cmd+S shortcut)
+  useEffect(() => {
+    if (sheetOpenRef) {
+      sheetOpenRef.current = openSheet
+      return () => {
+        sheetOpenRef.current = null
+      }
+    }
+  }, [sheetOpenRef, openSheet])
 
   // Track date changes but don't apply immediately
   const handleDateChange = useCallback((isoUtc: string) => {
@@ -158,6 +140,7 @@ export function SelectionActionSheet({
   }, [])
 
   // Save button: apply pending changes, close, exit selection mode
+  // Note: recurrence changes are handled by QuickActionPanel via onRruleChange
   const handleSave = useCallback(() => {
     if (pendingDateRef.current) {
       if (pendingDateRef.current.type === 'absolute') {
@@ -166,24 +149,20 @@ export function SelectionActionSheet({
         onSnoozeRelative(pendingDateRef.current.deltaMinutes)
       }
     }
-    // Apply pending recurrence change if any
-    if (pendingRrule !== undefined && onRecurrenceChange) {
-      onRecurrenceChange(pendingRrule, pendingRecurrenceMode ?? undefined)
-    }
     // Apply pending priority change
-    if (pendingPriority !== null) {
-      onPriorityChange(pendingPriority)
+    if (pendingPriorityRef.current !== null) {
+      onPriorityChange(pendingPriorityRef.current)
     }
     // Apply pending label changes (add/remove)
-    if (pendingLabelsAdd.length > 0 && onLabelsAdd) {
-      onLabelsAdd(pendingLabelsAdd)
+    if (pendingLabelsAddRef.current.length > 0 && onLabelsAdd) {
+      onLabelsAdd(pendingLabelsAddRef.current)
     }
-    if (pendingLabelsRemove.length > 0 && onLabelsRemove) {
-      onLabelsRemove(pendingLabelsRemove)
+    if (pendingLabelsRemoveRef.current.length > 0 && onLabelsRemove) {
+      onLabelsRemove(pendingLabelsRemoveRef.current)
     }
     // Apply pending project change
-    if (pendingProject !== null && onProjectChange) {
-      onProjectChange(pendingProject)
+    if (pendingProjectRef.current !== null && onProjectChange) {
+      onProjectChange(pendingProjectRef.current)
     }
     setSheetOpen(false)
     onClear() // Exit selection mode
@@ -191,16 +170,9 @@ export function SelectionActionSheet({
     onSnooze,
     onSnoozeRelative,
     onClear,
-    pendingRrule,
-    pendingRecurrenceMode,
-    onRecurrenceChange,
-    pendingPriority,
     onPriorityChange,
-    pendingLabelsAdd,
     onLabelsAdd,
-    pendingLabelsRemove,
     onLabelsRemove,
-    pendingProject,
     onProjectChange,
   ])
 
@@ -232,23 +204,9 @@ export function SelectionActionSheet({
     [clearPendingState],
   )
 
-  // Toggle recurrence picker
-  const handleRecurrenceToggle = useCallback(() => {
-    setShowRecurrencePicker((prev) => !prev)
-  }, [])
-
-  // Handle recurrence change from picker
-  const handleRecurrenceChange = useCallback(
-    (rrule: string | null, mode?: 'from_due' | 'from_completion') => {
-      setPendingRrule(rrule)
-      if (mode) setPendingRecurrenceMode(mode)
-    },
-    [],
-  )
-
   // Handle priority change from QuickActionPanel (stages change until Save)
   const handlePriorityChange = useCallback((priority: number) => {
-    setPendingPriority(priority)
+    pendingPriorityRef.current = priority
   }, [])
 
   // Compute bulk common labels (intersection of labels across all selected tasks)
@@ -288,15 +246,15 @@ export function SelectionActionSheet({
       const toAdd = newLabels.filter((l) => !bulkCommonLabels.includes(l))
       // Labels to remove: in bulkCommonLabels but not in newLabels
       const toRemove = bulkCommonLabels.filter((l) => !newLabels.includes(l))
-      setPendingLabelsAdd(toAdd)
-      setPendingLabelsRemove(toRemove)
+      pendingLabelsAddRef.current = toAdd
+      pendingLabelsRemoveRef.current = toRemove
     },
     [bulkCommonLabels],
   )
 
   // Handle project change from QuickActionPanel (stages change until Save)
   const handleProjectChange = useCallback((projectId: number) => {
-    setPendingProject(projectId)
+    pendingProjectRef.current = projectId
   }, [])
 
   // Track dirty state from QuickActionPanel for visual indicator
@@ -316,59 +274,6 @@ export function SelectionActionSheet({
     selectedCount === 1 && selectedTasks[0]
       ? selectedTasks[0].title
       : `${selectedCount} tasks selected`
-
-  // Quick-links component to render in modal header
-  const quickLinks = (
-    <div className="flex items-center gap-0.5">
-      {/* Recurrence button - opens picker inline */}
-      {onRecurrenceChange && (
-        <IconButton
-          icon={<Repeat className="size-4" />}
-          label="Recurrence"
-          onClick={handleRecurrenceToggle}
-          active={showRecurrencePicker}
-        />
-      )}
-      {/* Disabled stubs */}
-      <IconButton icon={<Timer className="size-4" />} label="Auto-snooze interval" disabled />
-      <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
-      {/* Delete button */}
-      <IconButton
-        icon={<Trash2 className="size-4" />}
-        label="Delete"
-        onClick={handleDelete}
-        destructive
-      />
-      {/* More menu with move to project, task details */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            aria-label="More options"
-            title="More options"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {onMoveToProject && (
-            <DropdownMenuItem onClick={handleMoveToProject}>
-              <FolderInput className="mr-2 size-4" />
-              Move to Project
-            </DropdownMenuItem>
-          )}
-          {selectedCount === 1 && onNavigateToDetail && (
-            <DropdownMenuItem onClick={handleNavigateToDetail}>
-              <Info className="mr-2 size-4" />
-              Task Details
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  )
 
   const panelContent = (
     <div
@@ -390,19 +295,16 @@ export function SelectionActionSheet({
         recurrenceSummary={recurrenceSummary}
         onPriorityChange={handlePriorityChange}
         onLabelsChange={handleLabelsChange}
+        onRruleChange={onRecurrenceChange}
+        onDelete={handleDelete}
+        onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
+        onNavigateToDetail={
+          selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
+        }
         projects={projects}
         onProjectChange={handleProjectChange}
         onDirtyChange={setIsPanelDirty}
       />
-      {/* Expandable recurrence picker */}
-      {showRecurrencePicker && onRecurrenceChange && (
-        <div className="rounded-lg border p-3">
-          <RecurrencePicker
-            value={pendingRrule !== undefined ? pendingRrule : effectiveRrule}
-            onChange={handleRecurrenceChange}
-          />
-        </div>
-      )}
     </div>
   )
 
@@ -457,9 +359,7 @@ export function SelectionActionSheet({
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={handleOpenChange}>
           <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
-            <SheetHeader className="flex flex-col gap-2 pr-10">
-              {/* Quick links first on mobile for better touch access */}
-              <div className="order-first">{quickLinks}</div>
+            <SheetHeader>
               <SheetTitle className="truncate">{modalTitle}</SheetTitle>
               <SheetDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
@@ -473,9 +373,8 @@ export function SelectionActionSheet({
         /* Desktop: centered dialog */
         <Dialog open={sheetOpen} onOpenChange={handleOpenChange}>
           <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4">
-            <DialogHeader className="flex-row items-center justify-between gap-2 pr-8">
+            <DialogHeader>
               <DialogTitle className="truncate">{modalTitle}</DialogTitle>
-              {quickLinks}
               <DialogDescription className="sr-only">
                 Adjust date, priority, and other settings for selected tasks
               </DialogDescription>
