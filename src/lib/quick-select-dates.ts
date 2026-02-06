@@ -218,24 +218,27 @@ export function formatRelativeTime(isoUtc: string, now?: Date): string {
  */
 export function formatDeltaText(deltaMinutes: number): string {
   const absDelta = Math.abs(deltaMinutes)
-  const sign = deltaMinutes >= 0 ? '+' : '-'
+  const direction = deltaMinutes >= 0 ? 'later' : 'sooner'
 
   const totalHours = Math.floor(absDelta / 60)
   const minutes = absDelta % 60
   const days = Math.floor(totalHours / 24)
   const hours = totalHours % 24
 
+  let magnitude: string
   if (days > 0 && hours > 0) {
-    return `${sign}${days}d ${hours}h`
+    magnitude = `${days}d ${hours}h`
   } else if (days > 0) {
-    return `${sign}${days}d`
+    magnitude = `${days}d`
   } else if (hours > 0 && minutes > 0) {
-    return `${sign}${hours}h ${minutes}m`
+    magnitude = `${hours}h ${minutes}m`
   } else if (hours > 0) {
-    return `${sign}${hours}h`
+    magnitude = `${hours}h`
   } else {
-    return `${sign}${minutes}m`
+    magnitude = `${minutes}m`
   }
+
+  return `${magnitude} ${direction}`
 }
 
 /** Smart button definitions for quick date selection */

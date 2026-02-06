@@ -255,54 +255,54 @@ describe('preset + increment composition', () => {
 
 describe('formatDeltaText', () => {
   it('formats positive minutes', () => {
-    expect(formatDeltaText(30)).toBe('+30m')
+    expect(formatDeltaText(30)).toBe('30m later')
   })
 
   it('formats negative minutes', () => {
-    expect(formatDeltaText(-5)).toBe('-5m')
+    expect(formatDeltaText(-5)).toBe('5m sooner')
   })
 
   it('formats positive hours', () => {
-    expect(formatDeltaText(60)).toBe('+1h')
+    expect(formatDeltaText(60)).toBe('1h later')
   })
 
   it('formats negative hours', () => {
-    expect(formatDeltaText(-120)).toBe('-2h')
+    expect(formatDeltaText(-120)).toBe('2h sooner')
   })
 
   it('formats hours and minutes', () => {
-    expect(formatDeltaText(90)).toBe('+1h 30m')
+    expect(formatDeltaText(90)).toBe('1h 30m later')
   })
 
   it('formats negative hours and minutes', () => {
-    expect(formatDeltaText(-90)).toBe('-1h 30m')
+    expect(formatDeltaText(-90)).toBe('1h 30m sooner')
   })
 
   it('formats exact day boundary', () => {
-    expect(formatDeltaText(1440)).toBe('+1d')
+    expect(formatDeltaText(1440)).toBe('1d later')
   })
 
   it('formats negative day', () => {
-    expect(formatDeltaText(-1440)).toBe('-1d')
+    expect(formatDeltaText(-1440)).toBe('1d sooner')
   })
 
   it('formats days and hours', () => {
     // 25 hours = 1d 1h
-    expect(formatDeltaText(1500)).toBe('+1d 1h')
+    expect(formatDeltaText(1500)).toBe('1d 1h later')
   })
 
   it('formats multi-day with hours', () => {
     // 50 hours = 2d 2h
-    expect(formatDeltaText(3000)).toBe('+2d 2h')
+    expect(formatDeltaText(3000)).toBe('2d 2h later')
   })
 
   it('formats 1 minute', () => {
-    expect(formatDeltaText(1)).toBe('+1m')
+    expect(formatDeltaText(1)).toBe('1m later')
   })
 
-  it('formats zero as +0m', () => {
+  it('formats zero as 0m later', () => {
     // Edge case: callers guard against this, but documenting the behavior
-    expect(formatDeltaText(0)).toBe('+0m')
+    expect(formatDeltaText(0)).toBe('0m later')
   })
 })
 
