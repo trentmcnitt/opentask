@@ -334,17 +334,42 @@ export function useKeyboardNavigation({
                 : []
 
             if (idsToComplete.length > 0) {
-              // Find first task in current group for post-completion focus
-              const currentGroupFirstId = keyboardFocusedId
-                ? findFirstTaskInGroup(keyboardFocusedId)
-                : null
+              // Compute next focus BEFORE completion removes the task from state.
+              // orderedIds still contains the completed task(s) here because React
+              // batches state updates — the closure captures the pre-completion list.
+              const completionSet = new Set(idsToComplete)
+              let nextFocusId: number | null = null
+
+              if (keyboardFocusedId !== null) {
+                const currentIndex = orderedIds.indexOf(keyboardFocusedId)
+                if (currentIndex !== -1) {
+                  // Look forward first — enables rapid sequential completion
+                  for (let i = currentIndex + 1; i < orderedIds.length; i++) {
+                    if (!completionSet.has(orderedIds[i])) {
+                      nextFocusId = orderedIds[i]
+                      break
+                    }
+                  }
+                  // If nothing forward, look backward
+                  if (nextFocusId === null) {
+                    for (let i = currentIndex - 1; i >= 0; i--) {
+                      if (!completionSet.has(orderedIds[i])) {
+                        nextFocusId = orderedIds[i]
+                        break
+                      }
+                    }
+                  }
+                }
+              }
 
               onComplete(idsToComplete)
-
-              // After completion: focus first task in group, clear selection
               selection.clear()
-              if (currentGroupFirstId !== null) {
-                setKeyboardFocusedId(currentGroupFirstId)
+              setKeyboardFocusedId(nextFocusId)
+
+              // Sync browser focus to match the visual blue glow.
+              // (Existing code elsewhere does this imperatively — no useEffect auto-syncs it.)
+              if (nextFocusId !== null) {
+                document.getElementById(`task-row-${nextFocusId}`)?.focus()
               }
             }
           }

@@ -135,14 +135,14 @@ export function Header({
                       className={cn(
                         'bg-muted text-muted-foreground hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex',
                         overdueCount > 0
-                          ? '@[4.5rem]/badges:inline-flex'
-                          : '@[1.75rem]/badges:inline-flex',
+                          ? '@[4.75rem]/badges:inline-flex'
+                          : '@[2.75rem]/badges:inline-flex',
                       )}
                     >
                       {taskCount}
                     </span>
                     {overdueCount > 0 && (
-                      <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex @[1.75rem]/badges:inline-flex">
+                      <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex @[2.75rem]/badges:inline-flex">
                         {overdueCount}
                       </span>
                     )}
