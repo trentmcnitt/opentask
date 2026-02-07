@@ -368,6 +368,20 @@ export function QuickActionPanel({
   // priority, labels, etc.). Used for blue styling on the due date line.
   const isDateDirty = isBulkMode ? bulkHook.isDirty : singleHook.isDirty
 
+  // Per-field dirty booleans — used for blue "modified" indicators on each field
+  const isTitleDirty = pendingTitle !== null
+  const isPriorityDirty = pendingPriority !== null
+  const isLabelsDirty = pendingLabels !== null
+  // Track which labels are newly added (not in original set) for per-label dirty indicators
+  const newLabels = useMemo(() => {
+    if (!isLabelsDirty) return new Set<string>()
+    const origLabels = effectiveTask?.labels ?? (isBulkMode ? bulkCommonLabels : [])
+    const origSet = new Set(origLabels.map((l) => l.toLowerCase()))
+    return new Set(displayLabels.filter((l) => !origSet.has(l.toLowerCase())))
+  }, [isLabelsDirty, effectiveTask?.labels, isBulkMode, bulkCommonLabels, displayLabels])
+  const isRruleDirty = pendingRrule !== undefined
+  const isProjectDirty = pendingProject !== null
+
   // Whether ALL tasks genuinely have no due date — used for the "No due date" display.
   // In bulk mode, only show "No due date" when every task lacks a date.
   const allNoDueDate = isBulkMode
@@ -788,9 +802,11 @@ export function QuickActionPanel({
                           'font-medium',
                           titleVariant === 'prominent' ? detailClasses!.sizeClass : 'text-sm',
                           detailClasses?.scrollable && 'max-h-32 overflow-y-auto',
-                          onTitleChange || onSaveAll
-                            ? 'hover:text-primary cursor-pointer transition-colors'
-                            : 'select-text',
+                          isTitleDirty
+                            ? 'text-blue-500'
+                            : onTitleChange || onSaveAll
+                              ? 'hover:text-primary cursor-pointer transition-colors'
+                              : 'select-text',
                         )}
                         onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
                       >
@@ -828,9 +844,19 @@ export function QuickActionPanel({
                 >
                   {headerText}
                 </span>
-                <span className="text-muted-foreground mx-1">&middot;</span>
                 <span
-                  className={cn(isPast ? 'text-destructive font-medium' : 'text-muted-foreground')}
+                  className={cn(isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1')}
+                >
+                  &middot;
+                </span>
+                <span
+                  className={cn(
+                    isDateDirty
+                      ? 'font-bold text-blue-500'
+                      : isPast
+                        ? 'text-destructive font-medium'
+                        : 'text-muted-foreground',
+                  )}
                 >
                   {relativeText}
                 </span>
@@ -848,7 +874,12 @@ export function QuickActionPanel({
           )}
           {/* Recurrence summary line (with icon) - only in SelectionActionSheet mode */}
           {isSelectionSheetMode && recurrenceText && (
-            <p className="text-muted-foreground mt-0.5 text-xs select-text">
+            <p
+              className={cn(
+                'mt-0.5 text-xs select-text',
+                isRruleDirty ? 'font-medium text-blue-500' : 'text-muted-foreground',
+              )}
+            >
               <Repeat className="mr-1 inline size-3" />
               {recurrenceText}
             </p>
@@ -859,7 +890,11 @@ export function QuickActionPanel({
             <p
               className={cn(
                 'mt-1 text-xs select-text',
-                isOneTime ? 'text-muted-foreground/60' : 'text-muted-foreground',
+                isRruleDirty
+                  ? 'font-medium text-blue-500'
+                  : isOneTime
+                    ? 'text-muted-foreground/60'
+                    : 'text-muted-foreground',
               )}
             >
               {!isOneTime && <Repeat className="mr-1 inline size-3" />}
@@ -884,6 +919,7 @@ export function QuickActionPanel({
                             : getPriorityOption(displayPriority).color,
                         )}
                       >
+                        {isPriorityDirty && <span className="mr-0.5 text-blue-500">●</span>}
                         {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
                         <ChevronDown className="size-3 opacity-50" />
                       </button>
@@ -918,6 +954,7 @@ export function QuickActionPanel({
                         : getPriorityOption(displayPriority).color,
                     )}
                   >
+                    {isPriorityDirty && <span className="mr-0.5 text-blue-500">●</span>}
                     {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
                   </span>
                 )}
@@ -928,6 +965,7 @@ export function QuickActionPanel({
                   <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
                     {displayLabels.map((label) => {
                       const colorClasses = getLabelClasses(label, labelConfig)
+                      const isNew = newLabels.has(label)
                       return (
                         <Badge
                           key={label}
@@ -935,6 +973,7 @@ export function QuickActionPanel({
                           className={cn(
                             'gap-0.5 pr-1 text-xs',
                             colorClasses && `${colorClasses} border-0`,
+                            isNew && 'animate-pulse ring-2 ring-blue-400',
                           )}
                         >
                           {label}
@@ -1046,7 +1085,12 @@ export function QuickActionPanel({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="bg-muted text-muted-foreground hover:bg-accent active:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                        className={cn(
+                          'flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors',
+                          isProjectDirty
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                            : 'bg-muted text-muted-foreground hover:bg-accent active:bg-accent',
+                        )}
                       >
                         {displayProjectName}
                         <ChevronDown className="size-3 opacity-50" />
@@ -1078,14 +1122,26 @@ export function QuickActionPanel({
                   <button
                     type="button"
                     onClick={onMoveToProject}
-                    className="bg-muted text-muted-foreground hover:bg-accent active:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                    className={cn(
+                      'flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors',
+                      isProjectDirty
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                        : 'bg-muted text-muted-foreground hover:bg-accent active:bg-accent',
+                    )}
                   >
                     {displayProjectName}
                     <ChevronDown className="size-3 opacity-50" />
                   </button>
                 ) : displayProjectName ? (
                   // Read-only badge
-                  <span className="bg-muted text-muted-foreground shrink-0 rounded px-2 py-0.5 text-xs">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded px-2 py-0.5 text-xs',
+                      isProjectDirty
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
                     {displayProjectName}
                   </span>
                 ) : null
