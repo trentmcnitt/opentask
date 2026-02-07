@@ -21,6 +21,7 @@ export { SearchBar } from './SearchBar'
 export { RecurrencePicker } from './RecurrencePicker'
 
 // Sheet/Dialog components
+export { BatchUndoDialog } from './BatchUndoDialog'
 export { ProjectPickerSheet } from './ProjectPickerSheet'
 
 // Action components

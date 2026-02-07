@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
-import { executeUndo, canUndo } from '@/core/undo'
+import { executeUndo, canUndo, countUndoable, countRedoable } from '@/core/undo'
 import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
       undone_action: result.undone_action,
       description: result.description,
       tasks_affected: result.tasks_affected,
+      undoable_count: countUndoable(user.id),
+      redoable_count: countRedoable(user.id),
     })
   } catch (err) {
     if (err instanceof AuthError) {

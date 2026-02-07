@@ -26,6 +26,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
+import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 
 export default function Home() {
   return (
@@ -276,6 +277,8 @@ function HomeContent() {
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const [createPanelOpen, setCreatePanelOpen] = useState(false)
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [batchDialogMode, setBatchDialogMode] = useState<'undo' | 'redo'>('undo')
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
 
   // Track when the CreateTaskPanel modal (in AppLayout) is open so we can disable keyboard shortcuts
@@ -773,6 +776,25 @@ function HomeContent() {
       onShortcutsDialogChange={setShowShortcutsDialog}
       onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
       bulkSheetOpenRef={bulkSheetOpenRef}
+      batchDialogOpen={batchDialogOpen}
+      batchDialogMode={batchDialogMode}
+      onBatchDialogChange={setBatchDialogOpen}
+      onOpenBatchUndo={() => {
+        setBatchDialogMode('undo')
+        setBatchDialogOpen(true)
+      }}
+      onOpenBatchRedo={() => {
+        setBatchDialogMode('redo')
+        setBatchDialogOpen(true)
+      }}
+      onBatchConfirm={() => {
+        setBatchDialogOpen(false)
+        if (batchDialogMode === 'undo') {
+          actions.handleBatchUndo()
+        } else {
+          actions.handleBatchRedo()
+        }
+      }}
     />
   )
 }
@@ -825,6 +847,12 @@ function DashboardView({
   onShortcutsDialogChange,
   onShortcutsDialogCloseAutoFocus,
   bulkSheetOpenRef,
+  batchDialogOpen,
+  batchDialogMode,
+  onBatchDialogChange,
+  onOpenBatchUndo,
+  onOpenBatchRedo,
+  onBatchConfirm,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -873,6 +901,12 @@ function DashboardView({
   onShortcutsDialogChange: (open: boolean) => void
   onShortcutsDialogCloseAutoFocus: (e: Event) => void
   bulkSheetOpenRef: React.MutableRefObject<(() => void) | null>
+  batchDialogOpen: boolean
+  batchDialogMode: 'undo' | 'redo'
+  onBatchDialogChange: (open: boolean) => void
+  onOpenBatchUndo: () => void
+  onOpenBatchRedo: () => void
+  onBatchConfirm: () => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -884,6 +918,10 @@ function DashboardView({
         isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
+        undoCount={actions.undoCount}
+        redoCount={actions.redoCount}
+        onBatchUndo={onOpenBatchUndo}
+        onBatchRedo={onOpenBatchRedo}
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}
@@ -1045,6 +1083,14 @@ function DashboardView({
         open={showShortcutsDialog}
         onOpenChange={onShortcutsDialogChange}
         onCloseAutoFocus={onShortcutsDialogCloseAutoFocus}
+      />
+
+      <BatchUndoDialog
+        open={batchDialogOpen}
+        onOpenChange={onBatchDialogChange}
+        mode={batchDialogMode}
+        count={batchDialogMode === 'undo' ? actions.undoCount : actions.redoCount}
+        onConfirm={onBatchConfirm}
       />
     </div>
   )

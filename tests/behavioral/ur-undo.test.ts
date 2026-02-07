@@ -13,6 +13,11 @@ import {
   executeRedo,
   canUndo,
   canRedo,
+  countUndoable,
+  countRedoable,
+  getLatestUndoId,
+  executeBatchUndo,
+  executeBatchRedo,
 } from '@/core/undo'
 import { nowUtc } from '@/core/recurrence'
 import bcrypt from 'bcrypt'
@@ -586,5 +591,291 @@ describe('UR-009: Undo Task Creation (soft delete)', () => {
     }
     expect(afterUndo).not.toBeUndefined()
     expect(afterUndo.deleted_at).not.toBeNull()
+  })
+})
+
+describe('UR-010: Count and Watermark Functions', () => {
+  let db: ReturnType<typeof getDb>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
+
+  test('countUndoable returns correct count', () => {
+    expect(countUndoable(1)).toBe(0)
+
+    // Create 3 logged actions
+    for (let i = 0; i < 3; i++) {
+      const taskId = createTestTask(db, { title: `Task ${i}` })
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Edit ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    expect(countUndoable(1)).toBe(3)
+
+    // Undo one
+    executeUndo(1)
+    expect(countUndoable(1)).toBe(2)
+  })
+
+  test('countRedoable returns correct count', () => {
+    expect(countRedoable(1)).toBe(0)
+
+    const taskId = createTestTask(db)
+    const before = getTask(db, taskId)
+    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+    const after = getTask(db, taskId)
+    logAction(1, 'edit', 'Edit', ['priority'], [createTaskSnapshot(before, after, ['priority'])])
+
+    // Undo it
+    executeUndo(1)
+    expect(countRedoable(1)).toBe(1)
+
+    // Redo it
+    executeRedo(1)
+    expect(countRedoable(1)).toBe(0)
+  })
+
+  test('getLatestUndoId returns correct ID', () => {
+    // No entries yet
+    expect(getLatestUndoId(1)).toBeNull()
+
+    // Create an action
+    const taskId = createTestTask(db)
+    const before = getTask(db, taskId)
+    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+    const after = getTask(db, taskId)
+    logAction(1, 'edit', 'Edit 1', ['priority'], [createTaskSnapshot(before, after, ['priority'])])
+
+    const id1 = getLatestUndoId(1)
+    expect(id1).not.toBeNull()
+    expect(typeof id1).toBe('number')
+
+    // Create another action - ID should increase
+    const before2 = getTask(db, taskId)
+    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(3, taskId)
+    const after2 = getTask(db, taskId)
+    logAction(
+      1,
+      'edit',
+      'Edit 2',
+      ['priority'],
+      [createTaskSnapshot(before2, after2, ['priority'])],
+    )
+
+    const id2 = getLatestUndoId(1)
+    expect(id2).not.toBeNull()
+    expect(id2!).toBeGreaterThan(id1!)
+  })
+})
+
+describe('UR-011: Batch Undo', () => {
+  let db: ReturnType<typeof getDb>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
+
+  test('executeBatchUndo undoes multiple entries atomically', () => {
+    // Create 5 actions
+    const taskIds: number[] = []
+    for (let i = 0; i < 5; i++) {
+      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      taskIds.push(taskId)
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Edit ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    expect(countUndoable(1)).toBe(5)
+
+    // Batch undo all
+    const result = executeBatchUndo(1, { count: 5 })
+    expect(result.count).toBe(5)
+    expect(result.remaining_undoable).toBe(0)
+    expect(result.remaining_redoable).toBe(5)
+
+    // All tasks should be back to priority 0
+    for (const taskId of taskIds) {
+      expect(getTask(db, taskId).priority).toBe(0)
+    }
+  })
+
+  test('executeBatchUndo respects sessionStartId boundary', () => {
+    // Create 2 "pre-session" actions
+    for (let i = 0; i < 2; i++) {
+      const taskId = createTestTask(db, { title: `Pre ${i}`, priority: 0 })
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(1, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Pre ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    // Record the session watermark
+    const sessionStartId = getLatestUndoId(1)!
+
+    // Create 3 "in-session" actions
+    const sessionTaskIds: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const taskId = createTestTask(db, { title: `Session ${i}`, priority: 0 })
+      sessionTaskIds.push(taskId)
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Session ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    expect(countUndoable(1)).toBe(5) // 2 pre + 3 session
+
+    // Batch undo with session boundary — should only undo 3 session actions
+    const result = executeBatchUndo(1, { sessionStartId })
+    expect(result.count).toBe(3)
+    expect(result.remaining_undoable).toBe(2) // pre-session actions remain
+
+    // Session tasks should be restored
+    for (const taskId of sessionTaskIds) {
+      expect(getTask(db, taskId).priority).toBe(0)
+    }
+  })
+
+  test('executeBatchUndo with throughId undoes down to specific entry', () => {
+    const taskIds: number[] = []
+    for (let i = 0; i < 5; i++) {
+      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      taskIds.push(taskId)
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Edit ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    // Get the ID of the 3rd entry (middle one)
+    const entries = db
+      .prepare('SELECT id FROM undo_log WHERE user_id = ? ORDER BY id ASC')
+      .all(1) as { id: number }[]
+    const thirdEntryId = entries[2].id
+
+    // Undo through the 3rd entry — should undo entries 3, 4, 5 (the 3rd and above)
+    const result = executeBatchUndo(1, { throughId: thirdEntryId })
+    expect(result.count).toBe(3)
+    expect(result.remaining_undoable).toBe(2)
+  })
+})
+
+describe('UR-012: Batch Redo', () => {
+  let db: ReturnType<typeof getDb>
+
+  beforeEach(async () => {
+    db = await setupTestDb()
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
+
+  test('executeBatchRedo redoes multiple entries atomically', () => {
+    // Create 3 actions and undo them all
+    const taskIds: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      taskIds.push(taskId)
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Edit ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    // Undo all 3
+    executeBatchUndo(1, { count: 3 })
+    expect(countRedoable(1)).toBe(3)
+
+    // Batch redo all
+    const result = executeBatchRedo(1, { count: 3 })
+    expect(result.count).toBe(3)
+    expect(result.remaining_undoable).toBe(3)
+    expect(result.remaining_redoable).toBe(0)
+
+    // All tasks should have their new priorities
+    for (let i = 0; i < 3; i++) {
+      expect(getTask(db, taskIds[i]).priority).toBe(i + 1)
+    }
+  })
+
+  test('executeBatchRedo with throughId redoes up to specific entry', () => {
+    // Create 5 actions and undo them all
+    for (let i = 0; i < 5; i++) {
+      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      const before = getTask(db, taskId)
+      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
+      const after = getTask(db, taskId)
+      logAction(
+        1,
+        'edit',
+        `Edit ${i}`,
+        ['priority'],
+        [createTaskSnapshot(before, after, ['priority'])],
+      )
+    }
+
+    executeBatchUndo(1, { count: 5 })
+    expect(countRedoable(1)).toBe(5)
+
+    // Get the ID of the 3rd entry
+    const entries = db
+      .prepare('SELECT id FROM undo_log WHERE user_id = ? ORDER BY id ASC')
+      .all(1) as { id: number }[]
+    const thirdEntryId = entries[2].id
+
+    // Redo through the 3rd entry — should redo entries 1, 2, 3
+    const result = executeBatchRedo(1, { throughId: thirdEntryId })
+    expect(result.count).toBe(3)
+    expect(result.remaining_redoable).toBe(2)
   })
 })

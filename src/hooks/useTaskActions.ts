@@ -2,7 +2,9 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
+  useState,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -26,7 +28,13 @@ import { saveTaskChanges } from '@/lib/save-task-changes'
  * The config is stored in a ref so callbacks don't need it in their dependency
  * arrays. This avoids eslint-disable for react-hooks/exhaustive-deps and keeps
  * callbacks stable.
+ *
+ * Session watermark: On mount, fetches the current top undo_log ID and stores
+ * it in sessionStorage. Undo is blocked from going past this boundary. Counts
+ * are tracked and exposed for Header badges.
  */
+
+const SESSION_WATERMARK_KEY = 'opentask_session_undo_id'
 
 interface UseTaskActionsListConfig {
   mode: 'list'
@@ -47,11 +55,63 @@ interface UseTaskActionsSingleConfig {
 
 type UseTaskActionsConfig = UseTaskActionsListConfig | UseTaskActionsSingleConfig
 
+/** Update both counts from an API response that includes undoable_count/redoable_count */
+function extractCounts(data: { data?: { undoable_count?: number; redoable_count?: number } }): {
+  undoable: number | null
+  redoable: number | null
+} {
+  return {
+    undoable: data.data?.undoable_count ?? null,
+    redoable: data.data?.redoable_count ?? null,
+  }
+}
+
 export function useTaskActions(config: UseTaskActionsConfig) {
   // Store config in a ref so callbacks always see the latest values without
   // needing config fields in their dependency arrays.
   const configRef = useRef(config)
   configRef.current = config
+
+  // --- Session watermark and undo/redo counts ---
+  const [undoCount, setUndoCount] = useState(0)
+  const [redoCount, setRedoCount] = useState(0)
+  const sessionStartIdRef = useRef<number | null>(null)
+
+  // Initialize session watermark on mount
+  useEffect(() => {
+    // Check sessionStorage first (survives soft navigations)
+    const stored = sessionStorage.getItem(SESSION_WATERMARK_KEY)
+    if (stored !== null) {
+      sessionStartIdRef.current = parseInt(stored, 10)
+    }
+
+    // Fetch current status from server
+    fetch('/api/undo/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.data) return
+        const { latest_id, undoable_count, redoable_count } = data.data
+        setUndoCount(undoable_count ?? 0)
+        setRedoCount(redoable_count ?? 0)
+
+        // Only set watermark if not already stored (first load of this session)
+        if (stored === null && latest_id !== null) {
+          sessionStartIdRef.current = latest_id
+          sessionStorage.setItem(SESSION_WATERMARK_KEY, String(latest_id))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  /** Update counts from an API response */
+  const updateCounts = useCallback(
+    (data: { data?: { undoable_count?: number; redoable_count?: number } }) => {
+      const counts = extractCounts(data)
+      if (counts.undoable !== null) setUndoCount(counts.undoable)
+      if (counts.redoable !== null) setRedoCount(counts.redoable)
+    },
+    [],
+  )
 
   // Undo/redo refs break the circular dependency between the two handlers
   const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
@@ -65,15 +125,18 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         return
       }
       const data = await res.json()
+      updateCounts(data)
       configRef.current.onRefresh()
+      const remaining = data.data?.undoable_count
+      const countSuffix = typeof remaining === 'number' ? ` · ${remaining} left` : ''
       showToast({
-        message: `Undid: ${data.data.description}`,
+        message: `Undid: ${data.data.description}${countSuffix}`,
         action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
       })
     } catch {
       showToast({ message: 'Undo failed' })
     }
-  }, [])
+  }, [updateCounts])
 
   const handleRedo = useCallback(async () => {
     try {
@@ -83,18 +146,77 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         return
       }
       const data = await res.json()
+      updateCounts(data)
       configRef.current.onRefresh()
+      const remaining = data.data?.redoable_count
+      const countSuffix = typeof remaining === 'number' ? ` · ${remaining} left` : ''
       showToast({
-        message: `Redid: ${data.data.description}`,
+        message: `Redid: ${data.data.description}${countSuffix}`,
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
       showToast({ message: 'Redo failed' })
     }
-  }, [])
+  }, [updateCounts])
 
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
+
+  // --- Batch undo/redo handlers ---
+
+  const handleBatchUndo = useCallback(async () => {
+    const sessionStartId = sessionStartIdRef.current
+    try {
+      const body: Record<string, number> = {}
+      if (sessionStartId !== null) {
+        body.session_start_id = sessionStartId
+      } else {
+        // No session watermark — undo everything
+        body.count = 9999
+      }
+      const res = await fetch('/api/undo/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to undo' })
+        return
+      }
+      const data = await res.json()
+      updateCounts(data)
+      configRef.current.onRefresh()
+      showToast({
+        message: `Undid ${data.data.count} actions`,
+        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Batch undo failed' })
+    }
+  }, [updateCounts])
+
+  const handleBatchRedo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/redo/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: 9999 }),
+      })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to redo' })
+        return
+      }
+      const data = await res.json()
+      updateCounts(data)
+      configRef.current.onRefresh()
+      showToast({
+        message: `Redid ${data.data.count} actions`,
+        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Batch redo failed' })
+    }
+  }, [updateCounts])
 
   // --- List-mode handlers (dashboard, project page) ---
 
@@ -116,6 +238,9 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       if (data.data?.task?.rrule) {
         cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
       }
+      // Bump undo count since a new action was logged
+      setUndoCount((c) => c + 1)
+      setRedoCount(0)
       showToast({
         message: task.rrule ? 'Task advanced' : 'Task completed',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
@@ -133,6 +258,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       const res = await fetch(`/api/tasks/${cfg.taskId}/done`, { method: 'POST' })
       if (!res.ok) throw new Error('Failed to mark done')
       const data = await res.json()
+      setUndoCount((c) => c + 1)
+      setRedoCount(0)
       if (data.data.was_recurring) {
         cfg.setTask(data.data.task as Task)
       } else {
@@ -156,6 +283,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       })
       if (!res.ok) throw new Error('Failed to snooze')
       cfg.onRefresh()
+      setUndoCount((c) => c + 1)
+      setRedoCount(0)
       showToast({
         message: 'Task snoozed',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
@@ -181,6 +310,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       try {
         const { description } = await saveTaskChanges(taskId, changes)
         cfg.onRefresh()
+        setUndoCount((c) => c + 1)
+        setRedoCount(0)
         showToast({
           message: description || 'Changes saved',
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
@@ -199,6 +330,8 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     try {
       const { task: updatedTask, description } = await saveTaskChanges(cfg.taskId, changes)
       cfg.setTask(updatedTask)
+      setUndoCount((c) => c + 1)
+      setRedoCount(0)
       showToast({
         message: description || 'Changes saved',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
@@ -214,9 +347,13 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       handleRedo,
       handleUndoRef,
       handleRedoRef,
+      handleBatchUndo,
+      handleBatchRedo,
       handleDone: handleDoneList,
       handleSnooze,
       handleSaveAllChanges: handleSaveAllChangesList,
+      undoCount,
+      redoCount,
     }
   }
 
@@ -225,8 +362,12 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     handleRedo,
     handleUndoRef,
     handleRedoRef,
+    handleBatchUndo,
+    handleBatchRedo,
     handleDone: handleDoneSingle,
     handleSaveAllChanges: handleSaveAllChangesSingle,
+    undoCount,
+    redoCount,
   }
 }
 
@@ -236,15 +377,23 @@ export type ListTaskActionsReturn = {
   handleRedo: () => Promise<void>
   handleUndoRef: MutableRefObject<(() => Promise<void>) | null>
   handleRedoRef: MutableRefObject<(() => Promise<void>) | null>
+  handleBatchUndo: () => Promise<void>
+  handleBatchRedo: () => Promise<void>
   handleDone: (taskId: number) => Promise<void>
   handleSnooze: (taskId: number, until: string) => Promise<void>
   handleSaveAllChanges: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
+  undoCount: number
+  redoCount: number
 }
 export type SingleTaskActionsReturn = {
   handleUndo: () => Promise<void>
   handleRedo: () => Promise<void>
   handleUndoRef: MutableRefObject<(() => Promise<void>) | null>
   handleRedoRef: MutableRefObject<(() => Promise<void>) | null>
+  handleBatchUndo: () => Promise<void>
+  handleBatchRedo: () => Promise<void>
   handleDone: () => Promise<void>
   handleSaveAllChanges: (changes: QuickActionPanelChanges) => Promise<void>
+  undoCount: number
+  redoCount: number
 }

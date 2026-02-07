@@ -29,6 +29,10 @@ interface HeaderProps {
   isSelectionMode?: boolean
   onUndo: () => void
   onRedo: () => void
+  undoCount?: number
+  redoCount?: number
+  onBatchUndo?: () => void
+  onBatchRedo?: () => void
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   onSnoozeOverdue?: (until?: string) => void
@@ -43,6 +47,10 @@ export function Header({
   isSelectionMode = false,
   onUndo,
   onRedo,
+  undoCount = 0,
+  redoCount = 0,
+  onBatchUndo,
+  onBatchRedo,
   onSearch,
   onSearchClear,
   onSnoozeOverdue,
@@ -54,9 +62,17 @@ export function Header({
   const snoozeFiredRef = useRef(false)
   const { defaultSnoozeOption } = useSnoozePreferences()
 
+  // Long-press refs for undo/redo buttons
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const undoFiredRef = useRef(false)
+  const redoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const redoFiredRef = useRef(false)
+
   useEffect(() => {
     return () => {
       if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+      if (redoTimerRef.current) clearTimeout(redoTimerRef.current)
     }
   }, [])
 
@@ -86,6 +102,62 @@ export function Header({
     }
     onSnoozeOverdue?.()
   }, [onSnoozeOverdue])
+
+  // Long-press handlers for undo button (mobile)
+  const handleUndoPointerDown = useCallback(() => {
+    undoFiredRef.current = false
+    undoTimerRef.current = setTimeout(() => {
+      undoFiredRef.current = true
+      onBatchUndo?.()
+    }, 400)
+  }, [onBatchUndo])
+
+  const handleUndoPointerUp = useCallback(() => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+    if (!undoFiredRef.current) {
+      undoFiredRef.current = true
+      onUndo()
+    }
+  }, [onUndo])
+
+  const handleUndoClick = useCallback(() => {
+    if (undoFiredRef.current) {
+      undoFiredRef.current = false
+      return
+    }
+    onUndo()
+  }, [onUndo])
+
+  // Long-press handlers for redo button (mobile)
+  const handleRedoPointerDown = useCallback(() => {
+    redoFiredRef.current = false
+    redoTimerRef.current = setTimeout(() => {
+      redoFiredRef.current = true
+      onBatchRedo?.()
+    }, 400)
+  }, [onBatchRedo])
+
+  const handleRedoPointerUp = useCallback(() => {
+    if (redoTimerRef.current) {
+      clearTimeout(redoTimerRef.current)
+      redoTimerRef.current = null
+    }
+    if (!redoFiredRef.current) {
+      redoFiredRef.current = true
+      onRedo()
+    }
+  }, [onRedo])
+
+  const handleRedoClick = useCallback(() => {
+    if (redoFiredRef.current) {
+      redoFiredRef.current = false
+      return
+    }
+    onRedo()
+  }, [onRedo])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -215,23 +287,67 @@ export function Header({
               </SnoozeMenu>
             )}
 
-            {/* Mobile-only undo/redo buttons */}
+            {/* Mobile-only undo/redo buttons with count badges.
+                Single tap: undo/redo one action.
+                Long-press (400ms): triggers batch undo/redo. */}
             <div className="flex md:hidden">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={onUndo} aria-label="Undo">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleUndoClick}
+                    onPointerDown={handleUndoPointerDown}
+                    onPointerUp={handleUndoPointerUp}
+                    onPointerLeave={() => {
+                      if (undoTimerRef.current) {
+                        clearTimeout(undoTimerRef.current)
+                        undoTimerRef.current = null
+                      }
+                    }}
+                    aria-label={
+                      undoCount > 0 ? `Undo (${undoCount} available, hold for all)` : 'Undo'
+                    }
+                    className="relative"
+                  >
                     <Undo2 className="size-5" />
+                    {undoCount > 0 && (
+                      <span className="bg-muted-foreground/80 absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-bold text-white">
+                        {undoCount > 99 ? '99+' : undoCount}
+                      </span>
+                    )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Undo</TooltipContent>
+                <TooltipContent>Undo (hold for all)</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={onRedo} aria-label="Redo">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRedoClick}
+                    onPointerDown={handleRedoPointerDown}
+                    onPointerUp={handleRedoPointerUp}
+                    onPointerLeave={() => {
+                      if (redoTimerRef.current) {
+                        clearTimeout(redoTimerRef.current)
+                        redoTimerRef.current = null
+                      }
+                    }}
+                    aria-label={
+                      redoCount > 0 ? `Redo (${redoCount} available, hold for all)` : 'Redo'
+                    }
+                    className="relative"
+                  >
                     <Redo2 className="size-5" />
+                    {redoCount > 0 && (
+                      <span className="bg-muted-foreground/80 absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-bold text-white">
+                        {redoCount > 99 ? '99+' : redoCount}
+                      </span>
+                    )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Redo</TooltipContent>
+                <TooltipContent>Redo (hold for all)</TooltipContent>
               </Tooltip>
             </div>
 
@@ -247,13 +363,33 @@ export function Header({
                 <DropdownMenuItem onClick={onUndo} className="hidden md:flex">
                   <Undo2 className="size-4" />
                   Undo
+                  {undoCount > 0 && (
+                    <span className="text-muted-foreground ml-1 text-xs">({undoCount})</span>
+                  )}
                   <span className="text-muted-foreground ml-auto text-xs">⌘Z</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={onRedo} className="hidden md:flex">
                   <Redo2 className="size-4" />
                   Redo
+                  {redoCount > 0 && (
+                    <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
+                  )}
                   <span className="text-muted-foreground ml-auto text-xs">⌘⇧Z</span>
                 </DropdownMenuItem>
+                {onBatchUndo && undoCount > 1 && (
+                  <DropdownMenuItem onClick={onBatchUndo} className="hidden md:flex">
+                    <Undo2 className="size-4" />
+                    Undo Session...
+                    <span className="text-muted-foreground ml-1 text-xs">({undoCount})</span>
+                  </DropdownMenuItem>
+                )}
+                {onBatchRedo && redoCount > 1 && (
+                  <DropdownMenuItem onClick={onBatchRedo} className="hidden md:flex">
+                    <Redo2 className="size-4" />
+                    Redo All...
+                    <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
+                  </DropdownMenuItem>
+                )}
                 {onShowKeyboardShortcuts && (
                   <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
                     <Keyboard className="size-4" />

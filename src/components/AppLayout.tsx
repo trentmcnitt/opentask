@@ -56,6 +56,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('open-add-form', handler)
   }, [])
 
+  // Notify dashboard when CreateTaskPanel opens/closes so it can disable keyboard shortcuts
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open: showAddForm } }))
+  }, [showAddForm])
+
   const handleReorderProjects = useCallback(
     async (projectIds: number[]) => {
       // Optimistic update
@@ -101,9 +106,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       <BottomTabs onAddClick={() => setShowAddForm(true)} />
 
-      {/* Notify dashboard when CreateTaskPanel opens/closes so it can disable keyboard shortcuts */}
-      <CreatePanelStateEmitter open={showAddForm} />
-
       <CreateTaskPanel
         open={showAddForm}
         projects={projects}
@@ -120,12 +122,4 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       />
     </div>
   )
-}
-
-/** Dispatches a custom event when the CreateTaskPanel opens/closes so the dashboard can disable keyboard shortcuts. */
-function CreatePanelStateEmitter({ open }: { open: boolean }) {
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open } }))
-  }, [open])
-  return null
 }

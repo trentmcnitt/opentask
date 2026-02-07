@@ -832,7 +832,7 @@ export function QuickActionPanel({
                         }
                         if (e.key === 'Escape') setEditingTitle(false)
                       }}
-                      className={`-mx-2 max-h-48 min-h-0 overflow-y-auto px-2 py-1 ${getDetailTitleClasses(titleDraft).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
+                      className={`-mx-2 max-h-48 min-h-0 resize-none overflow-y-auto px-2 py-1 ${getDetailTitleClasses(titleDraft).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
                       autoFocus
                     />
                   ) : (

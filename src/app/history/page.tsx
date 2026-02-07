@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Undo2, Redo2 } from 'lucide-react'
 import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { BatchUndoDialog } from '@/components/BatchUndoDialog'
+import { showToast } from '@/lib/toast'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -49,6 +52,21 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
 
+  const fetchActivity = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/undo/history?limit=50')
+      if (res.ok) {
+        const data = await res.json()
+        setActivities(data.data?.history || [])
+      }
+    } catch {
+      // Handled silently
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
@@ -66,11 +84,8 @@ export default function HistoryPage() {
             setCompletions(data.data?.completions || [])
           }
         } else {
-          const res = await fetch('/api/undo/history?limit=50')
-          if (res.ok) {
-            const data = await res.json()
-            setActivities(data.data?.history || [])
-          }
+          await fetchActivity()
+          return // fetchActivity already handles setLoading
         }
       } catch {
         // Handled silently
@@ -80,7 +95,7 @@ export default function HistoryPage() {
     }
 
     fetchData()
-  }, [status, router, tab, date])
+  }, [status, router, tab, date, fetchActivity])
 
   if (status === 'loading') {
     return (
@@ -134,7 +149,12 @@ export default function HistoryPage() {
         )}
 
         {tab === 'activity' && (
-          <ActivityTab loading={loading} activities={activities} timezone={timezone} />
+          <ActivityTab
+            loading={loading}
+            activities={activities}
+            timezone={timezone}
+            onRefresh={fetchActivity}
+          />
         )}
       </main>
     </div>
@@ -429,15 +449,83 @@ function formatEditDetails(
   return parts.slice(0, 3).join(', ') // Limit to 3 details
 }
 
+/**
+ * Checks whether there's a significant time gap (>15s) between two entries.
+ * Used to insert visual dividers that group rapid actions together.
+ */
+function hasTimeGap(a: UndoEntry, b: UndoEntry): boolean {
+  const aTime = new Date(a.created_at).getTime()
+  const bTime = new Date(b.created_at).getTime()
+  return Math.abs(aTime - bTime) > 15_000
+}
+
 function ActivityTab({
   loading,
   activities,
   timezone,
+  onRefresh,
 }: {
   loading: boolean
   activities: UndoEntry[]
   timezone: string
+  onRefresh: () => void
 }) {
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [batchMode, setBatchMode] = useState<'undo' | 'redo'>('undo')
+  const [batchCount, setBatchCount] = useState(0)
+  const [batchThroughId, setBatchThroughId] = useState<number | null>(null)
+
+  const handleUndoToHere = useCallback(
+    (entryId: number) => {
+      // Count non-undone entries from the top down to (and including) this entry
+      const count = activities.filter((a) => !a.undone && a.id >= entryId).length
+      if (count === 0) return
+      setBatchMode('undo')
+      setBatchCount(count)
+      setBatchThroughId(entryId)
+      setBatchDialogOpen(true)
+    },
+    [activities],
+  )
+
+  const handleRedoToHere = useCallback(
+    (entryId: number) => {
+      // Count undone entries from the bottom up to (and including) this entry
+      const count = activities.filter((a) => a.undone && a.id <= entryId).length
+      if (count === 0) return
+      setBatchMode('redo')
+      setBatchCount(count)
+      setBatchThroughId(entryId)
+      setBatchDialogOpen(true)
+    },
+    [activities],
+  )
+
+  const handleBatchConfirm = useCallback(async () => {
+    if (batchThroughId === null) return
+    setBatchDialogOpen(false)
+
+    const endpoint = batchMode === 'undo' ? '/api/undo/batch' : '/api/redo/batch'
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ through_id: batchThroughId }),
+      })
+      if (!res.ok) {
+        showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed` })
+        return
+      }
+      const data = await res.json()
+      showToast({
+        message: `${batchMode === 'undo' ? 'Undid' : 'Redid'} ${data.data.count} actions`,
+      })
+      onRefresh()
+    } catch {
+      showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed` })
+    }
+  }, [batchMode, batchThroughId, onRefresh])
+
   return (
     <div>
       {loading ? (
@@ -445,12 +533,33 @@ function ActivityTab({
       ) : activities.length === 0 ? (
         <p className="py-8 text-center text-zinc-400">No activity recorded.</p>
       ) : (
-        <div className="space-y-2">
-          {activities.map((a) => (
-            <ExpandableActivityItem key={a.id} activity={a} timezone={timezone} />
+        <div>
+          {activities.map((a, i) => (
+            <div key={a.id}>
+              {/* Time-gap divider: subtle separator between groups of rapid actions */}
+              {i > 0 && hasTimeGap(activities[i - 1], a) && (
+                <div className="my-3 border-t border-dashed border-zinc-200 dark:border-zinc-800" />
+              )}
+              <div className={i > 0 && !hasTimeGap(activities[i - 1], a) ? 'mt-2' : ''}>
+                <ExpandableActivityItem
+                  activity={a}
+                  timezone={timezone}
+                  onUndoToHere={!a.undone ? () => handleUndoToHere(a.id) : undefined}
+                  onRedoToHere={a.undone ? () => handleRedoToHere(a.id) : undefined}
+                />
+              </div>
+            </div>
           ))}
         </div>
       )}
+
+      <BatchUndoDialog
+        open={batchDialogOpen}
+        onOpenChange={setBatchDialogOpen}
+        mode={batchMode}
+        count={batchCount}
+        onConfirm={handleBatchConfirm}
+      />
     </div>
   )
 }
@@ -459,54 +568,91 @@ function ActivityTab({
  * Expandable activity item with chevron to show/hide full details.
  * Collapsed: shows truncated description with chevron
  * Expanded: shows full description, field badges, and before/after values
+ * Includes "Undo to here" or "Redo to here" action button.
  */
-function ExpandableActivityItem({ activity, timezone }: { activity: UndoEntry; timezone: string }) {
+function ExpandableActivityItem({
+  activity,
+  timezone,
+  onUndoToHere,
+  onRedoToHere,
+}: {
+  activity: UndoEntry
+  timezone: string
+  onUndoToHere?: () => void
+  onRedoToHere?: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const hasDetails = activity.snapshot.length > 0 || activity.fields_changed.length > 0
 
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
       {/* Header - always visible, clickable if has details */}
-      <button
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        className={cn(
-          'flex w-full items-center gap-3 p-3 text-left',
-          hasDetails && 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900',
-        )}
-        disabled={!hasDetails}
-        type="button"
-      >
-        {hasDetails ? (
-          expanded ? (
-            <ChevronDown className="size-4 flex-shrink-0 text-zinc-400" />
+      <div className="flex items-center gap-1 pr-2">
+        <button
+          onClick={() => hasDetails && setExpanded(!expanded)}
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-3 p-3 text-left',
+            hasDetails && 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900',
+          )}
+          disabled={!hasDetails}
+          type="button"
+        >
+          {hasDetails ? (
+            expanded ? (
+              <ChevronDown className="size-4 flex-shrink-0 text-zinc-400" />
+            ) : (
+              <ChevronRight className="size-4 flex-shrink-0 text-zinc-400" />
+            )
           ) : (
-            <ChevronRight className="size-4 flex-shrink-0 text-zinc-400" />
-          )
-        ) : (
-          <span className="size-4 flex-shrink-0" />
+            <span className="size-4 flex-shrink-0" />
+          )}
+
+          <span className={activity.undone ? 'text-zinc-400' : 'text-blue-500'}>
+            {activity.undone ? '○' : '●'}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <p className={cn('text-sm font-medium', !expanded && 'truncate')}>
+              {formatActivityDescription(activity, timezone)}
+            </p>
+            <p className="text-xs text-zinc-400">
+              {new Date(activity.created_at).toLocaleString('en-US', {
+                timeZone: timezone,
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              })}
+              {activity.undone && ' (undone)'}
+            </p>
+          </div>
+        </button>
+
+        {/* Undo/Redo to here button */}
+        {onUndoToHere && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onUndoToHere}
+            className="text-muted-foreground hover:text-foreground flex-shrink-0 gap-1 text-xs"
+          >
+            <Undo2 className="size-3" />
+            Undo to here
+          </Button>
         )}
-
-        <span className={activity.undone ? 'text-zinc-400' : 'text-blue-500'}>
-          {activity.undone ? '○' : '●'}
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <p className={cn('text-sm font-medium', !expanded && 'truncate')}>
-            {formatActivityDescription(activity, timezone)}
-          </p>
-          <p className="text-xs text-zinc-400">
-            {new Date(activity.created_at).toLocaleString('en-US', {
-              timeZone: timezone,
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-            })}
-            {activity.undone && ' (undone)'}
-          </p>
-        </div>
-      </button>
+        {onRedoToHere && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRedoToHere}
+            className="text-muted-foreground hover:text-foreground flex-shrink-0 gap-1 text-xs"
+          >
+            <Redo2 className="size-3" />
+            Redo to here
+          </Button>
+        )}
+      </div>
 
       {/* Expanded details */}
       {expanded && hasDetails && (
