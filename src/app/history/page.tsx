@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, Undo2, Redo2 } from 'lucide-react'
-import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
+import {
+  formatDurationDelta,
+  formatTimeInTimezone,
+  getTimezoneDayBoundaries,
+} from '@/lib/format-date'
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -13,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { showToast } from '@/lib/toast'
+import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -49,6 +54,21 @@ export default function HistoryPage() {
   const [tab, setTab] = useState<TabId>('completions')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
   const [activities, setActivities] = useState<UndoEntry[]>([])
+
+  // Read tab from URL on mount (avoids useSearchParams which requires Suspense boundary)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('tab')
+    if (t === 'activity' || t === 'completions') setTab(t)
+  }, [])
+
+  const handleTabChange = useCallback((newTab: TabId) => {
+    setTab(newTab)
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', newTab)
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+  const [activityFetchedAt, setActivityFetchedAt] = useState(0)
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
 
@@ -59,6 +79,7 @@ export default function HistoryPage() {
       if (res.ok) {
         const data = await res.json()
         setActivities(data.data?.history || [])
+        setActivityFetchedAt(Date.now())
       }
     } catch {
       // Handled silently
@@ -117,7 +138,7 @@ export default function HistoryPage() {
         {/* Tab bar */}
         <div className="mb-6 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
           <button
-            onClick={() => setTab('completions')}
+            onClick={() => handleTabChange('completions')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'completions'
                 ? 'bg-white shadow-sm dark:bg-zinc-800'
@@ -127,7 +148,7 @@ export default function HistoryPage() {
             Completions
           </button>
           <button
-            onClick={() => setTab('activity')}
+            onClick={() => handleTabChange('activity')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'activity'
                 ? 'bg-white shadow-sm dark:bg-zinc-800'
@@ -154,6 +175,7 @@ export default function HistoryPage() {
             activities={activities}
             timezone={timezone}
             onRefresh={fetchActivity}
+            now={activityFetchedAt}
           />
         )}
       </main>
@@ -450,13 +472,111 @@ function formatEditDetails(
 }
 
 /**
- * Checks whether there's a significant time gap (>15s) between two entries.
- * Used to insert visual dividers that group rapid actions together.
+ * Determines whether to show a separator pill between two adjacent entries.
+ * Threshold adapts based on the age of the older entry (entries are newest-first):
+ * - Last 24 hours: separator if gap > 5 minutes (fine granularity when it matters)
+ * - 1–7 days ago: separator if gap > 2 hours (collapse rapid bursts)
+ * - Beyond 1 week: separator if gap > 24 hours (day-level only)
  */
-function hasTimeGap(a: UndoEntry, b: UndoEntry): boolean {
-  const aTime = new Date(a.created_at).getTime()
-  const bTime = new Date(b.created_at).getTime()
-  return Math.abs(aTime - bTime) > 15_000
+function shouldShowSeparator(prev: UndoEntry, current: UndoEntry, now: number): boolean {
+  const prevTime = new Date(prev.created_at).getTime()
+  const currentTime = new Date(current.created_at).getTime()
+  const currentAge = now - currentTime
+  const gap = prevTime - currentTime // positive: prev is newer (list is newest-first)
+
+  const ONE_HOUR = 3_600_000
+  const ONE_DAY = 86_400_000
+
+  let threshold: number
+  if (currentAge < ONE_HOUR) {
+    threshold = 3 * 60_000 // 3 minutes
+  } else if (currentAge < 2 * ONE_HOUR) {
+    threshold = 15 * 60_000 // 15 minutes
+  } else if (currentAge < ONE_DAY) {
+    threshold = 30 * 60_000 // 30 minutes
+  } else if (currentAge < 3 * ONE_DAY) {
+    threshold = 3 * ONE_HOUR // 3 hours
+  } else if (currentAge < 7 * ONE_DAY) {
+    threshold = 6 * ONE_HOUR // 6 hours
+  } else {
+    threshold = ONE_DAY // 24 hours
+  }
+
+  return gap > threshold
+}
+
+/**
+ * Format a label for the separator pill above an activity entry.
+ * Uses precise timezone-aware day boundaries for "Yesterday" detection.
+ *
+ * Label tiers (most recent → oldest):
+ * - < 1h:     "3:04 PM (54m ago)"
+ * - 1–24h:    "12:48 PM (3h ago)"
+ * - Yesterday: "Yesterday 12:33 PM"
+ * - 2–4 days: "Wednesday 3:15 PM"   (weekday + time)
+ * - 5–7 days: "Feb 3 3:15 PM"       (date + time)
+ * - > 7 days: "Feb 3"               (date only)
+ */
+function formatTimeAgoLabel(entry: UndoEntry, now: number, timezone: string): string {
+  const entryTime = new Date(entry.created_at).getTime()
+  const entryDate = new Date(entry.created_at)
+  const age = now - entryTime
+
+  const ONE_HOUR = 3_600_000
+  const ONE_DAY = 86_400_000
+
+  const formatTime = () =>
+    entryDate.toLocaleTimeString('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+
+  if (age < ONE_HOUR) {
+    const minutes = Math.max(1, Math.floor(age / 60_000))
+    return `${formatTime()} (${minutes}m ago)`
+  }
+
+  if (age < ONE_DAY) {
+    const hours = Math.floor(age / ONE_HOUR)
+    return `${formatTime()} (${hours}h ago)`
+  }
+
+  // Use precise day boundaries to detect "Yesterday" vs weekday
+  const { todayStart } = getTimezoneDayBoundaries(timezone)
+  const yesterdayStart = new Date(todayStart.getTime() - ONE_DAY)
+
+  if (entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()) {
+    return `Yesterday ${formatTime()}`
+  }
+
+  // 2–4 days ago: weekday + time
+  const fourDaysAgo = new Date(todayStart.getTime() - 4 * ONE_DAY)
+  if (entryTime >= fourDaysAgo.getTime()) {
+    const weekday = entryDate.toLocaleDateString('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+    })
+    return `${weekday} ${formatTime()}`
+  }
+
+  // 5–7 days ago: date + time
+  if (age < 7 * ONE_DAY) {
+    const date = entryDate.toLocaleDateString('en-US', {
+      timeZone: timezone,
+      month: 'short',
+      day: 'numeric',
+    })
+    return `${date} ${formatTime()}`
+  }
+
+  // > 7 days: date only
+  return entryDate.toLocaleDateString('en-US', {
+    timeZone: timezone,
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 function ActivityTab({
@@ -464,16 +584,66 @@ function ActivityTab({
   activities,
   timezone,
   onRefresh,
+  now,
 }: {
   loading: boolean
   activities: UndoEntry[]
   timezone: string
   onRefresh: () => void
+  /** Timestamp captured when activities were fetched — used for time-ago separator labels. */
+  now: number
 }) {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [batchMode, setBatchMode] = useState<'undo' | 'redo'>('undo')
   const [batchCount, setBatchCount] = useState(0)
   const [batchThroughId, setBatchThroughId] = useState<number | null>(null)
+
+  // --- Cmd+Z / Cmd+Shift+Z keyboard shortcuts for single undo/redo ---
+  const handleUndoRef = useRef<(() => Promise<void>) | null>(null)
+  const handleRedoRef = useRef<(() => Promise<void>) | null>(null)
+
+  const handleUndo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/undo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to undo' })
+        return
+      }
+      const data = await res.json()
+      onRefresh()
+      showToast({
+        message: `Undid: ${data.data.description}`,
+        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Undo failed' })
+    }
+  }, [onRefresh])
+
+  const handleRedo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/redo', { method: 'POST' })
+      if (!res.ok) {
+        showToast({ message: 'Nothing to redo' })
+        return
+      }
+      const data = await res.json()
+      onRefresh()
+      showToast({
+        message: `Redid: ${data.data.description}`,
+        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+      })
+    } catch {
+      showToast({ message: 'Redo failed' })
+    }
+  }, [onRefresh])
+
+  useEffect(() => {
+    handleUndoRef.current = handleUndo
+    handleRedoRef.current = handleRedo
+  }, [handleUndo, handleRedo])
+
+  useUndoRedoShortcuts(handleUndoRef, handleRedoRef)
 
   const handleUndoToHere = useCallback(
     (entryId: number) => {
@@ -534,22 +704,31 @@ function ActivityTab({
         <p className="py-8 text-center text-zinc-400">No activity recorded.</p>
       ) : (
         <div>
-          {activities.map((a, i) => (
-            <div key={a.id}>
-              {/* Time-gap divider: subtle separator between groups of rapid actions */}
-              {i > 0 && hasTimeGap(activities[i - 1], a) && (
-                <div className="my-3 border-t border-dashed border-zinc-200 dark:border-zinc-800" />
-              )}
-              <div className={i > 0 && !hasTimeGap(activities[i - 1], a) ? 'mt-2' : ''}>
-                <ExpandableActivityItem
-                  activity={a}
-                  timezone={timezone}
-                  onUndoToHere={!a.undone ? () => handleUndoToHere(a.id) : undefined}
-                  onRedoToHere={a.undone ? () => handleRedoToHere(a.id) : undefined}
-                />
+          {activities.map((a, i) => {
+            const showSep = i > 0 && shouldShowSeparator(activities[i - 1], a, now)
+            return (
+              <div key={a.id}>
+                {/* Time-ago pill: shows how long ago the entries below occurred */}
+                {showSep && (
+                  <div className="flex items-end gap-2 pt-1.5 pb-4">
+                    <div className="h-1.5 flex-1 rounded-bl-md border-b border-l border-zinc-200/60 dark:border-zinc-700/60" />
+                    <span className="translate-y-[5px] text-[11px] leading-none text-zinc-400/70">
+                      {formatTimeAgoLabel(activities[i - 1], now, timezone)}
+                    </span>
+                    <div className="h-1.5 flex-1 rounded-br-md border-r border-b border-zinc-200/60 dark:border-zinc-700/60" />
+                  </div>
+                )}
+                <div className={i > 0 && !showSep ? 'mt-2' : ''}>
+                  <ExpandableActivityItem
+                    activity={a}
+                    timezone={timezone}
+                    onUndoToHere={!a.undone ? () => handleUndoToHere(a.id) : undefined}
+                    onRedoToHere={a.undone ? () => handleRedoToHere(a.id) : undefined}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -559,6 +738,7 @@ function ActivityTab({
         mode={batchMode}
         count={batchCount}
         onConfirm={handleBatchConfirm}
+        context="history"
       />
     </div>
   )
@@ -585,14 +765,20 @@ function ExpandableActivityItem({
   const hasDetails = activity.snapshot.length > 0 || activity.fields_changed.length > 0
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <div
+      className={cn(
+        'rounded-lg border border-zinc-200 dark:border-zinc-800',
+        activity.undone && 'border-l-4 border-l-amber-300 dark:border-l-amber-600',
+        hasDetails && 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+      )}
+    >
       {/* Header - always visible, clickable if has details */}
       <div className="flex items-center gap-1 pr-2">
         <button
           onClick={() => hasDetails && setExpanded(!expanded)}
           className={cn(
             'flex min-w-0 flex-1 items-center gap-3 p-3 text-left',
-            hasDetails && 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900',
+            hasDetails && 'cursor-pointer',
           )}
           disabled={!hasDetails}
           type="button"
@@ -606,10 +792,6 @@ function ExpandableActivityItem({
           ) : (
             <span className="size-4 flex-shrink-0" />
           )}
-
-          <span className={activity.undone ? 'text-zinc-400' : 'text-blue-500'}>
-            {activity.undone ? '○' : '●'}
-          </span>
 
           <div className="min-w-0 flex-1">
             <p className={cn('text-sm font-medium', !expanded && 'truncate')}>
@@ -684,7 +866,7 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
     <div className="space-y-3 text-sm">
       {/* Fields changed badges */}
       {displayFields.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-zinc-500">Changed:</span>
           {displayFields.map((field) => (
             <Badge key={field} variant="secondary" className="text-xs">
