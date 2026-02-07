@@ -5,21 +5,21 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
-import { useGroupSort } from '@/hooks/useGroupSort'
+import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { FilterBar } from '@/components/FilterBar'
-import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
-import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
+import { computeSnoozeTime } from '@/lib/snooze'
+import { useSnoozePreferences } from '@/components/LabelConfigProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTaskActions } from '@/hooks/useTaskActions'
@@ -37,28 +37,6 @@ export default function Home() {
 
 function taskWord(n: number) {
   return n === 1 ? 'task' : 'tasks'
-}
-
-function getSnoozeTime(option: '+1h' | '+2h' | 'tomorrow', timezone: string): string {
-  const now = new Date()
-  if (option === '+1h') {
-    const t = new Date(now.getTime() + 60 * 60 * 1000)
-    t.setMinutes(0, 0, 0)
-    return t.toISOString()
-  }
-  if (option === '+2h') {
-    const t = new Date(now.getTime() + 2 * 60 * 60 * 1000)
-    t.setMinutes(0, 0, 0)
-    return t.toISOString()
-  }
-  // Use Luxon with the user's configured timezone so "tomorrow at 9 AM" targets
-  // the correct moment even when the browser timezone differs from the account timezone.
-  return DateTime.now()
-    .setZone(timezone)
-    .plus({ days: 1 })
-    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
-    .toUTC()
-    .toISO()!
 }
 
 function useFetchData(router: ReturnType<typeof useRouter>) {
@@ -291,8 +269,8 @@ function HomeContent() {
   }, [])
   const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
+  const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
 
-  const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
@@ -380,8 +358,7 @@ function HomeContent() {
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled =
-    !snoozeTask && !showProjectPicker && !quickActionOpen && !showShortcutsDialog
+  const keyboardNavEnabled = !showProjectPicker && !quickActionOpen && !showShortcutsDialog
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -604,38 +581,44 @@ function HomeContent() {
   // Snooze all overdue tasks in the current filtered view (respects label/search filters).
   // Sends all overdue task IDs to the server — the server's filterMixedPriorityForSnooze
   // handles skipping high/urgent tasks in mixed-priority groups.
-  const handleSnoozeAllOverdue = useCallback(async () => {
-    const now = new Date()
-    const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
+  // The `until` param allows SnoozeAllFab long-press menu to override the default duration.
+  const handleSnoozeAllOverdue = useCallback(
+    async (until?: string) => {
+      const now = new Date()
+      const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
 
-    if (overdueTasks.length === 0) {
-      showToast({ message: 'No overdue tasks' })
-      return
-    }
+      if (overdueTasks.length === 0) {
+        showToast({ message: 'No overdue tasks' })
+        return
+      }
 
-    try {
-      const res = await fetch('/api/tasks/bulk/snooze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ids: overdueTasks.map((t) => t.id),
-          until: getSnoozeTime('+1h', timezone),
-        }),
-      })
-      if (!res.ok) throw new Error('Snooze failed')
-      const responseData = await res.json()
-      const tasksAffected = responseData.data?.tasks_affected ?? 0
-      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
-      fetchTasks()
-      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
-      showToast({
-        message: `${tasksAffected} overdue ${taskWord(tasksAffected)} snoozed +1h${skippedMsg}`,
-        action: { label: 'Undo', onClick: actions.handleUndo },
-      })
-    } catch {
-      showToast({ message: 'Snooze failed' })
-    }
-  }, [displayTasks, fetchTasks, actions.handleUndo, timezone])
+      const snoozeUntil = until ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+
+      try {
+        const res = await fetch('/api/tasks/bulk/snooze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ids: overdueTasks.map((t) => t.id),
+            until: snoozeUntil,
+          }),
+        })
+        if (!res.ok) throw new Error('Snooze failed')
+        const responseData = await res.json()
+        const tasksAffected = responseData.data?.tasks_affected ?? 0
+        const tasksSkipped = responseData.data?.tasks_skipped ?? 0
+        fetchTasks()
+        const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
+        showToast({
+          message: `${tasksAffected} overdue ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
+          action: { label: 'Undo', onClick: actions.handleUndo },
+        })
+      } catch {
+        showToast({ message: 'Snooze failed' })
+      }
+    },
+    [displayTasks, fetchTasks, actions.handleUndo, timezone, defaultSnoozeOption, morningTime],
+  )
 
   const bulk = useBulkActions(
     selection,
@@ -741,7 +724,6 @@ function HomeContent() {
       snoozableOverdueCount={snoozableOverdueCount}
       selection={selection}
       selectedTasks={selectedTasks}
-      snoozeTask={snoozeTask}
       showProjectPicker={showProjectPicker}
       actions={actions}
       selectedLabels={selectedLabels}
@@ -755,7 +737,6 @@ function HomeContent() {
         setSearchQuery(null)
         setSearchResults([])
       }}
-      onSnoozeTask={setSnoozeTask}
       onBulkAction={bulk.bulkAction}
       onBulkSnoozeRelative={bulk.bulkSnoozeRelative}
       onBulkDelete={bulk.bulkDelete}
@@ -799,7 +780,6 @@ function DashboardView({
   snoozableOverdueCount,
   selection,
   selectedTasks,
-  snoozeTask,
   showProjectPicker,
   actions,
   selectedLabels,
@@ -809,7 +789,6 @@ function DashboardView({
   onTogglePriority,
   onSearch,
   onSearchClear,
-  onSnoozeTask,
   onBulkAction,
   onBulkSnoozeRelative,
   onBulkDelete,
@@ -849,7 +828,6 @@ function DashboardView({
   snoozableOverdueCount: number
   selection: ReturnType<typeof useSelection>
   selectedTasks: Task[]
-  snoozeTask: Task | null
   showProjectPicker: boolean
   actions: ReturnType<typeof useDashboardActions>
   selectedLabels: string[]
@@ -859,13 +837,12 @@ function DashboardView({
   onTogglePriority: (priority: number) => void
   onSearch: (q: string) => void
   onSearchClear: () => void
-  onSnoozeTask: (t: Task | null) => void
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
   onBulkSnoozeRelative: (deltaMinutes: number) => Promise<void>
   onBulkDelete: () => Promise<void>
   onBulkMoveToProject: (projectId: number) => Promise<void>
   onShowProjectPicker: (show: boolean) => void
-  onSnoozeOverdue: () => void
+  onSnoozeOverdue: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
@@ -878,9 +855,9 @@ function DashboardView({
   onKeyDown: (e: React.KeyboardEvent) => void
   onListFocus: (e: React.FocusEvent) => void
   onListBlur: (e: React.FocusEvent) => void
-  getSortOption: (groupLabel: string) => 'priority' | 'title' | 'age'
+  getSortOption: (groupLabel: string) => SortOption
   getReversed: (groupLabel: string) => boolean
-  setSortOption: (groupLabel: string, option: 'priority' | 'title' | 'age') => void
+  setSortOption: (groupLabel: string, option: SortOption) => void
   onActivate: (taskId: number) => void
   onDoubleClick: (task: Task) => void
   showShortcutsDialog: boolean
@@ -965,8 +942,7 @@ function DashboardView({
           projects={projects}
           grouping={grouping}
           onDone={actions.handleDone}
-          onSnooze={(task) => onSnoozeTask(task)}
-          onSwipeSnooze={actions.handleSnooze}
+          onSnooze={actions.handleSnooze}
           onLabelClick={onToggleLabel}
           onTaskFocus={onTaskFocus}
           keyboardFocusedId={keyboardFocusedId}
@@ -1038,14 +1014,6 @@ function DashboardView({
         isSelectionMode={selection.isSelectionMode}
         onSnoozeOverdue={onSnoozeOverdue}
       />
-
-      {snoozeTask && (
-        <SnoozeSheet
-          task={snoozeTask}
-          onSnooze={(until) => actions.handleSnooze(snoozeTask.id, until)}
-          onClose={() => onSnoozeTask(null)}
-        />
-      )}
 
       {showProjectPicker && (
         <ProjectPickerSheet

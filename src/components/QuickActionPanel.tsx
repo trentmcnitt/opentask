@@ -590,12 +590,11 @@ export function QuickActionPanel({
   }, [reset, resetAllPending])
 
   // In sheet mode with selectedCount, SelectionActionSheet owns title and quick-links
-  // (SnoozeSheet also uses sheet mode but doesn't pass selectedCount, so it still shows the title)
   const isSelectionSheetMode = mode === 'sheet' && selectedCount !== undefined
 
   // Compute title:
   // - SelectionActionSheet (sheet mode with selectedCount): hide title, modal shows it
-  // - SnoozeSheet (sheet mode without selectedCount): show task title
+  // - sheet mode without selectedCount: show task title
   // - inline/popover: show count for bulk or task title
   // When pendingTitle exists, show it instead of the task's current title
   const displayTitle = pendingTitle ?? effectiveTask?.title
@@ -752,10 +751,10 @@ export function QuickActionPanel({
                   autoFocus
                 />
               ) : (
-                <div className="flex items-center gap-1">
+                <div className="flex min-w-0 items-center gap-1">
                   <p
                     className={cn(
-                      'truncate font-medium',
+                      'font-medium',
                       titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
                       onTitleChange || onSaveAll
                         ? 'hover:text-primary cursor-pointer transition-colors'
@@ -1327,14 +1326,25 @@ function GridButton({
   variant?: 'preset' | 'increment' | 'decrement' | 'smart'
   span?: 1 | 2
 }) {
+  // Tiered text sizing: use smaller text for longer labels to prevent overflow.
+  // Single-span buttons are narrower and need smaller text sooner.
+  const textSize =
+    span === 2
+      ? label.length <= 20
+        ? 'text-sm'
+        : 'text-xs'
+      : label.length <= 8
+        ? 'text-sm'
+        : 'text-xs'
+
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'rounded-lg border px-2 py-2.5 text-center text-sm font-medium transition-colors',
+        'flex items-center justify-center rounded-lg border px-2 py-2.5 text-center leading-tight font-medium transition-colors',
+        textSize,
         'min-h-[44px]', // Apple HIG touch target
-        'whitespace-nowrap', // Prevent "12:00 PM" from wrapping on narrow screens
         'active:scale-[0.97]',
         span === 2 && 'col-span-2',
         variant === 'preset' && 'bg-card hover:bg-accent border-border',

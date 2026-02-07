@@ -12,11 +12,13 @@ import {
   useLabelConfig,
   usePriorityDisplay,
   useAutoSnoozeDefault,
+  useSnoozePreferences,
 } from '@/components/LabelConfigProvider'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
 import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
+import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 
 export default function SettingsPage() {
@@ -25,6 +27,10 @@ export default function SettingsPage() {
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
   const { autoSnoozeDefault, setAutoSnoozeDefault } = useAutoSnoozeDefault()
+  const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
+    useSnoozePreferences()
+  const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
+  const [showCustomSnooze, setShowCustomSnooze] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -78,6 +84,40 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved' })
     } catch {
       setAutoSnoozeDefault(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
+
+  const handleDefaultSnoozeChange = async (value: string) => {
+    const prev = defaultSnoozeOption
+    setDefaultSnoozeOption(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_snooze_option: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setDefaultSnoozeOption(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
+
+  const handleMorningTimeChange = async (value: string) => {
+    const prev = morningTime
+    setMorningTime(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ morning_time: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setMorningTime(prev)
       showToast({ message: 'Failed to save preference' })
     }
   }
@@ -191,6 +231,119 @@ export default function SettingsPage() {
               <option value={30}>30 min</option>
               <option value={60}>1 hour</option>
             </select>
+          </div>
+        </section>
+
+        {/* Snooze */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Snooze
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Configure the default snooze duration and morning start time.
+          </p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Default snooze</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Duration used for single-tap snooze
+                </div>
+              </div>
+              {showCustomSnooze ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={customSnoozeMinutes}
+                    onChange={(e) => setCustomSnoozeMinutes(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = parseInt(customSnoozeMinutes, 10)
+                        if (val >= 1 && val <= 1440) {
+                          handleDefaultSnoozeChange(String(val))
+                          setShowCustomSnooze(false)
+                        }
+                      }
+                      if (e.key === 'Escape') setShowCustomSnooze(false)
+                    }}
+                    className="h-8 w-20 text-sm"
+                    placeholder="min"
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => {
+                      const val = parseInt(customSnoozeMinutes, 10)
+                      if (val >= 1 && val <= 1440) {
+                        handleDefaultSnoozeChange(String(val))
+                        setShowCustomSnooze(false)
+                      }
+                    }}
+                  >
+                    Set
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={() => setShowCustomSnooze(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <select
+                  value={
+                    ['30', '60', '120', 'tomorrow'].includes(defaultSnoozeOption)
+                      ? defaultSnoozeOption
+                      : 'custom'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'custom') {
+                      setCustomSnoozeMinutes(
+                        defaultSnoozeOption !== 'tomorrow' ? defaultSnoozeOption : '',
+                      )
+                      setShowCustomSnooze(true)
+                    } else {
+                      handleDefaultSnoozeChange(val)
+                    }
+                  }}
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  <option value="30">30 min</option>
+                  <option value="60">1 hour</option>
+                  <option value="120">2 hours</option>
+                  <option value="tomorrow">Tomorrow at {formatMorningTime(morningTime)}</option>
+                  {!['30', '60', '120', 'tomorrow'].includes(defaultSnoozeOption) && (
+                    <option value={defaultSnoozeOption}>
+                      {formatSnoozeOptionLabel(defaultSnoozeOption, morningTime)}
+                    </option>
+                  )}
+                  <option value="custom">Custom...</option>
+                </select>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Morning time</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Used for &ldquo;Tomorrow at...&rdquo; snooze option
+                </div>
+              </div>
+              <input
+                type="time"
+                value={morningTime}
+                onChange={(e) => {
+                  if (e.target.value) handleMorningTimeChange(e.target.value)
+                }}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </div>
           </div>
         </section>
 

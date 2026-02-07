@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useDrag } from '@use-gesture/react'
+import { cn } from '@/lib/utils'
 
 interface SwipeableRowProps {
   children: React.ReactNode
@@ -103,7 +104,10 @@ export function SwipeableRow({
   const label = offset > 0 ? 'Done' : offset < 0 ? 'Snooze' : ''
 
   return (
-    <div ref={containerRef} className="relative overflow-hidden rounded-lg">
+    <div
+      ref={containerRef}
+      className={cn('relative rounded-lg', offset !== 0 ? 'overflow-hidden' : 'overflow-visible')}
+    >
       {/* Background revealed by swipe */}
       {offset !== 0 && (
         <div

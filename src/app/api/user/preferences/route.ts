@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     const db = getDb()
     const row = db
       .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes FROM users WHERE id = ?',
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time FROM users WHERE id = ?',
       )
       .get(user.id) as
       | {
@@ -64,6 +64,8 @@ export async function GET(request: NextRequest) {
           label_config: string
           priority_display: string
           auto_snooze_minutes: number
+          default_snooze_option: string
+          morning_time: string
         }
       | undefined
 
@@ -76,6 +78,8 @@ export async function GET(request: NextRequest) {
       label_config: labelConfig,
       priority_display: priorityDisplay,
       auto_snooze_minutes: row?.auto_snooze_minutes ?? 30,
+      default_snooze_option: row?.default_snooze_option ?? '60',
+      morning_time: row?.morning_time ?? '09:00',
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -165,11 +169,41 @@ export async function PATCH(request: NextRequest) {
       validatedAutoSnooze = val
     }
 
+    let validatedDefaultSnoozeOption: string | undefined
+    if (body.default_snooze_option !== undefined) {
+      const val = body.default_snooze_option
+      if (typeof val !== 'string') {
+        return badRequest('default_snooze_option must be a string')
+      }
+      if (val !== 'tomorrow') {
+        const num = parseInt(val, 10)
+        if (isNaN(num) || num < 1 || num > 1440 || String(num) !== val) {
+          return badRequest('default_snooze_option must be "tomorrow" or a string integer 1-1440')
+        }
+      }
+      validatedDefaultSnoozeOption = val
+    }
+
+    let validatedMorningTime: string | undefined
+    if (body.morning_time !== undefined) {
+      const val = body.morning_time
+      if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val)) {
+        return badRequest('morning_time must be in HH:MM format')
+      }
+      const [hours, minutes] = val.split(':').map(Number)
+      if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return badRequest('morning_time must have valid hours (0-23) and minutes (0-59)')
+      }
+      validatedMorningTime = val
+    }
+
     if (
       body.default_grouping === undefined &&
       body.label_config === undefined &&
       body.priority_display === undefined &&
-      body.auto_snooze_minutes === undefined
+      body.auto_snooze_minutes === undefined &&
+      body.default_snooze_option === undefined &&
+      body.morning_time === undefined
     ) {
       return badRequest('No preferences to update')
     }
@@ -198,19 +232,31 @@ export async function PATCH(request: NextRequest) {
       params.push(validatedAutoSnooze)
     }
 
+    if (validatedDefaultSnoozeOption !== undefined) {
+      updates.push('default_snooze_option = ?')
+      params.push(validatedDefaultSnoozeOption)
+    }
+
+    if (validatedMorningTime !== undefined) {
+      updates.push('morning_time = ?')
+      params.push(validatedMorningTime)
+    }
+
     params.push(user.id)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
     // Read back current state
     const row = db
       .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes FROM users WHERE id = ?',
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time FROM users WHERE id = ?',
       )
       .get(user.id) as {
       default_grouping: string
       label_config: string
       priority_display: string
       auto_snooze_minutes: number
+      default_snooze_option: string
+      morning_time: string
     }
 
     const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
@@ -220,6 +266,8 @@ export async function PATCH(request: NextRequest) {
       label_config: labelConfig,
       priority_display: priorityDisplay,
       auto_snooze_minutes: row.auto_snooze_minutes,
+      default_snooze_option: row.default_snooze_option,
+      morning_time: row.morning_time,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

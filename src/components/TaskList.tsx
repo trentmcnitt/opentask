@@ -17,6 +17,8 @@ import type { Task, Project } from '@/types'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { computeSnoozeTime } from '@/lib/snooze'
 
 export type GroupingMode = 'time' | 'project'
 
@@ -40,8 +42,8 @@ interface TaskListProps {
   projects?: Project[]
   grouping?: GroupingMode
   onDone: (taskId: number) => void
-  onSnooze: (task: Task) => void
-  onSwipeSnooze?: (taskId: number, until: string) => void
+  /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
+  onSnooze: (taskId: number, until: string) => void
   onLabelClick?: (label: string) => void
   onTaskFocus?: (task: Task) => void
   /** Currently keyboard-focused task ID */
@@ -95,6 +97,14 @@ export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = fals
         return reversed ? -cmp : cmp
       })
       break
+    case 'modified':
+      sorted.sort((a, b) => {
+        const aUpdated = new Date(a.updated_at).getTime()
+        const bUpdated = new Date(b.updated_at).getTime()
+        const cmp = bUpdated - aUpdated
+        return reversed ? -cmp : cmp
+      })
+      break
   }
   return sorted
 }
@@ -104,6 +114,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   priority: { default: 'Priority ↓', reversed: 'Priority ↑' },
   title: { default: 'A-Z', reversed: 'Z-A' },
   age: { default: 'Newest', reversed: 'Oldest' },
+  modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
 }
 
 /** Labels shown in the dropdown menu items. */
@@ -111,6 +122,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   priority: 'Priority',
   title: 'A-Z',
   age: 'Date added',
+  modified: 'Date modified',
 }
 
 export function TaskList({
@@ -119,7 +131,6 @@ export function TaskList({
   grouping = 'time',
   onDone,
   onSnooze,
-  onSwipeSnooze,
   onLabelClick,
   onTaskFocus,
   keyboardFocusedId,
@@ -150,18 +161,14 @@ export function TaskList({
     }
   }, [selection.isSelectionMode])
 
-  // Snooze +1h helper for swipe (must be before early return for hooks rules)
+  // Swipe-left snooze uses the user's configured default snooze option
+  const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
   const handleSwipeSnooze = useCallback(
     (task: Task) => {
-      const snoozeTime = new Date(Date.now() + 60 * 60 * 1000)
-      snoozeTime.setMinutes(0, 0, 0)
-      if (onSwipeSnooze) {
-        onSwipeSnooze(task.id, snoozeTime.toISOString())
-      } else {
-        onSnooze(task)
-      }
+      const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+      onSnooze(task.id, until)
     },
-    [onSwipeSnooze, onSnooze],
+    [defaultSnoozeOption, timezone, morningTime, onSnooze],
   )
 
   if (tasks.length === 0) {
@@ -263,7 +270,7 @@ export function TaskList({
                     <TaskRow
                       task={task}
                       onDone={() => onDone(task.id)}
-                      onSnooze={() => onSnooze(task)}
+                      onSnooze={onSnooze}
                       isOverdue={isTaskOverdue(task)}
                       isSelected={selection.selectedIds.has(task.id)}
                       isSelectionMode={selection.isSelectionMode}
@@ -468,7 +475,7 @@ function SortDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {(['priority', 'title', 'age'] as const).map((option) => {
+        {(['priority', 'title', 'age', 'modified'] as const).map((option) => {
           const isActive = sortOption === option
           const itemLabel =
             isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]

@@ -131,7 +131,7 @@ export function QuickActionPopover({
           <DialogTitle>Quick Actions</DialogTitle>
           <DialogDescription>Adjust date, priority, and other task settings</DialogDescription>
         </VisuallyHidden>
-        {panel}
+        <div className="min-w-0">{panel}</div>
       </DialogContent>
     </Dialog>
   )

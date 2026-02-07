@@ -17,6 +17,10 @@ interface LabelConfigContextValue {
   setPriorityDisplay: (config: PriorityDisplayConfig) => void
   autoSnoozeDefault: number
   setAutoSnoozeDefault: (minutes: number) => void
+  defaultSnoozeOption: string
+  setDefaultSnoozeOption: (option: string) => void
+  morningTime: string
+  setMorningTime: (time: string) => void
 }
 
 const LabelConfigContext = createContext<LabelConfigContextValue>({
@@ -26,6 +30,10 @@ const LabelConfigContext = createContext<LabelConfigContextValue>({
   setPriorityDisplay: () => {},
   autoSnoozeDefault: 30,
   setAutoSnoozeDefault: () => {},
+  defaultSnoozeOption: '60',
+  setDefaultSnoozeOption: () => {},
+  morningTime: '09:00',
+  setMorningTime: () => {},
 })
 
 export function LabelConfigProvider({ children }: { children: React.ReactNode }) {
@@ -34,6 +42,8 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
   const [priorityDisplay, setPriorityDisplayState] =
     useState<PriorityDisplayConfig>(DEFAULT_PRIORITY_DISPLAY)
   const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
+  const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
+  const [morningTime, setMorningTimeState] = useState('09:00')
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -49,6 +59,12 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         if (data?.data?.auto_snooze_minutes) {
           setAutoSnoozeDefaultState(data.data.auto_snooze_minutes)
         }
+        if (data?.data?.default_snooze_option) {
+          setDefaultSnoozeOptionState(data.data.default_snooze_option)
+        }
+        if (data?.data?.morning_time) {
+          setMorningTimeState(data.data.morning_time)
+        }
       })
       .catch(() => {})
   }, [status])
@@ -62,6 +78,10 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         setPriorityDisplay: setPriorityDisplayState,
         autoSnoozeDefault,
         setAutoSnoozeDefault: setAutoSnoozeDefaultState,
+        defaultSnoozeOption,
+        setDefaultSnoozeOption: setDefaultSnoozeOptionState,
+        morningTime,
+        setMorningTime: setMorningTimeState,
       }}
     >
       {children}
@@ -81,4 +101,10 @@ export function usePriorityDisplay() {
 export function useAutoSnoozeDefault() {
   const { autoSnoozeDefault, setAutoSnoozeDefault } = useContext(LabelConfigContext)
   return { autoSnoozeDefault, setAutoSnoozeDefault }
+}
+
+export function useSnoozePreferences() {
+  const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
+    useContext(LabelConfigContext)
+  return { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime }
 }

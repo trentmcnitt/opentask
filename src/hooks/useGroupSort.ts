@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 
-export type SortOption = 'priority' | 'title' | 'age'
+export type SortOption = 'priority' | 'title' | 'age' | 'modified'
 
 interface GroupSortState {
   [groupLabel: string]: { sort: SortOption; reversed: boolean }
@@ -16,6 +16,7 @@ interface GroupSortState {
  *   - priority: highest first (reversed = lowest first)
  *   - title: A-Z (reversed = Z-A)
  *   - age: newest first (reversed = oldest first)
+ *   - modified: most recently modified first (reversed = least recently modified first)
  *
  * Selecting the same sort option again toggles the direction.
  * State resets on page refresh.

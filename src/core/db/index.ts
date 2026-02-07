@@ -121,6 +121,16 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks ADD COLUMN auto_snooze_minutes INTEGER')
   }
 
+  // Migration: Add default_snooze_option to users
+  if (!hasColumn('users', 'default_snooze_option')) {
+    database.exec("ALTER TABLE users ADD COLUMN default_snooze_option TEXT NOT NULL DEFAULT '60'")
+  }
+
+  // Migration: Add morning_time to users
+  if (!hasColumn('users', 'morning_time')) {
+    database.exec("ALTER TABLE users ADD COLUMN morning_time TEXT NOT NULL DEFAULT '09:00'")
+  }
+
   // Migration: Rename snoozed_from to original_due_at
   if (hasColumn('tasks', 'snoozed_from') && !hasColumn('tasks', 'original_due_at')) {
     database.exec('ALTER TABLE tasks RENAME COLUMN snoozed_from TO original_due_at')

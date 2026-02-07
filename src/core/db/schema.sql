@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
+  default_snooze_option TEXT NOT NULL DEFAULT '60',
+  morning_time  TEXT NOT NULL DEFAULT '09:00',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

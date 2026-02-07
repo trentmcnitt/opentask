@@ -7,7 +7,6 @@ import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TaskList } from '@/components/TaskList'
 import { FilterBar } from '@/components/FilterBar'
-import { SnoozeSheet } from '@/components/SnoozeSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import type { Task } from '@/types'
 import { useTaskActions } from '@/hooks/useTaskActions'
@@ -24,7 +23,6 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(true)
-  const [snoozeTask, setSnoozeTask] = useState<Task | null>(null)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
 
@@ -86,15 +84,6 @@ export default function ProjectDetailPage() {
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
-  // Wrap snooze to also close the snooze sheet
-  const handleSnooze = useCallback(
-    (taskId: number, until: string) => {
-      setSnoozeTask(null)
-      actions.handleSnooze(taskId, until)
-    },
-    [actions.handleSnooze],
-  )
-
   if (status === 'loading' || loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -133,19 +122,11 @@ export default function ProjectDetailPage() {
         <TaskList
           tasks={displayTasks}
           onDone={actions.handleDone}
-          onSnooze={(task) => setSnoozeTask(task)}
+          onSnooze={actions.handleSnooze}
           onLabelClick={toggleLabel}
           onTaskFocus={setFocusedTask}
         />
       </main>
-
-      {snoozeTask && (
-        <SnoozeSheet
-          task={snoozeTask}
-          onSnooze={(until) => handleSnooze(snoozeTask.id, until)}
-          onClose={() => setSnoozeTask(null)}
-        />
-      )}
 
       <QuickActionPopover
         focusedTask={focusedTask}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Clock, Undo2, Redo2, Menu, Keyboard, Settings } from 'lucide-react'
@@ -17,6 +17,9 @@ import {
 import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { SearchBar } from './SearchBar'
+import { SnoozeMenu } from '@/components/SnoozeMenu'
+import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { formatCompactSnoozeLabel } from '@/lib/snooze'
 
 interface HeaderProps {
   taskCount: number
@@ -27,7 +30,7 @@ interface HeaderProps {
   onRedo: () => void
   onSearch?: (query: string) => void
   onSearchClear?: () => void
-  onSnoozeOverdue?: () => void
+  onSnoozeOverdue?: (until?: string) => void
   onShowKeyboardShortcuts?: () => void
 }
 
@@ -44,6 +47,43 @@ export function Header({
   onShowKeyboardShortcuts,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
+  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
+  const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const snoozeFiredRef = useRef(false)
+  const { defaultSnoozeOption } = useSnoozePreferences()
+
+  useEffect(() => {
+    return () => {
+      if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
+    }
+  }, [])
+
+  const handleSnoozePointerDown = useCallback(() => {
+    snoozeFiredRef.current = false
+    snoozeTimerRef.current = setTimeout(() => {
+      snoozeFiredRef.current = true
+      setSnoozeMenuOpen(true)
+    }, 400)
+  }, [])
+
+  const handleSnoozePointerUp = useCallback(() => {
+    if (snoozeTimerRef.current) {
+      clearTimeout(snoozeTimerRef.current)
+      snoozeTimerRef.current = null
+    }
+    if (!snoozeFiredRef.current) {
+      snoozeFiredRef.current = true
+      onSnoozeOverdue?.()
+    }
+  }, [onSnoozeOverdue])
+
+  const handleSnoozeClick = useCallback(() => {
+    if (snoozeFiredRef.current) {
+      snoozeFiredRef.current = false
+      return
+    }
+    onSnoozeOverdue?.()
+  }, [onSnoozeOverdue])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -127,25 +167,39 @@ export function Header({
 
           {/* Action buttons: always fixed in place */}
           <div className="flex flex-shrink-0 items-center">
-            {/* Snooze all overdue button - desktop only (mobile uses FAB) */}
+            {/* Snooze all overdue button - desktop only (mobile uses FAB).
+               Single click: snooze using default duration.
+               Long-press (400ms): opens SnoozeMenu with duration choices. */}
             {onSnoozeOverdue && snoozableOverdueCount > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onSnoozeOverdue}
-                    aria-label={`Snooze ${snoozableOverdueCount} overdue tasks +1h`}
-                    className="relative hidden md:inline-flex"
-                  >
-                    <Clock className="size-5" />
-                    <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-bold">
-                      {snoozableOverdueCount > 99 ? '99+' : snoozableOverdueCount}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Snooze {snoozableOverdueCount} overdue +1h</TooltipContent>
-              </Tooltip>
+              <SnoozeMenu
+                open={snoozeMenuOpen}
+                onOpenChange={setSnoozeMenuOpen}
+                onSnooze={(until) => onSnoozeOverdue(until)}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleSnoozeClick}
+                  onPointerDown={handleSnoozePointerDown}
+                  onPointerUp={handleSnoozePointerUp}
+                  onPointerLeave={() => {
+                    if (snoozeTimerRef.current) {
+                      clearTimeout(snoozeTimerRef.current)
+                      snoozeTimerRef.current = null
+                    }
+                  }}
+                  aria-label={`Snooze ${snoozableOverdueCount} overdue tasks (hold for options)`}
+                  className="relative hidden md:inline-flex"
+                >
+                  <Clock className="size-5" />
+                  <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-bold">
+                    {snoozableOverdueCount > 99 ? '99+' : snoozableOverdueCount}
+                  </span>
+                  <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
+                    {formatCompactSnoozeLabel(defaultSnoozeOption)}
+                  </span>
+                </Button>
+              </SnoozeMenu>
             )}
 
             {/* Mobile-only undo/redo buttons */}
