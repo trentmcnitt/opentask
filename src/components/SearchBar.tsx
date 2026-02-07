@@ -57,7 +57,7 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
 
   return (
     // ml-auto keeps search right-aligned; flex-1 when active gives room for leftward growth
-    <div className="flex min-w-0 flex-1 items-center justify-end">
+    <div className="flex min-w-0 items-center justify-end md:flex-1">
       {/* Desktop: ml-4 (16px) for spacing from badges - matches 16px visual gap to clock icon */}
       <div
         className={cn(

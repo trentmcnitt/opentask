@@ -114,48 +114,59 @@ export function Header({
 
           {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
           <div className="flex min-w-0 flex-1 items-center">
-            {/* Badges: fade + collapse when search expanded */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <div
-                  className={cn(
-                    'flex flex-shrink-0 cursor-pointer items-center gap-1 transition-[opacity,max-width] duration-200',
-                    searchExpanded
-                      ? 'pointer-events-none opacity-0 md:max-w-0 md:overflow-hidden'
-                      : 'max-w-[12rem] opacity-100',
-                  )}
-                  role="group"
-                  aria-label="Task counts"
-                  tabIndex={0}
-                >
-                  <span className="bg-muted text-muted-foreground hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex">
-                    {taskCount}
-                  </span>
-                  {overdueCount > 0 && (
-                    <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex">
-                      {overdueCount}
-                    </span>
-                  )}
-                  <span
+            {/* Badge container: @container enables container queries on mobile.
+                md:[container-type:normal] disables containment on desktop where
+                md:inline-flex handles visibility via media queries instead. */}
+            <div className="@container/badges min-w-0 flex-1 md:[container-type:normal] md:flex-none md:flex-shrink-0">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <div
                     className={cn(
-                      'bg-primary/15 text-primary inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none',
-                      todayCount === 0 && 'md:hidden',
+                      'flex flex-shrink-0 cursor-pointer items-center gap-1 transition-[opacity,max-width] duration-200',
+                      searchExpanded
+                        ? 'pointer-events-none opacity-0 md:max-w-0 md:overflow-hidden'
+                        : 'max-w-[12rem] opacity-100',
                     )}
+                    role="group"
+                    aria-label="Task counts"
+                    tabIndex={0}
                   >
-                    {todayCount}
-                  </span>
-                </div>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
-                <div className="flex flex-col gap-1">
-                  <span>{taskCount} total</span>
-                  {overdueCount > 0 && (
-                    <span className="text-destructive">{overdueCount} overdue</span>
-                  )}
-                  {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
-                </div>
-              </PopoverContent>
-            </Popover>
+                    <span
+                      className={cn(
+                        'bg-muted text-muted-foreground hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex',
+                        overdueCount > 0
+                          ? '@[4.5rem]/badges:inline-flex'
+                          : '@[1.75rem]/badges:inline-flex',
+                      )}
+                    >
+                      {taskCount}
+                    </span>
+                    {overdueCount > 0 && (
+                      <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex @[1.75rem]/badges:inline-flex">
+                        {overdueCount}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        'bg-primary/15 text-primary inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none',
+                        todayCount === 0 && 'md:hidden',
+                      )}
+                    >
+                      {todayCount}
+                    </span>
+                  </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
+                  <div className="flex flex-col gap-1">
+                    <span>{taskCount} total</span>
+                    {overdueCount > 0 && (
+                      <span className="text-destructive">{overdueCount} overdue</span>
+                    )}
+                    {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
 
             {/* Search: ml-auto keeps it right-aligned, expands leftward */}
             {onSearch && onSearchClear && (
@@ -194,8 +205,8 @@ export function Header({
                   className="relative hidden md:inline-flex"
                 >
                   <Clock className="size-5" />
-                  <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-bold">
-                    {snoozableOverdueCount > 99 ? '99+' : snoozableOverdueCount}
+                  <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
+                    {snoozableOverdueCount > 999 ? '999+' : snoozableOverdueCount}
                   </span>
                   <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
                     {formatCompactSnoozeLabel(defaultSnoozeOption)}
