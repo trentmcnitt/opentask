@@ -54,7 +54,7 @@ export function BatchUndoDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction variant="default" onClick={onConfirm}>
-            {isUndo ? 'Undo All' : 'Redo All'}
+            {isUndo ? (count === 1 ? 'Undo' : 'Undo All') : count === 1 ? 'Redo' : 'Redo All'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

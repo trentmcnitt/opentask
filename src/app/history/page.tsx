@@ -51,7 +51,7 @@ export default function HistoryPage() {
   const { status } = useSession()
   const router = useRouter()
   const timezone = useTimezone()
-  const [tab, setTab] = useState<TabId>('completions')
+  const [tab, setTab] = useState<TabId>('activity')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
   const [activities, setActivities] = useState<UndoEntry[]>([])
 
@@ -138,16 +138,6 @@ export default function HistoryPage() {
         {/* Tab bar */}
         <div className="mb-6 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
           <button
-            onClick={() => handleTabChange('completions')}
-            className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
-              tab === 'completions'
-                ? 'bg-white shadow-sm dark:bg-zinc-800'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-            }`}
-          >
-            Completions
-          </button>
-          <button
             onClick={() => handleTabChange('activity')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'activity'
@@ -156,6 +146,16 @@ export default function HistoryPage() {
             }`}
           >
             Activity
+          </button>
+          <button
+            onClick={() => handleTabChange('completions')}
+            className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+              tab === 'completions'
+                ? 'bg-white shadow-sm dark:bg-zinc-800'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+          >
+            Completions
           </button>
         </div>
 
