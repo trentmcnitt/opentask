@@ -18,18 +18,21 @@ test.describe('Add task modal (mobile FAB)', () => {
     // Click the FAB
     await addButton.click()
 
-    // Dialog should open without errors
+    // Bottom sheet should open — the QuickActionPanel in create mode uses a Sheet on mobile.
+    // The sheet has a visually-hidden title "New Task" for accessibility.
     const dialog = page.getByRole('dialog', { name: 'New Task' })
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
-    // Verify key form elements are present
-    await expect(dialog.getByLabel('Title')).toBeVisible()
-    await expect(dialog.getByText('Project', { exact: true })).toBeVisible()
-    await expect(dialog.getByText('Priority', { exact: true })).toBeVisible()
+    // Verify key elements are present: title input, priority picker, project badge
+    await expect(dialog.getByLabel('Task title')).toBeVisible()
+    // Priority shows as "None" by default in the QuickActionPanel picker
+    await expect(dialog.getByText('None')).toBeVisible()
+    // Project shows as "Inbox" badge in create mode
+    await expect(dialog.getByText('Inbox')).toBeVisible()
 
     // Fill in a task title and submit
     const taskTitle = `E2E modal task ${Date.now()}`
-    await dialog.getByLabel('Title').fill(taskTitle)
+    await dialog.getByLabel('Task title').fill(taskTitle)
     await dialog.getByRole('button', { name: 'Create Task' }).click()
 
     // Dialog should close and task should appear in the list

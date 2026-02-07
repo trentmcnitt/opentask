@@ -275,7 +275,15 @@ function HomeContent() {
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+  const [createPanelOpen, setCreatePanelOpen] = useState(false)
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
+
+  // Track when the CreateTaskPanel modal (in AppLayout) is open so we can disable keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: Event) => setCreatePanelOpen((e as CustomEvent).detail.open)
+    window.addEventListener('create-panel-state', handler)
+    return () => window.removeEventListener('create-panel-state', handler)
+  }, [])
 
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
@@ -358,7 +366,8 @@ function HomeContent() {
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
-  const keyboardNavEnabled = !showProjectPicker && !quickActionOpen && !showShortcutsDialog
+  const keyboardNavEnabled =
+    !showProjectPicker && !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -434,7 +443,7 @@ function HomeContent() {
       if (!keyboardNavEnabled) return
 
       // Cmd+L: Always focus first task (works even in keyboard mode)
-      if (cmdKey && e.key === 'l') {
+      if (cmdKey && e.key === 'l' && !isInInput) {
         e.preventDefault()
         if (orderedIds.length > 0) {
           const firstTaskId = orderedIds[0]

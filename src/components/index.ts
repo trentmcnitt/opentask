@@ -16,7 +16,7 @@ export { LabelFilterBar } from './LabelFilterBar'
 
 // Form components
 export { QuickAdd } from './QuickAdd'
-export { AddTaskForm } from './AddTaskForm'
+export { CreateTaskPanel } from './CreateTaskPanel'
 export { SearchBar } from './SearchBar'
 export { RecurrencePicker } from './RecurrencePicker'
 

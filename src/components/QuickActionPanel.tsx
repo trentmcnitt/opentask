@@ -147,6 +147,12 @@ export interface QuickActionPanelProps {
    * with a single undo entry. Falls back to individual callbacks if not provided.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
+  /** Enables create mode — panel is used for new task creation instead of editing */
+  createMode?: boolean
+  /** Pre-fills title in create mode (from QuickAdd "+" button) */
+  initialTitle?: string
+  /** Called on submit in create mode with all staged fields including title */
+  onCreate?: (fields: QuickActionPanelChanges & { title: string }) => void | Promise<void>
 }
 
 /**
@@ -156,8 +162,8 @@ export interface QuickActionPanelProps {
  */
 function getDetailTitleClasses(title: string): { sizeClass: string; scrollable: boolean } {
   const len = title.length
-  if (len <= 200) return { sizeClass: 'text-lg', scrollable: false }
-  if (len <= 500) return { sizeClass: 'text-base', scrollable: false }
+  if (len <= 200) return { sizeClass: 'text-lg md:text-lg', scrollable: false }
+  if (len <= 500) return { sizeClass: 'text-base md:text-base', scrollable: false }
   return { sizeClass: 'text-sm', scrollable: true }
 }
 
@@ -189,12 +195,18 @@ export function QuickActionPanel({
   onDirtyChange,
   saveRef,
   onSaveAll,
+  createMode = false,
+  initialTitle,
+  onCreate,
 }: QuickActionPanelProps) {
   // Effective task: either passed directly, or single selected task via bulk path
   const effectiveTask = task ?? (selectedTasks?.length === 1 ? selectedTasks[0] : null)
 
   // Bulk mode = multiple tasks selected (not single task via bulk path)
   const isBulkMode = !effectiveTask && (selectedTasks?.length ?? 0) > 0
+
+  // Create mode = panel is used for new task creation
+  const isCreateMode = createMode
 
   // Single task mode (either direct or via bulk selection)
   const isSingleTask = !!effectiveTask
@@ -205,6 +217,9 @@ export function QuickActionPanel({
   // State for title editing
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+
+  // State for create-mode title (always-visible input, not click-to-edit)
+  const [createTitle, setCreateTitle] = useState(initialTitle ?? '')
 
   // State for Mark Done confirmation dialog
   const [showDoneConfirm, setShowDoneConfirm] = useState(false)
@@ -334,7 +349,18 @@ export function QuickActionPanel({
     pendingTitle !== null ||
     pendingDueAtCleared ||
     pendingAutoSnooze !== undefined
-  const isDirty = hasDateChanges || hasPendingChanges
+  // In create mode, dirty means the user has changed something from the initial defaults:
+  // typed a title (different from initialTitle), changed any field, or picked a date.
+  const createModeDirty = isCreateMode
+    ? createTitle.trim() !== (initialTitle ?? '').trim() ||
+      pendingPriority !== null ||
+      pendingLabels !== null ||
+      pendingRrule !== undefined ||
+      pendingProject !== null ||
+      hasDateChanges ||
+      pendingAutoSnooze !== undefined
+    : false
+  const isDirty = isCreateMode ? createModeDirty : hasDateChanges || hasPendingChanges
 
   // Recurrence is invalid when FREQ=WEEKLY has no BYDAY in from_due mode.
   // Only check when the user has the recurrence picker open or modified the rrule,
@@ -536,6 +562,20 @@ export function QuickActionPanel({
     setPendingAutoSnooze(undefined)
   }, [])
 
+  // Create mode handler: collects all staged fields + title, calls onCreate, then resets
+  const handleCreate = useCallback(async () => {
+    if (!onCreate) return
+    const changes = collectPendingChanges()
+    // Include date from hook if user picked one
+    if (!changes.due_at && singleHook.isDirty) {
+      changes.due_at = singleHook.workingDate
+    }
+    await onCreate({ ...changes, title: createTitle.trim() })
+    resetAllPending()
+    setCreateTitle('')
+    singleHook.reset()
+  }, [onCreate, collectPendingChanges, createTitle, resetAllPending, singleHook])
+
   // Shared save logic: applies all pending changes via either batched or individual callbacks.
   // Used by both handleSave and handleSaveAndDone to avoid duplicating the dispatch logic.
   const applyAllPendingChanges = useCallback(async () => {
@@ -607,8 +647,9 @@ export function QuickActionPanel({
   const handleCancel = useCallback(() => {
     reset()
     resetAllPending()
+    if (isCreateMode) setCreateTitle(initialTitle ?? '')
     onCancel?.()
-  }, [reset, resetAllPending, onCancel])
+  }, [reset, resetAllPending, onCancel, isCreateMode, initialTitle])
 
   // Reset handler for the Reset button - clears all pending changes
   const handleReset = useCallback(() => {
@@ -758,68 +799,86 @@ export function QuickActionPanel({
       {/* Header section — stacked: metadata on top (full width), priority+actions row below */}
       <div>
         <div className="min-w-0">
-          {/* Title: editable when onTitleChange or onSaveAll provided, otherwise static */}
-          {title && (
-            <>
-              {(onTitleChange || onSaveAll) && editingTitle ? (
-                titleVariant === 'prominent' ? (
-                  <Textarea
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={handleTitleSave}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleTitleSave()
-                      }
-                      if (e.key === 'Escape') setEditingTitle(false)
-                    }}
-                    className="min-h-0 py-1 text-lg font-semibold"
-                    autoFocus
-                  />
+          {/* Title: create mode shows always-visible input; edit mode uses click-to-edit */}
+          {isCreateMode ? (
+            <Textarea
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  if (createTitle.trim()) handleCreate()
+                }
+              }}
+              placeholder="What needs to be done?"
+              aria-label="Task title"
+              className={`-mx-2 max-h-48 min-h-0 resize-none overflow-y-auto px-2 py-1 ${getDetailTitleClasses(createTitle).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
+              rows={1}
+              autoFocus
+            />
+          ) : (
+            title && (
+              <>
+                {(onTitleChange || onSaveAll) && editingTitle ? (
+                  titleVariant === 'prominent' ? (
+                    <Textarea
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onBlur={handleTitleSave}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleTitleSave()
+                        }
+                        if (e.key === 'Escape') setEditingTitle(false)
+                      }}
+                      className={`-mx-2 max-h-48 min-h-0 overflow-y-auto px-2 py-1 ${getDetailTitleClasses(titleDraft).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
+                      autoFocus
+                    />
+                  ) : (
+                    <Input
+                      type="text"
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onBlur={handleTitleSave}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleTitleSave()
+                        if (e.key === 'Escape') setEditingTitle(false)
+                      }}
+                      className="hover:bg-muted/50 focus:bg-muted/50 -mx-2 h-auto rounded-sm border-transparent bg-transparent px-2 py-1 text-sm font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0"
+                      autoFocus
+                    />
+                  )
                 ) : (
-                  <Input
-                    type="text"
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={handleTitleSave}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleTitleSave()
-                      if (e.key === 'Escape') setEditingTitle(false)
-                    }}
-                    className="h-auto py-1 text-sm font-medium"
-                    autoFocus
-                  />
-                )
-              ) : (
-                <div className="flex min-w-0 items-start gap-1">
-                  {(() => {
-                    const detailClasses =
-                      titleVariant === 'prominent' ? getDetailTitleClasses(title) : null
-                    return (
-                      <p
-                        className={cn(
-                          'font-medium',
-                          titleVariant === 'prominent' ? detailClasses!.sizeClass : 'text-sm',
-                          detailClasses?.scrollable && 'max-h-32 overflow-y-auto',
-                          isTitleDirty
-                            ? 'text-blue-500'
-                            : onTitleChange || onSaveAll
-                              ? 'hover:text-primary cursor-pointer transition-colors'
-                              : 'select-text',
-                        )}
-                        onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
-                      >
-                        {title}
-                      </p>
-                    )
-                  })()}
-                </div>
-              )}
-            </>
+                  <div className="flex min-w-0 items-start gap-1">
+                    {(() => {
+                      const detailClasses =
+                        titleVariant === 'prominent' ? getDetailTitleClasses(title) : null
+                      return (
+                        <p
+                          className={cn(
+                            'font-medium',
+                            titleVariant === 'prominent' ? detailClasses!.sizeClass : 'text-sm',
+                            detailClasses?.scrollable && 'max-h-32 overflow-y-auto',
+                            isTitleDirty
+                              ? 'text-blue-500'
+                              : onTitleChange || onSaveAll
+                                ? 'hover:text-primary cursor-pointer transition-colors'
+                                : 'select-text',
+                          )}
+                          onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
+                        >
+                          {title}
+                        </p>
+                      )
+                    })()}
+                  </div>
+                )}
+              </>
+            )
           )}
-          {/* Completed badge - shown in popover/inline modes when task is done */}
-          {showCompletedBadge && effectiveTask?.done && (
+          {/* Completed badge - shown in popover/inline modes when task is done (hidden in create mode) */}
+          {!isCreateMode && showCompletedBadge && effectiveTask?.done && (
             <Badge
               variant="secondary"
               className="mt-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
@@ -903,11 +962,11 @@ export function QuickActionPanel({
           )}
           {/* Priority, Labels & Action icons row */}
           <div className="mt-1.5 flex items-center gap-1.5">
-            {(effectiveTask || isBulkMode) && (
+            {(effectiveTask || isBulkMode || isCreateMode) && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {/* Priority picker (clickable) - plain text styling for alignment */}
-                {/* Show picker when onPriorityChange OR onSaveAll is provided */}
-                {onPriorityChange || onSaveAll ? (
+                {/* Show picker when onPriorityChange OR onSaveAll OR createMode is provided */}
+                {onPriorityChange || onSaveAll || isCreateMode ? (
                   <Popover open={priorityPopoverOpen} onOpenChange={setPriorityPopoverOpen}>
                     <PopoverTrigger asChild>
                       <button
@@ -960,8 +1019,8 @@ export function QuickActionPanel({
                 )}
 
                 {/* Labels with inline editing - uses displayLabels (pending or current) */}
-                {/* Show editable labels when onLabelsChange OR onSaveAll is provided */}
-                {onLabelsChange || onSaveAll ? (
+                {/* Show editable labels when onLabelsChange OR onSaveAll OR createMode is provided */}
+                {onLabelsChange || onSaveAll || isCreateMode ? (
                   <div ref={labelWrapperRef} className="relative flex flex-wrap items-center gap-1">
                     {displayLabels.map((label) => {
                       const colorClasses = getLabelClasses(label, labelConfig)
@@ -1075,9 +1134,10 @@ export function QuickActionPanel({
               {/* Show display project name (pending or current from prop) */}
               {(() => {
                 const displayProjectObj = projects?.find((p) => p.id === displayProject)
-                const displayProjectName = displayProjectObj?.name ?? projectName
+                const displayProjectName =
+                  displayProjectObj?.name ?? projectName ?? (isCreateMode ? 'Inbox' : undefined)
                 return displayProjectName &&
-                  (onProjectChange || onSaveAll) &&
+                  (onProjectChange || onSaveAll || isCreateMode) &&
                   projects &&
                   projects.length > 0 ? (
                   // Inline popover with project list
@@ -1146,9 +1206,9 @@ export function QuickActionPanel({
                   </span>
                 ) : null
               })()}
-              {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
+              {/* Recurrence button - show when onRruleChange, onSaveAll, or createMode is active */}
               {/* Blue pill when recurrence is set (matching auto-snooze style), gray icon when unset */}
-              {(onRruleChange || onSaveAll) &&
+              {(onRruleChange || onSaveAll || isCreateMode) &&
                 (displayRrule ? (
                   <button
                     type="button"
@@ -1231,7 +1291,7 @@ export function QuickActionPanel({
                 )
               })()}
               <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
-              {onDelete && (
+              {!isCreateMode && onDelete && (
                 <IconButton
                   icon={<Trash2 className="size-4" />}
                   label="Delete"
@@ -1240,44 +1300,46 @@ export function QuickActionPanel({
                 />
               )}
 
-              {/* More menu - consolidates disabled features and task details */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    aria-label="More options"
-                    title="More options"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                  {/* Clear due date - only for single task with due_at or rrule */}
-                  {isSingleTask &&
-                    (effectiveTask?.due_at || effectiveTask?.rrule) &&
-                    !pendingDueAtCleared && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setPendingDueAtCleared(true)
-                          if (effectiveTask?.rrule) {
-                            setPendingRrule(null)
-                          }
-                        }}
-                      >
-                        <XCircle className="mr-2 size-4" />
-                        Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
+              {/* More menu - consolidates disabled features and task details (hidden in create mode) */}
+              {!isCreateMode && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      aria-label="More options"
+                      title="More options"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
+                    {/* Clear due date - only for single task with due_at or rrule */}
+                    {isSingleTask &&
+                      (effectiveTask?.due_at || effectiveTask?.rrule) &&
+                      !pendingDueAtCleared && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setPendingDueAtCleared(true)
+                            if (effectiveTask?.rrule) {
+                              setPendingRrule(null)
+                            }
+                          }}
+                        >
+                          <XCircle className="mr-2 size-4" />
+                          Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
+                        </DropdownMenuItem>
+                      )}
+                    {isSingleTask && onNavigateToDetail && (
+                      <DropdownMenuItem onClick={onNavigateToDetail}>
+                        <Info className="mr-2 size-4" />
+                        Task Details
                       </DropdownMenuItem>
                     )}
-                  {isSingleTask && onNavigateToDetail && (
-                    <DropdownMenuItem onClick={onNavigateToDetail}>
-                      <Info className="mr-2 size-4" />
-                      Task Details
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         </div>
@@ -1328,7 +1390,7 @@ export function QuickActionPanel({
 
       {/* Expandable recurrence section - shown when recurrence button is clicked */}
       {/* Uses displayRrule (pending or current) and stages changes via setPendingRrule */}
-      {editingRecurrence && (onRruleChange || onSaveAll) && (
+      {editingRecurrence && (onRruleChange || onSaveAll || isCreateMode) && (
         <div className="rounded-lg border p-3">
           <RecurrencePicker
             value={displayRrule}
@@ -1358,25 +1420,40 @@ export function QuickActionPanel({
       {/* Bottom action bar - Save/Reset/Done/Cancel (popover/sheet with explicit handlers) */}
       {mode !== 'inline' && onSave && onCancel && (
         <div className="flex gap-2 border-t pt-3 select-none">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleSave}
-            disabled={!isDirty || isRecurrenceInvalid}
-            className="flex-1"
-          >
-            Save
-          </Button>
+          {isCreateMode ? (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleCreate}
+              disabled={!createTitle.trim() || isRecurrenceInvalid}
+              className="flex-1"
+            >
+              Create Task
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleSave}
+              disabled={!isDirty || isRecurrenceInvalid}
+              className="flex-1"
+            >
+              Save
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
-            onClick={handleReset}
-            disabled={!isDirty}
+            onClick={() => {
+              handleReset()
+              if (isCreateMode) setCreateTitle(initialTitle ?? '')
+            }}
+            disabled={isCreateMode ? !isDirty && createTitle === (initialTitle ?? '') : !isDirty}
             className="flex-1"
           >
             Reset
           </Button>
-          {isSingleTask && onMarkDone && !effectiveTask?.done && (
+          {!isCreateMode && isSingleTask && onMarkDone && !effectiveTask?.done && (
             <Button
               size="sm"
               onClick={handleDoneClick}

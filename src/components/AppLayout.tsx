@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
-import { AddTaskForm } from './AddTaskForm'
+import { CreateTaskPanel } from './CreateTaskPanel'
 import { OfflineBanner } from './OfflineBanner'
 import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
@@ -101,21 +101,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       <BottomTabs onAddClick={() => setShowAddForm(true)} />
 
-      {showAddForm && (
-        <AddTaskForm
-          projects={projects}
-          initialTitle={addFormTitle}
-          onClose={() => {
-            setShowAddForm(false)
-            setAddFormTitle('')
-          }}
-          onCreated={() => {
-            setShowAddForm(false)
-            setAddFormTitle('')
-            window.dispatchEvent(new CustomEvent('task-created'))
-          }}
-        />
-      )}
+      {/* Notify dashboard when CreateTaskPanel opens/closes so it can disable keyboard shortcuts */}
+      <CreatePanelStateEmitter open={showAddForm} />
+
+      <CreateTaskPanel
+        open={showAddForm}
+        projects={projects}
+        initialTitle={addFormTitle}
+        onClose={() => {
+          setShowAddForm(false)
+          setAddFormTitle('')
+        }}
+        onCreated={() => {
+          setShowAddForm(false)
+          setAddFormTitle('')
+          window.dispatchEvent(new CustomEvent('task-created'))
+        }}
+      />
     </div>
   )
+}
+
+/** Dispatches a custom event when the CreateTaskPanel opens/closes so the dashboard can disable keyboard shortcuts. */
+function CreatePanelStateEmitter({ open }: { open: boolean }) {
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open } }))
+  }, [open])
+  return null
 }
