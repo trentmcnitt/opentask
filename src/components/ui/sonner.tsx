@@ -36,8 +36,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme="system"
       className="toaster group"
-      // Push toasts above the mobile bottom nav bar (64px tall + 8px gap)
-      mobileOffset={72}
+      // Push toasts above the mobile bottom nav bar (~78px + safe area inset + gap).
+      // Sonner adds ~9px of internal padding below the toast, so we need extra room.
+      mobileOffset={{ bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))' }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
