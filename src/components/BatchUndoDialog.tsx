@@ -32,17 +32,31 @@ export function BatchUndoDialog({
   const isUndo = mode === 'undo'
   const plural = count === 1 ? 'action' : 'actions'
 
+  const single = count === 1
+
   const title = isUndo
     ? context === 'session'
-      ? 'Undo session actions'
-      : 'Undo to here'
-    : 'Redo actions'
+      ? single
+        ? 'Undo action'
+        : 'Undo session actions'
+      : single
+        ? 'Undo action'
+        : 'Undo to here'
+    : single
+      ? 'Redo action'
+      : 'Redo actions'
 
   const description = isUndo
     ? context === 'session'
-      ? `This will undo ${count} ${plural} from this session. You can redo them to restore the changes.`
-      : `This will undo ${count} ${plural}. You can redo them from the activity log to restore the changes.`
-    : `This will redo ${count} ${plural}.`
+      ? single
+        ? 'This will undo the last action from this session. You can redo it to restore the change.'
+        : `This will undo ${count} ${plural} from this session. You can redo them to restore the changes.`
+      : single
+        ? 'This will undo this action. You can redo it from the activity log to restore the change.'
+        : `This will undo ${count} ${plural}. You can redo them from the activity log to restore the changes.`
+    : single
+      ? 'This will redo this action.'
+      : `This will redo ${count} ${plural}.`
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
