@@ -36,8 +36,8 @@ test.describe('Task detail', () => {
     await expect(titleText).toBeVisible({ timeout: 3000 })
     await titleText.click()
 
-    // The title should become an editable textbox
-    const titleInput = page.locator('input').first()
+    // The title should become an editable textarea (prominent variant uses textarea)
+    const titleInput = page.locator('textarea').first()
     await expect(titleInput).toBeVisible({ timeout: 3000 })
 
     // Clear and type new title

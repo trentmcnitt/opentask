@@ -1,49 +1,52 @@
 import { test, expect } from './fixtures'
 
 test.describe('Snooze', () => {
-  test('snooze via clock icon opens sheet with presets', async ({ authenticatedPage: page }) => {
+  test('quick tap triggers immediate snooze', async ({ authenticatedPage: page }) => {
     await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
 
+    // Click snooze button (force: true because it's opacity-0 until hover)
     const snoozeBtn = page.getByRole('button', { name: /snooze "Buy groceries"/i })
     await snoozeBtn.click({ force: true })
 
-    // Snooze sheet dialog should appear with QuickActionPanel preset grid
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible({ timeout: 3000 })
-
-    // Verify snooze UI elements are present
-    // Preset labels use abbreviated form: "+1 hr" not "+1 hour"
-    await expect(dialog.getByRole('button', { name: '+1 hr' })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '+1 day' })).toBeVisible()
-
-    // Verify the title shows the task name
-    await expect(dialog.getByText('Buy groceries')).toBeVisible()
-
-    // Close without snoozing
-    await dialog.getByRole('button', { name: /close/i }).click()
-    await expect(dialog).not.toBeVisible({ timeout: 3000 })
+    // Quick tap triggers immediate snooze with a toast
+    await expect(page.getByText('Task snoozed')).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('Undo')).toBeVisible({ timeout: 3000 })
   })
 
-  test('snooze sheet shows time presets', async ({ authenticatedPage: page }) => {
+  test('long-press opens snooze menu', async ({ authenticatedPage: page }) => {
     await expect(page.getByText('Review PRs')).toBeVisible({ timeout: 5000 })
 
+    // Hover the task row to make the snooze button visible
+    const taskText = page.getByText('Review PRs')
+    await taskText.hover()
+
+    // Get snooze button bounding box for long-press simulation
     const snoozeBtn = page.getByRole('button', { name: /snooze "Review PRs"/i })
-    await snoozeBtn.click({ force: true })
+    await expect(snoozeBtn).toBeVisible({ timeout: 3000 })
+    const box = await snoozeBtn.boundingBox()
+    if (!box) throw new Error('Snooze button bounding box not found')
 
-    // Snooze sheet dialog should appear with QuickActionPanel
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible({ timeout: 3000 })
+    // Long-press: mouse down, wait 500ms (threshold is 400ms), mouse up
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.waitForTimeout(500)
+    await page.mouse.up()
 
-    // Verify preset time buttons are visible (use exact match within dialog)
-    await expect(dialog.getByRole('button', { name: '9:00 AM', exact: true })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '12:00 PM', exact: true })).toBeVisible()
+    // Snooze menu (role="menu") should appear
+    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    await expect(menu).toBeVisible({ timeout: 3000 })
 
-    // Verify increment buttons are visible
-    await expect(dialog.getByRole('button', { name: '+30 min' })).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '+1 day' })).toBeVisible()
+    // Verify menu items
+    await expect(menu.getByRole('menuitem', { name: '1 hour' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: '2 hours' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: /Tomorrow at/ })).toBeVisible()
 
-    // Close the dialog without making changes
-    await dialog.getByRole('button', { name: /close/i }).click()
-    await expect(dialog).not.toBeVisible({ timeout: 3000 })
+    // Dismiss the menu by dispatching keydown Escape directly on document.
+    // The component registers its keydown listener in setTimeout(0), so wait first.
+    await page.waitForTimeout(200)
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    await expect(menu).not.toBeVisible({ timeout: 5000 })
   })
 })
