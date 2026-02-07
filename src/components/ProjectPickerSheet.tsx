@@ -26,7 +26,7 @@ export function ProjectPickerSheet({ projects, onSelect, onClose }: ProjectPicke
               variant="outline"
               className={cn(
                 'h-auto justify-start px-4 py-3',
-                'hover:bg-accent hover:text-accent-foreground',
+                'hover:bg-accent active:bg-accent hover:text-accent-foreground',
               )}
               onClick={() => {
                 onSelect(project.id)

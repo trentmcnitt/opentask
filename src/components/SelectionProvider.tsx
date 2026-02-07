@@ -8,7 +8,7 @@ export interface SelectionContextType {
   anchor: number | null
   isSelectionMode: boolean
   toggle: (id: number) => void
-  rangeSelect: (id: number, orderedIds: number[]) => void
+  rangeSelect: (id: number, orderedIds: number[], fallbackAnchor?: number | null) => void
   selectAll: (ids: number[]) => void
   selectOnly: (id: number) => void
   addAll: (ids: number[]) => void

@@ -49,89 +49,25 @@ function SheetOverlay({
 }
 
 /**
- * Drag-to-dismiss handle for bottom sheets. Rendered automatically by SheetContent
- * when side="bottom" and draggable is not false. The user drags down on the handle
- * area; releasing past a threshold (30% of sheet height, capped at 150px) dismisses
- * the sheet. Releasing below the threshold snaps back.
+ * Drag-to-dismiss for bottom sheets. When side="bottom" and draggable is not
+ * false, the entire content area of the sheet is wrapped in a drag zone — the
+ * user can start a downward drag from anywhere inside the sheet (not just the
+ * small pill handle). Releasing past a threshold (30% of sheet height, capped
+ * at 150px) dismisses the sheet. Releasing below the threshold snaps back.
  *
- * The drag is handle-only (touch-none on the handle div) so it never conflicts
- * with scrollable content inside the sheet.
+ * A small pill handle at the top serves as a visual affordance indicating the
+ * sheet is draggable. touch-action: none is set on the content wrapper so the
+ * browser doesn't hijack the vertical gesture for scrolling or pull-to-refresh.
  *
- * On drag-dismiss, the sheet animates off-screen via inline transform, then calls
- * onOpenChange(false). Radix's exit animation runs while the sheet is already
- * off-screen (the inline transform overrides the CSS animation's transform),
- * so there's no visible snap-back. Radix's state machine completes normally,
- * allowing the sheet to reopen.
+ * On drag-dismiss, the sheet animates off-screen via inline transform, then
+ * calls onOpenChange(false). Radix's exit animation runs while the sheet is
+ * already off-screen (the inline transform overrides the CSS animation's
+ * transform), so there's no visible snap-back. Radix's state machine completes
+ * normally, allowing the sheet to reopen.
+ *
+ * Performance: drag state is stored in refs (not React state) so the gesture
+ * runs at 60fps without re-rendering children on every frame.
  */
-function DragHandle({ onDismiss }: { onDismiss: () => void }) {
-  const contentRef = React.useRef<HTMLDivElement>(null)
-  const [dragOffset, setDragOffset] = React.useState(0)
-  const [isDragging, setIsDragging] = React.useState(false)
-
-  const bind = useDrag(
-    ({ movement: [, my], down }) => {
-      // Only allow downward drag (positive y)
-      const clamped = Math.max(0, my)
-
-      if (down) {
-        setIsDragging(true)
-        setDragOffset(clamped)
-      } else {
-        // Released — check threshold
-        const sheetEl = contentRef.current?.closest('[data-slot="sheet-content"]') as HTMLElement
-        const sheetHeight = sheetEl?.offsetHeight || 400
-        const threshold = Math.min(sheetHeight * 0.3, 150)
-
-        if (clamped > threshold) {
-          // Animate off-screen (use viewport height to ensure fully hidden),
-          // then dismiss. The inline transform keeps the sheet off-screen while
-          // Radix plays its exit animation, so no visual snap-back occurs.
-          setDragOffset(window.innerHeight)
-          setIsDragging(false)
-          setTimeout(() => {
-            onDismiss()
-          }, 200)
-        } else {
-          // Snap back
-          setDragOffset(0)
-          setIsDragging(false)
-        }
-      }
-    },
-    {
-      axis: 'y',
-      filterTaps: true,
-    },
-  )
-
-  // Apply translateY to the parent SheetContent element so the entire sheet
-  // moves during drag. Inline styles are cleaned up automatically when Radix
-  // unmounts the portal on close.
-  React.useEffect(() => {
-    const sheetEl = contentRef.current?.closest('[data-slot="sheet-content"]') as HTMLElement
-    if (!sheetEl) return
-
-    if (dragOffset > 0) {
-      sheetEl.style.transform = `translateY(${dragOffset}px)`
-      sheetEl.style.transition = isDragging ? 'none' : 'transform 0.2s ease-out'
-    } else {
-      sheetEl.style.transform = ''
-      sheetEl.style.transition = ''
-    }
-  }, [dragOffset, isDragging])
-
-  return (
-    <div
-      ref={contentRef}
-      className="flex cursor-grab items-center justify-center py-3 active:cursor-grabbing"
-      {...bind()}
-      style={{ touchAction: 'none' }}
-    >
-      <div className="bg-muted-foreground/30 h-1.5 w-12 rounded-full" />
-    </div>
-  )
-}
-
 function SheetContent({
   className,
   children,
@@ -145,11 +81,66 @@ function SheetContent({
   draggable?: boolean
 }) {
   const { onOpenChange } = React.useContext(SheetContext)
-  const showDragHandle = side === 'bottom' && draggable
+  const isBottomDraggable = side === 'bottom' && draggable
 
-  const handleDragDismiss = React.useCallback(() => {
-    onOpenChange?.(false)
+  // --- Drag-to-dismiss (refs only — no re-renders during drag) ---
+  const dragWrapperRef = React.useRef<HTMLDivElement>(null)
+  const dragStateRef = React.useRef({ offset: 0, isDragging: false })
+
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  React.useEffect(() => {
+    onOpenChangeRef.current = onOpenChange
   }, [onOpenChange])
+
+  const applyTransform = React.useCallback(() => {
+    const sheetEl = dragWrapperRef.current?.closest('[data-slot="sheet-content"]') as HTMLElement
+    if (!sheetEl) return
+    const { offset, isDragging } = dragStateRef.current
+    if (offset > 0) {
+      sheetEl.style.transform = `translateY(${offset}px)`
+      sheetEl.style.transition = isDragging ? 'none' : 'transform 0.2s ease-out'
+    } else {
+      sheetEl.style.transform = ''
+      sheetEl.style.transition = ''
+    }
+  }, [])
+
+  const bind = useDrag(
+    ({ movement: [, my], down }) => {
+      const clamped = Math.max(0, my)
+
+      if (down) {
+        dragStateRef.current = { offset: clamped, isDragging: true }
+        applyTransform()
+      } else {
+        // Released — check threshold
+        const sheetEl = dragWrapperRef.current?.closest(
+          '[data-slot="sheet-content"]',
+        ) as HTMLElement
+        const sheetHeight = sheetEl?.offsetHeight || 400
+        const threshold = Math.min(sheetHeight * 0.3, 150)
+
+        if (clamped > threshold) {
+          // Animate off-screen, then dismiss. The inline transform keeps the
+          // sheet off-screen while Radix plays its exit animation.
+          dragStateRef.current = { offset: window.innerHeight, isDragging: false }
+          applyTransform()
+          setTimeout(() => {
+            onOpenChangeRef.current?.(false)
+          }, 200)
+        } else {
+          // Snap back
+          dragStateRef.current = { offset: 0, isDragging: false }
+          applyTransform()
+        }
+      }
+    },
+    {
+      axis: 'y',
+      filterTaps: true,
+      enabled: isBottomDraggable,
+    },
+  )
 
   return (
     <SheetPortal>
@@ -170,8 +161,22 @@ function SheetContent({
         )}
         {...props}
       >
-        {showDragHandle && <DragHandle onDismiss={handleDragDismiss} />}
-        {children}
+        {isBottomDraggable ? (
+          <div
+            ref={dragWrapperRef}
+            {...bind()}
+            style={{ touchAction: 'none' }}
+            className="flex flex-col"
+          >
+            {/* Visual drag handle pill */}
+            <div className="flex cursor-grab items-center justify-center py-3 active:cursor-grabbing">
+              <div className="bg-muted-foreground/30 h-1.5 w-12 rounded-full" />
+            </div>
+            {children}
+          </div>
+        ) : (
+          children
+        )}
         {showCloseButton && (
           <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
             <XIcon className="size-4" />

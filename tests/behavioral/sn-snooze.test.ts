@@ -8,11 +8,12 @@
  * SN-011 to SN-012: Snooze tracking cleared on rrule change
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb, resetDb } from '@/core/db'
 import { createTask, getTaskById, markDone, updateTask } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { executeUndo, getUndoHistory } from '@/core/undo'
+import { computeSnoozeTime } from '@/lib/snooze'
 import { DateTime } from 'luxon'
 
 const TEST_TIMEZONE = 'America/Chicago'
@@ -709,5 +710,121 @@ describe('Snooze Validation Tests', () => {
     expect(cleared.due_at).toBeNull()
     // snooze_count should stay at 1, not increment to 2
     expect(cleared.snooze_count).toBe(1)
+  })
+})
+
+describe('computeSnoozeTime rounding', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * SN-015: Snooze +1h at :45 rounds UP to the next hour
+   *
+   * At 8:45 AM, snoozing +1h computes 9:45 AM. Since 45 >= 35,
+   * it should round up to 10:00 AM (not truncate to 9:00 AM).
+   */
+  test('SN-015: +1h at :45 rounds up (minutes >= 35 threshold)', () => {
+    // Freeze time to 8:45 AM UTC
+    vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
+
+    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:45 + 60m = 9:45 → 45 >= 35 → rounds up to 10:00
+    expect(d.getUTCHours()).toBe(10)
+    expect(d.getUTCMinutes()).toBe(0)
+    expect(d.getUTCSeconds()).toBe(0)
+  })
+
+  /**
+   * SN-016: Snooze +1h at :20 truncates DOWN to the current hour
+   *
+   * At 8:20 AM, snoozing +1h computes 9:20 AM. Since 20 < 35,
+   * it should truncate to 9:00 AM.
+   */
+  test('SN-016: +1h at :20 truncates down (minutes < 35 threshold)', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:20:00Z'))
+
+    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:20 + 60m = 9:20 → 20 < 35 → truncates to 9:00
+    expect(d.getUTCHours()).toBe(9)
+    expect(d.getUTCMinutes()).toBe(0)
+    expect(d.getUTCSeconds()).toBe(0)
+  })
+
+  /**
+   * SN-017: Snooze +2h at :35 rounds up (boundary case)
+   *
+   * At 8:35 AM, snoozing +2h computes 10:35 AM. Since 35 >= 35,
+   * it should round up to 11:00 AM.
+   */
+  test('SN-017: +2h at :35 rounds up (exact boundary)', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:35:00Z'))
+
+    const result = computeSnoozeTime('120', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:35 + 120m = 10:35 → 35 >= 35 → rounds up to 11:00
+    expect(d.getUTCHours()).toBe(11)
+    expect(d.getUTCMinutes()).toBe(0)
+  })
+
+  /**
+   * SN-018: Snooze +1h at :34 truncates (just below threshold)
+   */
+  test('SN-018: +1h at :34 truncates (just below threshold)', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:34:00Z'))
+
+    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:34 + 60m = 9:34 → 34 < 35 → truncates to 9:00
+    expect(d.getUTCHours()).toBe(9)
+    expect(d.getUTCMinutes()).toBe(0)
+  })
+
+  /**
+   * SN-019: Snooze +1h at :00 stays on the hour (no rounding needed)
+   */
+  test('SN-019: +1h at :00 stays on the hour', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:00:00Z'))
+
+    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:00 + 60m = 9:00 → 0 < 35 → truncates to 9:00 (same result)
+    expect(d.getUTCHours()).toBe(9)
+    expect(d.getUTCMinutes()).toBe(0)
+  })
+
+  /**
+   * SN-020: Sub-hour snooze (e.g., 30min) uses exact time, no rounding
+   */
+  test('SN-020: sub-hour snooze uses exact time', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
+
+    const result = computeSnoozeTime('30', 'UTC', '09:00')
+    const d = new Date(result)
+
+    // 8:45 + 30m = 9:15 — no rounding for sub-hour
+    expect(d.getUTCHours()).toBe(9)
+    expect(d.getUTCMinutes()).toBe(15)
+  })
+
+  /**
+   * SN-021: 'tomorrow' option uses morningTime, not rounding
+   */
+  test('SN-021: tomorrow option uses morningTime', () => {
+    vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
+
+    const result = computeSnoozeTime('tomorrow', 'America/Chicago', '09:00')
+    const d = DateTime.fromISO(result).setZone('America/Chicago')
+
+    expect(d.hour).toBe(9)
+    expect(d.minute).toBe(0)
+    expect(d.day).toBe(16) // Tomorrow
   })
 })

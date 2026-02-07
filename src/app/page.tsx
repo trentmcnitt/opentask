@@ -872,6 +872,7 @@ function DashboardView({
         overdueCount={overdueCount}
         todayCount={todayCount}
         snoozableOverdueCount={snoozableOverdueCount}
+        isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
         onSearch={onSearch}

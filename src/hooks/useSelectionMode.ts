@@ -34,13 +34,19 @@ export function useSelectionMode() {
   }, [])
 
   const rangeSelect = useCallback(
-    (id: number, orderedIds: number[]) => {
-      if (anchor === null) {
+    (id: number, orderedIds: number[], fallbackAnchor?: number | null) => {
+      // Use the selection anchor if available, otherwise fall back to
+      // the provided fallback (e.g. keyboardFocusedId). This enables
+      // shift-click range selection from outside selection mode: click
+      // a task to give it keyboard focus, then shift-click another to
+      // select the range between them.
+      const effectiveAnchor = anchor ?? fallbackAnchor ?? null
+      if (effectiveAnchor === null) {
         toggle(id)
         return
       }
 
-      const anchorIdx = orderedIds.indexOf(anchor)
+      const anchorIdx = orderedIds.indexOf(effectiveAnchor)
       const targetIdx = orderedIds.indexOf(id)
       if (anchorIdx === -1 || targetIdx === -1) {
         toggle(id)
@@ -57,6 +63,8 @@ export function useSelectionMode() {
         }
         return next
       })
+      setIsSelectionMode(true)
+      setAnchor(effectiveAnchor)
     },
     [anchor, toggle],
   )

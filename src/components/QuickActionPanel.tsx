@@ -798,12 +798,6 @@ export function QuickActionPanel({
                       </p>
                     )
                   })()}
-                  {/* Recurring indicator icon next to title (only for single recurring tasks) */}
-                  {effectiveTask?.rrule && (
-                    <span className="text-muted-foreground flex-shrink-0" title="Recurring">
-                      <Repeat className="size-3.5" />
-                    </span>
-                  )}
                 </div>
               )}
             </>
@@ -859,8 +853,8 @@ export function QuickActionPanel({
               {recurrenceText}
             </p>
           )}
-          {/* Recurrence inline (without icon) - for non-SelectionActionSheet modes */}
-          {/* Shows "One time" in muted color for non-recurring, or recurrence pattern for recurring */}
+          {/* Recurrence inline - for non-SelectionActionSheet modes */}
+          {/* Shows "One time" in muted color for non-recurring, or recurrence pattern with icon for recurring */}
           {!isSelectionSheetMode && recurrenceText && (
             <p
               className={cn(
@@ -868,6 +862,7 @@ export function QuickActionPanel({
                 isOneTime ? 'text-muted-foreground/60' : 'text-muted-foreground',
               )}
             >
+              {!isOneTime && <Repeat className="mr-1 inline size-3" />}
               {recurrenceText}
             </p>
           )}
@@ -900,7 +895,7 @@ export function QuickActionPanel({
                           type="button"
                           className={cn(
                             'flex w-full items-center rounded px-2 py-1.5 text-sm transition-colors',
-                            'hover:bg-accent',
+                            'hover:bg-accent active:bg-accent',
                             opt.color,
                             displayPriority === opt.value && 'bg-accent',
                           )}
@@ -991,7 +986,7 @@ export function QuickActionPanel({
                                   <button
                                     key={c.name}
                                     type="button"
-                                    className="hover:bg-accent flex w-full items-center gap-2 rounded px-2 py-1 text-sm"
+                                    className="hover:bg-accent active:bg-accent flex w-full items-center gap-2 rounded px-2 py-1 text-sm"
                                     onClick={() => addLabel(c.name)}
                                   >
                                     <Badge
@@ -1051,7 +1046,7 @@ export function QuickActionPanel({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                        className="bg-muted text-muted-foreground hover:bg-accent active:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
                       >
                         {displayProjectName}
                         <ChevronDown className="size-3 opacity-50" />
@@ -1064,7 +1059,7 @@ export function QuickActionPanel({
                           type="button"
                           className={cn(
                             'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors',
-                            'hover:bg-accent',
+                            'hover:bg-accent active:bg-accent',
                             displayProject === p.id && 'bg-accent',
                           )}
                           onClick={() => {
@@ -1083,7 +1078,7 @@ export function QuickActionPanel({
                   <button
                     type="button"
                     onClick={onMoveToProject}
-                    className="bg-muted text-muted-foreground hover:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
+                    className="bg-muted text-muted-foreground hover:bg-accent active:bg-accent flex shrink-0 items-center gap-0.5 rounded px-2 py-0.5 text-xs transition-colors"
                   >
                     {displayProjectName}
                     <ChevronDown className="size-3 opacity-50" />
@@ -1096,14 +1091,31 @@ export function QuickActionPanel({
                 ) : null
               })()}
               {/* Recurrence button - show when onRruleChange or onSaveAll is provided */}
-              {(onRruleChange || onSaveAll) && (
-                <IconButton
-                  icon={<Repeat className="size-4" />}
-                  label="Recurrence"
-                  onClick={handleRecurrenceToggle}
-                  active={editingRecurrence}
-                />
-              )}
+              {/* Blue pill when recurrence is set (matching auto-snooze style), gray icon when unset */}
+              {(onRruleChange || onSaveAll) &&
+                (displayRrule ? (
+                  <button
+                    type="button"
+                    onClick={handleRecurrenceToggle}
+                    className={cn(
+                      'flex h-8 shrink-0 items-center rounded-md px-1.5 text-xs transition-colors',
+                      editingRecurrence
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
+                    )}
+                    aria-label="Recurrence"
+                    title="Recurrence"
+                  >
+                    <Repeat className="size-4" />
+                  </button>
+                ) : (
+                  <IconButton
+                    icon={<Repeat className="size-4" />}
+                    label="Recurrence"
+                    onClick={handleRecurrenceToggle}
+                    active={editingRecurrence}
+                  />
+                ))}
               {/* Auto-snooze picker — per-task notification repeat interval */}
               {(() => {
                 const effectiveAutoSnooze =
@@ -1148,8 +1160,8 @@ export function QuickActionPanel({
                         className={cn(
                           'flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors',
                           isDefault
-                            ? 'text-muted-foreground/60 hover:bg-accent'
-                            : 'bg-blue-500 text-white hover:bg-blue-600',
+                            ? 'text-muted-foreground/60 hover:bg-accent active:bg-accent'
+                            : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
                         )}
                         title={`Auto-snooze: ${isMixedAutoSnooze ? 'mixed' : formatAutoSnoozeLabel(effectiveMinutes)}`}
                       >
@@ -1312,7 +1324,7 @@ export function QuickActionPanel({
             <Button
               size="sm"
               onClick={handleDoneClick}
-              className="flex-1 bg-green-600 text-white hover:bg-green-700"
+              className="flex-1 bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
             >
               <Check className="mr-1 size-4" />
               Done
@@ -1381,13 +1393,13 @@ function GridButton({
         'min-h-[44px]', // Apple HIG touch target
         'active:scale-[0.97]',
         span === 2 && 'col-span-2',
-        variant === 'preset' && 'bg-card hover:bg-accent border-border',
+        variant === 'preset' && 'bg-card hover:bg-accent active:bg-accent border-border',
         variant === 'increment' &&
-          'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50',
+          'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 dark:active:bg-emerald-950/50',
         variant === 'decrement' &&
-          'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50',
+          'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 dark:active:bg-amber-950/50',
         variant === 'smart' &&
-          'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50',
+          'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 dark:active:bg-blue-950/50',
       )}
     >
       {label}

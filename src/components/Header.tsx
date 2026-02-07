@@ -26,6 +26,7 @@ interface HeaderProps {
   overdueCount?: number
   todayCount?: number
   snoozableOverdueCount?: number
+  isSelectionMode?: boolean
   onUndo: () => void
   onRedo: () => void
   onSearch?: (query: string) => void
@@ -39,6 +40,7 @@ export function Header({
   overdueCount = 0,
   todayCount = 0,
   snoozableOverdueCount = 0,
+  isSelectionMode = false,
   onUndo,
   onRedo,
   onSearch,
@@ -170,7 +172,7 @@ export function Header({
             {/* Snooze all overdue button - desktop only (mobile uses FAB).
                Single click: snooze using default duration.
                Long-press (400ms): opens SnoozeMenu with duration choices. */}
-            {onSnoozeOverdue && snoozableOverdueCount > 0 && (
+            {onSnoozeOverdue && snoozableOverdueCount > 0 && !isSelectionMode && (
               <SnoozeMenu
                 open={snoozeMenuOpen}
                 onOpenChange={setSnoozeMenuOpen}

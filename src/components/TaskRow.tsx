@@ -328,6 +328,7 @@ export function TaskRow({
   const metaSegments = buildMetaSegments(task, timezone, isOverdue)
   const hasLabels = task.labels.length > 0
   const hasLine2 = metaSegments.length > 0
+  const iconHeight = getIconAlignHeight(task.title)
 
   return (
     <div
@@ -396,7 +397,11 @@ export function TaskRow({
         <div className="flex items-start gap-2">
           {leadingPriorityIndicator && (
             <span
-              className={cn('flex-shrink-0 text-sm font-bold', leadingPriorityIndicator.color)}
+              className={cn(
+                'flex flex-shrink-0 items-center text-sm font-bold',
+                iconHeight,
+                leadingPriorityIndicator.color,
+              )}
               title={leadingPriorityIndicator.title}
             >
               {leadingPriorityIndicator.icon}
@@ -433,7 +438,11 @@ export function TaskRow({
 
           {priorityDisplay.trailingDot && trailingPriorityIndicator && (
             <span
-              className={cn('-ml-1 flex-shrink-0 text-[10px]', trailingPriorityIndicator.color)}
+              className={cn(
+                '-ml-1 flex flex-shrink-0 items-center text-[10px]',
+                iconHeight,
+                trailingPriorityIndicator.color,
+              )}
               title={trailingPriorityIndicator.title}
             >
               ●
@@ -441,18 +450,24 @@ export function TaskRow({
           )}
 
           {task.rrule && (
-            <span className="text-muted-foreground flex-shrink-0" title="Recurring">
+            <span
+              className={cn('text-muted-foreground flex shrink-0 items-center', iconHeight)}
+              title="Recurring"
+            >
               <Repeat className="size-3.5" />
             </span>
           )}
 
           {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
-            <span className="text-muted-foreground flex-shrink-0" title="Auto-snooze off">
+            <span
+              className={cn('text-muted-foreground flex shrink-0 items-center', iconHeight)}
+              title="Auto-snooze off"
+            >
               <TimerOff className="size-3.5" />
             </span>
           ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
             <span
-              className="text-muted-foreground flex shrink-0 items-center gap-0.5"
+              className={cn('text-muted-foreground flex shrink-0 items-center gap-0.5', iconHeight)}
               title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
             >
               <Timer className="size-3.5" />
@@ -461,11 +476,13 @@ export function TaskRow({
           ) : null}
 
           {hasLabels && (
-            <LabelBadges
-              labels={task.labels}
-              labelConfig={labelConfig}
-              onLabelClick={onLabelClick}
-            />
+            <span className={cn('flex shrink-0 items-center', iconHeight)}>
+              <LabelBadges
+                labels={task.labels}
+                labelConfig={labelConfig}
+                onLabelClick={onLabelClick}
+              />
+            </span>
           )}
         </div>
 
@@ -591,6 +608,19 @@ function getTitleSizeClass(title: string): string {
   if (len <= 80) return ''
   if (len <= 160) return 'text-sm'
   return 'text-xs'
+}
+
+/**
+ * Height class matching the text line-height for the title tier.
+ * Used on indicator spans (with `flex items-center`) so icons are
+ * vertically centered against the first line of text when the
+ * parent uses `items-start`.
+ */
+function getIconAlignHeight(title: string): string {
+  const len = title.length
+  if (len <= 80) return 'h-6' // 24px = text-base line-height
+  if (len <= 160) return 'h-5' // 20px = text-sm line-height
+  return 'h-4' // 16px = text-xs line-height
 }
 
 /**

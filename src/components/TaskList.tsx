@@ -17,6 +17,7 @@ import type { Task, Project } from '@/types'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/LabelConfigProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 
@@ -151,6 +152,7 @@ export function TaskList({
   const setSortOption = setSortOptionProp ?? internalSort.setSortOption
   const selection = useSelectionOptional() ?? fallbackSelection
   const timezone = useTimezone()
+  const isMobile = useIsMobile()
   const listRef = useRef<HTMLDivElement>(null)
 
   // Focus the listbox when entering selection mode (e.g., when clicking a task)
@@ -276,11 +278,15 @@ export function TaskList({
                       isSelectionMode={selection.isSelectionMode}
                       onSelect={() => selection.toggle(task.id)}
                       onSelectOnly={() => selection.selectOnly(task.id)}
-                      onRangeSelect={() => selection.rangeSelect(task.id, orderedIds)}
+                      onRangeSelect={() =>
+                        selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
+                      }
                       cancelLongPressRef={cancelRef}
                       onLabelClick={onLabelClick}
                       onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
-                      isKeyboardFocused={isKeyboardActive && task.id === keyboardFocusedId}
+                      isKeyboardFocused={
+                        isKeyboardActive && !isMobile && task.id === keyboardFocusedId
+                      }
                       onActivate={onActivate ? () => onActivate(task.id) : undefined}
                       onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                     />

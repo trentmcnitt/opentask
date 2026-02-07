@@ -63,7 +63,7 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
                   key={opt.option}
                   type="button"
                   onClick={() => handleSelect(opt.option)}
-                  className="hover:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors"
+                  className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors"
                 >
                   <Clock className="text-muted-foreground size-4" />
                   {opt.label}
@@ -170,7 +170,7 @@ function SnoozeDropdown({
           role="menuitem"
           type="button"
           onClick={() => onSelect(opt.option)}
-          className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
+          className="hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors"
         >
           <Clock className="size-4 flex-shrink-0" />
           {opt.label}

@@ -21,9 +21,14 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
 
   const minutes = parseInt(option, 10)
   if (minutes >= 60) {
-    // Round up to the next hour boundary (matches existing behavior for 1h+ snoozes)
+    // Snap to the nearest hour using a 35-minute threshold (matches snapToNextHour
+    // in quick-select-dates.ts): >=35 past the hour rounds up, <35 truncates down.
     const t = new Date(Date.now() + minutes * 60 * 1000)
+    const mins = t.getMinutes()
     t.setMinutes(0, 0, 0)
+    if (mins >= 35) {
+      t.setHours(t.getHours() + 1)
+    }
     return t.toISOString()
   }
 

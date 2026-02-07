@@ -318,7 +318,7 @@ export function SelectionActionSheet({
             size="sm"
             variant="secondary"
             onClick={onDone}
-            className="bg-green-600 text-white hover:bg-green-700"
+            className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
           >
             <Check className="mr-1 size-4" />
             Done
@@ -341,7 +341,7 @@ export function SelectionActionSheet({
             size="icon"
             onClick={onClear}
             aria-label="Clear selection"
-            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 ml-2"
+            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-2"
           >
             <X className="size-4" />
           </Button>
