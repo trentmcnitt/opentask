@@ -13,7 +13,7 @@ import { getDb, resetDb } from '@/core/db'
 import { createTask, getTaskById, markDone, updateTask } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { executeUndo, getUndoHistory } from '@/core/undo'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { computeSnoozeTime, snapToHour } from '@/lib/snooze'
 import { DateTime } from 'luxon'
 
 const TEST_TIMEZONE = 'America/Chicago'
@@ -826,5 +826,47 @@ describe('computeSnoozeTime rounding', () => {
     expect(d.hour).toBe(9)
     expect(d.minute).toBe(0)
     expect(d.day).toBe(16) // Tomorrow
+  })
+})
+
+describe('snapToHour', () => {
+  test('rounds up when minutes >= 35', () => {
+    const result = snapToHour(new Date('2026-01-15T08:45:00Z'))
+    expect(result.getUTCHours()).toBe(9)
+    expect(result.getUTCMinutes()).toBe(0)
+    expect(result.getUTCSeconds()).toBe(0)
+    expect(result.getUTCMilliseconds()).toBe(0)
+  })
+
+  test('truncates down when minutes < 35', () => {
+    const result = snapToHour(new Date('2026-01-15T08:20:00Z'))
+    expect(result.getUTCHours()).toBe(8)
+    expect(result.getUTCMinutes()).toBe(0)
+    expect(result.getUTCSeconds()).toBe(0)
+  })
+
+  test('rounds up at exact boundary (35 minutes)', () => {
+    const result = snapToHour(new Date('2026-01-15T08:35:00Z'))
+    expect(result.getUTCHours()).toBe(9)
+    expect(result.getUTCMinutes()).toBe(0)
+  })
+
+  test('truncates at 34 minutes (just below threshold)', () => {
+    const result = snapToHour(new Date('2026-01-15T08:34:00Z'))
+    expect(result.getUTCHours()).toBe(8)
+    expect(result.getUTCMinutes()).toBe(0)
+  })
+
+  test('keeps exact hour unchanged (0 minutes)', () => {
+    const result = snapToHour(new Date('2026-01-15T08:00:00Z'))
+    expect(result.getUTCHours()).toBe(8)
+    expect(result.getUTCMinutes()).toBe(0)
+  })
+
+  test('does not mutate the input date', () => {
+    const input = new Date('2026-01-15T08:45:00Z')
+    const originalTime = input.getTime()
+    snapToHour(input)
+    expect(input.getTime()).toBe(originalTime)
   })
 })

@@ -1,5 +1,18 @@
 import { DateTime } from 'luxon'
 
+const HOUR_ROUND_THRESHOLD = 35
+
+/** Snap a Date to the nearest hour: >=35 min rounds up, <35 truncates down. */
+export function snapToHour(date: Date): Date {
+  const result = new Date(date.getTime())
+  const mins = result.getMinutes()
+  result.setMinutes(0, 0, 0)
+  if (mins >= HOUR_ROUND_THRESHOLD) {
+    result.setHours(result.getHours() + 1)
+  }
+  return result
+}
+
 /**
  * Compute the UTC ISO string for a snooze target time.
  *
@@ -21,15 +34,7 @@ export function computeSnoozeTime(option: string, timezone: string, morningTime:
 
   const minutes = parseInt(option, 10)
   if (minutes >= 60) {
-    // Snap to the nearest hour using a 35-minute threshold (matches snapToNextHour
-    // in quick-select-dates.ts): >=35 past the hour rounds up, <35 truncates down.
-    const t = new Date(Date.now() + minutes * 60 * 1000)
-    const mins = t.getMinutes()
-    t.setMinutes(0, 0, 0)
-    if (mins >= 35) {
-      t.setHours(t.getHours() + 1)
-    }
-    return t.toISOString()
+    return snapToHour(new Date(Date.now() + minutes * 60 * 1000)).toISOString()
   }
 
   // Sub-hour: exact minutes from now

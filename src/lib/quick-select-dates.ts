@@ -8,6 +8,7 @@
  */
 
 import { parseLocalDatetimeInput, getTimezoneDayBoundaries } from '@/lib/format-date'
+import { snapToHour } from '@/lib/snooze'
 
 /** Preset time slots (24h format in user's local timezone) */
 export const PRESET_TIMES = [
@@ -264,14 +265,12 @@ export function snapToNearestFiveMinutes(now?: Date): string {
 
 /**
  * Round up to the top of the next hour, or the hour after if past X:35.
+ * Advances at least one hour first, then snaps to the nearest hour boundary.
  * - 1:30 PM → 2:00 PM (minutes < 35)
  * - 1:37 PM → 3:00 PM (minutes >= 35)
  */
 export function snapToNextHour(now?: Date): string {
   const reference = now ?? new Date()
-  const minutes = reference.getMinutes()
-  const result = new Date(reference.getTime())
-  result.setMinutes(0, 0, 0)
-  result.setHours(result.getHours() + (minutes >= 35 ? 2 : 1))
-  return result.toISOString()
+  const oneHourLater = new Date(reference.getTime() + 60 * 60 * 1000)
+  return snapToHour(oneHourLater).toISOString()
 }
