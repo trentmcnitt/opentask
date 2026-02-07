@@ -50,7 +50,7 @@ const rruleString = z
  * Task creation input schema
  */
 export const taskCreateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(500, 'Title too long'),
+  title: z.string().min(1, 'Title is required').max(10000, 'Title too long'),
   due_at: dateTimeString.nullable().optional(),
   rrule: rruleString,
   recurrence_mode: recurrenceMode.default('from_due').optional(),
@@ -67,7 +67,7 @@ export type TaskCreateInput = z.infer<typeof taskCreateSchema>
  * All fields optional - only included fields are updated
  */
 export const taskUpdateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(500, 'Title too long').optional(),
+  title: z.string().min(1, 'Title is required').max(10000, 'Title too long').optional(),
   due_at: dateTimeString.nullable().optional(),
   rrule: rruleString,
   recurrence_mode: recurrenceMode.optional(),

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,7 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
   const [recurrenceMode, setRecurrenceMode] = useState<RecurrenceMode>('from_due')
   const [showRecurrence, setShowRecurrence] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const titleRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     titleRef.current?.focus()
@@ -128,14 +129,21 @@ export function AddTaskForm({ projects, initialTitle, onClose, onCreated }: AddT
             <label htmlFor="task-title" className="mb-1 block text-sm font-medium">
               Title
             </label>
-            <Input
+            <Textarea
               ref={titleRef}
               id="task-title"
-              type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSubmit(e)
+                }
+              }}
               placeholder="What needs to be done?"
               required
+              rows={1}
+              className="min-h-0 resize-none"
             />
           </div>
 

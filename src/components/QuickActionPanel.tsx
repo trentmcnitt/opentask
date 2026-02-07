@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -146,6 +147,18 @@ export interface QuickActionPanelProps {
    * with a single undo entry. Falls back to individual callbacks if not provided.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
+}
+
+/**
+ * Tiered text sizing for the detail page (prominent) title.
+ * The detail page has more room than the dashboard, so thresholds are higher.
+ * For extreme lengths (501+), also adds a scrollable container.
+ */
+function getDetailTitleClasses(title: string): { sizeClass: string; scrollable: boolean } {
+  const len = title.length
+  if (len <= 200) return { sizeClass: 'text-lg', scrollable: false }
+  if (len <= 500) return { sizeClass: 'text-base', scrollable: false }
+  return { sizeClass: 'text-sm', scrollable: true }
 }
 
 export function QuickActionPanel({
@@ -735,35 +748,56 @@ export function QuickActionPanel({
           {title && (
             <>
               {(onTitleChange || onSaveAll) && editingTitle ? (
-                <Input
-                  type="text"
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={handleTitleSave}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleTitleSave()
-                    if (e.key === 'Escape') setEditingTitle(false)
-                  }}
-                  className={cn(
-                    'h-auto py-1',
-                    titleVariant === 'prominent' ? 'text-lg font-semibold' : 'text-sm font-medium',
-                  )}
-                  autoFocus
-                />
+                titleVariant === 'prominent' ? (
+                  <Textarea
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={handleTitleSave}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleTitleSave()
+                      }
+                      if (e.key === 'Escape') setEditingTitle(false)
+                    }}
+                    className="min-h-0 py-1 text-lg font-semibold"
+                    autoFocus
+                  />
+                ) : (
+                  <Input
+                    type="text"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={handleTitleSave}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleTitleSave()
+                      if (e.key === 'Escape') setEditingTitle(false)
+                    }}
+                    className="h-auto py-1 text-sm font-medium"
+                    autoFocus
+                  />
+                )
               ) : (
-                <div className="flex min-w-0 items-center gap-1">
-                  <p
-                    className={cn(
-                      'font-medium',
-                      titleVariant === 'prominent' ? 'text-lg' : 'text-sm',
-                      onTitleChange || onSaveAll
-                        ? 'hover:text-primary cursor-pointer transition-colors'
-                        : 'select-text',
-                    )}
-                    onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
-                  >
-                    {title}
-                  </p>
+                <div className="flex min-w-0 items-start gap-1">
+                  {(() => {
+                    const detailClasses =
+                      titleVariant === 'prominent' ? getDetailTitleClasses(title) : null
+                    return (
+                      <p
+                        className={cn(
+                          'font-medium',
+                          titleVariant === 'prominent' ? detailClasses!.sizeClass : 'text-sm',
+                          detailClasses?.scrollable && 'max-h-32 overflow-y-auto',
+                          onTitleChange || onSaveAll
+                            ? 'hover:text-primary cursor-pointer transition-colors'
+                            : 'select-text',
+                        )}
+                        onClick={onTitleChange || onSaveAll ? handleTitleClick : undefined}
+                      >
+                        {title}
+                      </p>
+                    )
+                  })()}
                   {/* Recurring indicator icon next to title (only for single recurring tasks) */}
                   {effectiveTask?.rrule && (
                     <span className="text-muted-foreground flex-shrink-0" title="Recurring">

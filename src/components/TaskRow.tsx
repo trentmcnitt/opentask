@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Check, Clock, Repeat } from 'lucide-react'
+import { Check, Clock, Repeat, Timer, TimerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -14,12 +14,13 @@ import { useLabelConfig, useSnoozePreferences } from '@/components/LabelConfigPr
 import { getLabelClasses } from '@/lib/label-colors'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
+import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import type { Task, LabelConfig } from '@/types'
 
 /**
  * TaskRow visual reference — complete rendered examples:
  *
- *   Line 1: [priority] [title] [recurrence icon] [labels]
+ *   Line 1: [priority] [title] [recurrence icon] [auto-snooze icon] [labels]
  *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X]
  *
  * Due soon (< 3h, shows both relative + absolute):
@@ -271,7 +272,7 @@ export function TaskRow({
    * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
    * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
    * | In selection mode    | Desktop Shift+click     | rangeSelect - select range                 |
-   * | In selection mode    | Mobile tap              | toggle - accumulate selection              |
+   * | In selection mode    | Mobile tap              | toggle - accumulate (no blue glow)         |
    *
    * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
    * actually select. Double-click opens QuickActionPanel for quick edits.
@@ -302,8 +303,10 @@ export function TaskRow({
         onSelect()
         onActivate?.()
       } else if (isSelectionMode && pointer.wasTouch() && onSelect) {
+        // Touch in selection mode: toggle selection only, no keyboard focus (blue glow).
+        // Keyboard focus is a desktop affordance (arrow keys, Space, Cmd+D) with no
+        // purpose on mobile — showing it on touch just creates visual noise.
         onSelect()
-        onActivate?.()
       } else if (isSelectionMode && onSelectOnly) {
         onSelectOnly()
         onActivate?.()
@@ -390,7 +393,7 @@ export function TaskRow({
 
       {/* Task content */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           {leadingPriorityIndicator && (
             <span
               className={cn('flex-shrink-0 text-sm font-bold', leadingPriorityIndicator.color)}
@@ -403,7 +406,8 @@ export function TaskRow({
           {isSelectionMode ? (
             <span
               className={cn(
-                'truncate font-medium',
+                'line-clamp-3 font-medium',
+                getTitleSizeClass(task.title),
                 priorityDisplay.colorTitle && priorityColors?.text,
               )}
             >
@@ -413,7 +417,8 @@ export function TaskRow({
             <Link
               href={`/tasks/${task.id}`}
               className={cn(
-                'truncate font-medium hover:underline',
+                'line-clamp-3 font-medium hover:underline',
+                getTitleSizeClass(task.title),
                 priorityDisplay.colorTitle && priorityColors?.text,
               )}
               onClick={(e) => {
@@ -440,6 +445,20 @@ export function TaskRow({
               <Repeat className="size-3.5" />
             </span>
           )}
+
+          {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
+            <span className="text-muted-foreground flex-shrink-0" title="Auto-snooze off">
+              <TimerOff className="size-3.5" />
+            </span>
+          ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
+            <span
+              className="text-muted-foreground flex shrink-0 items-center gap-0.5"
+              title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
+            >
+              <Timer className="size-3.5" />
+              <span className="text-xs">{formatAutoSnoozeLabel(task.auto_snooze_minutes)}</span>
+            </span>
+          ) : null}
 
           {hasLabels && (
             <LabelBadges
@@ -560,6 +579,18 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   return segments
+}
+
+/**
+ * Tiered text sizing for task titles on the dashboard.
+ * Short titles use the default size, medium titles shrink to text-sm,
+ * and long titles shrink to text-xs to fit more content in 3 lines.
+ */
+function getTitleSizeClass(title: string): string {
+  const len = title.length
+  if (len <= 80) return ''
+  if (len <= 160) return 'text-sm'
+  return 'text-xs'
 }
 
 /**

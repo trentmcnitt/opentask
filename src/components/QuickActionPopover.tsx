@@ -114,10 +114,6 @@ export function QuickActionPopover({
             <SheetTitle>Quick Actions</SheetTitle>
             <SheetDescription>Adjust date, priority, and other task settings</SheetDescription>
           </VisuallyHidden>
-          {/* Drag handle */}
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="bg-muted-foreground/30 h-1 w-10 rounded-full" />
-          </div>
           <div className="px-4 pb-2">{panel}</div>
         </SheetContent>
       </Sheet>
