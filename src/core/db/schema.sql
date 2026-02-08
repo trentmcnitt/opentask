@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   last_completed_at  TEXT,
   meta_notes         TEXT,
 
+  -- AI enrichment status: null (no AI needed), 'pending', 'processing', 'complete', 'failed'
+  ai_status          TEXT,
+
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -149,3 +152,23 @@ CREATE INDEX IF NOT EXISTS idx_user_daily_stats_user_date
   ON user_daily_stats(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_user_daily_stats_date
   ON user_daily_stats(date);
+
+-- AI activity log (tracks all AI operations for debugging and cost visibility)
+CREATE TABLE IF NOT EXISTS ai_activity_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  task_id     INTEGER,
+  action      TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  input       TEXT,
+  output      TEXT,
+  model       TEXT,
+  duration_ms INTEGER,
+  error       TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_activity_log_user_id ON ai_activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_activity_log_task_id ON ai_activity_log(task_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_ai_status ON tasks(ai_status);

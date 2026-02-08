@@ -16,6 +16,8 @@ export async function register() {
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
     const { purgeOldStats } = await import('@/core/stats/purge')
+    const { initAI, isAIEnabled, processEnrichmentQueue, resetStuckTasks } =
+      await import('@/core/ai')
 
     // Start notification service
     initNotifications()
@@ -64,5 +66,20 @@ export async function register() {
       'cron',
       'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday)',
     )
+
+    // AI enrichment
+    await initAI()
+    if (isAIEnabled()) {
+      // Reset tasks stuck in 'processing' from a previous server restart
+      resetStuckTasks()
+
+      const intervalSeconds = parseInt(process.env.OPENTASK_AI_ENRICHMENT_INTERVAL || '10', 10)
+      cron.schedule(`*/${intervalSeconds} * * * * *`, () => {
+        processEnrichmentQueue().catch((err) => {
+          log.error('cron', 'AI enrichment queue error:', err)
+        })
+      })
+      log.info('ai', `AI enrichment cron started (every ${intervalSeconds}s)`)
+    }
   }
 }

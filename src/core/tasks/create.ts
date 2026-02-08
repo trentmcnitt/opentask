@@ -8,6 +8,7 @@ import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { isAIEnabled } from '@/core/ai'
 
 export interface CreateTaskOptions {
   userId: number
@@ -100,7 +101,15 @@ export function createTask(options: CreateTaskOptions): Task {
 
     const taskId = Number(result.lastInsertRowid)
 
-    // Fetch the created task
+    // Flag for AI enrichment if task was created with title only (no other fields set).
+    // Must run before getTaskById so the returned task has the correct ai_status.
+    const isTitleOnly =
+      !input.due_at && (input.priority ?? 0) === 0 && !input.labels?.length && !input.rrule
+    if (isAIEnabled() && isTitleOnly) {
+      tx.prepare("UPDATE tasks SET ai_status = 'pending' WHERE id = ?").run(taskId)
+    }
+
+    // Fetch the created task (after ai_status is set)
     const task = getTaskById(taskId)
     if (!task) {
       throw new Error('Failed to retrieve created task')
@@ -137,7 +146,7 @@ export function getTaskById(taskId: number): Task | null {
            original_due_at, last_notified_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
            completion_count, snooze_count, first_completed_at, last_completed_at,
-           meta_notes, created_at, updated_at
+           meta_notes, ai_status, created_at, updated_at
     FROM tasks WHERE id = ?
   `,
     )
@@ -252,7 +261,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.deleted_at, tasks.archived_at,
            tasks.labels, tasks.completion_count, tasks.snooze_count,
            tasks.first_completed_at, tasks.last_completed_at,
-           tasks.meta_notes, tasks.created_at, tasks.updated_at
+           tasks.meta_notes, tasks.ai_status, tasks.created_at, tasks.updated_at
     FROM tasks
     INNER JOIN projects ON tasks.project_id = projects.id
     WHERE ${conditions.join(' AND ')}
@@ -290,6 +299,7 @@ interface TaskRow {
   first_completed_at: string | null
   last_completed_at: string | null
   meta_notes: string | null
+  ai_status: string | null
   created_at: string
   updated_at: string
 }
@@ -320,6 +330,7 @@ function rowToTask(row: TaskRow): Task {
     first_completed_at: row.first_completed_at,
     last_completed_at: row.last_completed_at,
     meta_notes: row.meta_notes,
+    ai_status: row.ai_status as Task['ai_status'],
     created_at: row.created_at,
     updated_at: row.updated_at,
   }

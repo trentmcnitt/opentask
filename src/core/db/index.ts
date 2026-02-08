@@ -136,6 +136,11 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks RENAME COLUMN snoozed_from TO original_due_at')
   }
 
+  // Migration: Add ai_status to tasks
+  if (!hasColumn('tasks', 'ai_status')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN ai_status TEXT')
+  }
+
   // Migration: Create user_daily_stats table if it doesn't exist
   // This is handled by schema.sql CREATE TABLE IF NOT EXISTS, but we need
   // to ensure the table exists for older databases that ran schema.sql

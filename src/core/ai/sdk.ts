@@ -1,0 +1,176 @@
+/**
+ * Claude Agent SDK wrapper
+ *
+ * Provides a simplified interface for AI queries with error handling,
+ * duration measurement, and activity logging. The SDK spawns Claude Code
+ * subprocesses — it uses the server's existing Claude Code authentication
+ * (Max subscription), so no API key is needed.
+ */
+
+import { log } from '@/lib/logger'
+import { logAIActivity } from './activity'
+import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
+
+let aiEnabled: boolean | null = null
+
+/**
+ * Check if AI features are enabled.
+ * Reads OPENTASK_AI_ENABLED env var (default: false).
+ */
+export function isAIEnabled(): boolean {
+  if (aiEnabled === null) {
+    aiEnabled = process.env.OPENTASK_AI_ENABLED === 'true'
+  }
+  return aiEnabled
+}
+
+/**
+ * Initialize AI subsystem. Called from instrumentation.ts on server startup.
+ * Validates that the SDK is importable and logs the AI status.
+ */
+export async function initAI(): Promise<void> {
+  if (!isAIEnabled()) {
+    log.info('ai', 'AI features disabled (OPENTASK_AI_ENABLED != true)')
+    return
+  }
+
+  try {
+    // Verify the SDK is installed and importable
+    await import('@anthropic-ai/claude-agent-sdk')
+    log.info('ai', 'AI features enabled — Claude Agent SDK loaded')
+  } catch {
+    log.error(
+      'ai',
+      'AI features enabled but SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
+    )
+    aiEnabled = false
+  }
+}
+
+export interface AIQueryOptions {
+  /** The prompt to send to the model */
+  prompt: string
+  /** JSON Schema for structured output (optional) */
+  outputSchema?: Record<string, unknown>
+  /** Model to use (default: from env OPENTASK_AI_ENRICHMENT_MODEL or 'haiku') */
+  model?: string
+  /** Maximum conversation turns (default: 3) */
+  maxTurns?: number
+  /** User ID for activity logging */
+  userId: number
+  /** Task ID for activity logging (optional) */
+  taskId?: number
+  /** Action name for activity logging (e.g., 'enrich') */
+  action: string
+  /** Raw input text for activity logging */
+  inputText?: string
+}
+
+export interface AIQueryResult {
+  /** The structured output from the model, or null on failure */
+  structuredOutput: Record<string, unknown> | null
+  /** The raw text result from the model */
+  textResult: string | null
+  /** Duration of the query in milliseconds */
+  durationMs: number
+  /** Whether the query succeeded */
+  success: boolean
+  /** Error message if the query failed */
+  error: string | null
+}
+
+/**
+ * Execute an AI query via the Claude Agent SDK.
+ *
+ * Wraps the SDK's query() function with:
+ * - Error handling (catch SDK errors, log, return null)
+ * - Duration measurement
+ * - Activity logging (writes to ai_activity_log)
+ */
+export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
+  const { prompt, outputSchema, model, maxTurns = 3, userId, taskId, action, inputText } = options
+
+  const resolvedModel = model || process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
+  const startTime = Date.now()
+
+  try {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk')
+
+    // Build query options using the SDK's Options type.
+    // bypassPermissions requires allowDangerouslySkipPermissions safety flag.
+    // persistSession=false avoids writing enrichment sessions to ~/.claude/.
+    const queryOptions: Options = {
+      model: resolvedModel,
+      maxTurns,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      persistSession: false,
+    }
+
+    if (outputSchema) {
+      queryOptions.outputFormat = {
+        type: 'json_schema',
+        schema: outputSchema,
+      }
+    }
+
+    let structuredOutput: Record<string, unknown> | null = null
+    let textResult: string | null = null
+
+    for await (const message of query({ prompt, options: queryOptions })) {
+      // Only extract results from successful completions
+      if (message.type === 'result' && message.subtype === 'success') {
+        const result = message as SDKResultSuccess
+        if (result.structured_output) {
+          structuredOutput = result.structured_output as Record<string, unknown>
+        }
+        if (result.result) {
+          textResult = result.result
+        }
+      }
+    }
+
+    const durationMs = Date.now() - startTime
+
+    logAIActivity({
+      user_id: userId,
+      task_id: taskId ?? null,
+      action,
+      status: 'success',
+      input: inputText ?? null,
+      output: structuredOutput ? JSON.stringify(structuredOutput) : textResult,
+      model: resolvedModel,
+      duration_ms: durationMs,
+      error: null,
+    })
+
+    log.info('ai', `${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
+
+    return { structuredOutput, textResult, durationMs, success: true, error: null }
+  } catch (err) {
+    const durationMs = Date.now() - startTime
+    const errorMessage = err instanceof Error ? err.message : String(err)
+
+    logAIActivity({
+      user_id: userId,
+      task_id: taskId ?? null,
+      action,
+      status: 'error',
+      input: inputText ?? null,
+      output: null,
+      model: resolvedModel,
+      duration_ms: durationMs,
+      error: errorMessage,
+    })
+
+    log.error('ai', `${action} failed after ${durationMs}ms:`, err)
+
+    return {
+      structuredOutput: null,
+      textResult: null,
+      durationMs,
+      success: false,
+      error: errorMessage,
+    }
+  }
+}
