@@ -13,6 +13,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
+import { useTimezone } from '@/hooks/useTimezone'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -23,6 +24,7 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(true)
+  const timezone = useTimezone()
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
   const [quickActionOpen, setQuickActionOpen] = useState(false)
 
@@ -31,11 +33,13 @@ export default function ProjectDetailPage() {
   const {
     selectedLabels,
     selectedPriorities,
+    selectedDateFilters,
     toggleLabel,
     togglePriority,
+    toggleDateFilter,
     clearAllFilters,
     filteredTasks: displayTasks,
-  } = useFilterState({ tasks })
+  } = useFilterState({ tasks, timezone })
 
   // Clear filters when navigating between projects (App Router reuses this component instance)
   useEffect(() => {
@@ -115,9 +119,12 @@ export default function ProjectDetailPage() {
           tasks={tasks}
           selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
+          selectedDateFilters={selectedDateFilters}
           onTogglePriority={togglePriority}
           onToggleLabel={toggleLabel}
+          onToggleDateFilter={toggleDateFilter}
           onClearAll={clearAllFilters}
+          timezone={timezone}
         />
         <TaskList
           tasks={displayTasks}

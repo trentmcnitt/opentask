@@ -73,6 +73,16 @@ interface TaskListProps {
 export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = false): Task[] {
   const sorted = [...tasks]
   switch (sortOption) {
+    case 'due_date':
+      // Default: soonest first, no due date last; priority as tiebreaker
+      sorted.sort((a, b) => {
+        const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
+        const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
+        const cmp = aDue - bDue
+        if (cmp !== 0) return reversed ? -cmp : cmp
+        return (b.priority || 0) - (a.priority || 0)
+      })
+      break
     case 'priority':
       // Default: highest first (4=urgent, 0=unset), then by due date
       sorted.sort((a, b) => {
@@ -112,6 +122,7 @@ export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = fals
 
 /** Labels shown on the compact sort button — direction-aware. */
 const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string }> = {
+  due_date: { default: 'Soonest', reversed: 'Latest' },
   priority: { default: 'Priority ↓', reversed: 'Priority ↑' },
   title: { default: 'A-Z', reversed: 'Z-A' },
   age: { default: 'Newest', reversed: 'Oldest' },
@@ -120,6 +131,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
 
 /** Labels shown in the dropdown menu items. */
 const SORT_MENU_LABELS: Record<SortOption, string> = {
+  due_date: 'Due date',
   priority: 'Priority',
   title: 'A-Z',
   age: 'Date added',
@@ -481,7 +493,7 @@ function SortDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {(['priority', 'title', 'age', 'modified'] as const).map((option) => {
+        {(['due_date', 'priority', 'title', 'age', 'modified'] as const).map((option) => {
           const isActive = sortOption === option
           const itemLabel =
             isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]

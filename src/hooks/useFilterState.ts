@@ -1,16 +1,20 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
+import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
 import type { Task } from '@/types'
 
 interface UseFilterStateOptions {
   tasks: Task[]
   onLabelToggle?: () => void
+  timezone?: string
 }
 
-export function useFilterState({ tasks, onLabelToggle }: UseFilterStateOptions) {
+export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStateOptions) {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
+  const [selectedDateFilters, setSelectedDateFilters] = useState<DueDateFilter[]>([])
 
   const toggleLabel = useCallback(
     (label: string) => {
@@ -28,9 +32,16 @@ export function useFilterState({ tasks, onLabelToggle }: UseFilterStateOptions) 
     )
   }, [])
 
+  const toggleDateFilter = useCallback((filter: DueDateFilter) => {
+    setSelectedDateFilters((prev) =>
+      prev.includes(filter) ? prev.filter((f) => f !== filter) : [...prev, filter],
+    )
+  }, [])
+
   const clearAllFilters = useCallback(() => {
     setSelectedLabels([])
     setSelectedPriorities([])
+    setSelectedDateFilters([])
   }, [])
 
   const filteredTasks = useMemo(() => {
@@ -41,14 +52,24 @@ export function useFilterState({ tasks, onLabelToggle }: UseFilterStateOptions) 
     if (selectedPriorities.length > 0) {
       filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
     }
+    if (selectedDateFilters.length > 0 && timezone) {
+      const now = new Date()
+      const boundaries = getTimezoneDayBoundaries(timezone)
+      filtered = filtered.filter((t) => {
+        const bucket = classifyTaskDueDate(t, now, boundaries)
+        return bucket !== null && selectedDateFilters.includes(bucket)
+      })
+    }
     return filtered
-  }, [tasks, selectedLabels, selectedPriorities])
+  }, [tasks, selectedLabels, selectedPriorities, selectedDateFilters, timezone])
 
   return {
     selectedLabels,
     selectedPriorities,
+    selectedDateFilters,
     toggleLabel,
     togglePriority,
+    toggleDateFilter,
     clearAllFilters,
     filteredTasks,
   }

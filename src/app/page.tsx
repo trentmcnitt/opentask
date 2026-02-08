@@ -26,6 +26,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
+import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 
 export default function Home() {
@@ -308,11 +309,13 @@ function HomeContent() {
   const {
     selectedLabels,
     selectedPriorities,
+    selectedDateFilters,
     toggleLabel,
     togglePriority,
+    toggleDateFilter,
     clearAllFilters,
     filteredTasks: displayTasks,
-  } = useFilterState({ tasks: baseTasks, onLabelToggle })
+  } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
 
   // Wrap clearAllFilters to also clear selection (matching original clearLabels behavior)
   const handleClearFilters = useCallback(() => {
@@ -743,6 +746,9 @@ function HomeContent() {
       onClearFilters={handleClearFilters}
       selectedPriorities={selectedPriorities}
       onTogglePriority={togglePriority}
+      selectedDateFilters={selectedDateFilters}
+      onToggleDateFilter={toggleDateFilter}
+      timezone={timezone}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
         selection.clear() // Clear selection when search cleared
@@ -818,6 +824,9 @@ function DashboardView({
   onClearFilters,
   selectedPriorities,
   onTogglePriority,
+  selectedDateFilters,
+  onToggleDateFilter,
+  timezone,
   onSearch,
   onSearchClear,
   onBulkAction,
@@ -872,6 +881,9 @@ function DashboardView({
   onClearFilters: () => void
   selectedPriorities: number[]
   onTogglePriority: (priority: number) => void
+  selectedDateFilters: DueDateFilter[]
+  onToggleDateFilter: (filter: DueDateFilter) => void
+  timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
@@ -940,9 +952,12 @@ function DashboardView({
           tasks={allTasks}
           selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
+          selectedDateFilters={selectedDateFilters}
           onTogglePriority={onTogglePriority}
           onToggleLabel={onToggleLabel}
+          onToggleDateFilter={onToggleDateFilter}
           onClearAll={onClearFilters}
+          timezone={timezone}
         />
 
         {tasks.length > 0 && (
@@ -973,7 +988,9 @@ function DashboardView({
           </div>
         )}
 
-        {(selectedLabels.length > 0 || selectedPriorities.length > 0) && (
+        {(selectedLabels.length > 0 ||
+          selectedPriorities.length > 0 ||
+          selectedDateFilters.length > 0) && (
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
             <button

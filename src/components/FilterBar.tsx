@@ -1,51 +1,91 @@
 import { X } from 'lucide-react'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
+import {
+  DueDateFilterBar,
+  classifyTaskDueDate,
+  type DueDateFilter,
+} from '@/components/DueDateFilterBar'
+import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import type { Task } from '@/types'
 
 /**
- * Combined filter bar for priority and label filters.
- * Priority badges (square) appear first, then a gray separator, then label badges (pill).
- * The separator only appears if both filter types have content.
+ * Combined filter bar for due date, priority, and label filters.
+ * Date badges appear first, then priority, then labels, separated by gray dividers.
+ * Horizontal scroll on narrow screens (no wrapping).
  */
 export function FilterBar({
   tasks,
   selectedPriorities,
   selectedLabels,
+  selectedDateFilters = [],
   onTogglePriority,
   onToggleLabel,
+  onToggleDateFilter,
   onClearAll,
+  timezone,
 }: {
   tasks: Task[]
   selectedPriorities: number[]
   selectedLabels: string[]
+  selectedDateFilters?: DueDateFilter[]
   onTogglePriority: (priority: number) => void
   onToggleLabel: (label: string) => void
+  onToggleDateFilter?: (filter: DueDateFilter) => void
   onClearAll: () => void
+  timezone?: string
 }) {
-  const hasPriorities = tasks.some((t) => t.priority > 0)
   const hasLabels = tasks.some((t) => t.labels.length > 0)
 
-  if (!hasPriorities && !hasLabels) return null
+  // Check if the date filter section will actually render badges (needs 2+ buckets).
+  // Mirrors DueDateFilterBar's internal check so the divider isn't orphaned.
+  const dateFilterVisible = (() => {
+    if (!timezone || !onToggleDateFilter || tasks.length === 0) return false
+    const now = new Date()
+    const boundaries = getTimezoneDayBoundaries(timezone)
+    const buckets = new Set<string>()
+    for (const task of tasks) {
+      const bucket = classifyTaskDueDate(task, now, boundaries)
+      if (bucket) buckets.add(bucket)
+      if (buckets.size > 1) return true
+    }
+    return false
+  })()
 
-  const hasSelection = selectedPriorities.length > 0 || selectedLabels.length > 0
+  if (tasks.length === 0) return null
+
+  const hasSelection =
+    selectedPriorities.length > 0 || selectedLabels.length > 0 || selectedDateFilters.length > 0
 
   return (
     <div className="relative mb-4 flex items-center">
       <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
+        {dateFilterVisible && (
+          <DueDateFilterBar
+            tasks={tasks}
+            selectedDateFilters={selectedDateFilters}
+            onToggleDateFilter={onToggleDateFilter!}
+            timezone={timezone!}
+          />
+        )}
+
+        {dateFilterVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+
         <PriorityFilterBar
           tasks={tasks}
           selectedPriorities={selectedPriorities}
           onTogglePriority={onTogglePriority}
         />
 
-        {hasPriorities && hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+        {hasLabels && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
 
-        <LabelFilterBar
-          tasks={tasks}
-          selectedLabels={selectedLabels}
-          onToggleLabel={onToggleLabel}
-        />
+        {hasLabels && (
+          <LabelFilterBar
+            tasks={tasks}
+            selectedLabels={selectedLabels}
+            onToggleLabel={onToggleLabel}
+          />
+        )}
       </div>
 
       {hasSelection && (

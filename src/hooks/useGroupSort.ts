@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 
-export type SortOption = 'priority' | 'title' | 'age' | 'modified'
+export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified'
 
 interface GroupSortState {
   [groupLabel: string]: { sort: SortOption; reversed: boolean }
@@ -13,6 +13,7 @@ interface GroupSortState {
  * Tracks both the sort field and direction (reversed or not).
  *
  * Default directions:
+ *   - due_date: soonest first, no due date last (reversed = latest first)
  *   - priority: highest first (reversed = lowest first)
  *   - title: A-Z (reversed = Z-A)
  *   - age: newest first (reversed = oldest first)
@@ -26,7 +27,7 @@ export function useGroupSort() {
 
   const getSortOption = useCallback(
     (groupLabel: string): SortOption => {
-      return sortByGroup[groupLabel]?.sort || 'priority'
+      return sortByGroup[groupLabel]?.sort || 'due_date'
     },
     [sortByGroup],
   )
