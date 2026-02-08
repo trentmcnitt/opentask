@@ -56,8 +56,8 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
       const now = new Date()
       const boundaries = getTimezoneDayBoundaries(timezone)
       filtered = filtered.filter((t) => {
-        const bucket = classifyTaskDueDate(t, now, boundaries)
-        return bucket !== null && selectedDateFilters.includes(bucket)
+        const buckets = classifyTaskDueDate(t, now, boundaries)
+        return buckets.some((b) => selectedDateFilters.includes(b))
       })
     }
     return filtered

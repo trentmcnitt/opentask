@@ -34,24 +34,35 @@ const FILTER_ORDER: DueDateFilter[] = [
 ]
 
 /**
- * Classify a task into a due date filter bucket.
- * "Soon" = due within the next 2 hours. "Today" = due today but not within 2 hours.
+ * Classify a task into one or more due date filter buckets.
+ * Tasks are classified along two independent axes:
+ * - Time urgency (at most one): overdue, soon
+ * - Calendar period (at most one): today, this_week, later
+ * A task can appear in both a time-urgency and calendar-period bucket
+ * (e.g., a task due today at 9 AM when it's now 3 PM is both "overdue" and "today").
  */
 export function classifyTaskDueDate(
   task: Task,
   now: Date,
   boundaries: ReturnType<typeof getTimezoneDayBoundaries>,
-): DueDateFilter | null {
-  if (!task.due_at) return 'no_due_date'
+): DueDateFilter[] {
+  if (!task.due_at) return ['no_due_date']
 
   const due = new Date(task.due_at)
   const soonBoundary = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+  const buckets: DueDateFilter[] = []
 
-  if (due < now) return 'overdue'
-  if (due < soonBoundary) return 'soon'
-  if (due < boundaries.tomorrowStart) return 'today'
-  if (due < boundaries.nextWeekStart) return 'this_week'
-  return 'later'
+  // Time urgency (at most one)
+  if (due < now) buckets.push('overdue')
+  else if (due < soonBoundary) buckets.push('soon')
+
+  // Calendar period (at most one)
+  if (due >= boundaries.todayStart && due < boundaries.tomorrowStart) buckets.push('today')
+  else if (due >= boundaries.tomorrowStart && due < boundaries.nextWeekStart)
+    buckets.push('this_week')
+  else if (due >= boundaries.nextWeekStart) buckets.push('later')
+
+  return buckets
 }
 
 /**
@@ -71,8 +82,8 @@ export function DueDateFilterBar({
     const counts = new Map<DueDateFilter, number>()
 
     for (const task of tasks) {
-      const bucket = classifyTaskDueDate(task, now, boundaries)
-      if (bucket) {
+      const buckets = classifyTaskDueDate(task, now, boundaries)
+      for (const bucket of buckets) {
         counts.set(bucket, (counts.get(bucket) || 0) + 1)
       }
     }

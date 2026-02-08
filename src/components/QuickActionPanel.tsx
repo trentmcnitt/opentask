@@ -208,6 +208,19 @@ export function QuickActionPanel({
   // Create mode = panel is used for new task creation
   const isCreateMode = createMode
 
+  // Focus the title input after mount. On mobile (sheet mode), we delay focus
+  // until the slide-up animation finishes (500ms) so that iOS Safari's
+  // scroll-into-view calculation uses the textarea's final position. Without
+  // this delay, Safari scrolls the viewport too far because it measures the
+  // textarea mid-animation, before the sheet has settled.
+  const createTitleRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!isCreateMode) return
+    const delay = mode === 'sheet' ? 550 : 0
+    const timer = setTimeout(() => createTitleRef.current?.focus(), delay)
+    return () => clearTimeout(timer)
+  }, [isCreateMode, mode])
+
   // Single task mode (either direct or via bulk selection)
   const isSingleTask = !!effectiveTask
 
@@ -814,7 +827,7 @@ export function QuickActionPanel({
               aria-label="Task title"
               className={`-mx-2 max-h-48 min-h-0 resize-none overflow-y-auto px-2 py-1 ${getDetailTitleClasses(createTitle).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
               rows={1}
-              autoFocus
+              ref={createTitleRef}
             />
           ) : (
             title && (

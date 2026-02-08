@@ -43,11 +43,12 @@ export function FilterBar({
     if (!timezone || !onToggleDateFilter || tasks.length === 0) return false
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
-    const buckets = new Set<string>()
+    const allBuckets = new Set<string>()
     for (const task of tasks) {
-      const bucket = classifyTaskDueDate(task, now, boundaries)
-      if (bucket) buckets.add(bucket)
-      if (buckets.size > 1) return true
+      for (const bucket of classifyTaskDueDate(task, now, boundaries)) {
+        allBuckets.add(bucket)
+      }
+      if (allBuckets.size > 1) return true
     }
     return false
   })()
