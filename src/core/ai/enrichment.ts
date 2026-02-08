@@ -316,9 +316,9 @@ function applyEnrichment(
   }
 
   // Add ai_status and updated_at to the SET clauses.
-  // ai_status is included in fieldsChanged so undo reverts it to 'pending'.
+  // ai_status is NOT included in fieldsChanged — undo should not revert it to
+  // 'pending', which would cause the cron to re-enrich and undo the user's undo.
   changes.setClauses.push("ai_status = 'complete'")
-  changes.fieldsChanged.push('ai_status')
   changes.setClauses.push('updated_at = ?')
   changes.values.push(nowUtc())
   changes.values.push(row.id) // for WHERE clause
@@ -331,9 +331,7 @@ function applyEnrichment(
     if (!updatedTask) throw new Error('Failed to retrieve enriched task')
 
     const changeList = changes.fieldsChanged
-      .filter(
-        (f) => !['meta_notes', 'ai_status', 'anchor_time', 'anchor_dow', 'anchor_dom'].includes(f),
-      )
+      .filter((f) => !['meta_notes', 'anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
       .join(', ')
     const description = `AI: Enriched task — set ${changeList}`
 

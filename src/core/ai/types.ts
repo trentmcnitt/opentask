@@ -17,11 +17,23 @@ import { z } from 'zod'
  */
 export const EnrichmentResultSchema = z.object({
   title: z.string().describe('Clean, concise task title'),
-  due_at: z.string().nullable().describe('ISO 8601 UTC datetime, or null if no date mentioned'),
-  priority: z.number().min(0).max(4).describe('0=unset, 1=low, 2=medium, 3=high, 4=urgent'),
+  due_at: z
+    .string()
+    .nullable()
+    .describe('ISO 8601 UTC datetime, or null if no date mentioned')
+    .refine((val) => val === null || !isNaN(Date.parse(val)), {
+      message: 'due_at must be a valid ISO 8601 datetime',
+    }),
+  priority: z.number().int().min(0).max(4).describe('0=unset, 1=low, 2=medium, 3=high, 4=urgent'),
   labels: z.array(z.string()).describe('Relevant labels extracted from the text'),
   project_name: z.string().nullable().describe('Suggested project name, or null'),
-  rrule: z.string().nullable().describe('RFC 5545 RRULE string, or null if not recurring'),
+  rrule: z
+    .string()
+    .nullable()
+    .describe('RFC 5545 RRULE string, or null if not recurring')
+    .refine((val) => val === null || val.startsWith('FREQ='), {
+      message: 'rrule must be a valid RFC 5545 RRULE string starting with FREQ=',
+    }),
   reasoning: z.string().describe('Brief explanation of what was extracted and why'),
 })
 

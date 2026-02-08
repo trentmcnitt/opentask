@@ -52,7 +52,7 @@ export interface AIQueryOptions {
   prompt: string
   /** JSON Schema for structured output (optional) */
   outputSchema?: Record<string, unknown>
-  /** Model to use (default: from env OPENTASK_AI_ENRICHMENT_MODEL or 'haiku') */
+  /** Model to use (default: 'haiku'). Each feature should read its own env var. */
   model?: string
   /** Maximum conversation turns (default: 3) */
   maxTurns?: number
@@ -90,7 +90,7 @@ export interface AIQueryResult {
 export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
   const { prompt, outputSchema, model, maxTurns = 3, userId, taskId, action, inputText } = options
 
-  const resolvedModel = model || process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
+  const resolvedModel = model || 'haiku'
   const startTime = Date.now()
 
   try {

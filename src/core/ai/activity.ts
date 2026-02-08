@@ -7,6 +7,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { nowUtc } from '@/core/recurrence'
 import type { AIActivityEntry } from './types'
 
 /**
@@ -14,7 +15,7 @@ import type { AIActivityEntry } from './types'
  */
 export function logAIActivity(entry: Omit<AIActivityEntry, 'id' | 'created_at'>): number {
   const db = getDb()
-  const now = new Date().toISOString()
+  const now = nowUtc()
 
   const result = db
     .prepare(
