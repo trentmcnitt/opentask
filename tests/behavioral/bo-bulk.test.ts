@@ -1093,12 +1093,11 @@ describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
 })
 
 /**
- * Snooze Protection for High/Urgent Tasks (SP-001 through SP-006)
+ * Snooze Protection for High/Urgent Tasks (SP-001 through SP-008)
  *
- * High (3) and urgent (4) priority tasks are automatically skipped during
- * bulk snooze when the selection is "mixed" (contains both high/urgent AND
- * lower-priority tasks). They CAN be snoozed when selected individually or
- * when the group contains only high/urgent tasks.
+ * High (3) and urgent (4) priority tasks are always skipped during bulk snooze
+ * operations, regardless of selection composition. They must be snoozed
+ * individually via the single-task snooze endpoint.
  */
 describe('Snooze Protection for High/Urgent Tasks', () => {
   beforeEach(() => {
@@ -1160,9 +1159,9 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
   })
 
   /**
-   * SP-002: All high/urgent selection — no skipping
+   * SP-002: All high/urgent selection — all skipped
    */
-  test('SP-002: All high/urgent tasks are snoozed when no lower-priority tasks present', () => {
+  test('SP-002: All high/urgent tasks are skipped even when no lower-priority tasks present', () => {
     const highTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1181,11 +1180,12 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(2)
-    expect(result.tasksSkipped).toBe(0)
+    expect(result.tasksAffected).toBe(0)
+    expect(result.tasksSkipped).toBe(2)
 
-    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(18, 0))
+    // Tasks were NOT snoozed
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(8, 0))
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(9, 0))
   })
 
   /**
@@ -1220,9 +1220,9 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
   })
 
   /**
-   * SP-004: Single high/urgent task — allowed
+   * SP-004: Single high/urgent task — skipped
    */
-  test('SP-004: Single high/urgent task is allowed to be snoozed', () => {
+  test('SP-004: Single high/urgent task is skipped from bulk snooze', () => {
     const urgentTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1236,10 +1236,11 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(1)
-    expect(result.tasksSkipped).toBe(0)
+    expect(result.tasksAffected).toBe(0)
+    expect(result.tasksSkipped).toBe(1)
 
-    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(18, 0))
+    // Task was NOT snoozed
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(8, 0))
   })
 
   /**
@@ -1306,9 +1307,9 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
   })
 
   /**
-   * SP-007: bulkEdit with due_at when all tasks are high/urgent — allowed
+   * SP-007: bulkEdit with due_at when all tasks are high/urgent — skipped
    */
-  test('SP-007: bulkEdit with due_at allows all-high/urgent selection', () => {
+  test('SP-007: bulkEdit with due_at skips all-high/urgent selection', () => {
     const highTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1328,11 +1329,12 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
       changes: { due_at: newDueAt },
     })
 
-    expect(result.tasksAffected).toBe(2)
-    expect(result.tasksSkipped).toBe(0)
+    expect(result.tasksAffected).toBe(0)
+    expect(result.tasksSkipped).toBe(2)
 
-    expect(getTaskById(highTask.id)!.due_at).toBe(newDueAt)
-    expect(getTaskById(urgentTask.id)!.due_at).toBe(newDueAt)
+    // Tasks were NOT updated
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(8, 0))
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(9, 0))
   })
 
   /**

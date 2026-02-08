@@ -208,17 +208,18 @@ export function QuickActionPanel({
   // Create mode = panel is used for new task creation
   const isCreateMode = createMode
 
-  // Focus the title input after mount. On mobile (sheet mode), we delay focus
-  // until the slide-up animation finishes (500ms) so that iOS Safari's
-  // scroll-into-view calculation uses the textarea's final position. Without
-  // this delay, Safari scrolls the viewport too far because it measures the
-  // textarea mid-animation, before the sheet has settled.
+  // Focus the title input after mount in create mode.
+  //
+  // Desktop/popover: focus immediately (no animation to wait for).
+  // Sheet mode (mobile): focus is handled by CreateTaskPanel via a proxy input
+  // technique that works around iOS Safari's keyboard/animation conflict.
+  // See CreateTaskPanel.tsx for the full explanation.
   const createTitleRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     if (!isCreateMode) return
-    const delay = mode === 'sheet' ? 550 : 0
-    const timer = setTimeout(() => createTitleRef.current?.focus(), delay)
-    return () => clearTimeout(timer)
+    if (mode !== 'sheet') {
+      createTitleRef.current?.focus()
+    }
   }, [isCreateMode, mode])
 
   // Single task mode (either direct or via bulk selection)

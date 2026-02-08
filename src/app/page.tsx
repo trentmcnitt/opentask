@@ -27,6 +27,8 @@ import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
 import type { DueDateFilter } from '@/components/DueDateFilterBar'
+import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 
 export default function Home() {
@@ -443,6 +445,35 @@ function HomeContent() {
         return
       }
 
+      // Cmd+C: Copy selected tasks to clipboard (works even with dialogs open — read-only)
+      if (
+        cmdKey &&
+        e.key === 'c' &&
+        !isInInput &&
+        selection.isSelectionMode &&
+        selection.selectedIds.size > 0
+      ) {
+        e.preventDefault()
+        const clipboardGroups: ClipboardGroup[] = taskGroups
+          .map((g) => {
+            const sort = getSortOption(g.label)
+            const reversed = getReversed(g.label)
+            const sorted = sortTasks(g.tasks, sort, reversed)
+            const selected = sorted.filter((t) => selection.selectedIds.has(t.id))
+            return { label: g.label, tasks: selected, sort, reversed }
+          })
+          .filter((g) => g.tasks.length > 0)
+        if (clipboardGroups.length > 0) {
+          const text = formatTasksForClipboard(clipboardGroups, timezone)
+          const n = clipboardGroups.reduce((sum, g) => sum + g.tasks.length, 0)
+          navigator.clipboard.writeText(text).then(
+            () => showToast({ message: `Copied ${n} ${taskWord(n)}` }),
+            () => showToast({ message: 'Copy failed' }),
+          )
+        }
+        return
+      }
+
       // Undo/redo handled by useUndoRedoShortcuts hook
 
       // Don't intercept other shortcuts when dialogs/sheets are open
@@ -555,7 +586,17 @@ function HomeContent() {
 
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [keyboard, keyboardNavEnabled, orderedIds, setKeyboardFocusedId, selection, taskGroups])
+  }, [
+    keyboard,
+    keyboardNavEnabled,
+    orderedIds,
+    setKeyboardFocusedId,
+    selection,
+    taskGroups,
+    getSortOption,
+    getReversed,
+    timezone,
+  ])
 
   // Exit keyboard mode when clicking outside the task list
   useEffect(() => {
@@ -650,10 +691,12 @@ function HomeContent() {
   }, [tasks])
 
   // Count of overdue tasks from the filtered view (respects label/search filters).
-  // All overdue tasks are counted — the server handles priority-based filtering.
+  // Excludes high/urgent tasks since they are blocked from bulk snooze.
   const snoozableOverdueCount = useMemo(() => {
     const now = new Date()
-    return displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
+    return displayTasks.filter(
+      (t) => t.due_at && new Date(t.due_at) < now && (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD,
+    ).length
   }, [displayTasks])
 
   const todayCount = useMemo(() => {

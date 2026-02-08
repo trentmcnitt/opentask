@@ -145,22 +145,14 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 }
 
 /**
- * Filter high/urgent tasks from mixed-priority selections during snooze operations.
+ * Filter high/urgent tasks from bulk snooze operations.
  *
- * High (3) and urgent (4) tasks are skipped when a selection contains both
- * high/urgent AND lower-priority tasks. They are allowed when:
- * - Selected individually (single task)
- * - In a group containing only high/urgent tasks (all priority >= 3)
+ * High (3) and urgent (4) priority tasks are always skipped during bulk snooze.
+ * They must be snoozed individually via the single-task snooze endpoint.
  */
-function filterMixedPriorityForSnooze(tasks: Task[]): { eligible: Task[]; skippedCount: number } {
-  if (tasks.length <= 1) return { eligible: tasks, skippedCount: 0 }
-  const hasHighUrgent = tasks.some((t) => (t.priority ?? 0) >= HIGH_PRIORITY_THRESHOLD)
-  const hasLower = tasks.some((t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD)
-  if (hasHighUrgent && hasLower) {
-    const eligible = tasks.filter((t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD)
-    return { eligible, skippedCount: tasks.length - eligible.length }
-  }
-  return { eligible: tasks, skippedCount: 0 }
+function filterHighPriorityForSnooze(tasks: Task[]): { eligible: Task[]; skippedCount: number } {
+  const eligible = tasks.filter((t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD)
+  return { eligible, skippedCount: tasks.length - eligible.length }
 }
 
 export interface BulkSnoozeOptions {
@@ -216,8 +208,8 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // Skip high/urgent tasks in mixed-priority selections
-  const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
+  // Skip high/urgent tasks — they must be snoozed individually
+  const { eligible, skippedCount } = filterHighPriorityForSnooze(tasks)
   if (eligible.length === 0) {
     return { tasksAffected: 0, tasksSkipped: skippedCount }
   }
@@ -324,13 +316,13 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
   let tasks = validateBulkTasks(taskIds, userId)
 
-  // Skip high/urgent tasks in mixed-priority selections when editing due_at (snooze scenario).
+  // Skip high/urgent tasks when editing due_at (snooze scenario) — they must be snoozed individually.
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
   let snoozeSkippedCount = 0
   const isSnoozeEdit = changes.due_at !== undefined && changes.rrule === undefined
   if (isSnoozeEdit) {
-    const { eligible, skippedCount } = filterMixedPriorityForSnooze(tasks)
+    const { eligible, skippedCount } = filterHighPriorityForSnooze(tasks)
     tasks = eligible
     snoozeSkippedCount = skippedCount
     if (tasks.length === 0) {
