@@ -11,6 +11,8 @@ export interface ProjectRow {
   owner_id: number
   shared: number
   sort_order: number
+  active_count: number
+  overdue_count: number
   created_at: string
 }
 
@@ -21,6 +23,8 @@ export function formatProjectResponse(row: ProjectRow): Project {
     owner_id: row.owner_id,
     shared: row.shared === 1,
     sort_order: row.sort_order,
+    active_count: row.active_count,
+    overdue_count: row.overdue_count,
     created_at: row.created_at,
   }
 }

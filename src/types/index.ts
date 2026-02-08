@@ -19,6 +19,8 @@ export interface Project {
   owner_id: number
   shared: boolean
   sort_order: number
+  active_count: number
+  overdue_count: number
   created_at: string
 }
 

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Clock, Undo2, Redo2, Menu, Keyboard, Settings } from 'lucide-react'
+import { ChevronLeft, Clock, Undo2, Redo2, Menu, Keyboard, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -16,12 +16,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
+import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { useSnoozePreferences } from '@/components/LabelConfigProvider'
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
 
 interface HeaderProps {
+  backHref?: string
+  title?: string
   taskCount: number
   overdueCount?: number
   todayCount?: number
@@ -40,6 +43,8 @@ interface HeaderProps {
 }
 
 export function Header({
+  backHref,
+  title,
   taskCount,
   overdueCount = 0,
   todayCount = 0,
@@ -57,6 +62,7 @@ export function Header({
   onShowKeyboardShortcuts,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
+  const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
   const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const snoozeFiredRef = useRef(false)
@@ -163,26 +169,46 @@ export function Header({
     <TooltipProvider delayDuration={300}>
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
         <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
-          {/* Logo with build info popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Image
-                src="/opentask-logo.png"
-                alt="OpenTask"
-                width={120}
-                height={36}
-                className={cn(
-                  'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9 dark:invert',
-                  searchExpanded ? 'opacity-0 md:opacity-100' : '',
-                )}
-                unoptimized
-                priority
-              />
-            </PopoverTrigger>
-            <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
-              v{VERSION} · {formatBuildDate(BUILD_ID)}
-            </PopoverContent>
-          </Popover>
+          {/* Back button (when navigating into a sub-page like project detail) */}
+          {backHref && (
+            <Link href={backHref}>
+              <Button variant="ghost" size="icon" aria-label="Back" className="-ml-2 flex-shrink-0">
+                <ChevronLeft className="size-5" />
+              </Button>
+            </Link>
+          )}
+
+          {/* Logo or title with build info popover */}
+          {title ? (
+            <h1
+              className={cn(
+                'flex-shrink-0 truncate text-lg font-semibold transition-opacity duration-200',
+                searchExpanded ? 'opacity-0 md:opacity-100' : '',
+              )}
+            >
+              {title}
+            </h1>
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Image
+                  src="/opentask-logo.png"
+                  alt="OpenTask"
+                  width={120}
+                  height={36}
+                  className={cn(
+                    'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9 dark:invert',
+                    searchExpanded ? 'opacity-0 md:opacity-100' : '',
+                  )}
+                  unoptimized
+                  priority
+                />
+              </PopoverTrigger>
+              <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
+                v{VERSION} · {formatBuildDate(BUILD_ID)}
+              </PopoverContent>
+            </Popover>
+          )}
 
           {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
           <div className="flex min-w-0 flex-1 items-center">
@@ -190,7 +216,7 @@ export function Header({
                 md:[container-type:normal] disables containment on desktop where
                 md:inline-flex handles visibility via media queries instead. */}
             <div className="@container/badges min-w-0 flex-1 md:[container-type:normal] md:flex-none md:flex-shrink-0">
-              <Popover>
+              <Popover open={badgePopoverOpen} onOpenChange={setBadgePopoverOpen}>
                 <PopoverTrigger asChild>
                   <div
                     className={cn(
@@ -203,34 +229,42 @@ export function Header({
                     aria-label="Task counts"
                     tabIndex={0}
                   >
-                    <span
+                    <CountBadge
+                      count={taskCount}
+                      tooltip={
+                        badgePopoverOpen
+                          ? undefined
+                          : `${taskCount} total task${taskCount === 1 ? '' : 's'}`
+                      }
                       className={cn(
-                        'bg-muted text-muted-foreground hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex',
+                        'hidden items-center justify-center select-none md:inline-flex',
                         overdueCount > 0
                           ? '@[4.75rem]/badges:inline-flex'
                           : '@[2.75rem]/badges:inline-flex',
                       )}
-                    >
-                      {taskCount}
-                    </span>
+                    />
                     {overdueCount > 0 && (
-                      <span className="bg-destructive/15 text-destructive hidden min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none md:inline-flex @[2.75rem]/badges:inline-flex">
-                        {overdueCount}
-                      </span>
+                      <CountBadge
+                        count={overdueCount}
+                        variant="overdue"
+                        tooltip={badgePopoverOpen ? undefined : `${overdueCount} overdue`}
+                        className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
+                      />
                     )}
-                    <span
+                    <CountBadge
+                      count={todayCount}
+                      variant="today"
+                      tooltip={badgePopoverOpen ? undefined : `${todayCount} due today`}
                       className={cn(
-                        'bg-primary/15 text-primary inline-flex min-w-[1.25rem] items-center justify-center rounded px-1.5 py-0.5 text-[11px] font-medium select-none',
+                        'inline-flex items-center justify-center select-none',
                         todayCount === 0 && 'md:hidden',
                       )}
-                    >
-                      {todayCount}
-                    </span>
+                    />
                   </div>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
                   <div className="flex flex-col gap-1">
-                    <span>{taskCount} total</span>
+                    <span>{taskCount} total tasks</span>
                     {overdueCount > 0 && (
                       <span className="text-destructive">{overdueCount} overdue</span>
                     )}

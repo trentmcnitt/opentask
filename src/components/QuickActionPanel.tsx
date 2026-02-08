@@ -211,9 +211,9 @@ export function QuickActionPanel({
   // Focus the title input after mount in create mode.
   //
   // Desktop/popover: focus immediately (no animation to wait for).
-  // Sheet mode (mobile): focus is handled by CreateTaskPanel via a proxy input
-  // technique that works around iOS Safari's keyboard/animation conflict.
-  // See CreateTaskPanel.tsx for the full explanation.
+  // Sheet mode (mobile): Radix auto-focus handles it — the sheet's first
+  // focusable element (the textarea) receives focus automatically, which
+  // keeps the keyboard activation within the user gesture chain on iOS.
   const createTitleRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     if (!isCreateMode) return

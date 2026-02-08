@@ -11,7 +11,9 @@ import { log } from '@/lib/logger'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
-  const [projects, setProjects] = useState<{ id: number; name: string }[]>([])
+  const [projects, setProjects] = useState<
+    { id: number; name: string; active_count: number; overdue_count: number }[]
+  >([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [addFormTitle, setAddFormTitle] = useState('')
 
@@ -21,10 +23,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       if (!res.ok) return
       const data = await res.json()
       setProjects(
-        (data.data?.projects || []).map((p: { id: number; name: string }) => ({
-          id: p.id,
-          name: p.name,
-        })),
+        (data.data?.projects || []).map(
+          (p: { id: number; name: string; active_count: number; overdue_count: number }) => ({
+            id: p.id,
+            name: p.name,
+            active_count: p.active_count,
+            overdue_count: p.overdue_count,
+          }),
+        ),
       )
     } catch (err) {
       log.warn('ui', 'Failed to fetch projects for sidebar:', err)
@@ -56,6 +62,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('open-add-form', handler)
   }, [])
 
+  // Refresh project counts when a task is created
+  useEffect(() => {
+    const handler = () => loadProjects()
+    window.addEventListener('task-created', handler)
+    return () => window.removeEventListener('task-created', handler)
+  }, [loadProjects])
+
   // Notify dashboard when CreateTaskPanel opens/closes so it can disable keyboard shortcuts
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open: showAddForm } }))
@@ -68,7 +81,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       setProjects(
         projectIds
           .map((id) => projects.find((p) => p.id === id))
-          .filter((p): p is { id: number; name: string } => p !== undefined),
+          .filter(
+            (
+              p,
+            ): p is {
+              id: number
+              name: string
+              active_count: number
+              overdue_count: number
+            } => p !== undefined,
+          ),
       )
 
       try {

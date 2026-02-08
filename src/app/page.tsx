@@ -31,6 +31,7 @@ import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
+import { taskWord } from '@/lib/utils'
 
 export default function Home() {
   return (
@@ -38,10 +39,6 @@ export default function Home() {
       <HomeContent />
     </SelectionProvider>
   )
-}
-
-function taskWord(n: number) {
-  return n === 1 ? 'task' : 'tasks'
 }
 
 function useFetchData(router: ReturnType<typeof useRouter>) {

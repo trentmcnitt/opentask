@@ -26,6 +26,8 @@ import { cn } from '@/lib/utils'
 export interface SortableProject {
   id: number
   name: string
+  active_count?: number
+  overdue_count?: number
 }
 
 interface SortableProjectListProps {

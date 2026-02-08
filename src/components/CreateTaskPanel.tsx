@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
@@ -38,62 +38,7 @@ export function CreateTaskPanel({
   const isMobile = useIsMobile()
   const [isPanelDirty, setIsPanelDirty] = useState(false)
 
-  // --- iOS proxy input for keyboard focus during sheet animation ---
-  //
-  // iOS Safari only opens the virtual keyboard when .focus() is called within
-  // the user gesture call stack. The sheet's slide-up animation uses a CSS
-  // transform (translateY), so if Radix auto-focuses the textarea at the START
-  // of the animation, Safari's scroll-into-view measures a mid-animation position,
-  // leaving the input too low on screen.
-  //
-  // The proxy input trick: intercept Radix's auto-focus, focus a hidden proxy
-  // input instead (preserving the gesture chain so the keyboard opens), then
-  // transfer focus to the real textarea AFTER the animation completes. Safari
-  // keeps the keyboard open during input-to-input focus transfers, and by the
-  // time we focus the real input, its position is final.
-  const proxyRef = useRef<HTMLInputElement | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!isIOS()) return
-
-    const proxy = document.createElement('input')
-    proxy.type = 'text'
-    proxy.setAttribute('aria-hidden', 'true')
-    proxy.readOnly = true
-    proxy.tabIndex = -1
-    Object.assign(proxy.style, {
-      position: 'fixed',
-      opacity: '0',
-      height: '0',
-      width: '0',
-      top: '50%',
-      left: '0',
-      fontSize: '16px',
-      pointerEvents: 'none',
-    })
-    document.body.appendChild(proxy)
-    proxyRef.current = proxy
-
-    return () => {
-      proxy.remove()
-      proxyRef.current = null
-    }
-  }, [])
-
-  const handleOpenAutoFocus = useCallback((e: Event) => {
-    if (!isIOS()) return
-
-    e.preventDefault()
-    proxyRef.current?.focus()
-
-    // Transfer focus to the real textarea after the 500ms sheet animation
-    // plus a small buffer for the compositor to commit the final position
-    setTimeout(() => {
-      const textarea = panelRef.current?.querySelector('textarea')
-      textarea?.focus()
-    }, 600)
-  }, [])
 
   const handleCreate = useCallback(
     async (fields: QuickActionPanelChanges & { title: string }) => {
@@ -168,12 +113,7 @@ export function CreateTaskPanel({
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent
-          side="bottom"
-          className="rounded-t-2xl"
-          showCloseButton={false}
-          onOpenAutoFocus={handleOpenAutoFocus}
-        >
+        <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
           <VisuallyHidden>
             <SheetTitle>New Task</SheetTitle>
             <SheetDescription>Create a new task</SheetDescription>

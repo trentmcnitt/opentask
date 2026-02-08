@@ -244,17 +244,19 @@ export function TaskList({
             {/* "Now" separator between Overdue and the next group */}
             {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
-            <div className="mb-2 flex items-center justify-between px-1">
+            <div
+              className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
+            >
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => toggleCollapse(group.label)}
                   aria-expanded={!collapsed}
                   aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
-                  className="text-muted-foreground hover:text-foreground flex size-6 items-center justify-center transition-colors"
+                  className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
                 >
                   <ChevronDown
-                    className={`size-3.5 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+                    className={`size-3 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
                   />
                 </button>
                 {!collapsed && selection.isSelectionMode && (

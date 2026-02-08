@@ -121,6 +121,8 @@ Dual authentication checked in order:
 
 `AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' }`.
 
+**Login is username-based, not email-based.** The login form accepts a username (the `name` column, case-insensitive). Email is stored but is not a user-facing login field. Dev credentials are in `.secrets` at the project root.
+
 NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks).
 
 ## Domain Reference

@@ -11,9 +11,17 @@ import {
   DragHandle,
   type DragHandleProps,
 } from '@/components/SortableProjectList'
+import { CountBadge } from '@/components/CountBadge'
+
+interface SidebarProject {
+  id: number
+  name: string
+  active_count: number
+  overdue_count: number
+}
 
 interface SidebarProps {
-  projects?: { id: number; name: string }[]
+  projects?: SidebarProject[]
   onAddClick?: () => void
   onReorderProjects?: (projectIds: number[]) => void
 }
@@ -68,13 +76,16 @@ export function Sidebar({ projects = [], onAddClick, onReorderProjects }: Sideba
                 <SortableProjectList
                   projects={projects}
                   onReorder={onReorderProjects}
-                  renderItem={(project, dragHandle) => (
-                    <SidebarProjectItem
-                      project={project}
-                      pathname={pathname}
-                      dragHandle={dragHandle}
-                    />
-                  )}
+                  renderItem={(project, dragHandle) => {
+                    const fullProject = projects.find((p) => p.id === project.id)
+                    return (
+                      <SidebarProjectItem
+                        project={fullProject || { ...project, active_count: 0, overdue_count: 0 }}
+                        pathname={pathname}
+                        dragHandle={dragHandle}
+                      />
+                    )
+                  }}
                 />
               ) : (
                 projects.map((project) => (
@@ -135,7 +146,7 @@ function SidebarProjectItem({
   pathname,
   dragHandle,
 }: {
-  project: { id: number; name: string }
+  project: SidebarProject
   pathname: string
   dragHandle?: DragHandleProps
 }) {
@@ -164,7 +175,13 @@ function SidebarProjectItem({
         className={cn('flex flex-1 items-center gap-3 py-2 pr-3', dragHandle ? 'pl-0' : 'pl-3')}
       >
         <Circle className="size-4 flex-shrink-0" />
-        {project.name}
+        <span className="truncate">{project.name}</span>
+        <span className="ml-auto flex flex-shrink-0 items-center gap-1">
+          <CountBadge count={project.active_count} />
+          {project.overdue_count > 0 && (
+            <CountBadge count={project.overdue_count} variant="overdue" />
+          )}
+        </span>
       </Link>
     </div>
   )

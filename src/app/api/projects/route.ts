@@ -23,18 +23,28 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getDb()
+    const now = nowUtc()
 
-    // Get user's own projects + shared projects
+    // Get user's own projects + shared projects, with active and overdue task counts
     const projects = db
       .prepare(
         `
-      SELECT id, name, owner_id, shared, sort_order, created_at
-      FROM projects
-      WHERE owner_id = ? OR shared = 1
-      ORDER BY sort_order ASC, name ASC
+      SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.created_at,
+        (SELECT COUNT(*) FROM tasks t
+         WHERE t.project_id = p.id AND t.user_id = ?
+           AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        ) AS active_count,
+        (SELECT COUNT(*) FROM tasks t
+         WHERE t.project_id = p.id AND t.user_id = ?
+           AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
+           AND t.due_at IS NOT NULL AND t.due_at < ?
+        ) AS overdue_count
+      FROM projects p
+      WHERE p.owner_id = ? OR p.shared = 1
+      ORDER BY p.sort_order ASC, p.name ASC
     `,
       )
-      .all(user.id) as ProjectRow[]
+      .all(user.id, user.id, now, user.id) as ProjectRow[]
 
     // Transform to API format
     const formattedProjects = projects.map(formatProjectResponse)
@@ -81,16 +91,9 @@ export async function POST(request: NextRequest) {
 
     const project = db
       .prepare(
-        'SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?',
+        'SELECT id, name, owner_id, shared, sort_order, created_at, 0 AS active_count, 0 AS overdue_count FROM projects WHERE id = ?',
       )
-      .get(projectId) as {
-      id: number
-      name: string
-      owner_id: number
-      shared: number
-      sort_order: number
-      created_at: string
-    }
+      .get(projectId) as ProjectRow
 
     return success(formatProjectResponse(project), 201)
   } catch (err) {

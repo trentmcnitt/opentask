@@ -12,6 +12,7 @@ import {
 } from '@/components/SortableProjectList'
 import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { CountBadge } from '@/components/CountBadge'
 
 export default function ProjectsPage() {
   const { status } = useSession()
@@ -113,6 +114,8 @@ export default function ProjectsPage() {
                 <ProjectCard
                   project={project}
                   shared={fullProject?.shared}
+                  activeCount={fullProject?.active_count ?? 0}
+                  overdueCount={fullProject?.overdue_count ?? 0}
                   dragHandle={dragHandle}
                 />
               )
@@ -127,10 +130,14 @@ export default function ProjectsPage() {
 function ProjectCard({
   project,
   shared,
+  activeCount,
+  overdueCount,
   dragHandle,
 }: {
   project: { id: number; name: string }
   shared?: boolean
+  activeCount: number
+  overdueCount: number
   dragHandle: DragHandleProps
 }) {
   return (
@@ -146,10 +153,14 @@ function ProjectCard({
         className="flex-shrink-0"
       />
       <Link href={`/projects/${project.id}`} className="flex flex-1 items-center justify-between">
-        <div>
-          <span className="font-medium">{project.name}</span>
+        <div className="min-w-0 flex-1">
+          <span className="truncate font-medium">{project.name}</span>
           {shared && <span className="ml-2 text-xs text-zinc-400">Shared</span>}
         </div>
+        <span className="flex flex-shrink-0 items-center gap-1">
+          <CountBadge count={activeCount} />
+          {overdueCount > 0 && <CountBadge count={overdueCount} variant="overdue" />}
+        </span>
       </Link>
     </div>
   )
