@@ -99,12 +99,18 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     // Build query options using the SDK's Options type.
     // bypassPermissions requires allowDangerouslySkipPermissions safety flag.
     // persistSession=false avoids writing enrichment sessions to ~/.claude/.
+    // pathToClaudeCodeExecutable resolves the globally installed CLI when
+    // running inside a bundled Next.js standalone app (where the SDK's
+    // default resolution finds the wrong cli.js).
     const queryOptions: Options = {
       model: resolvedModel,
       maxTurns,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       persistSession: false,
+      ...(process.env.OPENTASK_AI_CLI_PATH && {
+        pathToClaudeCodeExecutable: process.env.OPENTASK_AI_CLI_PATH,
+      }),
     }
 
     if (outputSchema) {
