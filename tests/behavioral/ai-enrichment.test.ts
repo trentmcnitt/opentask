@@ -12,11 +12,11 @@
  * - Stuck tasks are reset on startup
  */
 
-import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById } from '@/core/tasks'
-import { resetStuckTasks } from '@/core/ai/enrichment'
+import { resetStuckTasks, processEnrichmentQueue, _resetCircuitBreaker } from '@/core/ai/enrichment'
 
 // Mock isAIEnabled to return true for these tests
 vi.mock('@/core/ai/sdk', () => ({
@@ -175,6 +175,47 @@ describe('applyEnrichment via collectEnrichmentChanges', () => {
     const fromDb = getTaskById(task.id)
     expect(fromDb!.ai_status).toBeNull()
     expect(fromDb!.labels).toContain('ai-locked')
+  })
+})
+
+describe('processEnrichmentQueue ai-locked skip', () => {
+  test('ai-locked task is skipped when processed through the queue', async () => {
+    const db = getDb()
+
+    // Create a title-only task (gets ai_status='pending')
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'do not enrich me' },
+    })
+
+    // Verify it starts as pending
+    expect(getTaskById(task.id)!.ai_status).toBe('pending')
+
+    // Manually add ai-locked label and keep ai_status='pending'
+    const labels = JSON.stringify(['ai-locked'])
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
+
+    // Process the queue
+    await processEnrichmentQueue()
+
+    // Task should be skipped: ai_status set to null, title unchanged
+    const after = getTaskById(task.id)
+    expect(after!.ai_status).toBeNull()
+    expect(after!.title).toBe('do not enrich me')
+    expect(after!.labels).toContain('ai-locked')
+  })
+})
+
+describe('circuit breaker', () => {
+  afterEach(() => {
+    _resetCircuitBreaker()
+  })
+
+  test('circuit breaker exports are available', () => {
+    // Verify the circuit breaker reset function exists and is callable
+    expect(typeof _resetCircuitBreaker).toBe('function')
+    _resetCircuitBreaker()
   })
 })
 

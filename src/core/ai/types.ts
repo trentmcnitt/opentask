@@ -40,6 +40,86 @@ export const EnrichmentResultSchema = z.object({
 export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
 
 /**
+ * "What's Next?" recommendation schema.
+ */
+export const WhatsNextResultSchema = z.object({
+  tasks: z
+    .array(
+      z.object({
+        task_id: z.number().describe('ID of the recommended task'),
+        reason: z.string().describe('Brief reason why this task matters now'),
+      }),
+    )
+    .describe('3-7 recommended tasks'),
+  summary: z.string().describe('1-2 sentence overview of what matters today'),
+})
+
+export type WhatsNextResult = z.infer<typeof WhatsNextResultSchema>
+
+/**
+ * Daily briefing schema.
+ */
+export const BriefingResultSchema = z.object({
+  greeting: z.string().describe('Conversational greeting, e.g. "Morning Trent — ..."'),
+  sections: z.array(
+    z.object({
+      heading: z.string().describe('Section heading like "Deadlines" or "Shopping"'),
+      items: z.array(
+        z.object({
+          task_id: z.number().nullable().describe('Task ID, or null for summary-only items'),
+          text: z.string().describe('Display text for this item'),
+          actionable: z.boolean().describe('True if a checkbox should be shown'),
+        }),
+      ),
+    }),
+  ),
+  generated_at: z.string().describe('ISO 8601 generation timestamp'),
+})
+
+export type BriefingResult = z.infer<typeof BriefingResultSchema>
+
+/**
+ * AI triage result schema.
+ */
+export const TriageResultSchema = z.object({
+  ordered_task_ids: z
+    .array(z.number())
+    .describe('Task IDs ordered by importance, most important first'),
+  reasoning: z.string().describe('Brief explanation of the ordering rationale'),
+})
+
+export type TriageResult = z.infer<typeof TriageResultSchema>
+
+/**
+ * Shopping label classification schema.
+ */
+export const ShoppingLabelResultSchema = z.object({
+  section: z
+    .string()
+    .describe(
+      'Store section: produce, dairy, meat, bakery, frozen, pantry, household, personal care, beverages, deli, other',
+    ),
+  reasoning: z.string().describe('Brief explanation of why this section was chosen'),
+})
+
+export type ShoppingLabelResult = z.infer<typeof ShoppingLabelResultSchema>
+
+/**
+ * Compact task summary for AI prompts.
+ * Includes only the fields AI needs to make decisions.
+ */
+export interface TaskSummary {
+  id: number
+  title: string
+  priority: number
+  due_at: string | null
+  labels: string[]
+  project_name: string | null
+  is_recurring: boolean
+  snooze_count: number
+}
+
+/**
  * Shape of rows in the ai_activity_log table.
  */
 export interface AIActivityEntry {

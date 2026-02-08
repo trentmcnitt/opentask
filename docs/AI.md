@@ -1,6 +1,6 @@
 # AI Integration — Design Document
 
-_Version 0.1 — 2026-02-08_
+_Version 0.3 — 2026-02-08_
 
 This is the authoritative reference for AI integration in OpenTask. It covers principles, architecture, failure handling, and the feature catalog.
 
@@ -11,10 +11,12 @@ This is the authoritative reference for AI integration in OpenTask. It covers pr
 1. [Principles](#principles)
 2. [Architecture](#architecture)
 3. [Module Structure](#module-structure)
-4. [Failure Modes](#failure-modes)
-5. [Feature Catalog](#feature-catalog)
-6. [Configuration](#configuration)
-7. [Activity Logging](#activity-logging)
+4. [Robustness](#robustness)
+5. [Failure Modes](#failure-modes)
+6. [Feature Catalog](#feature-catalog)
+7. [Configuration](#configuration)
+8. [Activity Logging](#activity-logging)
+9. [Data Retention](#data-retention)
 
 ---
 
@@ -23,6 +25,12 @@ This is the authoritative reference for AI integration in OpenTask. It covers pr
 ### Certainty first
 
 The task is always saved before AI is consulted. If the user types "call dentist next Tuesday high priority" and presses Enter, the task exists in the database within milliseconds. AI enrichment happens asynchronously — if it fails, the raw text is preserved exactly as typed. The user never loses data because of an AI failure.
+
+### Transcriptionist, not editor
+
+The enrichment prompt treats user input as dictation to be cleaned, not prose to be rewritten. Clean up: artifacts, rambling, repetition, false starts. Preserve exactly: word choices, framing, specific claims. Never add concepts the user didn't use.
+
+This is especially important because users often dictate tasks while driving or multitasking — input may be garbled, stream-of-consciousness, or oddly phrased.
 
 ### Graceful failure
 
@@ -49,15 +57,18 @@ Different features have different latency and intelligence requirements:
 | Use case                  | Model       | Why                                |
 | ------------------------- | ----------- | ---------------------------------- |
 | Task enrichment (parsing) | Haiku       | Fast, cheap, structured extraction |
+| What's Next?              | Haiku       | Fast, on-demand recommendations    |
+| Daily briefing            | Haiku       | Summarization, low stakes          |
+| AI triage                 | Haiku       | Interactive, user is waiting       |
+| Shopping labels           | Haiku       | Simple classification              |
 | Chat sidebar              | Sonnet      | Conversational, needs reasoning    |
-| Morning briefing          | Haiku       | Summarization, low stakes          |
-| Complex triage/analysis   | Sonnet/Opus | Needs deep understanding           |
+| Complex analysis          | Sonnet/Opus | Needs deep understanding           |
 
 The SDK supports per-query model selection, so each feature chooses its own model.
 
 ### AI-locked protection
 
-Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written.
+Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written. The queue checks for this label and skips the task (setting `ai_status` to null).
 
 ---
 
@@ -105,7 +116,20 @@ User types → Task saved immediately → ai_status = 'pending'
                           ai_status = 'complete'     User sees warning
 ```
 
-The cron runs every 10 seconds. Tasks are processed sequentially (one at a time) to avoid overwhelming the server.
+The cron runs every 10 seconds. Tasks are processed with round-robin fairness across users (up to 10 per cycle) to prevent any single user from starving others.
+
+### Shared project support
+
+Enrichment queries both owned and shared projects when building the project list for AI. This allows the model to route tasks to shared projects (e.g., a shared "Shopping List"). The project list format indicates which projects are shared:
+
+```
+- Inbox (id: 1)
+- Shopping List (id: 5, shared)
+```
+
+### Concurrent request management
+
+A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All AI queries (enrichment, What's Next, briefing, triage, shopping labels) acquire a slot before spawning a subprocess. Requests beyond the limit are queued FIFO with a 30-second timeout.
 
 ---
 
@@ -118,53 +142,122 @@ src/core/ai/
 ├── types.ts         — TypeScript types and Zod schemas
 ├── activity.ts      — Activity log read/write
 ├── prompts.ts       — System prompts for each feature
-├── sdk.ts           — SDK wrapper (init, query, error handling)
-└── enrichment.ts    — Task enrichment pipeline
+├── sdk.ts           — SDK wrapper (init, query, error handling, timeout)
+├── queue.ts         — Concurrent request semaphore (FIFO, configurable limit)
+├── parse-helpers.ts — Shared JSON extraction from text responses
+├── enrichment.ts    — Task enrichment pipeline (circuit breaker, round-robin, shopping labels)
+├── whats-next.ts    — "What's Next?" AI recommendations (cached 5 min)
+├── briefing.ts      — Daily briefing generation (cached 4 hours in activity log)
+├── triage.ts        — AI triage / task ordering (cached 5 min)
+├── shopping.ts      — Shopping list label classification
+├── purge.ts         — Activity log data retention
+└── index.ts         — Barrel exports
 ```
 
 ### `types.ts`
 
-- `AIStatus` — `'pending' | 'processing' | 'complete' | 'failed'`
-- `EnrichmentResult` — Zod schema for structured output (title, due_at, priority, labels, project_name, rrule, reasoning)
+- `EnrichmentResultSchema` — Zod schema for task enrichment output
+- `WhatsNextResultSchema` — recommended tasks + summary
+- `BriefingResultSchema` — greeting + sections + items
+- `TriageResultSchema` — ordered task IDs + reasoning
+- `ShoppingLabelResultSchema` — store section + reasoning
+- `TaskSummary` — compact task representation for AI prompts
 - `AIActivityEntry` — shape of activity log rows
-
-### `activity.ts`
-
-- `logAIActivity(entry)` — writes to `ai_activity_log` table
-- `getAIActivity(userId, options)` — queries activity log (for future UI)
 
 ### `prompts.ts`
 
-- `ENRICHMENT_SYSTEM_PROMPT` — instructions for task parsing: priority values (0-4), RRULE format with examples, timezone rules, label extraction guidance, "if uncertain, leave null"
+- `ENRICHMENT_SYSTEM_PROMPT` — task parsing with transcriptionist philosophy
+- `WHATS_NEXT_SYSTEM_PROMPT` — recommend 3-7 tasks to focus on
+- `BRIEFING_SYSTEM_PROMPT` — conversational daily briefing with sections
+- `TRIAGE_SYSTEM_PROMPT` — order tasks by importance
+- `SHOPPING_LABEL_SYSTEM_PROMPT` — classify items by store section
 
 ### `sdk.ts`
 
-- `initAI()` — called from `instrumentation.ts`, validates SDK is available
-- `aiQuery(options)` — wraps SDK `query()` with error handling, duration measurement, and activity logging
+- `initAI()` — called from `instrumentation.ts`, validates SDK
+- `aiQuery(options)` — wraps SDK `query()` with error handling, timeout, semaphore, and activity logging
 - `isAIEnabled()` — checks `OPENTASK_AI_ENABLED` env var
+
+### `queue.ts`
+
+- `acquireSlot()` / `releaseSlot()` — FIFO semaphore
+- `withSlot(fn)` — convenience wrapper with automatic release
+- `getQueueStats()` — returns active/waiting/max for monitoring
 
 ### `enrichment.ts`
 
-- `processEnrichmentQueue()` — cron entry point, picks up `ai_status = 'pending'` tasks
+- `processEnrichmentQueue()` — cron entry point with round-robin fairness, circuit breaker, shopping label integration
 - `enrichTask(task, user)` — runs SDK query with structured output
 - `applyEnrichment(task, result, user)` — applies changes via `withTransaction()` + `logAction()`
+- `resetStuckTasks()` — resets `'processing'` tasks to `'pending'` on startup
+
+### `whats-next.ts`
+
+- `generateWhatsNext(userId, timezone, tasks)` — returns 3-7 recommended tasks with reasons
+- 5-minute in-memory cache per user
+- Task selection scoring: overdue > due soon > high priority > stale
+
+### `briefing.ts`
+
+- `getBriefing(userId, timezone, tasks, refresh?)` — returns cached or fresh briefing
+- Cache persistence via `ai_activity_log` (4-hour TTL)
+- Includes task stats: overdue count, due today, recurring, high priority, stale
+
+### `triage.ts`
+
+- `triageTasks(userId, timezone, tasks)` — returns ordered task IDs by importance
+- 5-minute in-memory cache per user
+- Used by "AI Pick" filter chip on dashboard
+
+### `shopping.ts`
+
+- `isShoppingProject(name)` — name-based heuristic (contains "shop"/"grocer")
+- `getShoppingLabels(userId, title, projectName)` — classifies item by store section
+- Integrated into enrichment: runs after normal enrichment for shopping projects
+
+---
+
+## Robustness
+
+### Circuit breaker
+
+The enrichment queue tracks rapid consecutive failures. If 5 tasks fail within 60 seconds, the queue pauses for 5 minutes and logs a warning. This prevents infinite failure loops when the underlying service is down.
+
+### Request timeout
+
+Every SDK query has a configurable timeout (default 60 seconds). If the subprocess doesn't respond within the timeout, the `AbortController` kills it and the query returns an error.
+
+### Stuck task detection
+
+Each queue cycle checks for tasks stuck in `'processing'` for longer than 2 minutes. These are reset to `'pending'`. On server startup, `resetStuckTasks()` resets all `'processing'` tasks.
+
+### Concurrent request limiting
+
+The semaphore in `queue.ts` (default max 2) prevents resource exhaustion from multiple simultaneous AI features. Queue waiters time out after 30 seconds.
+
+### Round-robin fairness
+
+The enrichment queue uses round-robin scheduling across users. Tasks from different users are interleaved, so no single user's backlog can starve others.
 
 ---
 
 ## Failure Modes
 
-| Failure                        | What happens                                         | User sees                        |
-| ------------------------------ | ---------------------------------------------------- | -------------------------------- |
-| SDK not installed              | `isAIEnabled()` returns false                        | Nothing — app works normally     |
-| Subprocess fails to start      | `ai_status` stays `'pending'`, retried next cycle    | Spinner continues                |
-| Model returns invalid output   | `ai_status = 'failed'`, error logged                 | Warning icon, raw text preserved |
-| Model extracts wrong fields    | Changes applied and logged in undo                   | User can Cmd+Z to revert         |
-| Server restarts mid-enrichment | `'processing'` tasks reset to `'pending'` on startup | Re-processed automatically       |
-| Task has `ai-locked` label     | Enrichment skipped                                   | No AI processing                 |
+| Failure                        | What happens                                         | User sees                         |
+| ------------------------------ | ---------------------------------------------------- | --------------------------------- |
+| SDK not installed              | `isAIEnabled()` returns false                        | Nothing — app works normally      |
+| Subprocess fails to start      | `ai_status` stays `'pending'`, retried next cycle    | Spinner continues                 |
+| Subprocess hangs               | Timeout kills after 60s, `ai_status = 'failed'`      | Warning icon, raw text preserved  |
+| Model returns invalid output   | `ai_status = 'failed'`, error logged                 | Warning icon, raw text preserved  |
+| Model extracts wrong fields    | Changes applied and logged in undo                   | User can Cmd+Z to revert          |
+| Server restarts mid-enrichment | `'processing'` tasks reset to `'pending'` on startup | Re-processed automatically        |
+| Task has `ai-locked` label     | Enrichment skipped, `ai_status` set to null          | No AI processing                  |
+| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                |
+| Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error |
+| What's Next/triage cache hit   | Cached result returned immediately                   | Instant response                  |
+| Briefing cache hit             | Cached result from activity log                      | Instant page load                 |
 
-**No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway. Manual re-enrichment can be added later.
-
-**Stuck detection:** On startup, any task with `ai_status = 'processing'` is reset to `'pending'` (these were interrupted by a restart).
+**No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway.
 
 ---
 
@@ -172,43 +265,38 @@ src/core/ai/
 
 ### Implemented
 
-- **Task enrichment (v1)** — see below
-
-### v1: Task Enrichment
-
-User types natural language in QuickAdd. Task saves immediately with raw text as the title. AI enriches asynchronously:
-
-- Clean, concise title
-- Due date extraction (relative dates like "next Tuesday", absolute dates)
-- Priority detection ("high priority", "urgent", "low")
-- Label extraction (contextual tags from the text)
-- Recurrence detection ("every Monday", "daily at 9am") → RRULE
-- Project routing (match project name from text)
-
-**Model:** Haiku
-**Trigger:** Task created with title only (no due_at, priority = 0, no labels, no rrule)
-**MCP tool:** `list_projects` — lets the model resolve project names to IDs
+| Feature         | Description                                 | Model | Trigger               | Cache   |
+| --------------- | ------------------------------------------- | ----- | --------------------- | ------- |
+| Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —       |
+| What's Next?    | AI-recommended tasks to focus on            | Haiku | Dashboard panel (GET) | 5 min   |
+| Daily briefing  | Structured daily overview at /briefing      | Haiku | On-demand page load   | 4 hours |
+| AI triage       | Reorder tasks by AI-assessed importance     | Haiku | "AI Pick" filter chip | 5 min   |
+| Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —       |
 
 ### Planned
 
-| Feature          | Description                              | Model        | Trigger               |
-| ---------------- | ---------------------------------------- | ------------ | --------------------- |
-| Chat sidebar     | Conversational AI about your tasks       | Sonnet       | User opens chat       |
-| Morning briefing | Daily summary of what's ahead            | Haiku        | Daily cron            |
-| AI triage        | Suggest priority/project for inbox tasks | Haiku/Sonnet | On-demand button      |
-| Title rewrite    | Clean up a task title                    | Haiku        | Button on task detail |
-
-All planned features share the same infrastructure: `sdk.ts` (wrapper), `activity.ts` (logging), and the `ai_activity_log` table.
+| Feature      | Description                        | Model  | Status   |
+| ------------ | ---------------------------------- | ------ | -------- |
+| Chat sidebar | Conversational AI about your tasks | Sonnet | Deferred |
 
 ---
 
 ## Configuration
 
-| Env var                           | Default | Description                                         |
-| --------------------------------- | ------- | --------------------------------------------------- |
-| `OPENTASK_AI_ENABLED`             | `false` | Master switch — all AI features disabled when false |
-| `OPENTASK_AI_ENRICHMENT_MODEL`    | `haiku` | Model for task enrichment                           |
-| `OPENTASK_AI_ENRICHMENT_INTERVAL` | `10`    | Seconds between queue checks                        |
+| Env var                               | Default | Description                                         |
+| ------------------------------------- | ------- | --------------------------------------------------- |
+| `OPENTASK_AI_ENABLED`                 | `false` | Master switch — all AI features disabled when false |
+| `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku` | Model for task enrichment                           |
+| `OPENTASK_AI_ENRICHMENT_INTERVAL`     | `10`    | Seconds between queue checks                        |
+| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000` | Timeout for SDK queries in milliseconds             |
+| `OPENTASK_AI_CLI_PATH`                | (auto)  | Path to Claude Code CLI executable                  |
+| `OPENTASK_AI_MAX_CONCURRENT`          | `2`     | Maximum concurrent SDK subprocesses                 |
+| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000` | Maximum wait time for semaphore slot                |
+| `OPENTASK_AI_WHATS_NEXT_MODEL`        | `haiku` | Model for What's Next recommendations               |
+| `OPENTASK_AI_BRIEFING_MODEL`          | `haiku` | Model for daily briefing                            |
+| `OPENTASK_AI_TRIAGE_MODEL`            | `haiku` | Model for AI triage                                 |
+| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku` | Model for shopping label classification             |
+| `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`    | Days to retain AI activity log entries              |
 
 No API key needed — the SDK uses Claude Code's authentication on the server.
 
@@ -218,18 +306,32 @@ No API key needed — the SDK uses Claude Code's authentication on the server.
 
 Every AI operation is logged in the `ai_activity_log` table:
 
-| Column        | Type    | Description                                                    |
-| ------------- | ------- | -------------------------------------------------------------- |
-| `id`          | INTEGER | Primary key                                                    |
-| `user_id`     | INTEGER | Who owns the task                                              |
-| `task_id`     | INTEGER | Which task (nullable for non-task operations)                  |
-| `action`      | TEXT    | Operation type: `'enrich'`, `'chat'`, `'briefing'`, `'triage'` |
-| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                            |
-| `input`       | TEXT    | Raw input (e.g., original task text)                           |
-| `output`      | TEXT    | JSON result from AI                                            |
-| `model`       | TEXT    | Which model was used                                           |
-| `duration_ms` | INTEGER | How long the query took                                        |
-| `error`       | TEXT    | Error message if failed                                        |
-| `created_at`  | TEXT    | ISO 8601 timestamp                                             |
+| Column        | Type    | Description                                                                              |
+| ------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `id`          | INTEGER | Primary key                                                                              |
+| `user_id`     | INTEGER | Who owns the task                                                                        |
+| `task_id`     | INTEGER | Which task (nullable for non-task operations)                                            |
+| `action`      | TEXT    | Operation type: `'enrich'`, `'whats_next'`, `'briefing'`, `'triage'`, `'shopping_label'` |
+| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                                      |
+| `input`       | TEXT    | Raw input (e.g., original task text)                                                     |
+| `output`      | TEXT    | JSON result from AI                                                                      |
+| `model`       | TEXT    | Which model was used                                                                     |
+| `duration_ms` | INTEGER | How long the query took                                                                  |
+| `error`       | TEXT    | Error message if failed                                                                  |
+| `created_at`  | TEXT    | ISO 8601 timestamp                                                                       |
 
-This table is separate from the undo log. The undo log tracks what changed (for reverting). The activity log tracks AI operations (for debugging, cost visibility, and future UI).
+The briefing feature also uses this table for cache persistence (action='briefing', status='success').
+
+---
+
+## Data Retention
+
+| Data            | Retention | Purge schedule        | Env var override                      |
+| --------------- | --------- | --------------------- | ------------------------------------- |
+| Undo log        | 30 days   | Daily at 3:00 AM      | `OPENTASK_RETENTION_UNDO_DAYS`        |
+| Trash           | 30 days   | Daily at 3:30 AM      | `OPENTASK_RETENTION_TRASH_DAYS`       |
+| Completions     | 30 days   | Daily at 4:00 AM      | `OPENTASK_RETENTION_COMPLETIONS_DAYS` |
+| Daily stats     | 4 weeks   | Weekly Sunday 4:30 AM | —                                     |
+| AI activity log | 90 days   | Daily at 5:00 AM      | `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` |
+
+AI activity has a longer retention than other data because it's useful for prompt tuning and cost analysis.

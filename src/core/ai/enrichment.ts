@@ -17,13 +17,97 @@ import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recur
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { isAIEnabled, aiQuery } from './sdk'
+import { extractJsonFromText } from './parse-helpers'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
+import { isShoppingProject, getShoppingLabels, getProjectName } from './shopping'
 import { z } from 'zod'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
+
+/**
+ * Circuit breaker state.
+ *
+ * Tracks rapid consecutive failures to prevent infinite failure loops.
+ * If CIRCUIT_BREAKER_THRESHOLD tasks fail within CIRCUIT_BREAKER_WINDOW_MS,
+ * the queue pauses for CIRCUIT_BREAKER_PAUSE_MS before accepting new work.
+ */
+const CIRCUIT_BREAKER_THRESHOLD = 5
+const CIRCUIT_BREAKER_WINDOW_MS = 60_000 // 1 minute
+const CIRCUIT_BREAKER_PAUSE_MS = 300_000 // 5 minutes
+const STUCK_TASK_TIMEOUT_MS = 120_000 // 2 minutes
+
+interface CircuitBreakerState {
+  failureTimestamps: number[]
+  pausedUntil: number | null
+}
+
+const circuitBreaker: CircuitBreakerState = {
+  failureTimestamps: [],
+  pausedUntil: null,
+}
+
+/** Record a failure for circuit breaker tracking */
+function recordFailure(): void {
+  const now = Date.now()
+  circuitBreaker.failureTimestamps.push(now)
+
+  // Remove failures outside the window
+  const cutoff = now - CIRCUIT_BREAKER_WINDOW_MS
+  circuitBreaker.failureTimestamps = circuitBreaker.failureTimestamps.filter((t) => t > cutoff)
+
+  if (circuitBreaker.failureTimestamps.length >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuitBreaker.pausedUntil = now + CIRCUIT_BREAKER_PAUSE_MS
+    circuitBreaker.failureTimestamps = []
+    log.warn(
+      'ai',
+      `Circuit breaker tripped: ${CIRCUIT_BREAKER_THRESHOLD} failures in ${CIRCUIT_BREAKER_WINDOW_MS / 1000}s. ` +
+        `Queue paused for ${CIRCUIT_BREAKER_PAUSE_MS / 1000}s.`,
+    )
+  }
+}
+
+/** Check if the circuit breaker is currently tripped */
+function isCircuitBreakerOpen(): boolean {
+  if (!circuitBreaker.pausedUntil) return false
+  if (Date.now() >= circuitBreaker.pausedUntil) {
+    circuitBreaker.pausedUntil = null
+    log.info('ai', 'Circuit breaker reset — resuming queue processing')
+    return false
+  }
+  return true
+}
+
+/** Exported for testing */
+export function _resetCircuitBreaker(): void {
+  circuitBreaker.failureTimestamps = []
+  circuitBreaker.pausedUntil = null
+}
+
+/**
+ * Reset tasks stuck in 'processing' for too long.
+ *
+ * If a task has been processing for longer than STUCK_TASK_TIMEOUT_MS,
+ * it was likely interrupted without a clean server restart. Reset it
+ * to 'pending' so it gets retried.
+ */
+function resetTimedOutTasks(): void {
+  const db = getDb()
+  const cutoff = new Date(Date.now() - STUCK_TASK_TIMEOUT_MS).toISOString()
+  const result = db
+    .prepare(
+      "UPDATE tasks SET ai_status = 'pending' WHERE ai_status = 'processing' AND updated_at < ?",
+    )
+    .run(cutoff)
+  if (result.changes > 0) {
+    log.warn(
+      'ai',
+      `Reset ${result.changes} timed-out tasks (processing > ${STUCK_TASK_TIMEOUT_MS / 1000}s)`,
+    )
+  }
+}
 
 /**
  * Process the enrichment queue. Called by cron every N seconds.
@@ -31,33 +115,67 @@ let processing = false
  * Picks up tasks with ai_status='pending', processes them one at a time,
  * and applies the enrichment result. Sequential processing avoids
  * overwhelming the server with concurrent SDK subprocesses.
+ *
+ * Includes circuit breaker (pauses on rapid failures), timeout detection
+ * (resets stuck tasks), and cycle stats logging.
  */
 export async function processEnrichmentQueue(): Promise<void> {
   if (!isAIEnabled()) return
   if (processing) return
+  if (isCircuitBreakerOpen()) return
 
   processing = true
   try {
     const db = getDb()
 
-    // Pick up pending tasks (oldest first, limit to 5 per cycle)
+    // Reset tasks stuck in processing for too long
+    resetTimedOutTasks()
+
+    // Pick up pending tasks with round-robin fairness across users.
+    // Groups by user, picks the oldest pending task per user first,
+    // then cycles through users until the batch limit is reached.
     const pendingTasks = db
       .prepare(
         `SELECT id, user_id, title, labels, priority, due_at, rrule
          FROM tasks
          WHERE ai_status = 'pending' AND deleted_at IS NULL
-         ORDER BY created_at ASC
-         LIMIT 5`,
+         ORDER BY user_id, created_at ASC
+         LIMIT 20`,
       )
       .all() as PendingTaskRow[]
 
+    // Round-robin: interleave tasks from different users
+    const byUser = new Map<number, PendingTaskRow[]>()
     for (const row of pendingTasks) {
+      const userTasks = byUser.get(row.user_id) ?? []
+      userTasks.push(row)
+      byUser.set(row.user_id, userTasks)
+    }
+    const fairQueue: PendingTaskRow[] = []
+    const userQueues = [...byUser.values()]
+    let idx = 0
+    while (fairQueue.length < 10 && userQueues.some((q) => q.length > 0)) {
+      const queue = userQueues[idx % userQueues.length]
+      if (queue.length > 0) {
+        fairQueue.push(queue.shift()!)
+      }
+      idx++
+    }
+
+    if (fairQueue.length === 0) return
+
+    let processed = 0
+    let failed = 0
+    let skipped = 0
+
+    for (const row of fairQueue) {
       try {
         // Check for ai-locked label
         const labels: string[] = JSON.parse(row.labels)
         if (labels.includes('ai-locked')) {
           db.prepare('UPDATE tasks SET ai_status = NULL WHERE id = ?').run(row.id)
           log.info('ai', `Task ${row.id} has ai-locked label, skipping enrichment`)
+          skipped++
           continue
         }
 
@@ -68,14 +186,26 @@ export async function processEnrichmentQueue(): Promise<void> {
         )
 
         await enrichTask(row)
+        processed++
       } catch (err) {
         log.error('ai', `Enrichment failed for task ${row.id}:`, err)
         db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
           nowUtc(),
           row.id,
         )
+        failed++
+        recordFailure()
+
+        // Stop processing this cycle if circuit breaker tripped
+        if (isCircuitBreakerOpen()) break
       }
     }
+
+    log.info(
+      'ai',
+      `Queue cycle: ${processed} processed, ${failed} failed, ${skipped} skipped` +
+        ` (${fairQueue.length} picked up)`,
+    )
   } finally {
     processing = false
   }
@@ -114,12 +244,16 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
     throw new Error(`User ${row.user_id} not found`)
   }
 
-  // Get available projects for project name resolution
+  // Get available projects for project name resolution (owned + shared)
   const projects = db
-    .prepare('SELECT id, name FROM projects WHERE owner_id = ? ORDER BY sort_order')
-    .all(user.id) as { id: number; name: string }[]
+    .prepare(
+      'SELECT id, name, shared FROM projects WHERE owner_id = ? OR shared = 1 ORDER BY sort_order',
+    )
+    .all(user.id) as { id: number; name: string; shared: number }[]
 
-  const projectList = projects.map((p) => `- ${p.name} (id: ${p.id})`).join('\n')
+  const projectList = projects
+    .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
+    .join('\n')
 
   const prompt = `${ENRICHMENT_SYSTEM_PROMPT}
 
@@ -187,6 +321,45 @@ Parse this task and return the structured result.`
   }
 
   applyEnrichment(row, parsed.data, user)
+
+  // Post-enrichment: add shopping labels if the task is in a shopping project.
+  // Check the resolved project (after enrichment may have moved it).
+  const enrichedTask = getTaskById(row.id)
+  if (enrichedTask) {
+    const projectName = getProjectName(enrichedTask.project_id)
+    if (projectName && isShoppingProject(projectName)) {
+      try {
+        const shoppingLabels = await getShoppingLabels(row.user_id, enrichedTask.title, projectName)
+        if (shoppingLabels.length > 0) {
+          const existingLabels = new Set(enrichedTask.labels)
+          const newLabels = shoppingLabels.filter((l) => !existingLabels.has(l))
+          if (newLabels.length > 0) {
+            // Use withTransaction + logAction for atomic, undoable shopping label updates.
+            const beforeTask = enrichedTask
+            const merged = [...enrichedTask.labels, ...newLabels]
+            withTransaction((txDb) => {
+              txDb
+                .prepare('UPDATE tasks SET labels = ?, updated_at = ? WHERE id = ?')
+                .run(JSON.stringify(merged), nowUtc(), row.id)
+              const afterTask = getTaskById(row.id)!
+              const snapshot = createTaskSnapshot(beforeTask, afterTask, ['labels'])
+              logAction(
+                user.id,
+                'edit',
+                `AI: Added shopping labels — ${newLabels.join(', ')}`,
+                ['labels'],
+                [snapshot],
+              )
+            })
+            log.info('ai', `Task ${row.id} shopping labels added: ${newLabels.join(', ')}`)
+          }
+        }
+      } catch (err) {
+        // Shopping label failure is non-fatal — enrichment still succeeded
+        log.warn('ai', `Shopping label enrichment failed for task ${row.id}:`, err)
+      }
+    }
+  }
 }
 
 interface FieldChanges {
@@ -265,11 +438,13 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Project — resolve project name to ID if provided
+  // Project — resolve project name to ID if provided (owned or shared)
   if (enrichment.project_name) {
     const db = getDb()
     const project = db
-      .prepare('SELECT id FROM projects WHERE owner_id = ? AND name = ? COLLATE NOCASE')
+      .prepare(
+        'SELECT id FROM projects WHERE (owner_id = ? OR shared = 1) AND name = ? COLLATE NOCASE',
+      )
       .get(user.id, enrichment.project_name) as { id: number } | undefined
     if (project && project.id !== task.project_id) {
       setClauses.push('project_id = ?')
@@ -340,42 +515,6 @@ function applyEnrichment(
   })
 
   log.info('ai', `Task ${row.id} enriched: ${changes.fieldsChanged.join(', ')}`)
-}
-
-/**
- * Extract a JSON object from a text response that may contain markdown
- * code blocks or other surrounding text. The SDK sometimes returns text
- * with embedded JSON instead of using the structured output channel.
- */
-function extractJsonFromText(text: string): Record<string, unknown> | null {
-  // Try the full text as JSON first
-  try {
-    return JSON.parse(text) as Record<string, unknown>
-  } catch {
-    // Not pure JSON
-  }
-
-  // Try extracting from a ```json code block
-  const codeBlockMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/)
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1]) as Record<string, unknown>
-    } catch {
-      // Invalid JSON in code block
-    }
-  }
-
-  // Try finding the first { ... } block
-  const braceMatch = text.match(/\{[\s\S]*\}/)
-  if (braceMatch) {
-    try {
-      return JSON.parse(braceMatch[0]) as Record<string, unknown>
-    } catch {
-      // Invalid JSON
-    }
-  }
-
-  return null
 }
 
 interface PendingTaskRow {

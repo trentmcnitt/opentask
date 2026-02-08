@@ -16,7 +16,7 @@ export async function register() {
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
     const { purgeOldStats } = await import('@/core/stats/purge')
-    const { initAI, isAIEnabled, processEnrichmentQueue, resetStuckTasks } =
+    const { initAI, isAIEnabled, processEnrichmentQueue, resetStuckTasks, purgeOldAIActivity } =
       await import('@/core/ai')
 
     // Start notification service
@@ -62,9 +62,19 @@ export async function register() {
       }
     })
 
+    // Purge old AI activity logs daily at 5:00 AM
+    cron.schedule('0 5 * * *', () => {
+      log.info('cron', 'Running AI activity log purge')
+      try {
+        purgeOldAIActivity()
+      } catch (err) {
+        log.error('cron', 'AI activity log purge error:', err)
+      }
+    })
+
     log.info(
       'cron',
-      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday)',
+      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), AI activity (5:00 AM daily)',
     )
 
     // AI enrichment

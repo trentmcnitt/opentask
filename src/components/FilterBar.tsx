@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { X, Sparkles, Loader2 } from 'lucide-react'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import {
@@ -10,9 +10,9 @@ import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import type { Task } from '@/types'
 
 /**
- * Combined filter bar for due date, priority, and label filters.
- * Date badges appear first, then priority, then labels, separated by gray dividers.
- * Horizontal scroll on narrow screens (no wrapping).
+ * Combined filter bar for due date, priority, label, and AI filters.
+ * Date badges appear first, then priority, then labels, then AI chip,
+ * separated by gray dividers. Horizontal scroll on narrow screens.
  */
 export function FilterBar({
   tasks,
@@ -24,6 +24,9 @@ export function FilterBar({
   onToggleDateFilter,
   onClearAll,
   timezone,
+  aiPickActive = false,
+  aiPickLoading = false,
+  onToggleAiPick,
 }: {
   tasks: Task[]
   selectedPriorities: number[]
@@ -34,6 +37,9 @@ export function FilterBar({
   onToggleDateFilter?: (filter: DueDateFilter) => void
   onClearAll: () => void
   timezone?: string
+  aiPickActive?: boolean
+  aiPickLoading?: boolean
+  onToggleAiPick?: () => void
 }) {
   const hasLabels = tasks.some((t) => t.labels.length > 0)
 
@@ -56,7 +62,10 @@ export function FilterBar({
   if (tasks.length === 0) return null
 
   const hasSelection =
-    selectedPriorities.length > 0 || selectedLabels.length > 0 || selectedDateFilters.length > 0
+    selectedPriorities.length > 0 ||
+    selectedLabels.length > 0 ||
+    selectedDateFilters.length > 0 ||
+    aiPickActive
 
   return (
     <div className="relative mb-4 flex items-center">
@@ -86,6 +95,27 @@ export function FilterBar({
             selectedLabels={selectedLabels}
             onToggleLabel={onToggleLabel}
           />
+        )}
+
+        {onToggleAiPick && (
+          <>
+            <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+            <button
+              onClick={onToggleAiPick}
+              className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                aiPickActive
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+              }`}
+            >
+              {aiPickLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3" />
+              )}
+              AI Pick
+            </button>
+          </>
         )}
       </div>
 
