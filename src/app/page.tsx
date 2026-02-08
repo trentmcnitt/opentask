@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
+import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
@@ -296,6 +297,7 @@ function HomeContent() {
 
   // Sort state - lifted here so keyboard navigation can use the same order as display
   const { getSortOption, getReversed, setSortOption } = useGroupSort()
+  const { isCollapsed, toggleCollapse } = useCollapsedGroups()
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
     isSelectionMode: selection.isSelectionMode,
@@ -331,16 +333,34 @@ function HomeContent() {
     () => buildTaskGroups(displayTasks, projects, effectiveGrouping, timezone),
     [displayTasks, projects, effectiveGrouping, timezone],
   )
-  // Apply per-group sorting to match the visual order in TaskList
+  // Apply per-group sorting to match the visual order in TaskList.
+  // Exclude tasks in collapsed groups so keyboard navigation skips them.
   const orderedIds = useMemo(
     () =>
       taskGroups.flatMap((g) => {
+        if (isCollapsed(g.label)) return []
         const sortOption = getSortOption(g.label)
         const reversed = getReversed(g.label)
         const sortedTasks = sortTasks(g.tasks, sortOption, reversed)
         return sortedTasks.map((t) => t.id)
       }),
-    [taskGroups, getSortOption, getReversed],
+    [taskGroups, getSortOption, getReversed, isCollapsed],
+  )
+
+  // Wrap toggleCollapse to deselect tasks in a group when collapsing it
+  const handleToggleCollapse = useCallback(
+    (label: string) => {
+      if (!isCollapsed(label)) {
+        // About to collapse — deselect tasks in this group
+        const group = taskGroups.find((g) => g.label === label)
+        if (group && selection.isSelectionMode) {
+          const groupIds = group.tasks.map((t) => t.id)
+          selection.removeAll(groupIds)
+        }
+      }
+      toggleCollapse(label)
+    },
+    [isCollapsed, toggleCollapse, taskGroups, selection],
   )
 
   // Keyboard completion handler
@@ -618,6 +638,91 @@ function HomeContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [keyboard])
 
+  // Exit selection mode on double-click outside interactive zones (desktop)
+  useEffect(() => {
+    if (!selection.isSelectionMode) return
+
+    const isInsideInteractiveZone = (target: HTMLElement) =>
+      target.closest('[role="listbox"]') !== null ||
+      target.closest('[id^="task-row-"]') !== null ||
+      target.closest('[role="dialog"]') !== null ||
+      target.closest('[data-selection-sheet]') !== null ||
+      target.closest('button') !== null ||
+      target.closest('a') !== null ||
+      target.closest('input') !== null ||
+      target.closest('textarea') !== null ||
+      target.closest('select') !== null
+
+    const handleDblClick = (e: MouseEvent) => {
+      if (!isInsideInteractiveZone(e.target as HTMLElement)) {
+        selection.clear()
+      }
+    }
+
+    document.addEventListener('dblclick', handleDblClick)
+    return () => document.removeEventListener('dblclick', handleDblClick)
+  }, [selection])
+
+  // Exit selection mode on long-press outside interactive zones (mobile)
+  useEffect(() => {
+    if (!selection.isSelectionMode) return
+
+    const LONG_PRESS_MS = 400
+    const JITTER_PX = 10
+
+    const isInsideInteractiveZone = (target: HTMLElement) =>
+      target.closest('[role="listbox"]') !== null ||
+      target.closest('[id^="task-row-"]') !== null ||
+      target.closest('[role="dialog"]') !== null ||
+      target.closest('[data-selection-sheet]') !== null ||
+      target.closest('button') !== null ||
+      target.closest('a') !== null ||
+      target.closest('input') !== null ||
+      target.closest('textarea') !== null ||
+      target.closest('select') !== null
+
+    let timerId: ReturnType<typeof setTimeout> | null = null
+    let startX = 0
+    let startY = 0
+
+    const cancel = () => {
+      if (timerId !== null) {
+        clearTimeout(timerId)
+        timerId = null
+      }
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      if (isInsideInteractiveZone(e.target as HTMLElement)) return
+      startX = e.clientX
+      startY = e.clientY
+      timerId = setTimeout(() => {
+        timerId = null
+        selection.clear()
+      }, LONG_PRESS_MS)
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (timerId === null) return
+      const dx = e.clientX - startX
+      const dy = e.clientY - startY
+      if (Math.sqrt(dx * dx + dy * dy) > JITTER_PX) cancel()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('pointermove', onPointerMove)
+    document.addEventListener('pointerup', cancel)
+    document.addEventListener('pointercancel', cancel)
+    return () => {
+      cancel()
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('pointermove', onPointerMove)
+      document.removeEventListener('pointerup', cancel)
+      document.removeEventListener('pointercancel', cancel)
+    }
+  }, [selection])
+
   // Fetch saved grouping preference on mount
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -819,6 +924,8 @@ function HomeContent() {
       getSortOption={getSortOption}
       getReversed={getReversed}
       setSortOption={setSortOption}
+      isCollapsed={isCollapsed}
+      toggleCollapse={handleToggleCollapse}
       onActivate={handleActivate}
       onDoubleClick={handleDoubleClick}
       showShortcutsDialog={showShortcutsDialog}
@@ -893,6 +1000,8 @@ function DashboardView({
   getSortOption,
   getReversed,
   setSortOption,
+  isCollapsed,
+  toggleCollapse,
   onActivate,
   onDoubleClick,
   showShortcutsDialog,
@@ -950,6 +1059,8 @@ function DashboardView({
   getSortOption: (groupLabel: string) => SortOption
   getReversed: (groupLabel: string) => boolean
   setSortOption: (groupLabel: string, option: SortOption) => void
+  isCollapsed: (groupLabel: string) => boolean
+  toggleCollapse: (groupLabel: string) => void
   onActivate: (taskId: number) => void
   onDoubleClick: (task: Task) => void
   showShortcutsDialog: boolean
@@ -1061,6 +1172,8 @@ function DashboardView({
           getSortOption={getSortOption}
           getReversed={getReversed}
           setSortOption={setSortOption}
+          isCollapsed={isCollapsed}
+          toggleCollapse={toggleCollapse}
           onActivate={onActivate}
           onDoubleClick={onDoubleClick}
         />

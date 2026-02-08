@@ -15,6 +15,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed-dev": "tsx scripts/seed-dev.ts",
     "db:migrate-due": "tsx scripts/migrate-due.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

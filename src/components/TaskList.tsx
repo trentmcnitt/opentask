@@ -2,7 +2,7 @@
 
 // Selection integration via context
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { ArrowUpDown } from 'lucide-react'
+import { ArrowUpDown, ChevronDown } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Task, Project } from '@/types'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
+import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -67,6 +68,10 @@ interface TaskListProps {
   onActivate?: (taskId: number) => void
   /** Desktop double-click: open QuickActionPanel */
   onDoubleClick?: (task: Task) => void
+  /** Optional: check if a group is collapsed (lifted from useCollapsedGroups) */
+  isCollapsed?: (groupLabel: string) => boolean
+  /** Optional: toggle collapse for a group (lifted from useCollapsedGroups) */
+  toggleCollapse?: (groupLabel: string) => void
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -156,12 +161,17 @@ export function TaskList({
   setSortOption: setSortOptionProp,
   onActivate,
   onDoubleClick,
+  isCollapsed: isCollapsedProp,
+  toggleCollapse: toggleCollapseProp,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
   const getSortOption = getSortOptionProp ?? internalSort.getSortOption
   const getReversed = getReversedProp ?? internalSort.getReversed
   const setSortOption = setSortOptionProp ?? internalSort.setSortOption
+  const internalCollapse = useCollapsedGroups()
+  const isCollapsed = isCollapsedProp ?? internalCollapse.isCollapsed
+  const toggleCollapse = toggleCollapseProp ?? internalCollapse.toggleCollapse
   const selection = useSelectionOptional() ?? fallbackSelection
   const timezone = useTimezone()
   const isMobile = useIsMobile()
@@ -227,6 +237,7 @@ export function TaskList({
         const sortOption = getSortOption(group.label)
         const reversed = getReversed(group.label)
         const sortedTasks = sortTasks(group.tasks, sortOption, reversed)
+        const collapsed = isCollapsed(group.label)
 
         return (
           <section key={group.label}>
@@ -235,7 +246,18 @@ export function TaskList({
 
             <div className="mb-2 flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                {selection.isSelectionMode && (
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(group.label)}
+                  aria-expanded={!collapsed}
+                  aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
+                  className="text-muted-foreground hover:text-foreground flex size-6 items-center justify-center transition-colors"
+                >
+                  <ChevronDown
+                    className={`size-3.5 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+                  />
+                </button>
+                {!collapsed && selection.isSelectionMode && (
                   <GroupCheckbox
                     groupTaskIds={sortedTasks.map((t) => t.id)}
                     selection={selection}
@@ -244,6 +266,11 @@ export function TaskList({
                 <button
                   type="button"
                   onClick={() => {
+                    // When collapsed, clicking the label expands the group
+                    if (collapsed) {
+                      toggleCollapse(group.label)
+                      return
+                    }
                     const ids = sortedTasks.map((t) => t.id)
                     if (selection.isSelectionMode) {
                       // Toggle: if all selected, deselect all; otherwise select all
@@ -264,48 +291,52 @@ export function TaskList({
                   <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
                 </button>
               </div>
-              <SortDropdown
-                sortOption={sortOption}
-                reversed={reversed}
-                onSort={(option) => setSortOption(group.label, option)}
-              />
+              {!collapsed && (
+                <SortDropdown
+                  sortOption={sortOption}
+                  reversed={reversed}
+                  onSort={(option) => setSortOption(group.label, option)}
+                />
+              )}
             </div>
-            <div className="space-y-1">
-              {sortedTasks.map((task) => {
-                const cancelRef = { current: null as (() => void) | null }
-                return (
-                  <SwipeableRow
-                    key={task.id}
-                    onSwipeRight={() => onDone(task.id)}
-                    onSwipeLeft={() => handleSwipeSnooze(task)}
-                    onDragStart={() => cancelRef.current?.()}
-                    disabled={selection.isSelectionMode}
-                  >
-                    <TaskRow
-                      task={task}
-                      onDone={() => onDone(task.id)}
-                      onSnooze={onSnooze}
-                      isOverdue={isTaskOverdue(task)}
-                      isSelected={selection.selectedIds.has(task.id)}
-                      isSelectionMode={selection.isSelectionMode}
-                      onSelect={() => selection.toggle(task.id)}
-                      onSelectOnly={() => selection.selectOnly(task.id)}
-                      onRangeSelect={() =>
-                        selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
-                      }
-                      cancelLongPressRef={cancelRef}
-                      onLabelClick={onLabelClick}
-                      onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
-                      isKeyboardFocused={
-                        isKeyboardActive && !isMobile && task.id === keyboardFocusedId
-                      }
-                      onActivate={onActivate ? () => onActivate(task.id) : undefined}
-                      onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
-                    />
-                  </SwipeableRow>
-                )
-              })}
-            </div>
+            {!collapsed && (
+              <div className="space-y-1">
+                {sortedTasks.map((task) => {
+                  const cancelRef = { current: null as (() => void) | null }
+                  return (
+                    <SwipeableRow
+                      key={task.id}
+                      onSwipeRight={() => onDone(task.id)}
+                      onSwipeLeft={() => handleSwipeSnooze(task)}
+                      onDragStart={() => cancelRef.current?.()}
+                      disabled={selection.isSelectionMode}
+                    >
+                      <TaskRow
+                        task={task}
+                        onDone={() => onDone(task.id)}
+                        onSnooze={onSnooze}
+                        isOverdue={isTaskOverdue(task)}
+                        isSelected={selection.selectedIds.has(task.id)}
+                        isSelectionMode={selection.isSelectionMode}
+                        onSelect={() => selection.toggle(task.id)}
+                        onSelectOnly={() => selection.selectOnly(task.id)}
+                        onRangeSelect={() =>
+                          selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
+                        }
+                        cancelLongPressRef={cancelRef}
+                        onLabelClick={onLabelClick}
+                        onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
+                        isKeyboardFocused={
+                          isKeyboardActive && !isMobile && task.id === keyboardFocusedId
+                        }
+                        onActivate={onActivate ? () => onActivate(task.id) : undefined}
+                        onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
+                      />
+                    </SwipeableRow>
+                  )
+                })}
+              </div>
+            )}
           </section>
         )
       })}
