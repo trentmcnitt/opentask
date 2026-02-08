@@ -151,7 +151,7 @@ Parse this task and return the structured result.`
     inputText: row.title,
   })
 
-  if (!result.success || !result.structuredOutput) {
+  if (!result.success) {
     db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
       nowUtc(),
       row.id,
@@ -159,8 +159,24 @@ Parse this task and return the structured result.`
     return
   }
 
-  // Validate the structured output against our schema
-  const parsed = EnrichmentResultSchema.safeParse(result.structuredOutput)
+  // Try structured output first, fall back to extracting JSON from text.
+  // Some model/SDK configurations return text with embedded JSON code blocks
+  // instead of using the structured output channel.
+  let output = result.structuredOutput
+  if (!output && result.textResult) {
+    output = extractJsonFromText(result.textResult)
+  }
+  if (!output) {
+    log.error('ai', `No structured output or parseable JSON for task ${row.id}`)
+    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
+      nowUtc(),
+      row.id,
+    )
+    return
+  }
+
+  // Validate the output against our schema
+  const parsed = EnrichmentResultSchema.safeParse(output)
   if (!parsed.success) {
     log.error('ai', `Invalid enrichment output for task ${row.id}:`, parsed.error.message)
     db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
@@ -326,6 +342,42 @@ function applyEnrichment(
   })
 
   log.info('ai', `Task ${row.id} enriched: ${changes.fieldsChanged.join(', ')}`)
+}
+
+/**
+ * Extract a JSON object from a text response that may contain markdown
+ * code blocks or other surrounding text. The SDK sometimes returns text
+ * with embedded JSON instead of using the structured output channel.
+ */
+function extractJsonFromText(text: string): Record<string, unknown> | null {
+  // Try the full text as JSON first
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    // Not pure JSON
+  }
+
+  // Try extracting from a ```json code block
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/)
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1]) as Record<string, unknown>
+    } catch {
+      // Invalid JSON in code block
+    }
+  }
+
+  // Try finding the first { ... } block
+  const braceMatch = text.match(/\{[\s\S]*\}/)
+  if (braceMatch) {
+    try {
+      return JSON.parse(braceMatch[0]) as Record<string, unknown>
+    } catch {
+      // Invalid JSON
+    }
+  }
+
+  return null
 }
 
 interface PendingTaskRow {
