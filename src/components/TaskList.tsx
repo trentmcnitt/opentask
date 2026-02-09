@@ -346,7 +346,7 @@ export function TaskList({
   )
 }
 
-function isTaskOverdue(task: Task): boolean {
+export function isTaskOverdue(task: Task): boolean {
   if (!task.due_at) return false
   return new Date(task.due_at) < new Date()
 }

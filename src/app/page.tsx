@@ -1040,7 +1040,14 @@ function DashboardView({
           timezone={timezone}
         />
 
-        <BubblePanel tasks={allTasks} onDone={actions.handleDone} onActivate={onActivate} />
+        <BubblePanel
+          tasks={allTasks}
+          onDone={actions.handleDone}
+          onSnooze={actions.handleSnooze}
+          onActivate={onActivate}
+          onDoubleClick={onDoubleClick}
+          onLabelClick={onToggleLabel}
+        />
 
         {tasks.length > 0 && (
           <div className="mb-4">

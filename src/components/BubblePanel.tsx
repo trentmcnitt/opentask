@@ -2,13 +2,37 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronDown, ChevronRight, Sparkles, Loader2, RefreshCw } from 'lucide-react'
+import { TaskRow } from './TaskRow'
+import { SwipeableRow } from './SwipeableRow'
+import { isTaskOverdue } from './TaskList'
+import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { computeSnoozeTime } from '@/lib/snooze'
+import { useTimezone } from '@/hooks/useTimezone'
+import { formatRelativeTime } from '@/lib/quick-select-dates'
 import type { BubbleResult } from '@/core/ai/types'
 import type { Task } from '@/types'
+
+const fallbackSelection: SelectionContextType = {
+  selectedIds: new Set(),
+  anchor: null,
+  isSelectionMode: false,
+  toggle: () => {},
+  rangeSelect: () => {},
+  selectAll: () => {},
+  selectOnly: () => {},
+  addAll: () => {},
+  removeAll: () => {},
+  clear: () => {},
+}
 
 interface BubblePanelProps {
   tasks: Task[]
   onDone: (taskId: number) => void
+  onSnooze: (taskId: number, until: string) => void
   onActivate: (taskId: number) => void
+  onDoubleClick?: (task: Task) => void
+  onLabelClick?: (label: string) => void
 }
 
 /**
@@ -18,13 +42,27 @@ interface BubblePanelProps {
  * but things like social obligations, tasks sitting idle, and things
  * without hard deadlines that would become regrets.
  *
- * Replaces the previous "What's Next?" panel with richer task rendering
- * and AI-generated reasons for why each task was surfaced.
+ * Layout:
+ *   Header: [Sparkles] Bubble  [refresh] [2h ago] [chevron]
+ *   Body:   AI summary text
+ *           ─── divider ───
+ *           TaskRow with annotation (AI reason) for each recommendation
+ *
+ * Tasks render using the standard TaskRow + SwipeableRow, so they look
+ * and behave identically to tasks in the main list (metadata, swipe
+ * gestures, selection mode, etc.).
  *
  * Collapsible, remembers state in localStorage. Fails silently if AI
  * is unavailable.
  */
-export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelProps) {
+export default function BubblePanel({
+  tasks,
+  onDone,
+  onSnooze,
+  onActivate,
+  onDoubleClick,
+  onLabelClick,
+}: BubblePanelProps) {
   const [data, setData] = useState<BubbleResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -32,6 +70,18 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
     if (typeof window === 'undefined') return false
     return localStorage.getItem('bubble-collapsed') === 'true'
   })
+
+  const selection = useSelectionOptional() ?? fallbackSelection
+  const timezone = useTimezone()
+  const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
+
+  const handleSwipeSnooze = useCallback(
+    (task: Task) => {
+      const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+      onSnooze(task.id, until)
+    },
+    [defaultSnoozeOption, timezone, morningTime, onSnooze],
+  )
 
   const fetchRecommendations = useCallback(async (refresh = false) => {
     setLoading(true)
@@ -76,9 +126,22 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
   if (error && !data) return null
   if (!loading && !data) return null
 
+  // When we have data, resolve bubble tasks against the current task list.
+  // Tasks that were completed/deleted since bubble was generated are skipped.
+  const resolvedTasks = data
+    ? data.tasks
+        .map((rec) => ({ rec, task: tasks.find((t) => t.id === rec.task_id) }))
+        .filter((item): item is { rec: (typeof data.tasks)[0]; task: Task } => !!item.task)
+    : []
+
+  // If all bubble tasks are gone, hide the panel entirely
+  if (data && resolvedTasks.length === 0 && !loading) return null
+
+  const freshnessText = data?.generated_at ? formatRelativeTime(data.generated_at) : null
+
   return (
     <div className="mb-4 overflow-hidden rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
-      {/* Header */}
+      {/* Header: [Sparkles] Bubble  [refresh] [freshness] [chevron] */}
       <button
         onClick={toggleCollapsed}
         className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-blue-100/50 dark:hover:bg-blue-900/20"
@@ -93,9 +156,7 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
               </span>
             </div>
           ) : (
-            <span className="line-clamp-1 text-sm font-medium text-blue-800 dark:text-blue-200">
-              {data?.summary || 'Bubble'}
-            </span>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Bubble</span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -111,6 +172,9 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
           )}
+          {freshnessText && !loading && (
+            <span className="text-xs text-blue-500/70">{freshnessText}</span>
+          )}
           {collapsed ? (
             <ChevronRight className="h-4 w-4 text-blue-500" />
           ) : (
@@ -119,39 +183,47 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
         </div>
       </button>
 
-      {/* Body */}
+      {/* Body: summary + task list */}
       {!collapsed && data && (
         <div className="border-t border-blue-200 dark:border-blue-900">
-          {data.tasks.map((rec) => {
-            const task = tasks.find((t) => t.id === rec.task_id)
-            if (!task) return null
+          {/* AI summary */}
+          {data.summary && (
+            <p className="px-3 py-2 text-sm text-blue-700/80 dark:text-blue-300/80">
+              {data.summary}
+            </p>
+          )}
 
-            return (
-              <div
+          {/* Divider between summary and tasks */}
+          {data.summary && resolvedTasks.length > 0 && (
+            <div className="border-t border-blue-200/60 dark:border-blue-900/60" />
+          )}
+
+          {/* Task list using real TaskRow + SwipeableRow */}
+          <div className="space-y-1 p-1">
+            {resolvedTasks.map(({ rec, task }) => (
+              <SwipeableRow
                 key={rec.task_id}
-                className="flex items-start gap-3 border-b border-blue-100 px-3 py-2 last:border-b-0 dark:border-blue-900/50"
+                onSwipeRight={() => onDone(rec.task_id)}
+                onSwipeLeft={() => handleSwipeSnooze(task)}
+                disabled={selection.isSelectionMode}
               >
-                <button
-                  onClick={() => onDone(rec.task_id)}
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-blue-300 hover:border-blue-500 hover:bg-blue-100 dark:border-blue-600 dark:hover:border-blue-400"
-                  title="Mark done"
-                >
-                  <span className="sr-only">Complete</span>
-                </button>
-                <div className="min-w-0 flex-1">
-                  <button
-                    onClick={() => onActivate(rec.task_id)}
-                    className="line-clamp-1 text-left text-sm font-medium text-zinc-900 hover:text-blue-700 dark:text-zinc-100 dark:hover:text-blue-300"
-                  >
-                    {task.title}
-                  </button>
-                  <p className="line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
-                    {rec.reason}
-                  </p>
-                </div>
-              </div>
-            )
-          })}
+                <TaskRow
+                  task={task}
+                  onDone={() => onDone(rec.task_id)}
+                  onSnooze={onSnooze}
+                  isOverdue={isTaskOverdue(task)}
+                  isSelected={selection.selectedIds.has(rec.task_id)}
+                  isSelectionMode={selection.isSelectionMode}
+                  onSelect={() => selection.toggle(rec.task_id)}
+                  onSelectOnly={() => selection.selectOnly(rec.task_id)}
+                  onActivate={() => onActivate(rec.task_id)}
+                  onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
+                  onLabelClick={onLabelClick}
+                  annotation={rec.reason}
+                />
+              </SwipeableRow>
+            ))}
+          </div>
         </div>
       )}
 
