@@ -1,0 +1,79 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
+
+interface AIStatusModalProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  timezone: string
+}
+
+export function AIStatusModal({ open, onOpenChange, timezone }: AIStatusModalProps) {
+  const [data, setData] = useState<AIStatusData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true)
+    setError(false)
+    try {
+      const res = await fetch('/api/ai/status')
+      if (!res.ok) {
+        setError(true)
+        return
+      }
+      const json = await res.json()
+      if (json.data) {
+        setData(json.data)
+      }
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (open) {
+      fetchStatus()
+    }
+  }, [open, fetchStatus])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>AI Status</DialogTitle>
+          <VisuallyHidden>
+            <DialogDescription>AI system status and recent activity</DialogDescription>
+          </VisuallyHidden>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+        ) : error || !data ? (
+          <div className="py-8 text-center">
+            <p className="text-zinc-400">{error ? 'AI features are not available.' : 'No data.'}</p>
+            <button
+              onClick={fetchStatus}
+              className="mt-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <AIStatusContent data={data} timezone={timezone} onRefresh={fetchStatus} />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}

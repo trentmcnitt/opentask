@@ -12,9 +12,14 @@ export async function GET(request: NextRequest) {
       return serviceUnavailable('AI features are not enabled')
     }
 
+    const url = new URL(request.url)
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 100)
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10) || 0
+    const action = url.searchParams.get('action') || undefined
+
     const enrichmentSlot = getEnrichmentSlotStats()
     const queue = getQueueStats()
-    const recentActivity = getAIActivity(user.id, { limit: 20 })
+    const recentActivity = getAIActivity(user.id, { limit, offset, action })
 
     return success({
       enrichment_slot: enrichmentSlot,

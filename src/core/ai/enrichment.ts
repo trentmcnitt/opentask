@@ -1,9 +1,25 @@
 /**
- * Task enrichment pipeline
+ * Task enrichment pipeline — label-based state machine
  *
- * Processes tasks with ai_status='pending' by sending their raw title text
- * to the Claude Agent SDK for structured extraction. The AI extracts a clean
- * title, due date, priority, labels, recurrence rule, and project assignment.
+ * Tasks with the `ai-to-process` label are picked up by the queue or
+ * fire-and-forget path. The AI extracts a clean title, due date, priority,
+ * labels, recurrence rule, and project assignment.
+ *
+ * State machine:
+ *   [New title-only task] → add `ai-to-process` label
+ *   [Fire-and-forget or cron picks up task with `ai-to-process`]
+ *     → Success: remove `ai-to-process`, apply enrichment
+ *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
+ *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`
+ *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
+ *     remove `ai-to-process`
+ *
+ * Processing guard: in-memory Set<number> of task IDs currently being
+ * processed prevents double-processing. Resets naturally on restart.
+ *
+ * Retry tracking: in-memory Map<number, number> (taskId → attempt count).
+ * After 2 failed attempts, swap `ai-to-process` → `ai-failed`. Resets on
+ * restart (giving tasks fresh attempts).
  *
  * The enrichment is applied through the standard mutation pattern:
  * withTransaction() + logAction() + createTaskSnapshot(), so all AI changes
@@ -25,6 +41,14 @@ import { enrichmentQuery } from './enrichment-slot'
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
 
+/** In-memory set of task IDs currently being processed (prevents double-processing) */
+const processingTasks = new Set<number>()
+
+/** In-memory retry tracking (taskId → attempt count). Resets on restart. */
+const retryCount = new Map<number, number>()
+
+const MAX_ATTEMPTS = 2
+
 /**
  * Circuit breaker state.
  *
@@ -35,7 +59,6 @@ let processing = false
 const CIRCUIT_BREAKER_THRESHOLD = 5
 const CIRCUIT_BREAKER_WINDOW_MS = 60_000 // 1 minute
 const CIRCUIT_BREAKER_PAUSE_MS = 300_000 // 5 minutes
-const STUCK_TASK_TIMEOUT_MS = 120_000 // 2 minutes
 
 interface CircuitBreakerState {
   failureTimestamps: number[]
@@ -84,38 +107,73 @@ export function _resetCircuitBreaker(): void {
   circuitBreaker.pausedUntil = null
 }
 
+/** Exported for testing */
+export function _resetProcessingState(): void {
+  processingTasks.clear()
+  retryCount.clear()
+}
+
 /**
- * Reset tasks stuck in 'processing' for too long.
- *
- * If a task has been processing for longer than STUCK_TASK_TIMEOUT_MS,
- * it was likely interrupted without a clean server restart. Reset it
- * to 'pending' so it gets retried.
+ * Replace a label on a task. Removes `oldLabel` and adds `newLabel` atomically.
+ * If `newLabel` is null, just removes `oldLabel`.
  */
-function resetTimedOutTasks(): void {
+function swapLabel(taskId: number, oldLabel: string, newLabel: string | null): void {
   const db = getDb()
-  const cutoff = new Date(Date.now() - STUCK_TASK_TIMEOUT_MS).toISOString()
-  const result = db
-    .prepare(
-      "UPDATE tasks SET ai_status = 'pending' WHERE ai_status = 'processing' AND updated_at < ?",
-    )
-    .run(cutoff)
-  if (result.changes > 0) {
+  const task = getTaskById(taskId)
+  if (!task) return
+
+  const labels = task.labels.filter((l) => l !== oldLabel)
+  if (newLabel && !labels.includes(newLabel)) {
+    labels.push(newLabel)
+  }
+  db.prepare('UPDATE tasks SET labels = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(labels),
+    nowUtc(),
+    taskId,
+  )
+}
+
+/**
+ * Remove a label from a task.
+ */
+function removeLabel(taskId: number, label: string): void {
+  swapLabel(taskId, label, null)
+}
+
+/**
+ * Handle enrichment failure for a task.
+ *
+ * Tracks attempts in-memory. On first failure, keeps `ai-to-process` for retry.
+ * On second failure, swaps `ai-to-process` → `ai-failed`.
+ */
+function handleFailure(taskId: number): void {
+  const attempts = (retryCount.get(taskId) ?? 0) + 1
+  retryCount.set(taskId, attempts)
+
+  if (attempts >= MAX_ATTEMPTS) {
+    swapLabel(taskId, 'ai-to-process', 'ai-failed')
+    retryCount.delete(taskId)
     log.warn(
       'ai',
-      `Reset ${result.changes} timed-out tasks (processing > ${STUCK_TASK_TIMEOUT_MS / 1000}s)`,
+      `Task ${taskId} enrichment failed after ${MAX_ATTEMPTS} attempts — marked ai-failed`,
+    )
+  } else {
+    log.info(
+      'ai',
+      `Task ${taskId} enrichment failed (attempt ${attempts}/${MAX_ATTEMPTS}) — will retry`,
     )
   }
 }
 
 /**
- * Process the enrichment queue. Called by cron every N seconds.
+ * Process the enrichment queue. Called by cron every minute.
  *
- * Picks up tasks with ai_status='pending', processes them one at a time,
- * and applies the enrichment result. Sequential processing avoids
- * overwhelming the server with concurrent SDK subprocesses.
+ * Picks up tasks with the `ai-to-process` label (excluding those with
+ * `ai-locked`), processes them one at a time, and applies the enrichment
+ * result. Sequential processing avoids overwhelming the server with
+ * concurrent SDK subprocesses.
  *
- * Includes circuit breaker (pauses on rapid failures), timeout detection
- * (resets stuck tasks), and cycle stats logging.
+ * Includes circuit breaker (pauses on rapid failures) and cycle stats logging.
  */
 export async function processEnrichmentQueue(): Promise<void> {
   if (!isAIEnabled()) return
@@ -126,17 +184,16 @@ export async function processEnrichmentQueue(): Promise<void> {
   try {
     const db = getDb()
 
-    // Reset tasks stuck in processing for too long
-    resetTimedOutTasks()
-
-    // Pick up pending tasks with round-robin fairness across users.
-    // Groups by user, picks the oldest pending task per user first,
-    // then cycles through users until the batch limit is reached.
+    // Pick up tasks with ai-to-process label.
+    // Uses json_each() to query the JSON labels array.
+    // ai-locked filtering is done in the processing loop (so we can clean up
+    // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
         `SELECT id, user_id, title, labels, priority, due_at, rrule
          FROM tasks
-         WHERE ai_status = 'pending' AND deleted_at IS NULL
+         WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
+           AND deleted_at IS NULL
          ORDER BY user_id, created_at ASC
          LIMIT 20`,
       )
@@ -167,35 +224,36 @@ export async function processEnrichmentQueue(): Promise<void> {
     let skipped = 0
 
     for (const row of fairQueue) {
+      // Skip if already being processed (in-memory guard)
+      if (processingTasks.has(row.id)) {
+        skipped++
+        continue
+      }
+
+      // Check for ai-locked label (belt and suspenders — query excludes them too)
+      const labels: string[] = JSON.parse(row.labels)
+      if (labels.includes('ai-locked')) {
+        removeLabel(row.id, 'ai-to-process')
+        log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
+        skipped++
+        continue
+      }
+
+      processingTasks.add(row.id)
       try {
-        // Check for ai-locked label
-        const labels: string[] = JSON.parse(row.labels)
-        if (labels.includes('ai-locked')) {
-          db.prepare('UPDATE tasks SET ai_status = NULL WHERE id = ?').run(row.id)
-          log.info('ai', `Task ${row.id} has ai-locked label, skipping enrichment`)
-          skipped++
-          continue
-        }
-
-        // Set status to processing (prevents double-processing)
-        db.prepare("UPDATE tasks SET ai_status = 'processing', updated_at = ? WHERE id = ?").run(
-          nowUtc(),
-          row.id,
-        )
-
         await enrichTask(row)
+        retryCount.delete(row.id)
         processed++
       } catch (err) {
         log.error('ai', `Enrichment failed for task ${row.id}:`, err)
-        db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
-          nowUtc(),
-          row.id,
-        )
+        handleFailure(row.id)
         failed++
         recordFailure()
 
         // Stop processing this cycle if circuit breaker tripped
         if (isCircuitBreakerOpen()) break
+      } finally {
+        processingTasks.delete(row.id)
       }
     }
 
@@ -210,36 +268,24 @@ export async function processEnrichmentQueue(): Promise<void> {
 }
 
 /**
- * Reset stuck tasks on startup.
- *
- * Tasks with ai_status='processing' were interrupted by a server restart.
- * Reset them to 'pending' so they get picked up again.
- */
-export function resetStuckTasks(): void {
-  const db = getDb()
-  const result = db
-    .prepare("UPDATE tasks SET ai_status = 'pending' WHERE ai_status = 'processing'")
-    .run()
-  if (result.changes > 0) {
-    log.info('ai', `Reset ${result.changes} stuck tasks from 'processing' to 'pending'`)
-  }
-}
-
-/**
  * Enrich a single task by ID. Public entry point for on-demand enrichment.
  *
  * Called fire-and-forget from the task creation API route. Checks that the
- * task has ai_status='pending', sets it to 'processing', runs enrichTask(),
- * and handles success/failure status updates.
+ * task has the `ai-to-process` label, guards against double-processing,
+ * runs enrichTask(), and handles success/failure.
  */
 export async function enrichSingleTask(taskId: number, userId: number): Promise<void> {
   if (!isAIEnabled()) return
+  if (processingTasks.has(taskId)) return
 
   const db = getDb()
   const row = db
     .prepare(
       `SELECT id, user_id, title, labels, priority, due_at, rrule
-       FROM tasks WHERE id = ? AND user_id = ? AND ai_status = 'pending' AND deleted_at IS NULL`,
+       FROM tasks
+       WHERE id = ? AND user_id = ?
+         AND deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')`,
     )
     .get(taskId, userId) as PendingTaskRow | undefined
 
@@ -248,24 +294,20 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   // Check for ai-locked label
   const labels: string[] = JSON.parse(row.labels)
   if (labels.includes('ai-locked')) {
-    db.prepare('UPDATE tasks SET ai_status = NULL WHERE id = ?').run(row.id)
-    log.info('ai', `Task ${row.id} has ai-locked label, skipping enrichment`)
+    removeLabel(row.id, 'ai-to-process')
+    log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
     return
   }
 
-  db.prepare("UPDATE tasks SET ai_status = 'processing', updated_at = ? WHERE id = ?").run(
-    nowUtc(),
-    row.id,
-  )
-
+  processingTasks.add(taskId)
   try {
     await enrichTask(row)
+    retryCount.delete(taskId)
   } catch (err) {
     log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
-    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
-      nowUtc(),
-      row.id,
-    )
+    handleFailure(taskId)
+  } finally {
+    processingTasks.delete(taskId)
   }
 }
 
@@ -339,11 +381,7 @@ Parse this task and return the structured result.`
   }
 
   if (!parsed) {
-    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
-      nowUtc(),
-      row.id,
-    )
-    return
+    throw new Error('Failed to parse enrichment result')
   }
 
   applyEnrichment(row, parsed, user)
@@ -397,10 +435,15 @@ interface FieldChanges {
 }
 
 /**
- * Collect field changes from enrichment result.
+ * Collect field changes from enrichment result (overwrite mode).
  *
  * Compares the AI output against the existing task and builds SET clauses
- * for only the fields that should change. Does not clobber existing values.
+ * for fields that should change. Overwrites existing values — this is
+ * intentional for both new title-only tasks (where fields are empty anyway)
+ * and re-enrichment (where the user explicitly requested it via the label).
+ *
+ * Labels are merged (AI labels added to existing), and `ai-to-process` is
+ * always removed from the final label set.
  */
 function collectEnrichmentChanges(
   task: Task,
@@ -418,39 +461,48 @@ function collectEnrichmentChanges(
     fieldsChanged.push('title')
   }
 
-  // Due date — only set if not already set
-  if (enrichment.due_at && !task.due_at) {
-    setClauses.push('due_at = ?')
-    values.push(enrichment.due_at)
-    fieldsChanged.push('due_at')
+  // Due date — always overwrite
+  if (enrichment.due_at) {
+    if (enrichment.due_at !== task.due_at) {
+      setClauses.push('due_at = ?')
+      values.push(enrichment.due_at)
+      fieldsChanged.push('due_at')
+    }
   }
 
-  // Priority — only set if currently unset (0)
-  if (enrichment.priority > 0 && task.priority === 0) {
-    setClauses.push('priority = ?')
-    values.push(enrichment.priority)
-    fieldsChanged.push('priority')
+  // Priority — always overwrite
+  if (enrichment.priority > 0) {
+    if (enrichment.priority !== task.priority) {
+      setClauses.push('priority = ?')
+      values.push(enrichment.priority)
+      fieldsChanged.push('priority')
+    }
   }
 
-  // Labels — merge with existing (don't replace)
-  if (enrichment.labels.length > 0) {
+  // Labels — merge AI labels into existing, then remove ai-to-process.
+  // Always update labels to at least remove the trigger label.
+  {
     const existingLabels = new Set(task.labels)
-    const newLabels = enrichment.labels.filter((l) => !existingLabels.has(l))
-    if (newLabels.length > 0) {
-      const merged = [...task.labels, ...newLabels]
+    const newAiLabels = enrichment.labels.filter((l) => !existingLabels.has(l))
+    const merged = [...task.labels, ...newAiLabels].filter((l) => l !== 'ai-to-process')
+    const labelsJson = JSON.stringify(merged)
+    const currentLabelsJson = JSON.stringify(task.labels)
+    if (labelsJson !== currentLabelsJson) {
       setClauses.push('labels = ?')
-      values.push(JSON.stringify(merged))
+      values.push(labelsJson)
       fieldsChanged.push('labels')
     }
   }
 
-  // RRULE — only set if not already set
-  if (enrichment.rrule && !task.rrule) {
-    setClauses.push('rrule = ?')
-    values.push(enrichment.rrule)
-    fieldsChanged.push('rrule')
+  // RRULE — always overwrite
+  if (enrichment.rrule) {
+    if (enrichment.rrule !== task.rrule) {
+      setClauses.push('rrule = ?')
+      values.push(enrichment.rrule)
+      fieldsChanged.push('rrule')
+    }
 
-    // Derive anchor fields from the new rrule
+    // Derive anchor fields from the (possibly new) rrule
     const dueAt = enrichment.due_at || task.due_at
     const anchors = deriveAnchorFields(enrichment.rrule, dueAt, user.timezone)
     setClauses.push('anchor_time = ?', 'anchor_dow = ?', 'anchor_dom = ?')
@@ -488,8 +540,7 @@ function collectEnrichmentChanges(
  * Apply enrichment results to a task.
  *
  * Uses withTransaction() + logAction() to ensure the mutation is atomic
- * and logged for undo. Only updates fields that the AI actually extracted
- * (doesn't clobber existing values).
+ * and logged for undo. Removes the `ai-to-process` label on success.
  */
 function applyEnrichment(
   row: PendingTaskRow,
@@ -502,19 +553,13 @@ function applyEnrichment(
   const changes = collectEnrichmentChanges(task, enrichment, user)
 
   if (changes.fieldsChanged.length === 0) {
-    const db = getDb()
-    db.prepare("UPDATE tasks SET ai_status = 'complete', updated_at = ? WHERE id = ?").run(
-      nowUtc(),
-      row.id,
-    )
+    // No field changes, but still need to remove ai-to-process label
+    removeLabel(row.id, 'ai-to-process')
     log.info('ai', `Task ${row.id} enriched — no changes needed`)
     return
   }
 
-  // Add ai_status and updated_at to the SET clauses.
-  // ai_status is NOT included in fieldsChanged — undo should not revert it to
-  // 'pending', which would cause the cron to re-enrich and undo the user's undo.
-  changes.setClauses.push("ai_status = 'complete'")
+  // Add updated_at to the SET clauses
   changes.setClauses.push('updated_at = ?')
   changes.values.push(nowUtc())
   changes.values.push(row.id) // for WHERE clause

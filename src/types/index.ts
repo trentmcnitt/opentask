@@ -62,9 +62,6 @@ export interface Task {
   last_completed_at: string | null
   meta_notes: string | null
 
-  // AI enrichment status
-  ai_status: 'pending' | 'processing' | 'complete' | 'failed' | null
-
   created_at: string
   updated_at: string
 }

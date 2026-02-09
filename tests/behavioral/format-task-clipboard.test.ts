@@ -47,7 +47,6 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     first_completed_at: null,
     last_completed_at: null,
     meta_notes: null,
-    ai_status: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,

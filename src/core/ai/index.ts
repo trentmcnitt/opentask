@@ -1,5 +1,5 @@
 export { isAIEnabled, initAI, aiQuery } from './sdk'
-export { processEnrichmentQueue, resetStuckTasks, enrichSingleTask } from './enrichment'
+export { processEnrichmentQueue, enrichSingleTask } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
 export { generateBubble, getCachedBubble } from './bubble'

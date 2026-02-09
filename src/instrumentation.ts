@@ -29,7 +29,6 @@ export async function register() {
       initAI,
       isAIEnabled,
       processEnrichmentQueue,
-      resetStuckTasks,
       purgeOldAIActivity,
       initEnrichmentSlot,
       shutdownEnrichmentSlot,
@@ -117,9 +116,6 @@ export async function register() {
 
     await initAI()
     if (isAIEnabled()) {
-      // Reset tasks stuck in 'processing' from a previous server restart
-      resetStuckTasks()
-
       // Warm up the enrichment slot (dedicated subprocess for enrichment queries)
       initEnrichmentSlot().catch((err) => {
         log.error('ai', 'Enrichment slot startup failed:', err)

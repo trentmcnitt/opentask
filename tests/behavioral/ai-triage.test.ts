@@ -146,6 +146,39 @@ describe('triageTasks', () => {
     expect(result!.ordered_task_ids).toEqual([3, 1, 2])
   })
 
+  test('cache expires after 5 minutes', async () => {
+    vi.setSystemTime(new Date('2026-02-09T10:00:00Z'))
+
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: { ordered_task_ids: [1, 2], reasoning: 'First call' },
+      textResult: null,
+      durationMs: 100,
+      success: true,
+      error: null,
+    })
+
+    const tasks = makeTasks(2)
+    await triageTasks(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect(mockAiQuery).toHaveBeenCalledOnce()
+
+    // Advance 6 minutes — cache should be stale
+    vi.setSystemTime(new Date('2026-02-09T10:06:00Z'))
+
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: { ordered_task_ids: [2, 1], reasoning: 'Second call' },
+      textResult: null,
+      durationMs: 100,
+      success: true,
+      error: null,
+    })
+
+    const result2 = await triageTasks(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect(result2!.reasoning).toBe('Second call')
+    expect(mockAiQuery).toHaveBeenCalledTimes(2)
+
+    vi.useRealTimers()
+  })
+
   test('markdown fallback filters out invalid IDs', async () => {
     mockAiQuery.mockResolvedValueOnce({
       structuredOutput: null,

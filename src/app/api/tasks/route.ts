@@ -98,8 +98,8 @@ export async function POST(request: NextRequest) {
       input,
     })
 
-    // Fire-and-forget: trigger immediate enrichment if AI is enabled and task is pending
-    if (isAIEnabled() && task.ai_status === 'pending') {
+    // Fire-and-forget: trigger immediate enrichment if task has the ai-to-process label
+    if (isAIEnabled() && task.labels.includes('ai-to-process')) {
       enrichSingleTask(task.id, user.id).catch((err) => {
         log.error('api', `Fire-and-forget enrichment failed for task ${task.id}:`, err)
       })

@@ -235,8 +235,11 @@ export function TaskRow({
   // Only treat as "snoozed" if it's a recurring task - for one-off tasks,
   // changing the due date is just changing the due date, not snoozing
   const isSnoozed = !!task.original_due_at && !!task.rrule
+  const isAiProcessing = task.labels.includes('ai-to-process')
   const metaSegments = buildMetaSegments(task, timezone, isOverdue)
-  const hasLabels = task.labels.length > 0
+  // Filter ai-to-process from visible label count (animation conveys that state)
+  const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
+  const hasLabels = visibleLabelCount > 0
   const hasLine2 = metaSegments.length > 0
   const iconHeight = getIconAlignHeight(task.title)
 
@@ -268,6 +271,8 @@ export function TaskRow({
         priorityDisplay.rightBorder && priorityColors?.border,
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
+        // AI enrichment in progress — subtle border pulse
+        isAiProcessing && 'animate-ai-processing',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
         isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
       )}
@@ -445,9 +450,12 @@ function LabelBadges({
   labelConfig: LabelConfig[]
   onLabelClick?: (label: string) => void
 }) {
+  // Filter out ai-to-process (the animation conveys that state)
+  const visibleLabels = labels.filter((l) => l !== 'ai-to-process')
+
   return (
     <div className="flex flex-shrink-0 gap-1">
-      {labels.slice(0, 2).map((label) => {
+      {visibleLabels.slice(0, 2).map((label) => {
         const colorClasses = getLabelClasses(label, labelConfig)
         return (
           <Badge
@@ -467,8 +475,8 @@ function LabelBadges({
           </Badge>
         )
       })}
-      {labels.length > 2 && (
-        <span className="text-muted-foreground text-xs">+{labels.length - 2}</span>
+      {visibleLabels.length > 2 && (
+        <span className="text-muted-foreground text-xs">+{visibleLabels.length - 2}</span>
       )}
     </div>
   )

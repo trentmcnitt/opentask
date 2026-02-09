@@ -68,9 +68,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   last_completed_at  TEXT,
   meta_notes         TEXT,
 
-  -- AI enrichment status: null (no AI needed), 'pending', 'processing', 'complete', 'failed'
-  ai_status          TEXT,
-
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -171,4 +168,3 @@ CREATE TABLE IF NOT EXISTS ai_activity_log (
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_user_id ON ai_activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_task_id ON ai_activity_log(task_id);
 
-CREATE INDEX IF NOT EXISTS idx_tasks_ai_status ON tasks(ai_status);

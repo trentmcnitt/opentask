@@ -106,9 +106,23 @@ Do NOT include:
 
 ## Output format
 
-Return 3-7 tasks that deserve attention. For each, include the task_id and a reason explaining what makes it easy to overlook and why it matters now. Also provide a 1-2 sentence summary.
+Return a JSON object with this exact structure — all three top-level fields are required:
 
-Include a generated_at timestamp (ISO 8601 UTC).
+\`\`\`json
+{
+  "tasks": [
+    { "task_id": 42, "reason": "Why this task is easy to overlook" }
+  ],
+  "summary": "1-2 sentence overview of what needs attention",
+  "generated_at": "2026-01-15T16:00:00Z"
+}
+\`\`\`
+
+- **tasks**: 3-7 tasks that deserve attention. Each has task_id (integer) and reason (string).
+- **summary**: A 1-2 sentence overview inside the JSON (not as separate text).
+- **generated_at**: Current UTC timestamp in ISO 8601 format.
+
+Do not include any text outside the JSON object.
 
 ## Tone
 

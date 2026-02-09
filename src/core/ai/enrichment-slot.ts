@@ -37,6 +37,12 @@ function getQueryTimeout(): number {
 }
 
 // --- Slot state ---
+//
+// All mutable state is stored on globalThis to survive module duplication.
+// Next.js Turbopack may bundle this module into separate chunks for
+// instrumentation.ts and API routes, creating independent module scopes.
+// Without globalThis, the API route reads fresh defaults ("uninitialized")
+// while the real slot lives in the instrumentation chunk.
 
 type SlotState = 'uninitialized' | 'initializing' | 'available' | 'busy' | 'dead'
 
@@ -57,19 +63,6 @@ interface SlotResult {
   text: string | null
 }
 
-const slot: SlotInternals = {
-  state: 'uninitialized',
-  channel: null,
-  generation: 0,
-  resultCount: 0,
-  resultPromise: null,
-  deliverResult: null,
-  lastRecycleTime: 0,
-  rapidRecycleCount: 0,
-}
-
-// --- Stats ---
-
 interface SlotStats {
   state: SlotState
   activatedAt: string | null
@@ -79,23 +72,47 @@ interface SlotStats {
   model: string
 }
 
-let activatedAt: Date | null = null
-let totalRequests = 0
-let totalRecycles = 0
-let lastRequestAt: Date | null = null
-
-// --- FIFO wait queue ---
-
 interface WaitEntry {
   resolve: () => void
   reject: (error: Error) => void
 }
 
-const waitQueue: WaitEntry[] = []
+interface EnrichmentSlotGlobals {
+  slot: SlotInternals
+  activatedAt: Date | null
+  totalRequests: number
+  totalRecycles: number
+  lastRequestAt: Date | null
+  waitQueue: WaitEntry[]
+  warmupResolver: ((ok: boolean) => void) | null
+}
 
-// --- Warmup ---
+const globalForSlot = globalThis as typeof globalThis & {
+  __enrichmentSlotState?: EnrichmentSlotGlobals
+}
 
-let warmupResolver: ((ok: boolean) => void) | null = null
+if (!globalForSlot.__enrichmentSlotState) {
+  globalForSlot.__enrichmentSlotState = {
+    slot: {
+      state: 'uninitialized',
+      channel: null,
+      generation: 0,
+      resultCount: 0,
+      resultPromise: null,
+      deliverResult: null,
+      lastRecycleTime: 0,
+      rapidRecycleCount: 0,
+    },
+    activatedAt: null,
+    totalRequests: 0,
+    totalRecycles: 0,
+    lastRequestAt: null,
+    waitQueue: [],
+    warmupResolver: null,
+  }
+}
+
+const g = globalForSlot.__enrichmentSlotState!
 
 const WARMUP_MESSAGE = 'Respond with exactly: READY'
 
@@ -112,17 +129,17 @@ function validateWarmup(text: string | null): boolean {
  * waits for warmup validation.
  */
 export async function initEnrichmentSlot(): Promise<void> {
-  if (slot.state === 'available' || slot.state === 'busy') {
+  if (g.slot.state === 'available' || g.slot.state === 'busy') {
     log.warn('ai', 'Enrichment slot already initialized')
     return
   }
 
   try {
-    slot.state = 'initializing'
-    slot.resultCount = 0
+    g.slot.state = 'initializing'
+    g.slot.resultCount = 0
 
     const channel = createMessageChannel()
-    slot.channel = channel
+    g.slot.channel = channel
 
     // Push warmup message
     channel.push(WARMUP_MESSAGE)
@@ -157,23 +174,23 @@ export async function initEnrichmentSlot(): Promise<void> {
 
     // Wait for warmup validation
     const warmupOk = await new Promise<boolean>((resolve) => {
-      warmupResolver = resolve
+      g.warmupResolver = resolve
     })
 
     if (!warmupOk) {
       log.error('ai', 'Enrichment slot: warmup validation failed')
-      slot.state = 'dead'
+      g.slot.state = 'dead'
       return
     }
 
     // Check if something killed the slot during warmup (e.g. SIGTERM during await)
-    if ((slot.state as SlotState) === 'dead') return
+    if ((g.slot.state as SlotState) === 'dead') return
 
-    slot.state = 'available'
-    activatedAt = new Date()
+    g.slot.state = 'available'
+    g.activatedAt = new Date()
     log.info('ai', `Enrichment slot warm (model: ${getModel()}, max reuses: ${getMaxReuses()})`)
   } catch (err) {
-    slot.state = 'dead'
+    g.slot.state = 'dead'
     log.error('ai', 'Enrichment slot init failed:', err)
   }
 }
@@ -197,8 +214,8 @@ export async function enrichmentQuery(
   const timeoutMs = options?.timeoutMs ?? getQueryTimeout()
 
   // If slot is dead, fall back to per-query subprocess
-  if (slot.state === 'dead' || slot.state === 'uninitialized') {
-    throw new Error(`Enrichment slot is ${slot.state} — cannot process query`)
+  if (g.slot.state === 'dead' || g.slot.state === 'uninitialized') {
+    throw new Error(`Enrichment slot is ${g.slot.state} — cannot process query`)
   }
 
   // Acquire the slot (wait in FIFO if busy)
@@ -206,11 +223,11 @@ export async function enrichmentQuery(
 
   try {
     // Push the prompt to the warm subprocess
-    slot.channel!.push(prompt)
+    g.slot.channel!.push(prompt)
 
     // Wait for result with timeout
     const result = await Promise.race([
-      slot.resultPromise,
+      g.slot.resultPromise,
       new Promise<null>((_, reject) => {
         setTimeout(
           () => reject(new Error(`Enrichment query timed out after ${timeoutMs}ms`)),
@@ -221,8 +238,8 @@ export async function enrichmentQuery(
 
     const durationMs = Date.now() - startTime
 
-    totalRequests++
-    lastRequestAt = new Date()
+    g.totalRequests++
+    g.lastRequestAt = new Date()
 
     // Log activity
     if (options?.userId) {
@@ -273,11 +290,11 @@ export async function enrichmentQuery(
 /** Get enrichment slot statistics for observability. */
 export function getEnrichmentSlotStats(): SlotStats {
   return {
-    state: slot.state,
-    activatedAt: activatedAt?.toISOString() ?? null,
-    totalRequests,
-    totalRecycles,
-    lastRequestAt: lastRequestAt?.toISOString() ?? null,
+    state: g.slot.state,
+    activatedAt: g.activatedAt?.toISOString() ?? null,
+    totalRequests: g.totalRequests,
+    totalRecycles: g.totalRecycles,
+    lastRequestAt: g.lastRequestAt?.toISOString() ?? null,
     model: getModel(),
   }
 }
@@ -285,53 +302,53 @@ export function getEnrichmentSlotStats(): SlotStats {
 /** Graceful shutdown for SIGTERM. */
 export function shutdownEnrichmentSlot(): void {
   log.info('ai', 'Enrichment slot: shutting down')
-  slot.generation++
-  slot.deliverResult?.(null)
-  slot.state = 'dead'
+  g.slot.generation++
+  g.slot.deliverResult?.(null)
+  g.slot.state = 'dead'
   try {
-    slot.channel?.close()
+    g.slot.channel?.close()
   } catch {
     // Ignore close errors during shutdown
   }
-  slot.channel = null
-  slot.resultPromise = null
-  slot.deliverResult = null
+  g.slot.channel = null
+  g.slot.resultPromise = null
+  g.slot.deliverResult = null
 
   // Reject all waiters
-  for (const entry of waitQueue) {
+  for (const entry of g.waitQueue) {
     entry.reject(new Error('Enrichment slot shutting down'))
   }
-  waitQueue.length = 0
+  g.waitQueue.length = 0
 }
 
 // --- Internal helpers ---
 
 function resetResultPromise(): void {
-  slot.resultPromise = new Promise<SlotResult | null>((resolve) => {
-    slot.deliverResult = resolve
+  g.slot.resultPromise = new Promise<SlotResult | null>((resolve) => {
+    g.slot.deliverResult = resolve
   })
 }
 
 async function acquireSlot(): Promise<void> {
-  if (slot.state === 'available') {
-    slot.state = 'busy'
+  if (g.slot.state === 'available') {
+    g.slot.state = 'busy'
     return
   }
 
   // Wait in FIFO queue
   return new Promise<void>((resolve, reject) => {
-    waitQueue.push({ resolve, reject })
+    g.waitQueue.push({ resolve, reject })
   })
 }
 
 function releaseSlot(): void {
   // Wake the next waiter if any
-  if (waitQueue.length > 0) {
-    const next = waitQueue.shift()!
-    slot.state = 'busy'
+  if (g.waitQueue.length > 0) {
+    const next = g.waitQueue.shift()!
+    g.slot.state = 'busy'
     next.resolve()
   } else {
-    slot.state = 'available'
+    g.slot.state = 'available'
   }
 }
 
@@ -342,7 +359,7 @@ function releaseSlot(): void {
  * After MAX_REUSES: recycle. Stale consumer safety via generation counter.
  */
 async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
-  const myGeneration = slot.generation
+  const myGeneration = g.slot.generation
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iterator = (stream as AsyncIterable<any>)[Symbol.asyncIterator]()
   try {
@@ -375,22 +392,22 @@ async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
             'ai',
             `Enrichment slot: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${text?.slice(0, 50)})`,
           )
-          warmupResolver?.(warmupOk)
-          warmupResolver = null
+          g.warmupResolver?.(warmupOk)
+          g.warmupResolver = null
           if (!warmupOk) break
           continue
         }
 
         // Stale consumer guard
-        if (slot.generation !== myGeneration) return
+        if (g.slot.generation !== myGeneration) return
 
         // Deliver real result to caller
-        slot.resultCount++
-        slot.deliverResult?.({ structuredOutput, text })
+        g.slot.resultCount++
+        g.slot.deliverResult?.({ structuredOutput, text })
 
         // Check reuse limit
-        if (slot.state === 'dead') break
-        if (slot.resultCount >= getMaxReuses()) {
+        if (g.slot.state === 'dead') break
+        if (g.slot.resultCount >= getMaxReuses()) {
           log.debug('ai', `Enrichment slot reached max reuses (${getMaxReuses()}), recycling`)
           break
         }
@@ -401,13 +418,13 @@ async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
       }
     }
   } catch (err) {
-    if (slot.generation !== myGeneration) return
+    if (g.slot.generation !== myGeneration) return
     log.error('ai', 'Enrichment slot stream error:', err)
-    slot.deliverResult?.(null)
-    warmupResolver?.(false)
-    warmupResolver = null
+    g.slot.deliverResult?.(null)
+    g.warmupResolver?.(false)
+    g.warmupResolver = null
   } finally {
-    if (slot.generation !== myGeneration) {
+    if (g.slot.generation !== myGeneration) {
       await iterator.return?.()
       return
     }
@@ -420,55 +437,55 @@ async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
  * Circuit breaker: 5 recycles in 5 seconds = dead.
  */
 function recycleSlot(): void {
-  if (slot.state === 'dead') return
+  if (g.slot.state === 'dead') return
 
-  totalRecycles++
+  g.totalRecycles++
 
   // Circuit breaker: detect rapid consecutive recycles
   const now = Date.now()
-  if (now - slot.lastRecycleTime < RAPID_RECYCLE_WINDOW_MS) {
-    slot.rapidRecycleCount++
+  if (now - g.slot.lastRecycleTime < RAPID_RECYCLE_WINDOW_MS) {
+    g.slot.rapidRecycleCount++
   } else {
-    slot.rapidRecycleCount = 1
+    g.slot.rapidRecycleCount = 1
   }
-  slot.lastRecycleTime = now
+  g.slot.lastRecycleTime = now
 
-  if (slot.rapidRecycleCount >= RAPID_RECYCLE_LIMIT) {
+  if (g.slot.rapidRecycleCount >= RAPID_RECYCLE_LIMIT) {
     log.error(
       'ai',
-      `Enrichment slot recycled ${slot.rapidRecycleCount} times in <${RAPID_RECYCLE_WINDOW_MS}ms — marking dead (circuit breaker)`,
+      `Enrichment slot recycled ${g.slot.rapidRecycleCount} times in <${RAPID_RECYCLE_WINDOW_MS}ms — marking dead (circuit breaker)`,
     )
-    slot.generation++
-    slot.state = 'dead'
+    g.slot.generation++
+    g.slot.state = 'dead'
     try {
-      slot.channel?.close()
+      g.slot.channel?.close()
     } catch {
       // Ignore
     }
-    slot.channel = null
-    slot.resultPromise = null
-    slot.deliverResult = null
+    g.slot.channel = null
+    g.slot.resultPromise = null
+    g.slot.deliverResult = null
 
     // Reject all waiters
-    for (const entry of waitQueue) {
+    for (const entry of g.waitQueue) {
       entry.reject(new Error('Enrichment slot died (circuit breaker)'))
     }
-    waitQueue.length = 0
+    g.waitQueue.length = 0
     return
   }
 
   // Normal recycle: close old, reinit
-  slot.generation++
+  g.slot.generation++
   try {
-    slot.channel?.close()
+    g.slot.channel?.close()
   } catch {
     // Ignore
   }
-  slot.channel = null
-  slot.resultPromise = null
-  slot.deliverResult = null
-  slot.resultCount = 0
-  slot.state = 'initializing'
+  g.slot.channel = null
+  g.slot.resultPromise = null
+  g.slot.deliverResult = null
+  g.slot.resultCount = 0
+  g.slot.state = 'initializing'
 
   // Release any waiters — they'll get served after reinit
   log.info('ai', 'Enrichment slot recycling...')

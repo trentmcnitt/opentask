@@ -1,10 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Clock, Undo2, Redo2, Menu, Keyboard, Settings, Sparkles } from 'lucide-react'
+import {
+  ChevronLeft,
+  Clock,
+  Undo2,
+  Redo2,
+  Menu,
+  Keyboard,
+  Settings,
+  Sparkles,
+  Bot,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -22,6 +32,8 @@ import { SearchBar } from './SearchBar'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
+import { AIStatusDot } from '@/components/AIStatusContent'
+import { AIStatusModal } from '@/components/AIStatusModal'
 
 interface HeaderProps {
   backHref?: string
@@ -41,6 +53,7 @@ interface HeaderProps {
   onSearchClear?: () => void
   onSnoozeOverdue?: (until?: string) => void
   onShowKeyboardShortcuts?: () => void
+  timezone?: string
 }
 
 export function Header({
@@ -61,11 +74,42 @@ export function Header({
   onSearchClear,
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
+  timezone,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
+  const [aiStatusOpen, setAiStatusOpen] = useState(false)
+  const [aiSlotState, setAiSlotState] = useState<string | null>(null)
   const { defaultSnoozeOption } = useSnoozePreferences()
+
+  /** Fetch AI slot state lazily when the hamburger menu opens */
+  const handleMenuOpenChange = useCallback(
+    (open: boolean) => {
+      if (open && aiSlotState === null) {
+        fetch('/api/ai/status')
+          .then((res) => {
+            if (res.status === 503) {
+              // AI not enabled — no dot
+              setAiSlotState('disabled')
+              return null
+            }
+            if (!res.ok) {
+              setAiSlotState('unknown')
+              return null
+            }
+            return res.json()
+          })
+          .then((json) => {
+            if (json?.data?.enrichment_slot?.state) {
+              setAiSlotState(json.data.enrichment_slot.state)
+            }
+          })
+          .catch(() => setAiSlotState('unknown'))
+      }
+    },
+    [aiSlotState],
+  )
 
   const snoozePress = useSimpleLongPress({
     onLongPress: () => setSnoozeMenuOpen(true),
@@ -288,7 +332,7 @@ export function Header({
             </div>
 
             {/* Hamburger menu */}
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={handleMenuOpenChange}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Menu">
                   <Menu className="size-5" />
@@ -340,6 +384,11 @@ export function Header({
                     Daily Briefing
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
+                  <Bot className="size-4" />
+                  AI Status
+                  {aiSlotState && aiSlotState !== 'disabled' && <AIStatusDot state={aiSlotState} />}
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings">
                     <Settings className="size-4" />
@@ -351,6 +400,10 @@ export function Header({
           </div>
         </div>
       </header>
+
+      {timezone && (
+        <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
+      )}
     </TooltipProvider>
   )
 }

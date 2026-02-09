@@ -1,22 +1,21 @@
 /**
  * AI enrichment behavioral tests
  *
- * Tests the enrichment pipeline logic with mocked SDK responses.
+ * Tests the label-based enrichment pipeline with mocked SDK responses.
  * Verifies that:
- * - Tasks created with title-only get ai_status='pending' when AI is enabled
+ * - Tasks created with title-only get the `ai-to-process` label when AI is enabled
  * - Tasks created with fields set skip AI enrichment
- * - The enrichment apply logic correctly merges fields without clobbering
- * - AI changes are logged in the undo system
- * - ai-locked tasks are skipped
- * - Failed enrichments set ai_status='failed'
- * - Stuck tasks are reset on startup
+ * - The enrichment queue picks up tasks with `ai-to-process` label
+ * - ai-locked tasks are skipped and have ai-to-process removed
+ * - Failed enrichments use retry logic (ai-failed after 2 attempts)
+ * - In-memory processing guard prevents double-processing
+ * - Circuit breaker trips after rapid failures and resets after pause
+ * - Fair queuing interleaves tasks from different users
+ * - Label merging combines AI labels with existing user labels
  */
 
-import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
-import { getDb } from '@/core/db'
-import { createTask, getTaskById } from '@/core/tasks'
-import { resetStuckTasks, processEnrichmentQueue, _resetCircuitBreaker } from '@/core/ai/enrichment'
 
 // Mock isAIEnabled to return true for these tests
 vi.mock('@/core/ai/sdk', () => ({
@@ -24,6 +23,70 @@ vi.mock('@/core/ai/sdk', () => ({
   initAI: async () => {},
   aiQuery: vi.fn(),
 }))
+
+// Mock enrichment-slot to avoid launching real subprocesses
+vi.mock('@/core/ai/enrichment-slot', () => ({
+  enrichmentQuery: vi.fn(),
+  initEnrichmentSlot: vi.fn(),
+  getEnrichmentSlotStats: vi.fn(() => ({
+    state: 'available',
+    model: 'haiku',
+    totalRequests: 0,
+    totalRecycles: 0,
+    activatedAt: null,
+    lastRequestAt: null,
+  })),
+  shutdownEnrichmentSlot: vi.fn(),
+}))
+
+import { getDb } from '@/core/db'
+import { createTask, getTaskById } from '@/core/tasks'
+import {
+  processEnrichmentQueue,
+  enrichSingleTask,
+  _resetCircuitBreaker,
+  _resetProcessingState,
+} from '@/core/ai/enrichment'
+import { enrichmentQuery } from '@/core/ai/enrichment-slot'
+
+const mockEnrichmentQuery = vi.mocked(enrichmentQuery)
+
+/** Helper to build a mock enrichment result */
+function mockResult(overrides: Record<string, unknown> = {}) {
+  return {
+    structuredOutput: {
+      title: 'Clean title',
+      priority: 3,
+      due_at: '2026-02-20T14:00:00Z',
+      labels: ['errand'],
+      rrule: null,
+      project_name: null,
+      reasoning: 'Test reasoning',
+      ...overrides,
+    },
+    text: null,
+    durationMs: 100,
+  }
+}
+
+/**
+ * Remove all ai-to-process labels from tasks so previous tests don't
+ * leave queue items that interfere with subsequent tests.
+ */
+function clearPendingEnrichment(): void {
+  const db = getDb()
+  const rows = db
+    .prepare(
+      `SELECT id, labels FROM tasks
+       WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')`,
+    )
+    .all() as { id: number; labels: string }[]
+  for (const row of rows) {
+    const labels = JSON.parse(row.labels) as string[]
+    const cleaned = labels.filter((l) => l !== 'ai-to-process')
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(JSON.stringify(cleaned), row.id)
+  }
+}
 
 beforeAll(() => {
   setupTestDb()
@@ -33,8 +96,15 @@ afterAll(() => {
   teardownTestDb()
 })
 
-describe('AI enrichment trigger', () => {
-  test('title-only task gets ai_status=pending when AI is enabled', () => {
+afterEach(() => {
+  _resetCircuitBreaker()
+  _resetProcessingState()
+  mockEnrichmentQuery.mockReset()
+  vi.useRealTimers()
+})
+
+describe('AI enrichment trigger (label-based)', () => {
+  test('title-only task gets ai-to-process label when AI is enabled', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -43,7 +113,7 @@ describe('AI enrichment trigger', () => {
 
     const fromDb = getTaskById(task.id)
     expect(fromDb).not.toBeNull()
-    expect(fromDb!.ai_status).toBe('pending')
+    expect(fromDb!.labels).toContain('ai-to-process')
   })
 
   test('task with due_at set skips AI enrichment', () => {
@@ -57,7 +127,7 @@ describe('AI enrichment trigger', () => {
     })
 
     const fromDb = getTaskById(task.id)
-    expect(fromDb!.ai_status).toBeNull()
+    expect(fromDb!.labels).not.toContain('ai-to-process')
   })
 
   test('task with priority set skips AI enrichment', () => {
@@ -71,7 +141,7 @@ describe('AI enrichment trigger', () => {
     })
 
     const fromDb = getTaskById(task.id)
-    expect(fromDb!.ai_status).toBeNull()
+    expect(fromDb!.labels).not.toContain('ai-to-process')
   })
 
   test('task with labels set skips AI enrichment', () => {
@@ -85,7 +155,8 @@ describe('AI enrichment trigger', () => {
     })
 
     const fromDb = getTaskById(task.id)
-    expect(fromDb!.ai_status).toBeNull()
+    expect(fromDb!.labels).not.toContain('ai-to-process')
+    expect(fromDb!.labels).toContain('shopping')
   })
 
   test('task with rrule set skips AI enrichment', () => {
@@ -99,123 +170,607 @@ describe('AI enrichment trigger', () => {
     })
 
     const fromDb = getTaskById(task.id)
-    expect(fromDb!.ai_status).toBeNull()
-  })
-})
-
-describe('resetStuckTasks', () => {
-  test('resets processing tasks to pending on startup', () => {
-    const db = getDb()
-
-    // Create a task and manually set it to processing (simulating an interrupted enrichment)
-    const task = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'stuck task' },
-    })
-    db.prepare("UPDATE tasks SET ai_status = 'processing' WHERE id = ?").run(task.id)
-
-    // Verify it's processing
-    const before = getTaskById(task.id)
-    expect(before!.ai_status).toBe('processing')
-
-    // Reset stuck tasks
-    resetStuckTasks()
-
-    // Verify it's back to pending
-    const after = getTaskById(task.id)
-    expect(after!.ai_status).toBe('pending')
-  })
-
-  test('does not affect tasks with other statuses', () => {
-    const db = getDb()
-
-    const pendingTask = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'pending task' },
-    })
-    // Already pending from creation
-
-    const failedTask = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'failed task' },
-    })
-    db.prepare("UPDATE tasks SET ai_status = 'failed' WHERE id = ?").run(failedTask.id)
-
-    const completeTask = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'complete task' },
-    })
-    db.prepare("UPDATE tasks SET ai_status = 'complete' WHERE id = ?").run(completeTask.id)
-
-    resetStuckTasks()
-
-    expect(getTaskById(pendingTask.id)!.ai_status).toBe('pending')
-    expect(getTaskById(failedTask.id)!.ai_status).toBe('failed')
-    expect(getTaskById(completeTask.id)!.ai_status).toBe('complete')
-  })
-})
-
-describe('applyEnrichment via collectEnrichmentChanges', () => {
-  // These tests verify the logic indirectly by checking the database state
-  // after manually applying enrichment-style updates, since the actual
-  // applyEnrichment function calls the SDK internally.
-
-  test('ai-locked tasks are not processed', () => {
-    const task = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'do not touch this task', labels: ['ai-locked'] },
-    })
-
-    // Task with labels set doesn't get ai_status=pending
-    const fromDb = getTaskById(task.id)
-    expect(fromDb!.ai_status).toBeNull()
-    expect(fromDb!.labels).toContain('ai-locked')
+    expect(fromDb!.labels).not.toContain('ai-to-process')
   })
 })
 
 describe('processEnrichmentQueue ai-locked skip', () => {
-  test('ai-locked task is skipped when processed through the queue', async () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('ai-locked task has ai-to-process removed when processed through the queue', async () => {
     const db = getDb()
 
-    // Create a title-only task (gets ai_status='pending')
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: { title: 'do not enrich me' },
     })
 
-    // Verify it starts as pending
-    expect(getTaskById(task.id)!.ai_status).toBe('pending')
+    expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
 
-    // Manually add ai-locked label and keep ai_status='pending'
-    const labels = JSON.stringify(['ai-locked'])
+    // Manually add ai-locked label alongside ai-to-process
+    const labels = JSON.stringify(['ai-to-process', 'ai-locked'])
     db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
 
-    // Process the queue
     await processEnrichmentQueue()
 
-    // Task should be skipped: ai_status set to null, title unchanged
     const after = getTaskById(task.id)
-    expect(after!.ai_status).toBeNull()
-    expect(after!.title).toBe('do not enrich me')
+    expect(after!.labels).not.toContain('ai-to-process')
     expect(after!.labels).toContain('ai-locked')
+    expect(after!.title).toBe('do not enrich me')
+  })
+})
+
+describe('enrichment success path', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('applies title, priority, due_at, labels from AI result', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'call dentist next tuesday high priority' },
+    })
+    expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Call dentist',
+        priority: 3,
+        due_at: '2026-02-20T14:00:00Z',
+        labels: ['errand'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Call dentist')
+    expect(after.priority).toBe(3)
+    expect(after.due_at).toBe('2026-02-20T14:00:00Z')
+    expect(after.labels).toContain('errand')
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('applies rrule and derives anchor fields', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'weekly standup every tuesday' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Weekly standup',
+        priority: 0,
+        due_at: '2026-02-17T15:00:00Z',
+        labels: [],
+        rrule: 'FREQ=WEEKLY;BYDAY=TU',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TU')
+    expect(after.anchor_dow).not.toBeNull()
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('resolves project_name to project_id', async () => {
+    const db = getDb()
+    db.prepare('INSERT OR IGNORE INTO projects (name, owner_id, sort_order) VALUES (?, ?, ?)').run(
+      'Work',
+      TEST_USER_ID,
+      1,
+    )
+    const project = db.prepare('SELECT id FROM projects WHERE name = ?').get('Work') as {
+      id: number
+    }
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'finish report for work' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Finish report',
+        priority: 2,
+        labels: [],
+        project_name: 'Work',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.project_id).toBe(project.id)
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('removes ai-to-process even when no fields changed', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'simple task' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'simple task',
+        priority: 0,
+        due_at: null,
+        labels: [],
+        rrule: null,
+        project_name: null,
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).not.toContain('ai-to-process')
+    expect(after.title).toBe('simple task')
+  })
+
+  test('enrichment is logged in undo history', async () => {
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'log me in undo' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Log me in undo',
+        priority: 2,
+        labels: ['work'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const db = getDb()
+    const undoEntry = db
+      .prepare('SELECT * FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { id: number; action: string; description: string } | undefined
+
+    expect(undoEntry).toBeDefined()
+    expect(undoEntry!.action).toBe('edit')
+    expect(undoEntry!.description).toContain('AI')
+  })
+})
+
+describe('enrichSingleTask (fire-and-forget)', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('processes a title-only task', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'pick up dry cleaning tomorrow' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Pick up dry cleaning',
+        priority: 1,
+        due_at: '2026-02-10T17:00:00Z',
+        labels: ['errand'],
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Pick up dry cleaning')
+    expect(after.priority).toBe(1)
+    expect(after.labels).toContain('errand')
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('skips task without ai-to-process label', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Explicit task', labels: ['work'] },
+    })
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    expect(mockEnrichmentQuery).not.toHaveBeenCalled()
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Explicit task')
+  })
+
+  test('skips task with ai-locked label', async () => {
+    const db = getDb()
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'locked task' },
+    })
+
+    const labels = JSON.stringify(['ai-to-process', 'ai-locked'])
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    expect(mockEnrichmentQuery).not.toHaveBeenCalled()
+    const after = getTaskById(task.id)!
+    expect(after.labels).not.toContain('ai-to-process')
+    expect(after.labels).toContain('ai-locked')
+  })
+
+  test('handles failure with retry tracking', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'fail me once' },
+    })
+
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error'))
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('ai-to-process')
+    expect(after.labels).not.toContain('ai-failed')
+  })
+})
+
+describe('retry logic', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('first failure keeps ai-to-process label', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'retry task first fail' },
+    })
+
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error'))
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('ai-to-process')
+    expect(after.labels).not.toContain('ai-failed')
+  })
+
+  test('second failure swaps ai-to-process to ai-failed', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'retry task second fail' },
+    })
+
+    // First failure — retryCount goes to 1
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error 1'))
+    await processEnrichmentQueue()
+
+    const afterFirst = getTaskById(task.id)!
+    expect(afterFirst.labels).toContain('ai-to-process')
+
+    // Second failure — retryCount goes to 2 (>= MAX_ATTEMPTS), swaps label.
+    // The processing lock and processingTasks set are cleared by the finally
+    // block, so the next call picks the task up. retryCount persists.
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error 2'))
+    await processEnrichmentQueue()
+
+    const afterSecond = getTaskById(task.id)!
+    expect(afterSecond.labels).not.toContain('ai-to-process')
+    expect(afterSecond.labels).toContain('ai-failed')
+  })
+
+  test('success after first failure clears retry count', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'retry then succeed' },
+    })
+
+    // First call: failure
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error'))
+    await processEnrichmentQueue()
+
+    const afterFail = getTaskById(task.id)!
+    expect(afterFail.labels).toContain('ai-to-process')
+
+    // Second call: success — retryCount is cleared on success
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Retry then succeed',
+        priority: 1,
+        labels: [],
+      }),
+    )
+    await processEnrichmentQueue()
+
+    const afterSuccess = getTaskById(task.id)!
+    expect(afterSuccess.labels).not.toContain('ai-to-process')
+    expect(afterSuccess.labels).not.toContain('ai-failed')
+    expect(afterSuccess.title).toBe('Retry then succeed')
   })
 })
 
 describe('circuit breaker', () => {
-  afterEach(() => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('circuit breaker exports are available', () => {
+    expect(typeof _resetCircuitBreaker).toBe('function')
     _resetCircuitBreaker()
   })
 
-  test('circuit breaker exports are available', () => {
-    // Verify the circuit breaker reset function exists and is callable
-    expect(typeof _resetCircuitBreaker).toBe('function')
-    _resetCircuitBreaker()
+  test('trips after 5 failures within 60s window', async () => {
+    vi.setSystemTime(new Date('2026-02-15T12:00:00Z'))
+
+    // Create 5 tasks that will all fail
+    for (let i = 0; i < 5; i++) {
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: `circuit breaker fail ${i}` },
+      })
+    }
+
+    mockEnrichmentQuery.mockRejectedValue(new Error('SDK error'))
+    await processEnrichmentQueue()
+
+    // Circuit breaker is now tripped. Create a new task.
+    mockEnrichmentQuery.mockReset()
+    mockEnrichmentQuery.mockResolvedValue(mockResult({ title: 'Should not run' }))
+
+    const newTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'should not be processed yet' },
+    })
+
+    // Process again — circuit breaker should prevent all processing
+    await processEnrichmentQueue()
+
+    const after = getTaskById(newTask.id)!
+    expect(after.labels).toContain('ai-to-process')
+  })
+
+  test('paused queue skips processing during pause', async () => {
+    vi.setSystemTime(new Date('2026-02-15T12:00:00Z'))
+
+    for (let i = 0; i < 5; i++) {
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: `cb pause fail ${i}` },
+      })
+    }
+    mockEnrichmentQuery.mockRejectedValue(new Error('SDK error'))
+    await processEnrichmentQueue()
+
+    mockEnrichmentQuery.mockReset()
+
+    // Advance by only 60s — not enough to reset the 300s pause
+    vi.setSystemTime(new Date('2026-02-15T12:01:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'paused task' },
+    })
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('ai-to-process')
+  })
+
+  test('circuit breaker resets after 300s pause expires', async () => {
+    vi.setSystemTime(new Date('2026-02-15T12:00:00Z'))
+
+    for (let i = 0; i < 5; i++) {
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: `cb reset fail ${i}` },
+      })
+    }
+    mockEnrichmentQuery.mockRejectedValue(new Error('SDK error'))
+    await processEnrichmentQueue()
+
+    // Clear leftover failed tasks so they don't interfere
+    clearPendingEnrichment()
+    mockEnrichmentQuery.mockReset()
+
+    // Advance past the 300s pause
+    vi.setSystemTime(new Date('2026-02-15T12:05:01Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'after reset task' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'After reset task',
+        priority: 0,
+        labels: [],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).not.toContain('ai-to-process')
+    expect(after.title).toBe('After reset task')
+  })
+})
+
+describe('processing state', () => {
+  test('processing state reset function is callable', () => {
+    expect(typeof _resetProcessingState).toBe('function')
+    _resetProcessingState()
+  })
+})
+
+describe('processing guard', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('concurrent processEnrichmentQueue calls do not overlap', async () => {
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'concurrent guard test' },
+    })
+
+    let callCount = 0
+    mockEnrichmentQuery.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          callCount++
+          setTimeout(
+            () =>
+              resolve(
+                mockResult({
+                  title: 'Concurrent guard test',
+                  priority: 0,
+                  labels: [],
+                }),
+              ),
+            50,
+          )
+        }),
+    )
+
+    // Start two concurrent calls — the second should return early
+    // because the `processing` lock is held
+    const p1 = processEnrichmentQueue()
+    const p2 = processEnrichmentQueue()
+    await Promise.all([p1, p2])
+
+    expect(callCount).toBe(1)
+  })
+})
+
+describe('fair queuing', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('interleaves tasks from different users', async () => {
+    const db = getDb()
+
+    // Insert a second user (password_hash required by NOT NULL constraint)
+    db.prepare(
+      'INSERT OR IGNORE INTO users (id, name, email, password_hash, timezone) VALUES (?, ?, ?, ?, ?)',
+    ).run(2, 'user2', 'user2@test.com', 'hash', 'America/Chicago')
+
+    // Get default project ID (Inbox, ID 1)
+    const defaultProjectId = 1
+
+    // Create tasks for user 1
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'user1 task A' },
+    })
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'user1 task B' },
+    })
+
+    // Create tasks for user 2 directly in the DB (createTask requires auth setup)
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO tasks (title, user_id, project_id, labels, priority, done, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
+    ).run('user2 task A', 2, defaultProjectId, JSON.stringify(['ai-to-process']), now, now)
+    db.prepare(
+      `INSERT INTO tasks (title, user_id, project_id, labels, priority, done, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
+    ).run('user2 task B', 2, defaultProjectId, JSON.stringify(['ai-to-process']), now, now)
+
+    // Track the order of user IDs processed
+    const processedUserIds: number[] = []
+    mockEnrichmentQuery.mockImplementation((_prompt, opts) => {
+      if (opts?.userId) processedUserIds.push(opts.userId)
+      return Promise.resolve(
+        mockResult({
+          title: 'Enriched',
+          priority: 0,
+          labels: [],
+        }),
+      )
+    })
+
+    await processEnrichmentQueue()
+
+    // Should have processed tasks from both users
+    expect(processedUserIds.length).toBeGreaterThanOrEqual(4)
+
+    // Verify interleaving: first two processed should be from different users
+    expect(processedUserIds[0]).not.toBe(processedUserIds[1])
+
+    // Clean up user 2 data
+    db.prepare('DELETE FROM tasks WHERE user_id = 2').run()
+  })
+
+  test('limits to 10 tasks per cycle', async () => {
+    for (let i = 0; i < 15; i++) {
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: `limit test task ${i}` },
+      })
+    }
+
+    mockEnrichmentQuery.mockResolvedValue(
+      mockResult({
+        title: 'Enriched',
+        priority: 0,
+        labels: [],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    expect(mockEnrichmentQuery).toHaveBeenCalledTimes(10)
+  })
+})
+
+describe('label merging', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('AI labels merged with existing user labels, ai-to-process removed', async () => {
+    const db = getDb()
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'buy milk and clean house' },
+    })
+
+    // Set labels to include both shopping and ai-to-process
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(
+      JSON.stringify(['shopping', 'ai-to-process']),
+      task.id,
+    )
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Buy milk and clean house',
+        priority: 0,
+        labels: ['errand', 'urgent'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('shopping')
+    expect(after.labels).toContain('errand')
+    expect(after.labels).toContain('urgent')
+    expect(after.labels).not.toContain('ai-to-process')
   })
 })
 
