@@ -74,6 +74,8 @@ interface TaskRowProps {
   onActivate?: () => void
   /** Desktop double-click: open QuickActionPanel (alternative to entering selection mode) */
   onDoubleClick?: () => void
+  /** Optional annotation line below metadata (e.g., AI reason from Bubble) */
+  annotation?: string
 }
 
 export function TaskRow({
@@ -92,6 +94,7 @@ export function TaskRow({
   isKeyboardFocused = false,
   onActivate,
   onDoubleClick,
+  annotation,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -410,6 +413,12 @@ export function TaskRow({
               </span>
             ))}
           </div>
+        )}
+
+        {annotation && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
+            {annotation}
+          </p>
         )}
       </div>
 
