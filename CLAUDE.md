@@ -16,6 +16,7 @@ npm test                 # Behavioral tests (vitest, no HTTP/UI)
 npm run test:integration # Integration tests (HTTP against built server)
 npm run test:e2e         # Playwright E2E tests (headless)
 npm run test:e2e:ui      # Playwright with UI
+npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
@@ -308,6 +309,8 @@ E2E tests (run locally) and browser verification (run against dev) are complemen
 
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
+
+**`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details.
 
 ### Pre-existing test failures
 

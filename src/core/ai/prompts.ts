@@ -52,7 +52,7 @@ Be generous when interpreting garbled input — extract the intent rather than r
    - 3 = high ("high priority", "important")
    - 4 = urgent ("urgent", "ASAP", "critical", "immediately")
 
-   Use natural language cues beyond keywords. "I really need to" or "don't forget to" suggests higher priority. Emotional urgency ("this is killing me") may indicate importance. But don't over-infer — leaving priority at 0 is better than guessing wrong.
+   Use natural language cues beyond keywords. Emotional urgency ("this is killing me", "I really really need to") indicates priority 2-3 (medium to high), NOT 4. Reserve priority 4 exclusively for explicit urgency keywords like "urgent", "ASAP", "critical", or "immediately". Don't over-infer — leaving priority at 0 is better than guessing wrong.
 
 4. **labels** — Array of label strings. Look for contextual categories implied by the task content: "work", "personal", "health", "errand", "shopping", "home", "finance", "family", "car", "medical", etc. Use your judgment based on context — the list above is not exhaustive. Only add labels that are clearly implied. Return an empty array if nothing is apparent. Be conservative: one accurate label is better than three speculative ones.
 
@@ -75,7 +75,70 @@ Be generous when interpreting garbled input — extract the intent rather than r
 - The user's raw text is always preserved separately — you cannot lose information.
 - For due_at, always return UTC. The user's timezone is provided for conversion.
 - Keep the title natural and human-readable. Don't over-format or add punctuation that wasn't there.
-- For titles that are already clean and concise, return them unchanged.`
+- For titles that are already clean and concise, return them unchanged.
+
+## Examples
+
+### Simple task with date
+Input: "call the dentist tomorrow morning"
+Timezone: America/Chicago (UTC-6 in winter)
+\`\`\`json
+{
+  "title": "Call the dentist",
+  "due_at": "2026-02-10T15:00:00Z",
+  "priority": 0,
+  "labels": ["medical"],
+  "project_name": null,
+  "rrule": null,
+  "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. Added medical label from dentist context."
+}
+\`\`\`
+
+### Garbled dictation with recurrence
+Input: "um I need to like take my vitamins every morning at 8 or whatever"
+Timezone: America/Chicago (UTC-6 in winter)
+\`\`\`json
+{
+  "title": "Take my vitamins",
+  "due_at": "2026-02-10T14:00:00Z",
+  "priority": 0,
+  "labels": ["health"],
+  "project_name": null,
+  "rrule": "FREQ=DAILY",
+  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'."
+}
+\`\`\`
+
+### Multi-field extraction
+Input: "high priority call mom next tuesday, add it to family"
+Timezone: America/Chicago (UTC-6 in winter)
+Available projects: Inbox, Family
+\`\`\`json
+{
+  "title": "Call mom",
+  "due_at": "2026-02-17T18:00:00Z",
+  "priority": 3,
+  "labels": ["family"],
+  "project_name": "Family",
+  "rrule": null,
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. Title cleaned of metadata phrases."
+}
+\`\`\`
+
+### Already clean — no over-extraction
+Input: "Fix van arm"
+Timezone: America/Chicago
+\`\`\`json
+{
+  "title": "Fix van arm",
+  "due_at": null,
+  "priority": 0,
+  "labels": ["car"],
+  "project_name": null,
+  "rrule": null,
+  "reasoning": "Title already clean and concise. No date or priority signals. Added car label from 'van' context."
+}
+\`\`\``
 
 /**
  * System prompt for Bubble recommendations.
@@ -126,7 +189,27 @@ Do not include any text outside the JSON object.
 
 ## Tone
 
-Be direct and specific. "You've snoozed this 6 times in 2 weeks — time to decide: do it or drop it" not "This task might benefit from your attention." Think of a thoughtful friend who notices what you're avoiding, not a nagging productivity app.`
+Be direct and specific. "You've snoozed this 6 times in 2 weeks — time to decide: do it or drop it" not "This task might benefit from your attention." Think of a thoughtful friend who notices what you're avoiding, not a nagging productivity app.
+
+## Example
+
+Given tasks including:
+- [42] "Call Granddaddy" | priority: 1 | due: yesterday | snooze_count: 0 | recurring: no
+- [65] "Charge jump starter" | priority: 0 | due: yesterday | snooze_count: 3 | recurring: no
+- [7] "Morning affirmation" | priority: 0 | due: today | snooze_count: 0 | recurring: yes
+
+\`\`\`json
+{
+  "tasks": [
+    { "task_id": 42, "reason": "Overdue by a day — calling your granddad is a social obligation that gets awkward fast. Do it today." },
+    { "task_id": 65, "reason": "Snoozed 3 times and now overdue. Either charge it this week or drop it — stop re-deferring." }
+  ],
+  "summary": "An overdue family call and an avoided maintenance task both need a decision today.",
+  "generated_at": "2026-02-09T16:00:00Z"
+}
+\`\`\`
+
+Note: Task 7 (daily affirmation) was correctly excluded — routine recurring tasks don't belong in Bubble.`
 
 /**
  * System prompt for daily briefing generation.
