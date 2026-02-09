@@ -17,6 +17,7 @@ This is the authoritative reference for AI integration in OpenTask. It covers pr
 7. [Configuration](#configuration)
 8. [Activity Logging](#activity-logging)
 9. [Data Retention](#data-retention)
+10. [Quality Testing](#quality-testing)
 
 ---
 
@@ -366,3 +367,50 @@ The History → AI tab shows enrichment slot status and recent activity entries 
 | AI activity log | 90 days   | Daily at 5:00 AM      | `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` |
 
 AI activity has a longer retention than other data because it's useful for prompt tuning and cost analysis.
+
+---
+
+## Quality Testing
+
+Prompt quality is measured with a two-layer system inspired by the Bespoke project's Layer 1/2 pattern.
+
+### Layer 1 — Automated generation + structural validation
+
+Runs each test scenario through the real AI (same production code paths). Validates that outputs parse correctly, schemas validate, and required fields are present. Saves inputs, outputs, and requirements to `test-results/quality-{timestamp}/`.
+
+```bash
+npm run test:quality
+```
+
+**Requirements:** `OPENTASK_AI_ENABLED=true` and the Claude CLI installed.
+
+If AI is not enabled, all tests skip gracefully (no errors).
+
+### Layer 2 — Quality evaluation by Claude
+
+After Layer 1 completes, it prints instructions to stdout. The evaluating agent (Claude in-session) reads the saved artifacts and judges output quality against criteria in `tests/quality/validator-prompt.md`.
+
+For each scenario, the evaluator writes a `validation.md` with a score (0-10), pass/fail, and per-criterion results. A `layer2-summary.md` summarizes the full run.
+
+### How to add scenarios
+
+Add an `AITestScenario` to `tests/quality/scenarios.ts`. Each scenario defines:
+
+- `id` — unique identifier (e.g., `enrich-garbled-dictation`)
+- `feature` — which AI feature (`enrichment`, `bubble`, `shopping`)
+- `input` — feature-specific input data
+- `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
+
+### How to adjust evaluation criteria
+
+Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature with specific criteria for each.
+
+### Key files
+
+| File                                | Purpose                                            |
+| ----------------------------------- | -------------------------------------------------- |
+| `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
+| `tests/quality/scenarios.ts`        | Test scenario definitions (~17 scenarios)          |
+| `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
+| `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
+| `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |
