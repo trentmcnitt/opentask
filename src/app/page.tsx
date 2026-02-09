@@ -321,37 +321,6 @@ function HomeContent() {
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
-  // AI Pick filter state
-  const [aiPickActive, setAiPickActive] = useState(false)
-  const [aiPickLoading, setAiPickLoading] = useState(false)
-  const [aiPickOrder, setAiPickOrder] = useState<number[] | null>(null)
-
-  const handleToggleAiPick = useCallback(async () => {
-    if (aiPickActive) {
-      setAiPickActive(false)
-      return
-    }
-    // Fetch AI triage if we don't have cached order
-    if (!aiPickOrder) {
-      setAiPickLoading(true)
-      try {
-        const res = await fetch('/api/ai/triage')
-        if (res.ok) {
-          const json = await res.json()
-          if (json.data?.ordered_task_ids) {
-            setAiPickOrder(json.data.ordered_task_ids)
-          }
-        }
-      } catch {
-        // Silently fail — chip just won't activate
-        setAiPickLoading(false)
-        return
-      }
-      setAiPickLoading(false)
-    }
-    setAiPickActive(true)
-  }, [aiPickActive, aiPickOrder])
-
   const baseTasks = searchQuery ? searchResults : tasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
   const {
@@ -365,24 +334,11 @@ function HomeContent() {
     filteredTasks: displayTasks,
   } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
 
-  // Apply AI Pick ordering when active
-  const aiSortedTasks = useMemo(() => {
-    if (!aiPickActive || !aiPickOrder) return displayTasks
-    const orderMap = new Map(aiPickOrder.map((id, idx) => [id, idx]))
-    return [...displayTasks].sort((a, b) => {
-      const aIdx = orderMap.get(a.id) ?? Infinity
-      const bIdx = orderMap.get(b.id) ?? Infinity
-      return aIdx - bIdx
-    })
-  }, [displayTasks, aiPickActive, aiPickOrder])
+  const tasks_ = displayTasks
 
-  // Use AI-sorted tasks when AI Pick is active, otherwise normal display tasks
-  const tasks_ = aiPickActive ? aiSortedTasks : displayTasks
-
-  // Wrap clearAllFilters to also clear selection and AI pick
+  // Wrap clearAllFilters to also clear selection
   const handleClearFilters = useCallback(() => {
     selection.clear()
-    setAiPickActive(false)
     clearAllFilters()
   }, [selection, clearAllFilters])
 
@@ -847,9 +803,6 @@ function HomeContent() {
     <DashboardView
       tasks={tasks_}
       allTasks={baseTasks}
-      aiPickActive={aiPickActive}
-      aiPickLoading={aiPickLoading}
-      onToggleAiPick={handleToggleAiPick}
       projects={projects}
       grouping={grouping}
       searchQuery={searchQuery}
@@ -949,9 +902,6 @@ function DashboardView({
   selectedDateFilters,
   onToggleDateFilter,
   timezone,
-  aiPickActive,
-  aiPickLoading,
-  onToggleAiPick,
   onSearch,
   onSearchClear,
   onBulkAction,
@@ -1011,9 +961,6 @@ function DashboardView({
   selectedDateFilters: DueDateFilter[]
   onToggleDateFilter: (filter: DueDateFilter) => void
   timezone: string
-  aiPickActive: boolean
-  aiPickLoading: boolean
-  onToggleAiPick: () => void
   onSearch: (q: string) => void
   onSearchClear: () => void
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
@@ -1091,9 +1038,6 @@ function DashboardView({
           onToggleDateFilter={onToggleDateFilter}
           onClearAll={onClearFilters}
           timezone={timezone}
-          aiPickActive={aiPickActive}
-          aiPickLoading={aiPickLoading}
-          onToggleAiPick={onToggleAiPick}
         />
 
         <BubblePanel tasks={allTasks} onDone={actions.handleDone} onActivate={onActivate} />

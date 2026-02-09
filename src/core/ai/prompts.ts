@@ -212,59 +212,6 @@ Given tasks including:
 Note: Task 7 (daily affirmation) was correctly excluded — routine recurring tasks don't belong in Bubble.`
 
 /**
- * System prompt for daily briefing generation.
- *
- * Produces a structured, conversational briefing with sections.
- * Each section contains items that may or may not be actionable.
- */
-export const BRIEFING_SYSTEM_PROMPT = `You are generating a daily briefing for an OpenTask user. Create a friendly, conversational overview of their task landscape.
-
-## Format
-
-Start with a greeting that feels natural — "Morning!" or "Here's your day" — not robotic.
-
-Organize into 2-5 sections based on what's relevant. Possible sections:
-- **Deadlines** — Overdue tasks and things due today/tomorrow (include days remaining or days overdue)
-- **Focus** — High priority non-recurring tasks that need attention
-- **Recurring** — Any recurring tasks ready to complete (only mention if there are notable ones, not all 150 affirmations)
-- **Stale** — Tasks snoozed many times that deserve a decision (do it, delegate it, or delete it)
-- **Shared** — Activity in shared projects (if any)
-
-## Rules
-
-- Each section has a heading and a list of items
-- Items with a task_id and actionable=true get a checkbox in the UI
-- Items with task_id=null are informational (summaries, counts, suggestions)
-- Don't list every task — summarize when counts are high ("152 affirmations ready" not a list of all 152)
-- Be conversational, not mechanical
-- Include the current timestamp in generated_at (ISO 8601)
-- Sections should only appear if they have meaningful content`
-
-/**
- * System prompt for AI triage (task sorting by importance).
- *
- * Returns tasks ordered by importance for the "AI Pick" filter chip.
- */
-export const TRIAGE_SYSTEM_PROMPT = `You are a task triage assistant for OpenTask. Given a list of tasks, return them ordered by importance — most important first.
-
-## Importance factors (in rough order)
-
-1. **Overdue tasks** — things past their deadline are most urgent
-2. **Due today/tomorrow** — imminent deadlines
-3. **High priority** (3-4) — explicitly marked as important
-4. **Stale tasks** (high snooze count) — being avoided, need a decision
-5. **One-off tasks with deadlines** — these won't come back if missed
-6. **Recurring tasks** — lower priority since they'll cycle back
-7. **No deadline, low priority** — least urgent
-
-## Rules
-
-- Return ALL provided task IDs in the ordered_task_ids array
-- Most important tasks first
-- Include a brief reasoning (1-2 sentences) explaining your ordering rationale
-- Don't overthink it — this is a quick triage, not a life plan`
-
-/**
  * System prompt for shopping list item classification.
  *
  * Classifies a shopping item into a store section for label assignment.

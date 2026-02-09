@@ -64,40 +64,6 @@ export const BubbleResultSchema = z.object({
 export type BubbleResult = z.infer<typeof BubbleResultSchema>
 
 /**
- * Daily briefing schema.
- */
-export const BriefingResultSchema = z.object({
-  greeting: z.string().describe('Conversational greeting, e.g. "Morning Trent — ..."'),
-  sections: z.array(
-    z.object({
-      heading: z.string().describe('Section heading like "Deadlines" or "Shopping"'),
-      items: z.array(
-        z.object({
-          task_id: z.number().nullable().describe('Task ID, or null for summary-only items'),
-          text: z.string().describe('Display text for this item'),
-          actionable: z.boolean().describe('True if a checkbox should be shown'),
-        }),
-      ),
-    }),
-  ),
-  generated_at: z.string().describe('ISO 8601 generation timestamp'),
-})
-
-export type BriefingResult = z.infer<typeof BriefingResultSchema>
-
-/**
- * AI triage result schema.
- */
-export const TriageResultSchema = z.object({
-  ordered_task_ids: z
-    .array(z.number())
-    .describe('Task IDs ordered by importance, most important first'),
-  reasoning: z.string().describe('Brief explanation of the ordering rationale'),
-})
-
-export type TriageResult = z.infer<typeof TriageResultSchema>
-
-/**
  * Shopping label classification schema.
  */
 export const ShoppingLabelResultSchema = z.object({

@@ -59,8 +59,6 @@ Different features have different latency and intelligence requirements:
 | ------------------------- | ----------- | ---------------------------------- |
 | Task enrichment (parsing) | Haiku       | Fast, cheap, structured extraction |
 | Bubble                    | Haiku       | Infrequent, 3 AM cron + on-demand  |
-| Daily briefing            | Haiku       | Summarization, low stakes          |
-| AI triage                 | Haiku       | Interactive, user is waiting       |
 | Shopping labels           | Haiku       | Simple classification              |
 | Chat sidebar              | Sonnet      | Conversational, needs reasoning    |
 | Complex analysis          | Sonnet/Opus | Needs deep understanding           |
@@ -104,7 +102,7 @@ How it works:
 5. Circuit breaker: 5 recycles in 5 seconds marks the slot as dead
 6. FIFO wait queue handles concurrent access to the single slot
 
-**2. Per-query subprocess** (`sdk.ts → aiQuery()`): For infrequent features (Bubble, briefing, triage). Cold-start latency doesn't matter when nobody's waiting. Each gets its own `outputFormat` per-query.
+**2. Per-query subprocess** (`sdk.ts → aiQuery()`): For infrequent features (Bubble, shopping labels). Cold-start latency doesn't matter when nobody's waiting. Each gets its own `outputFormat` per-query.
 
 ### On-demand enrichment
 
@@ -139,7 +137,7 @@ Enrichment queries both owned and shared projects when building the project list
 
 ### Concurrent request management
 
-A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (Bubble, briefing, triage, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
+A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (Bubble, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
 
 ---
 
@@ -159,8 +157,6 @@ src/core/ai/
 ├── enrichment-slot.ts  — Warm slot for enrichment (MessageChannel + consumer + lifecycle)
 ├── enrichment.ts       — Task enrichment pipeline (on-demand + safety-net cron)
 ├── bubble.ts           — Bubble recommendations (surfaces overlooked tasks)
-├── briefing.ts         — Daily briefing generation (cached 4 hours in activity log)
-├── triage.ts           — AI triage / task ordering (cached 5 min)
 ├── shopping.ts         — Shopping list label classification
 ├── purge.ts            — Activity log data retention
 ├── task-summaries.ts   — Compact task data builder for AI prompts
@@ -171,8 +167,6 @@ src/core/ai/
 
 - `EnrichmentResultSchema` — Zod schema for task enrichment output
 - `BubbleResultSchema` — surfaced tasks + reasons + summary
-- `BriefingResultSchema` — greeting + sections + items
-- `TriageResultSchema` — ordered task IDs + reasoning
 - `ShoppingLabelResultSchema` — store section + reasoning
 - `TaskSummary` — compact task representation for AI prompts
 - `AIActivityEntry` — shape of activity log rows
@@ -181,8 +175,6 @@ src/core/ai/
 
 - `ENRICHMENT_SYSTEM_PROMPT` — task parsing with transcriptionist philosophy
 - `BUBBLE_SYSTEM_PROMPT` — surface overlooked tasks (social obligations, snoozed items, idle tasks)
-- `BRIEFING_SYSTEM_PROMPT` — conversational daily briefing with sections
-- `TRIAGE_SYSTEM_PROMPT` — order tasks by importance
 - `SHOPPING_LABEL_SYSTEM_PROMPT` — classify items by store section
 
 ### `message-channel.ts`
@@ -221,18 +213,6 @@ Generic async iterable that buffers messages and yields them when the SDK calls 
 - `generateBubble(userId, timezone, tasks)` — surfaces overlooked tasks via per-query subprocess
 - `getCachedBubble(userId)` — returns cached result from `ai_activity_log` if generated today
 - Task selection scoring: high snooze count, no deadline, non-recurring (penalizes already-urgent tasks)
-
-### `briefing.ts`
-
-- `getBriefing(userId, timezone, tasks, refresh?)` — returns cached or fresh briefing
-- Cache persistence via `ai_activity_log` (4-hour TTL)
-- Includes task stats: overdue count, due today, recurring, high priority, stale
-
-### `triage.ts`
-
-- `triageTasks(userId, timezone, tasks)` — returns ordered task IDs by importance
-- 5-minute in-memory cache per user
-- Used by "AI Pick" filter chip on dashboard
 
 ### `shopping.ts`
 
@@ -284,8 +264,7 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                  |
 | Enrichment slot dies           | Marked dead, queries throw error                     | Enrichment falls back to safety net |
 | Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error   |
-| Bubble/triage cache hit        | Cached result returned immediately                   | Instant response                    |
-| Briefing cache hit             | Cached result from activity log                      | Instant page load                   |
+| Bubble cache hit               | Cached result returned immediately                   | Instant response                    |
 
 **No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway.
 
@@ -295,13 +274,11 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ### Implemented
 
-| Feature         | Description                                 | Model | Trigger               | Cache              |
-| --------------- | ------------------------------------------- | ----- | --------------------- | ------------------ |
-| Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —                  |
-| Bubble          | Surface easily overlooked tasks             | Haiku | 3 AM cron + on-demand | ai_activity_log    |
-| Daily briefing  | Structured daily overview at /briefing      | Haiku | On-demand page load   | ai_activity_log 4h |
-| AI triage       | Reorder tasks by AI-assessed importance     | Haiku | "AI Pick" filter chip | In-memory 5 min    |
-| Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —                  |
+| Feature         | Description                                 | Model | Trigger               | Cache           |
+| --------------- | ------------------------------------------- | ----- | --------------------- | --------------- |
+| Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —               |
+| Bubble          | Surface easily overlooked tasks             | Haiku | 3 AM cron + on-demand | ai_activity_log |
+| Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —               |
 
 ### Considered / Deferred
 
@@ -319,8 +296,6 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku` | Model for task enrichment                           |
 | `OPENTASK_AI_MAX_REUSES`              | `8`     | Max queries per warm enrichment subprocess          |
 | `OPENTASK_AI_BUBBLE_MODEL`            | `haiku` | Model for Bubble recommendations                    |
-| `OPENTASK_AI_BRIEFING_MODEL`          | `haiku` | Model for daily briefing                            |
-| `OPENTASK_AI_TRIAGE_MODEL`            | `haiku` | Model for AI triage                                 |
 | `OPENTASK_AI_SHOPPING_MODEL`          | `haiku` | Model for shopping label classification             |
 | `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000` | Timeout for SDK queries in milliseconds             |
 | `OPENTASK_AI_CLI_PATH`                | (auto)  | Path to Claude Code CLI executable                  |
@@ -336,21 +311,21 @@ No API key needed — the SDK uses Claude Code's authentication on the server.
 
 Every AI operation is logged in the `ai_activity_log` table:
 
-| Column        | Type    | Description                                                                          |
-| ------------- | ------- | ------------------------------------------------------------------------------------ |
-| `id`          | INTEGER | Primary key                                                                          |
-| `user_id`     | INTEGER | Who owns the task                                                                    |
-| `task_id`     | INTEGER | Which task (nullable for non-task operations)                                        |
-| `action`      | TEXT    | Operation type: `'enrich'`, `'bubble'`, `'briefing'`, `'triage'`, `'shopping_label'` |
-| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                                  |
-| `input`       | TEXT    | Raw input (e.g., original task text)                                                 |
-| `output`      | TEXT    | JSON result from AI                                                                  |
-| `model`       | TEXT    | Which model was used                                                                 |
-| `duration_ms` | INTEGER | How long the query took                                                              |
-| `error`       | TEXT    | Error message if failed                                                              |
-| `created_at`  | TEXT    | ISO 8601 timestamp                                                                   |
+| Column        | Type    | Description                                                |
+| ------------- | ------- | ---------------------------------------------------------- |
+| `id`          | INTEGER | Primary key                                                |
+| `user_id`     | INTEGER | Who owns the task                                          |
+| `task_id`     | INTEGER | Which task (nullable for non-task operations)              |
+| `action`      | TEXT    | Operation type: `'enrich'`, `'bubble'`, `'shopping_label'` |
+| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                        |
+| `input`       | TEXT    | Raw input (e.g., original task text)                       |
+| `output`      | TEXT    | JSON result from AI                                        |
+| `model`       | TEXT    | Which model was used                                       |
+| `duration_ms` | INTEGER | How long the query took                                    |
+| `error`       | TEXT    | Error message if failed                                    |
+| `created_at`  | TEXT    | ISO 8601 timestamp                                         |
 
-The briefing and Bubble features use this table for cache persistence.
+The Bubble feature uses this table for cache persistence.
 
 The History → AI tab shows enrichment slot status and recent activity entries for debugging and observability.
 

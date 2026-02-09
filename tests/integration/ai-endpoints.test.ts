@@ -16,16 +16,6 @@ describe('AI endpoints integration', () => {
       const res = await apiAnon('/api/ai/bubble')
       expect(res.status).toBe(401)
     })
-
-    test('GET /api/ai/briefing returns 401 without auth', async () => {
-      const res = await apiAnon('/api/ai/briefing')
-      expect(res.status).toBe(401)
-    })
-
-    test('GET /api/ai/triage returns 401 without auth', async () => {
-      const res = await apiAnon('/api/ai/triage')
-      expect(res.status).toBe(401)
-    })
   })
 
   describe('AI disabled (503)', () => {
@@ -49,22 +39,6 @@ describe('AI endpoints integration', () => {
       const res = await apiFetch('/api/ai/bubble?refresh=true')
       expect(res.status).toBe(503)
       const body = await res.json()
-      expect(body.code).toBe('SERVICE_UNAVAILABLE')
-    })
-
-    test('GET /api/ai/briefing returns 503', async () => {
-      const res = await apiFetch('/api/ai/briefing')
-      expect(res.status).toBe(503)
-      const body = await res.json()
-      expect(body.error).toBe('AI features are not enabled')
-      expect(body.code).toBe('SERVICE_UNAVAILABLE')
-    })
-
-    test('GET /api/ai/triage returns 503', async () => {
-      const res = await apiFetch('/api/ai/triage')
-      expect(res.status).toBe(503)
-      const body = await res.json()
-      expect(body.error).toBe('AI features are not enabled')
       expect(body.code).toBe('SERVICE_UNAVAILABLE')
     })
 
