@@ -32,8 +32,6 @@ export interface AIStatusData {
 const ACTION_LABELS: Record<string, string> = {
   enrich: 'Enrichment',
   bubble: 'Bubble',
-  briefing: 'Briefing',
-  triage: 'Triage',
   shopping_label: 'Shopping',
   whats_next: "What's Next",
 }
@@ -42,8 +40,6 @@ const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'enrich', label: 'Enrichment' },
   { value: 'bubble', label: 'Bubble' },
-  { value: 'briefing', label: 'Briefing' },
-  { value: 'triage', label: 'Triage' },
   { value: 'shopping_label', label: 'Shopping' },
 ]
 

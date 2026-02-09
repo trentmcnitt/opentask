@@ -2,7 +2,7 @@
  * AI request queue / semaphore
  *
  * Limits concurrent SDK subprocesses to prevent resource exhaustion.
- * Interactive AI features (What's Next, triage, briefing) plus background
+ * Interactive AI features (Bubble, shopping labels) plus background
  * enrichment could spawn unbounded subprocesses without this guard.
  */
 
