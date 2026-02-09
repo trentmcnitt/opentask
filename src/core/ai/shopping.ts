@@ -7,9 +7,8 @@
  */
 
 import { getDb } from '@/core/db'
-import { log } from '@/lib/logger'
 import { aiQuery } from './sdk'
-import { extractJsonFromText } from './parse-helpers'
+import { parseAIResponse } from './parse-helpers'
 import { SHOPPING_LABEL_SYSTEM_PROMPT } from './prompts'
 import { ShoppingLabelResultSchema } from './types'
 import { z } from 'zod'
@@ -59,23 +58,10 @@ Return the store section for this item.`
     inputText: taskTitle,
   })
 
-  if (!result.success || (!result.structuredOutput && !result.textResult)) {
-    log.error('ai', `Shopping label classification failed for "${taskTitle}"`)
-    return []
-  }
+  const parsed = parseAIResponse(result, ShoppingLabelResultSchema, 'Shopping label')
+  if (!parsed) return []
 
-  let output = result.structuredOutput
-  if (!output && result.textResult) {
-    output = extractJsonFromText(result.textResult)
-  }
-
-  const parsed = ShoppingLabelResultSchema.safeParse(output)
-  if (!parsed.success) {
-    log.error('ai', 'Invalid shopping label output:', parsed.error.message)
-    return []
-  }
-
-  return [parsed.data.section]
+  return [parsed.section]
 }
 
 /**

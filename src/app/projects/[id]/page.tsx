@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { TaskList } from '@/components/TaskList'
@@ -14,11 +14,9 @@ import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
 import { useTimezone } from '@/hooks/useTimezone'
-import { showToast } from '@/lib/toast'
-import { computeSnoozeTime } from '@/lib/snooze'
-import { useSnoozePreferences } from '@/components/LabelConfigProvider'
-import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
-import { taskWord } from '@/lib/utils'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useTaskCounts } from '@/hooks/useTaskCounts'
+import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -96,66 +94,20 @@ export default function ProjectDetailPage() {
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
-  const overdueCount = useMemo(() => {
-    const now = new Date()
-    return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
-  }, [tasks])
-
-  const todayCount = useMemo(() => {
-    const now = new Date()
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-    return tasks.filter((t) => {
-      if (!t.due_at) return false
-      const due = new Date(t.due_at)
-      return due >= startOfDay && due < endOfDay
-    }).length
-  }, [tasks])
-
-  const snoozableOverdueCount = useMemo(() => {
-    const now = new Date()
-    return displayTasks.filter(
-      (t) => t.due_at && new Date(t.due_at) < now && (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD,
-    ).length
-  }, [displayTasks])
-
-  const handleSnoozeAllOverdue = useCallback(
-    async (until?: string) => {
-      const now = new Date()
-      const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
-
-      if (overdueTasks.length === 0) {
-        showToast({ message: 'No overdue tasks' })
-        return
-      }
-
-      const snoozeUntil = until ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-
-      try {
-        const res = await fetch('/api/tasks/bulk/snooze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ids: overdueTasks.map((t) => t.id),
-            until: snoozeUntil,
-          }),
-        })
-        if (!res.ok) throw new Error('Snooze failed')
-        const responseData = await res.json()
-        const tasksAffected = responseData.data?.tasks_affected ?? 0
-        const tasksSkipped = responseData.data?.tasks_skipped ?? 0
-        fetchTasks()
-        const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
-        showToast({
-          message: `${tasksAffected} overdue ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
-          action: { label: 'Undo', onClick: actions.handleUndo },
-        })
-      } catch {
-        showToast({ message: 'Snooze failed' })
-      }
-    },
-    [displayTasks, fetchTasks, actions.handleUndo, timezone, defaultSnoozeOption, morningTime],
+  const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
+    tasks,
+    displayTasks,
+    timezone,
   )
+
+  const handleSnoozeAllOverdue = useSnoozeOverdue({
+    displayTasks,
+    fetchTasks,
+    handleUndo: actions.handleUndo,
+    timezone,
+    defaultSnoozeOption,
+    morningTime,
+  })
 
   if (status === 'loading' || loading) {
     return (

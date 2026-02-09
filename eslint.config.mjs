@@ -20,6 +20,11 @@ const eslintConfig = defineConfig([
       'max-depth': ['warn', 5],
       'max-nested-callbacks': ['warn', 4],
       'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+      // Allow destructure-to-exclude pattern: const { unwanted, ...rest } = obj
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
     },
   },
   prettier,

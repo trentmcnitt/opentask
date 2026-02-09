@@ -9,6 +9,7 @@ import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { ValidationError, ForbiddenError } from '@/core/errors'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
 import { formatDurationDelta } from '@/lib/format-date'
 import { getTaskById } from './create'
@@ -60,7 +61,7 @@ function validateBulkTasks(
   }
 
   if (failedIds.length > 0) {
-    throw new Error(`Invalid task IDs: ${failedIds.join(', ')}`)
+    throw new ValidationError(`Invalid task IDs: ${failedIds.join(', ')}`)
   }
 
   return tasks
@@ -188,17 +189,17 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   // Validate that exactly one mode is specified
   if (until === undefined && deltaMinutes === undefined) {
-    throw new Error('Either until or deltaMinutes must be provided')
+    throw new ValidationError('Either until or deltaMinutes must be provided')
   }
   if (until !== undefined && deltaMinutes !== undefined) {
-    throw new Error('Cannot provide both until and deltaMinutes')
+    throw new ValidationError('Cannot provide both until and deltaMinutes')
   }
 
   // Validate absolute snooze target if provided
   if (until !== undefined) {
     const snoozeTarget = new Date(until)
     if (isNaN(snoozeTarget.getTime())) {
-      throw new Error('Invalid snooze target datetime')
+      throw new ValidationError('Invalid snooze target datetime')
     }
   }
   // Note: We allow snoozing to past times - tasks will just appear overdue immediately.
@@ -344,7 +345,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         .prepare('SELECT owner_id, shared FROM projects WHERE id = ?')
         .get(changes.project_id) as { owner_id: number; shared: number } | undefined
       if (!project || (project.owner_id !== userId && project.shared !== 1)) {
-        throw new Error('Access denied to target project')
+        throw new ForbiddenError('Access denied to target project')
       }
     }
 

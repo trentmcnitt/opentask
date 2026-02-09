@@ -6,6 +6,7 @@ import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 
@@ -28,17 +29,17 @@ export function deleteTask(options: DeleteTaskOptions): Task {
   // Get current task state
   const task = getTaskById(taskId)
   if (!task) {
-    throw new Error('Task not found')
+    throw new NotFoundError('Task not found')
   }
 
   // Verify user has access
   if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
+    throw new ForbiddenError('Access denied')
   }
 
   // Cannot delete already trashed task
   if (task.deleted_at) {
-    throw new Error('Task is already in trash')
+    throw new ValidationError('Task is already in trash')
   }
 
   const now = nowUtc()
@@ -75,17 +76,17 @@ export function restoreTask(options: RestoreTaskOptions): Task {
   // Get current task state
   const task = getTaskById(taskId)
   if (!task) {
-    throw new Error('Task not found')
+    throw new NotFoundError('Task not found')
   }
 
   // Verify user has access
   if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
+    throw new ForbiddenError('Access denied')
   }
 
   // Cannot restore non-trashed task
   if (!task.deleted_at) {
-    throw new Error('Task is not in trash')
+    throw new ValidationError('Task is not in trash')
   }
 
   const now = nowUtc()

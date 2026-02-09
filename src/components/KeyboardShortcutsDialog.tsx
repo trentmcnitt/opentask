@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { isMacPlatform } from '@/lib/utils'
 
 interface KeyboardShortcutsDialogProps {
   open: boolean
@@ -44,8 +45,7 @@ export function KeyboardShortcutsDialog({
   onCloseAutoFocus,
 }: KeyboardShortcutsDialogProps) {
   const shortcuts = useMemo(() => {
-    const isMac =
-      typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
+    const isMac = isMacPlatform()
     return getShortcuts(isMac ? '⌘' : 'Ctrl')
   }, [])
 

@@ -3,6 +3,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { AppError } from '@/core/errors'
 import type { ErrorCode } from '@/types'
 
 /**
@@ -67,6 +68,13 @@ export function conflict(message: string, details?: Record<string, unknown>): Ne
 }
 
 /**
+ * 503 Service Unavailable - feature disabled or temporarily unavailable
+ */
+export function serviceUnavailable(message: string = 'Service unavailable'): NextResponse {
+  return error(message, 'SERVICE_UNAVAILABLE', 503)
+}
+
+/**
  * 500 Internal Server Error
  */
 export function internalError(message: string = 'Internal server error'): NextResponse {
@@ -90,27 +98,17 @@ export function handleZodError(err: unknown): NextResponse {
 }
 
 /**
- * Handle general errors from core operations
+ * Handle general errors from core operations.
+ *
+ * Typed errors (AppError subclasses) produce deterministic status codes.
+ * Plain Error instances return 500 with a generic message to avoid leaking internals.
  */
 export function handleError(err: unknown): NextResponse {
+  if (err instanceof AppError) {
+    return error(err.message, err.code, err.statusCode)
+  }
   if (err instanceof Error) {
-    const msg = err.message.toLowerCase()
-    // Check for specific error patterns
-    if (msg.includes('not found')) {
-      return notFound(err.message)
-    }
-    if (msg.includes('access denied') || msg.includes('forbidden')) {
-      return forbidden(err.message)
-    }
-    if (
-      msg.includes('invalid') ||
-      msg.includes('must be') ||
-      msg.includes('cannot') ||
-      msg.includes('already')
-    ) {
-      return badRequest(err.message)
-    }
-    return internalError(err.message)
+    return internalError('Internal server error')
   }
   return internalError('Unknown error')
 }

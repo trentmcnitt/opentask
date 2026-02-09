@@ -17,7 +17,7 @@ import {
   handleError,
   handleZodError,
 } from '@/lib/api-response'
-import { getDb } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { validateProjectUpdate } from '@/core/validation'
 import { log } from '@/lib/logger'
@@ -180,17 +180,21 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     const now = nowUtc()
 
-    // Move all tasks in this project to Inbox
-    db.prepare(
-      `
-      UPDATE tasks
-      SET project_id = ?, updated_at = ?
-      WHERE project_id = ?
-    `,
-    ).run(inbox.id, now, projectId)
+    withTransaction((txDb) => {
+      // Move all tasks in this project to Inbox
+      txDb
+        .prepare(
+          `
+        UPDATE tasks
+        SET project_id = ?, updated_at = ?
+        WHERE project_id = ?
+      `,
+        )
+        .run(inbox.id, now, projectId)
 
-    // Delete the project
-    db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+      // Delete the project
+      txDb.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+    })
 
     return success({
       message: 'Project deleted',

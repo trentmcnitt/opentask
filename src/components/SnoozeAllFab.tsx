@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Clock } from 'lucide-react'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
 
 interface SnoozeAllFabProps {
   overdueCount: number
@@ -22,43 +23,11 @@ export function SnoozeAllFab({
   onSnoozeOverdue,
 }: SnoozeAllFabProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const firedRef = useRef(false)
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [])
 
-  const handlePointerDown = useCallback(() => {
-    firedRef.current = false
-    timerRef.current = setTimeout(() => {
-      firedRef.current = true
-      setMenuOpen(true)
-    }, 400)
-  }, [])
-
-  // Primary trigger: quick tap detected via pointerup (not click),
-  // because stopPropagation on pointerdown can prevent click synthesis.
-  const handlePointerUp = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-    if (!firedRef.current) {
-      firedRef.current = true // suppress any subsequent click
-      onSnoozeOverdue()
-    }
-  }, [onSnoozeOverdue])
-
-  // Fallback for keyboard activation (Enter/Space)
-  const handleClick = useCallback(() => {
-    if (firedRef.current) {
-      firedRef.current = false
-      return
-    }
-    onSnoozeOverdue()
-  }, [onSnoozeOverdue])
+  const press = useSimpleLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onShortPress: () => onSnoozeOverdue(),
+  })
 
   if (overdueCount === 0 || isSelectionMode) return null
 
@@ -69,15 +38,10 @@ export function SnoozeAllFab({
       onSnooze={(until) => onSnoozeOverdue(until)}
     >
       <button
-        onClick={handleClick}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={() => {
-          if (timerRef.current) {
-            clearTimeout(timerRef.current)
-            timerRef.current = null
-          }
-        }}
+        onClick={press.onClick}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerLeave={press.onPointerLeave}
         aria-label={`Snooze ${overdueCount} overdue tasks (hold for options)`}
         className="fixed right-4 bottom-[calc(4rem+1.5rem)] z-40 flex size-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-600 active:bg-blue-700 md:hidden"
       >

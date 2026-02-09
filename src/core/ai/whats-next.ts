@@ -7,9 +7,8 @@
  */
 
 import { nowUtc } from '@/core/recurrence'
-import { log } from '@/lib/logger'
 import { aiQuery } from './sdk'
-import { extractJsonFromText } from './parse-helpers'
+import { parseAIResponse } from './parse-helpers'
 import { WHATS_NEXT_SYSTEM_PROMPT } from './prompts'
 import { WhatsNextResultSchema } from './types'
 import type { WhatsNextResult, TaskSummary } from './types'
@@ -77,53 +76,21 @@ Analyze these tasks and recommend 3-7 items to focus on right now.`
     inputText: `${tasks.length} tasks`,
   })
 
-  if (!result.success) {
-    log.error('ai', "What's Next generation failed:", result.error)
-    return null
-  }
-
-  if (!result.structuredOutput && !result.textResult) {
-    log.error('ai', "What's Next returned empty output")
-    return null
-  }
-
-  let output = result.structuredOutput
-  if (!output && result.textResult) {
-    output = extractJsonFromText(result.textResult)
-  }
-
-  const parsed = WhatsNextResultSchema.safeParse(output)
-
-  // If structured/JSON parsing failed, try extracting from markdown text.
-  // The model often returns numbered lists: "1. **[46] Title** — reason"
-  if (!parsed.success && result.textResult) {
-    const mdResult = parseMarkdownRecommendations(result.textResult)
-    if (mdResult) {
-      const taskIds = new Set(tasks.map((t) => t.id))
-      const validResult: WhatsNextResult = {
-        tasks: mdResult.tasks.filter((t) => taskIds.has(t.task_id)),
-        summary: mdResult.summary,
-      }
-      cache.set(userId, { result: validResult, timestamp: Date.now() })
-      return validResult
-    }
-    log.error('ai', "Invalid What's Next output:", parsed.error.message)
-    return null
-  }
-
-  if (!parsed.success) {
-    log.error('ai', "What's Next: no output to parse")
-    return null
-  }
+  const parsed = parseAIResponse(
+    result,
+    WhatsNextResultSchema,
+    "What's Next",
+    parseMarkdownRecommendations,
+  )
+  if (!parsed) return null
 
   // Filter to only include tasks that exist in the provided list
   const taskIds = new Set(tasks.map((t) => t.id))
   const validResult: WhatsNextResult = {
-    tasks: parsed.data.tasks.filter((t) => taskIds.has(t.task_id)),
-    summary: parsed.data.summary,
+    tasks: parsed.tasks.filter((t) => taskIds.has(t.task_id)),
+    summary: parsed.summary,
   }
 
-  // Cache the result
   cache.set(userId, { result: validResult, timestamp: Date.now() })
 
   return validResult

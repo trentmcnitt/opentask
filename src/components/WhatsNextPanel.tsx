@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronDown, ChevronRight, Sparkles, Loader2, RefreshCw } from 'lucide-react'
 import type { WhatsNextResult } from '@/core/ai/types'
 import type { Task } from '@/types'
@@ -46,11 +46,14 @@ export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextP
     }
   }, [])
 
+  const hasFetched = useRef(false)
   useEffect(() => {
+    if (hasFetched.current) return
     if (tasks.length > 0) {
+      hasFetched.current = true
       fetchRecommendations()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- fetch once on mount
+  }, [tasks.length, fetchRecommendations])
 
   const toggleCollapsed = () => {
     const next = !collapsed

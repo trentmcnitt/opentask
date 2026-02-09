@@ -17,7 +17,7 @@ import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recur
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { isAIEnabled, aiQuery } from './sdk'
-import { extractJsonFromText } from './parse-helpers'
+import { parseAIResponse } from './parse-helpers'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
@@ -285,7 +285,8 @@ Parse this task and return the structured result.`
     inputText: row.title,
   })
 
-  if (!result.success) {
+  const parsed = parseAIResponse(result, EnrichmentResultSchema, `Enrichment[${row.id}]`)
+  if (!parsed) {
     db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
       nowUtc(),
       row.id,
@@ -293,34 +294,7 @@ Parse this task and return the structured result.`
     return
   }
 
-  // Try structured output first, fall back to extracting JSON from text.
-  // Some model/SDK configurations return text with embedded JSON code blocks
-  // instead of using the structured output channel.
-  let output = result.structuredOutput
-  if (!output && result.textResult) {
-    output = extractJsonFromText(result.textResult)
-  }
-  if (!output) {
-    log.error('ai', `No structured output or parseable JSON for task ${row.id}`)
-    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
-      nowUtc(),
-      row.id,
-    )
-    return
-  }
-
-  // Validate the output against our schema
-  const parsed = EnrichmentResultSchema.safeParse(output)
-  if (!parsed.success) {
-    log.error('ai', `Invalid enrichment output for task ${row.id}:`, parsed.error.message)
-    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
-      nowUtc(),
-      row.id,
-    )
-    return
-  }
-
-  applyEnrichment(row, parsed.data, user)
+  applyEnrichment(row, parsed, user)
 
   // Post-enrichment: add shopping labels if the task is in a shopping project.
   // Check the resolved project (after enrichment may have moved it).

@@ -6,6 +6,7 @@ import {
   formatQuickSelectHeader,
   formatRelativeTime,
   formatDeltaText,
+  getDayLabel,
   snapToNextHour,
 } from '@/lib/quick-select-dates'
 
@@ -360,6 +361,15 @@ describe('snapToNextHour', () => {
     const now = new Date('2025-02-03T19:15:45.123Z')
     const result = snapToNextHour(now)
     expect(new Date(result).toISOString()).toBe('2025-02-03T20:00:00.000Z')
+  })
+})
+
+describe('getDayLabel DST', () => {
+  it('correctly labels "Yesterday" across spring-forward boundary', () => {
+    // March 10, 2025 in CDT — yesterday was March 9 (spring-forward day)
+    vi.setSystemTime(new Date('2025-03-10T12:00:00Z')) // 7 AM CDT
+    // 11 PM CST on March 9 = 05:00 UTC March 10 (right before midnight CDT)
+    expect(getDayLabel('2025-03-10T04:00:00.000Z', TZ)).toBe('Yesterday')
   })
 })
 

@@ -7,10 +7,9 @@
  */
 
 import { getDb } from '@/core/db'
-import { nowUtc } from '@/core/recurrence'
-import { log } from '@/lib/logger'
+import { nowUtc, utcToLocal, nowInTimezone } from '@/core/recurrence'
 import { aiQuery } from './sdk'
-import { extractJsonFromText } from './parse-helpers'
+import { parseAIResponse } from './parse-helpers'
 import { BRIEFING_SYSTEM_PROMPT } from './prompts'
 import { BriefingResultSchema } from './types'
 import type { BriefingResult, TaskSummary } from './types'
@@ -46,13 +45,17 @@ async function generateBriefing(
   timezone: string,
   tasks: TaskSummary[],
 ): Promise<BriefingResult | null> {
-  // Build task statistics for the prompt
+  // Build task statistics for the prompt.
+  // Use the user's timezone for "due today" comparison — server timezone may differ.
   const now = new Date()
+  const userNow = nowInTimezone(timezone)
+  const todayStr = userNow.toISODate()
   const overdueTasks = tasks.filter((t) => t.due_at && new Date(t.due_at) < now)
   const dueTodayTasks = tasks.filter((t) => {
     if (!t.due_at) return false
-    const due = new Date(t.due_at)
-    return due >= now && due.toDateString() === now.toDateString()
+    if (new Date(t.due_at) < now) return false // overdue, not "today"
+    const dueLocal = utcToLocal(t.due_at, timezone)
+    return dueLocal.toISODate() === todayStr
   })
   const recurringTasks = tasks.filter((t) => t.is_recurring)
   const highPriorityTasks = tasks.filter((t) => t.priority >= 3)
@@ -103,41 +106,9 @@ Generate a daily briefing for this user.`
     inputText: `${tasks.length} tasks`,
   })
 
-  if (!result.success) {
-    log.error('ai', 'Briefing generation failed:', result.error)
-    return null
-  }
+  const briefing = parseAIResponse(result, BriefingResultSchema, 'Briefing', parseTextBriefing)
 
-  if (!result.structuredOutput && !result.textResult) {
-    log.error('ai', 'Briefing returned empty output (no structured or text result)')
-    return null
-  }
-
-  let output = result.structuredOutput
-  if (!output && result.textResult) {
-    output = extractJsonFromText(result.textResult)
-  }
-
-  const parsed = BriefingResultSchema.safeParse(output)
-
-  // If structured/JSON parsing failed, build a simple briefing from the text.
-  // The model sometimes returns markdown instead of JSON.
-  if (!parsed.success && result.textResult) {
-    const textBriefing = parseTextBriefing(result.textResult)
-    if (textBriefing) {
-      cacheBriefing(userId, textBriefing)
-      return textBriefing
-    }
-    log.error('ai', 'Invalid briefing output:', parsed.error.message)
-    return null
-  }
-
-  if (!parsed.success) {
-    log.error('ai', 'Briefing: no output to parse')
-    return null
-  }
-
-  const briefing = parsed.data
+  if (!briefing) return null
 
   // Cache in the activity log for persistence
   cacheBriefing(userId, briefing)

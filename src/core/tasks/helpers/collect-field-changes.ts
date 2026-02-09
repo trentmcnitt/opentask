@@ -8,6 +8,7 @@
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
+import { NotFoundError, ForbiddenError } from '@/core/errors'
 
 /** Extended input type that supports additive/subtractive label operations */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -118,9 +119,9 @@ function collectBasicFields(
       const project = db
         .prepare('SELECT id, owner_id, shared FROM projects WHERE id = ?')
         .get(input.project_id) as { id: number; owner_id: number; shared: number } | undefined
-      if (!project) throw new Error('Project not found')
+      if (!project) throw new NotFoundError('Project not found')
       if (project.owner_id !== userId && project.shared !== 1) {
-        throw new Error('Access denied to project')
+        throw new ForbiddenError('Access denied to project')
       }
     }
     trackField(data, 'project_id', task.project_id, input.project_id)

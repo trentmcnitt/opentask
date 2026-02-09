@@ -11,14 +11,6 @@ import { showErrorToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 
-function isIOS(): boolean {
-  if (typeof window === 'undefined') return false
-  return (
-    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  )
-}
-
 interface CreateTaskPanelProps {
   open: boolean
   onClose: () => void

@@ -9,6 +9,7 @@ import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import { computeMarkDone, executeMarkDone } from './helpers'
@@ -37,22 +38,22 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   // Get current task state
   const task = getTaskById(taskId)
   if (!task) {
-    throw new Error('Task not found')
+    throw new NotFoundError('Task not found')
   }
 
   // Verify user has access
   if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
+    throw new ForbiddenError('Access denied')
   }
 
   // Cannot mark trashed task done
   if (task.deleted_at) {
-    throw new Error('Cannot mark trashed task done')
+    throw new ValidationError('Cannot mark trashed task done')
   }
 
   // Cannot mark already done one-off task done again
   if (task.done && !isRecurring(task.rrule)) {
-    throw new Error('Task is already done')
+    throw new ValidationError('Task is already done')
   }
 
   const completedAt = new Date()
@@ -104,22 +105,22 @@ export function markUndone(options: MarkDoneOptions): Task {
   // Get current task state
   const task = getTaskById(taskId)
   if (!task) {
-    throw new Error('Task not found')
+    throw new NotFoundError('Task not found')
   }
 
   // Verify user has access
   if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
+    throw new ForbiddenError('Access denied')
   }
 
   // Cannot undone a recurring task (use undo instead)
   if (isRecurring(task.rrule)) {
-    throw new Error('Cannot mark recurring task undone - use undo instead')
+    throw new ValidationError('Cannot mark recurring task undone - use undo instead')
   }
 
   // Must be done
   if (!task.done) {
-    throw new Error('Task is not done')
+    throw new ValidationError('Task is not done')
   }
 
   const nowStr = nowUtc()

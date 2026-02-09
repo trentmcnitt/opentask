@@ -10,6 +10,7 @@ import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
@@ -39,11 +40,11 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   const { userId, userTimezone, taskId, input, prefetchedTask } = options
 
   const task = prefetchedTask ?? getTaskById(taskId)
-  if (!task) throw new Error('Task not found')
+  if (!task) throw new NotFoundError('Task not found')
   if (!prefetchedTask) {
     // Only validate access if caller didn't pre-validate
-    if (!canUserAccessTask(userId, task)) throw new Error('Access denied')
-    if (task.deleted_at) throw new Error('Cannot edit trashed task')
+    if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
+    if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
   }
 
   const data = collectFieldChanges({

@@ -10,7 +10,7 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   rightBorder: false,
 }
 
-interface LabelConfigContextValue {
+interface PreferencesContextValue {
   labelConfig: LabelConfig[]
   setLabelConfig: (config: LabelConfig[]) => void
   priorityDisplay: PriorityDisplayConfig
@@ -21,9 +21,11 @@ interface LabelConfigContextValue {
   setDefaultSnoozeOption: (option: string) => void
   morningTime: string
   setMorningTime: (time: string) => void
+  defaultGrouping: 'time' | 'project'
+  setDefaultGrouping: (grouping: 'time' | 'project') => void
 }
 
-const LabelConfigContext = createContext<LabelConfigContextValue>({
+const PreferencesContext = createContext<PreferencesContextValue>({
   labelConfig: [],
   setLabelConfig: () => {},
   priorityDisplay: DEFAULT_PRIORITY_DISPLAY,
@@ -34,9 +36,11 @@ const LabelConfigContext = createContext<LabelConfigContextValue>({
   setDefaultSnoozeOption: () => {},
   morningTime: '09:00',
   setMorningTime: () => {},
+  defaultGrouping: 'time',
+  setDefaultGrouping: () => {},
 })
 
-export function LabelConfigProvider({ children }: { children: React.ReactNode }) {
+export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const [labelConfig, setLabelConfigState] = useState<LabelConfig[]>([])
   const [priorityDisplay, setPriorityDisplayState] =
@@ -44,6 +48,7 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
   const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
   const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
   const [morningTime, setMorningTimeState] = useState('09:00')
+  const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project'>('time')
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -65,12 +70,15 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         if (data?.data?.morning_time) {
           setMorningTimeState(data.data.morning_time)
         }
+        if (data?.data?.default_grouping) {
+          setDefaultGroupingState(data.data.default_grouping)
+        }
       })
       .catch(() => {})
   }, [status])
 
   return (
-    <LabelConfigContext.Provider
+    <PreferencesContext.Provider
       value={{
         labelConfig,
         setLabelConfig: setLabelConfigState,
@@ -82,29 +90,36 @@ export function LabelConfigProvider({ children }: { children: React.ReactNode })
         setDefaultSnoozeOption: setDefaultSnoozeOptionState,
         morningTime,
         setMorningTime: setMorningTimeState,
+        defaultGrouping,
+        setDefaultGrouping: setDefaultGroupingState,
       }}
     >
       {children}
-    </LabelConfigContext.Provider>
+    </PreferencesContext.Provider>
   )
 }
 
 export function useLabelConfig() {
-  return useContext(LabelConfigContext)
+  return useContext(PreferencesContext)
 }
 
 export function usePriorityDisplay() {
-  const { priorityDisplay, setPriorityDisplay } = useContext(LabelConfigContext)
+  const { priorityDisplay, setPriorityDisplay } = useContext(PreferencesContext)
   return { priorityDisplay, setPriorityDisplay }
 }
 
 export function useAutoSnoozeDefault() {
-  const { autoSnoozeDefault, setAutoSnoozeDefault } = useContext(LabelConfigContext)
+  const { autoSnoozeDefault, setAutoSnoozeDefault } = useContext(PreferencesContext)
   return { autoSnoozeDefault, setAutoSnoozeDefault }
 }
 
 export function useSnoozePreferences() {
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
-    useContext(LabelConfigContext)
+    useContext(PreferencesContext)
   return { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime }
+}
+
+export function useDefaultGrouping() {
+  const { defaultGrouping, setDefaultGrouping } = useContext(PreferencesContext)
+  return { defaultGrouping, setDefaultGrouping }
 }

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { X, Sparkles, Loader2 } from 'lucide-react'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
@@ -45,7 +46,7 @@ export function FilterBar({
 
   // Check if the date filter section will actually render badges (needs 2+ buckets).
   // Mirrors DueDateFilterBar's internal check so the divider isn't orphaned.
-  const dateFilterVisible = (() => {
+  const dateFilterVisible = useMemo(() => {
     if (!timezone || !onToggleDateFilter || tasks.length === 0) return false
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
@@ -57,7 +58,7 @@ export function FilterBar({
       if (allBuckets.size > 1) return true
     }
     return false
-  })()
+  }, [timezone, onToggleDateFilter, tasks])
 
   if (tasks.length === 0) return null
 

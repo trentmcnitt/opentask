@@ -5,7 +5,12 @@
  */
 
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { formatDueTimeParts, formatOriginalDueAt, formatDurationDelta } from '@/lib/format-date'
+import {
+  formatDueTimeParts,
+  formatOriginalDueAt,
+  formatDurationDelta,
+  getTimezoneDayBoundaries,
+} from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 
 const TZ = 'America/Chicago'
@@ -285,5 +290,69 @@ describe('formatRRuleCompact', () => {
   test('compact with anchor_time shows time', () => {
     expect(formatRRuleCompact('FREQ=DAILY', '14:30')).toBe('Daily at 2:30 PM')
     expect(formatRRuleCompact('FREQ=WEEKLY;BYDAY=FR', '09:00')).toBe('Fridays at 9:00 AM')
+  })
+})
+
+describe('getTimezoneDayBoundaries DST', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('spring-forward: tomorrowStart is 23h after todayStart', () => {
+    // March 9, 2025 is spring-forward in America/Chicago (CST → CDT).
+    // Clocks spring forward at 2:00 AM CST → 3:00 AM CDT, so this day is 23 hours long.
+    vi.setSystemTime(new Date('2025-03-09T12:00:00Z')) // 6 AM CST
+    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ)
+
+    // todayStart = midnight CST on March 9 = 06:00 UTC
+    expect(todayStart.toISOString()).toBe('2025-03-09T06:00:00.000Z')
+    // tomorrowStart = midnight CDT on March 10 = 05:00 UTC (CDT is UTC-5)
+    expect(tomorrowStart.toISOString()).toBe('2025-03-10T05:00:00.000Z')
+    // Difference should be 23 hours, not 24
+    const diffHours = (tomorrowStart.getTime() - todayStart.getTime()) / (60 * 60 * 1000)
+    expect(diffHours).toBe(23)
+  })
+
+  test('fall-back: tomorrowStart is 25h after todayStart', () => {
+    // Nov 2, 2025 is fall-back in America/Chicago (CDT → CST).
+    // Clocks fall back at 2:00 AM CDT → 1:00 AM CST, so this day is 25 hours long.
+    vi.setSystemTime(new Date('2025-11-02T12:00:00Z')) // 7 AM CDT
+    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ)
+
+    // todayStart = midnight CDT on Nov 2 = 05:00 UTC
+    expect(todayStart.toISOString()).toBe('2025-11-02T05:00:00.000Z')
+    // tomorrowStart = midnight CST on Nov 3 = 06:00 UTC (CST is UTC-6)
+    expect(tomorrowStart.toISOString()).toBe('2025-11-03T06:00:00.000Z')
+    // Difference should be 25 hours, not 24
+    const diffHours = (tomorrowStart.getTime() - todayStart.getTime()) / (60 * 60 * 1000)
+    expect(diffHours).toBe(25)
+  })
+
+  test('yesterdayStart is DST-safe', () => {
+    // March 10, 2025 (day after spring-forward)
+    vi.setSystemTime(new Date('2025-03-10T12:00:00Z')) // 7 AM CDT
+    const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(TZ)
+
+    // yesterdayStart = midnight CST on March 9 = 06:00 UTC
+    expect(yesterdayStart.toISOString()).toBe('2025-03-09T06:00:00.000Z')
+    // todayStart = midnight CDT on March 10 = 05:00 UTC
+    expect(todayStart.toISOString()).toBe('2025-03-10T05:00:00.000Z')
+    // Yesterday (the spring-forward day) was 23 hours long
+    const diffHours = (todayStart.getTime() - yesterdayStart.getTime()) / (60 * 60 * 1000)
+    expect(diffHours).toBe(23)
+  })
+
+  test('nextWeekStart is DST-safe across spring-forward', () => {
+    // March 5, 2025 — spring-forward happens March 9
+    vi.setSystemTime(new Date('2025-03-05T12:00:00Z')) // 6 AM CST
+    const { todayStart, nextWeekStart } = getTimezoneDayBoundaries(TZ)
+
+    // todayStart = midnight CST on March 5 = 06:00 UTC
+    expect(todayStart.toISOString()).toBe('2025-03-05T06:00:00.000Z')
+    // nextWeekStart = midnight CDT on March 12 = 05:00 UTC
+    expect(nextWeekStart.toISOString()).toBe('2025-03-12T05:00:00.000Z')
+    // 7 calendar days spanning DST: 6 normal days (144h) + 1 short day (23h) = 167h
+    const diffHours = (nextWeekStart.getTime() - todayStart.getTime()) / (60 * 60 * 1000)
+    expect(diffHours).toBe(167)
   })
 })

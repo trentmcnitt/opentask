@@ -7,7 +7,11 @@
  * arithmetic to survive DST transitions).
  */
 
-import { parseLocalDatetimeInput, getTimezoneDayBoundaries } from '@/lib/format-date'
+import {
+  parseLocalDatetimeInput,
+  parseInTimezone,
+  getTimezoneDayBoundaries,
+} from '@/lib/format-date'
 import { snapToHour } from '@/lib/snooze'
 
 /** Preset time slots (24h format in user's local timezone) */
@@ -73,9 +77,17 @@ export function snapToNextPreset(
     return todayAtPreset
   }
 
-  // Preset has passed — use tomorrow
-  const tomorrow = new Date(reference.getTime() + 24 * 60 * 60 * 1000)
-  return dateAtLocalTime(tomorrow, hour, minute, timezone)
+  // Preset has passed — use tomorrow (DST-safe: use calendar-day arithmetic)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+  }).formatToParts(reference)
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')
+  const tomorrowMidnight = parseInTimezone(get('year'), get('month'), get('day') + 1, timezone)
+  return dateAtLocalTime(tomorrowMidnight, hour, minute, timezone)
 }
 
 /**
@@ -145,8 +157,8 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
  */
 export function getDayLabel(isoUtc: string, timezone: string): string {
   const date = new Date(isoUtc)
-  const { todayStart, tomorrowStart, dayAfterTomorrowStart } = getTimezoneDayBoundaries(timezone)
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
+  const { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart } =
+    getTimezoneDayBoundaries(timezone)
 
   if (date >= yesterdayStart && date < todayStart) return 'Yesterday'
   if (date >= todayStart && date < tomorrowStart) return 'Today'

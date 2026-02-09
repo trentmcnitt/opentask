@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useCallback, useEffect, useState } from 'react'
+import { useLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
 import { Check, Clock, Repeat, Timer, TimerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { formatDueTimeParts, formatOriginalDueAt } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
-import { useLabelConfig, useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { useLabelConfig, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
@@ -52,97 +53,6 @@ import type { Task, LabelConfig } from '@/types'
  * Left border:   red=overdue (wins), blue=snoozed, none=default
  * Snooze button:  desktop only (hover) — mobile uses swipe
  */
-
-function useLongPress(onLongPress?: () => void) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const origin = useRef<{ x: number; y: number } | null>(null)
-  const fired = useRef(false)
-  const lastPointerType = useRef<string>('mouse')
-  const lastClickTime = useRef(0)
-  const doubleClicked = useRef(false)
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current)
-    }
-  }, [])
-
-  const cancel = useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
-    origin.current = null
-  }, [])
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      // Always track pointer type for click handler (touch vs mouse behavior)
-      lastPointerType.current = e.pointerType
-
-      // Double-click detection (mouse only — touch uses tap to select)
-      const now = Date.now()
-      if (e.pointerType === 'mouse' && now - lastClickTime.current < 300) {
-        doubleClicked.current = true
-      } else {
-        doubleClicked.current = false
-      }
-      lastClickTime.current = now
-
-      if (!onLongPress) return
-      fired.current = false
-      origin.current = { x: e.clientX, y: e.clientY }
-      timer.current = setTimeout(() => {
-        fired.current = true
-        onLongPress()
-      }, 400)
-    },
-    [onLongPress],
-  )
-
-  const onPointerUp = useCallback(() => {
-    cancel()
-  }, [cancel])
-
-  // Only cancel long-press if pointer moves >10px (ignore sub-pixel jitter)
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!timer.current || !origin.current) return
-    const dx = e.clientX - origin.current.x
-    const dy = e.clientY - origin.current.y
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
-  }, [])
-
-  /** True if the most recent pointer interaction triggered the long-press callback */
-  const didFire = useCallback(() => {
-    const result = fired.current
-    fired.current = false
-    return result
-  }, [])
-
-  /** True if the last interaction was a touch (not mouse/pen) */
-  const wasTouch = useCallback(() => lastPointerType.current === 'touch', [])
-
-  /** True if this is a double-click (two clicks within 300ms) */
-  const didDoubleClick = useCallback(() => {
-    const result = doubleClicked.current
-    doubleClicked.current = false
-    return result
-  }, [])
-
-  return {
-    onPointerDown,
-    onPointerUp,
-    onPointerMove,
-    onPointerLeave: cancel,
-    didFire,
-    wasTouch,
-    didDoubleClick,
-  }
-}
 
 interface TaskRowProps {
   task: Task
@@ -252,7 +162,7 @@ export function TaskRow({
   }, [])
   // Long-press: range-select when already in selection mode, otherwise toggle
   const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
-  const pointer = useLongPress(longPressAction)
+  const pointer = useLongPress({ onLongPress: longPressAction, trackDoubleClick: true })
 
   // Expose long-press cancel function to parent (SwipeableRow)
   useEffect(() => {

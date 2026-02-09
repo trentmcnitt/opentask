@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { SessionProvider } from '@/components/SessionProvider'
-import { LabelConfigProvider } from '@/components/LabelConfigProvider'
+import { PreferencesProvider } from '@/components/PreferencesProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -36,10 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={inter.variable}>
       <body className="bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
         <SessionProvider>
-          <LabelConfigProvider>
+          <PreferencesProvider>
             <AppLayoutWrapper>{children}</AppLayoutWrapper>
             <Toaster position="bottom-center" />
-          </LabelConfigProvider>
+          </PreferencesProvider>
         </SessionProvider>
       </body>
     </html>

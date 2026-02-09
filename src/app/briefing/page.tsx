@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Loader2, RefreshCw, CheckCircle2, Circle, Sparkles } from 'lucide-react'
@@ -57,31 +57,30 @@ export default function BriefingPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set())
+  const briefingRef = useRef(briefing)
+  briefingRef.current = briefing
 
-  const fetchBriefing = useCallback(
-    async (refresh = false) => {
-      if (refresh) setRefreshing(true)
-      else setLoading(true)
+  const fetchBriefing = useCallback(async (refresh = false) => {
+    if (refresh) setRefreshing(true)
+    else setLoading(true)
 
-      try {
-        const url = refresh ? '/api/ai/briefing?refresh=true' : '/api/ai/briefing'
-        const res = await fetch(url)
-        if (!res.ok) throw new Error('Failed to fetch briefing')
-        const json = await res.json()
-        if (json.data) {
-          setBriefing(json.data)
-        }
-      } catch {
-        if (!briefing) {
-          toast.error('Failed to generate briefing')
-        }
-      } finally {
-        setLoading(false)
-        setRefreshing(false)
+    try {
+      const url = refresh ? '/api/ai/briefing?refresh=true' : '/api/ai/briefing'
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Failed to fetch briefing')
+      const json = await res.json()
+      if (json.data) {
+        setBriefing(json.data)
       }
-    },
-    [briefing],
-  )
+    } catch {
+      if (!briefingRef.current) {
+        toast.error('Failed to generate briefing')
+      }
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (status === 'loading') return
@@ -90,7 +89,7 @@ export default function BriefingPage() {
       return
     }
     fetchBriefing()
-  }, [status, router]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, router, fetchBriefing])
 
   const handleDone = async (taskId: number) => {
     setCompletedIds((prev) => new Set([...prev, taskId]))

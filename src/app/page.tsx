@@ -19,20 +19,35 @@ import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
 import { showToast } from '@/lib/toast'
-import { computeSnoozeTime } from '@/lib/snooze'
-import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { useSnoozePreferences, useDefaultGrouping } from '@/components/PreferencesProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
+import { useTaskCounts } from '@/hooks/useTaskCounts'
+import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import type { DueDateFilter } from '@/components/DueDateFilterBar'
-import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
-import { taskWord } from '@/lib/utils'
+import { taskWord, isMacPlatform } from '@/lib/utils'
 import WhatsNextPanel from '@/components/WhatsNextPanel'
+
+/** Check if click/touch target is inside a zone that handles its own interaction */
+function isInsideInteractiveZone(target: HTMLElement) {
+  return (
+    target.closest('[role="listbox"]') !== null ||
+    target.closest('[id^="task-row-"]') !== null ||
+    target.closest('[role="dialog"]') !== null ||
+    target.closest('[data-selection-sheet]') !== null ||
+    target.closest('button') !== null ||
+    target.closest('a') !== null ||
+    target.closest('input') !== null ||
+    target.closest('textarea') !== null ||
+    target.closest('select') !== null
+  )
+}
 
 export default function Home() {
   return (
@@ -302,7 +317,7 @@ function HomeContent() {
     selectedCount: selection.selectedIds.size,
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
-  const [grouping, setGrouping] = useState<GroupingMode>('project')
+  const { defaultGrouping: grouping } = useDefaultGrouping()
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
@@ -492,7 +507,7 @@ function HomeContent() {
   // Global keyboard shortcuts for jumping into task list
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const isMac = isMacPlatform()
       const cmdKey = isMac ? e.metaKey : e.ctrlKey
 
       // Don't intercept when user is in an input, textarea, or contenteditable
@@ -686,17 +701,6 @@ function HomeContent() {
   useEffect(() => {
     if (!selection.isSelectionMode) return
 
-    const isInsideInteractiveZone = (target: HTMLElement) =>
-      target.closest('[role="listbox"]') !== null ||
-      target.closest('[id^="task-row-"]') !== null ||
-      target.closest('[role="dialog"]') !== null ||
-      target.closest('[data-selection-sheet]') !== null ||
-      target.closest('button') !== null ||
-      target.closest('a') !== null ||
-      target.closest('input') !== null ||
-      target.closest('textarea') !== null ||
-      target.closest('select') !== null
-
     const handleDblClick = (e: MouseEvent) => {
       if (!isInsideInteractiveZone(e.target as HTMLElement)) {
         selection.clear()
@@ -713,17 +717,6 @@ function HomeContent() {
 
     const LONG_PRESS_MS = 400
     const JITTER_PX = 10
-
-    const isInsideInteractiveZone = (target: HTMLElement) =>
-      target.closest('[role="listbox"]') !== null ||
-      target.closest('[id^="task-row-"]') !== null ||
-      target.closest('[role="dialog"]') !== null ||
-      target.closest('[data-selection-sheet]') !== null ||
-      target.closest('button') !== null ||
-      target.closest('a') !== null ||
-      target.closest('input') !== null ||
-      target.closest('textarea') !== null ||
-      target.closest('select') !== null
 
     let timerId: ReturnType<typeof setTimeout> | null = null
     let startX = 0
@@ -767,63 +760,14 @@ function HomeContent() {
     }
   }, [selection])
 
-  // Fetch saved grouping preference on mount
-  useEffect(() => {
-    if (status !== 'authenticated') return
-    let cancelled = false
-    fetch('/api/user/preferences')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data?.data?.default_grouping) return
-        setGrouping(data.data.default_grouping)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [status])
-
-  // Snooze all overdue tasks in the current filtered view (respects label/search filters).
-  // Sends all overdue task IDs to the server — the server's filterMixedPriorityForSnooze
-  // handles skipping high/urgent tasks in mixed-priority groups.
-  // The `until` param allows SnoozeAllFab long-press menu to override the default duration.
-  const handleSnoozeAllOverdue = useCallback(
-    async (until?: string) => {
-      const now = new Date()
-      const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
-
-      if (overdueTasks.length === 0) {
-        showToast({ message: 'No overdue tasks' })
-        return
-      }
-
-      const snoozeUntil = until ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-
-      try {
-        const res = await fetch('/api/tasks/bulk/snooze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ids: overdueTasks.map((t) => t.id),
-            until: snoozeUntil,
-          }),
-        })
-        if (!res.ok) throw new Error('Snooze failed')
-        const responseData = await res.json()
-        const tasksAffected = responseData.data?.tasks_affected ?? 0
-        const tasksSkipped = responseData.data?.tasks_skipped ?? 0
-        fetchTasks()
-        const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
-        showToast({
-          message: `${tasksAffected} overdue ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
-          action: { label: 'Undo', onClick: actions.handleUndo },
-        })
-      } catch {
-        showToast({ message: 'Snooze failed' })
-      }
-    },
-    [displayTasks, fetchTasks, actions.handleUndo, timezone, defaultSnoozeOption, morningTime],
-  )
+  const handleSnoozeAllOverdue = useSnoozeOverdue({
+    displayTasks,
+    fetchTasks,
+    handleUndo: actions.handleUndo,
+    timezone,
+    defaultSnoozeOption,
+    morningTime,
+  })
 
   const bulk = useBulkActions(
     selection,
@@ -834,30 +778,11 @@ function HomeContent() {
     setSearchResults,
   )
 
-  const overdueCount = useMemo(() => {
-    const now = new Date()
-    return tasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
-  }, [tasks])
-
-  // Count of overdue tasks from the filtered view (respects label/search filters).
-  // Excludes high/urgent tasks since they are blocked from bulk snooze.
-  const snoozableOverdueCount = useMemo(() => {
-    const now = new Date()
-    return displayTasks.filter(
-      (t) => t.due_at && new Date(t.due_at) < now && (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD,
-    ).length
-  }, [displayTasks])
-
-  const todayCount = useMemo(() => {
-    const now = new Date()
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-    return tasks.filter((t) => {
-      if (!t.due_at) return false
-      const due = new Date(t.due_at)
-      return due >= startOfDay && due < endOfDay
-    }).length
-  }, [tasks])
+  const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
+    tasks,
+    displayTasks,
+    timezone,
+  )
 
   // Compute selected tasks for bulk operations
   const selectedTasks = useMemo(() => {

@@ -13,7 +13,7 @@ import {
   usePriorityDisplay,
   useAutoSnoozeDefault,
   useSnoozePreferences,
-} from '@/components/LabelConfigProvider'
+} from '@/components/PreferencesProvider'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'

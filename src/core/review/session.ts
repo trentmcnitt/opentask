@@ -8,6 +8,7 @@
 import { v4 as uuid } from 'uuid'
 import { getTasks } from '@/core/tasks'
 import type { Task } from '@/types'
+import { NotFoundError, ValidationError } from '@/core/errors'
 
 interface ReviewSession {
   id: string
@@ -114,19 +115,19 @@ export function resolveSeqNumbers(session: ReviewSession, specs: string[]): numb
       const start = parseInt(startStr)
       const end = parseInt(endStr)
       if (isNaN(start) || isNaN(end) || start > end) {
-        throw new Error(`Invalid range: ${spec}`)
+        throw new ValidationError(`Invalid range: ${spec}`)
       }
       for (let i = start; i <= end; i++) {
         const taskId = session.mapping.get(i)
         if (taskId) taskIds.push(taskId)
-        else throw new Error(`No task with number ${i}`)
+        else throw new NotFoundError(`No task with number ${i}`)
       }
     } else {
       const num = parseInt(spec)
-      if (isNaN(num)) throw new Error(`Invalid number: ${spec}`)
+      if (isNaN(num)) throw new ValidationError(`Invalid number: ${spec}`)
       const taskId = session.mapping.get(num)
       if (taskId) taskIds.push(taskId)
-      else throw new Error(`No task with number ${num}`)
+      else throw new NotFoundError(`No task with number ${num}`)
     }
   }
 

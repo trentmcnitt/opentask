@@ -6,9 +6,8 @@
  */
 
 import { nowUtc } from '@/core/recurrence'
-import { log } from '@/lib/logger'
 import { aiQuery } from './sdk'
-import { extractJsonFromText } from './parse-helpers'
+import { parseAIResponse } from './parse-helpers'
 import { TRIAGE_SYSTEM_PROMPT } from './prompts'
 import { TriageResultSchema } from './types'
 import type { TriageResult, TaskSummary } from './types'
@@ -76,55 +75,30 @@ Return these tasks ordered by importance (most important first).`
     inputText: `${tasks.length} tasks`,
   })
 
-  if (!result.success) {
-    log.error('ai', 'Triage failed:', result.error)
-    return null
-  }
-
-  if (!result.structuredOutput && !result.textResult) {
-    log.error('ai', 'Triage returned empty output')
-    return null
-  }
-
-  let output = result.structuredOutput
-  if (!output && result.textResult) {
-    output = extractJsonFromText(result.textResult)
-  }
-
-  const parsed = TriageResultSchema.safeParse(output)
-
-  // If structured/JSON parsing failed, try extracting task IDs from markdown.
-  // The model often returns: "1. [46] Task Title" or "1. **[46]** ..."
-  if (!parsed.success && result.textResult) {
+  /** Markdown fallback: extract [N] task ID patterns from numbered/bulleted lists */
+  const parseTriageText = (text: string): TriageResult | null => {
     const idPattern = /\[(\d+)\]/g
     const ids: number[] = []
     let idMatch
-    while ((idMatch = idPattern.exec(result.textResult)) !== null) {
+    while ((idMatch = idPattern.exec(text)) !== null) {
       ids.push(parseInt(idMatch[1], 10))
     }
-    if (ids.length > 0) {
-      const validIds = new Set(tasks.map((t) => t.id))
-      const triageResult: TriageResult = {
-        ordered_task_ids: ids.filter((id) => validIds.has(id)),
-        reasoning: 'AI-ordered by importance',
-      }
-      cache.set(userId, { result: triageResult, timestamp: Date.now() })
-      return triageResult
+    if (ids.length === 0) return null
+    const validIds = new Set(tasks.map((t) => t.id))
+    return {
+      ordered_task_ids: ids.filter((id) => validIds.has(id)),
+      reasoning: 'AI-ordered by importance',
     }
-    log.error('ai', 'Invalid triage output:', parsed.error.message)
-    return null
   }
 
-  if (!parsed.success) {
-    log.error('ai', 'Triage: no output to parse')
-    return null
-  }
+  const parsed = parseAIResponse(result, TriageResultSchema, 'Triage', parseTriageText)
+  if (!parsed) return null
 
-  // Filter to valid task IDs
+  // Filter to valid task IDs (the model may reference stale IDs)
   const validIds = new Set(tasks.map((t) => t.id))
   const triageResult: TriageResult = {
-    ordered_task_ids: parsed.data.ordered_task_ids.filter((id) => validIds.has(id)),
-    reasoning: parsed.data.reasoning,
+    ordered_task_ids: parsed.ordered_task_ids.filter((id) => validIds.has(id)),
+    reasoning: parsed.reasoning,
   }
 
   cache.set(userId, { result: triageResult, timestamp: Date.now() })

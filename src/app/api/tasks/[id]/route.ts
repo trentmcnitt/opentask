@@ -111,7 +111,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     })
 
     return success({
-      ...task,
+      ...formatTaskResponse(task),
       message: 'Task moved to trash',
     })
   } catch (err) {

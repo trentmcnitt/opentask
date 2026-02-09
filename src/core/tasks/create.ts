@@ -8,6 +8,7 @@ import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { incrementDailyStat } from '@/core/stats'
+import { NotFoundError, ForbiddenError } from '@/core/errors'
 import { isAIEnabled } from '@/core/ai'
 
 export interface CreateTaskOptions {
@@ -42,10 +43,10 @@ export function createTask(options: CreateTaskOptions): Task {
     .prepare('SELECT id, owner_id, shared FROM projects WHERE id = ?')
     .get(projectId) as { id: number; owner_id: number; shared: number } | undefined
   if (!project) {
-    throw new Error('Project not found')
+    throw new NotFoundError('Project not found')
   }
   if (project.owner_id !== userId && project.shared !== 1) {
-    throw new Error('Access denied to project')
+    throw new ForbiddenError('Access denied to project')
   }
 
   // Compute due_at if rrule provided but no due_at

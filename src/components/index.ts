@@ -35,7 +35,4 @@ export { OfflineBanner } from './OfflineBanner'
 // Providers
 export { SessionProvider } from './SessionProvider'
 export { SelectionProvider, useSelection } from './SelectionProvider'
-export { LabelConfigProvider, useLabelConfig, usePriorityDisplay } from './LabelConfigProvider'
-
-// Label components
-export { LabelPicker } from './LabelPicker'
+export { PreferencesProvider, useLabelConfig, usePriorityDisplay } from './PreferencesProvider'

@@ -5,7 +5,8 @@
  * Uses Intl.DateTimeFormat for browser-native formatting — no extra dependencies.
  */
 
-interface DayBoundaries {
+export interface DayBoundaries {
+  yesterdayStart: Date
   todayStart: Date
   tomorrowStart: Date
   dayAfterTomorrowStart: Date
@@ -36,23 +37,33 @@ export function getTimezoneDayBoundaries(timezone: string): DayBoundaries {
 
   // Build a date string that represents midnight in the user's timezone,
   // then parse it as that timezone to get the correct UTC instant.
+  // Uses parseInTimezone for each boundary so DST transitions (23h or 25h days)
+  // are handled correctly — ms arithmetic would be off by ±1 hour on DST days.
+  const yesterdayStart = parseInTimezone(year, month, day - 1, timezone)
   const todayStart = parseInTimezone(year, month, day, timezone)
-  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
-  const dayAfterTomorrowStart = new Date(tomorrowStart.getTime() + 24 * 60 * 60 * 1000)
-  const nextWeekStart = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const tomorrowStart = parseInTimezone(year, month, day + 1, timezone)
+  const dayAfterTomorrowStart = parseInTimezone(year, month, day + 2, timezone)
+  const nextWeekStart = parseInTimezone(year, month, day + 7, timezone)
 
-  return { todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart }
+  return { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart }
 }
 
 /**
  * Parse a date at midnight in a given timezone, returning a UTC Date.
  */
-function parseInTimezone(year: number, month: number, day: number, timezone: string): Date {
-  // Create a date in UTC, then adjust by the timezone offset
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+export function parseInTimezone(year: number, month: number, day: number, timezone: string): Date {
+  // Date.UTC auto-normalizes overflow (e.g. day=32 → next month, day=0 → last day of prev month)
+  const normalized = new Date(Date.UTC(year, month - 1, day, 0, 0, 0))
+  const normY = normalized.getUTCFullYear()
+  const normM = normalized.getUTCMonth() + 1
+  const normD = normalized.getUTCDate()
 
-  // Format back in the target timezone to find the offset
-  const formatted = new Intl.DateTimeFormat('en-US', {
+  // Probe at noon UTC on the target date to discover the timezone offset.
+  // Noon is far enough from midnight that local and UTC are almost always on the
+  // same calendar day, avoiding wrap-around in the offset calculation.
+  const noonUtc = new Date(Date.UTC(normY, normM - 1, normD, 12, 0, 0))
+
+  const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -61,22 +72,37 @@ function parseInTimezone(year: number, month: number, day: number, timezone: str
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  }).formatToParts(utcGuess)
+  })
 
-  const get = (type: string) => parseInt(formatted.find((p) => p.type === type)?.value ?? '0')
-  // Use raw hour for offset calculation (hour=24 means midnight of next day,
-  // which is correct for computing the UTC offset at the guess point)
-  const localH = get('hour')
-  const localM = get('minute')
+  // Compute offset using full datetime difference (not just hours) to avoid
+  // wrap-around errors when local and UTC dates differ.
+  const offsetMsAt = (instant: Date): number => {
+    const parts = fmt.formatToParts(instant)
+    const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')
+    const localMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'))
+    const utcMs = Date.UTC(
+      instant.getUTCFullYear(),
+      instant.getUTCMonth(),
+      instant.getUTCDate(),
+      instant.getUTCHours(),
+      instant.getUTCMinutes(),
+    )
+    return localMs - utcMs
+  }
 
-  // The offset is: local time - UTC time (at the guess point)
-  const utcH = utcGuess.getUTCHours()
-  const utcM = utcGuess.getUTCMinutes()
-  const offsetMs = (localH - utcH) * 60 * 60 * 1000 + (localM - utcM) * 60 * 1000
+  // Step 1: approximate midnight using the offset at noon
+  const noonOffset = offsetMsAt(noonUtc)
+  const midnightAsUtc = new Date(Date.UTC(normY, normM - 1, normD, 0, 0, 0))
+  const approxMidnight = new Date(midnightAsUtc.getTime() - noonOffset)
 
-  // Midnight local = start of day in the timezone
-  const midnightLocal = new Date(Date.UTC(year, month - 1, day, 0, 0, 0))
-  return new Date(midnightLocal.getTime() - offsetMs)
+  // Step 2: verify offset at the approximate midnight itself.
+  // On DST transition days the offset at midnight may differ from noon
+  // (e.g. spring-forward at 2 AM: midnight is still in standard time).
+  const midnightOffset = offsetMsAt(approxMidnight)
+  if (midnightOffset === noonOffset) {
+    return approxMidnight
+  }
+  return new Date(midnightAsUtc.getTime() - midnightOffset)
 }
 
 /**
@@ -130,14 +156,14 @@ export interface DueTimeParts {
 export function formatDueTimeParts(isoUtc: string, timezone: string): DueTimeParts {
   const due = new Date(isoUtc)
   const now = new Date()
-  const { todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
+  const { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
     getTimezoneDayBoundaries(timezone)
 
   const time = formatTimeInZone(due, timezone)
 
   // Overdue — due is in the past
   if (due < now) {
-    return formatOverdue(due, now, todayStart, timezone, time)
+    return formatOverdue(due, now, todayStart, yesterdayStart, timezone, time)
   }
 
   // Today, future
@@ -181,6 +207,7 @@ function formatOverdue(
   due: Date,
   now: Date,
   todayStart: Date,
+  yesterdayStart: Date,
   timezone: string,
   time: string,
 ): DueTimeParts {
@@ -201,7 +228,6 @@ function formatOverdue(
   }
 
   // Yesterday
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
   if (due >= yesterdayStart) {
     return { relative: 'yesterday', absolute: time }
   }

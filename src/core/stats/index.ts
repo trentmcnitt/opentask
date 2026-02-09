@@ -7,6 +7,7 @@
 import { getDb } from '@/core/db'
 import { DateTime } from 'luxon'
 import type { DailyStat, StatsSummary } from '@/types'
+import { ValidationError } from '@/core/errors'
 
 export type StatType = 'completions' | 'tasks_created' | 'snoozes'
 
@@ -31,7 +32,7 @@ export function incrementDailyStat(
 ): void {
   // Runtime validation to prevent SQL injection (defense-in-depth)
   if (!VALID_STAT_TYPES.includes(statType)) {
-    throw new Error(`Invalid stat type: ${statType}`)
+    throw new ValidationError(`Invalid stat type: ${statType}`)
   }
 
   const db = getDb()

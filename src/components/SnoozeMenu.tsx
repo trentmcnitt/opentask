@@ -11,7 +11,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 

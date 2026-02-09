@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ChevronLeft, Clock, Undo2, Redo2, Menu, Keyboard, Settings, Sparkles } from 'lucide-react'
@@ -19,7 +20,7 @@ import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
-import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
 
 interface HeaderProps {
@@ -64,106 +65,22 @@ export function Header({
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
-  const snoozeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const snoozeFiredRef = useRef(false)
   const { defaultSnoozeOption } = useSnoozePreferences()
 
-  // Long-press refs for undo/redo buttons
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const undoFiredRef = useRef(false)
-  const redoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const redoFiredRef = useRef(false)
+  const snoozePress = useSimpleLongPress({
+    onLongPress: () => setSnoozeMenuOpen(true),
+    onShortPress: () => onSnoozeOverdue?.(),
+  })
 
-  useEffect(() => {
-    return () => {
-      if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-      if (redoTimerRef.current) clearTimeout(redoTimerRef.current)
-    }
-  }, [])
+  const undoPress = useSimpleLongPress({
+    onLongPress: () => onBatchUndo?.(),
+    onShortPress: () => onUndo(),
+  })
 
-  const handleSnoozePointerDown = useCallback(() => {
-    snoozeFiredRef.current = false
-    snoozeTimerRef.current = setTimeout(() => {
-      snoozeFiredRef.current = true
-      setSnoozeMenuOpen(true)
-    }, 400)
-  }, [])
-
-  const handleSnoozePointerUp = useCallback(() => {
-    if (snoozeTimerRef.current) {
-      clearTimeout(snoozeTimerRef.current)
-      snoozeTimerRef.current = null
-    }
-    if (!snoozeFiredRef.current) {
-      snoozeFiredRef.current = true
-      onSnoozeOverdue?.()
-    }
-  }, [onSnoozeOverdue])
-
-  const handleSnoozeClick = useCallback(() => {
-    if (snoozeFiredRef.current) {
-      snoozeFiredRef.current = false
-      return
-    }
-    onSnoozeOverdue?.()
-  }, [onSnoozeOverdue])
-
-  // Long-press handlers for undo button (mobile)
-  const handleUndoPointerDown = useCallback(() => {
-    undoFiredRef.current = false
-    undoTimerRef.current = setTimeout(() => {
-      undoFiredRef.current = true
-      onBatchUndo?.()
-    }, 400)
-  }, [onBatchUndo])
-
-  const handleUndoPointerUp = useCallback(() => {
-    if (undoTimerRef.current) {
-      clearTimeout(undoTimerRef.current)
-      undoTimerRef.current = null
-    }
-    if (!undoFiredRef.current) {
-      undoFiredRef.current = true
-      onUndo()
-    }
-  }, [onUndo])
-
-  const handleUndoClick = useCallback(() => {
-    if (undoFiredRef.current) {
-      undoFiredRef.current = false
-      return
-    }
-    onUndo()
-  }, [onUndo])
-
-  // Long-press handlers for redo button (mobile)
-  const handleRedoPointerDown = useCallback(() => {
-    redoFiredRef.current = false
-    redoTimerRef.current = setTimeout(() => {
-      redoFiredRef.current = true
-      onBatchRedo?.()
-    }, 400)
-  }, [onBatchRedo])
-
-  const handleRedoPointerUp = useCallback(() => {
-    if (redoTimerRef.current) {
-      clearTimeout(redoTimerRef.current)
-      redoTimerRef.current = null
-    }
-    if (!redoFiredRef.current) {
-      redoFiredRef.current = true
-      onRedo()
-    }
-  }, [onRedo])
-
-  const handleRedoClick = useCallback(() => {
-    if (redoFiredRef.current) {
-      redoFiredRef.current = false
-      return
-    }
-    onRedo()
-  }, [onRedo])
+  const redoPress = useSimpleLongPress({
+    onLongPress: () => onBatchRedo?.(),
+    onShortPress: () => onRedo(),
+  })
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -298,15 +215,10 @@ export function Header({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={handleSnoozeClick}
-                  onPointerDown={handleSnoozePointerDown}
-                  onPointerUp={handleSnoozePointerUp}
-                  onPointerLeave={() => {
-                    if (snoozeTimerRef.current) {
-                      clearTimeout(snoozeTimerRef.current)
-                      snoozeTimerRef.current = null
-                    }
-                  }}
+                  onClick={snoozePress.onClick}
+                  onPointerDown={snoozePress.onPointerDown}
+                  onPointerUp={snoozePress.onPointerUp}
+                  onPointerLeave={snoozePress.onPointerLeave}
                   aria-label={`Snooze ${snoozableOverdueCount} overdue tasks (hold for options)`}
                   className="relative hidden md:inline-flex"
                 >
@@ -330,15 +242,10 @@ export function Header({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={handleUndoClick}
-                    onPointerDown={handleUndoPointerDown}
-                    onPointerUp={handleUndoPointerUp}
-                    onPointerLeave={() => {
-                      if (undoTimerRef.current) {
-                        clearTimeout(undoTimerRef.current)
-                        undoTimerRef.current = null
-                      }
-                    }}
+                    onClick={undoPress.onClick}
+                    onPointerDown={undoPress.onPointerDown}
+                    onPointerUp={undoPress.onPointerUp}
+                    onPointerLeave={undoPress.onPointerLeave}
                     aria-label={
                       undoCount > 0 ? `Undo (${undoCount} available, hold for all)` : 'Undo'
                     }
@@ -359,15 +266,10 @@ export function Header({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={handleRedoClick}
-                    onPointerDown={handleRedoPointerDown}
-                    onPointerUp={handleRedoPointerUp}
-                    onPointerLeave={() => {
-                      if (redoTimerRef.current) {
-                        clearTimeout(redoTimerRef.current)
-                        redoTimerRef.current = null
-                      }
-                    }}
+                    onClick={redoPress.onClick}
+                    onPointerDown={redoPress.onPointerDown}
+                    onPointerUp={redoPress.onPointerUp}
+                    onPointerLeave={redoPress.onPointerLeave}
                     aria-label={
                       redoCount > 0 ? `Redo (${redoCount} available, hold for all)` : 'Redo'
                     }

@@ -7,6 +7,7 @@
  */
 
 import type { Task } from '@/types'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask, updateTask } from './update'
 
@@ -36,27 +37,27 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // Pre-validation (snooze-specific checks)
   const task = getTaskById(taskId)
   if (!task) {
-    throw new Error('Task not found')
+    throw new NotFoundError('Task not found')
   }
 
   if (!canUserAccessTask(userId, task)) {
-    throw new Error('Access denied')
+    throw new ForbiddenError('Access denied')
   }
 
   // Validate snooze target is a valid datetime
   const snoozeTarget = new Date(until)
   if (isNaN(snoozeTarget.getTime())) {
-    throw new Error('Invalid snooze target datetime')
+    throw new ValidationError('Invalid snooze target datetime')
   }
   // Note: We allow snoozing to past times - the task will just appear overdue immediately.
   // This lets users adjust due dates freely using the increment/decrement controls.
 
   // Only active tasks can be snoozed (SN-005)
   if (task.done) {
-    throw new Error('Cannot snooze done task')
+    throw new ValidationError('Cannot snooze done task')
   }
   if (task.deleted_at) {
-    throw new Error('Cannot snooze trashed task')
+    throw new ValidationError('Cannot snooze trashed task')
   }
 
   const previousDueAt = task.due_at

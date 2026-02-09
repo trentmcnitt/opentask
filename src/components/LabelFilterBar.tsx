@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { useLabelConfig } from '@/components/LabelConfigProvider'
+import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'

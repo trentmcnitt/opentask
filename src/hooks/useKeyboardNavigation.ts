@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import type { SelectionContextType } from '@/components/SelectionProvider'
 import { debug } from '@/lib/logger'
+import { isMacPlatform } from '@/lib/utils'
 
 /**
  * Keyboard Navigation for Task List
@@ -238,7 +239,7 @@ export function useKeyboardNavigation({
       })
       if (!enabled) return
 
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+      const isMac = isMacPlatform()
       const cmdKey = isMac ? e.metaKey : e.ctrlKey
 
       switch (e.key) {

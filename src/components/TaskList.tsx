@@ -19,7 +19,7 @@ import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { useSnoozePreferences } from '@/components/LabelConfigProvider'
+import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 
 export type GroupingMode = 'time' | 'project'
