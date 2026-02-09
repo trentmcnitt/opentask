@@ -335,9 +335,11 @@ Parse this task and return the structured result.`
           const newLabels = shoppingLabels.filter((l) => !existingLabels.has(l))
           if (newLabels.length > 0) {
             // Use withTransaction + logAction for atomic, undoable shopping label updates.
-            const beforeTask = enrichedTask
-            const merged = [...enrichedTask.labels, ...newLabels]
+            // Re-read beforeTask inside the transaction to capture the true pre-mutation
+            // state — the enrichedTask reference was captured before the async SDK call.
             withTransaction((txDb) => {
+              const beforeTask = getTaskById(row.id)!
+              const merged = [...beforeTask.labels, ...newLabels]
               txDb
                 .prepare('UPDATE tasks SET labels = ?, updated_at = ? WHERE id = ?')
                 .run(JSON.stringify(merged), nowUtc(), row.id)

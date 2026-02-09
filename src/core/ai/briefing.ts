@@ -74,7 +74,7 @@ async function generateBriefing(
 ## Context
 
 User's timezone: ${timezone}
-Current UTC time: ${now.toISOString()}
+Current UTC time: ${nowUtc()}
 
 ## Stats
 

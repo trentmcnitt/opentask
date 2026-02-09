@@ -6,6 +6,7 @@
  * Results are cached per-user for 5 minutes.
  */
 
+import { nowUtc } from '@/core/recurrence'
 import { log } from '@/lib/logger'
 import { aiQuery } from './sdk'
 import { extractJsonFromText } from './parse-helpers'
@@ -55,7 +56,7 @@ export async function generateWhatsNext(
 ## Context
 
 User's timezone: ${timezone}
-Current UTC time: ${new Date().toISOString()}
+Current UTC time: ${nowUtc()}
 Total active tasks: ${tasks.length}
 
 ## Tasks

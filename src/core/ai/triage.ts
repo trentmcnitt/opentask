@@ -5,6 +5,7 @@
  * of the user's tasks to AI and returns them ordered by importance.
  */
 
+import { nowUtc } from '@/core/recurrence'
 import { log } from '@/lib/logger'
 import { aiQuery } from './sdk'
 import { extractJsonFromText } from './parse-helpers'
@@ -54,7 +55,7 @@ export async function triageTasks(
 ## Context
 
 User's timezone: ${timezone}
-Current UTC time: ${new Date().toISOString()}
+Current UTC time: ${nowUtc()}
 Total active tasks: ${tasks.length} (showing top ${relevantTasks.length})
 
 ## Tasks
