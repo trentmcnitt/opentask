@@ -1,6 +1,6 @@
 # AI Integration — Design Document
 
-_Version 0.3 — 2026-02-08_
+_Version 0.4 — 2026-02-09_
 
 This is the authoritative reference for AI integration in OpenTask. It covers principles, architecture, failure handling, and the feature catalog.
 
@@ -57,7 +57,7 @@ Different features have different latency and intelligence requirements:
 | Use case                  | Model       | Why                                |
 | ------------------------- | ----------- | ---------------------------------- |
 | Task enrichment (parsing) | Haiku       | Fast, cheap, structured extraction |
-| What's Next?              | Haiku       | Fast, on-demand recommendations    |
+| Bubble                    | Haiku       | Infrequent, 3 AM cron + on-demand  |
 | Daily briefing            | Haiku       | Summarization, low stakes          |
 | AI triage                 | Haiku       | Interactive, user is waiting       |
 | Shopping labels           | Haiku       | Simple classification              |
@@ -86,28 +86,37 @@ The Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) runs inside the OpenTask
 - Single log stream — `journalctl -u opentask` shows everything
 - Sufficient for 1-2 users on a dedicated server
 
-**How it works:**
-
-1. The SDK's `query()` function spawns a Claude Code subprocess
-2. The subprocess runs the prompt with the specified model and tools
-3. Structured output (`outputFormat` with JSON Schema) guarantees valid responses
-4. The subprocess exits after the query completes
-5. Results are applied to the database through existing core mutation functions
-
 **Prerequisites:** Claude Code must be installed and authenticated on the server. The SDK uses Claude Code's existing authentication (Max subscription) — no API key needed.
 
-### Async enrichment pattern
+### Warm enrichment slot + per-query subprocess
 
-Task enrichment is asynchronous by design:
+The AI system uses two execution patterns:
+
+**1. Warm enrichment slot** (`enrichment-slot.ts`): A dedicated Claude Code subprocess kept alive across requests via the MessageChannel pattern. Eliminates cold-start latency for enrichment, which is the most frequent AI operation (runs on every task creation).
+
+How it works:
+
+1. `initEnrichmentSlot()` creates a MessageChannel, starts a subprocess with `outputFormat` set to EnrichmentResultSchema
+2. Pushes a warmup message and waits for validation
+3. Subsequent requests push prompts through the same channel
+4. After MAX_REUSES (default 8) results, the slot recycles (closes old subprocess, starts a new one)
+5. Circuit breaker: 5 recycles in 5 seconds marks the slot as dead
+6. FIFO wait queue handles concurrent access to the single slot
+
+**2. Per-query subprocess** (`sdk.ts → aiQuery()`): For infrequent features (Bubble, briefing, triage). Cold-start latency doesn't matter when nobody's waiting. Each gets its own `outputFormat` per-query.
+
+### On-demand enrichment
+
+Task enrichment is on-demand: when a task is created, the API route fires and forgets `enrichSingleTask()` which sends the query through the warm enrichment slot. A 1-minute safety-net cron (`processEnrichmentQueue()`) picks up any `ai_status='pending'` tasks that the on-demand path missed.
 
 ```
 User types → Task saved immediately → ai_status = 'pending'
                                            ↓
-                                    Cron picks up task
+                                    Fire-and-forget enrichSingleTask()
                                            ↓
                                     ai_status = 'processing'
                                            ↓
-                                    SDK query (Haiku)
+                                    Warm enrichment slot query
                                            ↓
                                   ┌─── Success ───┐── Failure ──┐
                                   ↓                              ↓
@@ -116,7 +125,7 @@ User types → Task saved immediately → ai_status = 'pending'
                           ai_status = 'complete'     User sees warning
 ```
 
-The cron runs every 10 seconds. Tasks are processed with round-robin fairness across users (up to 10 per cycle) to prevent any single user from starving others.
+Safety net: cron runs every 1 minute, picks up pending tasks with round-robin fairness across users.
 
 ### Shared project support
 
@@ -129,7 +138,7 @@ Enrichment queries both owned and shared projects when building the project list
 
 ### Concurrent request management
 
-A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All AI queries (enrichment, What's Next, briefing, triage, shopping labels) acquire a slot before spawning a subprocess. Requests beyond the limit are queued FIFO with a 30-second timeout.
+A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (Bubble, briefing, triage, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
 
 ---
 
@@ -139,25 +148,28 @@ All AI code lives in `src/core/ai/`:
 
 ```
 src/core/ai/
-├── types.ts         — TypeScript types and Zod schemas
-├── activity.ts      — Activity log read/write
-├── prompts.ts       — System prompts for each feature
-├── sdk.ts           — SDK wrapper (init, query, error handling, timeout)
-├── queue.ts         — Concurrent request semaphore (FIFO, configurable limit)
-├── parse-helpers.ts — Shared JSON extraction from text responses
-├── enrichment.ts    — Task enrichment pipeline (circuit breaker, round-robin, shopping labels)
-├── whats-next.ts    — "What's Next?" AI recommendations (cached 5 min)
-├── briefing.ts      — Daily briefing generation (cached 4 hours in activity log)
-├── triage.ts        — AI triage / task ordering (cached 5 min)
-├── shopping.ts      — Shopping list label classification
-├── purge.ts         — Activity log data retention
-└── index.ts         — Barrel exports
+├── types.ts            — TypeScript types and Zod schemas
+├── activity.ts         — Activity log read/write
+├── prompts.ts          — System prompts for each feature
+├── sdk.ts              — SDK wrapper (init, query, error handling, timeout)
+├── queue.ts            — Concurrent request semaphore (FIFO, configurable limit)
+├── parse-helpers.ts    — Shared JSON extraction from text responses
+├── message-channel.ts  — Async iterable for subprocess communication
+├── enrichment-slot.ts  — Warm slot for enrichment (MessageChannel + consumer + lifecycle)
+├── enrichment.ts       — Task enrichment pipeline (on-demand + safety-net cron)
+├── bubble.ts           — Bubble recommendations (surfaces overlooked tasks)
+├── briefing.ts         — Daily briefing generation (cached 4 hours in activity log)
+├── triage.ts           — AI triage / task ordering (cached 5 min)
+├── shopping.ts         — Shopping list label classification
+├── purge.ts            — Activity log data retention
+├── task-summaries.ts   — Compact task data builder for AI prompts
+└── index.ts            — Barrel exports
 ```
 
 ### `types.ts`
 
 - `EnrichmentResultSchema` — Zod schema for task enrichment output
-- `WhatsNextResultSchema` — recommended tasks + summary
+- `BubbleResultSchema` — surfaced tasks + reasons + summary
 - `BriefingResultSchema` — greeting + sections + items
 - `TriageResultSchema` — ordered task IDs + reasoning
 - `ShoppingLabelResultSchema` — store section + reasoning
@@ -167,10 +179,21 @@ src/core/ai/
 ### `prompts.ts`
 
 - `ENRICHMENT_SYSTEM_PROMPT` — task parsing with transcriptionist philosophy
-- `WHATS_NEXT_SYSTEM_PROMPT` — recommend 3-7 tasks to focus on
+- `BUBBLE_SYSTEM_PROMPT` — surface overlooked tasks (social obligations, snoozed items, idle tasks)
 - `BRIEFING_SYSTEM_PROMPT` — conversational daily briefing with sections
 - `TRIAGE_SYSTEM_PROMPT` — order tasks by importance
 - `SHOPPING_LABEL_SYSTEM_PROMPT` — classify items by store section
+
+### `message-channel.ts`
+
+Generic async iterable that buffers messages and yields them when the SDK calls `next()`. Used by the enrichment slot to reuse a single subprocess across multiple queries.
+
+### `enrichment-slot.ts`
+
+- `initEnrichmentSlot()` — warm up subprocess with MessageChannel
+- `enrichmentQuery(prompt, options?)` — send query through warm slot (FIFO if busy)
+- `getEnrichmentSlotStats()` — state, uptime, requests, recycles, model
+- `shutdownEnrichmentSlot()` — graceful close for SIGTERM
 
 ### `sdk.ts`
 
@@ -186,16 +209,17 @@ src/core/ai/
 
 ### `enrichment.ts`
 
-- `processEnrichmentQueue()` — cron entry point with round-robin fairness, circuit breaker, shopping label integration
-- `enrichTask(task, user)` — runs SDK query with structured output
+- `enrichSingleTask(taskId, userId)` — on-demand enrichment via warm slot
+- `processEnrichmentQueue()` — safety-net cron entry point with round-robin fairness, circuit breaker, shopping label integration
+- `enrichTask(task, user)` — runs enrichment query through the warm slot
 - `applyEnrichment(task, result, user)` — applies changes via `withTransaction()` + `logAction()`
 - `resetStuckTasks()` — resets `'processing'` tasks to `'pending'` on startup
 
-### `whats-next.ts`
+### `bubble.ts`
 
-- `generateWhatsNext(userId, timezone, tasks)` — returns 3-7 recommended tasks with reasons
-- 5-minute in-memory cache per user
-- Task selection scoring: overdue > due soon > high priority > stale
+- `generateBubble(userId, timezone, tasks)` — surfaces overlooked tasks via per-query subprocess
+- `getCachedBubble(userId)` — returns cached result from `ai_activity_log` if generated today
+- Task selection scoring: high snooze count, no deadline, non-recurring (penalizes already-urgent tasks)
 
 ### `briefing.ts`
 
@@ -219,9 +243,13 @@ src/core/ai/
 
 ## Robustness
 
-### Circuit breaker
+### Circuit breaker (enrichment queue)
 
 The enrichment queue tracks rapid consecutive failures. If 5 tasks fail within 60 seconds, the queue pauses for 5 minutes and logs a warning. This prevents infinite failure loops when the underlying service is down.
+
+### Circuit breaker (enrichment slot)
+
+The warm enrichment slot tracks rapid consecutive recycles. If the slot recycles 5 times within 5 seconds, it is marked dead and no longer accepts queries. This prevents thrashing when the subprocess can't stay alive.
 
 ### Request timeout
 
@@ -233,7 +261,7 @@ Each queue cycle checks for tasks stuck in `'processing'` for longer than 2 minu
 
 ### Concurrent request limiting
 
-The semaphore in `queue.ts` (default max 2) prevents resource exhaustion from multiple simultaneous AI features. Queue waiters time out after 30 seconds.
+The semaphore in `queue.ts` (default max 2) prevents resource exhaustion from multiple simultaneous per-query AI features. Queue waiters time out after 30 seconds. The warm enrichment slot uses its own FIFO queue.
 
 ### Round-robin fairness
 
@@ -243,19 +271,20 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ## Failure Modes
 
-| Failure                        | What happens                                         | User sees                         |
-| ------------------------------ | ---------------------------------------------------- | --------------------------------- |
-| SDK not installed              | `isAIEnabled()` returns false                        | Nothing — app works normally      |
-| Subprocess fails to start      | `ai_status` stays `'pending'`, retried next cycle    | Spinner continues                 |
-| Subprocess hangs               | Timeout kills after 60s, `ai_status = 'failed'`      | Warning icon, raw text preserved  |
-| Model returns invalid output   | `ai_status = 'failed'`, error logged                 | Warning icon, raw text preserved  |
-| Model extracts wrong fields    | Changes applied and logged in undo                   | User can Cmd+Z to revert          |
-| Server restarts mid-enrichment | `'processing'` tasks reset to `'pending'` on startup | Re-processed automatically        |
-| Task has `ai-locked` label     | Enrichment skipped, `ai_status` set to null          | No AI processing                  |
-| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                |
-| Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error |
-| What's Next/triage cache hit   | Cached result returned immediately                   | Instant response                  |
-| Briefing cache hit             | Cached result from activity log                      | Instant page load                 |
+| Failure                        | What happens                                         | User sees                           |
+| ------------------------------ | ---------------------------------------------------- | ----------------------------------- |
+| SDK not installed              | `isAIEnabled()` returns false                        | Nothing — app works normally        |
+| Subprocess fails to start      | `ai_status` stays `'pending'`, retried next cycle    | Spinner continues                   |
+| Subprocess hangs               | Timeout kills after 60s, `ai_status = 'failed'`      | Warning icon, raw text preserved    |
+| Model returns invalid output   | `ai_status = 'failed'`, error logged                 | Warning icon, raw text preserved    |
+| Model extracts wrong fields    | Changes applied and logged in undo                   | User can Cmd+Z to revert            |
+| Server restarts mid-enrichment | `'processing'` tasks reset to `'pending'` on startup | Re-processed automatically          |
+| Task has `ai-locked` label     | Enrichment skipped, `ai_status` set to null          | No AI processing                    |
+| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                  |
+| Enrichment slot dies           | Marked dead, queries throw error                     | Enrichment falls back to safety net |
+| Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error   |
+| Bubble/triage cache hit        | Cached result returned immediately                   | Instant response                    |
+| Briefing cache hit             | Cached result from activity log                      | Instant page load                   |
 
 **No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway.
 
@@ -265,15 +294,15 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ### Implemented
 
-| Feature         | Description                                 | Model | Trigger               | Cache   |
-| --------------- | ------------------------------------------- | ----- | --------------------- | ------- |
-| Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —       |
-| What's Next?    | AI-recommended tasks to focus on            | Haiku | Dashboard panel (GET) | 5 min   |
-| Daily briefing  | Structured daily overview at /briefing      | Haiku | On-demand page load   | 4 hours |
-| AI triage       | Reorder tasks by AI-assessed importance     | Haiku | "AI Pick" filter chip | 5 min   |
-| Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —       |
+| Feature         | Description                                 | Model | Trigger               | Cache              |
+| --------------- | ------------------------------------------- | ----- | --------------------- | ------------------ |
+| Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —                  |
+| Bubble          | Surface easily overlooked tasks             | Haiku | 3 AM cron + on-demand | ai_activity_log    |
+| Daily briefing  | Structured daily overview at /briefing      | Haiku | On-demand page load   | ai_activity_log 4h |
+| AI triage       | Reorder tasks by AI-assessed importance     | Haiku | "AI Pick" filter chip | In-memory 5 min    |
+| Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —                  |
 
-### Planned
+### Considered / Deferred
 
 | Feature      | Description                        | Model  | Status   |
 | ------------ | ---------------------------------- | ------ | -------- |
@@ -287,15 +316,15 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | ------------------------------------- | ------- | --------------------------------------------------- |
 | `OPENTASK_AI_ENABLED`                 | `false` | Master switch — all AI features disabled when false |
 | `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku` | Model for task enrichment                           |
-| `OPENTASK_AI_ENRICHMENT_INTERVAL`     | `10`    | Seconds between queue checks                        |
-| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000` | Timeout for SDK queries in milliseconds             |
-| `OPENTASK_AI_CLI_PATH`                | (auto)  | Path to Claude Code CLI executable                  |
-| `OPENTASK_AI_MAX_CONCURRENT`          | `2`     | Maximum concurrent SDK subprocesses                 |
-| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000` | Maximum wait time for semaphore slot                |
-| `OPENTASK_AI_WHATS_NEXT_MODEL`        | `haiku` | Model for What's Next recommendations               |
+| `OPENTASK_AI_MAX_REUSES`              | `8`     | Max queries per warm enrichment subprocess          |
+| `OPENTASK_AI_BUBBLE_MODEL`            | `haiku` | Model for Bubble recommendations                    |
 | `OPENTASK_AI_BRIEFING_MODEL`          | `haiku` | Model for daily briefing                            |
 | `OPENTASK_AI_TRIAGE_MODEL`            | `haiku` | Model for AI triage                                 |
 | `OPENTASK_AI_SHOPPING_MODEL`          | `haiku` | Model for shopping label classification             |
+| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000` | Timeout for SDK queries in milliseconds             |
+| `OPENTASK_AI_CLI_PATH`                | (auto)  | Path to Claude Code CLI executable                  |
+| `OPENTASK_AI_MAX_CONCURRENT`          | `2`     | Maximum concurrent SDK subprocesses (per-query)     |
+| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000` | Maximum wait time for semaphore slot                |
 | `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`    | Days to retain AI activity log entries              |
 
 No API key needed — the SDK uses Claude Code's authentication on the server.
@@ -306,21 +335,23 @@ No API key needed — the SDK uses Claude Code's authentication on the server.
 
 Every AI operation is logged in the `ai_activity_log` table:
 
-| Column        | Type    | Description                                                                              |
-| ------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `id`          | INTEGER | Primary key                                                                              |
-| `user_id`     | INTEGER | Who owns the task                                                                        |
-| `task_id`     | INTEGER | Which task (nullable for non-task operations)                                            |
-| `action`      | TEXT    | Operation type: `'enrich'`, `'whats_next'`, `'briefing'`, `'triage'`, `'shopping_label'` |
-| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                                      |
-| `input`       | TEXT    | Raw input (e.g., original task text)                                                     |
-| `output`      | TEXT    | JSON result from AI                                                                      |
-| `model`       | TEXT    | Which model was used                                                                     |
-| `duration_ms` | INTEGER | How long the query took                                                                  |
-| `error`       | TEXT    | Error message if failed                                                                  |
-| `created_at`  | TEXT    | ISO 8601 timestamp                                                                       |
+| Column        | Type    | Description                                                                          |
+| ------------- | ------- | ------------------------------------------------------------------------------------ |
+| `id`          | INTEGER | Primary key                                                                          |
+| `user_id`     | INTEGER | Who owns the task                                                                    |
+| `task_id`     | INTEGER | Which task (nullable for non-task operations)                                        |
+| `action`      | TEXT    | Operation type: `'enrich'`, `'bubble'`, `'briefing'`, `'triage'`, `'shopping_label'` |
+| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                                                  |
+| `input`       | TEXT    | Raw input (e.g., original task text)                                                 |
+| `output`      | TEXT    | JSON result from AI                                                                  |
+| `model`       | TEXT    | Which model was used                                                                 |
+| `duration_ms` | INTEGER | How long the query took                                                              |
+| `error`       | TEXT    | Error message if failed                                                              |
+| `created_at`  | TEXT    | ISO 8601 timestamp                                                                   |
 
-The briefing feature also uses this table for cache persistence (action='briefing', status='success').
+The briefing and Bubble features use this table for cache persistence.
+
+The History → AI tab shows enrichment slot status and recent activity entries for debugging and observability.
 
 ---
 

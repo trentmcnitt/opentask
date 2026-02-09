@@ -26,19 +26,18 @@ const CLIPBOARD_SORT_LABELS: Record<SortOption, { default: string; reversed: str
   modified: { default: 'Recently Modified', reversed: 'Least Recently Modified' },
 }
 
-export interface FormattedTask extends Omit<Task, 'ai_status'> {
+export interface FormattedTask extends Task {
   is_recurring: boolean
   is_snoozed: boolean
 }
 
 /**
  * Format a task for API response by adding computed fields.
- * Strips internal-only fields (ai_status) that should not leak to clients.
+ * Includes ai_status so the frontend can show enrichment indicators.
  */
 export function formatTaskResponse(task: Task): FormattedTask {
-  const { ai_status, ...rest } = task
   return {
-    ...rest,
+    ...task,
     is_recurring: task.rrule !== null,
     is_snoozed: task.original_due_at !== null,
   }

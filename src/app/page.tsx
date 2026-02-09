@@ -32,7 +32,7 @@ import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { taskWord, isMacPlatform } from '@/lib/utils'
-import WhatsNextPanel from '@/components/WhatsNextPanel'
+import BubblePanel from '@/components/BubblePanel'
 
 /** Check if click/touch target is inside a zone that handles its own interaction */
 function isInsideInteractiveZone(target: HTMLElement) {
@@ -387,7 +387,7 @@ function HomeContent() {
   }, [selection, clearAllFilters])
 
   // Build task groups for keyboard navigation
-  const effectiveGrouping = searchQuery ? 'time' : grouping
+  const effectiveGrouping = grouping
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, effectiveGrouping, timezone),
     [tasks_, projects, effectiveGrouping, timezone],
@@ -851,7 +851,7 @@ function HomeContent() {
       aiPickLoading={aiPickLoading}
       onToggleAiPick={handleToggleAiPick}
       projects={projects}
-      grouping={searchQuery ? 'time' : grouping}
+      grouping={grouping}
       searchQuery={searchQuery}
       searchResultCount={searchResults.length}
       overdueCount={overdueCount}
@@ -1095,7 +1095,7 @@ function DashboardView({
           onToggleAiPick={onToggleAiPick}
         />
 
-        <WhatsNextPanel tasks={allTasks} onDone={actions.handleDone} onActivate={onActivate} />
+        <BubblePanel tasks={allTasks} onDone={actions.handleDone} onActivate={onActivate} />
 
         {tasks.length > 0 && (
           <div className="mb-4">
@@ -1233,6 +1233,7 @@ function DashboardView({
         onClose={onQuickActionClose}
         onSaveAll={onQuickActionSaveAll}
         onNavigateToDetail={onQuickActionNavigate}
+        projects={projects}
       />
 
       <KeyboardShortcutsDialog

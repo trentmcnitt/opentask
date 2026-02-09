@@ -4,12 +4,8 @@ import { useState, useCallback } from 'react'
 
 export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified'
 
-interface GroupSortState {
-  [groupLabel: string]: { sort: SortOption; reversed: boolean }
-}
-
 /**
- * Session-only sort state per group header.
+ * Dashboard-level sort state shared across all group headers.
  * Tracks both the sort field and direction (reversed or not).
  *
  * Default directions:
@@ -20,34 +16,37 @@ interface GroupSortState {
  *   - modified: most recently modified first (reversed = least recently modified first)
  *
  * Selecting the same sort option again toggles the direction.
+ * Changing sort on any group header updates all groups.
  * State resets on page refresh.
  */
 export function useGroupSort() {
-  const [sortByGroup, setSortByGroup] = useState<GroupSortState>({})
+  const [globalSort, setGlobalSort] = useState<{ sort: SortOption; reversed: boolean }>({
+    sort: 'due_date',
+    reversed: false,
+  })
 
   const getSortOption = useCallback(
-    (groupLabel: string): SortOption => {
-      return sortByGroup[groupLabel]?.sort || 'due_date'
+    (_groupLabel: string): SortOption => {
+      return globalSort.sort
     },
-    [sortByGroup],
+    [globalSort],
   )
 
   const getReversed = useCallback(
-    (groupLabel: string): boolean => {
-      return sortByGroup[groupLabel]?.reversed ?? false
+    (_groupLabel: string): boolean => {
+      return globalSort.reversed
     },
-    [sortByGroup],
+    [globalSort],
   )
 
-  const setSortOption = useCallback((groupLabel: string, option: SortOption) => {
-    setSortByGroup((prev) => {
-      const current = prev[groupLabel]
+  const setSortOption = useCallback((_groupLabel: string, option: SortOption) => {
+    setGlobalSort((prev) => {
       // If selecting the same sort, toggle direction
-      if (current?.sort === option) {
-        return { ...prev, [groupLabel]: { sort: option, reversed: !current.reversed } }
+      if (prev.sort === option) {
+        return { sort: option, reversed: !prev.reversed }
       }
       // New sort option — use default direction (not reversed)
-      return { ...prev, [groupLabel]: { sort: option, reversed: false } }
+      return { sort: option, reversed: false }
     })
   }, [])
 

@@ -2,35 +2,43 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronDown, ChevronRight, Sparkles, Loader2, RefreshCw } from 'lucide-react'
-import type { WhatsNextResult } from '@/core/ai/types'
+import type { BubbleResult } from '@/core/ai/types'
 import type { Task } from '@/types'
 
-interface WhatsNextPanelProps {
+interface BubblePanelProps {
   tasks: Task[]
   onDone: (taskId: number) => void
   onActivate: (taskId: number) => void
 }
 
 /**
- * AI-powered "What's Next?" panel for the dashboard.
+ * AI-powered "Bubble" panel for the dashboard.
  *
- * Shows 3-7 recommended tasks with reasons. Collapsible, remembers
- * state in localStorage. Fails silently if AI is unavailable.
+ * Surfaces tasks that would be easily overlooked — not just urgent items,
+ * but things like social obligations, tasks sitting idle, and things
+ * without hard deadlines that would become regrets.
+ *
+ * Replaces the previous "What's Next?" panel with richer task rendering
+ * and AI-generated reasons for why each task was surfaced.
+ *
+ * Collapsible, remembers state in localStorage. Fails silently if AI
+ * is unavailable.
  */
-export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextPanelProps) {
-  const [data, setData] = useState<WhatsNextResult | null>(null)
+export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelProps) {
+  const [data, setData] = useState<BubbleResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
-    return localStorage.getItem('whats-next-collapsed') === 'true'
+    return localStorage.getItem('bubble-collapsed') === 'true'
   })
 
-  const fetchRecommendations = useCallback(async () => {
+  const fetchRecommendations = useCallback(async (refresh = false) => {
     setLoading(true)
     setError(false)
     try {
-      const res = await fetch('/api/ai/whats-next')
+      const url = refresh ? '/api/ai/bubble?refresh=true' : '/api/ai/bubble'
+      const res = await fetch(url)
       if (!res.ok) {
         setError(true)
         return
@@ -58,7 +66,7 @@ export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextP
   const toggleCollapsed = () => {
     const next = !collapsed
     setCollapsed(next)
-    localStorage.setItem('whats-next-collapsed', String(next))
+    localStorage.setItem('bubble-collapsed', String(next))
   }
 
   // Don't render if error or no data and not loading
@@ -83,7 +91,7 @@ export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextP
             </div>
           ) : (
             <span className="line-clamp-1 text-sm font-medium text-blue-800 dark:text-blue-200">
-              {data?.summary || "What's Next?"}
+              {data?.summary || 'Bubble'}
             </span>
           )}
         </div>
@@ -92,7 +100,7 @@ export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextP
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                fetchRecommendations()
+                fetchRecommendations(true)
               }}
               className="rounded p-1 text-blue-500 hover:bg-blue-200/50 dark:hover:bg-blue-800/50"
               title="Refresh recommendations"
@@ -134,7 +142,7 @@ export default function WhatsNextPanel({ tasks, onDone, onActivate }: WhatsNextP
                   >
                     {task.title}
                   </button>
-                  <p className="line-clamp-1 text-xs text-blue-600/80 dark:text-blue-400/80">
+                  <p className="line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
                     {rec.reason}
                   </p>
                 </div>

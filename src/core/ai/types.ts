@@ -40,21 +40,24 @@ export const EnrichmentResultSchema = z.object({
 export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
 
 /**
- * "What's Next?" recommendation schema.
+ * Bubble recommendation schema.
+ *
+ * Surfaces tasks that would be easily overlooked — not just urgent/overdue items,
+ * but things like social obligations, tasks sitting idle, and things that don't
+ * have hard deadlines but would become regrets.
  */
-export const WhatsNextResultSchema = z.object({
-  tasks: z
-    .array(
-      z.object({
-        task_id: z.number().describe('ID of the recommended task'),
-        reason: z.string().describe('Brief reason why this task matters now'),
-      }),
-    )
-    .describe('3-7 recommended tasks'),
-  summary: z.string().describe('1-2 sentence overview of what matters today'),
+export const BubbleResultSchema = z.object({
+  tasks: z.array(
+    z.object({
+      task_id: z.number().describe('ID of the surfaced task'),
+      reason: z.string().describe('Why this task was surfaced — what makes it easy to overlook'),
+    }),
+  ),
+  summary: z.string().describe('1-2 sentence overview of what needs attention'),
+  generated_at: z.string().describe('ISO 8601 generation timestamp'),
 })
 
-export type WhatsNextResult = z.infer<typeof WhatsNextResultSchema>
+export type BubbleResult = z.infer<typeof BubbleResultSchema>
 
 /**
  * Daily briefing schema.

@@ -11,6 +11,7 @@ import { success, unauthorized, handleError, handleZodError } from '@/lib/api-re
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
 import { getTasks, createTask } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
+import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 
@@ -96,6 +97,13 @@ export async function POST(request: NextRequest) {
       userTimezone: user.timezone,
       input,
     })
+
+    // Fire-and-forget: trigger immediate enrichment if AI is enabled and task is pending
+    if (isAIEnabled() && task.ai_status === 'pending') {
+      enrichSingleTask(task.id, user.id).catch((err) => {
+        log.error('api', `Fire-and-forget enrichment failed for task ${task.id}:`, err)
+      })
+    }
 
     return success(formatTaskResponse(task), 201)
   } catch (err) {

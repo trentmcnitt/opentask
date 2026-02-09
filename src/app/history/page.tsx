@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronRight, Undo2, Redo2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Undo2, Redo2, RefreshCw } from 'lucide-react'
 import {
   formatDurationDelta,
   formatTimeInTimezone,
@@ -19,6 +19,7 @@ import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { showToast } from '@/lib/toast'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import type { Task, UndoAction } from '@/types'
+import type { AIActivityEntry } from '@/core/ai/types'
 
 interface CompletionEntry {
   id: number
@@ -45,7 +46,7 @@ interface UndoEntry {
   snapshot: UndoSnapshot[]
 }
 
-type TabId = 'completions' | 'activity'
+type TabId = 'completions' | 'activity' | 'ai'
 
 export default function HistoryPage() {
   const { status } = useSession()
@@ -59,7 +60,7 @@ export default function HistoryPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const t = params.get('tab')
-    if (t === 'activity' || t === 'completions') setTab(t)
+    if (t === 'activity' || t === 'completions' || t === 'ai') setTab(t)
   }, [])
 
   const handleTabChange = useCallback((newTab: TabId) => {
@@ -157,6 +158,16 @@ export default function HistoryPage() {
           >
             Completions
           </button>
+          <button
+            onClick={() => handleTabChange('ai')}
+            className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+              tab === 'ai'
+                ? 'bg-white shadow-sm dark:bg-zinc-800'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
+          >
+            AI
+          </button>
         </div>
 
         {tab === 'completions' && (
@@ -178,6 +189,8 @@ export default function HistoryPage() {
             now={activityFetchedAt}
           />
         )}
+
+        {tab === 'ai' && <AITab timezone={timezone} />}
       </main>
     </div>
   )
@@ -977,4 +990,214 @@ function formatFieldDetail(snapshot: UndoSnapshot, field: string, timezone: stri
     default:
       return null
   }
+}
+
+// --- AI Tab ---
+
+interface SlotStats {
+  state: string
+  activatedAt: string | null
+  totalRequests: number
+  totalRecycles: number
+  lastRequestAt: string | null
+  model: string
+}
+
+interface QueueStats {
+  active: number
+  waiting: number
+  max: number
+}
+
+interface AIStatusData {
+  enrichment_slot: SlotStats
+  queue: QueueStats
+  recent_activity: AIActivityEntry[]
+}
+
+function AITab({ timezone }: { timezone: string }) {
+  const [data, setData] = useState<AIStatusData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true)
+    setError(false)
+    try {
+      const res = await fetch('/api/ai/status')
+      if (!res.ok) {
+        setError(true)
+        return
+      }
+      const json = await res.json()
+      if (json.data) {
+        setData(json.data)
+      }
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchStatus()
+  }, [fetchStatus])
+
+  if (loading) {
+    return <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+  }
+
+  if (error || !data) {
+    return (
+      <div className="py-8 text-center">
+        <p className="text-zinc-400">{error ? 'AI features are not available.' : 'No data.'}</p>
+        <Button variant="ghost" size="sm" onClick={fetchStatus} className="mt-2">
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Enrichment slot status */}
+      <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Enrichment Slot</h3>
+          <Button variant="ghost" size="sm" onClick={fetchStatus} className="text-xs">
+            <RefreshCw className="mr-1 h-3 w-3" />
+            Refresh
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span className="text-zinc-500">State</span>
+            <div className="mt-0.5">
+              <SlotStateBadge state={data.enrichment_slot.state} />
+            </div>
+          </div>
+          <div>
+            <span className="text-zinc-500">Model</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.model}</p>
+          </div>
+          <div>
+            <span className="text-zinc-500">Requests</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRequests}</p>
+          </div>
+          <div>
+            <span className="text-zinc-500">Recycles</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRecycles}</p>
+          </div>
+          {data.enrichment_slot.activatedAt && (
+            <div className="col-span-2">
+              <span className="text-zinc-500">Up since</span>
+              <p className="mt-0.5 text-xs">
+                {new Date(data.enrichment_slot.activatedAt).toLocaleString('en-US', {
+                  timeZone: timezone,
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Queue status */}
+      <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <h3 className="mb-3 text-sm font-semibold">Queue</h3>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <span className="text-zinc-500">Active</span>
+            <p className="mt-0.5 font-medium">{data.queue.active}</p>
+          </div>
+          <div>
+            <span className="text-zinc-500">Waiting</span>
+            <p className="mt-0.5 font-medium">{data.queue.waiting}</p>
+          </div>
+          <div>
+            <span className="text-zinc-500">Max</span>
+            <p className="mt-0.5 font-medium">{data.queue.max}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent AI activity */}
+      <div>
+        <h3 className="mb-3 text-sm font-semibold">Recent Activity</h3>
+        {data.recent_activity.length === 0 ? (
+          <p className="py-4 text-center text-zinc-400">No AI activity recorded.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.recent_activity.map((entry) => (
+              <AIActivityRow key={entry.id} entry={entry} timezone={timezone} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SlotStateBadge({ state }: { state: string }) {
+  const styles: Record<string, string> = {
+    available: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    busy: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    initializing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    dead: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    uninitialized: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+  }
+
+  return <Badge className={cn('text-xs', styles[state] || styles.uninitialized)}>{state}</Badge>
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  enrich: 'Enrichment',
+  bubble: 'Bubble',
+  briefing: 'Briefing',
+  triage: 'Triage',
+  shopping_label: 'Shopping',
+  whats_next: "What's Next",
+}
+
+function AIActivityRow({ entry, timezone }: { entry: AIActivityEntry; timezone: string }) {
+  const statusColor =
+    entry.status === 'success'
+      ? 'text-green-600 dark:text-green-400'
+      : entry.status === 'error'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-zinc-400'
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-xs">
+            {ACTION_LABELS[entry.action] || entry.action}
+          </Badge>
+          <span className={cn('text-xs font-medium', statusColor)}>{entry.status}</span>
+          {entry.duration_ms != null && (
+            <span className="text-xs text-zinc-400">{entry.duration_ms}ms</span>
+          )}
+        </div>
+        {entry.input && <p className="mt-0.5 truncate text-xs text-zinc-500">{entry.input}</p>}
+      </div>
+      <span className="flex-shrink-0 text-xs text-zinc-400">
+        {entry.created_at
+          ? new Date(entry.created_at).toLocaleString('en-US', {
+              timeZone: timezone,
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })
+          : ''}
+      </span>
+    </div>
+  )
 }

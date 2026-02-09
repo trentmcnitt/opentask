@@ -16,13 +16,11 @@ import { getTaskById } from '@/core/tasks'
 import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
-import { isAIEnabled, aiQuery } from './sdk'
-import { parseAIResponse } from './parse-helpers'
+import { isAIEnabled } from './sdk'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
-import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
 import { isShoppingProject, getShoppingLabels, getProjectName } from './shopping'
-import { z } from 'zod'
+import { enrichmentQuery } from './enrichment-slot'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
@@ -228,7 +226,51 @@ export function resetStuckTasks(): void {
 }
 
 /**
- * Enrich a single task via the Claude Agent SDK.
+ * Enrich a single task by ID. Public entry point for on-demand enrichment.
+ *
+ * Called fire-and-forget from the task creation API route. Checks that the
+ * task has ai_status='pending', sets it to 'processing', runs enrichTask(),
+ * and handles success/failure status updates.
+ */
+export async function enrichSingleTask(taskId: number, userId: number): Promise<void> {
+  if (!isAIEnabled()) return
+
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT id, user_id, title, labels, priority, due_at, rrule
+       FROM tasks WHERE id = ? AND user_id = ? AND ai_status = 'pending' AND deleted_at IS NULL`,
+    )
+    .get(taskId, userId) as PendingTaskRow | undefined
+
+  if (!row) return
+
+  // Check for ai-locked label
+  const labels: string[] = JSON.parse(row.labels)
+  if (labels.includes('ai-locked')) {
+    db.prepare('UPDATE tasks SET ai_status = NULL WHERE id = ?').run(row.id)
+    log.info('ai', `Task ${row.id} has ai-locked label, skipping enrichment`)
+    return
+  }
+
+  db.prepare("UPDATE tasks SET ai_status = 'processing', updated_at = ? WHERE id = ?").run(
+    nowUtc(),
+    row.id,
+  )
+
+  try {
+    await enrichTask(row)
+  } catch (err) {
+    log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
+    db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
+      nowUtc(),
+      row.id,
+    )
+  }
+}
+
+/**
+ * Enrich a single task via the warm enrichment slot.
  *
  * Sends the raw title text with the user's timezone to the model,
  * gets back structured output, validates it, and applies changes.
@@ -255,9 +297,7 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
     .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
     .join('\n')
 
-  const prompt = `${ENRICHMENT_SYSTEM_PROMPT}
-
-## Context
+  const prompt = `## Context
 
 User's timezone: ${user.timezone}
 Current UTC time: ${nowUtc()}
@@ -271,21 +311,33 @@ ${projectList}
 
 Parse this task and return the structured result.`
 
-  // Convert Zod schema to JSON Schema for the SDK
-  const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
-
-  const result = await aiQuery({
-    prompt,
-    outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku',
-    maxTurns: 1,
+  const result = await enrichmentQuery(prompt, {
     userId: row.user_id,
     taskId: row.id,
-    action: 'enrich',
     inputText: row.title,
   })
 
-  const parsed = parseAIResponse(result, EnrichmentResultSchema, `Enrichment[${row.id}]`)
+  // Parse and validate the enrichment result
+  let parsed: EnrichmentResult | null = null
+  if (result.structuredOutput) {
+    const validation = EnrichmentResultSchema.safeParse(result.structuredOutput)
+    if (validation.success) {
+      parsed = validation.data
+    } else {
+      log.error('ai', `Enrichment[${row.id}]: invalid structured output:`, validation.error.message)
+    }
+  }
+  if (!parsed && result.text) {
+    // Try extracting JSON from text response
+    try {
+      const json = JSON.parse(result.text)
+      const validation = EnrichmentResultSchema.safeParse(json)
+      if (validation.success) parsed = validation.data
+    } catch {
+      // Not valid JSON text
+    }
+  }
+
   if (!parsed) {
     db.prepare("UPDATE tasks SET ai_status = 'failed', updated_at = ? WHERE id = ?").run(
       nowUtc(),
@@ -429,13 +481,6 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Store original raw text in meta_notes for reference
-  if (!task.meta_notes) {
-    setClauses.push('meta_notes = ?')
-    values.push(`AI enriched from: "${task.title}"`)
-    fieldsChanged.push('meta_notes')
-  }
-
   return { setClauses, values, fieldsChanged }
 }
 
@@ -482,7 +527,7 @@ function applyEnrichment(
     if (!updatedTask) throw new Error('Failed to retrieve enriched task')
 
     const changeList = changes.fieldsChanged
-      .filter((f) => !['meta_notes', 'anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
+      .filter((f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
       .join(', ')
     const description = `AI: Enriched task — set ${changeList}`
 

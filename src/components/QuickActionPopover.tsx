@@ -8,7 +8,7 @@ import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickAct
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
-import type { Task } from '@/types'
+import type { Task, Project } from '@/types'
 
 interface QuickActionPopoverProps {
   /** The focused task (from onMouseEnter) */
@@ -23,6 +23,8 @@ interface QuickActionPopoverProps {
   onDelete?: (taskId: number) => void
   /** Called to navigate to task detail page */
   onNavigateToDetail?: (taskId: number) => void
+  /** Available projects for project picker in the quick panel */
+  projects?: Project[]
 }
 
 export function QuickActionPopover({
@@ -32,6 +34,7 @@ export function QuickActionPopover({
   onSaveAll,
   onDelete,
   onNavigateToDetail,
+  projects,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
   const isMobile = useIsMobile()
@@ -101,6 +104,7 @@ export function QuickActionPopover({
         onSave={handleSave}
         onCancel={handleCancel}
         onDirtyChange={setIsPanelDirty}
+        projects={projects}
       />
     </div>
   )

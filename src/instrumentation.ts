@@ -2,7 +2,15 @@
  * Next.js instrumentation hook
  *
  * Runs once when the server starts. Used to initialize cron jobs
- * for the notification service and cleanup tasks.
+ * for notifications, cleanup tasks, and the AI subsystem.
+ *
+ * Cron schedule:
+ * - Every 1 min: heartbeat (overdue + critical + enrichment safety net)
+ * - 3:00 AM daily: undo purge + Bubble generation (AI)
+ * - 3:30 AM daily: trash purge
+ * - 4:00 AM daily: completions purge
+ * - 4:30 AM Sunday: stats purge
+ * - 5:00 AM daily: AI activity purge
  */
 
 import { log } from '@/lib/logger'
@@ -11,16 +19,44 @@ export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const cron = (await import('node-cron')).default
-    const { initNotifications } = await import('@/core/notifications')
+    const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
+    const { checkCriticalTasks } = await import('@/core/notifications/critical-alerts')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
     const { purgeOldStats } = await import('@/core/stats/purge')
-    const { initAI, isAIEnabled, processEnrichmentQueue, resetStuckTasks, purgeOldAIActivity } =
-      await import('@/core/ai')
+    const {
+      initAI,
+      isAIEnabled,
+      processEnrichmentQueue,
+      resetStuckTasks,
+      purgeOldAIActivity,
+      initEnrichmentSlot,
+      shutdownEnrichmentSlot,
+    } = await import('@/core/ai')
 
-    // Start notification service
-    initNotifications()
+    // Run initial notification checks after a short delay (existing pattern)
+    setTimeout(async () => {
+      log.info('notifications', 'Running initial overdue check')
+      await checkOverdueTasks()
+      await checkCriticalTasks()
+    }, 5000)
+
+    // Single 1-minute heartbeat cron replaces separate overdue (1m), critical (15m),
+    // and enrichment (10s) crons. All three checks run sequentially each minute.
+    cron.schedule('* * * * *', async () => {
+      await checkOverdueTasks()
+      await checkCriticalTasks()
+      if (isAIEnabled()) {
+        processEnrichmentQueue().catch((err) =>
+          log.error('cron', 'Enrichment safety-net error:', err),
+        )
+      }
+    })
+
+    log.info('cron', 'Heartbeat cron started (every 1 min: overdue + critical + enrichment)')
+
+    // --- Daily purge crons ---
 
     // Purge old undo logs daily at 3:00 AM
     cron.schedule('0 3 * * *', () => {
@@ -77,19 +113,49 @@ export async function register() {
       'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), AI activity (5:00 AM daily)',
     )
 
-    // AI enrichment
+    // --- AI subsystem ---
+
     await initAI()
     if (isAIEnabled()) {
       // Reset tasks stuck in 'processing' from a previous server restart
       resetStuckTasks()
 
-      const intervalSeconds = parseInt(process.env.OPENTASK_AI_ENRICHMENT_INTERVAL || '10', 10)
-      cron.schedule(`*/${intervalSeconds} * * * * *`, () => {
-        processEnrichmentQueue().catch((err) => {
-          log.error('cron', 'AI enrichment queue error:', err)
-        })
+      // Warm up the enrichment slot (dedicated subprocess for enrichment queries)
+      initEnrichmentSlot().catch((err) => {
+        log.error('ai', 'Enrichment slot startup failed:', err)
       })
-      log.info('ai', `AI enrichment cron started (every ${intervalSeconds}s)`)
+
+      // Bubble cron: generate recommendations for all active users at 3 AM
+      cron.schedule('0 3 * * *', async () => {
+        try {
+          const { generateBubble, buildTaskSummaries } = await import('@/core/ai')
+          const { getDb } = await import('@/core/db')
+          const db = getDb()
+          const users = db.prepare('SELECT id, timezone FROM users').all() as {
+            id: number
+            timezone: string
+          }[]
+          for (const user of users) {
+            const tasks = buildTaskSummaries(user.id)
+            if (tasks.length > 0) {
+              await generateBubble(user.id, user.timezone, tasks).catch((err) => {
+                log.error('cron', `Bubble generation failed for user ${user.id}:`, err)
+              })
+            }
+          }
+          log.info('cron', `Bubble cron: generated for ${users.length} users`)
+        } catch (err) {
+          log.error('cron', 'Bubble cron error:', err)
+        }
+      })
+
+      log.info('ai', 'AI enrichment slot initializing, Bubble cron scheduled (3 AM daily)')
+
+      // Graceful shutdown: close enrichment slot on SIGTERM
+      process.on('SIGTERM', () => {
+        log.info('ai', 'SIGTERM received — shutting down enrichment slot')
+        shutdownEnrichmentSlot()
+      })
     }
   }
 }
