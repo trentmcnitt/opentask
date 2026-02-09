@@ -53,8 +53,12 @@ export const BubbleResultSchema = z.object({
       reason: z.string().describe('Why this task was surfaced — what makes it easy to overlook'),
     }),
   ),
-  summary: z.string().describe('1-2 sentence overview of what needs attention'),
-  generated_at: z.string().describe('ISO 8601 generation timestamp'),
+  summary: z
+    .string()
+    .optional()
+    .default('Tasks that need your attention')
+    .describe('1-2 sentence overview of what needs attention'),
+  generated_at: z.string().optional().default('').describe('ISO 8601 generation timestamp'),
 })
 
 export type BubbleResult = z.infer<typeof BubbleResultSchema>

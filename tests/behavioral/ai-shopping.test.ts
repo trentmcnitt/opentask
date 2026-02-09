@@ -87,6 +87,19 @@ describe('getShoppingLabels', () => {
     expect(result).toEqual([])
   })
 
+  test('invalid JSON text fallback returns empty array', async () => {
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: null,
+      textResult: 'This is not JSON at all, just random text',
+      durationMs: 100,
+      success: true,
+      error: null,
+    })
+
+    const result = await getShoppingLabels(1, 'Milk', 'Shopping List')
+    expect(result).toEqual([])
+  })
+
   test('parses text fallback when structured output is null', async () => {
     mockAiQuery.mockResolvedValueOnce({
       structuredOutput: null,

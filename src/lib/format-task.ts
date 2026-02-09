@@ -33,7 +33,6 @@ export interface FormattedTask extends Task {
 
 /**
  * Format a task for API response by adding computed fields.
- * Includes ai_status so the frontend can show enrichment indicators.
  */
 export function formatTaskResponse(task: Task): FormattedTask {
   return {

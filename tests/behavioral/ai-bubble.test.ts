@@ -17,6 +17,7 @@ vi.mock('@/core/ai/sdk', () => ({
 }))
 
 import { generateBubble, getCachedBubble } from '@/core/ai/bubble'
+import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
 
 const mockAiQuery = vi.mocked(aiQuery)
@@ -45,6 +46,8 @@ afterAll(() => {
 
 afterEach(() => {
   mockAiQuery.mockReset()
+  // Clear cached bubble entries so tests don't leak state
+  getDb().prepare("DELETE FROM ai_activity_log WHERE action = 'bubble'").run()
 })
 
 describe('generateBubble', () => {
@@ -138,6 +141,82 @@ describe('generateBubble', () => {
     expect(result!.summary).toBe('Parsed from text')
   })
 
+  test('parses JSON from markdown code block with missing summary', async () => {
+    // Real-world: AI returns text with JSON in a code block but puts summary as prose
+    const jsonBlock = JSON.stringify({
+      generated_at: '2026-02-09T18:26:35.354Z',
+      tasks: [
+        { task_id: 1, summary: 'Jump starter overdue', reason: 'Snoozed 3 times' },
+        { task_id: 3, reason: 'Social obligation delayed' },
+      ],
+    })
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: null,
+      textResult: `Here are tasks that need attention:\n\n\`\`\`json\n${jsonBlock}\n\`\`\`\n\n**The pattern:** You have snoozed items and overdue social obligations.`,
+      durationMs: 14000,
+      success: true,
+      error: null,
+    })
+
+    const tasks = makeTasks(5)
+    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect(result).not.toBeNull()
+    expect(result!.tasks).toHaveLength(2)
+    expect(result!.tasks[0].task_id).toBe(1)
+    // summary should get a default since it's missing from the JSON
+    expect(result!.summary).toBeTruthy()
+  })
+
+  test('handles tasks_to_surface field name variant', async () => {
+    // Real-world: AI uses "tasks_to_surface" instead of "tasks"
+    const jsonBlock = JSON.stringify({
+      generated_at: '2026-02-09T18:13:09.603Z',
+      tasks_to_surface: [
+        { task_id: 2, reason: 'Overdue and snoozed', summary: 'Ignored for days' },
+      ],
+    })
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: null,
+      textResult: `\`\`\`json\n${jsonBlock}\n\`\`\``,
+      durationMs: 14000,
+      success: true,
+      error: null,
+    })
+
+    const tasks = makeTasks(5)
+    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect(result).not.toBeNull()
+    expect(result!.tasks).toHaveLength(1)
+    expect(result!.tasks[0].task_id).toBe(2)
+  })
+
+  test('handles text response with extra per-task fields', async () => {
+    // Real-world: AI adds title/summary fields per task that aren't in schema
+    const jsonBlock = JSON.stringify({
+      generated_at: '2026-02-09T18:11:50.373Z',
+      tasks: [
+        { task_id: 1, title: 'Charge jump starter', reason: 'Snoozed 3 times', summary: 'Overdue' },
+        { task_id: 3, title: 'Call Granddaddy', reason: 'Social obligation', summary: 'Delayed' },
+      ],
+      summary: 'Two tasks need decisions.',
+    })
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: null,
+      textResult: jsonBlock,
+      durationMs: 13000,
+      success: true,
+      error: null,
+    })
+
+    const tasks = makeTasks(5)
+    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    expect(result).not.toBeNull()
+    expect(result!.tasks).toHaveLength(2)
+    // Extra per-task fields (title, summary) should be stripped by Zod
+    expect(result!.tasks[0]).toEqual({ task_id: 1, reason: 'Snoozed 3 times' })
+    expect(result!.summary).toBe('Two tasks need decisions.')
+  })
+
   test('caches result in ai_activity_log', async () => {
     mockAiQuery.mockResolvedValueOnce({
       structuredOutput: {
@@ -167,5 +246,49 @@ describe('getCachedBubble', () => {
     // Use a user ID that has no cached data
     const result = getCachedBubble(99999)
     expect(result).toBeNull()
+  })
+})
+
+describe('cache expiry', () => {
+  test('cache expires after midnight', () => {
+    vi.setSystemTime(new Date('2026-02-09T23:00:00Z'))
+
+    // Insert a cache entry from "yesterday" — getCachedBubble should ignore it
+    const db = getDb()
+    const yesterday = '2026-02-08T22:00:00Z'
+    db.prepare(
+      `INSERT INTO ai_activity_log (user_id, task_id, action, status, input, output, model, duration_ms, error, created_at)
+       VALUES (?, NULL, 'bubble', 'success', NULL, ?, 'haiku', 100, NULL, ?)`,
+    ).run(
+      TEST_USER_ID,
+      JSON.stringify({ tasks: [], summary: 'Old', generated_at: yesterday }),
+      yesterday,
+    )
+
+    const cached = getCachedBubble(TEST_USER_ID)
+    expect(cached).toBeNull()
+
+    vi.useRealTimers()
+  })
+
+  test('multi-user cache isolation', async () => {
+    mockAiQuery.mockResolvedValueOnce({
+      structuredOutput: {
+        tasks: [{ task_id: 1, reason: 'Test' }],
+        summary: 'User 1 result',
+        generated_at: new Date().toISOString(),
+      },
+      textResult: null,
+      durationMs: 100,
+      success: true,
+      error: null,
+    })
+
+    const tasks = makeTasks(3)
+    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+
+    // Different user should not see user 1's cache
+    const cached = getCachedBubble(99998)
+    expect(cached).toBeNull()
   })
 })

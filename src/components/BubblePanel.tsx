@@ -39,6 +39,9 @@ export default function BubblePanel({ tasks, onDone, onActivate }: BubblePanelPr
     try {
       const url = refresh ? '/api/ai/bubble?refresh=true' : '/api/ai/bubble'
       const res = await fetch(url)
+      if (res.status === 503) {
+        return
+      }
       if (!res.ok) {
         setError(true)
         return

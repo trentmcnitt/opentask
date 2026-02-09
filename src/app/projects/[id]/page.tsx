@@ -139,6 +139,7 @@ export default function ProjectDetailPage() {
           setBatchDialogOpen(true)
         }}
         onSnoozeOverdue={handleSnoozeAllOverdue}
+        timezone={timezone}
       />
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">

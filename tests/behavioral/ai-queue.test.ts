@@ -79,3 +79,65 @@ describe('semaphore', () => {
     expect(stats.maxConcurrent).toBe(2) // default
   })
 })
+
+describe('timeout and stress', () => {
+  test('queue rejects after timeout when no slot available', async () => {
+    const origTimeout = process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS
+    process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS = '100'
+
+    // Fill both slots
+    await acquireSlot()
+    await acquireSlot()
+
+    // Third should timeout
+    await expect(acquireSlot()).rejects.toThrow(/timeout/)
+
+    releaseSlot()
+    releaseSlot()
+    if (origTimeout === undefined) {
+      delete process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS
+    } else {
+      process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS = origTimeout
+    }
+  })
+
+  test('10 concurrent withSlot calls complete without deadlock', async () => {
+    const results: number[] = []
+    const promises = Array.from({ length: 10 }, (_, i) =>
+      withSlot(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+        results.push(i)
+        return i
+      }),
+    )
+    const settled = await Promise.all(promises)
+    expect(settled).toHaveLength(10)
+    expect(results).toHaveLength(10)
+  })
+
+  test('FIFO ordering preserved under contention', async () => {
+    const order: number[] = []
+
+    // Fill both slots
+    await acquireSlot()
+    await acquireSlot()
+
+    // Queue 3 waiters via withSlot
+    const p1 = withSlot(async () => {
+      order.push(1)
+    })
+    const p2 = withSlot(async () => {
+      order.push(2)
+    })
+    const p3 = withSlot(async () => {
+      order.push(3)
+    })
+
+    // Release slots to let waiters through
+    releaseSlot()
+    releaseSlot()
+
+    await Promise.all([p1, p2, p3])
+    expect(order).toEqual([1, 2, 3])
+  })
+})

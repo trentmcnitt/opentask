@@ -141,6 +141,21 @@
   scrollbar-width: none;
 }
 
+/* AI enrichment processing indicator — subtle border pulse */
+@keyframes ai-processing {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: oklch(0.7 0.15 270);
+  }
+}
+
+.animate-ai-processing {
+  animation: ai-processing 2s ease-in-out infinite;
+}
+
 /* Safe area insets for mobile */
 @supports (padding: max(0px)) {
   .safe-bottom {

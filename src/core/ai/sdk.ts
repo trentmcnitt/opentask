@@ -172,8 +172,12 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
 
       const durationMs = Date.now() - startTime
 
-      // Log a warning if the SDK returned success but no content
-      if (!structuredOutput && !textResult) {
+      // The SDK subprocess completed, but check if we actually got usable output.
+      // Empty output means the model ran but produced nothing parseable — log as
+      // error so the activity log accurately reflects whether we got a result.
+      const hasOutput = !!(structuredOutput || textResult)
+
+      if (!hasOutput) {
         log.warn('ai', `${action} completed but returned no output (${durationMs}ms)`)
       }
 
@@ -181,17 +185,23 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         user_id: userId,
         task_id: taskId ?? null,
         action,
-        status: 'success',
+        status: hasOutput ? 'success' : 'error',
         input: inputText ?? null,
         output: structuredOutput ? JSON.stringify(structuredOutput) : textResult,
         model: resolvedModel,
         duration_ms: durationMs,
-        error: null,
+        error: hasOutput ? null : 'Subprocess completed but returned no output',
       })
 
       log.info('ai', `${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
 
-      return { structuredOutput, textResult, durationMs, success: true, error: null }
+      return {
+        structuredOutput,
+        textResult,
+        durationMs,
+        success: hasOutput,
+        error: hasOutput ? null : 'No output',
+      }
     })
   } catch (err) {
     return handleQueryError(err, startTime, timedOut, {

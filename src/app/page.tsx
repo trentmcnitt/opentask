@@ -1070,6 +1070,7 @@ function DashboardView({
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
+        timezone={timezone}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
