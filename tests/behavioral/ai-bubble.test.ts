@@ -28,10 +28,11 @@ function makeTasks(count: number, overrides?: Partial<TaskSummary>[]): TaskSumma
     title: `Task ${i + 1}`,
     priority: 0,
     due_at: null,
+    original_due_at: null,
+    created_at: '2026-02-01T12:00:00Z',
     labels: [],
     project_name: 'Inbox',
     is_recurring: false,
-    snooze_count: 0,
     ...(overrides?.[i] ?? {}),
   }))
 }

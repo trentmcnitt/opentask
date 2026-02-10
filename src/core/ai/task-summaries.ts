@@ -39,9 +39,10 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
     title: t.title,
     priority: t.priority,
     due_at: t.due_at,
+    original_due_at: t.original_due_at,
+    created_at: t.created_at,
     labels: t.labels,
     project_name: projectMap.get(t.project_id) ?? null,
     is_recurring: t.rrule !== null,
-    snooze_count: t.snooze_count,
   }))
 }

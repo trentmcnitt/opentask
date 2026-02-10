@@ -459,7 +459,8 @@ describe('Bulk Snooze Relative Mode', () => {
     const expectedDueAt = new Date('2026-01-15T17:00:00Z') // 16:00 UTC + 60 min
 
     expect(newDueAt.getTime()).toBe(expectedDueAt.getTime())
-    expect(updatedTask.original_due_at).toBeNull() // Original was null
+    // When a task with no due_at gets snoozed, original_due_at is set to the new due_at
+    expect(updatedTask.original_due_at).toBe(updatedTask.due_at)
   })
 
   /**
@@ -512,8 +513,9 @@ describe('Bulk Snooze Relative Mode', () => {
 
     expect(revertedTask1.due_at).toBe(task1Original)
     expect(revertedTask2.due_at).toBe(task2Original)
-    expect(revertedTask1.original_due_at).toBeNull()
-    expect(revertedTask2.original_due_at).toBeNull()
+    // original_due_at was set at creation and preserved through snooze/undo
+    expect(revertedTask1.original_due_at).toBe(task1Original)
+    expect(revertedTask2.original_due_at).toBe(task2Original)
   })
 
   /**
@@ -652,10 +654,10 @@ describe('Bulk Edit Snooze & Recurrence', () => {
       },
     })
 
-    // Verify initial state
-    expect(task1.original_due_at).toBeNull()
+    // Verify initial state — original_due_at is set eagerly at creation time
+    expect(task1.original_due_at).toBe(task1.due_at)
     expect(task1.snooze_count).toBe(0)
-    expect(task2.original_due_at).toBeNull()
+    expect(task2.original_due_at).toBe(task2.due_at)
     expect(task2.snooze_count).toBe(0)
 
     const originalTask1DueAt = task1.due_at

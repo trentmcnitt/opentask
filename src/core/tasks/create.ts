@@ -82,14 +82,16 @@ export function createTask(options: CreateTaskOptions): Task {
   // Execute insert and undo log in a transaction
   return withTransaction((tx) => {
     // Insert the task
+    // Set original_due_at = due_at when creating with a due date, so the field
+    // always tracks the "occurrence origin" timestamp (not just snooze state).
     const result = tx
       .prepare(
         `
       INSERT INTO tasks (
-        user_id, project_id, title, done, priority, due_at,
+        user_id, project_id, title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
         labels, created_at, updated_at
-      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -98,6 +100,7 @@ export function createTask(options: CreateTaskOptions): Task {
         input.title,
         input.priority ?? 0,
         dueAt,
+        dueAt, // original_due_at = due_at (null if no due date)
         input.rrule ?? null,
         input.recurrence_mode ?? 'from_due',
         anchorTime,

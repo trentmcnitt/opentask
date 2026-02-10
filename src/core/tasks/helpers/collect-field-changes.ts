@@ -326,4 +326,25 @@ function collectDueAtChanges(
     data.beforeState.snooze_count = task.snooze_count
     data.afterState.snooze_count = newSnoozeCount
   }
+
+  // When due_at is set for the first time on a task that had no due date,
+  // also set original_due_at to track the occurrence origin timestamp.
+  if (task.due_at === null && input.due_at !== null && task.original_due_at === null) {
+    data.setClauses.push('original_due_at = ?')
+    data.values.push(input.due_at)
+    data.fieldsChanged.push('original_due_at')
+    data.beforeState.original_due_at = null
+    data.afterState.original_due_at = input.due_at
+  }
+
+  // When due_at is cleared to null, also clear original_due_at since the
+  // occurrence origin is meaningless without a due date.
+  if (input.due_at === null && task.original_due_at !== null) {
+    data.setClauses.push('original_due_at = NULL')
+    if (!data.fieldsChanged.includes('original_due_at')) {
+      data.fieldsChanged.push('original_due_at')
+      data.beforeState.original_due_at = task.original_due_at
+    }
+    data.afterState.original_due_at = null
+  }
 }

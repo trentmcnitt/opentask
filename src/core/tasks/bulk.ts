@@ -231,8 +231,9 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         newDueAt = new Date(baseDueAt.getTime() + deltaMinutes! * 60 * 1000).toISOString()
       }
 
-      // Set original_due_at if not already set (preserve existing)
-      const newOriginalDueAt = task.original_due_at ?? task.due_at
+      // Set original_due_at if not already set (preserve existing).
+      // When the task had no due_at (both null), use the new due_at as the origin timestamp.
+      const newOriginalDueAt = task.original_due_at ?? task.due_at ?? newDueAt
 
       // ALWAYS increment snooze_count (changed behavior - every snooze increments)
       const newSnoozeCount = task.snooze_count + 1

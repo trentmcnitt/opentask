@@ -354,21 +354,35 @@ async function runBubble(
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { z } = await import('zod')
 
+  const { DateTime } = await import('luxon')
+  const now = DateTime.now().setZone(input.timezone)
+
+  const formatLocal = (iso: string) =>
+    DateTime.fromISO(iso, { zone: 'utc' }).setZone(input.timezone).toFormat('ccc, LLL d, h:mm a')
+
   const taskList = input.tasks
-    .map(
-      (t) =>
-        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${t.due_at || 'none'} | ` +
-        `snooze_count: ${t.snooze_count} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`,
-    )
+    .map((t) => {
+      const due = t.due_at ? formatLocal(t.due_at) : 'none'
+      const originalDue =
+        t.original_due_at && t.original_due_at !== t.due_at
+          ? ` (originally due: ${formatLocal(t.original_due_at)})`
+          : ''
+      const created = formatLocal(t.created_at)
+      return (
+        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
+        `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
+        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`
+      )
+    })
     .join('\n')
+
+  const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
   const prompt = `${BUBBLE_SYSTEM_PROMPT}
 
 ## Context
 
-User's timezone: ${input.timezone}
-Current UTC time: ${new Date().toISOString()}
+Current time: ${currentTime}
 Total active tasks: ${input.tasks.length}
 
 ## Tasks
