@@ -22,7 +22,6 @@ import type {
   AITestScenario,
   EnrichmentInput,
   BubbleInput,
-  ShoppingInput,
   ScenarioOutput,
   RunSummary,
 } from './types'
@@ -117,7 +116,7 @@ afterAll(() => {
   LAYER 1 COMPLETE — LAYER 2 VALIDATION REQUIRED
 ======================================================================
 
-  Feature:   all (enrichment, bubble, shopping)
+  Feature:   all (enrichment, bubble)
   Model:     ${summary.model}
   Generated: ${generated}/${summary.total} outputs (${errors} errors)
   Duration:  ${durationSeconds}s total
@@ -178,20 +177,6 @@ describe('AI Quality — Layer 1', () => {
       })
     }
   })
-
-  // -------------------------------------------------------------------------
-  // Shopping scenarios
-  // -------------------------------------------------------------------------
-
-  describe('Shopping', () => {
-    const shoppingTests = allScenarios.filter((s) => s.feature === 'shopping')
-
-    for (const scenario of shoppingTests) {
-      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
-        await runScenario(scenario)
-      })
-    }
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -230,9 +215,6 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
         break
       case 'bubble':
         ;({ output, durationMs } = await runBubble(scenario.input as BubbleInput))
-        break
-      case 'shopping':
-        ;({ output, durationMs } = await runShopping(scenario.input as ShoppingInput))
         break
     }
 
@@ -425,74 +407,6 @@ Analyze these tasks and surface 3-7 that are easy to overlook but deserve attent
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
 }
 
-async function runShopping(
-  input: ShoppingInput,
-): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { SHOPPING_LABEL_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
-  const { aiQuery } = await import('@/core/ai/sdk')
-  const { ShoppingLabelResultSchema } = await import('@/core/ai/types')
-  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
-  const { z } = await import('zod')
-
-  const prompt = `${SHOPPING_LABEL_SYSTEM_PROMPT}
-
-## Item to classify
-
-"${input.item}"
-
-Return the store section for this item.`
-
-  const jsonSchema = z.toJSONSchema(ShoppingLabelResultSchema)
-
-  const result = await aiQuery({
-    prompt,
-    outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_SHOPPING_MODEL || 'haiku',
-    maxTurns: 1,
-    userId: QUALITY_TEST_USER_ID,
-    action: 'quality_test_shopping',
-    inputText: input.item,
-  })
-
-  // Use parseAIResponse with text fallback — the SDK sometimes returns
-  // prose like "**Section: produce**\n\n**Reasoning:** ..." instead of JSON
-  const parsed = parseAIResponse(result, ShoppingLabelResultSchema, 'Shopping label', (text) => {
-    // Try JSON extraction first (handles markdown code blocks)
-    const json = extractJsonFromText(text)
-    if (json) {
-      const attempt = ShoppingLabelResultSchema.safeParse(json)
-      if (attempt.success) return attempt.data
-    }
-    // Parse prose format — the AI returns varying formats:
-    //   "**Section: produce**\n\n**Reasoning:** ..."
-    //   "**pantry**\n\n**Reasoning:** ..."
-    //   "**household**\n\nPaper towels are..."
-    // Strategy: extract the first bold word as section, rest as reasoning
-    const lines = text.trim().split('\n')
-    const firstLine = lines[0] || ''
-    // Try "Section: X" first, then a standalone bold word
-    const sectionLabelMatch = firstLine.match(/[Ss]ection:?\s*\**\s*(\w[\w\s]*\w|\w)/)
-    const boldWordMatch = firstLine.match(/^\*{1,2}(\w[\w\s]*\w|\w)\*{1,2}$/)
-    const sectionWord = sectionLabelMatch?.[1] || boldWordMatch?.[1]
-    if (sectionWord) {
-      const section = sectionWord.trim().toLowerCase()
-      // Reasoning: try explicit label, else everything after the first paragraph
-      const reasoningMatch = text.match(/\*{0,2}[Rr]easoning:?\*{0,2}\s*([\s\S]+)/)
-      const restOfText = lines.slice(1).join('\n').trim()
-      const reasoning = reasoningMatch ? reasoningMatch[1].trim() : restOfText
-      const attempt = ShoppingLabelResultSchema.safeParse({ section, reasoning })
-      if (attempt.success) return attempt.data
-    }
-    return null
-  })
-
-  if (!parsed) {
-    throw new Error(`Shopping query failed: ${result.error || 'Could not parse output'}`)
-  }
-
-  return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
-}
-
 // ---------------------------------------------------------------------------
 // Structural validation
 // ---------------------------------------------------------------------------
@@ -551,9 +465,6 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     case 'bubble':
       validateBubbleSchema(scenario.id, output)
       break
-    case 'shopping':
-      validateShoppingSchema(scenario.id, output)
-      break
   }
 }
 
@@ -598,15 +509,6 @@ function validateBubbleSchema(id: string, output: Record<string, unknown>): void
   }
 }
 
-function validateShoppingSchema(id: string, output: Record<string, unknown>): void {
-  if (typeof output.section !== 'string' || output.section.length === 0) {
-    throw new Error(`[${id}] section must be a non-empty string`)
-  }
-  if (typeof output.reasoning !== 'string') {
-    throw new Error(`[${id}] reasoning must be a string`)
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -617,8 +519,6 @@ function getModelForFeature(feature: string): string {
       return process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
     case 'bubble':
       return process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku'
-    case 'shopping':
-      return process.env.OPENTASK_AI_SHOPPING_MODEL || 'haiku'
     default:
       return 'haiku'
   }

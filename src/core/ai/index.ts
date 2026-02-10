@@ -3,7 +3,6 @@ export { processEnrichmentQueue, enrichSingleTask } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
 export { generateBubble, getCachedBubble } from './bubble'
-export { getShoppingLabels, isShoppingProject, getProjectName } from './shopping'
 export { buildTaskSummaries } from './task-summaries'
 export { withSlot, getQueueStats } from './queue'
 export {

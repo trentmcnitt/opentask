@@ -229,30 +229,3 @@ Given tasks including:
 \`\`\`
 
 Note: Task 7 (daily affirmation) was correctly excluded — routine recurring tasks don't belong in Bubble.`
-
-/**
- * System prompt for shopping list item classification.
- *
- * Classifies a shopping item into a store section for label assignment.
- */
-export const SHOPPING_LABEL_SYSTEM_PROMPT = `You are classifying a shopping list item into a store section. Return the most appropriate section.
-
-## Store sections
-
-- produce — fruits, vegetables, fresh herbs
-- dairy — milk, cheese, yogurt, butter, eggs
-- meat — beef, chicken, pork, fish, deli meats
-- bakery — bread, rolls, pastries, tortillas
-- frozen — frozen meals, ice cream, frozen vegetables
-- pantry — canned goods, pasta, rice, snacks, condiments, spices, oils
-- household — cleaning supplies, paper products, trash bags
-- personal care — soap, shampoo, toothpaste, medicine
-- beverages — water, soda, juice, coffee, tea, alcohol
-- deli — prepared foods, salads, rotisserie chicken
-- other — anything that doesn't fit above
-
-## Rules
-
-- Pick the single best section
-- If uncertain, use "other"
-- Provide brief reasoning`

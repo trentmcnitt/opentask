@@ -286,6 +286,28 @@ function HomeContent() {
     setQuickActionOpen(true)
   }, [])
   const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
+
+  const handleReprocess = useCallback(
+    async (taskId: number) => {
+      // Optimistic update: swap ai-failed → ai-to-process (triggers processing animation)
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, labels: t.labels.map((l) => (l === 'ai-failed' ? 'ai-to-process' : l)) }
+            : t,
+        ),
+      )
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/reprocess`, { method: 'POST' })
+        if (!res.ok) throw new Error('Reprocess failed')
+        showToast({ message: 'Retrying AI enrichment...' })
+      } catch {
+        fetchTasks() // Revert on failure
+        showToast({ message: 'Failed to retry enrichment' })
+      }
+    },
+    [setTasks, fetchTasks],
+  )
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
 
@@ -898,6 +920,7 @@ function HomeContent() {
       aiAnnotationsVisible={aiAnnotationsVisible}
       onToggleAiAnnotations={handleToggleAiAnnotations}
       onRefreshAi={aiInsights.refresh}
+      onReprocess={handleReprocess}
     />
   )
 }
@@ -967,6 +990,7 @@ function DashboardView({
   aiAnnotationsVisible,
   onToggleAiAnnotations,
   onRefreshAi,
+  onReprocess,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -1032,6 +1056,7 @@ function DashboardView({
   aiAnnotationsVisible: boolean
   onToggleAiAnnotations: () => void
   onRefreshAi: () => void
+  onReprocess: (taskId: number) => Promise<void>
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -1125,6 +1150,7 @@ function DashboardView({
           onDoubleClick={onDoubleClick}
           annotationMap={aiInsights.annotationMap}
           showAnnotations={aiAnnotationsVisible}
+          onReprocess={onReprocess}
           headerLeft={
             tasks.length > 0 ? (
               <button

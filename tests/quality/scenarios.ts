@@ -511,50 +511,7 @@ export const bubbleScenarios: AITestScenario[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Shopping scenarios
-// ---------------------------------------------------------------------------
-
-export const shoppingScenarios: AITestScenario[] = [
-  {
-    id: 'shopping-produce',
-    feature: 'shopping',
-    description: 'Basic produce item — straightforward classification',
-    input: { item: 'bananas' },
-    requirements: {
-      must_include: { section: 'produce' },
-      quality_notes: 'Bananas are unambiguously produce. Section must be "produce".',
-    },
-  },
-  {
-    id: 'shopping-ambiguous',
-    feature: 'shopping',
-    description: 'Ambiguous item — could be pantry (canned) or meat',
-    input: { item: 'chicken broth' },
-    requirements: {
-      must_include: { section: 'pantry' },
-      quality_notes:
-        'Chicken broth is typically a pantry/canned good, not a meat item. ' +
-        'Section should be "pantry". Accept "other" if reasoning is sensible.',
-    },
-  },
-  {
-    id: 'shopping-non-food',
-    feature: 'shopping',
-    description: 'Non-food household item',
-    input: { item: 'paper towels' },
-    requirements: {
-      must_include: { section: 'household' },
-      quality_notes: 'Paper towels are unambiguously household. Section must be "household".',
-    },
-  },
-]
-
-// ---------------------------------------------------------------------------
 // All scenarios combined
 // ---------------------------------------------------------------------------
 
-export const allScenarios: AITestScenario[] = [
-  ...enrichmentScenarios,
-  ...bubbleScenarios,
-  ...shoppingScenarios,
-]
+export const allScenarios: AITestScenario[] = [...enrichmentScenarios, ...bubbleScenarios]

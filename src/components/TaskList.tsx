@@ -76,6 +76,8 @@ interface TaskListProps {
   annotationMap?: Map<number, string>
   /** Whether to show annotation text below task metadata (sparkle icon always shows) */
   showAnnotations?: boolean
+  /** Called when user clicks retry on an ai-failed badge */
+  onReprocess?: (taskId: number) => void
   /** Optional content rendered on the left side of the sort dropdown row */
   headerLeft?: React.ReactNode
 }
@@ -183,6 +185,7 @@ export function TaskList({
   toggleCollapse: toggleCollapseProp,
   annotationMap,
   showAnnotations = false,
+  onReprocess,
   headerLeft,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
@@ -350,6 +353,7 @@ export function TaskList({
                           onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                           annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
                           isAiHighlighted={annotationMap?.has(task.id)}
+                          onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
                         />
                       </SwipeableRow>
                     )

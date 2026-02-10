@@ -1,7 +1,7 @@
 /**
  * AI activity logging
  *
- * Every AI operation (enrichment, bubble, shopping, etc.) is logged here
+ * Every AI operation (enrichment, bubble, etc.) is logged here
  * for debugging, cost visibility, and future UI. This is separate from
  * the undo log — undo tracks what changed, activity tracks AI operations.
  */

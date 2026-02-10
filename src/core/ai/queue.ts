@@ -2,8 +2,8 @@
  * AI request queue / semaphore
  *
  * Limits concurrent SDK subprocesses to prevent resource exhaustion.
- * Interactive AI features (Bubble, shopping labels) plus background
- * enrichment could spawn unbounded subprocesses without this guard.
+ * Interactive AI features (Bubble) plus background enrichment could
+ * spawn unbounded subprocesses without this guard.
  */
 
 import { log } from '@/lib/logger'
