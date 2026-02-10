@@ -125,6 +125,16 @@ export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = fals
         return reversed ? -cmp : cmp
       })
       break
+    case 'original_due':
+      // Default: earliest original_due first (oldest origin at top). Null → end.
+      sorted.sort((a, b) => {
+        const aOrig = a.original_due_at ? new Date(a.original_due_at).getTime() : Infinity
+        const bOrig = b.original_due_at ? new Date(b.original_due_at).getTime() : Infinity
+        const cmp = aOrig - bOrig
+        if (cmp !== 0) return reversed ? -cmp : cmp
+        return (b.priority || 0) - (a.priority || 0)
+      })
+      break
   }
   return sorted
 }
@@ -136,6 +146,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   title: { default: 'A-Z', reversed: 'Z-A' },
   age: { default: 'Newest', reversed: 'Oldest' },
   modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
+  original_due: { default: 'Original Due ↓', reversed: 'Original Due ↑' },
 }
 
 /** Labels shown in the dropdown menu items. */
@@ -145,6 +156,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   title: 'A-Z',
   age: 'Date added',
   modified: 'Date modified',
+  original_due: 'Original due date',
 }
 
 export function TaskList({
@@ -534,29 +546,31 @@ function SortDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {(['due_date', 'priority', 'title', 'age', 'modified'] as const).map((option) => {
-          const isActive = sortOption === option
-          const itemLabel =
-            isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
-          // Selecting the active option will toggle direction, so show what it will become
-          const hint = isActive
-            ? `→ ${reversed ? SORT_BUTTON_LABELS[option].default : SORT_BUTTON_LABELS[option].reversed}`
-            : null
-          return (
-            <DropdownMenuItem
-              key={option}
-              onClick={() => onSort(option)}
-              className={isActive ? 'font-semibold' : ''}
-            >
-              {itemLabel}
-              {hint && (
-                <span className="text-muted-foreground ml-auto pl-3 text-[10px] font-normal">
-                  {hint}
-                </span>
-              )}
-            </DropdownMenuItem>
-          )
-        })}
+        {(['due_date', 'priority', 'title', 'age', 'modified', 'original_due'] as const).map(
+          (option) => {
+            const isActive = sortOption === option
+            const itemLabel =
+              isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
+            // Selecting the active option will toggle direction, so show what it will become
+            const hint = isActive
+              ? `→ ${reversed ? SORT_BUTTON_LABELS[option].default : SORT_BUTTON_LABELS[option].reversed}`
+              : null
+            return (
+              <DropdownMenuItem
+                key={option}
+                onClick={() => onSort(option)}
+                className={isActive ? 'font-semibold' : ''}
+              >
+                {itemLabel}
+                {hint && (
+                  <span className="text-muted-foreground ml-auto pl-3 text-[10px] font-normal">
+                    {hint}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            )
+          },
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

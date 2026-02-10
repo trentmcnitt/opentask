@@ -360,6 +360,49 @@ export function formatTimeInTimezone(isoUtc: string, timezone: string): string {
   return formatTimeInZone(new Date(isoUtc), timezone)
 }
 
+/**
+ * Compact task age for the dashboard TaskRow metadata line.
+ *
+ * Returns a compact "Xd old" string when the anchor is 1+ calendar days old
+ * (in the user's timezone), or null if the anchor is less than 1 day old.
+ *
+ * Anchor dates (chosen by caller):
+ * - One-off tasks: created_at
+ * - Recurring tasks: original_due_at ?? due_at
+ *
+ * Ranges: 1–6d → "Xd old", 7–29d → "Xw old", 30–364d → "Xmo old", 365+ → "Xy old"
+ */
+export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | null {
+  const anchor = new Date(anchorIsoUtc)
+  const now = new Date()
+
+  if (anchor > now) return null
+
+  // Use timezone-aware calendar day math (same pattern as formatOverdue)
+  const anchorDateStr = anchor.toLocaleDateString('en-US', { timeZone: timezone })
+  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
+  const anchorDate = new Date(anchorDateStr)
+  const today = new Date(todayStr)
+  const calendarDays = Math.round((today.getTime() - anchorDate.getTime()) / (24 * 60 * 60 * 1000))
+
+  if (calendarDays < 1) return null
+
+  if (calendarDays < 7) return `${calendarDays}d old`
+
+  if (calendarDays < 30) {
+    const weeks = Math.floor(calendarDays / 7)
+    return `${weeks}w old`
+  }
+
+  if (calendarDays < 365) {
+    const months = Math.floor(calendarDays / 30)
+    return `${Math.max(1, months)}mo old`
+  }
+
+  const years = Math.floor(calendarDays / 365)
+  return `${years}y old`
+}
+
 export function parseLocalDatetimeInput(value: string, timezone: string): string {
   const [datePart, timePart] = value.split('T')
   const [year, month, day] = datePart.split('-').map(Number)

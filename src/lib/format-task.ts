@@ -24,6 +24,7 @@ const CLIPBOARD_SORT_LABELS: Record<SortOption, { default: string; reversed: str
   title: { default: 'A-Z', reversed: 'Z-A' },
   age: { default: 'Newest First', reversed: 'Oldest First' },
   modified: { default: 'Recently Modified', reversed: 'Least Recently Modified' },
+  original_due: { default: 'Oldest Original Due', reversed: 'Newest Original Due' },
 }
 
 export interface FormattedTask extends Task {

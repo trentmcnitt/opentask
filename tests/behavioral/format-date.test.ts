@@ -9,6 +9,7 @@ import {
   formatDueTimeParts,
   formatOriginalDueAt,
   formatDurationDelta,
+  formatTaskAge,
   getTimezoneDayBoundaries,
 } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -290,6 +291,75 @@ describe('formatRRuleCompact', () => {
   test('compact with anchor_time shows time', () => {
     expect(formatRRuleCompact('FREQ=DAILY', '14:30')).toBe('Daily at 2:30 PM')
     expect(formatRRuleCompact('FREQ=WEEKLY;BYDAY=FR', '09:00')).toBe('Fridays at 9:00 AM')
+  })
+})
+
+describe('formatTaskAge', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('returns null for future anchor', () => {
+    vi.setSystemTime(new Date('2026-02-01T12:00:00Z'))
+    expect(formatTaskAge('2026-02-02T12:00:00Z', TZ)).toBeNull()
+  })
+
+  test('returns null for same-day anchor (less than 1 calendar day)', () => {
+    vi.setSystemTime(new Date('2026-02-01T18:00:00Z')) // noon CST
+    expect(formatTaskAge('2026-02-01T12:00:00Z', TZ)).toBeNull() // earlier same day CST
+  })
+
+  test('1 day old', () => {
+    vi.setSystemTime(new Date('2026-02-02T18:00:00Z')) // Feb 2 noon CST
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1d old')
+  })
+
+  test('6 days old (upper boundary of days range)', () => {
+    vi.setSystemTime(new Date('2026-02-07T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('6d old')
+  })
+
+  test('7 days old shows weeks', () => {
+    vi.setSystemTime(new Date('2026-02-08T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1w old')
+  })
+
+  test('14 days old shows 2w', () => {
+    vi.setSystemTime(new Date('2026-02-15T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('2w old')
+  })
+
+  test('29 days old shows 4w (upper boundary of weeks range)', () => {
+    vi.setSystemTime(new Date('2026-03-02T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('4w old')
+  })
+
+  test('30 days old shows months', () => {
+    vi.setSystemTime(new Date('2026-03-03T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1mo old')
+  })
+
+  test('90 days old shows 3mo', () => {
+    vi.setSystemTime(new Date('2026-05-02T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('3mo old')
+  })
+
+  test('365 days old shows years', () => {
+    vi.setSystemTime(new Date('2027-02-01T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1y old')
+  })
+
+  test('730 days old shows 2y', () => {
+    vi.setSystemTime(new Date('2028-02-01T18:00:00Z'))
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('2y old')
+  })
+
+  test('timezone boundary: anchor is earlier in timezone than UTC', () => {
+    // anchor = Jan 31 at 5:30 UTC. CST is UTC-6, so 5:30 UTC = 11:30 PM Jan 30 CST.
+    // now = Feb 2 at 7:00 UTC = Feb 2 at 1:00 AM CST.
+    // Calendar days in CST: Feb 2 - Jan 30 = 3 days old.
+    vi.setSystemTime(new Date('2026-02-02T07:00:00Z'))
+    expect(formatTaskAge('2026-01-31T05:30:00Z', TZ)).toBe('3d old')
   })
 })
 

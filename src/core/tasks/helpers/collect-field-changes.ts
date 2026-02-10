@@ -10,10 +10,11 @@ import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
 import { NotFoundError, ForbiddenError } from '@/core/errors'
 
-/** Extended input type that supports additive/subtractive label operations */
+/** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
   labels_add?: string[]
   labels_remove?: string[]
+  reset_original_due_at?: boolean
 }
 
 export interface FieldChangeData {
@@ -104,6 +105,16 @@ function collectBasicFields(
   userId: number,
   skipProjectValidation: boolean,
 ): void {
+  // Reset origin: sets original_due_at = due_at, snooze_count = 0
+  if (input.reset_original_due_at && task.due_at) {
+    if (task.original_due_at !== task.due_at) {
+      trackField(data, 'original_due_at', task.original_due_at, task.due_at)
+    }
+    if (task.snooze_count !== 0) {
+      trackField(data, 'snooze_count', task.snooze_count, 0)
+    }
+  }
+
   if (input.title !== undefined && input.title !== task.title) {
     trackField(data, 'title', task.title, input.title)
   }

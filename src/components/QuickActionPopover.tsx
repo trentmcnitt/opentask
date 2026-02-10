@@ -25,6 +25,8 @@ interface QuickActionPopoverProps {
   onNavigateToDetail?: (taskId: number) => void
   /** Available projects for project picker in the quick panel */
   projects?: Project[]
+  /** AI annotation text to display in the panel */
+  annotation?: string
 }
 
 export function QuickActionPopover({
@@ -35,6 +37,7 @@ export function QuickActionPopover({
   onDelete,
   onNavigateToDetail,
   projects,
+  annotation,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
   const isMobile = useIsMobile()
@@ -105,6 +108,7 @@ export function QuickActionPopover({
         onCancel={handleCancel}
         onDirtyChange={setIsPanelDirty}
         projects={projects}
+        annotation={annotation}
       />
     </div>
   )

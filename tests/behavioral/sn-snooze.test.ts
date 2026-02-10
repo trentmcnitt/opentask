@@ -718,6 +718,148 @@ describe('Snooze Validation Tests', () => {
   })
 })
 
+describe('Reset original_due_at', () => {
+  beforeEach(() => {
+    resetDb()
+    const db = getDb()
+
+    db.prepare(
+      `
+      INSERT INTO users (id, email, name, password_hash, timezone)
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
+
+    db.prepare(
+      `
+      INSERT INTO projects (id, name, owner_id, shared, sort_order)
+      VALUES (1, 'Inbox', ?, 0, 0)
+    `,
+    ).run(TEST_USER_ID)
+  })
+
+  afterEach(() => {
+    resetDb()
+  })
+
+  /**
+   * SN-025: reset_original_due_at sets original_due_at = due_at and snooze_count = 0
+   */
+  test('SN-025: reset_original_due_at resets origin and snooze_count', () => {
+    const originalDueAt = futureLocalTime(8, 0, 1)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Snoozed task',
+        due_at: originalDueAt,
+      },
+    })
+
+    // Snooze twice
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(14, 0, 1),
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(16, 0, 1),
+    })
+
+    const snoozedTask = getTaskById(task.id)!
+    expect(snoozedTask.snooze_count).toBe(2)
+    expect(snoozedTask.original_due_at).toBe(originalDueAt)
+
+    // Reset origin
+    const { task: resetTask } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { reset_original_due_at: true },
+    })
+
+    expect(resetTask.original_due_at).toBe(snoozedTask.due_at)
+    expect(resetTask.snooze_count).toBe(0)
+  })
+
+  /**
+   * SN-026: undo after reset_original_due_at restores previous values
+   */
+  test('SN-026: undo after reset restores original values', () => {
+    const originalDueAt = futureLocalTime(8, 0, 1)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Snoozed task',
+        due_at: originalDueAt,
+      },
+    })
+
+    // Snooze once
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: futureLocalTime(14, 0, 1),
+    })
+
+    const snoozedTask = getTaskById(task.id)!
+    expect(snoozedTask.snooze_count).toBe(1)
+    expect(snoozedTask.original_due_at).toBe(originalDueAt)
+
+    // Reset origin
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { reset_original_due_at: true },
+    })
+
+    // Undo
+    executeUndo(TEST_USER_ID)
+
+    const restored = getTaskById(task.id)!
+    expect(restored.original_due_at).toBe(originalDueAt)
+    expect(restored.snooze_count).toBe(1)
+  })
+
+  /**
+   * SN-027: reset on un-snoozed task is a no-op
+   */
+  test('SN-027: reset on un-snoozed task is a no-op', () => {
+    const dueAt = futureLocalTime(8, 0, 1)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Fresh task',
+        due_at: dueAt,
+      },
+    })
+
+    // original_due_at == due_at and snooze_count == 0, so reset is a no-op
+    expect(task.original_due_at).toBe(dueAt)
+    expect(task.snooze_count).toBe(0)
+
+    const { task: resetTask, fieldsChanged } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { reset_original_due_at: true },
+    })
+
+    // No fields should have changed
+    expect(fieldsChanged).toEqual([])
+    expect(resetTask.original_due_at).toBe(dueAt)
+    expect(resetTask.snooze_count).toBe(0)
+  })
+})
+
 describe('computeSnoozeTime rounding', () => {
   afterEach(() => {
     vi.useRealTimers()
