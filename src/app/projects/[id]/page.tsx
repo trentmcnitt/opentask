@@ -9,6 +9,7 @@ import { Header } from '@/components/Header'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import type { Task } from '@/types'
+import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
@@ -96,6 +97,27 @@ export default function ProjectDetailPage() {
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
+  const handleReprocess = useCallback(
+    async (taskId: number) => {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, labels: t.labels.map((l) => (l === 'ai-failed' ? 'ai-to-process' : l)) }
+            : t,
+        ),
+      )
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/reprocess`, { method: 'POST' })
+        if (!res.ok) throw new Error('Reprocess failed')
+        showToast({ message: 'Retrying AI enrichment...' })
+      } catch {
+        fetchTasks()
+        showToast({ message: 'Failed to retry enrichment' })
+      }
+    },
+    [setTasks, fetchTasks],
+  )
+
   const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
     tasks,
     displayTasks,
@@ -162,6 +184,7 @@ export default function ProjectDetailPage() {
           onSnooze={actions.handleSnooze}
           onLabelClick={toggleLabel}
           onTaskFocus={setFocusedTask}
+          onReprocess={handleReprocess}
         />
       </main>
 

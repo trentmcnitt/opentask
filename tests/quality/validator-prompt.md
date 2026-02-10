@@ -51,7 +51,6 @@ For each scenario:
 
 - Was the correct project selected from the available list?
 - Was `null` returned when no project was a clear match?
-- Was a shopping item matched to a Shopping project when available?
 
 ### 6. Recurrence Parsing
 
@@ -73,7 +72,7 @@ For each scenario:
 ### 1. Task Selection
 
 - Were overlooked tasks surfaced? (high snooze count, idle without attention, social obligations)
-- Were obvious items correctly excluded? (daily recurring affirmations, urgent/high-priority, shopping, due today)
+- Were obvious items correctly excluded? (daily recurring affirmations, urgent/high-priority, due today)
 - Were time-sensitive items without hard deadlines recognized?
 - Were social obligations identified? (calls, thank-you cards, RSVPs)
 
@@ -93,20 +92,6 @@ For each scenario:
 
 - Do all `task_id` values exist in the input task list?
 - Are no tasks invented or referenced that weren't provided?
-
----
-
-## Shopping Evaluation Criteria
-
-### 1. Section Accuracy
-
-- Is the correct store section assigned?
-- For ambiguous items, is the most common classification used? (chicken broth = pantry, not meat)
-
-### 2. Reasoning Quality
-
-- Is the reasoning brief and logical?
-- Does it explain why this section was chosen?
 
 ---
 
@@ -169,12 +154,6 @@ For the `layer2-summary.md`, use:
 | ...      | ...   | ...  | ...         |
 
 ### Bubble
-
-| Scenario | Score | Pass | Key Finding |
-| -------- | ----- | ---- | ----------- |
-| ...      | ...   | ...  | ...         |
-
-### Shopping
 
 | Scenario | Score | Pass | Key Finding |
 | -------- | ----- | ---- | ----------- |

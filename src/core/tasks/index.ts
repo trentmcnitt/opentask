@@ -24,6 +24,10 @@ export type { MarkDoneOptions, MarkDoneResult } from './mark-done'
 export { snoozeTask } from './snooze'
 export type { SnoozeTaskOptions, SnoozeResult } from './snooze'
 
+// Reprocess (retry AI enrichment)
+export { reprocessTask } from './reprocess'
+export type { ReprocessTaskOptions } from './reprocess'
+
 // Bulk operations
 export { bulkDone, bulkSnooze, bulkEdit, bulkDelete } from './bulk'
 export type {

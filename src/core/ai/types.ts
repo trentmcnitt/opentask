@@ -64,20 +64,6 @@ export const BubbleResultSchema = z.object({
 export type BubbleResult = z.infer<typeof BubbleResultSchema>
 
 /**
- * Shopping label classification schema.
- */
-export const ShoppingLabelResultSchema = z.object({
-  section: z
-    .string()
-    .describe(
-      'Store section: produce, dairy, meat, bakery, frozen, pantry, household, personal care, beverages, deli, other',
-    ),
-  reasoning: z.string().describe('Brief explanation of why this section was chosen'),
-})
-
-export type ShoppingLabelResult = z.infer<typeof ShoppingLabelResultSchema>
-
-/**
  * Compact task summary for AI prompts.
  * Includes only the fields AI needs to make decisions.
  *

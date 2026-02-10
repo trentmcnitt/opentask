@@ -3,7 +3,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
-import { Check, Clock, Repeat, Sparkles, Timer, TimerOff } from 'lucide-react'
+import { Check, Clock, RefreshCw, Repeat, Sparkles, Timer, TimerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -78,6 +78,8 @@ interface TaskRowProps {
   annotation?: string
   /** When true, renders a sparkle icon before the title indicating AI insight */
   isAiHighlighted?: boolean
+  /** Called when the user clicks the retry button on an ai-failed badge */
+  onReprocess?: () => void
 }
 
 export function TaskRow({
@@ -98,6 +100,7 @@ export function TaskRow({
   onDoubleClick,
   annotation,
   isAiHighlighted = false,
+  onReprocess,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -403,6 +406,7 @@ export function TaskRow({
                 labels={task.labels}
                 labelConfig={labelConfig}
                 onLabelClick={onLabelClick}
+                onReprocess={onReprocess}
               />
             </span>
           )}
@@ -459,34 +463,58 @@ function LabelBadges({
   labels,
   labelConfig,
   onLabelClick,
+  onReprocess,
 }: {
   labels: string[]
   labelConfig: LabelConfig[]
   onLabelClick?: (label: string) => void
+  onReprocess?: () => void
 }) {
   // Filter out ai-to-process (the animation conveys that state)
   const visibleLabels = labels.filter((l) => l !== 'ai-to-process')
 
   return (
-    <div className="flex flex-shrink-0 gap-1">
+    <div className="flex flex-shrink-0 items-center gap-1">
       {visibleLabels.slice(0, 2).map((label) => {
         const colorClasses = getLabelClasses(label, labelConfig)
+        const isAiFailed = label === 'ai-failed'
         return (
-          <Badge
+          <span
             key={label}
-            variant={colorClasses ? undefined : 'secondary'}
             className={cn(
-              'px-1.5 py-0 text-xs',
-              colorClasses && `${colorClasses} border-0`,
-              onLabelClick && 'cursor-pointer',
+              'inline-flex items-center gap-0.5',
+              isAiFailed && onReprocess && 'group/retry',
             )}
-            onClick={(e) => {
-              e.stopPropagation()
-              onLabelClick?.(label)
-            }}
           >
-            {label}
-          </Badge>
+            <Badge
+              variant={colorClasses ? undefined : 'secondary'}
+              className={cn(
+                'px-1.5 py-0 text-xs',
+                colorClasses && `${colorClasses} border-0`,
+                onLabelClick && 'cursor-pointer',
+              )}
+              onClick={(e) => {
+                e.stopPropagation()
+                onLabelClick?.(label)
+              }}
+            >
+              {label}
+            </Badge>
+            {isAiFailed && onReprocess && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onReprocess()
+                }}
+                className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center rounded p-0.5 transition-colors"
+                title="Retry AI enrichment"
+                aria-label="Retry AI enrichment"
+              >
+                <RefreshCw className="size-3" />
+              </button>
+            )}
+          </span>
         )
       })}
       {visibleLabels.length > 2 && (

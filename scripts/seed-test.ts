@@ -96,14 +96,6 @@ export async function seedTestData(): Promise<void> {
   `,
   ).run(5, 'Family', 1, 1, 4)
 
-  // Shared Shopping project (owned by User A) — triggers AI shopping label classification
-  db.prepare(
-    `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
-  `,
-  ).run(6, 'Shopping', 1, 1, 5)
-
   // Insert API tokens
   db.prepare(
     `

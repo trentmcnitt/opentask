@@ -12,11 +12,11 @@ export interface AITestScenario {
   /** Unique scenario ID, e.g., "enrich-garbled-dictation" */
   id: string
   /** Which AI feature this scenario tests */
-  feature: 'enrichment' | 'bubble' | 'shopping'
+  feature: 'enrichment' | 'bubble'
   /** Human-readable description of what this scenario tests */
   description: string
   /** Input data specific to the feature being tested */
-  input: EnrichmentInput | BubbleInput | ShoppingInput
+  input: EnrichmentInput | BubbleInput
   /** Requirements for Layer 1 structural checks and Layer 2 quality evaluation */
   requirements: ScenarioRequirements
 }
@@ -41,11 +41,6 @@ export interface BubbleInput {
   tasks: TaskSummary[]
   /** User's timezone */
   timezone: string
-}
-
-export interface ShoppingInput {
-  /** Shopping item name to classify */
-  item: string
 }
 
 export interface ScenarioRequirements {

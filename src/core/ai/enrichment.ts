@@ -35,7 +35,6 @@ import { log } from '@/lib/logger'
 import { isAIEnabled } from './sdk'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
-import { isShoppingProject, getShoppingLabels, getProjectName } from './shopping'
 import { enrichmentQuery } from './enrichment-slot'
 
 /** Simple lock to prevent concurrent queue processing */
@@ -385,47 +384,6 @@ Parse this task and return the structured result.`
   }
 
   applyEnrichment(row, parsed, user)
-
-  // Post-enrichment: add shopping labels if the task is in a shopping project.
-  // Check the resolved project (after enrichment may have moved it).
-  const enrichedTask = getTaskById(row.id)
-  if (enrichedTask) {
-    const projectName = getProjectName(enrichedTask.project_id)
-    if (projectName && isShoppingProject(projectName)) {
-      try {
-        const shoppingLabels = await getShoppingLabels(row.user_id, enrichedTask.title, projectName)
-        if (shoppingLabels.length > 0) {
-          const existingLabels = new Set(enrichedTask.labels)
-          const newLabels = shoppingLabels.filter((l) => !existingLabels.has(l))
-          if (newLabels.length > 0) {
-            // Use withTransaction + logAction for atomic, undoable shopping label updates.
-            // Re-read beforeTask inside the transaction to capture the true pre-mutation
-            // state — the enrichedTask reference was captured before the async SDK call.
-            withTransaction((txDb) => {
-              const beforeTask = getTaskById(row.id)!
-              const merged = [...beforeTask.labels, ...newLabels]
-              txDb
-                .prepare('UPDATE tasks SET labels = ?, updated_at = ? WHERE id = ?')
-                .run(JSON.stringify(merged), nowUtc(), row.id)
-              const afterTask = getTaskById(row.id)!
-              const snapshot = createTaskSnapshot(beforeTask, afterTask, ['labels'])
-              logAction(
-                user.id,
-                'edit',
-                `AI: Added shopping labels — ${newLabels.join(', ')}`,
-                ['labels'],
-                [snapshot],
-              )
-            })
-            log.info('ai', `Task ${row.id} shopping labels added: ${newLabels.join(', ')}`)
-          }
-        }
-      } catch (err) {
-        // Shopping label failure is non-fatal — enrichment still succeeded
-        log.warn('ai', `Shopping label enrichment failed for task ${row.id}:`, err)
-      }
-    }
-  }
 }
 
 interface FieldChanges {
