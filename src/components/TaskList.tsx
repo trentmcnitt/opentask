@@ -72,6 +72,10 @@ interface TaskListProps {
   isCollapsed?: (groupLabel: string) => boolean
   /** Optional: toggle collapse for a group (lifted from useCollapsedGroups) */
   toggleCollapse?: (groupLabel: string) => void
+  /** Map of taskId -> AI annotation text */
+  annotationMap?: Map<number, string>
+  /** Whether to show annotation text below task metadata (sparkle icon always shows) */
+  showAnnotations?: boolean
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -163,6 +167,8 @@ export function TaskList({
   onDoubleClick,
   isCollapsed: isCollapsedProp,
   toggleCollapse: toggleCollapseProp,
+  annotationMap,
+  showAnnotations = false,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -333,6 +339,8 @@ export function TaskList({
                         }
                         onActivate={onActivate ? () => onActivate(task.id) : undefined}
                         onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
+                        annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
+                        isAiHighlighted={annotationMap?.has(task.id)}
                       />
                     </SwipeableRow>
                   )

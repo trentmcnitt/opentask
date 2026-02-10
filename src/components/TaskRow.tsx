@@ -3,7 +3,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
-import { Check, Clock, Repeat, Timer, TimerOff } from 'lucide-react'
+import { Check, Clock, Repeat, Sparkles, Timer, TimerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -76,6 +76,8 @@ interface TaskRowProps {
   onDoubleClick?: () => void
   /** Optional annotation line below metadata (e.g., AI reason from Bubble) */
   annotation?: string
+  /** When true, renders a sparkle icon before the title indicating AI insight */
+  isAiHighlighted?: boolean
 }
 
 export function TaskRow({
@@ -95,6 +97,7 @@ export function TaskRow({
   onActivate,
   onDoubleClick,
   annotation,
+  isAiHighlighted = false,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -267,6 +270,7 @@ export function TaskRow({
         // This prevents single-line tasks from shrinking when entering selection mode.
         'bg-card min-h-[62px] border',
         'hover:border-border/80 transition-colors',
+        isAiHighlighted && !isSelected && 'bg-blue-50/50 dark:bg-blue-950/20',
         isOverdue && 'border-l-destructive border-l-4',
         !isOverdue && isSnoozed && 'border-l-4 border-l-blue-400',
         // Right border for priority (user preference)
@@ -417,6 +421,7 @@ export function TaskRow({
 
         {annotation && (
           <p className="mt-0.5 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
+            <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {annotation}
           </p>
         )}

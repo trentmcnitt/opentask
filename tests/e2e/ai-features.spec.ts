@@ -29,19 +29,13 @@ test.describe('AI features (disabled)', () => {
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 
-  test('BubblePanel does not render when AI is disabled', async ({ authenticatedPage: page }) => {
+  test('AI chip does not render when AI is disabled', async ({ authenticatedPage: page }) => {
     // Wait for the page to fully load and any fetch calls to settle
     await page.waitForLoadState('networkidle')
 
-    // The BubblePanel shows "Analyzing your tasks..." while loading,
-    // and renders with a blue border when data is available.
-    // When AI returns 503, the component returns null — nothing renders.
-    await expect(page.getByText('Analyzing your tasks')).not.toBeVisible()
-
-    // Also verify the Sparkles-based summary area is absent
-    // (BubblePanel header uses a Sparkles icon with blue styling)
-    const bubbleContainer = page.locator('.border-blue-200.bg-blue-50\\/50')
-    await expect(bubbleContainer).not.toBeVisible()
+    // When AI returns 503, hasData is false so the AI filter chip in FilterBar
+    // doesn't render and no AI-related UI is shown.
+    await expect(page.getByText('tasks highlighted')).not.toBeVisible()
   })
 
   test('task creation works normally without AI enrichment', async ({

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { X } from 'lucide-react'
+import { Loader2, Sparkles, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import {
@@ -8,12 +9,16 @@ import {
   type DueDateFilter,
 } from '@/components/DueDateFilterBar'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
 import type { Task } from '@/types'
 
 /**
  * Combined filter bar for due date, priority, and label filters.
  * Date badges appear first, then priority, then labels,
  * separated by gray dividers. Horizontal scroll on narrow screens.
+ *
+ * AI chip: short press toggles AI filter, long press refreshes AI insights.
+ * Annotation visibility is controlled via the hamburger menu, not here.
  */
 export function FilterBar({
   tasks,
@@ -25,6 +30,11 @@ export function FilterBar({
   onToggleDateFilter,
   onClearAll,
   timezone,
+  aiInsightsCount,
+  aiFilterActive = false,
+  aiFilterLoading = false,
+  onToggleAiFilter,
+  onRefreshAi,
 }: {
   tasks: Task[]
   selectedPriorities: number[]
@@ -35,6 +45,11 @@ export function FilterBar({
   onToggleDateFilter?: (filter: DueDateFilter) => void
   onClearAll: () => void
   timezone?: string
+  aiInsightsCount?: number
+  aiFilterActive?: boolean
+  aiFilterLoading?: boolean
+  onToggleAiFilter?: () => void
+  onRefreshAi?: () => void
 }) {
   const hasLabels = tasks.some((t) => t.labels.length > 0)
 
@@ -57,11 +72,27 @@ export function FilterBar({
   if (tasks.length === 0) return null
 
   const hasSelection =
-    selectedPriorities.length > 0 || selectedLabels.length > 0 || selectedDateFilters.length > 0
+    selectedPriorities.length > 0 ||
+    selectedLabels.length > 0 ||
+    selectedDateFilters.length > 0 ||
+    aiFilterActive
 
   return (
     <div className="relative mb-4 flex items-center">
       <div className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto pr-8">
+        {onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0 && (
+          <>
+            <AiChip
+              active={aiFilterActive}
+              loading={aiFilterLoading}
+              count={aiInsightsCount}
+              onToggleFilter={onToggleAiFilter}
+              onRefresh={onRefreshAi}
+            />
+            <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+          </>
+        )}
+
         {dateFilterVisible && (
           <DueDateFilterBar
             tasks={tasks}
@@ -102,5 +133,50 @@ export function FilterBar({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * AI chip with short-press (toggle filter) and long-press (refresh).
+ * Extracted to isolate the useSimpleLongPress hook call from the conditional
+ * rendering block (hooks cannot be called conditionally).
+ */
+function AiChip({
+  active,
+  loading,
+  count,
+  onToggleFilter,
+  onRefresh,
+}: {
+  active: boolean
+  loading: boolean
+  count: number
+  onToggleFilter: () => void
+  onRefresh?: () => void
+}) {
+  const press = useSimpleLongPress({
+    onShortPress: onToggleFilter,
+    onLongPress: () => {
+      if (!loading) onRefresh?.()
+    },
+  })
+
+  return (
+    <button
+      onClick={press.onClick}
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerLeave={press.onPointerLeave}
+      className={cn(
+        'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'bg-blue-600 text-white'
+          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
+      )}
+    >
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+      AI
+      <span className="opacity-60">{count}</span>
+    </button>
   )
 }

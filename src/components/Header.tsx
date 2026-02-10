@@ -4,7 +4,18 @@ import { useState, useCallback } from 'react'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Clock, Undo2, Redo2, Menu, Keyboard, Settings, Bot } from 'lucide-react'
+import {
+  ChevronLeft,
+  Clock,
+  Undo2,
+  Redo2,
+  Menu,
+  Keyboard,
+  MessageSquareText,
+  Settings,
+  Bot,
+  Sparkles,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -44,6 +55,8 @@ interface HeaderProps {
   onSnoozeOverdue?: (until?: string) => void
   onShowKeyboardShortcuts?: () => void
   timezone?: string
+  showAiAnnotations?: boolean
+  onToggleAiAnnotations?: () => void
 }
 
 export function Header({
@@ -65,6 +78,8 @@ export function Header({
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
   timezone,
+  showAiAnnotations,
+  onToggleAiAnnotations,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
@@ -368,6 +383,26 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/review">
+                    <Sparkles className="size-4" />
+                    AI Review
+                  </Link>
+                </DropdownMenuItem>
+                {onToggleAiAnnotations && (
+                  <DropdownMenuItem onClick={onToggleAiAnnotations}>
+                    <MessageSquareText className="size-4" />
+                    AI Annotations
+                    <span
+                      className={cn(
+                        'ml-auto text-xs',
+                        showAiAnnotations ? 'text-green-600' : 'text-muted-foreground',
+                      )}
+                    >
+                      {showAiAnnotations ? 'On' : 'Off'}
+                    </span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                   <Bot className="size-4" />
                   AI Status
