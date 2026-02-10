@@ -1380,7 +1380,6 @@ export function QuickActionPanel({
                     </AutoSnoozePicker>
                   )
                 })()}
-                <IconButton icon={<Bell className="size-4" />} label="Critical alert" disabled />
                 {!isCreateMode && onDelete && (
                   <IconButton
                     icon={<Trash2 className="size-4" />}
@@ -1427,6 +1426,10 @@ export function QuickActionPanel({
                           Task Details
                         </DropdownMenuItem>
                       )}
+                      <DropdownMenuItem disabled>
+                        <Bell className="mr-2 size-4" />
+                        Critical alert
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

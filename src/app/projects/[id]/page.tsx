@@ -118,6 +118,23 @@ export default function ProjectDetailPage() {
     [setTasks, fetchTasks],
   )
 
+  const handleDelete = useCallback(
+    async (taskId: number) => {
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Failed to delete')
+        fetchTasks()
+        showToast({
+          message: 'Task moved to trash',
+          action: { label: 'Undo', onClick: actions.handleUndo },
+        })
+      } catch {
+        showToast({ message: 'Delete failed' })
+      }
+    },
+    [fetchTasks, actions.handleUndo],
+  )
+
   const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
     tasks,
     displayTasks,
@@ -193,6 +210,7 @@ export default function ProjectDetailPage() {
         open={quickActionOpen}
         onClose={() => setQuickActionOpen(false)}
         onSaveAll={actions.handleSaveAllChanges}
+        onDelete={handleDelete}
         annotation={focusedTask ? annotationMap.get(focusedTask.id) : undefined}
       />
 
