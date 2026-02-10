@@ -58,12 +58,12 @@ interface TaskListProps {
   onListFocus?: (e: React.FocusEvent) => void
   /** Blur handler for list container */
   onListBlur?: (e: React.FocusEvent) => void
-  /** Optional: get sort option for a group (lifted from useGroupSort) */
-  getSortOption?: (groupLabel: string) => SortOption
-  /** Optional: get reversed state for a group (lifted from useGroupSort) */
-  getReversed?: (groupLabel: string) => boolean
-  /** Optional: set sort option for a group (lifted from useGroupSort) */
-  setSortOption?: (groupLabel: string, option: SortOption) => void
+  /** Optional: sort option (lifted from useGroupSort) */
+  sortOption?: SortOption
+  /** Optional: reversed state (lifted from useGroupSort) */
+  reversed?: boolean
+  /** Optional: set sort option (lifted from useGroupSort) */
+  setSortOption?: (option: SortOption) => void
   /** Desktop click: set keyboard focus (blue glow) without selecting */
   onActivate?: (taskId: number) => void
   /** Desktop double-click: open QuickActionPanel */
@@ -76,6 +76,8 @@ interface TaskListProps {
   annotationMap?: Map<number, string>
   /** Whether to show annotation text below task metadata (sparkle icon always shows) */
   showAnnotations?: boolean
+  /** Optional content rendered on the left side of the sort dropdown row */
+  headerLeft?: React.ReactNode
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -172,8 +174,8 @@ export function TaskList({
   onKeyDown,
   onListFocus,
   onListBlur,
-  getSortOption: getSortOptionProp,
-  getReversed: getReversedProp,
+  sortOption: sortOptionProp,
+  reversed: reversedProp,
   setSortOption: setSortOptionProp,
   onActivate,
   onDoubleClick,
@@ -181,11 +183,12 @@ export function TaskList({
   toggleCollapse: toggleCollapseProp,
   annotationMap,
   showAnnotations = false,
+  headerLeft,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
-  const getSortOption = getSortOptionProp ?? internalSort.getSortOption
-  const getReversed = getReversedProp ?? internalSort.getReversed
+  const sortOption = sortOptionProp ?? internalSort.sortOption
+  const reversed = reversedProp ?? internalSort.reversed
   const setSortOption = setSortOptionProp ?? internalSort.setSortOption
   const internalCollapse = useCollapsedGroups()
   const isCollapsed = isCollapsedProp ?? internalCollapse.isCollapsed
@@ -228,8 +231,6 @@ export function TaskList({
 
   // Build ordered ID list for range-select, applying the same sort as rendering
   const orderedIds = groups.flatMap((g) => {
-    const sortOption = getSortOption(g.label)
-    const reversed = getReversed(g.label)
     return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
   })
 
@@ -249,119 +250,116 @@ export function TaskList({
       onKeyDown={onKeyDown}
       onFocus={onListFocus}
       onBlur={onListBlur}
-      className="space-y-6 outline-none"
+      className="outline-none"
     >
-      {groups.map((group, groupIdx) => {
-        const sortOption = getSortOption(group.label)
-        const reversed = getReversed(group.label)
-        const sortedTasks = sortTasks(group.tasks, sortOption, reversed)
-        const collapsed = isCollapsed(group.label)
+      <div className="mb-4 flex items-center justify-between px-1">
+        {headerLeft ?? <div />}
+        <SortDropdown sortOption={sortOption} reversed={reversed} onSort={setSortOption} />
+      </div>
+      <div className="space-y-6">
+        {groups.map((group, groupIdx) => {
+          const sortedTasks = sortTasks(group.tasks, sortOption, reversed)
+          const collapsed = isCollapsed(group.label)
 
-        return (
-          <section key={group.label}>
-            {/* "Now" separator between Overdue and the next group */}
-            {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
+          return (
+            <section key={group.label}>
+              {/* "Now" separator between Overdue and the next group */}
+              {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
-            <div
-              className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
-            >
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => toggleCollapse(group.label)}
-                  aria-expanded={!collapsed}
-                  aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
-                  className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
-                >
-                  <ChevronDown
-                    className={`size-3 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
-                  />
-                </button>
-                {!collapsed && selection.isSelectionMode && (
-                  <GroupCheckbox
-                    groupTaskIds={sortedTasks.map((t) => t.id)}
-                    selection={selection}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    // When collapsed, clicking the label expands the group
-                    if (collapsed) {
-                      toggleCollapse(group.label)
-                      return
-                    }
-                    const ids = sortedTasks.map((t) => t.id)
-                    if (selection.isSelectionMode) {
-                      // Toggle: if all selected, deselect all; otherwise select all
-                      const allSelected = ids.every((id) => selection.selectedIds.has(id))
-                      if (allSelected) {
-                        selection.removeAll(ids)
+              <div
+                className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapse(group.label)}
+                    aria-expanded={!collapsed}
+                    aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
+                    className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
+                  >
+                    <ChevronDown
+                      className={`size-3 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+                    />
+                  </button>
+                  {!collapsed && selection.isSelectionMode && (
+                    <GroupCheckbox
+                      groupTaskIds={sortedTasks.map((t) => t.id)}
+                      selection={selection}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // When collapsed, clicking the label expands the group
+                      if (collapsed) {
+                        toggleCollapse(group.label)
+                        return
+                      }
+                      const ids = sortedTasks.map((t) => t.id)
+                      if (selection.isSelectionMode) {
+                        // Toggle: if all selected, deselect all; otherwise select all
+                        const allSelected = ids.every((id) => selection.selectedIds.has(id))
+                        if (allSelected) {
+                          selection.removeAll(ids)
+                        } else {
+                          selection.addAll(ids)
+                        }
                       } else {
+                        // Enter selection mode and select all in this group
                         selection.addAll(ids)
                       }
-                    } else {
-                      // Enter selection mode and select all in this group
-                      selection.addAll(ids)
-                    }
-                  }}
-                  className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
-                >
-                  {group.label}
-                  <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
-                </button>
+                    }}
+                    className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
+                  >
+                    {group.label}
+                    <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
+                  </button>
+                </div>
               </div>
               {!collapsed && (
-                <SortDropdown
-                  sortOption={sortOption}
-                  reversed={reversed}
-                  onSort={(option) => setSortOption(group.label, option)}
-                />
+                <div className="space-y-1">
+                  {sortedTasks.map((task) => {
+                    const cancelRef = { current: null as (() => void) | null }
+                    return (
+                      <SwipeableRow
+                        key={task.id}
+                        onSwipeRight={() => onDone(task.id)}
+                        onSwipeLeft={() => handleSwipeSnooze(task)}
+                        onDragStart={() => cancelRef.current?.()}
+                        disabled={selection.isSelectionMode}
+                      >
+                        <TaskRow
+                          task={task}
+                          onDone={() => onDone(task.id)}
+                          onSnooze={onSnooze}
+                          isOverdue={isTaskOverdue(task)}
+                          isSelected={selection.selectedIds.has(task.id)}
+                          isSelectionMode={selection.isSelectionMode}
+                          onSelect={() => selection.toggle(task.id)}
+                          onSelectOnly={() => selection.selectOnly(task.id)}
+                          onRangeSelect={() =>
+                            selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
+                          }
+                          cancelLongPressRef={cancelRef}
+                          onLabelClick={onLabelClick}
+                          onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
+                          isKeyboardFocused={
+                            isKeyboardActive && !isMobile && task.id === keyboardFocusedId
+                          }
+                          onActivate={onActivate ? () => onActivate(task.id) : undefined}
+                          onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
+                          annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
+                          isAiHighlighted={annotationMap?.has(task.id)}
+                        />
+                      </SwipeableRow>
+                    )
+                  })}
+                </div>
               )}
-            </div>
-            {!collapsed && (
-              <div className="space-y-1">
-                {sortedTasks.map((task) => {
-                  const cancelRef = { current: null as (() => void) | null }
-                  return (
-                    <SwipeableRow
-                      key={task.id}
-                      onSwipeRight={() => onDone(task.id)}
-                      onSwipeLeft={() => handleSwipeSnooze(task)}
-                      onDragStart={() => cancelRef.current?.()}
-                      disabled={selection.isSelectionMode}
-                    >
-                      <TaskRow
-                        task={task}
-                        onDone={() => onDone(task.id)}
-                        onSnooze={onSnooze}
-                        isOverdue={isTaskOverdue(task)}
-                        isSelected={selection.selectedIds.has(task.id)}
-                        isSelectionMode={selection.isSelectionMode}
-                        onSelect={() => selection.toggle(task.id)}
-                        onSelectOnly={() => selection.selectOnly(task.id)}
-                        onRangeSelect={() =>
-                          selection.rangeSelect(task.id, orderedIds, keyboardFocusedId)
-                        }
-                        cancelLongPressRef={cancelRef}
-                        onLabelClick={onLabelClick}
-                        onFocus={onTaskFocus ? () => onTaskFocus(task) : undefined}
-                        isKeyboardFocused={
-                          isKeyboardActive && !isMobile && task.id === keyboardFocusedId
-                        }
-                        onActivate={onActivate ? () => onActivate(task.id) : undefined}
-                        onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
-                        annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
-                        isAiHighlighted={annotationMap?.has(task.id)}
-                      />
-                    </SwipeableRow>
-                  )
-                })}
-              </div>
-            )}
-          </section>
-        )
-      })}
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }

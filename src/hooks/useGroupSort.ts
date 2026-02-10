@@ -6,7 +6,7 @@ export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified' 
 
 /**
  * Dashboard-level sort state shared across all group headers.
- * Tracks both the sort field and direction (reversed or not).
+ * Returns a single sort field and direction that applies to every group.
  *
  * Default directions:
  *   - due_date: soonest first, no due date last (reversed = latest first)
@@ -16,7 +16,6 @@ export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified' 
  *   - modified: most recently modified first (reversed = least recently modified first)
  *
  * Selecting the same sort option again toggles the direction.
- * Changing sort on any group header updates all groups.
  * State resets on page refresh.
  */
 export function useGroupSort() {
@@ -25,21 +24,7 @@ export function useGroupSort() {
     reversed: false,
   })
 
-  const getSortOption = useCallback(
-    (_groupLabel: string): SortOption => {
-      return globalSort.sort
-    },
-    [globalSort],
-  )
-
-  const getReversed = useCallback(
-    (_groupLabel: string): boolean => {
-      return globalSort.reversed
-    },
-    [globalSort],
-  )
-
-  const setSortOption = useCallback((_groupLabel: string, option: SortOption) => {
+  const setSortOption = useCallback((option: SortOption) => {
     setGlobalSort((prev) => {
       // If selecting the same sort, toggle direction
       if (prev.sort === option) {
@@ -51,8 +36,8 @@ export function useGroupSort() {
   }, [])
 
   return {
-    getSortOption,
-    getReversed,
+    sortOption: globalSort.sort,
+    reversed: globalSort.reversed,
     setSortOption,
   }
 }

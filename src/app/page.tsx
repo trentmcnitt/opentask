@@ -309,7 +309,7 @@ function HomeContent() {
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
 
   // Sort state - lifted here so keyboard navigation can use the same order as display
-  const { getSortOption, getReversed, setSortOption } = useGroupSort()
+  const { sortOption, reversed, setSortOption } = useGroupSort()
   const { isCollapsed, toggleCollapse } = useCollapsedGroups()
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
@@ -375,12 +375,9 @@ function HomeContent() {
     () =>
       taskGroups.flatMap((g) => {
         if (isCollapsed(g.label)) return []
-        const sortOption = getSortOption(g.label)
-        const reversed = getReversed(g.label)
-        const sortedTasks = sortTasks(g.tasks, sortOption, reversed)
-        return sortedTasks.map((t) => t.id)
+        return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
       }),
-    [taskGroups, getSortOption, getReversed, isCollapsed],
+    [taskGroups, sortOption, reversed, isCollapsed],
   )
 
   // Wrap toggleCollapse to deselect tasks in a group when collapsing it
@@ -512,11 +509,9 @@ function HomeContent() {
         e.preventDefault()
         const clipboardGroups: ClipboardGroup[] = taskGroups
           .map((g) => {
-            const sort = getSortOption(g.label)
-            const reversed = getReversed(g.label)
-            const sorted = sortTasks(g.tasks, sort, reversed)
+            const sorted = sortTasks(g.tasks, sortOption, reversed)
             const selected = sorted.filter((t) => selection.selectedIds.has(t.id))
-            return { label: g.label, tasks: selected, sort, reversed }
+            return { label: g.label, tasks: selected, sort: sortOption, reversed }
           })
           .filter((g) => g.tasks.length > 0)
         if (clipboardGroups.length > 0) {
@@ -649,8 +644,8 @@ function HomeContent() {
     setKeyboardFocusedId,
     selection,
     taskGroups,
-    getSortOption,
-    getReversed,
+    sortOption,
+    reversed,
     timezone,
   ])
 
@@ -867,8 +862,8 @@ function HomeContent() {
       onKeyDown={keyboard.handleKeyDown}
       onListFocus={keyboard.handleFocus}
       onListBlur={keyboard.handleBlur}
-      getSortOption={getSortOption}
-      getReversed={getReversed}
+      sortOption={sortOption}
+      reversed={reversed}
       setSortOption={setSortOption}
       isCollapsed={isCollapsed}
       toggleCollapse={handleToggleCollapse}
@@ -949,8 +944,8 @@ function DashboardView({
   onKeyDown,
   onListFocus,
   onListBlur,
-  getSortOption,
-  getReversed,
+  sortOption,
+  reversed,
   setSortOption,
   isCollapsed,
   toggleCollapse,
@@ -1014,9 +1009,9 @@ function DashboardView({
   onKeyDown: (e: React.KeyboardEvent) => void
   onListFocus: (e: React.FocusEvent) => void
   onListBlur: (e: React.FocusEvent) => void
-  getSortOption: (groupLabel: string) => SortOption
-  getReversed: (groupLabel: string) => boolean
-  setSortOption: (groupLabel: string, option: SortOption) => void
+  sortOption: SortOption
+  reversed: boolean
+  setSortOption: (option: SortOption) => void
   isCollapsed: (groupLabel: string) => boolean
   toggleCollapse: (groupLabel: string) => void
   onActivate: (taskId: number) => void
@@ -1086,27 +1081,6 @@ function DashboardView({
           onRefreshAi={onRefreshAi}
         />
 
-        {tasks.length > 0 && (
-          <div className="mb-4">
-            <button
-              onClick={() => {
-                const allSelected =
-                  tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                if (allSelected) {
-                  selection.clear()
-                } else {
-                  selection.selectAll(tasks.map((t) => t.id))
-                }
-              }}
-              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-            >
-              {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                ? 'Select None'
-                : 'Select All'}
-            </button>
-          </div>
-        )}
-
         {searchQuery && (
           <div className="mb-4 text-sm text-zinc-500">
             {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
@@ -1142,8 +1116,8 @@ function DashboardView({
           onKeyDown={onKeyDown}
           onListFocus={onListFocus}
           onListBlur={onListBlur}
-          getSortOption={getSortOption}
-          getReversed={getReversed}
+          sortOption={sortOption}
+          reversed={reversed}
           setSortOption={setSortOption}
           isCollapsed={isCollapsed}
           toggleCollapse={toggleCollapse}
@@ -1151,6 +1125,26 @@ function DashboardView({
           onDoubleClick={onDoubleClick}
           annotationMap={aiInsights.annotationMap}
           showAnnotations={aiAnnotationsVisible}
+          headerLeft={
+            tasks.length > 0 ? (
+              <button
+                onClick={() => {
+                  const allSelected =
+                    tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                  if (allSelected) {
+                    selection.clear()
+                  } else {
+                    selection.selectAll(tasks.map((t) => t.id))
+                  }
+                }}
+                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+              >
+                {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                  ? 'Select None'
+                  : 'Select All'}
+              </button>
+            ) : undefined
+          }
         />
       </main>
 
