@@ -32,7 +32,7 @@ import type { DueDateFilter } from '@/components/DueDateFilterBar'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { taskWord, isMacPlatform } from '@/lib/utils'
-import BubblePanel from '@/components/BubblePanel'
+import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
 
 /** Check if click/touch target is inside a zone that handles its own interaction */
 function isInsideInteractiveZone(target: HTMLElement) {
@@ -334,11 +334,32 @@ function HomeContent() {
     filteredTasks: displayTasks,
   } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
 
-  const tasks_ = displayTasks
+  // AI insights: fetch recommendations and resolve against current task list
+  const aiInsights = useAiInsights(baseTasks)
+  const [aiFilterActive, setAiFilterActive] = useState(false)
+  const [aiAnnotationsVisible, setAiAnnotationsVisible] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return localStorage.getItem('ai-annotations-visible') !== 'false'
+  })
 
-  // Wrap clearAllFilters to also clear selection
+  // Apply AI filter after other filters
+  const tasks_ = useMemo(() => {
+    if (!aiFilterActive || aiInsights.aiTaskIds.size === 0) return displayTasks
+    return displayTasks.filter((t) => aiInsights.aiTaskIds.has(t.id))
+  }, [displayTasks, aiFilterActive, aiInsights.aiTaskIds])
+
+  const handleToggleAiAnnotations = useCallback(() => {
+    setAiAnnotationsVisible((prev) => {
+      const next = !prev
+      localStorage.setItem('ai-annotations-visible', String(next))
+      return next
+    })
+  }, [])
+
+  // Wrap clearAllFilters to also clear selection and AI filter
   const handleClearFilters = useCallback(() => {
     selection.clear()
+    setAiFilterActive(false)
     clearAllFilters()
   }, [selection, clearAllFilters])
 
@@ -876,6 +897,12 @@ function HomeContent() {
           actions.handleBatchRedo()
         }
       }}
+      aiInsights={aiInsights}
+      aiFilterActive={aiFilterActive}
+      onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
+      aiAnnotationsVisible={aiAnnotationsVisible}
+      onToggleAiAnnotations={handleToggleAiAnnotations}
+      onRefreshAi={aiInsights.refresh}
     />
   )
 }
@@ -939,6 +966,12 @@ function DashboardView({
   onOpenBatchUndo,
   onOpenBatchRedo,
   onBatchConfirm,
+  aiInsights,
+  aiFilterActive,
+  onToggleAiFilter,
+  aiAnnotationsVisible,
+  onToggleAiAnnotations,
+  onRefreshAi,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -998,6 +1031,12 @@ function DashboardView({
   onOpenBatchUndo: () => void
   onOpenBatchRedo: () => void
   onBatchConfirm: () => void
+  aiInsights: UseAiInsightsReturn
+  aiFilterActive: boolean
+  onToggleAiFilter: () => void
+  aiAnnotationsVisible: boolean
+  onToggleAiAnnotations: () => void
+  onRefreshAi: () => void
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -1018,6 +1057,8 @@ function DashboardView({
         onSnoozeOverdue={onSnoozeOverdue}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
+        showAiAnnotations={aiAnnotationsVisible}
+        onToggleAiAnnotations={onToggleAiAnnotations}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
@@ -1038,15 +1079,11 @@ function DashboardView({
           onToggleDateFilter={onToggleDateFilter}
           onClearAll={onClearFilters}
           timezone={timezone}
-        />
-
-        <BubblePanel
-          tasks={allTasks}
-          onDone={actions.handleDone}
-          onSnooze={actions.handleSnooze}
-          onActivate={onActivate}
-          onDoubleClick={onDoubleClick}
-          onLabelClick={onToggleLabel}
+          aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
+          aiFilterActive={aiFilterActive}
+          aiFilterLoading={aiInsights.loading}
+          onToggleAiFilter={onToggleAiFilter}
+          onRefreshAi={onRefreshAi}
         />
 
         {tasks.length > 0 && (
@@ -1079,7 +1116,8 @@ function DashboardView({
 
         {(selectedLabels.length > 0 ||
           selectedPriorities.length > 0 ||
-          selectedDateFilters.length > 0) && (
+          selectedDateFilters.length > 0 ||
+          aiFilterActive) && (
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
             <button
@@ -1111,6 +1149,8 @@ function DashboardView({
           toggleCollapse={toggleCollapse}
           onActivate={onActivate}
           onDoubleClick={onDoubleClick}
+          annotationMap={aiInsights.annotationMap}
+          showAnnotations={aiAnnotationsVisible}
         />
       </main>
 
