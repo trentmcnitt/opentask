@@ -80,16 +80,20 @@ export type ShoppingLabelResult = z.infer<typeof ShoppingLabelResultSchema>
 /**
  * Compact task summary for AI prompts.
  * Includes only the fields AI needs to make decisions.
+ *
+ * Dates are stored as ISO UTC here and converted to human-readable
+ * local time when building the prompt (see bubble.ts).
  */
 export interface TaskSummary {
   id: number
   title: string
   priority: number
   due_at: string | null
+  original_due_at: string | null
+  created_at: string
   labels: string[]
   project_name: string | null
   is_recurring: boolean
-  snooze_count: number
 }
 
 /**

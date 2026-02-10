@@ -63,17 +63,18 @@ function executeRecurringMarkDone(
 
   const completionId = Number(completionResult.lastInsertRowid)
 
-  // Update task: advance due_at, clear original_due_at, update completion stats
+  // Update task: advance due_at, set original_due_at to new occurrence origin, update completion stats
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, original_due_at = NULL,
+    SET due_at = ?, original_due_at = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         updated_at = ?
     WHERE id = ?
   `,
   ).run(
     nextDueAt,
+    nextDueAt, // original_due_at tracks the new occurrence's origin timestamp
     stats.completionCount,
     stats.firstCompletedAt,
     stats.lastCompletedAt,
@@ -85,7 +86,7 @@ function executeRecurringMarkDone(
   const afterState: Partial<Task> & { _completion?: unknown } = {
     id: task.id,
     due_at: nextDueAt,
-    original_due_at: null,
+    original_due_at: nextDueAt,
     completion_count: stats.completionCount,
     first_completed_at: stats.firstCompletedAt,
     last_completed_at: stats.lastCompletedAt,

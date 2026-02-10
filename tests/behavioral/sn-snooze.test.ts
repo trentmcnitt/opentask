@@ -61,11 +61,11 @@ describe('Snooze Behavioral Tests', () => {
   })
 
   /**
-   * SN-001: First Snooze Captures Original
+   * SN-001: First Snooze Preserves Original
    *
-   * First snooze saves original `due_at` to `original_due_at`.
+   * original_due_at is set at creation time (eager). First snooze preserves it.
    *
-   * Task: due_at=tomorrow 08:00, original_due_at=NULL
+   * Task: due_at=tomorrow 08:00, original_due_at=tomorrow 08:00
    * Action: Snooze to 14:00
    * Result: due_at=tomorrow 14:00, original_due_at=tomorrow 08:00
    */
@@ -81,7 +81,8 @@ describe('Snooze Behavioral Tests', () => {
       },
     })
 
-    expect(task.original_due_at).toBeNull()
+    // original_due_at is set eagerly at creation time
+    expect(task.original_due_at).toBe(originalDueAt)
 
     // Snooze to 2:00 PM tomorrow (also future, later than original)
     const snoozeTo = futureLocalTime(14, 0, 1)
@@ -152,13 +153,14 @@ describe('Snooze Behavioral Tests', () => {
   })
 
   /**
-   * SN-003: Done Clears Snooze
+   * SN-003: Done Resets Original to New Occurrence
    *
-   * Marking a snoozed recurring task done clears `original_due_at`.
+   * Marking a snoozed recurring task done advances due_at and resets
+   * original_due_at to the new occurrence's due_at.
    *
    * Task: due_at=tomorrow 14:00, original_due_at=tomorrow 08:00, recurring
    * Action: Mark done
-   * Result: due_at=day after tomorrow 08:00, original_due_at=NULL
+   * Result: due_at=day after tomorrow 08:00, original_due_at=day after tomorrow 08:00
    */
   test('SN-003: Marking done on snoozed recurring task clears original_due_at', () => {
     // Create recurring task due at 8:00 AM tomorrow
@@ -196,8 +198,8 @@ describe('Snooze Behavioral Tests', () => {
       taskId: task.id,
     })
 
-    // Verify original_due_at is cleared (THE KEY ASSERTION for SN-003)
-    expect(result.task.original_due_at).toBeNull()
+    // Verify original_due_at is reset to the new occurrence's due_at
+    expect(result.task.original_due_at).toBe(result.task.due_at)
 
     // Verify due_at advanced to next occurrence at anchor time
     // The exact date depends on when the test runs, but it should be at 8:00 AM
@@ -401,7 +403,8 @@ describe('Snooze Validation Tests', () => {
       },
     })
 
-    expect(task.original_due_at).toBeNull()
+    // original_due_at is set eagerly at creation time
+    expect(task.original_due_at).toBe(originalDueAt)
     expect(task.snooze_count).toBe(0)
 
     // Update due_at via PATCH
@@ -412,7 +415,7 @@ describe('Snooze Validation Tests', () => {
       input: { due_at: futureTime(3) },
     })
 
-    // Snooze logic should have been applied
+    // Snooze logic should have been applied (original_due_at preserved from creation)
     expect(updatedTask.original_due_at).toBe(originalDueAt)
     expect(updatedTask.snooze_count).toBe(1)
   })
@@ -450,7 +453,8 @@ describe('Snooze Validation Tests', () => {
     expect(editEntry!.fields_changed).toContain('due_at')
     expect(editEntry!.fields_changed).toContain('priority')
     expect(editEntry!.fields_changed).toContain('snooze_count')
-    expect(editEntry!.fields_changed).toContain('original_due_at')
+    // original_due_at is NOT in fields_changed because it was already set at creation time
+    expect(editEntry!.fields_changed).not.toContain('original_due_at')
   })
 
   /**
@@ -657,7 +661,8 @@ describe('Snooze Validation Tests', () => {
 
     expect(task.due_at).not.toBeNull()
     expect(task.snooze_count).toBe(0)
-    expect(task.original_due_at).toBeNull()
+    // original_due_at is set eagerly at creation time
+    expect(task.original_due_at).toBe(task.due_at)
 
     // Clear due_at and rrule to null
     const { task: updated } = updateTask({

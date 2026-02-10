@@ -704,6 +704,72 @@ export function QuickActionPanel({
   // Determine if recurrence is "One time" for styling purposes
   const isOneTime = !isBulkMode && !isSelectionSheetMode && !displayRrule
 
+  /**
+   * Task age — "since X" text shown on the recurrence line.
+   *
+   * For one-off tasks: age is based on created_at (how long the task has existed).
+   * For recurring tasks: age is based on original_due_at (when the current
+   * occurrence was originally due), but only shown when the occurrence is
+   * overdue (original_due_at is in the past). If the occurrence hasn't arrived
+   * yet, no age is shown.
+   */
+  const sinceInfo = useMemo(() => {
+    if (!effectiveTask || isBulkMode || isSelectionSheetMode || isCreateMode) return null
+
+    const isRecurring = !!effectiveTask.rrule
+    let anchorIso: string | null = null
+
+    if (isRecurring) {
+      // For recurring: use original_due_at (occurrence origin), only if in the past
+      anchorIso = effectiveTask.original_due_at ?? effectiveTask.due_at
+      if (!anchorIso) return null
+      if (new Date(anchorIso) > new Date()) return null // occurrence hasn't arrived yet
+    } else {
+      // For one-off: use created_at
+      anchorIso = effectiveTask.created_at
+    }
+
+    const anchor = DateTime.fromISO(anchorIso, { zone: 'utc' }).setZone(timezone)
+    const now = DateTime.now().setZone(timezone)
+    const fullDate = anchor.toFormat('ccc, LLL d, yyyy, h:mm a')
+
+    // Time ago: "2 hours ago", "3 days ago", "4 weeks ago", "2 months ago"
+    const diff = now.diff(anchor, ['months', 'weeks', 'days', 'hours', 'minutes'])
+    let timeAgo: string
+    if (diff.months >= 1) {
+      const m = Math.floor(diff.months)
+      timeAgo = `${m} month${m === 1 ? '' : 's'} ago`
+    } else if (diff.weeks >= 1) {
+      const w = Math.floor(diff.weeks)
+      timeAgo = `${w} week${w === 1 ? '' : 's'} ago`
+    } else if (diff.days >= 1) {
+      const d = Math.floor(diff.days)
+      timeAgo = `${d} day${d === 1 ? '' : 's'} ago`
+    } else if (diff.hours >= 1) {
+      const h = Math.floor(diff.hours)
+      timeAgo = `${h} hour${h === 1 ? '' : 's'} ago`
+    } else {
+      const m = Math.max(1, Math.floor(diff.minutes))
+      timeAgo = `${m} minute${m === 1 ? '' : 's'} ago`
+    }
+
+    // Compact label: "today", "yesterday", "Mon", "Jan 11", "Dec 20, 2025"
+    let label: string
+    if (anchor.hasSame(now, 'day')) {
+      label = 'today'
+    } else if (anchor.hasSame(now.minus({ days: 1 }), 'day')) {
+      label = 'yesterday'
+    } else if (now.diff(anchor, 'days').days < 7) {
+      label = anchor.toFormat('ccc')
+    } else if (anchor.year === now.year) {
+      label = anchor.toFormat('LLL d')
+    } else {
+      label = anchor.toFormat('LLL d, yyyy')
+    }
+
+    return { label, timeAgo, fullDate }
+  }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
+
   // Toggle recurrence picker (for inline mode)
   const handleRecurrenceToggle = useCallback(() => {
     setEditingRecurrence((prev) => !prev)
@@ -958,7 +1024,7 @@ export function QuickActionPanel({
             </p>
           )}
           {/* Recurrence inline - for non-SelectionActionSheet modes */}
-          {/* Shows "One time" in muted color for non-recurring, or recurrence pattern with icon for recurring */}
+          {/* Shows "One time" or recurrence pattern, plus "since X" age when available */}
           {!isSelectionSheetMode && recurrenceText && (
             <p
               className={cn(
@@ -972,6 +1038,13 @@ export function QuickActionPanel({
             >
               {!isOneTime && <Repeat className="mr-1 inline size-3" />}
               {recurrenceText}
+              {sinceInfo && !isRruleDirty && (
+                <SinceAge
+                  label={sinceInfo.label}
+                  timeAgo={sinceInfo.timeAgo}
+                  fullDate={sinceInfo.fullDate}
+                />
+              )}
             </p>
           )}
           {/* Project + Priority row */}
@@ -1542,5 +1615,64 @@ function GridButton({
     >
       {label}
     </button>
+  )
+}
+
+/**
+ * "since X" age indicator with hover (desktop) and tap (mobile) popover.
+ *
+ * Extracted as a separate component to isolate the open state and event
+ * handlers from the main QuickActionPanel render (avoids hooks-in-conditionals
+ * and keeps the main component clean).
+ */
+function SinceAge({
+  label,
+  timeAgo,
+  fullDate,
+}: {
+  label: string
+  timeAgo: string
+  fullDate: string
+}) {
+  const [open, setOpen] = useState(false)
+  const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleOpen = () => {
+    if (closeTimeout.current) clearTimeout(closeTimeout.current)
+    setOpen(true)
+  }
+  const handleClose = () => {
+    // Small delay so moving from trigger → content doesn't flicker
+    closeTimeout.current = setTimeout(() => setOpen(false), 100)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <span
+          className="text-muted-foreground/60 cursor-default"
+          onClick={() => setOpen((o) => !o)}
+          onMouseEnter={handleOpen}
+          onMouseLeave={handleClose}
+        >
+          {' · since '}
+          {label}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-auto px-3 py-2 text-xs"
+        sideOffset={4}
+        onMouseEnter={handleOpen}
+        onMouseLeave={handleClose}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="flex flex-col gap-0.5">
+          <span>{fullDate}</span>
+          <span className="text-muted-foreground">{timeAgo}</span>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

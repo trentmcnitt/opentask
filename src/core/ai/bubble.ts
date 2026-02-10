@@ -17,6 +17,7 @@ import { BubbleResultSchema } from './types'
 import type { BubbleResult, TaskSummary } from './types'
 import { logAIActivity, getAIActivity } from './activity'
 import { z } from 'zod'
+import { DateTime } from 'luxon'
 
 /**
  * Generate Bubble recommendations for a user.
@@ -40,21 +41,30 @@ export async function generateBubble(
 
   // Build a compact task summary for the prompt (limit to 50 most relevant)
   const relevantTasks = selectRelevantTasks(tasks, 50)
+  const now = DateTime.now().setZone(timezone)
   const taskList = relevantTasks
-    .map(
-      (t) =>
-        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${t.due_at || 'none'} | ` +
-        `snooze_count: ${t.snooze_count} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`,
-    )
+    .map((t) => {
+      const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
+      const originalDue =
+        t.original_due_at && t.original_due_at !== t.due_at
+          ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
+          : ''
+      const created = formatLocalDate(t.created_at, timezone)
+      return (
+        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
+        `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
+        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`
+      )
+    })
     .join('\n')
+
+  const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
   const prompt = `${BUBBLE_SYSTEM_PROMPT}
 
 ## Context
 
-User's timezone: ${timezone}
-Current UTC time: ${nowUtc()}
+Current time: ${currentTime}
 Total active tasks: ${tasks.length}
 
 ## Tasks
@@ -152,16 +162,27 @@ export function getCachedBubble(userId: number): BubbleResult | null {
 }
 
 /**
+ * Format an ISO UTC date as human-readable local time for the AI prompt.
+ * Example: "Mon, Feb 9, 4:00 PM"
+ */
+function formatLocalDate(isoUtc: string, timezone: string): string {
+  const dt = DateTime.fromISO(isoUtc, { zone: 'utc' }).setZone(timezone)
+  return dt.toFormat('ccc, LLL d, h:mm a')
+}
+
+/**
  * Select the most relevant tasks for the AI prompt.
- * Prioritizes: stale (high snooze) > idle (no deadline) > low priority.
+ * Prioritizes: old tasks (high age) > idle (no deadline) > low priority.
  * Excludes: daily recurring affirmations, already-urgent items.
  */
 function selectRelevantTasks(tasks: TaskSummary[], limit: number): TaskSummary[] {
+  const now = Date.now()
   const scored = tasks.map((t) => {
     let score = 0
 
-    // High snooze count = being avoided
-    score += Math.min(t.snooze_count * 10, 50)
+    // Task age: older tasks are more likely to be forgotten (cap at 50 points)
+    const ageDays = (now - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24)
+    score += Math.min(Math.floor(ageDays * 3), 50)
 
     // No deadline = easy to forget
     if (!t.due_at) score += 20
