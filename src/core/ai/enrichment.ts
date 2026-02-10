@@ -369,9 +369,14 @@ Parse this task and return the structured result.`
     }
   }
   if (!parsed && result.text) {
-    // Try extracting JSON from text response
+    // Try extracting JSON from text response.
+    // The model sometimes wraps JSON in markdown code fences (```json ... ```),
+    // so strip those before parsing.
+    let textToParse = result.text.trim()
+    const fenceMatch = textToParse.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/)
+    if (fenceMatch) textToParse = fenceMatch[1]
     try {
-      const json = JSON.parse(result.text)
+      const json = JSON.parse(textToParse)
       const validation = EnrichmentResultSchema.safeParse(json)
       if (validation.success) parsed = validation.data
     } catch {

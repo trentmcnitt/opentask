@@ -287,6 +287,23 @@ function HomeContent() {
   }, [])
   const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
 
+  const handleQuickActionDelete = useCallback(
+    async (taskId: number) => {
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Failed to delete')
+        fetchTasks()
+        showToast({
+          message: 'Task moved to trash',
+          action: { label: 'Undo', onClick: actions.handleUndo },
+        })
+      } catch {
+        showToast({ message: 'Delete failed' })
+      }
+    },
+    [fetchTasks, actions.handleUndo],
+  )
+
   const handleReprocess = useCallback(
     async (taskId: number) => {
       // Optimistic update: swap ai-failed → ai-to-process (triggers processing animation)
@@ -920,6 +937,7 @@ function HomeContent() {
       aiAnnotationsVisible={aiAnnotationsVisible}
       onToggleAiAnnotations={handleToggleAiAnnotations}
       onRefreshAi={aiInsights.refresh}
+      onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
     />
   )
@@ -960,6 +978,7 @@ function DashboardView({
   onTaskFocus,
   onQuickActionClose,
   onQuickActionSaveAll,
+  onQuickActionDelete,
   onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
@@ -1026,6 +1045,7 @@ function DashboardView({
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
   onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
+  onQuickActionDelete: (taskId: number) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
   keyboardFocusedId: number | null
@@ -1244,6 +1264,7 @@ function DashboardView({
         open={quickActionOpen}
         onClose={onQuickActionClose}
         onSaveAll={onQuickActionSaveAll}
+        onDelete={onQuickActionDelete}
         onNavigateToDetail={onQuickActionNavigate}
         projects={projects}
         annotation={focusedTask ? aiInsights.annotationMap.get(focusedTask.id) : undefined}
