@@ -37,6 +37,8 @@ interface TaskDetailProps {
    * This creates a single undo entry instead of multiple entries for each field change.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void
+  /** AI annotation text to display in the QuickActionPanel */
+  annotation?: string
 }
 
 export function TaskDetail({
@@ -53,6 +55,7 @@ export function TaskDetail({
   onMetaNotesSave,
   saveRef,
   onSaveAll,
+  annotation,
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
@@ -96,6 +99,7 @@ export function TaskDetail({
               onCancel={() => {}}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}
+              annotation={annotation}
             />
           </div>
         )}

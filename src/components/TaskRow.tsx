@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { formatDueTimeParts, formatOriginalDueAt } from '@/lib/format-date'
+import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig, useSnoozePreferences } from '@/components/PreferencesProvider'
@@ -525,6 +525,13 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     if (text) {
       segments.push({ text, className: 'text-blue-400' })
     }
+  }
+
+  // Age indicator: how old a task is (very subtle, at the end of metadata)
+  const ageAnchor = task.rrule ? (task.original_due_at ?? task.due_at) : task.created_at
+  if (ageAnchor) {
+    const ageText = formatTaskAge(ageAnchor, timezone)
+    if (ageText) segments.push({ text: ageText, className: 'text-muted-foreground/50' })
   }
 
   return segments

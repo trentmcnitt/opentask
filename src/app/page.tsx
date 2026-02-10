@@ -1226,6 +1226,7 @@ function DashboardView({
         onSaveAll={onQuickActionSaveAll}
         onNavigateToDetail={onQuickActionNavigate}
         projects={projects}
+        annotation={focusedTask ? aiInsights.annotationMap.get(focusedTask.id) : undefined}
       />
 
       <KeyboardShortcutsDialog

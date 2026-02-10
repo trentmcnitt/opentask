@@ -17,6 +17,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
+import { useAiInsights } from '@/hooks/useAiInsights'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -33,6 +34,7 @@ export default function ProjectDetailPage() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [batchDialogMode, setBatchDialogMode] = useState<'undo' | 'redo'>('undo')
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
+  const { annotationMap } = useAiInsights(tasks)
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen)
 
@@ -168,6 +170,7 @@ export default function ProjectDetailPage() {
         open={quickActionOpen}
         onClose={() => setQuickActionOpen(false)}
         onSaveAll={actions.handleSaveAllChanges}
+        annotation={focusedTask ? annotationMap.get(focusedTask.id) : undefined}
       />
 
       <BatchUndoDialog

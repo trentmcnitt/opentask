@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 
-export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified'
+export type SortOption = 'due_date' | 'priority' | 'title' | 'age' | 'modified' | 'original_due'
 
 /**
  * Dashboard-level sort state shared across all group headers.

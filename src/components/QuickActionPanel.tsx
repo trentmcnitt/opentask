@@ -14,6 +14,8 @@ import {
   Plus,
   ChevronDown,
   XCircle,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -83,6 +85,7 @@ export interface QuickActionPanelChanges {
   project_id?: number
   due_at?: string | null
   auto_snooze_minutes?: number | null
+  reset_original_due_at?: boolean
 }
 
 export interface QuickActionPanelProps {
@@ -147,6 +150,8 @@ export interface QuickActionPanelProps {
    * with a single undo entry. Falls back to individual callbacks if not provided.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
+  /** AI annotation text to display (e.g., bubble recommendation reason) */
+  annotation?: string
   /** Enables create mode — panel is used for new task creation instead of editing */
   createMode?: boolean
   /** Pre-fills title in create mode (from QuickAdd "+" button) */
@@ -195,6 +200,7 @@ export function QuickActionPanel({
   onDirtyChange,
   saveRef,
   onSaveAll,
+  annotation,
   createMode = false,
   initialTitle,
   onCreate,
@@ -267,6 +273,8 @@ export function QuickActionPanel({
   // pendingAutoSnooze: undefined = no change, null = default, 0 = off, positive = custom
   const [pendingAutoSnooze, setPendingAutoSnooze] = useState<number | null | undefined>(undefined)
   const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
+  // pendingResetOrigin: when true, reset_original_due_at will be sent on save
+  const [pendingResetOrigin, setPendingResetOrigin] = useState(false)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -362,7 +370,8 @@ export function QuickActionPanel({
     pendingProject !== null ||
     pendingTitle !== null ||
     pendingDueAtCleared ||
-    pendingAutoSnooze !== undefined
+    pendingAutoSnooze !== undefined ||
+    pendingResetOrigin
   // In create mode, dirty means the user has changed something from the initial defaults:
   // typed a title (different from initialTitle), changed any field, or picked a date.
   const createModeDirty = isCreateMode
@@ -547,6 +556,7 @@ export function QuickActionPanel({
     if (pendingRecurrenceMode !== null) changes.recurrence_mode = pendingRecurrenceMode
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
+    if (pendingResetOrigin) changes.reset_original_due_at = true
     return changes
   }, [
     pendingTitle,
@@ -560,6 +570,7 @@ export function QuickActionPanel({
     pendingRecurrenceMode,
     pendingProject,
     pendingAutoSnooze,
+    pendingResetOrigin,
   ])
 
   // Reset all pending state back to initial values.
@@ -574,6 +585,7 @@ export function QuickActionPanel({
     setPendingDueAt(null)
     setPendingDueAtCleared(false)
     setPendingAutoSnooze(undefined)
+    setPendingResetOrigin(false)
   }, [])
 
   // Create mode handler: collects all staged fields + title, calls onCreate, then resets
@@ -1043,6 +1055,7 @@ export function QuickActionPanel({
                   label={sinceInfo.label}
                   timeAgo={sinceInfo.timeAgo}
                   fullDate={sinceInfo.fullDate}
+                  onReset={onSaveAll ? () => setPendingResetOrigin(true) : undefined}
                 />
               )}
             </p>
@@ -1483,6 +1496,14 @@ export function QuickActionPanel({
         </div>
       )}
 
+      {/* AI annotation — shown between date grid and action buttons */}
+      {annotation && (
+        <p className="mt-2 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
+          <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
+          {annotation}
+        </p>
+      )}
+
       {/* Apply button (inline mode only) */}
       {mode === 'inline' && (
         <Button
@@ -1629,10 +1650,12 @@ function SinceAge({
   label,
   timeAgo,
   fullDate,
+  onReset,
 }: {
   label: string
   timeAgo: string
   fullDate: string
+  onReset?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1671,6 +1694,17 @@ function SinceAge({
         <div className="flex flex-col gap-0.5">
           <span>{fullDate}</span>
           <span className="text-muted-foreground">{timeAgo}</span>
+          {onReset && (
+            <button
+              onClick={() => {
+                onReset()
+                setOpen(false)
+              }}
+              className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1 text-xs"
+            >
+              <RotateCcw className="size-3" /> Reset origin to current due date
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>

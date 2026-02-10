@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -28,6 +28,7 @@ import type { Task, Note, Project } from '@/types'
 import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
+import { useAiInsights } from '@/hooks/useAiInsights'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 
 function useNoteActions(taskId: string) {
@@ -76,6 +77,9 @@ export default function TaskDetailPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const taskArray = useMemo(() => (task ? [task] : []), [task])
+  const { annotationMap } = useAiInsights(taskArray)
 
   // Track dirty state from QuickActionPanel for navigation protection
   const [isDirty, setIsDirty] = useState(false)
@@ -320,6 +324,7 @@ export default function TaskDetailPage() {
             onMetaNotesSave={handleMetaNotesSave}
             saveRef={saveRef}
             onSaveAll={actions.handleSaveAllChanges}
+            annotation={annotationMap.get(task.id)}
           />
         </main>
 

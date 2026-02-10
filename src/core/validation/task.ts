@@ -76,6 +76,7 @@ export const taskUpdateSchema = z.object({
   labels: labels.optional(),
   meta_notes: z.string().max(5000, 'Meta notes too long').nullable().optional(),
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
+  reset_original_due_at: z.boolean().optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
