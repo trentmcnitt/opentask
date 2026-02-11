@@ -41,11 +41,12 @@ For each scenario:
 - Was priority left at 0 when there was no signal? (conservative default)
 - Was there no over-inference? ("check the mail" should not get priority 2)
 
-### 4. Label Relevance
+### 4. Label Extraction (Explicit Only)
 
-- Do the labels match the task content? ("dentist" → "medical", "van" → "car")
-- Are labels conservative? (one accurate label > three speculative ones)
-- Were no spurious labels added?
+- Are labels empty when the user did NOT explicitly request a label? (This is the most common case — labels should almost always be `[]`)
+- When the user explicitly said "label it as X", "tag it X", "add the X label", or "mark it as X", was that label correctly extracted?
+- Were NO contextual labels inferred? ("dentist" must NOT produce "medical", "van" must NOT produce "car")
+- Critical label exception: "critical" / "critical alert" still triggers the critical label (it's a system alert, not a classification)
 
 ### 5. Project Matching
 

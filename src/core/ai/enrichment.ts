@@ -392,7 +392,23 @@ Parse this task and return the structured result.`
     throw new Error('Failed to parse enrichment result')
   }
 
-  applyEnrichment(row, parsed, user)
+  applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+/**
+ * Belt-and-suspenders guard: strip AI-inferred labels unless the user's input
+ * contains explicit label-intent language. The prompt already tells the AI not
+ * to infer labels, but this catches any leakage.
+ *
+ * - If the input has no label-intent keywords, only "critical" passes through.
+ * - If label-intent keywords are present, trust the AI's extraction.
+ */
+function filterExplicitLabels(labels: string[], inputText: string): string[] {
+  const labelIntentPattern = /\b(label\s+it|tag\s+it|mark\s+it\s+as|add\s+the\s+\w+\s+label)\b/i
+  if (labelIntentPattern.test(inputText)) {
+    return labels
+  }
+  return labels.filter((l) => l === 'critical')
 }
 
 interface FieldChanges {
@@ -416,6 +432,7 @@ function collectEnrichmentChanges(
   task: Task,
   enrichment: EnrichmentResult,
   user: { id: number; timezone: string },
+  inputText: string,
 ): FieldChanges {
   const setClauses: string[] = []
   const values: unknown[] = []
@@ -446,11 +463,12 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Labels — merge AI labels into existing, then remove ai-to-process.
+  // Labels — filter through explicit-only guard, merge into existing, remove ai-to-process.
   // Always update labels to at least remove the trigger label.
   {
+    const filteredLabels = filterExplicitLabels(enrichment.labels, inputText)
     const existingLabels = new Set(task.labels)
-    const newAiLabels = enrichment.labels.filter((l) => !existingLabels.has(l))
+    const newAiLabels = filteredLabels.filter((l) => !existingLabels.has(l))
     const merged = [...task.labels, ...newAiLabels].filter((l) => l !== 'ai-to-process')
     const labelsJson = JSON.stringify(merged)
     const currentLabelsJson = JSON.stringify(task.labels)
@@ -540,11 +558,12 @@ function applyEnrichment(
   row: PendingTaskRow,
   enrichment: EnrichmentResult,
   user: { id: number; timezone: string },
+  inputText: string,
 ): void {
   const task = getTaskById(row.id)
   if (!task) return
 
-  const changes = collectEnrichmentChanges(task, enrichment, user)
+  const changes = collectEnrichmentChanges(task, enrichment, user, inputText)
 
   if (changes.fieldsChanged.length === 0) {
     // No field changes, but still need to remove ai-to-process label
