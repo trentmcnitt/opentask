@@ -61,6 +61,9 @@ function mockResult(overrides: Record<string, unknown> = {}) {
       labels: ['errand'],
       rrule: null,
       project_name: null,
+      auto_snooze_minutes: null,
+      recurrence_mode: null,
+      meta_notes: null,
       reasoning: 'Test reasoning',
       ...overrides,
     },
@@ -771,6 +774,282 @@ describe('label merging', () => {
     expect(after.labels).toContain('errand')
     expect(after.labels).toContain('urgent')
     expect(after.labels).not.toContain('ai-to-process')
+  })
+})
+
+describe('original_title', () => {
+  test('create task sets original_title to input title', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'call dentist tomorrow morning high priority' },
+    })
+
+    const fromDb = getTaskById(task.id)!
+    expect(fromDb.original_title).toBe('call dentist tomorrow morning high priority')
+  })
+
+  test('original_title is preserved after enrichment changes title', async () => {
+    clearPendingEnrichment()
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'um call the dentist tomorrow or whatever' },
+    })
+
+    expect(task.original_title).toBe('um call the dentist tomorrow or whatever')
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Call the dentist',
+        priority: 0,
+        due_at: '2026-02-20T15:00:00Z',
+        labels: ['medical'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.title).toBe('Call the dentist')
+    expect(after.original_title).toBe('um call the dentist tomorrow or whatever')
+  })
+})
+
+describe('new enrichment fields', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('applies auto_snooze_minutes from enrichment', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'water plants auto-snooze 30 minutes' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Water plants',
+        priority: 0,
+        labels: ['home'],
+        auto_snooze_minutes: 30,
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.auto_snooze_minutes).toBe(30)
+    expect(after.labels).toContain('home')
+  })
+
+  test('applies recurrence_mode from_completion from enrichment', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'water plants every 3 days from completion' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Water plants',
+        priority: 0,
+        labels: [],
+        rrule: 'FREQ=DAILY;INTERVAL=3',
+        recurrence_mode: 'from_completion',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.recurrence_mode).toBe('from_completion')
+    expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3')
+  })
+
+  test('applies meta_notes from enrichment', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'call insurance about claim 847293 phone 1-800-555-0123 tomorrow high priority',
+      },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Call insurance about denied claim',
+        priority: 3,
+        due_at: '2026-02-20T15:00:00Z',
+        labels: ['finance'],
+        meta_notes: 'Claim #847293. Call 1-800-555-0123.',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.meta_notes).toBe('Claim #847293. Call 1-800-555-0123.')
+    expect(after.title).toBe('Call insurance about denied claim')
+    expect(after.priority).toBe(3)
+  })
+
+  test('null enrichment fields do not overwrite existing values', async () => {
+    const db = getDb()
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'task with existing meta' },
+    })
+
+    // Manually set meta_notes and auto_snooze_minutes on the task
+    db.prepare('UPDATE tasks SET meta_notes = ?, auto_snooze_minutes = ? WHERE id = ?').run(
+      'Existing notes',
+      60,
+      task.id,
+    )
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Task with existing meta',
+        priority: 0,
+        labels: [],
+        auto_snooze_minutes: null,
+        recurrence_mode: null,
+        meta_notes: null,
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // null means "not mentioned" — should not overwrite existing values
+    expect(after.meta_notes).toBe('Existing notes')
+    expect(after.auto_snooze_minutes).toBe(60)
+  })
+
+  test('undo reverts new enrichment fields', async () => {
+    const { executeUndo } = await import('@/core/undo')
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'undo test for new fields' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Undo test for new fields',
+        priority: 2,
+        labels: ['work'],
+        auto_snooze_minutes: 45,
+        meta_notes: 'Some context notes',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const enriched = getTaskById(task.id)!
+    expect(enriched.auto_snooze_minutes).toBe(45)
+    expect(enriched.meta_notes).toBe('Some context notes')
+
+    executeUndo(TEST_USER_ID)
+
+    const undone = getTaskById(task.id)!
+    expect(undone.auto_snooze_minutes).toBeNull()
+    expect(undone.meta_notes).toBeNull()
+    expect(undone.title).toBe('undo test for new fields')
+  })
+})
+
+describe('reprocess uses original_title', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('enrichment sends original_title to the model, not current title', async () => {
+    const db = getDb()
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'call my dentist tomorrow morning high priority or whatever' },
+    })
+
+    // Simulate enrichment that changed the title
+    db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run('Call my dentist', task.id)
+
+    // Re-add ai-to-process label for reprocessing
+    const labels = JSON.stringify(['ai-to-process'])
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Call my dentist',
+        priority: 3,
+        due_at: '2026-02-20T15:00:00Z',
+        labels: ['medical'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    // Verify the model received the original_title, not the current title
+    expect(mockEnrichmentQuery).toHaveBeenCalledTimes(1)
+    const [prompt] = mockEnrichmentQuery.mock.calls[0]
+    expect(prompt).toContain('call my dentist tomorrow morning high priority or whatever')
+    expect(prompt).not.toContain('"Call my dentist"')
+  })
+
+  test('legacy task with null original_title falls back to current title', async () => {
+    const db = getDb()
+
+    // Create a task and null out original_title to simulate a legacy task
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'legacy task with no original' },
+    })
+
+    db.prepare('UPDATE tasks SET original_title = NULL WHERE id = ?').run(task.id)
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Legacy task with no original',
+        priority: 0,
+        labels: [],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    // Verify the model received the current title as fallback
+    expect(mockEnrichmentQuery).toHaveBeenCalledTimes(1)
+    const [prompt] = mockEnrichmentQuery.mock.calls[0]
+    expect(prompt).toContain('legacy task with no original')
+  })
+})
+
+describe('auto_snooze_minutes in task creation', () => {
+  test('auto_snooze_minutes passed at creation is persisted', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'task with auto-snooze', auto_snooze_minutes: 120, priority: 2 },
+    })
+
+    const fromDb = getTaskById(task.id)!
+    expect(fromDb.auto_snooze_minutes).toBe(120)
+  })
+
+  test('auto_snooze_minutes defaults to null when not provided', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'task without auto-snooze', priority: 1 },
+    })
+
+    const fromDb = getTaskById(task.id)!
+    expect(fromDb.auto_snooze_minutes).toBeNull()
   })
 })
 

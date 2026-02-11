@@ -189,7 +189,7 @@ export async function processEnrichmentQueue(): Promise<void> {
     // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
-        `SELECT id, user_id, title, labels, priority, due_at, rrule
+        `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule
          FROM tasks
          WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
            AND deleted_at IS NULL
@@ -280,7 +280,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   const db = getDb()
   const row = db
     .prepare(
-      `SELECT id, user_id, title, labels, priority, due_at, rrule
+      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule
        FROM tasks
        WHERE id = ? AND user_id = ?
          AND deleted_at IS NULL
@@ -338,6 +338,10 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
     .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
     .join('\n')
 
+  // Use original_title when available (preserves raw dictated input for re-enrichment).
+  // Legacy tasks with null original_title fall back to current title.
+  const textToEnrich = row.original_title || row.title
+
   const prompt = `## Context
 
 User's timezone: ${user.timezone}
@@ -348,14 +352,14 @@ ${projectList}
 
 ## Task to parse
 
-"${row.title}"
+"${textToEnrich}"
 
 Parse this task and return the structured result.`
 
   const result = await enrichmentQuery(prompt, {
     userId: row.user_id,
     taskId: row.id,
-    inputText: row.title,
+    inputText: textToEnrich,
   })
 
   // Parse and validate the enrichment result
@@ -481,6 +485,33 @@ function collectEnrichmentChanges(
     }
   }
 
+  // Auto-snooze minutes — overwrite if AI extracted a value
+  if (enrichment.auto_snooze_minutes !== null && enrichment.auto_snooze_minutes !== undefined) {
+    if (enrichment.auto_snooze_minutes !== task.auto_snooze_minutes) {
+      setClauses.push('auto_snooze_minutes = ?')
+      values.push(enrichment.auto_snooze_minutes)
+      fieldsChanged.push('auto_snooze_minutes')
+    }
+  }
+
+  // Recurrence mode — overwrite if AI extracted a value
+  if (enrichment.recurrence_mode) {
+    if (enrichment.recurrence_mode !== task.recurrence_mode) {
+      setClauses.push('recurrence_mode = ?')
+      values.push(enrichment.recurrence_mode)
+      fieldsChanged.push('recurrence_mode')
+    }
+  }
+
+  // Meta notes — overwrite if AI extracted context/details
+  if (enrichment.meta_notes) {
+    if (enrichment.meta_notes !== task.meta_notes) {
+      setClauses.push('meta_notes = ?')
+      values.push(enrichment.meta_notes)
+      fieldsChanged.push('meta_notes')
+    }
+  }
+
   // Project — resolve project name to ID if provided (owned or shared)
   if (enrichment.project_name) {
     const db = getDb()
@@ -550,6 +581,7 @@ interface PendingTaskRow {
   id: number
   user_id: number
   title: string
+  original_title: string | null
   labels: string
   priority: number
   due_at: string | null

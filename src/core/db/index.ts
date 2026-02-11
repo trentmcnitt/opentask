@@ -136,6 +136,11 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks RENAME COLUMN snoozed_from TO original_due_at')
   }
 
+  // Migration: Add original_title to tasks
+  if (!hasColumn('tasks', 'original_title')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN original_title TEXT')
+  }
+
   // Migration: Drop ai_status column (replaced by label-based enrichment)
   // Drop index first — if the column was dropped but the index wasn't, the index is corrupted
   database.exec('DROP INDEX IF EXISTS idx_tasks_ai_status')

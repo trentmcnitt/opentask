@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   user_id       INTEGER NOT NULL REFERENCES users(id),
   project_id    INTEGER NOT NULL REFERENCES projects(id),
   title         TEXT NOT NULL,
+  original_title TEXT,
   done          INTEGER NOT NULL DEFAULT 0,
   done_at       TEXT,
   priority      INTEGER NOT NULL DEFAULT 0,

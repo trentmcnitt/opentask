@@ -88,16 +88,17 @@ export function createTask(options: CreateTaskOptions): Task {
       .prepare(
         `
       INSERT INTO tasks (
-        user_id, project_id, title, done, priority, due_at, original_due_at,
+        user_id, project_id, title, original_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        labels, created_at, updated_at
-      ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_snooze_minutes, labels, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
         userId,
         projectId,
         input.title,
+        input.title, // original_title — preserve raw input for enrichment retry
         input.priority ?? 0,
         dueAt,
         dueAt, // original_due_at = due_at (null if no due date)
@@ -106,6 +107,7 @@ export function createTask(options: CreateTaskOptions): Task {
         anchorTime,
         anchorDow,
         anchorDom,
+        input.auto_snooze_minutes ?? null,
         labelsJson,
         now,
         now,
@@ -145,7 +147,7 @@ export function getTaskById(taskId: number): Task | null {
   const row = db
     .prepare(
       `
-    SELECT id, user_id, project_id, title, done, done_at, priority, due_at,
+    SELECT id, user_id, project_id, title, original_title, done, done_at, priority, due_at,
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            original_due_at, last_notified_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
@@ -257,7 +259,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
   params.push(limit, offset)
 
   const sql = `
-    SELECT tasks.id, tasks.user_id, tasks.project_id, tasks.title, tasks.done,
+    SELECT tasks.id, tasks.user_id, tasks.project_id, tasks.title,
+           tasks.original_title, tasks.done,
            tasks.done_at, tasks.priority, tasks.due_at,
            tasks.rrule, tasks.recurrence_mode, tasks.anchor_time,
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
@@ -283,6 +286,7 @@ interface TaskRow {
   user_id: number
   project_id: number
   title: string
+  original_title: string | null
   done: number
   done_at: string | null
   priority: number
@@ -313,6 +317,7 @@ function rowToTask(row: TaskRow): Task {
     user_id: row.user_id,
     project_id: row.project_id,
     title: row.title,
+    original_title: row.original_title,
     done: row.done === 1,
     done_at: row.done_at,
     priority: row.priority,

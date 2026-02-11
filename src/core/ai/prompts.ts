@@ -39,6 +39,15 @@ Users frequently dictate tasks while driving, walking, or multitasking. Expect:
 
 Be generous when interpreting garbled input — extract the intent rather than rejecting it.
 
+## Wall-of-text decomposition
+
+When input is a long dictated paragraph, decompose it into structured parts:
+- **title** = concise core action (what the user needs to do)
+- **metadata** = due_at, priority, rrule, labels, auto_snooze_minutes, recurrence_mode (extracted into their dedicated fields)
+- **meta_notes** = everything else — context, reasons, reference numbers, addresses, phone numbers, instructions, background info
+
+The user dictated everything in one breath because they couldn't structure it. Your job is to structure it for them without losing any information.
+
 ## Fields to extract
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
@@ -56,6 +65,8 @@ Be generous when interpreting garbled input — extract the intent rather than r
 
 4. **labels** — Array of label strings. Look for contextual categories implied by the task content: "work", "personal", "health", "errand", "shopping", "home", "finance", "family", "car", "medical", etc. Use your judgment based on context — the list above is not exhaustive. Only add labels that are clearly implied. Return an empty array if nothing is apparent. Be conservative: one accurate label is better than three speculative ones.
 
+   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for.
+
 5. **project_name** — Suggested project name from the available projects list, or null. Match based on content — a task about groceries might match a "Shopping List" project. Projects marked as "shared" are available to all users. Return null if unsure.
 
 6. **rrule** — RFC 5545 RRULE string, or null. Parse recurrence patterns:
@@ -67,7 +78,13 @@ Be generous when interpreting garbled input — extract the intent rather than r
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART.
 
-7. **reasoning** — Brief explanation of what you extracted and why.
+7. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440.
+
+8. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
+
+9. **meta_notes** — Supplementary context extracted from dictation: reference numbers, phone numbers, addresses, reasons, instructions, background info. Separate from the title. Return null if no extra context beyond what's captured in other fields.
+
+10. **reasoning** — Brief explanation of what you extracted and why.
 
 ## Rules
 
@@ -90,6 +107,9 @@ Timezone: America/Chicago (UTC-6 in winter)
   "labels": ["medical"],
   "project_name": null,
   "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": null,
   "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. Added medical label from dentist context."
 }
 \`\`\`
@@ -105,6 +125,9 @@ Timezone: America/Chicago (UTC-6 in winter)
   "labels": ["health"],
   "project_name": null,
   "rrule": "FREQ=DAILY",
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": null,
   "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'."
 }
 \`\`\`
@@ -121,6 +144,9 @@ Available projects: Inbox, Family
   "labels": ["family"],
   "project_name": "Family",
   "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": null,
   "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. Title cleaned of metadata phrases."
 }
 \`\`\`
@@ -136,7 +162,46 @@ Timezone: America/Chicago
   "labels": ["car"],
   "project_name": null,
   "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": null,
   "reasoning": "Title already clean and concise. No date or priority signals. Added car label from 'van' context."
+}
+\`\`\`
+
+### Wall-of-text dictation
+Input: "I need to call my insurance company about the claim they denied for the ER visit, claim number 847293, call 1-800-555-0123, do this tomorrow morning, high priority, the appeal deadline is coming up"
+Timezone: America/Chicago (UTC-6 in winter)
+\`\`\`json
+{
+  "title": "Call insurance company about denied ER claim",
+  "due_at": "2026-02-10T15:00:00Z",
+  "priority": 3,
+  "labels": ["medical", "finance"],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
+  "reasoning": "Decomposed wall-of-text: title captures core action, meta_notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3."
+}
+\`\`\`
+
+### Auto-snooze and recurrence mode
+Input: "water the plants every 3 days from when I complete it, auto-snooze 2 hours"
+Timezone: America/Chicago
+\`\`\`json
+{
+  "title": "Water the plants",
+  "due_at": null,
+  "priority": 0,
+  "labels": ["home"],
+  "project_name": null,
+  "rrule": "FREQ=DAILY;INTERVAL=3",
+  "auto_snooze_minutes": 120,
+  "recurrence_mode": "from_completion",
+  "meta_notes": null,
+  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes."
 }
 \`\`\``
 

@@ -29,6 +29,7 @@ export interface Task {
   user_id: number
   project_id: number
   title: string
+  original_title: string | null
   done: boolean
   done_at: string | null
   priority: number // 0=unset, 1=low, 2=medium, 3=high, 4=urgent
