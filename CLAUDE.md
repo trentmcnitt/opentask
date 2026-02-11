@@ -331,7 +331,7 @@ During iterative UI verification deploys to dev, committing between each deploy 
 - [ ] E2E tests pass (`npm run test:e2e`)
 - [ ] Deployed to dev via `./scripts/deploy.sh dev`
 - [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
-- [ ] Chrome DevTools MCP (Model Context Protocol): no console errors/warnings, no failed network requests
+- [ ] Playwright: no console errors/warnings, no failed network requests
 - [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
 - [ ] Fixes applied and re-deployed if anything looked wrong
 - [ ] Dev link shared with results: https://tasks-dev.tk11.mcnitt.io

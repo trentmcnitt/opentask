@@ -1124,6 +1124,7 @@ function DashboardView({
           aiFilterLoading={aiInsights.loading}
           onToggleAiFilter={onToggleAiFilter}
           onRefreshAi={onRefreshAi}
+          aiFreshnessText={aiInsights.freshnessText}
         />
 
         {searchQuery && (
