@@ -65,6 +65,33 @@ For each scenario:
 - Was nothing guessed when uncertain?
 - "Better to leave empty than guess wrong" — was this principle followed?
 
+### 8. Auto-Snooze Correctness
+
+- Was `auto_snooze_minutes` parsed to the correct integer value? ("auto-snooze 30 minutes" = 30, "snooze every 2 hours" = 120)
+- Was `null` returned when auto-snooze was not mentioned?
+- Was `0` returned when the user explicitly disabled auto-snooze? ("no auto-snooze")
+- Was auto-snooze not confused with regular snooze behavior? (regular snooze changes `due_at`; auto-snooze is a repeating reminder interval)
+
+### 9. Recurrence Mode
+
+- Was `"from_completion"` set only when the user explicitly signals it? ("from when I finish", "after I do it", "start counting from when I actually do it")
+- Was `null` returned as the default when no mode was mentioned? (standard recurrence = `null`, not `"from_due"`)
+- Was recurrence mode not confused with regular recurrence? ("every Monday" = rrule only, no recurrence_mode; "every 2 weeks from completion" = rrule + `"from_completion"`)
+
+### 10. Meta Notes Quality
+
+- Were reference numbers preserved exactly? (phone numbers, case numbers, Rx numbers, confirmation codes)
+- Were addresses and specific details captured? (street addresses, suite numbers, extensions)
+- Was context that doesn't belong in the title separated into meta_notes? (instructions, amounts, reference info)
+- Was `null` returned when there was nothing extra to capture? ("buy milk" has no meta_notes)
+- Was information NOT duplicated? (if "Walgreens" is in the title, it shouldn't be repeated in meta_notes)
+
+### 11. Critical Label Usage
+
+- Was the "critical" label applied only for explicit "critical" or "critical alert" language?
+- Was emotional urgency ("really important", "URGENT") NOT treated as a "critical" trigger? (those map to priority, not the critical label)
+- Was non-alert usage of the word "critical" correctly ignored? ("critical thinking" is not a critical alert)
+
 ---
 
 ## Bubble Evaluation Criteria

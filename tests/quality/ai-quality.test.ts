@@ -441,6 +441,24 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
             `[${scenario.id}] Expected ${key} = "${expectedValue}", got ${JSON.stringify(actualValue)}`,
           )
         }
+      } else if (Array.isArray(expectedValue)) {
+        // Array-contains check: every element in expectedValue must be present in actualValue
+        if (!Array.isArray(actualValue)) {
+          throw new Error(
+            `[${scenario.id}] Expected ${key} to be an array, got ${typeof actualValue}`,
+          )
+        }
+        const actualLower = (actualValue as string[]).map((v) =>
+          typeof v === 'string' ? v.toLowerCase() : v,
+        )
+        for (const expected of expectedValue) {
+          const needle = typeof expected === 'string' ? expected.toLowerCase() : expected
+          if (!actualLower.includes(needle)) {
+            throw new Error(
+              `[${scenario.id}] Expected ${key} to include ${JSON.stringify(expected)}, got ${JSON.stringify(actualValue)}`,
+            )
+          }
+        }
       }
     }
   }
@@ -449,7 +467,20 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
   if (must_not_include) {
     for (const [key, forbiddenValue] of Object.entries(must_not_include)) {
       const actualValue = output[key]
-      if (actualValue === forbiddenValue) {
+      if (Array.isArray(forbiddenValue) && Array.isArray(actualValue)) {
+        // Array-excludes check: none of the forbidden elements may be in actualValue
+        const actualLower = (actualValue as string[]).map((v) =>
+          typeof v === 'string' ? v.toLowerCase() : v,
+        )
+        for (const forbidden of forbiddenValue) {
+          const needle = typeof forbidden === 'string' ? forbidden.toLowerCase() : forbidden
+          if (actualLower.includes(needle)) {
+            throw new Error(
+              `[${scenario.id}] ${key} must NOT include ${JSON.stringify(forbidden)}, but it does`,
+            )
+          }
+        }
+      } else if (actualValue === forbiddenValue) {
         throw new Error(
           `[${scenario.id}] ${key} must NOT be ${JSON.stringify(forbiddenValue)}, but it is`,
         )
@@ -489,6 +520,41 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
   }
   if (output.rrule !== null && !(output.rrule as string).startsWith('FREQ=')) {
     throw new Error(`[${id}] rrule must start with FREQ=, got: ${output.rrule}`)
+  }
+  // auto_snooze_minutes: integer 0-1440 or null
+  if (output.auto_snooze_minutes !== null && output.auto_snooze_minutes !== undefined) {
+    if (
+      typeof output.auto_snooze_minutes !== 'number' ||
+      !Number.isInteger(output.auto_snooze_minutes)
+    ) {
+      throw new Error(
+        `[${id}] auto_snooze_minutes must be an integer or null, got ${output.auto_snooze_minutes}`,
+      )
+    }
+    if (
+      (output.auto_snooze_minutes as number) < 0 ||
+      (output.auto_snooze_minutes as number) > 1440
+    ) {
+      throw new Error(
+        `[${id}] auto_snooze_minutes must be 0-1440, got ${output.auto_snooze_minutes}`,
+      )
+    }
+  }
+  // recurrence_mode: "from_due" | "from_completion" or null
+  if (output.recurrence_mode !== null && output.recurrence_mode !== undefined) {
+    if (output.recurrence_mode !== 'from_due' && output.recurrence_mode !== 'from_completion') {
+      throw new Error(
+        `[${id}] recurrence_mode must be "from_due", "from_completion", or null, got ${JSON.stringify(output.recurrence_mode)}`,
+      )
+    }
+  }
+  // meta_notes: string or null
+  if (output.meta_notes !== null && output.meta_notes !== undefined) {
+    if (typeof output.meta_notes !== 'string') {
+      throw new Error(
+        `[${id}] meta_notes must be a string or null, got ${typeof output.meta_notes}`,
+      )
+    }
   }
 }
 

@@ -65,7 +65,7 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 4. **labels** — Array of label strings. Look for contextual categories implied by the task content: "work", "personal", "health", "errand", "shopping", "home", "finance", "family", "car", "medical", etc. Use your judgment based on context — the list above is not exhaustive. Only add labels that are clearly implied. Return an empty array if nothing is apparent. Be conservative: one accurate label is better than three speculative ones.
 
-   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for.
+   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for. IMPORTANT: When "critical alert" appears in the input, the "critical" label MUST be included in the labels array even when other signals (URGENT, priority, dates) are also present. Multiple signals do not cancel each other out — extract ALL of them independently.
 
 5. **project_name** — Suggested project name from the available projects list, or null. Match based on content — a task about groceries might match a "Shopping List" project. Projects marked as "shared" are available to all users. Return null if unsure.
 
@@ -76,9 +76,11 @@ The user dictated everything in one breath because they couldn't structure it. Y
    - "every month on the 1st" → FREQ=MONTHLY;BYMONTHDAY=1
    - "every 2 weeks" → FREQ=WEEKLY;INTERVAL=2
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
-   If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART.
+   - "every 4 hours" → FREQ=HOURLY;INTERVAL=4
+   - "every 90 minutes" → FREQ=MINUTELY;INTERVAL=90
+   If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
 
-7. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440.
+7. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440. IMPORTANT: Auto-snooze is NOT recurrence. "Auto-snooze every hour" means the task gets re-snoozed every hour — it does NOT create an rrule. When "every X" appears alongside "auto-snooze" or "snooze", it sets auto_snooze_minutes, not rrule.
 
 8. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
 
@@ -90,7 +92,8 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 - When uncertain about a field, leave it null (0 for priority, empty array for labels). Better to leave empty than guess wrong.
 - The user's raw text is always preserved separately — you cannot lose information.
-- For due_at, always return UTC. The user's timezone is provided for conversion.
+- For due_at, always return UTC. The user's timezone is provided for conversion. Pay close attention to the UTC offset: Chicago CST is UTC-6 (winter) and CDT is UTC-5 (summer). Example: 9:00 AM Chicago CST = 15:00 UTC, 2:30 PM Chicago CST = 20:30 UTC.
+- When resolving relative day-of-week references ("next Thursday", "this Saturday"), carefully count forward from the current date. Use the provided current UTC time to determine today's day of week.
 - Keep the title natural and human-readable. Don't over-format or add punctuation that wasn't there.
 - For titles that are already clean and concise, return them unchanged.
 
