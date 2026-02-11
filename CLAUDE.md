@@ -20,6 +20,7 @@ npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTAS
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
+npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]
 npm run db:migrate-due   # Data migration from the "Due" app
 ```
 
@@ -60,7 +61,7 @@ If an Authorization header is present but the token is invalid, return 401 immed
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA with iOS optimization and basic offline support (`public/sw.js` caches the app shell for navigation fallback; no offline data access or mutation queuing). Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. See `docs/SPEC.md` for product requirements and `docs/ROADMAP.md` for planned features.
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA with iOS optimization and basic offline support (`public/sw.js` caches the app shell for navigation fallback; no offline data access or mutation queuing). Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, and `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts).
 
 ### Source layout
 

@@ -16,6 +16,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:quality": "vitest run --config vitest.quality.config.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:create-token": "tsx scripts/create-token.ts",
     "db:seed-dev": "tsx scripts/seed-dev.ts",
     "db:migrate-due": "tsx scripts/migrate-due.ts",
     "format": "prettier --write .",

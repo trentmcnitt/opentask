@@ -34,6 +34,21 @@ export const EnrichmentResultSchema = z.object({
     .refine((val) => val === null || val.startsWith('FREQ='), {
       message: 'rrule must be a valid RFC 5545 RRULE string starting with FREQ=',
     }),
+  auto_snooze_minutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(1440)
+    .nullable()
+    .describe('Auto-snooze in minutes. 0 = off. null = unmentioned'),
+  recurrence_mode: z
+    .enum(['from_due', 'from_completion'])
+    .nullable()
+    .describe('"from_completion" only if user explicitly says so. null = unmentioned'),
+  meta_notes: z
+    .string()
+    .nullable()
+    .describe('Context/details extracted from dictation, separate from the title'),
   reasoning: z.string().describe('Brief explanation of what was extracted and why'),
 })
 
