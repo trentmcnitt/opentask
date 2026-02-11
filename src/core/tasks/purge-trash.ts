@@ -21,17 +21,6 @@ export function purgeOldTrash(): number {
 
   // Execute all deletes in a transaction
   const changes = withTransaction((tx) => {
-    // First, delete any notes associated with the tasks we're about to purge
-    tx.prepare(
-      `
-      DELETE FROM notes
-      WHERE task_id IN (
-        SELECT id FROM tasks
-        WHERE deleted_at IS NOT NULL AND deleted_at < ?
-      )
-    `,
-    ).run(cutoffIso)
-
     // Delete any completions associated with these tasks
     tx.prepare(
       `

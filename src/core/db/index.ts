@@ -107,8 +107,59 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('tasks', 'last_completed_at')) {
     database.exec('ALTER TABLE tasks ADD COLUMN last_completed_at TEXT')
   }
-  if (!hasColumn('tasks', 'meta_notes')) {
-    database.exec('ALTER TABLE tasks ADD COLUMN meta_notes TEXT')
+  // Migration: Unify notes — merge meta_notes column and notes table into tasks.notes
+  if (hasColumn('tasks', 'meta_notes') && !hasColumn('tasks', 'notes')) {
+    // Step 1: Add the new notes column and copy meta_notes values
+    database.exec('ALTER TABLE tasks ADD COLUMN notes TEXT')
+    database.exec('UPDATE tasks SET notes = meta_notes WHERE meta_notes IS NOT NULL')
+
+    // Step 2: Merge any rows from the separate notes table into tasks.notes
+    const hasNotesTable = database
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'")
+      .get()
+    if (hasNotesTable) {
+      // For each task that has entries in the notes table, concatenate them
+      // (ordered by created_at) and append to any existing notes value
+      const tasksWithNotes = database
+        .prepare(
+          `SELECT task_id, GROUP_CONCAT(content, char(10) || char(10)) as merged
+           FROM (SELECT task_id, content FROM notes ORDER BY created_at ASC)
+           GROUP BY task_id`,
+        )
+        .all() as { task_id: number; merged: string }[]
+
+      const updateStmt = database.prepare(
+        `UPDATE tasks SET notes = CASE
+           WHEN notes IS NOT NULL AND notes != '' THEN notes || char(10) || char(10) || ?
+           ELSE ?
+         END
+         WHERE id = ?`,
+      )
+      for (const row of tasksWithNotes) {
+        updateStmt.run(row.merged, row.merged, row.task_id)
+      }
+
+      // Step 3: Drop the notes table and its index
+      database.exec('DROP INDEX IF EXISTS idx_notes_task_id')
+      database.exec('DROP TABLE IF EXISTS notes')
+    }
+
+    // Step 4: Drop the old meta_notes column
+    database.exec('ALTER TABLE tasks DROP COLUMN meta_notes')
+  } else if (!hasColumn('tasks', 'notes') && !hasColumn('tasks', 'meta_notes')) {
+    // Fresh DB that predates both columns
+    database.exec('ALTER TABLE tasks ADD COLUMN notes TEXT')
+  }
+
+  // Clean up: drop notes table if it still exists (for DBs that already have tasks.notes)
+  {
+    const hasNotesTable = database
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'")
+      .get()
+    if (hasNotesTable) {
+      database.exec('DROP INDEX IF EXISTS idx_notes_task_id')
+      database.exec('DROP TABLE IF EXISTS notes')
+    }
   }
 
   // Migration: Add auto_snooze_minutes to users

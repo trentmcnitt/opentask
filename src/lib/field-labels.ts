@@ -26,7 +26,7 @@ export const FIELD_LABELS: Record<string, string> = {
   rrule: 'recurrence',
   project_id: 'project',
   due_at: 'due date',
-  meta_notes: 'notes',
+  notes: 'notes',
   recurrence_mode: 'recurrence mode',
   auto_snooze_minutes: 'auto-snooze',
 }
@@ -214,7 +214,7 @@ function buildFieldFragment(
       return buildTitleFragment(beforeState, afterState)
     case 'labels':
       return 'Labels updated'
-    case 'meta_notes':
+    case 'notes':
       return 'Notes updated'
     case 'auto_snooze_minutes':
       return buildAutoSnoozeFragment(beforeState, afterState)

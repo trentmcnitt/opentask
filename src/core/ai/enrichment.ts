@@ -521,12 +521,12 @@ function collectEnrichmentChanges(
     }
   }
 
-  // Meta notes — overwrite if AI extracted context/details
-  if (enrichment.meta_notes) {
-    if (enrichment.meta_notes !== task.meta_notes) {
-      setClauses.push('meta_notes = ?')
-      values.push(enrichment.meta_notes)
-      fieldsChanged.push('meta_notes')
+  // Notes — overwrite if AI extracted context/details
+  if (enrichment.notes) {
+    if (enrichment.notes !== task.notes) {
+      setClauses.push('notes = ?')
+      values.push(enrichment.notes)
+      fieldsChanged.push('notes')
     }
   }
 

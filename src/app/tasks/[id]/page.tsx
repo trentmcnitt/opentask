@@ -24,47 +24,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import type { Task, Note, Project } from '@/types'
+import type { Task, Project } from '@/types'
 import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
-
-function useNoteActions(taskId: string) {
-  const [notes, setNotes] = useState<Note[]>([])
-
-  const handleAddNote = async (content: string) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      })
-      if (!res.ok) throw new Error('Failed to add note')
-
-      const notesRes = await fetch(`/api/tasks/${taskId}/notes`)
-      if (notesRes.ok) {
-        const notesData = await notesRes.json()
-        setNotes(notesData.data?.notes || [])
-      }
-    } catch {
-      // Silent fail
-    }
-  }
-
-  const handleDeleteNote = async (noteId: number) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete note')
-      setNotes((prev) => prev.filter((n) => n.id !== noteId))
-    } catch {
-      // Silent fail
-    }
-  }
-
-  return { notes, setNotes, handleAddNote, handleDeleteNote }
-}
 
 export default function TaskDetailPage() {
   const { status } = useSession()
@@ -73,7 +38,6 @@ export default function TaskDetailPage() {
   const taskId = params.id as string
 
   const [task, setTask] = useState<Task | null>(null)
-  const { notes, setNotes, handleAddNote, handleDeleteNote } = useNoteActions(taskId)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -131,9 +95,8 @@ export default function TaskDetailPage() {
 
   const fetchTask = useCallback(async () => {
     try {
-      const [taskRes, notesRes, projRes] = await Promise.all([
+      const [taskRes, projRes] = await Promise.all([
         fetch(`/api/tasks/${taskId}`),
-        fetch(`/api/tasks/${taskId}/notes`),
         fetch('/api/projects'),
       ])
 
@@ -151,11 +114,6 @@ export default function TaskDetailPage() {
       const taskData = await taskRes.json()
       setTask(taskData.data as Task)
 
-      if (notesRes.ok) {
-        const notesData = await notesRes.json()
-        setNotes(notesData.data?.notes || [])
-      }
-
       if (projRes.ok) {
         const projData = await projRes.json()
         setProjects(projData.data?.projects || [])
@@ -165,7 +123,7 @@ export default function TaskDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [taskId, router, setNotes])
+  }, [taskId, router])
 
   useEffect(() => {
     if (status === 'loading') return
@@ -190,16 +148,16 @@ export default function TaskDetailPage() {
   // Keep handleSaveAndLeave's undo ref in sync with the shared handler
   handleUndoRef.current = actions.handleUndo
 
-  const handleMetaNotesSave = async (value: string | null) => {
+  const handleNotesSave = async (value: string | null) => {
     if (!task) return
 
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meta_notes: value }),
+        body: JSON.stringify({ notes: value }),
       })
-      if (!res.ok) throw new Error('Failed to update meta notes')
+      if (!res.ok) throw new Error('Failed to update notes')
 
       const data = await res.json()
       setTask(data.data as Task)
@@ -312,16 +270,13 @@ export default function TaskDetailPage() {
         <main className="mx-auto w-full max-w-2xl px-4 py-6">
           <TaskDetail
             task={task}
-            notes={notes}
             project={project}
             projects={projects}
             editable
-            onAddNote={handleAddNote}
-            onDeleteNote={handleDeleteNote}
             onDelete={handleDelete}
             onMarkDone={actions.handleDone}
             onDirtyChange={handleDirtyChange}
-            onMetaNotesSave={handleMetaNotesSave}
+            onNotesSave={handleNotesSave}
             saveRef={saveRef}
             onSaveAll={actions.handleSaveAllChanges}
             annotation={annotationMap.get(task.id)}

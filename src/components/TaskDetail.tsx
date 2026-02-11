@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/lib/format-date'
@@ -11,25 +10,22 @@ import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { getPriorityOption } from '@/lib/priority'
-import type { Task, Note, Project } from '@/types'
+import type { Task, Project } from '@/types'
 import { formatRRule } from '@/lib/format-rrule'
 import { Textarea } from '@/components/ui/textarea'
 import { Pencil } from 'lucide-react'
 
 interface TaskDetailProps {
   task: Task
-  notes: Note[]
   project?: Project
   projects?: Project[]
   editable?: boolean
-  onAddNote?: (content: string) => void
-  onDeleteNote?: (noteId: number) => void
   onDelete?: () => void
   onMarkDone?: () => void
   /** Called when QuickActionPanel dirty state changes (for navigation protection) */
   onDirtyChange?: (isDirty: boolean) => void
-  /** Called when meta_notes is saved */
-  onMetaNotesSave?: (value: string | null) => void
+  /** Called when notes is saved */
+  onNotesSave?: (value: string | null) => void
   /** Ref populated with save function for external triggering (e.g., from navigation dialog) */
   saveRef?: React.MutableRefObject<(() => Promise<void> | void) | null>
   /**
@@ -43,16 +39,13 @@ interface TaskDetailProps {
 
 export function TaskDetail({
   task,
-  notes,
   project,
   projects = [],
   editable = false,
-  onAddNote,
-  onDeleteNote,
   onDelete,
   onMarkDone,
   onDirtyChange,
-  onMetaNotesSave,
+  onNotesSave,
   saveRef,
   onSaveAll,
   annotation,
@@ -176,36 +169,28 @@ export function TaskDetail({
         )}
       </div>
 
-      <NotesSection
-        notes={notes}
-        editable={editable}
-        onAddNote={onAddNote}
-        onDeleteNote={onDeleteNote}
-        timezone={timezone}
-      />
-
-      <MetaNotesSection metaNotes={task.meta_notes} onSave={onMetaNotesSave} />
+      <NotesSection notes={task.notes} onSave={onNotesSave} />
     </div>
   )
 }
 
 /**
- * MetaNotesSection displays AI-generated notes with its own edit toggle.
+ * NotesSection displays notes with an edit toggle.
  * The section is always visible and the edit button is independent of the page's editable state.
- * This allows users to view and modify AI notes at any time.
+ * This allows users to view and modify notes at any time.
  */
-function MetaNotesSection({
-  metaNotes,
+function NotesSection({
+  notes,
   onSave,
 }: {
-  metaNotes: string | null
+  notes: string | null
   onSave?: (value: string | null) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
-  const [draft, setDraft] = useState(metaNotes ?? '')
+  const [draft, setDraft] = useState(notes ?? '')
 
   const handleStartEdit = () => {
-    setDraft(metaNotes ?? '') // Initialize draft with current value when entering edit mode
+    setDraft(notes ?? '') // Initialize draft with current value when entering edit mode
     setIsEditing(true)
   }
 
@@ -223,7 +208,7 @@ function MetaNotesSection({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <h2 className="text-muted-foreground text-sm font-semibold tracking-wider uppercase">
-          AI Notes
+          Notes
         </h2>
         {!isEditing && onSave && (
           <Button variant="ghost" size="sm" onClick={handleStartEdit} className="h-7 w-7 p-0">
@@ -237,7 +222,7 @@ function MetaNotesSection({
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add AI-generated notes..."
+            placeholder="Add notes..."
             className="min-h-[100px]"
           />
           <div className="flex gap-2">
@@ -249,85 +234,10 @@ function MetaNotesSection({
             </Button>
           </div>
         </div>
-      ) : metaNotes ? (
-        <div className="bg-muted/50 rounded-md p-3 text-sm whitespace-pre-wrap">{metaNotes}</div>
+      ) : notes ? (
+        <div className="bg-muted/50 rounded-md p-3 text-sm whitespace-pre-wrap">{notes}</div>
       ) : (
-        <p className="text-muted-foreground text-sm italic">No AI notes</p>
-      )}
-    </div>
-  )
-}
-
-function NotesSection({
-  notes,
-  editable,
-  onAddNote,
-  onDeleteNote,
-  timezone,
-}: {
-  notes: Note[]
-  editable: boolean
-  onAddNote?: (content: string) => void
-  onDeleteNote?: (noteId: number) => void
-  timezone: string
-}) {
-  const [newNote, setNewNote] = useState('')
-
-  const handleAddNote = () => {
-    if (newNote.trim()) {
-      onAddNote?.(newNote.trim())
-      setNewNote('')
-    }
-  }
-
-  return (
-    <div>
-      <h2 className="text-muted-foreground mb-3 text-sm font-semibold tracking-wider uppercase">
-        Notes
-        <span className="text-muted-foreground/60 ml-2">{notes.length}</span>
-      </h2>
-
-      {editable && onAddNote && (
-        <div className="mb-4 flex gap-2">
-          <Input
-            type="text"
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAddNote()
-            }}
-            placeholder="Add a note..."
-            className="flex-1"
-          />
-          <Button onClick={handleAddNote} disabled={!newNote.trim()}>
-            Add
-          </Button>
-        </div>
-      )}
-
-      {notes.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No notes yet.</p>
-      ) : (
-        <div className="space-y-3">
-          {notes.map((note) => (
-            <div key={note.id} className="group bg-muted rounded-lg border p-3">
-              <p className="text-sm whitespace-pre-wrap">{note.content}</p>
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-muted-foreground text-xs">
-                  {formatDateTime(note.created_at, timezone)}
-                </p>
-                {editable && onDeleteNote && (
-                  <button
-                    onClick={() => onDeleteNote(note.id)}
-                    className="text-muted-foreground hover:text-destructive text-xs opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <p className="text-muted-foreground text-sm italic">No notes</p>
       )}
     </div>
   )

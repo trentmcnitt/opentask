@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   snooze_count       INTEGER NOT NULL DEFAULT 0,
   first_completed_at TEXT,
   last_completed_at  TEXT,
-  meta_notes         TEXT,
+  notes              TEXT,
 
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -81,14 +81,6 @@ CREATE TABLE IF NOT EXISTS completions (
   completed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   due_at_was  TEXT,
   due_at_next TEXT
-);
-
--- Notes table
-CREATE TABLE IF NOT EXISTS notes (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id    INTEGER NOT NULL REFERENCES tasks(id),
-  content    TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 -- API tokens table
@@ -135,8 +127,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_active ON tasks(user_id, done, deleted
 CREATE INDEX IF NOT EXISTS idx_completions_task_id ON completions(task_id);
 CREATE INDEX IF NOT EXISTS idx_completions_user_id ON completions(user_id);
 CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at);
-
-CREATE INDEX IF NOT EXISTS idx_notes_task_id ON notes(task_id);
 
 CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);

@@ -4,9 +4,9 @@
  * Tests the HTTP-level behavior of:
  * - original_title: preserved on creation, returned in responses, unchanged by PATCH
  * - auto_snooze_minutes: accepted at creation, round-trips through API
- * - meta_notes: set via PATCH, round-trips through API
+ * - notes: set via PATCH, round-trips through API
  * - reprocess endpoint: returns task with original_title intact
- * - New enrichment fields (recurrence_mode, meta_notes, auto_snooze_minutes) via PATCH
+ * - New enrichment fields (recurrence_mode, notes, auto_snooze_minutes) via PATCH
  */
 
 import { describe, test, expect, beforeAll } from 'vitest'
@@ -172,8 +172,8 @@ describe('auto_snooze_minutes at creation', () => {
   })
 })
 
-describe('meta_notes via API', () => {
-  test('PATCH meta_notes sets the value', async () => {
+describe('notes via API', () => {
+  test('PATCH notes sets the value', async () => {
     const createRes = await apiFetch('/api/tasks', {
       method: 'POST',
       body: { title: 'Task needing notes', priority: 2 },
@@ -182,14 +182,14 @@ describe('meta_notes via API', () => {
 
     const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { meta_notes: 'Claim #847293. Call 1-800-555-0123.' },
+      body: { notes: 'Claim #847293. Call 1-800-555-0123.' },
     })
     expect(patchRes.status).toBe(200)
     const { data: patched } = await patchRes.json()
-    expect(patched.meta_notes).toBe('Claim #847293. Call 1-800-555-0123.')
+    expect(patched.notes).toBe('Claim #847293. Call 1-800-555-0123.')
   })
 
-  test('PATCH meta_notes: null clears the value', async () => {
+  test('PATCH notes: null clears the value', async () => {
     const createRes = await apiFetch('/api/tasks', {
       method: 'POST',
       body: { title: 'Notes to clear', priority: 1 },
@@ -199,20 +199,20 @@ describe('meta_notes via API', () => {
     // Set notes
     await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { meta_notes: 'Some notes' },
+      body: { notes: 'Some notes' },
     })
 
     // Clear notes
     const clearRes = await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { meta_notes: null },
+      body: { notes: null },
     })
     expect(clearRes.status).toBe(200)
     const { data: cleared } = await clearRes.json()
-    expect(cleared.meta_notes).toBeNull()
+    expect(cleared.notes).toBeNull()
   })
 
-  test('GET returns meta_notes after PATCH', async () => {
+  test('GET returns notes after PATCH', async () => {
     const createRes = await apiFetch('/api/tasks', {
       method: 'POST',
       body: { title: 'Notes round-trip', priority: 1 },
@@ -221,12 +221,12 @@ describe('meta_notes via API', () => {
 
     await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { meta_notes: 'Reference: ABC-123' },
+      body: { notes: 'Reference: ABC-123' },
     })
 
     const getRes = await apiFetch(`/api/tasks/${created.id}`)
     const { data: fetched } = await getRes.json()
-    expect(fetched.meta_notes).toBe('Reference: ABC-123')
+    expect(fetched.notes).toBe('Reference: ABC-123')
   })
 })
 
@@ -311,18 +311,18 @@ describe('reprocess endpoint', () => {
 })
 
 describe('undo reverts new fields', () => {
-  test('undo PATCH meta_notes restores previous value', async () => {
+  test('undo PATCH notes restores previous value', async () => {
     const createRes = await apiFetch('/api/tasks', {
       method: 'POST',
-      body: { title: 'Undo meta_notes test', priority: 1 },
+      body: { title: 'Undo notes test', priority: 1 },
     })
     const { data: created } = await createRes.json()
-    expect(created.meta_notes).toBeNull()
+    expect(created.notes).toBeNull()
 
-    // Set meta_notes
+    // Set notes
     await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { meta_notes: 'Important context' },
+      body: { notes: 'Important context' },
     })
 
     // Undo
@@ -332,7 +332,7 @@ describe('undo reverts new fields', () => {
     // Verify restored
     const getRes = await apiFetch(`/api/tasks/${created.id}`)
     const { data: restored } = await getRes.json()
-    expect(restored.meta_notes).toBeNull()
+    expect(restored.notes).toBeNull()
   })
 
   test('undo PATCH auto_snooze_minutes restores previous value', async () => {

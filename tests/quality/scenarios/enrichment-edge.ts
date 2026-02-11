@@ -67,7 +67,7 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should be concise: "Call the gutter repair guy" or "Get gutters fixed" or similar. ' +
-        'meta_notes should capture relevant details: neighbor referral, name (Mike or Mark), ' +
+        'notes should capture relevant details: neighbor referral, name (Mike or Mark), ' +
         'number on Facebook group page, storm damage context. ' +
         'The title should NOT be a paragraph.',
     },
@@ -88,7 +88,7 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Sign up for the webinar" or similar (date removed from title). ' +
-        'The URL (https://example.com/webinar) MUST be preserved — in the title or meta_notes. ' +
+        'The URL (https://example.com/webinar) MUST be preserved — in the title or notes. ' +
         'due_at should be next Thursday at 2pm.',
     },
   },
@@ -107,7 +107,7 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Email john.smith@example.com about the invoice" or similar. ' +
-        'The email address MUST be preserved exactly — in title or meta_notes. ' +
+        'The email address MUST be preserved exactly — in title or notes. ' +
         'due_at should be Friday.',
     },
   },

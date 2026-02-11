@@ -46,7 +46,7 @@ Be generous when interpreting garbled input — extract the intent rather than r
 When input is a long dictated paragraph, decompose it into structured parts:
 - **title** = concise core action (what the user needs to do)
 - **metadata** = due_at, priority, rrule, labels, auto_snooze_minutes, recurrence_mode (extracted into their dedicated fields)
-- **meta_notes** = everything else — context, reasons, reference numbers, addresses, phone numbers, instructions, background info
+- **notes** = everything else — context, reasons, reference numbers, addresses, phone numbers, instructions, background info
 
 The user dictated everything in one breath because they couldn't structure it. Your job is to structure it for them without losing any information.
 
@@ -90,14 +90,14 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 8. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
 
-9. **meta_notes** — Supplementary context extracted from dictation: reference numbers, phone numbers, addresses, reasons, instructions, background info. Separate from the title. Return null if no extra context beyond what's captured in other fields.
+9. **notes** — Supplementary context extracted from dictation: reference numbers, phone numbers, addresses, reasons, instructions, background info. Separate from the title. Return null if no extra context beyond what's captured in other fields.
 
 10. **reasoning** — Brief explanation of what you extracted and why.
 
 ## Rules
 
 - When uncertain about a field, leave it null (0 for priority, empty array for labels). Better to leave empty than guess wrong.
-- The user's raw text is always preserved separately — you cannot lose information.
+- **Every meaningful piece of information the user provided must be captured** in the title, a structured field, or notes. Nothing gets dropped. Dictation artifacts and filler words get cleaned, but facts, names, numbers, context, reasons, and instructions must all land somewhere. If it doesn't fit in the title or a structured field, it goes in notes.
 - For due_at, always return UTC. The user's timezone is provided for conversion. Pay close attention to the UTC offset: Chicago CST is UTC-6 (winter) and CDT is UTC-5 (summer). Example: 9:00 AM Chicago CST = 15:00 UTC, 2:30 PM Chicago CST = 20:30 UTC.
 - When resolving relative day-of-week references ("next Thursday", "this Saturday"), carefully count forward from the current date. Use the provided current UTC time to determine today's day of week.
 - Keep the title natural and human-readable. Don't over-format or add punctuation that wasn't there.
@@ -118,7 +118,7 @@ Timezone: America/Chicago (UTC-6 in winter)
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. No explicit label request."
 }
 \`\`\`
@@ -136,7 +136,7 @@ Timezone: America/Chicago (UTC-6 in winter)
   "rrule": "FREQ=DAILY",
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
 }
 \`\`\`
@@ -155,7 +155,7 @@ Available projects: Inbox, Family
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. 'add it to family' is a project assignment, not a label request."
 }
 \`\`\`
@@ -173,7 +173,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "Title already clean and concise. No date, priority, or explicit label request."
 }
 \`\`\`
@@ -191,8 +191,8 @@ Timezone: America/Chicago (UTC-6 in winter)
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
-  "reasoning": "Decomposed wall-of-text: title captures core action, meta_notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3. No explicit label request."
+  "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
+  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3. No explicit label request."
 }
 \`\`\`
 
@@ -209,7 +209,7 @@ Timezone: America/Chicago
   "rrule": "FREQ=DAILY;INTERVAL=3",
   "auto_snooze_minutes": 120,
   "recurrence_mode": "from_completion",
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request."
 }
 \`\`\`
@@ -227,7 +227,7 @@ Timezone: America/Chicago
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
-  "meta_notes": null,
+  "notes": null,
   "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence."
 }
 \`\`\``

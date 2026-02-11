@@ -548,12 +548,10 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
       )
     }
   }
-  // meta_notes: string or null
-  if (output.meta_notes !== null && output.meta_notes !== undefined) {
-    if (typeof output.meta_notes !== 'string') {
-      throw new Error(
-        `[${id}] meta_notes must be a string or null, got ${typeof output.meta_notes}`,
-      )
+  // notes: string or null
+  if (output.notes !== null && output.notes !== undefined) {
+    if (typeof output.notes !== 'string') {
+      throw new Error(`[${id}] notes must be a string or null, got ${typeof output.notes}`)
     }
   }
 }

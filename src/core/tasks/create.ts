@@ -152,7 +152,7 @@ export function getTaskById(taskId: number): Task | null {
            original_due_at, last_notified_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
            completion_count, snooze_count, first_completed_at, last_completed_at,
-           meta_notes, created_at, updated_at
+           notes, created_at, updated_at
     FROM tasks WHERE id = ?
   `,
     )
@@ -268,7 +268,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.deleted_at, tasks.archived_at,
            tasks.labels, tasks.completion_count, tasks.snooze_count,
            tasks.first_completed_at, tasks.last_completed_at,
-           tasks.meta_notes, tasks.created_at, tasks.updated_at
+           tasks.notes, tasks.created_at, tasks.updated_at
     FROM tasks
     INNER JOIN projects ON tasks.project_id = projects.id
     WHERE ${conditions.join(' AND ')}
@@ -306,7 +306,7 @@ interface TaskRow {
   snooze_count: number
   first_completed_at: string | null
   last_completed_at: string | null
-  meta_notes: string | null
+  notes: string | null
   created_at: string
   updated_at: string
 }
@@ -337,7 +337,7 @@ function rowToTask(row: TaskRow): Task {
     snooze_count: row.snooze_count,
     first_completed_at: row.first_completed_at,
     last_completed_at: row.last_completed_at,
-    meta_notes: row.meta_notes,
+    notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }

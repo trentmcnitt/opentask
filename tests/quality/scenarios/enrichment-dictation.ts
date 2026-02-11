@@ -86,8 +86,8 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Pay the electrician" or similar. ' +
-        'meta_notes MUST preserve: dollar amount ($450) and invoice number (3279). ' +
-        'Numbers dictated as words should be converted to digits in meta_notes.',
+        'notes MUST preserve: dollar amount ($450) and invoice number (3279). ' +
+        'Numbers dictated as words should be converted to digits in notes.',
     },
   },
   {
@@ -206,7 +206,7 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Buy a new charger for the laptop" or "Buy a new USB-C charger for the laptop". ' +
         'All repeated words and filler should be cleaned up. ' +
-        'The "USB-C" detail should be preserved (either in title or meta_notes).',
+        'The "USB-C" detail should be preserved (either in title or notes).',
     },
   },
 ]

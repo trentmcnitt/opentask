@@ -179,7 +179,7 @@ export const enrichmentVoiceScenarios: AITestScenario[] = [
         'Title should preserve casual voice: "Swing by the bank and deposit the check" or similar. ' +
         'NOT: "Visit bank to make deposit". ' +
         'due_at should be tomorrow morning. ' +
-        'meta_notes may capture "$200" (from "two hundred bucks") or it can stay in the title. ' +
+        'notes may capture "$200" (from "two hundred bucks") or it can stay in the title. ' +
         '"like" is a filler word and should be removed.',
     },
   },

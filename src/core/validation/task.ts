@@ -74,7 +74,7 @@ export const taskUpdateSchema = z.object({
   project_id: z.number().int().positive().optional(),
   priority: priority.optional(),
   labels: labels.optional(),
-  meta_notes: z.string().max(5000, 'Meta notes too long').nullable().optional(),
+  notes: z.string().max(10000, 'Notes too long').nullable().optional(),
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
   reset_original_due_at: z.boolean().optional(),
 })
