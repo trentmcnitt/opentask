@@ -292,7 +292,7 @@ describe('formatEditDescription', () => {
   })
 
   test('notes updated', () => {
-    const result = formatEditDescription('Buy groceries', ['meta_notes'], {
+    const result = formatEditDescription('Buy groceries', ['notes'], {
       isSnooze: false,
       beforeState: { id: 1 },
       afterState: { id: 1 },
@@ -321,7 +321,7 @@ describe('formatEditDescription', () => {
   })
 
   test('recurrence + notes (two fields)', () => {
-    const result = formatEditDescription('Buy groceries', ['rrule', 'anchor_time', 'meta_notes'], {
+    const result = formatEditDescription('Buy groceries', ['rrule', 'anchor_time', 'notes'], {
       isSnooze: false,
       beforeState: { id: 1 },
       afterState: { id: 1, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', anchor_time: '09:00' },

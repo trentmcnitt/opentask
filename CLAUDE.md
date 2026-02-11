@@ -288,8 +288,6 @@ Follow the pattern above, and verify:
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
 
-For nested routes with two dynamic params, use `NoteRouteContext` from `@/types/api` (e.g., `/api/tasks/[id]/notes/[nid]`).
-
 ## Development and Testing
 
 ### When to run which tests

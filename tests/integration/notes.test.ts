@@ -1,3 +1,10 @@
+/**
+ * Integration tests for notes via task PATCH/GET
+ *
+ * Notes are now a single text field on the task, read and written
+ * via the existing PATCH /api/tasks/:id and GET /api/tasks/:id endpoints.
+ */
+
 import { describe, test, expect, beforeAll } from 'vitest'
 import { apiFetch, resetTestData } from './helpers'
 
@@ -6,51 +13,71 @@ describe('Notes integration', () => {
     await resetTestData()
   })
 
-  test('POST note then GET notes — content matches', async () => {
-    const createRes = await apiFetch('/api/tasks/1/notes', {
+  test('PATCH notes sets the value, GET returns it', async () => {
+    const createRes = await apiFetch('/api/tasks', {
       method: 'POST',
-      body: { content: 'Remember to buy organic milk' },
+      body: { title: 'Task with notes' },
     })
-    expect(createRes.status).toBe(201)
-    const created = (await createRes.json()).data
-    expect(created.content).toBe('Remember to buy organic milk')
+    const { data: created } = await createRes.json()
+    expect(created.notes).toBeNull()
 
-    const listRes = await apiFetch('/api/tasks/1/notes')
-    expect(listRes.status).toBe(200)
-    const notes = (await listRes.json()).data.notes
-    expect(notes.length).toBeGreaterThan(0)
-    expect(notes.find((n: { id: number }) => n.id === created.id)?.content).toBe(
-      'Remember to buy organic milk',
-    )
-  })
-
-  test('PATCH note updates, DELETE note removes it', async () => {
-    // Create a note
-    const createRes = await apiFetch('/api/tasks/4/notes', {
-      method: 'POST',
-      body: { content: 'Original content' },
-    })
-    const note = (await createRes.json()).data
-
-    // Patch
-    const patchRes = await apiFetch(`/api/tasks/4/notes/${note.id}`, {
+    const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
       method: 'PATCH',
-      body: { content: 'Updated content' },
+      body: { notes: 'Claim #847293. Call 1-800-555-0123.' },
     })
     expect(patchRes.status).toBe(200)
+    const { data: patched } = await patchRes.json()
+    expect(patched.notes).toBe('Claim #847293. Call 1-800-555-0123.')
 
-    const afterPatch = await apiFetch('/api/tasks/4/notes')
-    const patchedNotes = (await afterPatch.json()).data.notes
-    expect(patchedNotes.find((n: { id: number }) => n.id === note.id)?.content).toBe(
-      'Updated content',
-    )
+    // Verify round-trip via GET
+    const getRes = await apiFetch(`/api/tasks/${created.id}`)
+    const { data: fetched } = await getRes.json()
+    expect(fetched.notes).toBe('Claim #847293. Call 1-800-555-0123.')
+  })
 
-    // Delete
-    const delRes = await apiFetch(`/api/tasks/4/notes/${note.id}`, { method: 'DELETE' })
-    expect(delRes.status).toBe(200)
+  test('PATCH notes: null clears the value', async () => {
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Notes to clear' },
+    })
+    const { data: created } = await createRes.json()
 
-    const afterDel = await apiFetch('/api/tasks/4/notes')
-    const remainingNotes = (await afterDel.json()).data.notes
-    expect(remainingNotes.find((n: { id: number }) => n.id === note.id)).toBeUndefined()
+    // Set notes
+    await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { notes: 'Some notes here' },
+    })
+
+    // Clear notes
+    const clearRes = await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { notes: null },
+    })
+    expect(clearRes.status).toBe(200)
+    const { data: cleared } = await clearRes.json()
+    expect(cleared.notes).toBeNull()
+
+    // Verify via GET
+    const getRes = await apiFetch(`/api/tasks/${created.id}`)
+    const { data: fetched } = await getRes.json()
+    expect(fetched.notes).toBeNull()
+  })
+
+  test('multi-line notes are preserved', async () => {
+    const createRes = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Multi-line notes task' },
+    })
+    const { data: created } = await createRes.json()
+
+    const multiLine = 'Line one\nLine two\nLine three'
+    await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { notes: multiLine },
+    })
+
+    const getRes = await apiFetch(`/api/tasks/${created.id}`)
+    const { data: fetched } = await getRes.json()
+    expect(fetched.notes).toBe(multiLine)
   })
 })

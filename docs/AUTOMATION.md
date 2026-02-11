@@ -47,7 +47,7 @@ The AI extracts: clean title, due date, priority, labels, recurrence, project, a
 | project_name        | "add to family"                            | Matched to existing project |
 | auto_snooze_minutes | "auto-snooze 30 minutes"                   | Integer (0-1440)            |
 | recurrence_mode     | "repeat from completion"                   | "from_completion"           |
-| meta_notes          | "claim number 847293, call 1-800-555-0123" | Supplementary context       |
+| notes               | "claim number 847293, call 1-800-555-0123" | Supplementary context       |
 
 ### Wall-of-text example
 
@@ -60,7 +60,7 @@ Result:
 - **title**: "Call insurance company about denied ER claim"
 - **due_at**: tomorrow 9am (UTC-converted)
 - **priority**: 3 (high)
-- **meta_notes**: "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching."
+- **notes**: "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching."
 
 ## Skipping AI Enrichment
 

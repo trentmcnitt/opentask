@@ -96,7 +96,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 }
 
 /**
- * Collect basic field changes (title, priority, project_id, labels, recurrence_mode, meta_notes)
+ * Collect basic field changes (title, priority, project_id, labels, recurrence_mode, notes)
  */
 function collectBasicFields(
   data: FieldChangeData,
@@ -178,8 +178,8 @@ function collectBasicFields(
     trackField(data, 'recurrence_mode', task.recurrence_mode, input.recurrence_mode)
   }
 
-  if (input.meta_notes !== undefined && input.meta_notes !== task.meta_notes) {
-    trackField(data, 'meta_notes', task.meta_notes, input.meta_notes)
+  if (input.notes !== undefined && input.notes !== task.notes) {
+    trackField(data, 'notes', task.notes, input.notes)
   }
 
   if (

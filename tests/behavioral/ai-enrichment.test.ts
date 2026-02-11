@@ -63,7 +63,7 @@ function mockResult(overrides: Record<string, unknown> = {}) {
       project_name: null,
       auto_snooze_minutes: null,
       recurrence_mode: null,
-      meta_notes: null,
+      notes: null,
       reasoning: 'Test reasoning',
       ...overrides,
     },
@@ -926,7 +926,7 @@ describe('new enrichment fields', () => {
     expect(after.rrule).toBe('FREQ=DAILY;INTERVAL=3')
   })
 
-  test('applies meta_notes from enrichment', async () => {
+  test('applies notes from enrichment', async () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -941,14 +941,14 @@ describe('new enrichment fields', () => {
         priority: 3,
         due_at: '2026-02-20T15:00:00Z',
         labels: ['finance'],
-        meta_notes: 'Claim #847293. Call 1-800-555-0123.',
+        notes: 'Claim #847293. Call 1-800-555-0123.',
       }),
     )
 
     await processEnrichmentQueue()
 
     const after = getTaskById(task.id)!
-    expect(after.meta_notes).toBe('Claim #847293. Call 1-800-555-0123.')
+    expect(after.notes).toBe('Claim #847293. Call 1-800-555-0123.')
     expect(after.title).toBe('Call insurance about denied claim')
     expect(after.priority).toBe(3)
   })
@@ -962,8 +962,8 @@ describe('new enrichment fields', () => {
       input: { title: 'task with existing meta' },
     })
 
-    // Manually set meta_notes and auto_snooze_minutes on the task
-    db.prepare('UPDATE tasks SET meta_notes = ?, auto_snooze_minutes = ? WHERE id = ?').run(
+    // Manually set notes and auto_snooze_minutes on the task
+    db.prepare('UPDATE tasks SET notes = ?, auto_snooze_minutes = ? WHERE id = ?').run(
       'Existing notes',
       60,
       task.id,
@@ -976,7 +976,7 @@ describe('new enrichment fields', () => {
         labels: [],
         auto_snooze_minutes: null,
         recurrence_mode: null,
-        meta_notes: null,
+        notes: null,
       }),
     )
 
@@ -984,7 +984,7 @@ describe('new enrichment fields', () => {
 
     const after = getTaskById(task.id)!
     // null means "not mentioned" — should not overwrite existing values
-    expect(after.meta_notes).toBe('Existing notes')
+    expect(after.notes).toBe('Existing notes')
     expect(after.auto_snooze_minutes).toBe(60)
   })
 
@@ -1003,7 +1003,7 @@ describe('new enrichment fields', () => {
         priority: 2,
         labels: ['work'],
         auto_snooze_minutes: 45,
-        meta_notes: 'Some context notes',
+        notes: 'Some context notes',
       }),
     )
 
@@ -1011,13 +1011,13 @@ describe('new enrichment fields', () => {
 
     const enriched = getTaskById(task.id)!
     expect(enriched.auto_snooze_minutes).toBe(45)
-    expect(enriched.meta_notes).toBe('Some context notes')
+    expect(enriched.notes).toBe('Some context notes')
 
     executeUndo(TEST_USER_ID)
 
     const undone = getTaskById(task.id)!
     expect(undone.auto_snooze_minutes).toBeNull()
-    expect(undone.meta_notes).toBeNull()
+    expect(undone.notes).toBeNull()
     expect(undone.title).toBe('undo test for new fields')
   })
 })

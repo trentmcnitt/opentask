@@ -79,13 +79,13 @@ For each scenario:
 - Was `null` returned as the default when no mode was mentioned? (standard recurrence = `null`, not `"from_due"`)
 - Was recurrence mode not confused with regular recurrence? ("every Monday" = rrule only, no recurrence_mode; "every 2 weeks from completion" = rrule + `"from_completion"`)
 
-### 10. Meta Notes Quality
+### 10. Notes Quality
 
 - Were reference numbers preserved exactly? (phone numbers, case numbers, Rx numbers, confirmation codes)
 - Were addresses and specific details captured? (street addresses, suite numbers, extensions)
-- Was context that doesn't belong in the title separated into meta_notes? (instructions, amounts, reference info)
-- Was `null` returned when there was nothing extra to capture? ("buy milk" has no meta_notes)
-- Was information NOT duplicated? (if "Walgreens" is in the title, it shouldn't be repeated in meta_notes)
+- Was context that doesn't belong in the title separated into notes? (instructions, amounts, reference info)
+- Was `null` returned when there was nothing extra to capture? ("buy milk" has no notes)
+- Was information NOT duplicated? (if "Walgreens" is in the title, it shouldn't be repeated in notes)
 
 ### 11. Critical Label Usage
 

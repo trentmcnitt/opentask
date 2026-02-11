@@ -61,17 +61,10 @@ export interface Task {
   snooze_count: number
   first_completed_at: string | null
   last_completed_at: string | null
-  meta_notes: string | null
+  notes: string | null
 
   created_at: string
   updated_at: string
-}
-
-export interface Note {
-  id: number
-  task_id: number
-  content: string
-  created_at: string
 }
 
 export interface UndoLogEntry {

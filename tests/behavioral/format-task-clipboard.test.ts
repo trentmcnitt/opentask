@@ -47,7 +47,7 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     snooze_count: 0,
     first_completed_at: null,
     last_completed_at: null,
-    meta_notes: null,
+    notes: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -409,5 +409,127 @@ describe('formatTasksForClipboard', () => {
     const lines = result.split('\n')
     expect(lines[0]).toBe('Overdue (Highest Priority):')
     expect(lines[3]).toBe('Today (Soonest First):')
+  })
+
+  describe('notes in clipboard output', () => {
+    test('task with notes shows indented note line', () => {
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [
+            makeTask({
+              id: 1,
+              title: 'Call insurance company',
+              notes: 'Claim #847293. Call 1-800-555-0123.',
+            }),
+          ],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const lines = result.split('\n')
+      expect(lines[0]).toBe('Today (Soonest First):')
+      expect(lines[1]).toBe('Call insurance company')
+      expect(lines[2]).toBe('    Claim #847293. Call 1-800-555-0123.')
+    })
+
+    test('task with long notes shows truncated first line', () => {
+      const longNote =
+        'This is a very long note that goes on and on and on about many different things and contains a lot of detail that probably does not all need to be shown'
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Long notes task', notes: longNote })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const lines = result.split('\n')
+      expect(lines[2]).toMatch(/^    .{97}\.\.\.$/)
+      expect(lines[2].length).toBe(4 + 100) // 4-space indent + 97 chars + "..."
+    })
+
+    test('multi-line notes shows only first line', () => {
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [
+            makeTask({
+              id: 1,
+              title: 'Multi-line task',
+              notes: 'First line of notes\nSecond line\nThird line',
+            }),
+          ],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      expect(result).toContain('    First line of notes')
+      expect(result).not.toContain('Second line')
+    })
+
+    test('task without notes has no extra line', () => {
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'No notes task' })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      expect(result).toBe('Today (Soonest First):\nNo notes task')
+    })
+  })
+
+  describe('project name in clipboard output', () => {
+    test('task with project shows [ProjectName] in metadata', () => {
+      const projectMap = new Map([[1, 'Shopping List']])
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Buy groceries', project_id: 1 })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      expect(result).toContain('Buy groceries [Shopping List]')
+    })
+
+    test('project name appears before parenthetical metadata', () => {
+      const projectMap = new Map([[1, 'Work']])
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [
+            makeTask({
+              id: 1,
+              title: 'Fix bug',
+              project_id: 1,
+              priority: 3,
+            }),
+          ],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      expect(result).toContain('Fix bug [Work] (High)')
+    })
+
+    test('task without project match has no brackets', () => {
+      const projectMap = new Map([[99, 'Other']])
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Simple task', project_id: 1 })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      expect(result).toBe('Today (Soonest First):\nSimple task')
+    })
+
+    test('no projectMap passed — no brackets', () => {
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Simple task' })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      expect(result).toBe('Today (Soonest First):\nSimple task')
+    })
   })
 })

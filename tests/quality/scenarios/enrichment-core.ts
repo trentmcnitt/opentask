@@ -2,7 +2,7 @@
  * Core enrichment scenarios — updated from original scenarios.ts
  *
  * These test fundamental enrichment capabilities: title cleaning, date extraction,
- * priority inference, recurrence, auto-snooze, recurrence mode, meta_notes,
+ * priority inference, recurrence, auto-snooze, recurrence mode, notes,
  * wall-of-text decomposition, critical labels, and complex combinations.
  *
  * Labels policy: labels must be empty unless the user explicitly requests one.
@@ -270,7 +270,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title should be clean: "Doctor Patel appointment" or similar. ' +
         'due_at should be next Thursday at 2:30pm Chicago time in UTC. ' +
-        'meta_notes MUST preserve: address (4200 Medical Parkway Suite 310), ' +
+        'notes MUST preserve: address (4200 Medical Parkway Suite 310), ' +
         'phone (512-555-0847), what to bring (insurance card, MRI results), ' +
         'and fasting instructions (fast 4 hours before). ' +
         'Labels must be an empty array — no explicit label request in input.',
@@ -298,7 +298,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title should be something like "ABC Plumbing water heater replacement" or similar. ' +
         'Priority must be 2 (explicit "medium priority"). ' +
         'due_at should be end of the current month. ' +
-        'meta_notes MUST preserve: quote amount ($4,800), phone (847-555-0192). ' +
+        'notes MUST preserve: quote amount ($4,800), phone (847-555-0192). ' +
         'Labels must be an empty array — no explicit label request in input. May match Home project.',
     },
   },
@@ -319,7 +319,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title should capture the core action: something about travel/flight or trip prep. ' +
         'due_at should be Saturday at 6:15am Chicago time in UTC. ' +
-        'meta_notes MUST preserve ALL confirmation numbers and details: ' +
+        'notes MUST preserve ALL confirmation numbers and details: ' +
         'Southwest flight ABC123, confirmation 2847, Midway departure, ' +
         'Hertz rental, Marriott confirmation H-99281. ' +
         'Labels must be an empty array — no explicit label request in input.',
@@ -343,7 +343,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "File property tax appeal" or similar. ' +
         'Priority: 0 is acceptable (no explicit keyword), but >= 1 would also be reasonable given the legal deadline. ' +
         'due_at should be February 28th. ' +
-        'meta_notes MUST preserve: case number (2026-PT-44821), dollar amounts ($285k vs $340k), ' +
+        'notes MUST preserve: case number (2026-PT-44821), dollar amounts ($285k vs $340k), ' +
         'phone with extension (312-555-0400 ext 247). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
@@ -367,7 +367,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         auto_snooze_minutes: 30,
         priority: 0,
         rrule: null,
-        meta_notes: null,
+        notes: null,
         labels: [],
       },
       quality_notes:
@@ -604,7 +604,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'auto_snooze_minutes must be 120 (2 hours). ' +
         'recurrence_mode MUST be "from_completion" — "from the last time I actually did it". ' +
         'rrule should reflect 3-month interval. ' +
-        'meta_notes MUST preserve: model (AO Smith GCR-50), instructions. ' +
+        'notes MUST preserve: model (AO Smith GCR-50), instructions. ' +
         'Labels must be an empty array — no explicit label request in input. May match Home project.',
     },
   },
@@ -627,7 +627,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Priority MUST be 4 (explicit "urgent"). ' +
         'Labels MUST include "critical" (explicit "critical alert"). ' +
         'due_at should be tonight at 9pm Chicago time in UTC. ' +
-        'meta_notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
+        'notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
     },
   },
   {
@@ -685,7 +685,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'due_at should be next Wednesday at 7pm Chicago time in UTC. ' +
         'priority should be 1-2 ("kinda important" is a mild signal, not urgent). ' +
         'project_name should be "Home". ' +
-        'meta_notes should preserve: form reference (noise complaint form B-12). ' +
+        'notes should preserve: form reference (noise complaint form B-12). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
   },
@@ -736,14 +736,14 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Deep clean the oven" or similar. ' +
         'The user signals from-completion intent ("from when I finish") but gives no interval. ' +
         'Acceptable outcomes: recurrence_mode="from_completion" with a reasonable default rrule, ' +
-        'OR the from-completion intent captured in meta_notes so it is not lost. ' +
+        'OR the from-completion intent captured in notes so it is not lost. ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
     id: 'enrich-edge-meta-notes-minimal',
     feature: 'enrichment',
-    description: 'Simple task with nothing extra — meta_notes must be null',
+    description: 'Simple task with nothing extra — notes must be null',
     input: {
       text: 'buy new socks tomorrow',
       timezone: 'America/Chicago',
@@ -751,7 +751,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        meta_notes: null,
+        notes: null,
         priority: 0,
         rrule: null,
         auto_snooze_minutes: null,
@@ -759,7 +759,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Buy new socks" (date phrase removed). ' +
-        'meta_notes MUST be null — there is no extra context to capture. ' +
+        'notes MUST be null — there is no extra context to capture. ' +
         'due_at should be tomorrow. ' +
         'Labels must be an empty array — no explicit label request in input.',
     },

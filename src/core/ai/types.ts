@@ -45,7 +45,7 @@ export const EnrichmentResultSchema = z.object({
     .enum(['from_due', 'from_completion'])
     .nullable()
     .describe('"from_completion" only if user explicitly says so. null = unmentioned'),
-  meta_notes: z
+  notes: z
     .string()
     .nullable()
     .describe('Context/details extracted from dictation, separate from the title'),

@@ -52,10 +52,11 @@ export function formatTasksResponse(tasks: Task[]): FormattedTask[] {
 
 /**
  * Build the parenthetical metadata string for a single task.
- * Order: due date, recurrence, priority, labels. Empty parts are omitted.
- * Returns empty string if no metadata is present.
+ * Order: project name (in brackets), then parenthetical with due date, recurrence, priority, labels.
+ * Empty parts are omitted. Returns empty string if no metadata is present.
  */
-function formatTaskMeta(task: Task, timezone: string): string {
+function formatTaskMeta(task: Task, timezone: string, projectName?: string): string {
+  const prefix = projectName ? ` [${projectName}]` : ''
   const parts: string[] = []
 
   if (task.due_at) {
@@ -74,7 +75,20 @@ function formatTaskMeta(task: Task, timezone: string): string {
     parts.push(...task.labels)
   }
 
-  return parts.length > 0 ? ` (${parts.join(', ')})` : ''
+  const parens = parts.length > 0 ? ` (${parts.join(', ')})` : ''
+  return `${prefix}${parens}`
+}
+
+/**
+ * Format the first line of task notes for clipboard, truncated to ~100 chars.
+ * Returns null if notes is empty/null.
+ */
+function formatNotesLine(notes: string | null): string | null {
+  if (!notes) return null
+  const firstLine = notes.split('\n')[0].trim()
+  if (!firstLine) return null
+  if (firstLine.length > 100) return firstLine.slice(0, 97) + '...'
+  return firstLine
 }
 
 /**
@@ -89,7 +103,11 @@ function formatTaskMeta(task: Task, timezone: string): string {
  * - Multiple groups: separated by blank lines
  * - Metadata (due, recurrence, priority, labels) in parentheses after title
  */
-export function formatTasksForClipboard(groups: ClipboardGroup[], timezone: string): string {
+export function formatTasksForClipboard(
+  groups: ClipboardGroup[],
+  timezone: string,
+  projectMap?: Map<number, string>,
+): string {
   const sections: string[] = []
 
   for (const group of groups) {
@@ -99,12 +117,13 @@ export function formatTasksForClipboard(groups: ClipboardGroup[], timezone: stri
     const annotation = group.reversed ? sortLabel.reversed : sortLabel.default
     const lines: string[] = [`${group.label} (${annotation}):`]
 
-    if (group.tasks.length === 1) {
-      const task = group.tasks[0]
-      lines.push(`${task.title}${formatTaskMeta(task, timezone)}`)
-    } else {
-      for (const task of group.tasks) {
-        lines.push(`- ${task.title}${formatTaskMeta(task, timezone)}`)
+    const bullet = group.tasks.length > 1 ? '- ' : ''
+    for (const task of group.tasks) {
+      const projectName = projectMap?.get(task.project_id)
+      lines.push(`${bullet}${task.title}${formatTaskMeta(task, timezone, projectName)}`)
+      const notesLine = formatNotesLine(task.notes)
+      if (notesLine) {
+        lines.push(`    ${notesLine}`)
       }
     }
 
