@@ -17,7 +17,7 @@
 import { describe, test, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import { allScenarios } from './scenarios'
+import { allScenarios } from './scenarios/index'
 import type {
   AITestScenario,
   EnrichmentInput,

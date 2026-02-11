@@ -296,13 +296,14 @@ For nested routes with two dynamic params, use `NoteRouteContext` from `@/types/
 
 If a change spans multiple rows in this table, combine the test suites from all matching rows. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
 
-| Change type                                   | What to run                                                                                     |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Every change (always run)                     | The quick check                                                                                 |
-| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                        |
-| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)** |
-| Refactoring / code reorganization             | All test suites                                                                                 |
-| Production deploy                             | All test suites (see [Deployment](#deployment) section)                                         |
+| Change type                                   | What to run                                                                                        |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Every change (always run)                     | The quick check                                                                                    |
+| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                           |
+| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (both layers) — see [AI quality testing](#ai-quality-testing) |
+| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**    |
+| Refactoring / code reorganization             | All test suites                                                                                    |
+| Production deploy                             | All test suites (see [Deployment](#deployment) section)                                            |
 
 During rapid iteration within a UI verification loop, the quick check between deploys is sufficient; the full checklist applies to the final version before reporting results.
 
@@ -311,7 +312,21 @@ E2E tests (run locally) and browser verification (run against dev) are complemen
 Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
+### AI quality testing
+
+**Production has essentially no feedback loop for AI quality.** There is no user rating system, no A/B testing, no way to know if the AI is producing good results in the field. Quality testing IS the quality bar — the AI will only perform as well as our tests prove it can. This makes two things critical:
+
+1. **How extensive and realistic the quality test scenarios are** — scenarios must cover the full range of real-world inputs: dictation artifacts, typos, edge cases, ambiguous phrasing, colloquial language, and every field combination. If a scenario isn't tested, assume it doesn't work.
+2. **How well the AI holds up under that testing** — every scenario must be evaluated in Layer 2, and any score below 6 means the prompt needs iteration. Do not ship prompt changes that degrade quality on existing scenarios.
+
 **`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details.
+
+**When modifying AI prompts or enrichment logic:**
+
+- Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones)
+- If any scenario regresses, fix the prompt before proceeding
+- When adding new behavior, add scenarios that test it — untested behavior is unverified behavior
+- Scenarios live in `tests/quality/scenarios/` organized by category
 
 ### Pre-existing test failures
 

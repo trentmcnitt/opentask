@@ -37,7 +37,9 @@ Users frequently dictate tasks while driving, walking, or multitasking. Expect:
 - Odd or imprecise recurrence phrasing ("do it again next week and then like keep doing it")
 - Run-on sentences mixing the task with context ("oh and also I should probably call the dentist because that thing is still bothering me, make it high priority")
 
-Be generous when interpreting garbled input — extract the intent rather than rejecting it.
+- Common typos and misspellings ("urget" for "urgent", "critcal" for "critical", "tommorow" for "tomorrow")
+
+Be generous when interpreting garbled input — extract the intent rather than rejecting it. Be generous with typo interpretation — if "urget" clearly means "urgent", treat it as priority 4.
 
 ## Wall-of-text decomposition
 
@@ -61,9 +63,13 @@ The user dictated everything in one breath because they couldn't structure it. Y
    - 3 = high ("high priority", "important")
    - 4 = urgent ("urgent", "ASAP", "critical", "immediately")
 
+   Priority keyword detection is case-insensitive. Dictation software typically produces lowercase, so "urgent" and "URGENT" should both trigger priority 4.
+
    Use natural language cues beyond keywords. Emotional urgency ("this is killing me", "I really really need to") indicates priority 2-3 (medium to high), NOT 4. Reserve priority 4 exclusively for explicit urgency keywords like "urgent", "ASAP", "critical", or "immediately". Don't over-infer — leaving priority at 0 is better than guessing wrong.
 
-4. **labels** — Array of label strings. Look for contextual categories implied by the task content: "work", "personal", "health", "errand", "shopping", "home", "finance", "family", "car", "medical", etc. Use your judgment based on context — the list above is not exhaustive. Only add labels that are clearly implied. Return an empty array if nothing is apparent. Be conservative: one accurate label is better than three speculative ones.
+4. **labels** — Array of label strings. Only include labels the user **explicitly requests** using phrases like "label it as X", "add the X label", "tag it X", "mark it as X". Do NOT infer labels from context — even if a task mentions a dentist, do not add "medical". Even if a task mentions a car, do not add "car". Labels are a user-controlled organizational tool, not an AI classification system. Return an empty array unless the user explicitly asks for a label.
+
+   If the user explicitly requests a label that doesn't exist yet, still include it — it's the user's intent. Use the naming style of existing labels (lowercase, simple words).
 
    **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for. IMPORTANT: When "critical alert" appears in the input, the "critical" label MUST be included in the labels array even when other signals (URGENT, priority, dates) are also present. Multiple signals do not cancel each other out — extract ALL of them independently.
 
@@ -107,13 +113,13 @@ Timezone: America/Chicago (UTC-6 in winter)
   "title": "Call the dentist",
   "due_at": "2026-02-10T15:00:00Z",
   "priority": 0,
-  "labels": ["medical"],
+  "labels": [],
   "project_name": null,
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "meta_notes": null,
-  "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. Added medical label from dentist context."
+  "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. No explicit label request."
 }
 \`\`\`
 
@@ -125,13 +131,13 @@ Timezone: America/Chicago (UTC-6 in winter)
   "title": "Take my vitamins",
   "due_at": "2026-02-10T14:00:00Z",
   "priority": 0,
-  "labels": ["health"],
+  "labels": [],
   "project_name": null,
   "rrule": "FREQ=DAILY",
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "meta_notes": null,
-  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'."
+  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
 }
 \`\`\`
 
@@ -144,13 +150,13 @@ Available projects: Inbox, Family
   "title": "Call mom",
   "due_at": "2026-02-17T18:00:00Z",
   "priority": 3,
-  "labels": ["family"],
+  "labels": [],
   "project_name": "Family",
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "meta_notes": null,
-  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. Title cleaned of metadata phrases."
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. 'add it to family' is a project assignment, not a label request."
 }
 \`\`\`
 
@@ -162,13 +168,13 @@ Timezone: America/Chicago
   "title": "Fix van arm",
   "due_at": null,
   "priority": 0,
-  "labels": ["car"],
+  "labels": [],
   "project_name": null,
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "meta_notes": null,
-  "reasoning": "Title already clean and concise. No date or priority signals. Added car label from 'van' context."
+  "reasoning": "Title already clean and concise. No date, priority, or explicit label request."
 }
 \`\`\`
 
@@ -180,13 +186,13 @@ Timezone: America/Chicago (UTC-6 in winter)
   "title": "Call insurance company about denied ER claim",
   "due_at": "2026-02-10T15:00:00Z",
   "priority": 3,
-  "labels": ["medical", "finance"],
+  "labels": [],
   "project_name": null,
   "rrule": null,
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "meta_notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
-  "reasoning": "Decomposed wall-of-text: title captures core action, meta_notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3."
+  "reasoning": "Decomposed wall-of-text: title captures core action, meta_notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3. No explicit label request."
 }
 \`\`\`
 
@@ -198,13 +204,31 @@ Timezone: America/Chicago
   "title": "Water the plants",
   "due_at": null,
   "priority": 0,
-  "labels": ["home"],
+  "labels": [],
   "project_name": null,
   "rrule": "FREQ=DAILY;INTERVAL=3",
   "auto_snooze_minutes": 120,
   "recurrence_mode": "from_completion",
   "meta_notes": null,
-  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes."
+  "reasoning": "Extracted 3-day recurrence. 'from when I complete it' → recurrence_mode from_completion. 'auto-snooze 2 hours' → 120 minutes. No explicit label request."
+}
+\`\`\`
+
+### Explicit label request
+Input: "pick up dry cleaning and label it as errands"
+Timezone: America/Chicago
+\`\`\`json
+{
+  "title": "Pick up dry cleaning",
+  "due_at": null,
+  "priority": 0,
+  "labels": ["errands"],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "meta_notes": null,
+  "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence."
 }
 \`\`\``
 

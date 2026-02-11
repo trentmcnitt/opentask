@@ -207,7 +207,7 @@ describe('processEnrichmentQueue ai-locked skip', () => {
 describe('enrichment success path', () => {
   beforeEach(() => clearPendingEnrichment())
 
-  test('applies title, priority, due_at, labels from AI result', async () => {
+  test('applies title, priority, due_at from AI result, strips inferred labels', async () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -215,6 +215,8 @@ describe('enrichment success path', () => {
     })
     expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
 
+    // AI returns an inferred "errand" label, but the guard strips it because
+    // the input has no explicit label-intent keywords ("label it as", "tag it", etc.)
     mockEnrichmentQuery.mockResolvedValueOnce(
       mockResult({
         title: 'Call dentist',
@@ -230,7 +232,7 @@ describe('enrichment success path', () => {
     expect(after.title).toBe('Call dentist')
     expect(after.priority).toBe(3)
     expect(after.due_at).toBe('2026-02-20T14:00:00Z')
-    expect(after.labels).toContain('errand')
+    expect(after.labels).not.toContain('errand')
     expect(after.labels).not.toContain('ai-to-process')
   })
 
@@ -348,13 +350,14 @@ describe('enrichment success path', () => {
 describe('enrichSingleTask (fire-and-forget)', () => {
   beforeEach(() => clearPendingEnrichment())
 
-  test('processes a title-only task', async () => {
+  test('processes a title-only task, strips inferred labels', async () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: { title: 'pick up dry cleaning tomorrow' },
     })
 
+    // AI returns inferred "errand" label — guard strips it (no label-intent in input)
     mockEnrichmentQuery.mockResolvedValueOnce(
       mockResult({
         title: 'Pick up dry cleaning',
@@ -369,7 +372,7 @@ describe('enrichSingleTask (fire-and-forget)', () => {
     const after = getTaskById(task.id)!
     expect(after.title).toBe('Pick up dry cleaning')
     expect(after.priority).toBe(1)
-    expect(after.labels).toContain('errand')
+    expect(after.labels).not.toContain('errand')
     expect(after.labels).not.toContain('ai-to-process')
   })
 
@@ -744,13 +747,14 @@ describe('fair queuing', () => {
 describe('label merging', () => {
   beforeEach(() => clearPendingEnrichment())
 
-  test('AI labels merged with existing user labels, ai-to-process removed', async () => {
+  test('explicit AI labels merged with existing user labels, ai-to-process removed', async () => {
     const db = getDb()
 
+    // Input contains explicit label-intent keyword ("label it as") so AI labels pass through
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      input: { title: 'buy milk and clean house' },
+      input: { title: 'buy milk and clean house label it as errand' },
     })
 
     // Set labels to include both shopping and ai-to-process
@@ -763,7 +767,7 @@ describe('label merging', () => {
       mockResult({
         title: 'Buy milk and clean house',
         priority: 0,
-        labels: ['errand', 'urgent'],
+        labels: ['errand'],
       }),
     )
 
@@ -772,7 +776,62 @@ describe('label merging', () => {
     const after = getTaskById(task.id)!
     expect(after.labels).toContain('shopping')
     expect(after.labels).toContain('errand')
-    expect(after.labels).toContain('urgent')
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('inferred AI labels stripped when input has no label-intent keywords', async () => {
+    const db = getDb()
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'buy milk and clean house' },
+    })
+
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(
+      JSON.stringify(['shopping', 'ai-to-process']),
+      task.id,
+    )
+
+    // AI returns inferred labels — guard strips them (no label-intent in input)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Buy milk and clean house',
+        priority: 0,
+        labels: ['errand', 'home'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('shopping')
+    expect(after.labels).not.toContain('errand')
+    expect(after.labels).not.toContain('home')
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+
+  test('critical label always passes through even without label-intent keywords', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'refill heart medication critical alert' },
+    })
+
+    // AI returns both "critical" (allowed) and "medical" (inferred, stripped)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Refill heart medication',
+        priority: 4,
+        labels: ['critical', 'medical'],
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.labels).toContain('critical')
+    expect(after.labels).not.toContain('medical')
     expect(after.labels).not.toContain('ai-to-process')
   })
 })
@@ -831,7 +890,7 @@ describe('new enrichment fields', () => {
       mockResult({
         title: 'Water plants',
         priority: 0,
-        labels: ['home'],
+        labels: [],
         auto_snooze_minutes: 30,
       }),
     )
@@ -840,7 +899,7 @@ describe('new enrichment fields', () => {
 
     const after = getTaskById(task.id)!
     expect(after.auto_snooze_minutes).toBe(30)
-    expect(after.labels).toContain('home')
+    expect(after.labels).not.toContain('ai-to-process')
   })
 
   test('applies recurrence_mode from_completion from enrichment', async () => {

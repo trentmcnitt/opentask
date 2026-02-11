@@ -347,7 +347,17 @@ AI activity has a longer retention than other data because it's useful for promp
 
 ## Quality Testing
 
-Prompt quality is measured with a two-layer system inspired by the Bespoke project's Layer 1/2 pattern.
+### Why quality testing is critical
+
+**Production has no feedback loop for AI quality.** There is no user rating system, no A/B testing, no telemetry on whether the AI is producing good results in the field. The quality test suite is the _only_ mechanism for measuring and maintaining AI output quality.
+
+This means the AI will only perform as well as our tests prove it can. Quality is a function of two things:
+
+1. **How extensive and realistic the test scenarios are.** Scenarios must cover the full range of real-world inputs: garbled dictation, typos, edge cases, ambiguous phrasing, colloquial language, and every field combination. Coverage gaps are quality gaps — if a pattern isn't tested, assume it doesn't work correctly.
+
+2. **How well the AI holds up under that realistic testing.** Every scenario is evaluated against a rubric, and any score below 6 means the prompt needs iteration. Prompt changes that degrade quality on existing scenarios must not ship.
+
+When modifying prompts or enrichment logic: run both layers on ALL scenarios, not just new ones. Regressions are easy to introduce and hard to detect without full coverage.
 
 ### Layer 1 — Automated generation + structural validation
 
@@ -367,14 +377,29 @@ After Layer 1 completes, it prints instructions to stdout. The evaluating agent 
 
 For each scenario, the evaluator writes a `validation.md` with a score (0-10), pass/fail, and per-criterion results. A `layer2-summary.md` summarizes the full run.
 
-### How to add scenarios
+### Scenario organization
 
-Add an `AITestScenario` to `tests/quality/scenarios.ts`. Each scenario defines:
+Scenarios live in `tests/quality/scenarios/`, organized by category:
+
+| File                       | Category                                      | Count |
+| -------------------------- | --------------------------------------------- | ----- |
+| `enrichment-core.ts`       | Core enrichment (title, date, priority, etc.) | 30    |
+| `enrichment-labels.ts`     | Explicit-only label extraction                | 10    |
+| `enrichment-dictation.ts`  | Dictation realism and typo tolerance          | 10    |
+| `enrichment-recurrence.ts` | Expanded recurrence patterns                  | 10    |
+| `enrichment-voice.ts`      | Voice preservation                            | 8     |
+| `enrichment-edge.ts`       | Edge cases                                    | 8     |
+| `bubble.ts`                | Bubble recommendations                        | 4     |
+| `index.ts`                 | Barrel export                                 | —     |
+
+Each scenario defines:
 
 - `id` — unique identifier (e.g., `enrich-garbled-dictation`)
-- `feature` — which AI feature (`enrichment`, `bubble`, `shopping`)
+- `feature` — which AI feature (`enrichment`, `bubble`)
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
+
+When adding new AI behavior, always add scenarios that test it. Untested behavior is unverified behavior.
 
 ### How to adjust evaluation criteria
 
@@ -385,7 +410,7 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | File                                | Purpose                                            |
 | ----------------------------------- | -------------------------------------------------- |
 | `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
-| `tests/quality/scenarios.ts`        | Test scenario definitions (~17 scenarios)          |
+| `tests/quality/scenarios/`          | Test scenario definitions (~80 scenarios)          |
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |

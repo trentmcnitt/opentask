@@ -1,20 +1,16 @@
 /**
- * AI quality test scenarios
+ * Core enrichment scenarios — updated from original scenarios.ts
  *
- * Each scenario defines an input, the feature it tests, and requirements
- * for both Layer 1 (structural) and Layer 2 (quality) validation.
+ * These test fundamental enrichment capabilities: title cleaning, date extraction,
+ * priority inference, recurrence, auto-snooze, recurrence mode, meta_notes,
+ * wall-of-text decomposition, critical labels, and complex combinations.
  *
- * To add a scenario: append to the appropriate array below, then run
- * `npm run test:quality` to generate outputs and evaluate quality.
+ * Labels policy: labels must be empty unless the user explicitly requests one.
  */
 
-import type { AITestScenario } from './types'
+import type { AITestScenario } from '../types'
 
-// ---------------------------------------------------------------------------
-// Enrichment scenarios
-// ---------------------------------------------------------------------------
-
-export const enrichmentScenarios: AITestScenario[] = [
+export const enrichmentCoreScenarios: AITestScenario[] = [
   {
     id: 'enrich-simple-clean',
     feature: 'enrichment',
@@ -31,6 +27,7 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         priority: 0,
         rrule: null,
+        labels: [],
       },
       must_not_include: {
         priority: 4,
@@ -38,7 +35,7 @@ export const enrichmentScenarios: AITestScenario[] = [
       quality_notes:
         'Title should be unchanged or minimally cleaned. ' +
         'May match Shopping List project given "Buy milk". ' +
-        'Labels should be conservative — "shopping" or "errand" are reasonable. ' +
+        'Labels must be an empty array — no explicit label request in input. ' +
         'No due date or recurrence should be inferred.',
     },
   },
@@ -54,12 +51,13 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should be clean (e.g., "Call the dentist"). ' +
         'due_at must be tomorrow morning in UTC (Chicago is UTC-6 or UTC-5). ' +
         '"Morning" typically means 8-10am local. ' +
-        'Labels like "medical" are reasonable. Priority should be 0 (no urgency signal).',
+        'Labels must be an empty array — no explicit label request in input. Priority should be 0 (no urgency signal).',
     },
   },
   {
@@ -74,20 +72,21 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should be cleaned of dictation artifacts (um, like, you know, or whatever). ' +
         'Something like "Get the car fixed" or "Go get the car fixed". ' +
         'due_at should be approximately next week. ' +
-        'Labels like "car" or "errand" are reasonable. Priority 0 or 1.',
+        'Labels must be an empty array — no explicit label request in input. Priority 0 or 1.',
     },
   },
   {
     id: 'enrich-priority-urgent',
     feature: 'enrichment',
-    description: 'Explicit urgent priority signal',
+    description: 'Explicit urgent priority signal (lowercase for dictation realism)',
     input: {
-      text: 'URGENT fix the leak in the kitchen right now',
+      text: 'urgent fix the leak in the kitchen right now',
       timezone: 'America/Chicago',
       projects: [
         { id: 1, name: 'Inbox', shared: false },
@@ -98,13 +97,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         priority: 4,
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Priority MUST be 4 (urgent). ' +
-        'Title should remove "URGENT" and "right now" (extracted into priority/date). ' +
+        'Title should remove "urgent" and "right now" (extracted into priority/date). ' +
         'Something like "Fix the leak in the kitchen". ' +
         'due_at could be now/today given "right now". ' +
-        'Should match Home project. Labels like "home" are reasonable.',
+        'Should match Home project. Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -117,12 +117,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       projects: [{ id: 1, name: 'Inbox', shared: false }],
     },
     requirements: {
-      must_include: {},
+      must_include: {
+        labels: [],
+      },
       quality_notes:
         'Title: "Take vitamins" (recurrence phrase removed). ' +
         'rrule MUST be "FREQ=DAILY" (no DTSTART). ' +
         'due_at should be set to 8am Chicago time converted to UTC. ' +
-        'Labels like "health" are reasonable. Priority 0.',
+        'Labels must be an empty array — no explicit label request in input. Priority 0.',
     },
   },
   {
@@ -140,13 +142,14 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Priority should be 3 (high). ' +
         'Title: "Call mom" (priority/date/project phrases removed). ' +
         'due_at should be next Tuesday. ' +
         'project_name should be "Family". ' +
-        'Labels like "family" are reasonable.',
+        'Labels must be an empty array — "add it to family" is a project assignment, not a label request.',
     },
   },
   {
@@ -163,11 +166,12 @@ export const enrichmentScenarios: AITestScenario[] = [
         priority: 0,
         rrule: null,
         project_name: null,
+        labels: [],
       },
       quality_notes:
         'Title should be unchanged: "Fix van arm". ' +
         'No date, priority, recurrence, or project should be inferred. ' +
-        'Labels like "car" are reasonable (from "van" context). ' +
+        'Labels must be an empty array — no explicit label request in input. ' +
         'This tests the "do not over-extract" principle.',
     },
   },
@@ -187,11 +191,12 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         priority: 0,
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should be "Whole milk" or unchanged. ' +
         'project_name should be "Shopping List" (clear shopping context). ' +
-        'Labels like "shopping" or "dairy" are reasonable. ' +
+        'Labels must be an empty array — no explicit label request in input. ' +
         'No date or priority should be inferred.',
     },
   },
@@ -207,12 +212,13 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should be cleaned: "Call the insurance company" or similar. ' +
         'Priority should be >= 2 (the emotional intensity "really really", "killing me" signals importance). ' +
         'No date should be inferred (no temporal signal). ' +
-        'Labels like "finance" or "personal" are reasonable.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -229,12 +235,13 @@ export const enrichmentScenarios: AITestScenario[] = [
         priority: 0,
         rrule: null,
         project_name: null,
+        labels: [],
       },
       quality_notes:
         'Title should be "Check the mail" or unchanged. ' +
         'Priority must be 0 — no urgency signal. ' +
         'No due date should be inferred. ' +
-        'Minimal labels — "errand" or "home" at most. ' +
+        'Labels must be an empty array — no explicit label request in input. ' +
         'This tests conservative extraction — better to leave empty than guess wrong.',
     },
   },
@@ -258,6 +265,7 @@ export const enrichmentScenarios: AITestScenario[] = [
         rrule: null,
         auto_snooze_minutes: null,
         recurrence_mode: null,
+        labels: [],
       },
       quality_notes:
         'Title should be clean: "Doctor Patel appointment" or similar. ' +
@@ -265,7 +273,7 @@ export const enrichmentScenarios: AITestScenario[] = [
         'meta_notes MUST preserve: address (4200 Medical Parkway Suite 310), ' +
         'phone (512-555-0847), what to bring (insurance card, MRI results), ' +
         'and fasting instructions (fast 4 hours before). ' +
-        'These details are critical reference info that should not be lost or put in the title.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -284,13 +292,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         priority: 2,
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should be something like "ABC Plumbing water heater replacement" or similar. ' +
         'Priority must be 2 (explicit "medium priority"). ' +
         'due_at should be end of the current month. ' +
         'meta_notes MUST preserve: quote amount ($4,800), phone (847-555-0192). ' +
-        'May match Home project.',
+        'Labels must be an empty array — no explicit label request in input. May match Home project.',
     },
   },
   {
@@ -305,6 +314,7 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
+        labels: [],
       },
       quality_notes:
         'Title should capture the core action: something about travel/flight or trip prep. ' +
@@ -312,7 +322,7 @@ export const enrichmentScenarios: AITestScenario[] = [
         'meta_notes MUST preserve ALL confirmation numbers and details: ' +
         'Southwest flight ABC123, confirmation 2847, Midway departure, ' +
         'Hertz rental, Marriott confirmation H-99281. ' +
-        'Losing any confirmation number is a critical failure.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -327,17 +337,15 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         rrule: null,
-      },
-      must_not_include: {
-        priority: 0,
+        labels: [],
       },
       quality_notes:
         'Title: "File property tax appeal" or similar. ' +
-        'Priority should be >= 1 (legal deadline implies some urgency). ' +
+        'Priority: 0 is acceptable (no explicit keyword), but >= 1 would also be reasonable given the legal deadline. ' +
         'due_at should be February 28th. ' +
         'meta_notes MUST preserve: case number (2026-PT-44821), dollar amounts ($285k vs $340k), ' +
         'phone with extension (312-555-0400 ext 247). ' +
-        'All reference numbers must be exact — no rounding or paraphrasing.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
 
@@ -360,11 +368,12 @@ export const enrichmentScenarios: AITestScenario[] = [
         priority: 0,
         rrule: null,
         meta_notes: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Check on the laundry" (auto-snooze phrase removed). ' +
         'auto_snooze_minutes must be exactly 30. ' +
-        'No priority, recurrence, or meta_notes needed — this is a simple task with auto-snooze.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -380,13 +389,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         auto_snooze_minutes: 120,
         recurrence_mode: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Take the dog out" or similar. ' +
         'auto_snooze_minutes must be 120 (2 hours converted to minutes). ' +
         'rrule should reflect "every 4 hours" — likely FREQ=HOURLY;INTERVAL=4 or FREQ=DAILY. ' +
         'due_at should be 7am Chicago time in UTC. ' +
-        'recurrence_mode should be null (no "from completion" signal).',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -405,14 +415,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         auto_snooze_minutes: 0,
         priority: 3,
+        labels: [],
       },
       quality_notes:
         'Title: "Weekly standup" (recurrence/priority/snooze phrases removed). ' +
         'auto_snooze_minutes must be exactly 0 (explicitly disabled, not null). ' +
         'priority must be 3 (high). ' +
         'rrule should be FREQ=WEEKLY;BYDAY=MO. ' +
-        'due_at should be Monday at 9am Chicago time in UTC. ' +
-        'May match Work project.',
+        'Labels must be an empty array — no explicit label request in input. May match Work project.',
     },
   },
 
@@ -433,12 +443,13 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         recurrence_mode: 'from_completion',
         auto_snooze_minutes: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Clean the fish tank" (recurrence phrase removed). ' +
         'recurrence_mode MUST be "from_completion" — "start counting from when I actually do it" is an explicit signal. ' +
         'rrule should be FREQ=WEEKLY;INTERVAL=2 or FREQ=DAILY;INTERVAL=14. ' +
-        'No auto-snooze mentioned.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -457,13 +468,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         recurrence_mode: 'from_completion',
         auto_snooze_minutes: 240,
+        labels: [],
       },
       quality_notes:
         'Title: "Mow the lawn" (recurrence/snooze phrases removed). ' +
         'recurrence_mode MUST be "from_completion" — "after I finish it" is explicit. ' +
         'auto_snooze_minutes must be 240 (4 hours). ' +
         'rrule should reflect 10-day interval. ' +
-        'May match Home project.',
+        'Labels must be an empty array — no explicit label request in input. May match Home project.',
     },
   },
   {
@@ -480,13 +492,13 @@ export const enrichmentScenarios: AITestScenario[] = [
         recurrence_mode: null,
         priority: 0,
         auto_snooze_minutes: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Pay rent" (recurrence phrase removed). ' +
         'recurrence_mode MUST be null — no from-completion signal present. ' +
         'rrule should be FREQ=MONTHLY;BYMONTHDAY=1. ' +
-        'priority should be 0 (no urgency signal). ' +
-        'Labels like "finance" are reasonable.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
 
@@ -535,9 +547,9 @@ export const enrichmentScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Submit the quarterly report" or similar (urgency phrase removed). ' +
         'Labels must NOT include "critical" — "really really important" is emotional urgency, not a critical alert. ' +
+        'Labels should be an empty array — no explicit label request in input. ' +
         'Priority should be 2-3 (importance signal without "urgent" keyword). ' +
-        'due_at should be Wednesday EOD. ' +
-        'May match Work project.',
+        'due_at should be Wednesday EOD. May match Work project.',
     },
   },
   {
@@ -552,6 +564,7 @@ export const enrichmentScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         priority: 0,
+        labels: [],
       },
       must_not_include: {
         labels: ['critical'],
@@ -559,14 +572,13 @@ export const enrichmentScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Read the critical thinking chapter" or similar. ' +
         'Labels must NOT include "critical" — "critical thinking" is an academic concept, not an alert. ' +
-        'Priority should be 0 (no urgency signal). ' +
-        'due_at should be Monday. ' +
-        'Labels like "school" or "reading" are reasonable.',
+        'Labels must be an empty array — no explicit label request in input. ' +
+        'Priority should be 0 (no urgency signal). due_at should be Monday.',
     },
   },
 
   // -------------------------------------------------------------------------
-  // Complex Combinations — multiple new fields exercised together
+  // Complex Combinations
   // -------------------------------------------------------------------------
 
   {
@@ -585,15 +597,15 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         auto_snooze_minutes: 120,
         recurrence_mode: 'from_completion',
+        labels: [],
       },
       quality_notes:
         'Title: "Flush the water heater" or similar. ' +
         'auto_snooze_minutes must be 120 (2 hours). ' +
         'recurrence_mode MUST be "from_completion" — "from the last time I actually did it". ' +
         'rrule should reflect 3-month interval. ' +
-        'meta_notes MUST preserve: model (AO Smith GCR-50), ' +
-        'instructions (close cold water valve, connect hose to drain valve). ' +
-        'May match Home project.',
+        'meta_notes MUST preserve: model (AO Smith GCR-50), instructions. ' +
+        'Labels must be an empty array — no explicit label request in input. May match Home project.',
     },
   },
   {
@@ -601,7 +613,7 @@ export const enrichmentScenarios: AITestScenario[] = [
     feature: 'enrichment',
     description: 'Critical + urgent + time-sensitive — all high-signal fields at once',
     input: {
-      text: "URGENT critical alert refill mom's heart medication prescription number RX-7742190 Walgreens on Main closes at 9pm tonight",
+      text: "urgent critical alert refill mom's heart medication prescription number RX-7742190 Walgreens on Main closes at 9pm tonight",
       timezone: 'America/Chicago',
       projects: [{ id: 1, name: 'Inbox', shared: false }],
     },
@@ -612,11 +624,10 @@ export const enrichmentScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Refill mom\'s heart medication" or similar (urgency/alert phrases removed). ' +
-        'Priority MUST be 4 (explicit "URGENT"). ' +
+        'Priority MUST be 4 (explicit "urgent"). ' +
         'Labels MUST include "critical" (explicit "critical alert"). ' +
         'due_at should be tonight at 9pm Chicago time in UTC. ' +
-        'meta_notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main). ' +
-        'Labels like "medical" or "health" are also reasonable.',
+        'meta_notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
     },
   },
   {
@@ -637,16 +648,15 @@ export const enrichmentScenarios: AITestScenario[] = [
         priority: 3,
         auto_snooze_minutes: 60,
         recurrence_mode: 'from_completion',
+        labels: [],
       },
       quality_notes:
         'Title: "Payroll reconciliation" (dictation artifacts and metadata removed). ' +
         'Priority must be 3 (explicit "high priority"). ' +
         'auto_snooze_minutes must be 60 (1 hour). ' +
-        'recurrence_mode MUST be "from_completion" — "start counting from when I complete it". ' +
-        'rrule should be FREQ=WEEKLY;INTERVAL=2;BYDAY=FR or similar biweekly Friday. ' +
-        'project_name should be "Work". ' +
-        'meta_notes should capture: ADP login location (shared drive, HR folder). ' +
-        'This is the stress test — all fields should be extracted correctly from garbled input.',
+        'recurrence_mode MUST be "from_completion". ' +
+        'rrule should be biweekly Friday. project_name should be "Work". ' +
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -665,6 +675,7 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         rrule: null,
         auto_snooze_minutes: null,
+        labels: [],
       },
       must_not_include: {
         priority: 4,
@@ -675,7 +686,7 @@ export const enrichmentScenarios: AITestScenario[] = [
         'priority should be 1-2 ("kinda important" is a mild signal, not urgent). ' +
         'project_name should be "Home". ' +
         'meta_notes should preserve: form reference (noise complaint form B-12). ' +
-        'No recurrence or auto-snooze mentioned.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
 
@@ -688,7 +699,7 @@ export const enrichmentScenarios: AITestScenario[] = [
     feature: 'enrichment',
     description: 'Auto-snooze on a non-recurring task — snooze without rrule',
     input: {
-      text: 'call the cable company to cancel auto-snooze every hour tomorrow afternoon',
+      text: 'call the cable company about the bill auto-snooze every hour tomorrow afternoon',
       timezone: 'America/Chicago',
       projects: [{ id: 1, name: 'Inbox', shared: false }],
     },
@@ -697,14 +708,13 @@ export const enrichmentScenarios: AITestScenario[] = [
         auto_snooze_minutes: 60,
         rrule: null,
         recurrence_mode: null,
-        meta_notes: null,
+        labels: [],
       },
       quality_notes:
-        'Title: "Call the cable company to cancel" or similar. ' +
+        'Title: "Call the cable company about the bill" or similar. ' +
         'auto_snooze_minutes must be 60 (1 hour). ' +
         'rrule MUST be null — "every hour" is auto-snooze, not recurrence. ' +
-        'recurrence_mode must be null (no recurrence). ' +
-        'due_at should be tomorrow afternoon.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -720,14 +730,14 @@ export const enrichmentScenarios: AITestScenario[] = [
       must_include: {
         priority: 0,
         auto_snooze_minutes: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Deep clean the oven" or similar. ' +
         'The user signals from-completion intent ("from when I finish") but gives no interval. ' +
         'Acceptable outcomes: recurrence_mode="from_completion" with a reasonable default rrule, ' +
         'OR the from-completion intent captured in meta_notes so it is not lost. ' +
-        'The worst outcome is silently dropping the "from when I finish" signal entirely. ' +
-        'No auto-snooze or priority signal.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -745,289 +755,13 @@ export const enrichmentScenarios: AITestScenario[] = [
         priority: 0,
         rrule: null,
         auto_snooze_minutes: null,
+        labels: [],
       },
       quality_notes:
         'Title: "Buy new socks" (date phrase removed). ' +
         'meta_notes MUST be null — there is no extra context to capture. ' +
         'due_at should be tomorrow. ' +
-        'Priority 0, no recurrence, no auto-snooze. ' +
-        'This tests that meta_notes is not filled with noise for simple tasks.',
+        'Labels must be an empty array — no explicit label request in input.',
     },
   },
 ]
-
-// ---------------------------------------------------------------------------
-// Bubble scenarios
-// ---------------------------------------------------------------------------
-
-export const bubbleScenarios: AITestScenario[] = [
-  {
-    id: 'bubble-old-lingering-tasks',
-    feature: 'bubble',
-    description: 'Old one-off tasks that have been lingering for weeks should be surfaced',
-    input: {
-      timezone: 'America/Chicago',
-      tasks: [
-        {
-          id: 10,
-          title: 'Schedule oil change',
-          priority: 0,
-          due_at: '2026-01-20T15:00:00Z',
-          original_due_at: '2026-01-10T15:00:00Z',
-          created_at: '2026-01-05T16:00:00Z',
-          labels: ['car'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 11,
-          title: 'Return library books',
-          priority: 1,
-          due_at: '2026-01-25T15:00:00Z',
-          original_due_at: '2026-01-15T15:00:00Z',
-          created_at: '2026-01-12T16:00:00Z',
-          labels: ['errand'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 12,
-          title: 'Clean out garage',
-          priority: 0,
-          due_at: null,
-          original_due_at: null,
-          created_at: '2025-12-20T16:00:00Z',
-          labels: ['home'],
-          project_name: null,
-          is_recurring: false,
-        },
-        // Filler tasks that should NOT be surfaced
-        {
-          id: 20,
-          title: 'Morning affirmation',
-          priority: 0,
-          due_at: '2026-02-09T12:00:00Z',
-          original_due_at: '2026-02-09T12:00:00Z',
-          created_at: '2026-01-01T12:00:00Z',
-          labels: [],
-          project_name: null,
-          is_recurring: true,
-        },
-        {
-          id: 21,
-          title: 'Buy groceries',
-          priority: 0,
-          due_at: '2026-02-09T15:00:00Z',
-          original_due_at: '2026-02-09T15:00:00Z',
-          created_at: '2026-02-09T12:00:00Z',
-          labels: ['shopping'],
-          project_name: 'Shopping List',
-          is_recurring: false,
-        },
-        {
-          id: 22,
-          title: 'URGENT: Fix server outage',
-          priority: 4,
-          due_at: '2026-02-09T15:00:00Z',
-          original_due_at: '2026-02-09T15:00:00Z',
-          created_at: '2026-02-09T14:00:00Z',
-          labels: ['work'],
-          project_name: null,
-          is_recurring: false,
-        },
-        // More filler — recently created tasks
-        ...Array.from({ length: 14 }, (_, i) => ({
-          id: 30 + i,
-          title: `Routine task ${i + 1}`,
-          priority: 0,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
-          labels: [],
-          project_name: null,
-          is_recurring: false,
-        })),
-      ],
-    },
-    requirements: {
-      must_include: {},
-      quality_notes:
-        'MUST surface the old lingering tasks (IDs 10, 11, 12). ' +
-        'ID 10: created over a month ago, originally due Jan 10 but snoozed to Jan 20. ' +
-        'ID 11: created almost a month ago, originally due Jan 15 but snoozed. ' +
-        'ID 12: created in December with no due date — sitting for 7+ weeks. ' +
-        'Must NOT surface: daily recurring affirmation (20), shopping (21), or urgent task (22). ' +
-        'Reasons should mention how long the task has been on the list. ' +
-        'Summary should reflect the pattern of tasks lingering without resolution.',
-    },
-  },
-  {
-    id: 'bubble-social-obligations',
-    feature: 'bubble',
-    description: 'Social obligations should be surfaced',
-    input: {
-      timezone: 'America/Chicago',
-      tasks: [
-        {
-          id: 42,
-          title: 'Call Granddaddy',
-          priority: 1,
-          due_at: '2026-02-08T15:00:00Z',
-          original_due_at: '2026-01-20T15:00:00Z',
-          created_at: '2026-01-18T16:00:00Z',
-          labels: ['family'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 43,
-          title: 'Write thank-you card for the Johnsons',
-          priority: 0,
-          due_at: null,
-          original_due_at: null,
-          created_at: '2026-01-25T16:00:00Z',
-          labels: ['family'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 44,
-          title: 'RSVP to neighborhood cookout',
-          priority: 0,
-          due_at: '2026-02-20T15:00:00Z',
-          original_due_at: '2026-02-20T15:00:00Z',
-          created_at: '2026-02-01T16:00:00Z',
-          labels: ['social'],
-          project_name: null,
-          is_recurring: false,
-        },
-        // Non-social tasks
-        {
-          id: 50,
-          title: 'Update spreadsheet',
-          priority: 2,
-          due_at: '2026-02-10T15:00:00Z',
-          original_due_at: '2026-02-10T15:00:00Z',
-          created_at: '2026-02-08T15:00:00Z',
-          labels: ['work'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 51,
-          title: 'Evening walk',
-          priority: 0,
-          due_at: '2026-02-09T23:00:00Z',
-          original_due_at: '2026-02-09T23:00:00Z',
-          created_at: '2026-01-01T23:00:00Z',
-          labels: ['health'],
-          project_name: null,
-          is_recurring: true,
-        },
-        ...Array.from({ length: 10 }, (_, i) => ({
-          id: 60 + i,
-          title: `Work task ${i + 1}`,
-          priority: 1,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
-          labels: ['work'],
-          project_name: null,
-          is_recurring: false,
-        })),
-      ],
-    },
-    requirements: {
-      must_include: {},
-      quality_notes:
-        'MUST surface social obligations: Call Granddaddy (42), thank-you card (43), RSVP (44). ' +
-        'Social/family tasks become awkward if delayed and slip through the cracks. ' +
-        'Should NOT surface the recurring evening walk (51) or obvious work tasks. ' +
-        'Reasons should mention the social/relational aspect.',
-    },
-  },
-  {
-    id: 'bubble-all-routine',
-    feature: 'bubble',
-    description: 'All daily recurring tasks — should return few or no recommendations',
-    input: {
-      timezone: 'America/Chicago',
-      tasks: Array.from({ length: 10 }, (_, i) => ({
-        id: 100 + i,
-        title: `Daily affirmation ${i + 1}`,
-        priority: 0,
-        due_at: '2026-02-09T12:00:00Z',
-        original_due_at: '2026-02-09T12:00:00Z',
-        created_at: '2026-01-01T12:00:00Z',
-        labels: [],
-        project_name: null,
-        is_recurring: true,
-      })),
-    },
-    requirements: {
-      must_include: {},
-      quality_notes:
-        'With only recurring daily affirmations, Bubble should return an empty or very small ' +
-        'task list (0-2 items). These are routine tasks the user already sees in their task list. ' +
-        'Surfacing all 10 would be noise. Summary should reflect that nothing needs attention.',
-    },
-  },
-  {
-    id: 'bubble-closing-windows',
-    feature: 'bubble',
-    description: 'Time-sensitive tasks without hard deadlines — closing opportunity windows',
-    input: {
-      timezone: 'America/Chicago',
-      tasks: [
-        {
-          id: 80,
-          title: 'Order tulip bulbs for spring planting',
-          priority: 0,
-          due_at: null,
-          original_due_at: null,
-          created_at: '2026-01-15T16:00:00Z',
-          labels: ['home'],
-          project_name: null,
-          is_recurring: false,
-        },
-        {
-          id: 81,
-          title: 'Book summer camp for the kids before slots fill up',
-          priority: 0,
-          due_at: null,
-          original_due_at: null,
-          created_at: '2026-01-20T16:00:00Z',
-          labels: ['family'],
-          project_name: null,
-          is_recurring: false,
-        },
-        // Regular tasks — recently created
-        ...Array.from({ length: 10 }, (_, i) => ({
-          id: 90 + i,
-          title: `Regular task ${i + 1}`,
-          priority: 1,
-          due_at: `2026-02-${String(15 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(15 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
-          labels: ['work'],
-          project_name: null,
-          is_recurring: false,
-        })),
-      ],
-    },
-    requirements: {
-      must_include: {},
-      quality_notes:
-        'MUST surface the time-sensitive tasks: tulip bulbs (80) and summer camp (81). ' +
-        'Both have closing windows — tulips are seasonal, camp slots fill up. ' +
-        'The AI should recognize these from the task titles even without hard deadlines. ' +
-        'Reasons should mention the time-sensitive nature.',
-    },
-  },
-]
-
-// ---------------------------------------------------------------------------
-// All scenarios combined
-// ---------------------------------------------------------------------------
-
-export const allScenarios: AITestScenario[] = [...enrichmentScenarios, ...bubbleScenarios]
