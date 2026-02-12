@@ -555,7 +555,8 @@ function HomeContent() {
           .filter((g) => g.tasks.length > 0)
         if (clipboardGroups.length > 0) {
           const projMap = new Map(projects.map((p) => [p.id, p.name]))
-          const text = formatTasksForClipboard(clipboardGroups, timezone, projMap)
+          const annotations = aiAnnotationsVisible ? aiInsights.annotationMap : undefined
+          const text = formatTasksForClipboard(clipboardGroups, timezone, projMap, annotations)
           const n = clipboardGroups.reduce((sum, g) => sum + g.tasks.length, 0)
           navigator.clipboard.writeText(text).then(
             () => showToast({ message: `Copied ${n} ${taskWord(n)}` }),
@@ -687,6 +688,9 @@ function HomeContent() {
     sortOption,
     reversed,
     timezone,
+    aiAnnotationsVisible,
+    aiInsights.annotationMap,
+    projects,
   ])
 
   // Exit keyboard mode when clicking outside the task list

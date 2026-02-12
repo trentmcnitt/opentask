@@ -532,4 +532,83 @@ describe('formatTasksForClipboard', () => {
       expect(result).toBe('Today (Soonest First):\nSimple task')
     })
   })
+
+  describe('AI annotations in clipboard output', () => {
+    test('task with annotation shows indented annotation line', () => {
+      const annotationMap = new Map([[1, 'This has been overdue for 3 days']])
+      const groups = [
+        makeGroup({
+          label: 'Overdue',
+          tasks: [makeTask({ id: 1, title: 'Fix broken link' })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const lines = result.split('\n')
+      expect(lines[0]).toBe('Overdue (Soonest First):')
+      expect(lines[1]).toBe('Fix broken link')
+      expect(lines[2]).toBe('    ✨ This has been overdue for 3 days')
+    })
+
+    test('annotation appears before notes', () => {
+      const annotationMap = new Map([[1, 'Quick win — takes 5 minutes']])
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [
+            makeTask({
+              id: 1,
+              title: 'Reply to email',
+              notes: 'RE: Q4 budget review thread',
+            }),
+          ],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const lines = result.split('\n')
+      expect(lines[1]).toBe('Reply to email')
+      expect(lines[2]).toBe('    ✨ Quick win — takes 5 minutes')
+      expect(lines[3]).toBe('    RE: Q4 budget review thread')
+    })
+
+    test('tasks without annotations are unaffected', () => {
+      const annotationMap = new Map([[1, 'High priority item']])
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [
+            makeTask({ id: 1, title: 'Annotated task' }),
+            makeTask({ id: 2, title: 'Regular task' }),
+          ],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      expect(result).toContain('- Annotated task')
+      expect(result).toContain('    ✨ High priority item')
+      expect(result).toContain('- Regular task')
+      expect(result).not.toMatch(/Regular task\n.*✨/)
+    })
+
+    test('no annotationMap passed — no annotation lines', () => {
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Simple task' })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE)
+      expect(result).not.toContain('✨')
+    })
+
+    test('empty annotationMap — no annotation lines', () => {
+      const annotationMap = new Map<number, string>()
+      const groups = [
+        makeGroup({
+          label: 'Today',
+          tasks: [makeTask({ id: 1, title: 'Simple task' })],
+        }),
+      ]
+      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      expect(result).not.toContain('✨')
+    })
+  })
 })
