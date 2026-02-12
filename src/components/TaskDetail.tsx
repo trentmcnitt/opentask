@@ -169,7 +169,7 @@ export function TaskDetail({
         )}
       </div>
 
-      <NotesSection notes={task.notes} onSave={onNotesSave} />
+      {!editable && <NotesSection notes={task.notes} onSave={onNotesSave} />}
     </div>
   )
 }

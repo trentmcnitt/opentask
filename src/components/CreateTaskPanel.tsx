@@ -1,13 +1,14 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { showErrorToast, showSuccessToast } from '@/lib/toast'
+import { showErrorToast, showSuccessToast, showSuccessToastWithAction } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 
@@ -124,6 +125,7 @@ export function CreateTaskPanel({
   projects,
   initialTitle,
 }: CreateTaskPanelProps) {
+  const router = useRouter()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
   const [isPanelDirty, setIsPanelDirty] = useState(false)
@@ -144,6 +146,9 @@ export function CreateTaskPanel({
       if (fields.auto_snooze_minutes !== undefined && fields.auto_snooze_minutes !== null) {
         body.auto_snooze_minutes = fields.auto_snooze_minutes
       }
+      if (fields.notes !== undefined && fields.notes !== null) {
+        body.notes = fields.notes
+      }
 
       try {
         const res = await fetch('/api/tasks', {
@@ -157,6 +162,14 @@ export function CreateTaskPanel({
 
         onCreated()
 
+        // Show success toast with navigation action
+        if (createdTask?.id) {
+          showSuccessToastWithAction('Task created', {
+            label: 'View',
+            onClick: () => router.push(`/tasks/${createdTask.id}`),
+          })
+        }
+
         // If the task has ai-to-process, start polling for enrichment result
         if (createdTask?.labels?.includes('ai-to-process')) {
           pollForEnrichment(createdTask.id, createdTask.title, onCreated)
@@ -165,7 +178,7 @@ export function CreateTaskPanel({
         showErrorToast('Failed to create task')
       }
     },
-    [onCreated],
+    [onCreated, router],
   )
 
   const handleSave = useCallback(() => {

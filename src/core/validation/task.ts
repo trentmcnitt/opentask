@@ -57,6 +57,7 @@ export const taskCreateSchema = z.object({
   project_id: z.number().int().positive().optional(),
   priority: priority.default(0).optional(),
   labels: labels.default([]).optional(),
+  notes: z.string().max(10000, 'Notes too long').nullable().optional(),
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
 })
 

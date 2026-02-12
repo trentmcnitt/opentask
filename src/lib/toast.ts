@@ -25,6 +25,13 @@ export function showSuccessToast(message: string) {
   sonnerToast.success(message)
 }
 
+export function showSuccessToastWithAction(
+  message: string,
+  action: { label: string; onClick: () => void },
+) {
+  sonnerToast.success(message, { action: { label: action.label, onClick: action.onClick } })
+}
+
 export function showErrorToast(message: string) {
   sonnerToast.error(message)
 }

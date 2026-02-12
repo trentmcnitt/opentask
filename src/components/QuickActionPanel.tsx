@@ -16,6 +16,8 @@ import {
   XCircle,
   RotateCcw,
   Sparkles,
+  CalendarDays,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,6 +62,7 @@ import { formatDateTime, formatTimeInTimezone } from '@/lib/format-date'
 import { IconButton } from '@/components/ui/icon-button'
 import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
+import { DateTimePicker } from '@/components/DateTimePicker'
 import type { Task, Project } from '@/types'
 
 /**
@@ -86,6 +89,7 @@ export interface QuickActionPanelChanges {
   due_at?: string | null
   auto_snooze_minutes?: number | null
   reset_original_due_at?: boolean
+  notes?: string | null
 }
 
 export interface QuickActionPanelProps {
@@ -275,6 +279,9 @@ export function QuickActionPanel({
   const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
   // pendingResetOrigin: when true, reset_original_due_at will be sent on save
   const [pendingResetOrigin, setPendingResetOrigin] = useState(false)
+  // pendingNotes: undefined = no change, null = clear, string = new value
+  const [pendingNotes, setPendingNotes] = useState<string | null | undefined>(undefined)
+  const [notesExpanded, setNotesExpanded] = useState(false)
 
   // Single task mode hook
   const dueAt = effectiveTask?.due_at ?? null
@@ -371,7 +378,8 @@ export function QuickActionPanel({
     pendingTitle !== null ||
     pendingDueAtCleared ||
     pendingAutoSnooze !== undefined ||
-    pendingResetOrigin
+    pendingResetOrigin ||
+    pendingNotes !== undefined
   // In create mode, dirty means the user has changed something from the initial defaults:
   // typed a title (different from initialTitle), changed any field, or picked a date.
   const createModeDirty = isCreateMode
@@ -381,7 +389,18 @@ export function QuickActionPanel({
       pendingRrule !== undefined ||
       pendingProject !== null ||
       hasDateChanges ||
-      pendingAutoSnooze !== undefined
+      pendingAutoSnooze !== undefined ||
+      pendingNotes !== undefined
+    : false
+  // Non-title dirty state for create mode — controls Reset button (title is preserved on reset)
+  const createModeNonTitleDirty = isCreateMode
+    ? pendingPriority !== null ||
+      pendingLabels !== null ||
+      pendingRrule !== undefined ||
+      pendingProject !== null ||
+      hasDateChanges ||
+      pendingAutoSnooze !== undefined ||
+      pendingNotes !== undefined
     : false
   const isDirty = isCreateMode ? createModeDirty : hasDateChanges || hasPendingChanges
 
@@ -557,6 +576,7 @@ export function QuickActionPanel({
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     if (pendingResetOrigin) changes.reset_original_due_at = true
+    if (pendingNotes !== undefined) changes.notes = pendingNotes
     return changes
   }, [
     pendingTitle,
@@ -571,6 +591,7 @@ export function QuickActionPanel({
     pendingProject,
     pendingAutoSnooze,
     pendingResetOrigin,
+    pendingNotes,
   ])
 
   // Reset all pending state back to initial values.
@@ -586,6 +607,8 @@ export function QuickActionPanel({
     setPendingDueAtCleared(false)
     setPendingAutoSnooze(undefined)
     setPendingResetOrigin(false)
+    setPendingNotes(undefined)
+    setNotesExpanded(false)
   }, [])
 
   // Create mode handler: collects all staged fields + title, calls onCreate, then resets
@@ -980,45 +1003,117 @@ export function QuickActionPanel({
               Completed
             </Badge>
           )}
-          <p className="text-xs select-text">
-            {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
-              <span
-                className={cn(
-                  'font-medium',
-                  pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
+          {/* Date display — wrapped in DateTimePicker for single-task mode */}
+          {!isBulkMode ? (
+            <DateTimePicker
+              value={pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null}
+              timezone={timezone}
+              onChange={(isoUtc) => {
+                if (isoUtc === null) {
+                  setPendingDueAtCleared(true)
+                  if (effectiveTask?.rrule || pendingRrule) {
+                    setPendingRrule(null)
+                  }
+                } else {
+                  setPendingDueAtCleared(false)
+                  singleHook.setWorkingDate(isoUtc)
+                }
+              }}
+            >
+              <p className="inline-flex cursor-pointer items-center gap-1 text-xs select-text">
+                <CalendarDays className="text-muted-foreground/50 size-3 shrink-0" />
+                {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
+                  <span
+                    className={cn(
+                      'font-medium',
+                      pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
+                    )}
+                  >
+                    No due date
+                  </span>
+                ) : (
+                  <>
+                    <span
+                      className={cn(
+                        isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground',
+                      )}
+                    >
+                      {headerText}
+                    </span>
+                    <span
+                      className={cn(
+                        isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1',
+                      )}
+                    >
+                      &middot;
+                    </span>
+                    <span
+                      className={cn(
+                        isDateDirty
+                          ? 'font-bold text-blue-500'
+                          : isPast
+                            ? 'text-destructive font-medium'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      {relativeText}
+                    </span>
+                    {effectiveDeltaDisplay && (
+                      <span className="ml-1 font-medium text-blue-500">
+                        ({effectiveDeltaDisplay})
+                      </span>
+                    )}
+                  </>
                 )}
-              >
-                No due date
-              </span>
-            ) : (
-              <>
-                <span
-                  className={cn(isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground')}
-                >
-                  {headerText}
-                </span>
-                <span
-                  className={cn(isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1')}
-                >
-                  &middot;
-                </span>
+              </p>
+            </DateTimePicker>
+          ) : (
+            <p className="text-xs select-text">
+              {pendingDueAtCleared || (allNoDueDate && !isDateDirty && pendingDueAt === null) ? (
                 <span
                   className={cn(
-                    isDateDirty
-                      ? 'font-bold text-blue-500'
-                      : isPast
-                        ? 'text-destructive font-medium'
-                        : 'text-muted-foreground',
+                    'font-medium',
+                    pendingDueAtCleared ? 'text-blue-500' : 'text-muted-foreground',
                   )}
                 >
-                  {relativeText}
+                  No due date
                 </span>
-                {effectiveDeltaDisplay && (
-                  <span className="ml-1 font-medium text-blue-500">({effectiveDeltaDisplay})</span>
-                )}
-              </>
-            )}
-          </p>
+              ) : (
+                <>
+                  <span
+                    className={cn(
+                      isDateDirty ? 'font-bold text-blue-500' : 'text-muted-foreground',
+                    )}
+                  >
+                    {headerText}
+                  </span>
+                  <span
+                    className={cn(
+                      isDateDirty ? 'mx-1 text-blue-500' : 'text-muted-foreground mx-1',
+                    )}
+                  >
+                    &middot;
+                  </span>
+                  <span
+                    className={cn(
+                      isDateDirty
+                        ? 'font-bold text-blue-500'
+                        : isPast
+                          ? 'text-destructive font-medium'
+                          : 'text-muted-foreground',
+                    )}
+                  >
+                    {relativeText}
+                  </span>
+                  {effectiveDeltaDisplay && (
+                    <span className="ml-1 font-medium text-blue-500">
+                      ({effectiveDeltaDisplay})
+                    </span>
+                  )}
+                </>
+              )}
+            </p>
+          )}
           {/* Preview of new due_at when changing recurrence - shows what date the task will move to */}
           {previewDueAt && (
             <p className="mt-0.5 text-xs font-medium text-blue-500">
@@ -1548,11 +1643,8 @@ export function QuickActionPanel({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              handleReset()
-              if (isCreateMode) setCreateTitle(initialTitle ?? '')
-            }}
-            disabled={isCreateMode ? !isDirty && createTitle === (initialTitle ?? '') : !isDirty}
+            onClick={handleReset}
+            disabled={isCreateMode ? !createModeNonTitleDirty : !isDirty}
             className="flex-1"
           >
             Reset
@@ -1571,6 +1663,18 @@ export function QuickActionPanel({
             Cancel
           </Button>
         </div>
+      )}
+
+      {/* Notes section — inline editing below action buttons (single-task only) */}
+      {!isBulkMode && (
+        <NotesInlineSection
+          isCreateMode={isCreateMode}
+          currentNotes={effectiveTask?.notes ?? null}
+          pendingNotes={pendingNotes}
+          expanded={notesExpanded}
+          onExpand={() => setNotesExpanded(true)}
+          onChange={setPendingNotes}
+        />
       )}
 
       {/* Mark Done confirmation dialog */}
@@ -1713,5 +1817,134 @@ function SinceAge({
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/**
+ * Inline notes section for QuickActionPanel.
+ *
+ * Create mode: shows "+ Add notes..." collapse link, expands to textarea.
+ * Edit mode: shows read-only text (clamped to 3 lines) with pencil edit button,
+ * or "+ Add notes..." if empty. Blue indicator when pendingNotes is set.
+ */
+function NotesInlineSection({
+  isCreateMode,
+  currentNotes,
+  pendingNotes,
+  expanded,
+  onExpand,
+  onChange,
+}: {
+  isCreateMode: boolean
+  currentNotes: string | null
+  pendingNotes: string | null | undefined
+  expanded: boolean
+  onExpand: () => void
+  onChange: (value: string | null | undefined) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const displayNotes = pendingNotes !== undefined ? pendingNotes : currentNotes
+  const isDirty = pendingNotes !== undefined
+
+  const handleStartEdit = () => {
+    setDraft(displayNotes ?? '')
+    onExpand()
+  }
+
+  const handleDone = () => {
+    const trimmed = draft.trim()
+    const newValue = trimmed || null
+    // Only stage if different from current
+    if (newValue !== currentNotes) {
+      onChange(newValue)
+    } else {
+      onChange(undefined) // reset pending
+    }
+  }
+
+  // Create mode: show link or textarea
+  if (isCreateMode) {
+    if (!expanded) {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft('')
+            onExpand()
+          }}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          + Add notes...
+        </button>
+      )
+    }
+    return (
+      <div className="space-y-1">
+        <Textarea
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            // Stage notes as user types in create mode
+            const trimmed = e.target.value.trim()
+            onChange(trimmed || null)
+          }}
+          placeholder="Add notes..."
+          className="min-h-[60px] text-sm"
+          autoFocus
+        />
+      </div>
+    )
+  }
+
+  // Edit mode: no notes and not expanded — show add link
+  if (!displayNotes && !expanded) {
+    return (
+      <button
+        type="button"
+        onClick={handleStartEdit}
+        className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+      >
+        + Add notes...
+      </button>
+    )
+  }
+
+  // Edit mode: has notes but not expanded — show read-only with edit button
+  if (!expanded) {
+    return (
+      <div className="flex items-start gap-2">
+        <p
+          className={cn(
+            'line-clamp-3 min-w-0 flex-1 text-xs whitespace-pre-wrap',
+            isDirty ? 'text-blue-500' : 'text-muted-foreground',
+          )}
+        >
+          {displayNotes}
+        </p>
+        <button
+          type="button"
+          onClick={handleStartEdit}
+          className="text-muted-foreground hover:text-foreground shrink-0"
+        >
+          <Pencil className="size-3" />
+        </button>
+      </div>
+    )
+  }
+
+  // Edit mode: expanded — show textarea with Done button
+  return (
+    <div className="space-y-1">
+      <Textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Add notes..."
+        className="min-h-[60px] text-sm"
+        autoFocus
+      />
+      <Button size="xs" variant="outline" onClick={handleDone}>
+        Done
+      </Button>
+    </div>
   )
 }
