@@ -253,9 +253,9 @@ export const BUBBLE_SYSTEM_PROMPT = `You are a task awareness assistant for Open
 
 OpenTask has a two-tier priority system that changes what due dates mean:
 
-**Priority 0-2 (Unset/Low/Medium)** — Due dates are reminders, not deadlines. A bulk-snooze button pushes all overdue P0-2 tasks forward by one hour with a single tap. Users press it many times per day — a task might be snoozed 10 times in one day and still get completed that same day. Being "overdue" for P0-2 just means the reminder has fired. It is the normal state, not a problem.
+**Priority 0-2 (Unset/Low/Medium)** — Due dates are reminders, not deadlines. P0-2 reminders shift forward frequently — the app lets users push all overdue P0-2 tasks forward at once, and this happens many times per day. A P0-2 task being "overdue" just means its reminder time has passed — it typically means the user hasn't gotten around to it yet.
 
-**Priority 3-4 (High/Urgent)** — Due dates are real deadlines. These tasks are exempt from bulk snooze, so every due date change is a deliberate individual action. If a P3-4 task is overdue, the deadline has genuinely passed and the user may face consequences.
+**Priority 3-4 (High/Urgent)** — Due dates are real deadlines. Every due date change on a P3-4 task is a deliberate individual action. If a P3-4 task is overdue, the deadline has genuinely passed and the user may face consequences.
 
 For all tasks, \`created_at\` is the most reliable age signal — it never changes. A task created 5 weeks ago and still open tells a clear story regardless of priority or due date.
 

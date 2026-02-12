@@ -1673,6 +1673,7 @@ export function QuickActionPanel({
           pendingNotes={pendingNotes}
           expanded={notesExpanded}
           onExpand={() => setNotesExpanded(true)}
+          onCollapse={() => setNotesExpanded(false)}
           onChange={setPendingNotes}
         />
       )}
@@ -1833,6 +1834,7 @@ function NotesInlineSection({
   pendingNotes,
   expanded,
   onExpand,
+  onCollapse,
   onChange,
 }: {
   isCreateMode: boolean
@@ -1840,6 +1842,7 @@ function NotesInlineSection({
   pendingNotes: string | null | undefined
   expanded: boolean
   onExpand: () => void
+  onCollapse: () => void
   onChange: (value: string | null | undefined) => void
 }) {
   const [draft, setDraft] = useState('')
@@ -1860,6 +1863,7 @@ function NotesInlineSection({
     } else {
       onChange(undefined) // reset pending
     }
+    onCollapse()
   }
 
   // Create mode: show link or textarea
