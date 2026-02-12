@@ -3,7 +3,16 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
-import { Check, Clock, RefreshCw, Repeat, Sparkles, Timer, TimerOff } from 'lucide-react'
+import {
+  Check,
+  Clock,
+  RefreshCw,
+  Repeat,
+  Sparkles,
+  StickyNote,
+  Timer,
+  TimerOff,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -399,6 +408,15 @@ export function TaskRow({
               <span className="text-xs">{formatAutoSnoozeLabel(task.auto_snooze_minutes)}</span>
             </span>
           ) : null}
+
+          {task.notes && task.notes.trim() && (
+            <span
+              className={cn('flex shrink-0 items-center text-amber-400', iconHeight)}
+              title="Has notes"
+            >
+              <StickyNote className="size-3.5" />
+            </span>
+          )}
 
           {hasLabels && (
             <span className={cn('flex shrink-0 items-center', iconHeight)}>
