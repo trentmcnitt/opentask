@@ -36,6 +36,10 @@ export async function POST(request: NextRequest) {
     return success({
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
+      tier: result.tier,
+      skipped_medium: result.skippedByPriority.medium,
+      skipped_high: result.skippedByPriority.high,
+      skipped_urgent: result.skippedByPriority.urgent,
     })
   } catch (err) {
     if (err instanceof AuthError) {

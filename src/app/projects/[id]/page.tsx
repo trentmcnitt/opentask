@@ -135,11 +135,7 @@ export default function ProjectDetailPage() {
     [fetchTasks, actions.handleUndo],
   )
 
-  const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
-    tasks,
-    displayTasks,
-    timezone,
-  )
+  const { overdueCount, todayCount } = useTaskCounts(tasks, timezone)
 
   const handleSnoozeAllOverdue = useSnoozeOverdue({
     displayTasks,
@@ -166,7 +162,6 @@ export default function ProjectDetailPage() {
         taskCount={tasks.length}
         overdueCount={overdueCount}
         todayCount={todayCount}
-        snoozableOverdueCount={snoozableOverdueCount}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}

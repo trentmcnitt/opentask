@@ -794,11 +794,7 @@ function HomeContent() {
     setSearchResults,
   )
 
-  const { overdueCount, todayCount, snoozableOverdueCount } = useTaskCounts(
-    tasks,
-    displayTasks,
-    timezone,
-  )
+  const { overdueCount, todayCount } = useTaskCounts(tasks, timezone)
 
   // Compute selected tasks for bulk operations
   const selectedTasks = useMemo(() => {
@@ -869,7 +865,6 @@ function HomeContent() {
       searchResultCount={searchResults.length}
       overdueCount={overdueCount}
       todayCount={todayCount}
-      snoozableOverdueCount={snoozableOverdueCount}
       selection={selection}
       selectedTasks={selectedTasks}
       showProjectPicker={showProjectPicker}
@@ -957,7 +952,6 @@ function DashboardView({
   searchResultCount,
   overdueCount,
   todayCount,
-  snoozableOverdueCount,
   selection,
   selectedTasks,
   showProjectPicker,
@@ -1024,7 +1018,6 @@ function DashboardView({
   searchResultCount: number
   overdueCount: number
   todayCount: number
-  snoozableOverdueCount: number
   selection: ReturnType<typeof useSelection>
   selectedTasks: Task[]
   showProjectPicker: boolean
@@ -1089,7 +1082,6 @@ function DashboardView({
         taskCount={tasks.length}
         overdueCount={overdueCount}
         todayCount={todayCount}
-        snoozableOverdueCount={snoozableOverdueCount}
         isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
@@ -1252,7 +1244,7 @@ function DashboardView({
       />
 
       <SnoozeAllFab
-        overdueCount={snoozableOverdueCount}
+        overdueCount={overdueCount}
         isSelectionMode={selection.isSelectionMode}
         onSnoozeOverdue={onSnoozeOverdue}
       />

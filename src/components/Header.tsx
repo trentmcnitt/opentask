@@ -42,7 +42,6 @@ interface HeaderProps {
   taskCount: number
   overdueCount?: number
   todayCount?: number
-  snoozableOverdueCount?: number
   isSelectionMode?: boolean
   onUndo: () => void
   onRedo: () => void
@@ -65,7 +64,6 @@ export function Header({
   taskCount,
   overdueCount = 0,
   todayCount = 0,
-  snoozableOverdueCount = 0,
   isSelectionMode = false,
   onUndo,
   onRedo,
@@ -255,7 +253,7 @@ export function Header({
             {/* Snooze all overdue button - desktop only (mobile uses FAB).
                Single click: snooze using default duration.
                Long-press (400ms): opens SnoozeMenu with duration choices. */}
-            {onSnoozeOverdue && snoozableOverdueCount > 0 && !isSelectionMode && (
+            {onSnoozeOverdue && overdueCount > 0 && !isSelectionMode && (
               <SnoozeMenu
                 open={snoozeMenuOpen}
                 onOpenChange={setSnoozeMenuOpen}
@@ -268,12 +266,12 @@ export function Header({
                   onPointerDown={snoozePress.onPointerDown}
                   onPointerUp={snoozePress.onPointerUp}
                   onPointerLeave={snoozePress.onPointerLeave}
-                  aria-label={`Snooze ${snoozableOverdueCount} overdue tasks (hold for options)`}
+                  aria-label={`Snooze ${overdueCount} overdue tasks (hold for options)`}
                   className="relative hidden md:inline-flex"
                 >
                   <Clock className="size-5" />
                   <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
-                    {snoozableOverdueCount > 999 ? '999+' : snoozableOverdueCount}
+                    {overdueCount > 999 ? '999+' : overdueCount}
                   </span>
                   <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
                     {formatCompactSnoozeLabel(defaultSnoozeOption)}

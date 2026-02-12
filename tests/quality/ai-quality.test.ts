@@ -345,8 +345,9 @@ async function runBubble(
   const taskList = input.tasks
     .map((t) => {
       const due = t.due_at ? formatLocal(t.due_at) : 'none'
+      // Only show original_due_at for P3-4 (deliberate changes); P0-2 gap is bulk-snooze noise
       const originalDue =
-        t.original_due_at && t.original_due_at !== t.due_at
+        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
           ? ` (originally due: ${formatLocal(t.original_due_at)})`
           : ''
       const created = formatLocal(t.created_at)

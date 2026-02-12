@@ -122,11 +122,12 @@ export const bubbleScenarios: AITestScenario[] = [
       must_include: {},
       quality_notes:
         'MUST surface the old lingering tasks (IDs 10, 11, 12). ' +
-        'ID 10: created over a month ago, originally due Jan 10 but snoozed to Jan 20. ' +
-        'ID 11: created almost a month ago, originally due Jan 15 but snoozed. ' +
+        'ID 10: created Jan 5, priority 0 — on the list for 5+ weeks. ' +
+        'ID 11: created Jan 12, priority 1 — lingering for nearly 4 weeks. ' +
         'ID 12: created in December with no due date — sitting for 7+ weeks. ' +
         'Must NOT surface: daily recurring affirmation (20), shopping (21), or urgent task (22). ' +
-        'Reasons should mention how long the task has been on the list. ' +
+        'Reasons should mention how long the task has been on the list (based on created_at). ' +
+        'Reasons must NOT reference original_due_at or deferral counts for P0-2 tasks. ' +
         'Summary should reflect the pattern of tasks lingering without resolution.',
     },
   },
@@ -229,6 +230,8 @@ export const bubbleScenarios: AITestScenario[] = [
       quality_notes:
         'MUST surface social obligations: Call Granddaddy (42), thank-you card (43), RSVP (44). ' +
         'Social/family tasks become awkward if delayed and slip through the cracks. ' +
+        'Task 42 (P1) commentary should reference task age (created Jan 18, ~3 weeks), not deferral. ' +
+        'Task 44 commentary should reference notes (headcount for Mary by Saturday). ' +
         'Should NOT surface the recurring evening walk (51) or obvious work tasks. ' +
         'Reasons should mention the social/relational aspect.',
     },

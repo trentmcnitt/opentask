@@ -2,7 +2,7 @@
  * Bubble AI recommendations
  *
  * Surfaces tasks that would be easily overlooked — social obligations,
- * repeatedly snoozed items, idle tasks, and things without hard deadlines
+ * old lingering tasks, idle tasks, and things without hard deadlines
  * that would become regrets. Replaces the previous "What's Next?" feature.
  *
  * Uses per-query subprocess (not the warm enrichment slot) because it runs
@@ -53,8 +53,10 @@ export async function generateBubble(
   const taskList = relevantTasks
     .map((t) => {
       const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
+      // Only show original_due_at for P3-4 tasks where due date changes are deliberate.
+      // For P0-2, the gap between original and current due_at is bulk-snooze noise.
       const originalDue =
-        t.original_due_at && t.original_due_at !== t.due_at
+        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
           ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
           : ''
       const created = formatLocalDate(t.created_at, timezone)
