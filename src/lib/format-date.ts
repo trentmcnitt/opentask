@@ -367,7 +367,7 @@ export function formatTimeInTimezone(isoUtc: string, timezone: string): string {
  * (in the user's timezone), or null if the anchor is less than 1 day old.
  *
  * Anchor dates (chosen by caller):
- * - One-off tasks: created_at
+ * - One-off tasks: original_due_at ?? created_at (captures deferral time when present)
  * - Recurring tasks: original_due_at ?? due_at
  *
  * Ranges: 1–6d → "Xd old", 7–29d → "Xw old", 30–364d → "Xmo old", 365+ → "Xy old"

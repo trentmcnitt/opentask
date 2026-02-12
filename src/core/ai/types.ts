@@ -95,6 +95,9 @@ export interface TaskSummary {
   labels: string[]
   project_name: string | null
   is_recurring: boolean
+  rrule: string | null
+  notes: string | null
+  recurrence_mode: 'from_due' | 'from_completion'
 }
 
 /**

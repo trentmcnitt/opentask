@@ -65,6 +65,10 @@ Different features have different latency and intelligence requirements:
 
 The SDK supports per-query model selection, so each feature chooses its own model.
 
+### Give AI the fullest picture possible
+
+Only filter things that are truly safe to filter (like tasks due far in the future). The more context AI has, the better its insights. For example, the Bubble prompt includes `rrule`, `notes`, and `recurrence_mode` — not just `recurring: yes/no` — because the pattern (daily vs monthly), the context (notes from dictation), and the advancement mode (from_due vs from_completion) all affect how the AI should interpret a task's state.
+
 ### AI-locked protection
 
 Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written. The queue checks for this label and skips the task (setting `ai_status` to null).
@@ -389,7 +393,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-recurrence.ts` | Expanded recurrence patterns                  | 10    |
 | `enrichment-voice.ts`      | Voice preservation                            | 8     |
 | `enrichment-edge.ts`       | Edge cases                                    | 8     |
-| `bubble.ts`                | Bubble recommendations                        | 4     |
+| `bubble.ts`                | Bubble recommendations                        | 7     |
 | `index.ts`                 | Barrel export                                 | —     |
 
 Each scenario defines:

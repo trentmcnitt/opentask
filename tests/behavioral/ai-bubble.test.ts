@@ -33,6 +33,9 @@ function makeTasks(count: number, overrides?: Partial<TaskSummary>[]): TaskSumma
     labels: [],
     project_name: 'Inbox',
     is_recurring: false,
+    rrule: null,
+    notes: null,
+    recurrence_mode: 'from_due' as const,
     ...(overrides?.[i] ?? {}),
   }))
 }

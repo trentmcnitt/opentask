@@ -258,20 +258,30 @@ Focus on tasks the user might forget or avoid:
 - Tasks where the window of opportunity is closing (seasonal items, time-sensitive favors)
 - Tasks with no due date that have been on the list a long time
 
-## Understanding "overdue"
+## Understanding "overdue" and deadlines
 
-A task being a few hours overdue is rarely interesting — the user probably knows. What matters is context:
-- A one-off task created 3 weeks ago that's now a few hours overdue? The story is the 3 weeks, not the hours.
-- A recurring task originally due yesterday morning but snoozed to this afternoon? The occurrence has been sitting for a day — that's the useful observation.
-- Use the "created" date for one-off tasks and "originally due" (when present) for recurring tasks to understand how long something has really been waiting.
+In OpenTask, due dates serve two different purposes depending on priority:
+
+**Priority 3-4 (High/Urgent) — real deadlines.** These tasks have hard deadlines that cannot be auto-snoozed. If a priority 3 task is overdue, that's significant — the deadline has passed and the user may face consequences. Treat these seriously.
+
+**Priority 0-2 (Unset/Low/Medium) — notification triggers.** These tasks use due dates as auto-snooze cycles. Being "overdue" often just means the notification cycle is active and the task keeps resurfacing. A low-priority task being 3 hours overdue is not interesting. What IS interesting:
+- How long the task has been lingering overall (use created date for one-offs, original_due_at for recurring)
+- Whether it's been repeatedly deferred (original_due_at much earlier than current due_at shows a deferral pattern)
+- Whether the task has been sitting idle for weeks with no action
+
+**Recurrence mode matters:**
+- \`recurrence_mode: from_completion\` — the task doesn't advance until completed. Being overdue means the user hasn't done it since the last occurrence. Example: "Water plants" every 3 days from completion, 2 days overdue = the plants need watering.
+- Default (from_due) — the task advances on schedule regardless of completion.
+
+**Notes field:** When present, notes contain AI-generated context from the original dictation — reference numbers, phone numbers, reasons, instructions. Use this to make commentary more specific and helpful.
 
 ## What NOT to surface
 
 Do NOT include:
 - Daily recurring tasks and routine affirmations (user can see those in their task list)
-- Tasks already flagged as urgent or high priority (they're already visible)
+- Priority 4 (urgent) tasks — they're already at the top and highly visible
 - Shopping items or grocery lists
-- Tasks due today or overdue by less than a day (the main task list already highlights these)
+- Tasks due today or overdue by less than a day (the main task list already highlights these) — UNLESS they are priority 3+ with a real deadline
 
 ## Output format
 
@@ -305,19 +315,25 @@ Bad: "This task might benefit from your attention." (too vague)
 ## Example
 
 Given tasks including:
-- [42] "Call Granddaddy" | priority: 1 | due: Sun, Feb 8, 4:00 PM | created: Sat, Jan 18, 10:00 AM | recurring: no
-- [65] "Charge jump starter" | priority: 0 | due: Sat, Feb 8, 9:00 AM | created: Mon, Jan 27, 8:30 AM | recurring: no
-- [7] "Morning affirmation" | priority: 0 | due: Mon, Feb 9, 8:00 AM | created: Wed, Jan 1, 8:00 AM | recurring: yes
+- [42] "Call Granddaddy" | priority: 1 | due: Sun, Feb 8, 4:00 PM (originally due: Sat, Jan 18, 10:00 AM) | created: Sat, Jan 18, 10:00 AM | labels: family | project: Inbox | one-off
+- [65] "Charge jump starter" | priority: 0 | due: Sat, Feb 8, 9:00 AM | created: Mon, Jan 27, 8:30 AM | labels: none | project: Inbox | one-off
+- [7] "Morning affirmation" | priority: 0 | due: Mon, Feb 9, 8:00 AM | created: Wed, Jan 1, 8:00 AM | labels: none | project: Inbox | rrule: FREQ=DAILY
+- [88] "File insurance claim" | priority: 3 | due: Sat, Feb 8, 5:00 PM | created: Thu, Feb 6, 9:00 AM | labels: none | project: Inbox | one-off | notes: 7-day filing window, claim #IN-4829
 
 \`\`\`json
 {
   "tasks": [
-    { "task_id": 42, "reason": "A call to your granddad that's been on the list for 3 weeks — easy to keep pushing off but worth making time for." },
-    { "task_id": 65, "reason": "Been sitting for almost 2 weeks. Quick task — either charge it this week or let it go." }
+    { "task_id": 42, "reason": "A call to your granddad that's been on the list for 3 weeks and deferred multiple times — easy to keep pushing off but worth making time for." },
+    { "task_id": 65, "reason": "Been sitting for almost 2 weeks. Quick task — either charge it this week or let it go." },
+    { "task_id": 88, "reason": "This has a real deadline — the 7-day filing window for claim #IN-4829 is closing. Priority 3 overdue means the deadline has passed." }
   ],
-  "summary": "A family call and a small maintenance task have both been lingering and are easy to keep deferring.",
+  "summary": "A family call keeps getting deferred, a small maintenance task is gathering dust, and an insurance claim has a hard deadline closing.",
   "generated_at": "2026-02-09T16:00:00Z"
 }
 \`\`\`
 
-Note: Task 7 (daily affirmation) was correctly excluded — routine recurring tasks don't belong in Bubble.`
+Notes:
+- Task 7 (daily affirmation) correctly excluded — routine recurring tasks don't belong in Bubble.
+- Task 88 (priority 3, overdue) correctly included — high-priority deadlines are real and consequential.
+- Task 42's commentary focuses on deferral pattern (3 weeks, originally due Jan 18) rather than hours overdue.
+- Task 88's commentary references the notes field for specificity (filing window, claim number).`

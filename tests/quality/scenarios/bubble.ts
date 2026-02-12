@@ -2,8 +2,8 @@
  * Bubble recommendation scenarios
  *
  * Tests the Bubble feature which surfaces tasks that are easy to overlook:
- * old lingering tasks, social obligations, routine-only lists, and
- * time-sensitive tasks without hard deadlines.
+ * old lingering tasks, social obligations, routine-only lists,
+ * time-sensitive tasks without hard deadlines, and overdue/deadline distinction.
  */
 
 import type { AITestScenario } from '../types'
@@ -26,6 +26,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['car'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 11,
@@ -37,6 +40,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['errand'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 12,
@@ -48,6 +54,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['home'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         // Filler tasks that should NOT be surfaced
         {
@@ -60,6 +69,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: [],
           project_name: null,
           is_recurring: true,
+          rrule: 'FREQ=DAILY',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 21,
@@ -71,6 +83,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['shopping'],
           project_name: 'Shopping List',
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 22,
@@ -82,6 +97,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['work'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         // More filler — recently created tasks
         ...Array.from({ length: 14 }, (_, i) => ({
@@ -94,6 +112,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: [],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         })),
       ],
     },
@@ -126,6 +147,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['family'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 43,
@@ -137,29 +161,38 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['family'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 44,
           title: 'RSVP to neighborhood cookout',
           priority: 0,
-          due_at: '2026-02-20T15:00:00Z',
-          original_due_at: '2026-02-20T15:00:00Z',
+          due_at: '2026-02-15T15:00:00Z',
+          original_due_at: '2026-02-15T15:00:00Z',
           created_at: '2026-02-01T16:00:00Z',
           labels: ['social'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: 'Need to give headcount to Mary by Saturday so she can order food.',
+          recurrence_mode: 'from_due' as const,
         },
-        // Non-social tasks
+        // Non-social filler — routine, recently created, low priority
         {
           id: 50,
           title: 'Update spreadsheet',
-          priority: 2,
-          due_at: '2026-02-10T15:00:00Z',
-          original_due_at: '2026-02-10T15:00:00Z',
+          priority: 0,
+          due_at: '2026-02-12T15:00:00Z',
+          original_due_at: '2026-02-12T15:00:00Z',
           created_at: '2026-02-08T15:00:00Z',
           labels: ['work'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 51,
@@ -171,17 +204,23 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['health'],
           project_name: null,
           is_recurring: true,
+          rrule: 'FREQ=DAILY',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         ...Array.from({ length: 10 }, (_, i) => ({
           id: 60 + i,
           title: `Work task ${i + 1}`,
-          priority: 1,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          priority: 0,
+          due_at: `2026-02-${String(13 + i).padStart(2, '0')}T15:00:00Z`,
+          original_due_at: `2026-02-${String(13 + i).padStart(2, '0')}T15:00:00Z`,
           created_at: '2026-02-08T15:00:00Z',
           labels: ['work'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         })),
       ],
     },
@@ -210,6 +249,9 @@ export const bubbleScenarios: AITestScenario[] = [
         labels: [],
         project_name: null,
         is_recurring: true,
+        rrule: 'FREQ=DAILY',
+        notes: null,
+        recurrence_mode: 'from_due' as const,
       })),
     },
     requirements: {
@@ -237,6 +279,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['home'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         {
           id: 81,
@@ -248,6 +293,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['family'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         },
         // Regular tasks — recently created
         ...Array.from({ length: 10 }, (_, i) => ({
@@ -260,6 +308,9 @@ export const bubbleScenarios: AITestScenario[] = [
           labels: ['work'],
           project_name: null,
           is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
         })),
       ],
     },
@@ -270,6 +321,216 @@ export const bubbleScenarios: AITestScenario[] = [
         'Both have closing windows — tulips are seasonal, camp slots fill up. ' +
         'The AI should recognize these from the task titles even without hard deadlines. ' +
         'Reasons should mention the time-sensitive nature.',
+    },
+  },
+
+  // --- New scenarios testing overdue/deadline distinction ---
+
+  {
+    id: 'bubble-high-priority-overdue',
+    feature: 'bubble',
+    description:
+      'Priority 3 overdue task with real deadline — AI must treat deadline seriously and reference notes',
+    input: {
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 200,
+          title: 'Pay quarterly estimated taxes',
+          priority: 3,
+          due_at: '2026-02-08T22:00:00Z',
+          original_due_at: '2026-02-08T22:00:00Z',
+          created_at: '2026-01-20T16:00:00Z',
+          labels: ['finance'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: 'IRS penalty for late payment. Form 1040-ES, payment via EFTPS.',
+          recurrence_mode: 'from_due' as const,
+        },
+        // Filler: low priority recent tasks
+        ...Array.from({ length: 8 }, (_, i) => ({
+          id: 210 + i,
+          title: `Routine task ${i + 1}`,
+          priority: 0,
+          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          created_at: '2026-02-08T15:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        })),
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'MUST surface the tax payment task (200). It is priority 3 and overdue — this is a real deadline. ' +
+        'The AI must treat this seriously and reference the consequences from notes (IRS penalty). ' +
+        'Commentary should NOT focus on "hours overdue" but on the fact that a real deadline has passed ' +
+        'with financial consequences. The notes field provides critical context that should be referenced.',
+    },
+  },
+  {
+    id: 'bubble-low-priority-overdue',
+    feature: 'bubble',
+    description:
+      'Low-priority overdue tasks that were snoozed multiple times — focus on age/deferral, not hours overdue',
+    input: {
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 300,
+          title: 'Organize photo albums',
+          priority: 0,
+          due_at: '2026-02-08T20:00:00Z',
+          original_due_at: '2026-01-10T15:00:00Z',
+          created_at: '2026-01-05T16:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 301,
+          title: 'Research new internet providers',
+          priority: 1,
+          due_at: '2026-02-07T15:00:00Z',
+          original_due_at: '2026-01-15T15:00:00Z',
+          created_at: '2026-01-12T16:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 302,
+          title: 'Clean out email inbox',
+          priority: 0,
+          due_at: '2026-02-09T12:00:00Z',
+          original_due_at: '2026-01-18T12:00:00Z',
+          created_at: '2026-01-15T16:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        // Filler
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: 310 + i,
+          title: `Recent task ${i + 1}`,
+          priority: 1,
+          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          created_at: '2026-02-08T15:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        })),
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'MUST surface tasks 300, 301, 302. All are low priority (0-1) and overdue, but the interesting ' +
+        'story is NOT that they are overdue — it is the deferral pattern. ' +
+        'ID 300: originally due Jan 10, deferred ~1 month to Feb 8. ' +
+        'ID 301: originally due Jan 15, deferred ~3 weeks to Feb 7. ' +
+        'ID 302: originally due Jan 18, deferred ~3 weeks to Feb 9. ' +
+        'Commentary MUST focus on age/lingering/deferral (e.g., "been deferred for a month"), ' +
+        'NOT on "X hours overdue." The deferral gap (original_due_at vs current due_at) is the signal.',
+    },
+  },
+  {
+    id: 'bubble-mixed-priority-overdue',
+    feature: 'bubble',
+    description:
+      'Mix of priority 3 (real deadline), priority 0 (deferred), and recurring from_completion — different commentary styles',
+    input: {
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 400,
+          title: 'Submit insurance claim for water damage',
+          priority: 3,
+          due_at: '2026-02-07T22:00:00Z',
+          original_due_at: '2026-02-07T22:00:00Z',
+          created_at: '2026-02-01T16:00:00Z',
+          labels: ['finance'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: '7-day filing window from incident date (Feb 1). Claim #WD-9921.',
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 401,
+          title: 'Clean out email inbox',
+          priority: 0,
+          due_at: '2026-02-08T15:00:00Z',
+          original_due_at: '2026-01-18T15:00:00Z',
+          created_at: '2026-01-15T16:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 402,
+          title: 'Water the plants',
+          priority: 1,
+          due_at: '2026-02-07T15:00:00Z',
+          original_due_at: '2026-02-07T15:00:00Z',
+          created_at: '2026-01-01T16:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: true,
+          rrule: 'FREQ=DAILY;INTERVAL=3',
+          notes: null,
+          recurrence_mode: 'from_completion' as const,
+        },
+        // Filler
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: 410 + i,
+          title: `Background task ${i + 1}`,
+          priority: 0,
+          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          created_at: '2026-02-08T15:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        })),
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'MUST surface all three key tasks (400, 401, 402) with DIFFERENT commentary styles: ' +
+        'ID 400 (priority 3, insurance claim): Must treat the deadline as real and consequential. ' +
+        'Should reference notes (7-day filing window, claim #WD-9921). This is urgent. ' +
+        'ID 401 (priority 0, email inbox): Must focus on deferral pattern (originally due Jan 18, ' +
+        'deferred 3 weeks). NOT "X hours overdue." ' +
+        'ID 402 (recurring from_completion, water plants): Must recognize that from_completion + overdue ' +
+        'means the plants literally need watering — the task waits for completion before advancing. ' +
+        'Three different overdue situations requiring three different kinds of commentary.',
     },
   },
 ]
