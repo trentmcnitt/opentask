@@ -133,8 +133,15 @@ OpenTask is not a traditional task manager. Due dates for most tasks are **remin
 
 **The two-tier due date system:** Priority determines whether a due date is a deadline or a notification trigger.
 
-- **Priority 0-2 (Unset/Low/Medium):** `due_at` means "remind me at this time." These tasks are bulk-snoozed via a one-tap button in the top bar, often 10+ times per day. The server always skips P3-4 during bulk snooze (`HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts`). Being "overdue" for P0-2 just means the snooze timer expired — it's the normal state, not a problem.
-- **Priority 3-4 (High/Urgent):** `due_at` is a real deadline. These must be snoozed individually, so every due date change is a deliberate decision. Being overdue is significant.
+- **Priority 0-1 (Unset/Low):** `due_at` means "remind me at this time." These tasks are bulk-snoozed on the first click of the snooze button. Being "overdue" just means `due_at` has passed — it's the normal state, not a problem.
+- **Priority 2 (Medium):** `due_at` is still a reminder, but gets a second-tier snooze. Medium tasks are only bulk-snoozed on the second click, after P0/P1 are cleared. This gives the user a natural pause to reconsider medium-priority items. `MEDIUM_PRIORITY_THRESHOLD = 2` in `src/lib/priority.ts`.
+- **Priority 3-4 (High/Urgent):** `due_at` is a real deadline. These are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is significant. `HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts`.
+
+**Two-tier bulk snooze flow:** The snooze button in the top bar uses a stateless two-tier system. The server determines the tier from the batch composition:
+
+1. **Tier 1** (first click): If P0/P1 tasks are present, only those are snoozed. P2+ skipped.
+2. **Tier 2** (second click): If only P2+ remain, P2 tasks are snoozed. P3/P4 skipped.
+3. **Tier 0**: If only P3/P4, nothing is eligible.
 
 **Implications for code and AI:**
 
@@ -172,7 +179,7 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 ### Snooze
 
-Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze always skips P3-4 tasks (see [Behavioral Model](#behavioral-model)).
+Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze uses two-tier priority filtering — see [Behavioral Model](#behavioral-model).
 
 ### Updating recurrence rules
 

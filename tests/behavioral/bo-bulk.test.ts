@@ -1113,9 +1113,9 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
   })
 
   /**
-   * SP-001: Mixed selection skips high/urgent tasks during bulk snooze
+   * SP-001: Mixed selection — tier 1 snoozes only P0/P1, skips P2/P3/P4
    */
-  test('SP-001: Mixed selection skips high/urgent tasks', () => {
+  test('SP-001: Mixed selection tier 1 — only P1 snoozed, P2/P3/P4 skipped', () => {
     const lowTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1144,24 +1144,23 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(2)
-    expect(result.tasksSkipped).toBe(2)
+    // Tier 1: only P1 snoozed, P2/P3/P4 skipped
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(3)
+    expect(result.tier).toBe(1)
+    expect(result.skippedByPriority).toEqual({ medium: 1, high: 1, urgent: 1 })
 
-    // Low and medium tasks were snoozed
-    const updatedLow = getTaskById(lowTask.id)!
-    const updatedMed = getTaskById(medTask.id)!
-    expect(updatedLow.due_at).toBe(localTime(18, 0))
-    expect(updatedMed.due_at).toBe(localTime(18, 0))
+    // Low task was snoozed
+    expect(getTaskById(lowTask.id)!.due_at).toBe(localTime(18, 0))
 
-    // High and urgent tasks were NOT snoozed
-    const updatedHigh = getTaskById(highTask.id)!
-    const updatedUrgent = getTaskById(urgentTask.id)!
-    expect(updatedHigh.due_at).toBe(localTime(10, 0))
-    expect(updatedUrgent.due_at).toBe(localTime(11, 0))
+    // Medium, high, and urgent tasks were NOT snoozed
+    expect(getTaskById(medTask.id)!.due_at).toBe(localTime(9, 0))
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(10, 0))
+    expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(11, 0))
   })
 
   /**
-   * SP-002: All high/urgent selection — all skipped
+   * SP-002: All high/urgent selection — tier 0, all skipped
    */
   test('SP-002: All high/urgent tasks are skipped even when no lower-priority tasks present', () => {
     const highTask = createTask({
@@ -1184,6 +1183,8 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
 
     expect(result.tasksAffected).toBe(0)
     expect(result.tasksSkipped).toBe(2)
+    expect(result.tier).toBe(0)
+    expect(result.skippedByPriority).toEqual({ medium: 0, high: 1, urgent: 1 })
 
     // Tasks were NOT snoozed
     expect(getTaskById(highTask.id)!.due_at).toBe(localTime(8, 0))
@@ -1191,9 +1192,9 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
   })
 
   /**
-   * SP-003: All lower priority — no skipping
+   * SP-003: P0/P1/P2 mix — tier 1, only P0/P1 snoozed, P2 skipped
    */
-  test('SP-003: All lower-priority tasks are snoozed without skipping', () => {
+  test('SP-003: P0/P1/P2 mix — tier 1 snoozes P0/P1, skips P2', () => {
     const unsetTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1217,12 +1218,22 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(3)
-    expect(result.tasksSkipped).toBe(0)
+    // Tier 1: P0/P1 snoozed, P2 skipped
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(1)
+    expect(result.tier).toBe(1)
+    expect(result.skippedByPriority).toEqual({ medium: 1, high: 0, urgent: 0 })
+
+    // P0 and P1 were snoozed
+    expect(getTaskById(unsetTask.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(lowTask.id)!.due_at).toBe(localTime(18, 0))
+
+    // P2 was NOT snoozed
+    expect(getTaskById(medTask.id)!.due_at).toBe(localTime(10, 0))
   })
 
   /**
-   * SP-004: Single high/urgent task — skipped
+   * SP-004: Single high/urgent task — tier 0, skipped
    */
   test('SP-004: Single high/urgent task is skipped from bulk snooze', () => {
     const urgentTask = createTask({
@@ -1240,15 +1251,17 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
 
     expect(result.tasksAffected).toBe(0)
     expect(result.tasksSkipped).toBe(1)
+    expect(result.tier).toBe(0)
+    expect(result.skippedByPriority).toEqual({ medium: 0, high: 0, urgent: 1 })
 
     // Task was NOT snoozed
     expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(8, 0))
   })
 
   /**
-   * SP-005: Mixed selection + bulkEdit with due_at applies same filtering
+   * SP-005: bulkEdit with due_at uses two-tier filter — P1 snoozed, P3 skipped
    */
-  test('SP-005: bulkEdit with due_at skips high/urgent in mixed selection', () => {
+  test('SP-005: bulkEdit with due_at uses two-tier filter in mixed selection', () => {
     const lowTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1370,5 +1383,290 @@ describe('Snooze Protection for High/Urgent Tasks', () => {
     // Since rrule is present, isSnoozeEdit=false, so all tasks proceed
     expect(result.tasksAffected).toBe(2)
     expect(result.tasksSkipped).toBe(0)
+  })
+})
+
+/**
+ * Two-Tier Bulk Snooze Tests (TT-001 through TT-006)
+ *
+ * Tests the two-tier snooze behavior:
+ * - Tier 1: P0/P1 tasks snoozed, P2/P3/P4 skipped
+ * - Tier 2: P2 tasks snoozed (when no P0/P1 in batch), P3/P4 skipped
+ * - Tier 0: Only P3/P4 in batch, nothing eligible
+ */
+describe('Two-Tier Bulk Snooze', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * TT-001: Tier 1 — batch with P0, P1, P2, P3 snoozes only P0/P1
+   */
+  test('TT-001: Tier 1 snoozes only P0/P1, skips P2/P3', () => {
+    const p0Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Unset task', due_at: localTime(8, 0), priority: 0 },
+    })
+    const p1Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low task', due_at: localTime(8, 30), priority: 1 },
+    })
+    const p2Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task', due_at: localTime(9, 0), priority: 2 },
+    })
+    const p3Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(9, 30), priority: 3 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p0Task.id, p1Task.id, p2Task.id, p3Task.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tier).toBe(1)
+
+    // P0 and P1 snoozed
+    expect(getTaskById(p0Task.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p1Task.id)!.due_at).toBe(localTime(18, 0))
+
+    // P2 and P3 untouched
+    expect(getTaskById(p2Task.id)!.due_at).toBe(localTime(9, 0))
+    expect(getTaskById(p3Task.id)!.due_at).toBe(localTime(9, 30))
+  })
+
+  /**
+   * TT-002: Tier 2 — batch with only P2 and P3 snoozes only P2
+   */
+  test('TT-002: Tier 2 snoozes only P2 when no P0/P1 present', () => {
+    const p2Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task', due_at: localTime(8, 0), priority: 2 },
+    })
+    const p3Task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High task', due_at: localTime(9, 0), priority: 3 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p2Task.id, p3Task.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
+    expect(result.tier).toBe(2)
+    expect(result.skippedByPriority).toEqual({ medium: 0, high: 1, urgent: 0 })
+
+    // P2 snoozed
+    expect(getTaskById(p2Task.id)!.due_at).toBe(localTime(18, 0))
+
+    // P3 untouched
+    expect(getTaskById(p3Task.id)!.due_at).toBe(localTime(9, 0))
+  })
+
+  /**
+   * TT-003: Tier 2 — batch with only P2 tasks snoozes all
+   */
+  test('TT-003: Tier 2 with only P2 tasks snoozes all of them', () => {
+    const p2a = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task A', due_at: localTime(8, 0), priority: 2 },
+    })
+    const p2b = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task B', due_at: localTime(9, 0), priority: 2 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p2a.id, p2b.id],
+      until: localTime(18, 0),
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+    expect(result.tier).toBe(2)
+    expect(result.skippedByPriority).toEqual({ medium: 0, high: 0, urgent: 0 })
+
+    expect(getTaskById(p2a.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p2b.id)!.due_at).toBe(localTime(18, 0))
+  })
+
+  /**
+   * TT-004: Verify tier field is correctly set for each scenario
+   */
+  test('TT-004: Tier field reflects batch composition', () => {
+    const p0 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P0', due_at: localTime(8, 0), priority: 0 },
+    })
+    const p2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P2', due_at: localTime(9, 0), priority: 2 },
+    })
+    const p3 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P3', due_at: localTime(10, 0), priority: 3 },
+    })
+
+    // Tier 1: has P0
+    const r1 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p0.id, p2.id, p3.id],
+      until: localTime(18, 0),
+    })
+    expect(r1.tier).toBe(1)
+
+    // Tier 2: only P2 + P3 remaining (P0 already snoozed away from this batch)
+    const r2 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p2.id, p3.id],
+      until: localTime(19, 0),
+    })
+    expect(r2.tier).toBe(2)
+
+    // Tier 0: only P3
+    const r3 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p3.id],
+      until: localTime(20, 0),
+    })
+    expect(r3.tier).toBe(0)
+  })
+
+  /**
+   * TT-005: Verify skippedByPriority counts match for each tier
+   */
+  test('TT-005: skippedByPriority counts are accurate per tier', () => {
+    const p1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P1', due_at: localTime(8, 0), priority: 1 },
+    })
+    const p2a = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P2a', due_at: localTime(8, 30), priority: 2 },
+    })
+    const p2b = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P2b', due_at: localTime(9, 0), priority: 2 },
+    })
+    const p3 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P3', due_at: localTime(9, 30), priority: 3 },
+    })
+    const p4a = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P4a', due_at: localTime(10, 0), priority: 4 },
+    })
+    const p4b = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'P4b', due_at: localTime(10, 30), priority: 4 },
+    })
+
+    // Tier 1: P1 snoozed, 2 medium + 1 high + 2 urgent skipped
+    const r1 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p1.id, p2a.id, p2b.id, p3.id, p4a.id, p4b.id],
+      until: localTime(18, 0),
+    })
+
+    expect(r1.tasksAffected).toBe(1)
+    expect(r1.tasksSkipped).toBe(5)
+    expect(r1.skippedByPriority).toEqual({ medium: 2, high: 1, urgent: 2 })
+  })
+
+  /**
+   * TT-006: Simulated two-click flow — first call snoozes P0/P1, second snoozes P2
+   */
+  test('TT-006: Two-click flow snoozes P0/P1 then P2', () => {
+    const p0 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Unset', due_at: localTime(8, 0), priority: 0 },
+    })
+    const p1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low', due_at: localTime(8, 30), priority: 1 },
+    })
+    const p2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Medium', due_at: localTime(9, 0), priority: 2 },
+    })
+    const p3 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High', due_at: localTime(9, 30), priority: 3 },
+    })
+
+    // First click: send all overdue task IDs
+    const allIds = [p0.id, p1.id, p2.id, p3.id]
+    const r1 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: allIds,
+      until: localTime(18, 0),
+    })
+
+    expect(r1.tier).toBe(1)
+    expect(r1.tasksAffected).toBe(2) // P0 + P1
+
+    // P0 and P1 now have future due_at, P2 and P3 are still overdue
+    expect(getTaskById(p0.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p1.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p2.id)!.due_at).toBe(localTime(9, 0))
+    expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 30))
+
+    // Second click: UI sends only remaining overdue IDs (P2 + P3)
+    const remainingIds = [p2.id, p3.id]
+    const r2 = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: remainingIds,
+      until: localTime(18, 0),
+    })
+
+    expect(r2.tier).toBe(2)
+    expect(r2.tasksAffected).toBe(1) // P2 only
+
+    // P2 now snoozed, P3 still at original time
+    expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 30))
   })
 })

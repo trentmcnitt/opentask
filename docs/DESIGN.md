@@ -27,9 +27,9 @@ A typical daily pattern:
 5. Taps bulk snooze again
 6. Repeats throughout the day
 
-A single task might be snoozed 10+ times in one day and still get completed that same day. This is normal, expected behavior — not a sign of procrastination.
+A single task might be snoozed multiple times in one day and still get completed that same day. This is normal, expected behavior — not a sign of procrastination.
 
-**What this means for `due_at`:** For P0-2 tasks, `due_at` changes constantly and carries no signal about user intent. A task being "overdue" simply means its snooze timer expired and it's waiting to be snoozed again or completed. The gap between `original_due_at` and `due_at` tells you the task has drifted from its original intended date, but nothing about how or why — it could be one deliberate postponement or hundreds of automatic bulk snoozes.
+**What this means for `due_at`:** For P0-2 tasks, `due_at` changes constantly and carries no signal about user intent. A task being "overdue" simply means its `due_at` has passed — the user is being notified and will either snooze it again or complete it. The gap between `original_due_at` and `due_at` tells you the task has drifted from its original intended date, but nothing about how or why — it could be one deliberate postponement or hundreds of bulk snoozes from the daily snooze-all routine.
 
 ### Priority 3-4 (High, Urgent): Due dates as deadlines
 
@@ -55,7 +55,7 @@ The `HIGH_PRIORITY_THRESHOLD` constant (value: 3) is the boundary. Everything be
 
 AI features that analyze tasks must understand this behavioral model. Key principles:
 
-- **Don't treat P0-2 "overdue" as meaningful.** It just means the snooze timer expired.
+- **Don't treat P0-2 "overdue" as meaningful.** It just means `due_at` has passed and the user is being reminded periodically until they snooze or complete it.
 - **Do treat P3-4 "overdue" as meaningful.** The deadline has passed.
 - **Use `created_at` as the primary age signal.** It's the one date that can't be muddied by snoozing.
 - **Don't infer snooze count or deferral count from dates.** The gap between `original_due_at` and `due_at` shows total drift but not the path taken.

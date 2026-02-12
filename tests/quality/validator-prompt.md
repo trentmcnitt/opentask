@@ -99,16 +99,16 @@ For each scenario:
 
 ### 1. Task Selection
 
-- Were overlooked tasks surfaced? (high snooze count, idle without attention, social obligations)
+- Were overlooked tasks surfaced? (old lingering tasks, idle without attention, social obligations)
 - Were obvious items correctly excluded? (daily recurring affirmations, urgent/high-priority, due today)
 - Were time-sensitive items without hard deadlines recognized?
 - Were social obligations identified? (calls, thank-you cards, RSVPs)
 
 ### 2. Reason Quality
 
-- Are reasons specific and actionable? ("You've snoozed this 7 times" not "This deserves attention")
+- Are reasons specific and actionable? ("Been on your list for 3 weeks" not "This deserves attention")
 - Is the tone direct? (like a thoughtful friend, not a nagging app)
-- Do reasons reference concrete data from the task? (snooze count, dates, labels)
+- Do reasons reference concrete data from the task? (task age from created_at, dates, labels, notes)
 
 ### 3. Summary Quality
 
@@ -127,6 +127,14 @@ For each scenario:
 - For priority 0-2 overdue tasks: does commentary focus on age/deferral, NOT hours overdue?
 - Are notes referenced when they provide relevant context?
 - Is recurrence_mode: from_completion correctly interpreted (overdue = the user hasn't completed the last occurrence)?
+
+### 6. Factual Grounding
+
+- Does the AI only state things derivable from the input data?
+- For P0-2 tasks: is commentary based on task age (created_at) rather than due date gap?
+- Does the AI avoid fabricated counts ("deferred twice", "snoozed X times")?
+- Are notes referenced accurately when present (exact claim numbers, deadlines)?
+- Is no narrative fabricated about what happened between two dates?
 
 ---
 
