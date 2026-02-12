@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
+  ai_context    TEXT,
+  ai_mode       TEXT NOT NULL DEFAULT 'bubble',
+  ai_show_scores INTEGER NOT NULL DEFAULT 1,
+  ai_show_signals INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -158,4 +162,31 @@ CREATE TABLE IF NOT EXISTS ai_activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_user_id ON ai_activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_task_id ON ai_activity_log(task_id);
+
+-- AI review results (cached per-task scores, commentary, and signals from AI review)
+CREATE TABLE IF NOT EXISTS ai_review_results (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  task_id      INTEGER NOT NULL REFERENCES tasks(id),
+  score        INTEGER NOT NULL,
+  commentary   TEXT NOT NULL,
+  signals      TEXT,
+  generated_at TEXT NOT NULL,
+  UNIQUE(user_id, task_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_review_results_user
+  ON ai_review_results(user_id);
+
+-- AI review sessions (tracks generation progress for polling)
+CREATE TABLE IF NOT EXISTS ai_review_sessions (
+  id           TEXT PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  status       TEXT NOT NULL DEFAULT 'running',
+  total_tasks  INTEGER NOT NULL,
+  completed    INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT,
+  error        TEXT
+);
 

@@ -4,14 +4,19 @@ import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLongPress } from '@/hooks/useLongPress'
 import Link from 'next/link'
 import {
+  AlertTriangle,
+  ArrowUpDown,
   Check,
   Clock,
+  Eye,
+  HelpCircle,
   RefreshCw,
   Repeat,
   Sparkles,
   StickyNote,
   Timer,
   TimerOff,
+  Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -89,6 +94,60 @@ interface TaskRowProps {
   isAiHighlighted?: boolean
   /** Called when the user clicks the retry button on an ai-failed badge */
   onReprocess?: () => void
+  /** AI review score (0-100) — only shown on the review page */
+  reviewScore?: number
+  /** AI review signal keys — only shown on the review page */
+  reviewSignals?: string[]
+}
+
+/** Signal icon + color mapping for AI review indicators */
+export const SIGNAL_ICONS: Record<
+  string,
+  { icon: React.ReactNode; label: string; bg: string; text: string }
+> = {
+  review: {
+    icon: <Eye className="size-3" />,
+    label: 'Review',
+    bg: 'bg-indigo-100 dark:bg-indigo-900/40',
+    text: 'text-indigo-700 dark:text-indigo-300',
+  },
+  stale: {
+    icon: <Clock className="size-3" />,
+    label: 'Stale',
+    bg: 'bg-zinc-100 dark:bg-zinc-800',
+    text: 'text-zinc-600 dark:text-zinc-400',
+  },
+  act_soon: {
+    icon: <AlertTriangle className="size-3" />,
+    label: 'Act Soon',
+    bg: 'bg-amber-100 dark:bg-amber-900/40',
+    text: 'text-amber-700 dark:text-amber-300',
+  },
+  quick_win: {
+    icon: <Zap className="size-3" />,
+    label: 'Quick Win',
+    bg: 'bg-green-100 dark:bg-green-900/40',
+    text: 'text-green-700 dark:text-green-300',
+  },
+  vague: {
+    icon: <HelpCircle className="size-3" />,
+    label: 'Vague',
+    bg: 'bg-blue-100 dark:bg-blue-900/40',
+    text: 'text-blue-700 dark:text-blue-300',
+  },
+  misprioritized: {
+    icon: <ArrowUpDown className="size-3" />,
+    label: 'Misprioritized',
+    bg: 'bg-purple-100 dark:bg-purple-900/40',
+    text: 'text-purple-700 dark:text-purple-300',
+  },
+}
+
+/** Color class for review score badge */
+function getScoreColor(score: number): string {
+  if (score >= 70) return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+  if (score >= 40) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+  return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
 }
 
 export function TaskRow({
@@ -110,6 +169,8 @@ export function TaskRow({
   annotation,
   isAiHighlighted = false,
   onReprocess,
+  reviewScore,
+  reviewSignals,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -447,7 +508,44 @@ export function TaskRow({
             {annotation}
           </p>
         )}
+
+        {/* Review signal pills — below commentary for visual separation from task metadata icons */}
+        {reviewSignals && reviewSignals.length > 0 && (
+          <div className="mt-1 flex items-center gap-1">
+            {reviewSignals.map((key) => {
+              const sig = SIGNAL_ICONS[key]
+              if (!sig) return null
+              return (
+                <span
+                  key={key}
+                  className={cn(
+                    'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                    sig.bg,
+                    sig.text,
+                  )}
+                  title={key.replace('_', ' ')}
+                >
+                  {sig.icon}
+                  <span>{sig.label}</span>
+                </span>
+              )
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Review score badge (only on review page) */}
+      {reviewScore !== undefined && (
+        <span
+          className={cn(
+            'flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+            getScoreColor(reviewScore),
+          )}
+          title={`AI attention score: ${reviewScore}/100`}
+        >
+          {reviewScore}
+        </span>
+      )}
 
       {/* Snooze button (hidden in selection mode and on mobile — swipe-to-snooze is the mobile interaction).
           Single click: immediate snooze with default duration.

@@ -13,7 +13,9 @@ import {
   usePriorityDisplay,
   useAutoSnoozeDefault,
   useSnoozePreferences,
+  useAiContext,
 } from '@/components/PreferencesProvider'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
@@ -29,8 +31,19 @@ export default function SettingsPage() {
   const { autoSnoozeDefault, setAutoSnoozeDefault } = useAutoSnoozeDefault()
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
+  const { aiContext, setAiContext } = useAiContext()
+  const [aiContextDraft, setAiContextDraft] = useState('')
+  const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
   const [showCustomSnooze, setShowCustomSnooze] = useState(false)
+
+  // Sync draft from loaded preference (once, when a non-null value first arrives)
+  useEffect(() => {
+    if (!aiContextSynced && aiContext !== null) {
+      setAiContextDraft(aiContext)
+      setAiContextSynced(true)
+    }
+  }, [aiContext, aiContextSynced])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -119,6 +132,26 @@ export default function SettingsPage() {
     } catch {
       setMorningTime(prev)
       showToast({ message: 'Failed to save preference' })
+    }
+  }
+
+  const aiContextDirty = aiContextDraft !== (aiContext ?? '')
+
+  const handleAiContextSave = async () => {
+    const newValue = aiContextDraft.trim() || null
+    const prev = aiContext
+    setAiContext(newValue)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai_context: newValue }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'AI context saved' })
+    } catch {
+      setAiContext(prev)
+      showToast({ message: 'Failed to save AI context' })
     }
   }
 
@@ -356,6 +389,39 @@ export default function SettingsPage() {
             Define labels with colors. Predefined labels display their color everywhere.
           </p>
           <LabelEditor labels={labelConfig} onSave={saveLabelConfig} />
+        </section>
+
+        {/* AI Context */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            AI Context
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Help the AI understand your situation. This context is included in all AI features
+            (enrichment, bubble, review) to improve relevance.
+          </p>
+          <Textarea
+            value={aiContextDraft}
+            onChange={(e) => setAiContextDraft(e.target.value)}
+            placeholder={
+              'e.g., "I work from home as a software engineer. My wife handles groceries. I have two young kids in daycare."'
+            }
+            maxLength={1000}
+            rows={3}
+            className="mb-2 text-sm"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-400">{aiContextDraft.length}/1000</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleAiContextSave}
+              disabled={!aiContextDirty}
+              className="h-8"
+            >
+              Save
+            </Button>
+          </div>
         </section>
 
         {/* Navigation links (mobile access to Archive & Trash) */}

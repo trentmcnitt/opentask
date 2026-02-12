@@ -30,6 +30,7 @@ export async function generateBubble(
   userId: number,
   timezone: string,
   tasks: TaskSummary[],
+  userContext?: string | null,
 ): Promise<BubbleResult | null> {
   if (tasks.length === 0) {
     return {
@@ -74,12 +75,14 @@ export async function generateBubble(
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
   const prompt = `${BUBBLE_SYSTEM_PROMPT}
 
 ## Context
 
 Current time: ${currentTime}
-Total active tasks: ${tasks.length}
+Total active tasks: ${tasks.length}${userContextBlock}
 
 ## Tasks
 

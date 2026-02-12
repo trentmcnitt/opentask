@@ -101,6 +101,38 @@ export interface TaskSummary {
 }
 
 /**
+ * AI review result schema.
+ *
+ * Each task gets a score (0-100), one-line commentary, and 0-2 signals
+ * from a preset vocabulary. Used for batch review of the entire task list.
+ */
+export const REVIEW_SIGNAL_KEYS = [
+  'review',
+  'stale',
+  'act_soon',
+  'quick_win',
+  'vague',
+  'misprioritized',
+] as const
+
+export type ReviewSignalKey = (typeof REVIEW_SIGNAL_KEYS)[number]
+
+export const ReviewItemSchema = z.object({
+  task_id: z.number().describe('ID of the reviewed task'),
+  score: z.number().int().min(0).max(100).describe('0-100 attention score'),
+  commentary: z.string().describe('One-line reason for the score'),
+  signals: z
+    .array(z.enum(REVIEW_SIGNAL_KEYS))
+    .max(2)
+    .default([])
+    .describe('0-2 signal keys from the preset vocabulary'),
+})
+
+export const ReviewBatchResultSchema = z.array(ReviewItemSchema)
+
+export type ReviewItem = z.infer<typeof ReviewItemSchema>
+
+/**
  * Shape of rows in the ai_activity_log table.
  */
 export interface AIActivityEntry {

@@ -12,6 +12,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
 import { FilterBar } from '@/components/FilterBar'
+import { AiControlArea } from '@/components/AiControlArea'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
@@ -29,25 +30,13 @@ import { useFilterState } from '@/hooks/useFilterState'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import type { DueDateFilter } from '@/components/DueDateFilterBar'
-import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
-import { taskWord, isMacPlatform } from '@/lib/utils'
+import { taskWord } from '@/lib/utils'
 import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
-
-/** Check if click/touch target is inside a zone that handles its own interaction */
-function isInsideInteractiveZone(target: HTMLElement) {
-  return (
-    target.closest('[role="listbox"]') !== null ||
-    target.closest('[id^="task-row-"]') !== null ||
-    target.closest('[role="dialog"]') !== null ||
-    target.closest('[data-selection-sheet]') !== null ||
-    target.closest('button') !== null ||
-    target.closest('a') !== null ||
-    target.closest('input') !== null ||
-    target.closest('textarea') !== null ||
-    target.closest('select') !== null
-  )
-}
+import { useAiMode, type AiMode } from '@/hooks/useAiMode'
+import { useReviewData, type UseReviewDataReturn } from '@/hooks/useReviewData'
+import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
+import { useExitModes } from '@/hooks/useExitModes'
 
 export default function Home() {
   return (
@@ -369,36 +358,103 @@ function HomeContent() {
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    exclusivePriority,
+    exclusiveLabel,
+    exclusiveDateFilter,
     clearAllFilters,
     filteredTasks: displayTasks,
   } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
 
-  // AI insights: fetch recommendations and resolve against current task list
+  // AI mode: three-way toggle (Off / Bubble / Insight)
+  const {
+    mode: aiMode,
+    setMode: setAiMode,
+    showScores,
+    setShowScores,
+    showSignals,
+    setShowSignals,
+  } = useAiMode()
+
+  // AI insights (bubble): fetch recommendations and resolve against current task list
   const aiInsights = useAiInsights(baseTasks)
+
+  // AI review (insight): fetch/generate review results
+  const reviewData = useReviewData(baseTasks)
+
+  // Bubble-specific AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
-  const [aiAnnotationsVisible, setAiAnnotationsVisible] = useState(() => {
-    if (typeof window === 'undefined') return true
-    return localStorage.getItem('ai-annotations-visible') !== 'false'
-  })
 
-  // Apply AI filter after other filters
-  const tasks_ = useMemo(() => {
-    if (!aiFilterActive || aiInsights.aiTaskIds.size === 0) return displayTasks
-    return displayTasks.filter((t) => aiInsights.aiTaskIds.has(t.id))
-  }, [displayTasks, aiFilterActive, aiInsights.aiTaskIds])
+  // Signal filter state for Insight mode (multi-select with Cmd+click exclusive)
+  const [selectedSignals, setSelectedSignals] = useState<string[]>([])
 
-  const handleToggleAiAnnotations = useCallback(() => {
-    setAiAnnotationsVisible((prev) => {
-      const next = !prev
-      localStorage.setItem('ai-annotations-visible', String(next))
-      return next
-    })
+  const handleSignalClick = useCallback((key: string, e: React.MouseEvent) => {
+    // Special key from "All" chip to clear signal filter
+    if (key === '__clear_all__') {
+      setSelectedSignals([])
+      return
+    }
+    if (e.metaKey || e.ctrlKey) {
+      setSelectedSignals((prev) => (prev.length === 1 && prev[0] === key ? [] : [key]))
+    } else {
+      setSelectedSignals((prev) =>
+        prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key],
+      )
+    }
   }, [])
 
-  // Wrap clearAllFilters to also clear selection and AI filter
+  const handleSignalLongPress = useCallback((key: string) => {
+    setSelectedSignals((prev) => (prev.length === 1 && prev[0] === key ? [] : [key]))
+  }, [])
+
+  // Apply AI filter and signal filter after other filters
+  const tasks_ = useMemo(() => {
+    let result = displayTasks
+
+    // Bubble mode: filter to AI-highlighted tasks when chip is active
+    if (aiMode === 'bubble' && aiFilterActive && aiInsights.aiTaskIds.size > 0) {
+      result = result.filter((t) => aiInsights.aiTaskIds.has(t.id))
+    }
+
+    // Insight mode: filter by selected signals (union/OR)
+    if (aiMode === 'insight' && selectedSignals.length > 0) {
+      result = result.filter((t) => {
+        const sigs = reviewData.reviewSignalMap.get(t.id)
+        return sigs?.some((s) => selectedSignals.includes(s))
+      })
+    }
+
+    return result
+  }, [
+    displayTasks,
+    aiMode,
+    aiFilterActive,
+    aiInsights.aiTaskIds,
+    selectedSignals,
+    reviewData.reviewSignalMap,
+  ])
+
+  // Derive effective annotation map based on AI mode
+  const effectiveAnnotationMap = useMemo(() => {
+    if (aiMode === 'bubble') return aiInsights.annotationMap
+    if (aiMode === 'insight') return reviewData.annotationMap
+    return new Map<number, string>()
+  }, [aiMode, aiInsights.annotationMap, reviewData.annotationMap])
+
+  // Show annotations when AI mode is not off
+  const showAnnotations = aiMode !== 'off'
+
+  // Sort fallback: if showScores is off and sorting by AI score, revert to due_date
+  useEffect(() => {
+    if (!showScores && sortOption === 'ai_review') {
+      setSortOption('due_date')
+    }
+  }, [showScores, sortOption, setSortOption])
+
+  // Wrap clearAllFilters to also clear selection, AI filter, and signal filters
   const handleClearFilters = useCallback(() => {
     selection.clear()
     setAiFilterActive(false)
+    setSelectedSignals([])
     clearAllFilters()
   }, [selection, clearAllFilters])
 
@@ -517,168 +573,8 @@ function HomeContent() {
     [selection.isSelectionMode, selection.selectedIds, keyboardFocusedId, keyboard],
   )
 
-  // Global keyboard shortcuts for jumping into task list
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const isMac = isMacPlatform()
-      const cmdKey = isMac ? e.metaKey : e.ctrlKey
-
-      // Don't intercept when user is in an input, textarea, or contenteditable
-      const activeEl = document.activeElement
-      const isInInput =
-        activeEl instanceof HTMLInputElement ||
-        activeEl instanceof HTMLTextAreaElement ||
-        (activeEl as HTMLElement)?.isContentEditable
-
-      // ?: Open keyboard shortcuts help dialog (works globally, even with dialogs open)
-      if (e.key === '?' && !isInInput) {
-        e.preventDefault()
-        setShowShortcutsDialog(true)
-        return
-      }
-
-      // Cmd+C: Copy selected tasks to clipboard (works even with dialogs open — read-only)
-      if (
-        cmdKey &&
-        e.key === 'c' &&
-        !isInInput &&
-        selection.isSelectionMode &&
-        selection.selectedIds.size > 0
-      ) {
-        e.preventDefault()
-        const clipboardGroups: ClipboardGroup[] = taskGroups
-          .map((g) => {
-            const sorted = sortTasks(g.tasks, sortOption, reversed)
-            const selected = sorted.filter((t) => selection.selectedIds.has(t.id))
-            return { label: g.label, tasks: selected, sort: sortOption, reversed }
-          })
-          .filter((g) => g.tasks.length > 0)
-        if (clipboardGroups.length > 0) {
-          const projMap = new Map(projects.map((p) => [p.id, p.name]))
-          const annotations = aiAnnotationsVisible ? aiInsights.annotationMap : undefined
-          const text = formatTasksForClipboard(clipboardGroups, timezone, projMap, annotations)
-          const n = clipboardGroups.reduce((sum, g) => sum + g.tasks.length, 0)
-          navigator.clipboard.writeText(text).then(
-            () => showToast({ message: `Copied ${n} ${taskWord(n)}` }),
-            () => showToast({ message: 'Copy failed' }),
-          )
-        }
-        return
-      }
-
-      // Undo/redo handled by useUndoRedoShortcuts hook
-
-      // Don't intercept other shortcuts when dialogs/sheets are open
-      if (!keyboardNavEnabled) return
-
-      // Cmd+L: Always focus first task (works even in keyboard mode)
-      if (cmdKey && e.key === 'l' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const firstTaskId = orderedIds[0]
-          setKeyboardFocusedId(firstTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${firstTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // ArrowDown: Focus first task (only when not in keyboard mode and not in input)
-      if (e.key === 'ArrowDown' && !keyboard.isKeyboardActive && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const firstTaskId = orderedIds[0]
-          setKeyboardFocusedId(firstTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${firstTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // ArrowUp: Focus last task (only when not in keyboard mode and not in input)
-      if (e.key === 'ArrowUp' && !keyboard.isKeyboardActive && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const lastTaskId = orderedIds[orderedIds.length - 1]
-          setKeyboardFocusedId(lastTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${lastTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // Home: Focus first task (works globally, even when not in keyboard mode)
-      if (e.key === 'Home' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const firstTaskId = orderedIds[0]
-          setKeyboardFocusedId(firstTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${firstTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // End: Focus last task (works globally, even when not in keyboard mode)
-      if (e.key === 'End' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const lastTaskId = orderedIds[orderedIds.length - 1]
-          setKeyboardFocusedId(lastTaskId)
-          keyboard.enterKeyboardMode()
-          document.getElementById(`task-row-${lastTaskId}`)?.focus()
-        }
-        return
-      }
-
-      // Cmd+Shift+A: Select all tasks in first group (works globally)
-      if (cmdKey && e.shiftKey && e.key.toLowerCase() === 'a' && !isInInput) {
-        e.preventDefault()
-        if (taskGroups.length > 0 && orderedIds.length > 0) {
-          const firstGroup = taskGroups[0]
-          const firstGroupTaskIds = new Set(firstGroup.tasks.map((t) => t.id))
-          const groupIds = orderedIds.filter((id) => firstGroupTaskIds.has(id))
-
-          if (groupIds.length > 0) {
-            const allSelected = groupIds.every((id) => selection.selectedIds.has(id))
-            if (allSelected) {
-              selection.removeAll(groupIds)
-            } else {
-              selection.addAll(groupIds)
-              if (!keyboard.isKeyboardActive) {
-                setKeyboardFocusedId(groupIds[0])
-                keyboard.enterKeyboardMode()
-                document.getElementById(`task-row-${groupIds[0]}`)?.focus()
-              }
-            }
-          }
-        }
-        return
-      }
-
-      // Cmd+A: Select all visible tasks (or deselect if all selected) - works globally
-      if (cmdKey && e.key.toLowerCase() === 'a' && !isInInput) {
-        e.preventDefault()
-        if (orderedIds.length > 0) {
-          const allSelected = orderedIds.every((id) => selection.selectedIds.has(id))
-          if (allSelected) {
-            selection.clear()
-          } else {
-            selection.selectAll(orderedIds)
-            if (!keyboard.isKeyboardActive) {
-              setKeyboardFocusedId(orderedIds[0])
-              keyboard.enterKeyboardMode()
-              document.getElementById(`task-row-${orderedIds[0]}`)?.focus()
-            }
-          }
-        }
-        return
-      }
-    }
-
-    document.addEventListener('keydown', handleGlobalKeyDown)
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [
+  // Global keyboard shortcuts (extracted to hook)
+  useDashboardKeyboard({
     keyboard,
     keyboardNavEnabled,
     orderedIds,
@@ -688,93 +584,14 @@ function HomeContent() {
     sortOption,
     reversed,
     timezone,
-    aiAnnotationsVisible,
-    aiInsights.annotationMap,
     projects,
-  ])
+    annotationMap: effectiveAnnotationMap,
+    showAnnotations,
+    setShowShortcutsDialog,
+  })
 
-  // Exit keyboard mode when clicking outside the task list
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      // Only handle if keyboard mode is active
-      if (!keyboard.isKeyboardActive) return
-
-      const target = e.target as HTMLElement
-      // Check if click is inside the task list (listbox or any task row)
-      const isInsideTaskList =
-        target.closest('[role="listbox"]') !== null || target.closest('[id^="task-row-"]') !== null
-
-      if (!isInsideTaskList) {
-        keyboard.exitKeyboardMode()
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [keyboard])
-
-  // Exit selection mode on double-click outside interactive zones (desktop)
-  useEffect(() => {
-    if (!selection.isSelectionMode) return
-
-    const handleDblClick = (e: MouseEvent) => {
-      if (!isInsideInteractiveZone(e.target as HTMLElement)) {
-        selection.clear()
-      }
-    }
-
-    document.addEventListener('dblclick', handleDblClick)
-    return () => document.removeEventListener('dblclick', handleDblClick)
-  }, [selection])
-
-  // Exit selection mode on long-press outside interactive zones (mobile)
-  useEffect(() => {
-    if (!selection.isSelectionMode) return
-
-    const LONG_PRESS_MS = 400
-    const JITTER_PX = 10
-
-    let timerId: ReturnType<typeof setTimeout> | null = null
-    let startX = 0
-    let startY = 0
-
-    const cancel = () => {
-      if (timerId !== null) {
-        clearTimeout(timerId)
-        timerId = null
-      }
-    }
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.pointerType !== 'touch') return
-      if (isInsideInteractiveZone(e.target as HTMLElement)) return
-      startX = e.clientX
-      startY = e.clientY
-      timerId = setTimeout(() => {
-        timerId = null
-        selection.clear()
-      }, LONG_PRESS_MS)
-    }
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (timerId === null) return
-      const dx = e.clientX - startX
-      const dy = e.clientY - startY
-      if (Math.sqrt(dx * dx + dy * dy) > JITTER_PX) cancel()
-    }
-
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('pointermove', onPointerMove)
-    document.addEventListener('pointerup', cancel)
-    document.addEventListener('pointercancel', cancel)
-    return () => {
-      cancel()
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('pointermove', onPointerMove)
-      document.removeEventListener('pointerup', cancel)
-      document.removeEventListener('pointercancel', cancel)
-    }
-  }, [selection])
+  // Exit keyboard/selection modes on click/touch outside (extracted to hook)
+  useExitModes({ keyboard, selection })
 
   const handleSnoozeAllOverdue = useSnoozeOverdue({
     displayTasks,
@@ -822,8 +639,6 @@ function HomeContent() {
     window.addEventListener('projects-reordered', handler)
     return () => window.removeEventListener('projects-reordered', handler)
   }, [fetchProjects])
-
-  // Global Escape handler removed - keyboard navigation hook handles Escape now
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
@@ -874,12 +689,15 @@ function HomeContent() {
       onClearFilters={handleClearFilters}
       selectedPriorities={selectedPriorities}
       onTogglePriority={togglePriority}
+      onExclusivePriority={exclusivePriority}
       selectedDateFilters={selectedDateFilters}
       onToggleDateFilter={toggleDateFilter}
+      onExclusiveDateFilter={exclusiveDateFilter}
+      onExclusiveLabel={exclusiveLabel}
       timezone={timezone}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
-        selection.clear() // Clear selection when search cleared
+        selection.clear()
         setSearchQuery(null)
         setSearchResults([])
       }}
@@ -931,12 +749,21 @@ function HomeContent() {
           actions.handleBatchRedo()
         }
       }}
+      aiMode={aiMode}
+      onAiModeChange={setAiMode}
+      showScores={showScores}
+      onShowScoresChange={setShowScores}
+      showSignals={showSignals}
+      onShowSignalsChange={setShowSignals}
       aiInsights={aiInsights}
+      reviewData={reviewData}
       aiFilterActive={aiFilterActive}
       onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
-      aiAnnotationsVisible={aiAnnotationsVisible}
-      onToggleAiAnnotations={handleToggleAiAnnotations}
-      onRefreshAi={aiInsights.refresh}
+      effectiveAnnotationMap={effectiveAnnotationMap}
+      showAnnotations={showAnnotations}
+      selectedSignals={selectedSignals}
+      onSignalClick={handleSignalClick}
+      onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
     />
@@ -961,8 +788,11 @@ function DashboardView({
   onClearFilters,
   selectedPriorities,
   onTogglePriority,
+  onExclusivePriority,
   selectedDateFilters,
   onToggleDateFilter,
+  onExclusiveDateFilter,
+  onExclusiveLabel,
   timezone,
   onSearch,
   onSearchClear,
@@ -977,7 +807,6 @@ function DashboardView({
   onTaskFocus,
   onQuickActionClose,
   onQuickActionSaveAll,
-  onQuickActionDelete,
   onQuickActionNavigate,
   onNavigateToDetail,
   keyboardFocusedId,
@@ -1002,12 +831,22 @@ function DashboardView({
   onOpenBatchUndo,
   onOpenBatchRedo,
   onBatchConfirm,
+  aiMode,
+  onAiModeChange,
+  showScores,
+  onShowScoresChange,
+  showSignals,
+  onShowSignalsChange,
   aiInsights,
+  reviewData,
   aiFilterActive,
   onToggleAiFilter,
-  aiAnnotationsVisible,
-  onToggleAiAnnotations,
-  onRefreshAi,
+  effectiveAnnotationMap,
+  showAnnotations,
+  selectedSignals,
+  onSignalClick,
+  onSignalLongPress,
+  onQuickActionDelete,
   onReprocess,
 }: {
   tasks: Task[]
@@ -1027,8 +866,11 @@ function DashboardView({
   onClearFilters: () => void
   selectedPriorities: number[]
   onTogglePriority: (priority: number) => void
+  onExclusivePriority: (priority: number) => void
   selectedDateFilters: DueDateFilter[]
   onToggleDateFilter: (filter: DueDateFilter) => void
+  onExclusiveDateFilter: (filter: DueDateFilter) => void
+  onExclusiveLabel: (label: string) => void
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -1068,14 +910,30 @@ function DashboardView({
   onOpenBatchUndo: () => void
   onOpenBatchRedo: () => void
   onBatchConfirm: () => void
+  aiMode: AiMode
+  onAiModeChange: (mode: AiMode) => void
+  showScores: boolean
+  onShowScoresChange: (show: boolean) => void
+  showSignals: boolean
+  onShowSignalsChange: (show: boolean) => void
   aiInsights: UseAiInsightsReturn
+  reviewData: UseReviewDataReturn
   aiFilterActive: boolean
   onToggleAiFilter: () => void
-  aiAnnotationsVisible: boolean
-  onToggleAiAnnotations: () => void
-  onRefreshAi: () => void
+  effectiveAnnotationMap: Map<number, string>
+  showAnnotations: boolean
+  selectedSignals: string[]
+  onSignalClick: (key: string, e: React.MouseEvent) => void
+  onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
 }) {
+  const anyFilterActive =
+    selectedLabels.length > 0 ||
+    selectedPriorities.length > 0 ||
+    selectedDateFilters.length > 0 ||
+    (aiMode === 'bubble' && aiFilterActive) ||
+    (aiMode === 'insight' && selectedSignals.length > 0)
+
   return (
     <div className="flex flex-1 flex-col">
       <Header
@@ -1094,8 +952,6 @@ function DashboardView({
         onSnoozeOverdue={onSnoozeOverdue}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
-        showAiAnnotations={aiAnnotationsVisible}
-        onToggleAiAnnotations={onToggleAiAnnotations}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
@@ -1106,22 +962,57 @@ function DashboardView({
           }}
         />
 
+        <AiControlArea
+          mode={aiMode}
+          onModeChange={onAiModeChange}
+          showScores={showScores}
+          onShowScoresChange={onShowScoresChange}
+          showSignals={showSignals}
+          onShowSignalsChange={onShowSignalsChange}
+          hasScores={reviewData.hasResults}
+          bubbleFreshnessText={aiInsights.freshnessText}
+          bubbleLoading={aiInsights.loading}
+          onRefreshBubble={aiInsights.refresh}
+          reviewGeneratedAt={reviewData.generatedAt}
+          reviewGenerating={reviewData.generating}
+          reviewProgress={reviewData.progress}
+          reviewCompletedTasks={reviewData.completedTasks}
+          reviewTotalTasks={reviewData.totalTasks}
+          onGenerateReview={reviewData.generate}
+        />
+
         <FilterBar
           tasks={allTasks}
           selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
           selectedDateFilters={selectedDateFilters}
           onTogglePriority={onTogglePriority}
+          onExclusivePriority={onExclusivePriority}
           onToggleLabel={onToggleLabel}
+          onExclusiveLabel={onExclusiveLabel}
           onToggleDateFilter={onToggleDateFilter}
+          onExclusiveDateFilter={onExclusiveDateFilter}
           onClearAll={onClearFilters}
           timezone={timezone}
+          aiMode={aiMode}
           aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
           aiFilterActive={aiFilterActive}
           aiFilterLoading={aiInsights.loading}
           onToggleAiFilter={onToggleAiFilter}
-          onRefreshAi={onRefreshAi}
-          aiFreshnessText={aiInsights.freshnessText}
+          signalChips={
+            aiMode === 'insight'
+              ? reviewData.activeSignals.map((s) => ({
+                  key: s.key,
+                  label: s.label,
+                  count: reviewData.signalCounts[s.key] || 0,
+                  description: s.description,
+                }))
+              : undefined
+          }
+          selectedSignals={selectedSignals}
+          onSignalClick={onSignalClick}
+          onSignalLongPress={onSignalLongPress}
+          totalResultCount={reviewData.results.length}
         />
 
         {searchQuery && (
@@ -1131,10 +1022,7 @@ function DashboardView({
           </div>
         )}
 
-        {(selectedLabels.length > 0 ||
-          selectedPriorities.length > 0 ||
-          selectedDateFilters.length > 0 ||
-          aiFilterActive) && (
+        {anyFilterActive && (
           <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
             Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
             <button
@@ -1166,9 +1054,14 @@ function DashboardView({
           toggleCollapse={toggleCollapse}
           onActivate={onActivate}
           onDoubleClick={onDoubleClick}
-          annotationMap={aiInsights.annotationMap}
-          showAnnotations={aiAnnotationsVisible}
+          annotationMap={effectiveAnnotationMap}
+          showAnnotations={showAnnotations}
           onReprocess={onReprocess}
+          reviewScoreMap={showScores && aiMode !== 'off' ? reviewData.reviewScoreMap : undefined}
+          reviewSignalMap={showSignals && aiMode !== 'off' ? reviewData.reviewSignalMap : undefined}
+          showAiReview={reviewData.hasResults}
+          aiScoreDisabled={!showScores || aiMode === 'off'}
+          suppressAiHighlight={aiMode === 'insight'}
           headerLeft={
             tasks.length > 0 ? (
               <button
@@ -1265,7 +1158,7 @@ function DashboardView({
         onDelete={onQuickActionDelete}
         onNavigateToDetail={onQuickActionNavigate}
         projects={projects}
-        annotation={focusedTask ? aiInsights.annotationMap.get(focusedTask.id) : undefined}
+        annotation={focusedTask ? effectiveAnnotationMap.get(focusedTask.id) : undefined}
       />
 
       <KeyboardShortcutsDialog

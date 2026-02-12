@@ -13,6 +13,7 @@ import { enrichmentRecurrenceScenarios } from './enrichment-recurrence'
 import { enrichmentVoiceScenarios } from './enrichment-voice'
 import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { bubbleScenarios } from './bubble'
+import { reviewScenarios } from './review'
 
 export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentCoreScenarios,
@@ -23,6 +24,10 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentEdgeScenarios,
 ]
 
-export const allScenarios: AITestScenario[] = [...enrichmentScenarios, ...bubbleScenarios]
+export const allScenarios: AITestScenario[] = [
+  ...enrichmentScenarios,
+  ...bubbleScenarios,
+  ...reviewScenarios,
+]
 
-export { bubbleScenarios }
+export { bubbleScenarios, reviewScenarios }
