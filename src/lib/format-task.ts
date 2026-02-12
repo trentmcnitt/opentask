@@ -107,6 +107,7 @@ export function formatTasksForClipboard(
   groups: ClipboardGroup[],
   timezone: string,
   projectMap?: Map<number, string>,
+  annotationMap?: Map<number, string>,
 ): string {
   const sections: string[] = []
 
@@ -121,6 +122,10 @@ export function formatTasksForClipboard(
     for (const task of group.tasks) {
       const projectName = projectMap?.get(task.project_id)
       lines.push(`${bullet}${task.title}${formatTaskMeta(task, timezone, projectName)}`)
+      const annotation = annotationMap?.get(task.id)
+      if (annotation) {
+        lines.push(`    ✨ ${annotation}`)
+      }
       const notesLine = formatNotesLine(task.notes)
       if (notesLine) {
         lines.push(`    ${notesLine}`)

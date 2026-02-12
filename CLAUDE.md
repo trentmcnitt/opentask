@@ -127,6 +127,22 @@ Dual authentication checked in order:
 
 NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks).
 
+## Behavioral Model
+
+OpenTask is not a traditional task manager. Due dates for most tasks are **reminders, not deadlines**. Understanding this is critical for interpreting task data correctly, especially in AI features. See `docs/DESIGN.md` for the full rationale.
+
+**The two-tier due date system:** Priority determines whether a due date is a deadline or a notification trigger.
+
+- **Priority 0-2 (Unset/Low/Medium):** `due_at` means "remind me at this time." These tasks are bulk-snoozed via a one-tap button in the top bar, often 10+ times per day. The server always skips P3-4 during bulk snooze (`HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts`). Being "overdue" for P0-2 just means the snooze timer expired — it's the normal state, not a problem.
+- **Priority 3-4 (High/Urgent):** `due_at` is a real deadline. These must be snoozed individually, so every due date change is a deliberate decision. Being overdue is significant.
+
+**Implications for code and AI:**
+
+- `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
+- The gap between `original_due_at` and `due_at` shows total drift but not how many times or why the task was snoozed. Don't infer deferral counts or intent from dates alone.
+- `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
+- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
+
 ## Domain Reference
 
 ### Priority values
@@ -156,7 +172,7 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 ### Snooze
 
-Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
+Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze always skips P3-4 tasks (see [Behavioral Model](#behavioral-model)).
 
 ### Updating recurrence rules
 

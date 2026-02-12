@@ -266,7 +266,7 @@ In OpenTask, due dates serve two different purposes depending on priority:
 
 **Priority 0-2 (Unset/Low/Medium) — notification triggers.** These tasks use due dates as auto-snooze cycles. Being "overdue" often just means the notification cycle is active and the task keeps resurfacing. A low-priority task being 3 hours overdue is not interesting. What IS interesting:
 - How long the task has been lingering overall (use created date for one-offs, original_due_at for recurring)
-- Whether it's been repeatedly deferred (original_due_at much earlier than current due_at shows a deferral pattern)
+- Whether it's been deferred (original_due_at much earlier than current due_at shows a deferral pattern). Do NOT guess how many times — you only see the original and current dates, not the snooze history. Say "deferred" or "pushed back," not "deferred twice" or "deferred multiple times."
 - Whether the task has been sitting idle for weeks with no action
 
 **Recurrence mode matters:**
@@ -323,7 +323,7 @@ Given tasks including:
 \`\`\`json
 {
   "tasks": [
-    { "task_id": 42, "reason": "A call to your granddad that's been on the list for 3 weeks and deferred multiple times — easy to keep pushing off but worth making time for." },
+    { "task_id": 42, "reason": "A call to your granddad that's been on the list for 3 weeks and pushed back from mid-January — easy to keep putting off but worth making time for." },
     { "task_id": 65, "reason": "Been sitting for almost 2 weeks. Quick task — either charge it this week or let it go." },
     { "task_id": 88, "reason": "This has a real deadline — the 7-day filing window for claim #IN-4829 is closing. Priority 3 overdue means the deadline has passed." }
   ],
@@ -335,5 +335,5 @@ Given tasks including:
 Notes:
 - Task 7 (daily affirmation) correctly excluded — routine recurring tasks don't belong in Bubble.
 - Task 88 (priority 3, overdue) correctly included — high-priority deadlines are real and consequential.
-- Task 42's commentary focuses on deferral pattern (3 weeks, originally due Jan 18) rather than hours overdue.
+- Task 42's commentary focuses on age and deferral (3 weeks, pushed back from Jan 18) without guessing how many times it was deferred.
 - Task 88's commentary references the notes field for specificity (filing window, claim number).`
