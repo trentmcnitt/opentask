@@ -350,10 +350,14 @@ async function runBubble(
           ? ` (originally due: ${formatLocal(t.original_due_at)})`
           : ''
       const created = formatLocal(t.created_at)
+      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
+      const recMode =
+        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
+      const notes = t.notes ? ` | notes: ${t.notes}` : ''
       return (
         `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
         `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`
+        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
       )
     })
     .join('\n')

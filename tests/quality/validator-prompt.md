@@ -121,6 +121,13 @@ For each scenario:
 - Do all `task_id` values exist in the input task list?
 - Are no tasks invented or referenced that weren't provided?
 
+### 5. Overdue/Deadline Distinction
+
+- For priority 3-4 overdue tasks: does commentary treat the deadline as real and urgent?
+- For priority 0-2 overdue tasks: does commentary focus on age/deferral, NOT hours overdue?
+- Are notes referenced when they provide relevant context?
+- Is recurrence_mode: from_completion correctly interpreted (overdue = the user hasn't completed the last occurrence)?
+
 ---
 
 ## Scoring Scale

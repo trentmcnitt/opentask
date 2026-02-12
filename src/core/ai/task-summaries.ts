@@ -44,5 +44,8 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
     labels: t.labels,
     project_name: projectMap.get(t.project_id) ?? null,
     is_recurring: t.rrule !== null,
+    rrule: t.rrule,
+    notes: t.notes,
+    recurrence_mode: t.recurrence_mode,
   }))
 }

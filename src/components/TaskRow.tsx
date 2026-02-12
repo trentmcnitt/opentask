@@ -556,7 +556,11 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   // Age indicator: how old a task is (very subtle, at the end of metadata)
-  const ageAnchor = task.rrule ? (task.original_due_at ?? task.due_at) : task.created_at
+  // One-off: original_due_at ?? created_at (captures deferral time when present)
+  // Recurring: original_due_at ?? due_at (when the current occurrence was originally due)
+  const ageAnchor = task.rrule
+    ? (task.original_due_at ?? task.due_at)
+    : (task.original_due_at ?? task.created_at)
   if (ageAnchor) {
     const ageText = formatTaskAge(ageAnchor, timezone)
     if (ageText) segments.push({ text: ageText, className: 'text-muted-foreground/50' })

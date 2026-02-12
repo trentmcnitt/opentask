@@ -719,7 +719,9 @@ export function QuickActionPanel({
   /**
    * Task age — "since X" text shown on the recurrence line.
    *
-   * For one-off tasks: age is based on created_at (how long the task has existed).
+   * For one-off tasks: age is based on original_due_at ?? created_at. When
+   * original_due_at exists, it shows how long since the task was first due
+   * (capturing deferral time). Falls back to created_at for tasks never deferred.
    * For recurring tasks: age is based on original_due_at (when the current
    * occurrence was originally due), but only shown when the occurrence is
    * overdue (original_due_at is in the past). If the occurrence hasn't arrived
@@ -737,8 +739,8 @@ export function QuickActionPanel({
       if (!anchorIso) return null
       if (new Date(anchorIso) > new Date()) return null // occurrence hasn't arrived yet
     } else {
-      // For one-off: use created_at
-      anchorIso = effectiveTask.created_at
+      // For one-off: use original_due_at (if the task was deferred) or created_at
+      anchorIso = effectiveTask.original_due_at ?? effectiveTask.created_at
     }
 
     const anchor = DateTime.fromISO(anchorIso, { zone: 'utc' }).setZone(timezone)

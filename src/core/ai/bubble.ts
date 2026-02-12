@@ -39,8 +39,16 @@ export async function generateBubble(
     }
   }
 
-  // Build a compact task summary for the prompt (limit to 50 most relevant)
-  const relevantTasks = selectRelevantTasks(tasks, 50)
+  // Filter to tasks due within 7 days or already overdue/no due date
+  const relevantTasks = selectRelevantTasks(tasks)
+  if (relevantTasks.length === 0) {
+    return {
+      tasks: [],
+      summary: 'All tasks are scheduled for later. Nothing needs attention right now.',
+      generated_at: nowUtc(),
+    }
+  }
+
   const now = DateTime.now().setZone(timezone)
   const taskList = relevantTasks
     .map((t) => {
@@ -50,10 +58,14 @@ export async function generateBubble(
           ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
           : ''
       const created = formatLocalDate(t.created_at, timezone)
+      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
+      const recMode =
+        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
+      const notes = t.notes ? ` | notes: ${t.notes}` : ''
       return (
         `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
         `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | recurring: ${t.is_recurring ? 'yes' : 'no'}`
+        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
       )
     })
     .join('\n')
@@ -171,37 +183,13 @@ function formatLocalDate(isoUtc: string, timezone: string): string {
 }
 
 /**
- * Select the most relevant tasks for the AI prompt.
- * Prioritizes: old tasks (high age) > idle (no deadline) > low priority.
- * Excludes: daily recurring affirmations, already-urgent items.
+ * Select tasks relevant for the Bubble prompt.
+ *
+ * Simple filter: include everything except tasks due more than 7 days out.
+ * Overdue tasks, tasks due within 7 days, and tasks with no due date are all included.
+ * The AI prompt itself handles prioritization and exclusion logic.
  */
-function selectRelevantTasks(tasks: TaskSummary[], limit: number): TaskSummary[] {
-  const now = Date.now()
-  const scored = tasks.map((t) => {
-    let score = 0
-
-    // Task age: older tasks are more likely to be forgotten (cap at 50 points)
-    const ageDays = (now - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24)
-    score += Math.min(Math.floor(ageDays * 3), 50)
-
-    // No deadline = easy to forget
-    if (!t.due_at) score += 20
-
-    // Low priority without deadline = likely overlooked
-    if (t.priority <= 1 && !t.due_at) score += 15
-
-    // Non-recurring = won't come back if missed
-    if (!t.is_recurring) score += 10
-
-    // Already urgent/high priority = already visible, lower score for Bubble
-    if (t.priority >= 3) score -= 20
-
-    // Recurring daily tasks = routine, not interesting for Bubble
-    if (t.is_recurring && t.priority === 0) score -= 10
-
-    return { task: t, score }
-  })
-
-  scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, limit).map((s) => s.task)
+function selectRelevantTasks(tasks: TaskSummary[]): TaskSummary[] {
+  const cutoff = Date.now() + 7 * 24 * 60 * 60 * 1000
+  return tasks.filter((t) => !t.due_at || new Date(t.due_at).getTime() <= cutoff)
 }
