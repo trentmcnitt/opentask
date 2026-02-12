@@ -176,4 +176,60 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
         'This tests graceful handling of metadata-heavy, task-light input.',
     },
   },
+  {
+    id: 'enrich-user-context-project-matching',
+    feature: 'enrichment',
+    description:
+      'User context helps with project matching — context says "I work from home as a software engineer"',
+    input: {
+      text: 'fix that deployment bug',
+      timezone: 'America/Chicago',
+      projects: [
+        { id: 1, name: 'Inbox', shared: false },
+        { id: 2, name: 'Work', shared: false },
+        { id: 3, name: 'Home', shared: false },
+      ],
+      userContext: 'I work from home as a software engineer. My main project at work is a web app.',
+    },
+    requirements: {
+      must_include: {
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        'Title should be clean (e.g., "Fix that deployment bug" or "Fix deployment bug"). ' +
+        'Project matching should lean toward "Work" given the user context about being a software engineer. ' +
+        'The user context should NOT appear in the title or notes — it is background knowledge only. ' +
+        'Priority should remain 0 (no urgency signal in the input). ' +
+        'This tests that user context influences project matching without leaking into the output.',
+    },
+  },
+  {
+    id: 'enrich-user-context-no-leakage',
+    feature: 'enrichment',
+    description:
+      'User context must not leak into output fields — context says "my wife handles groceries"',
+    input: {
+      text: 'buy milk',
+      timezone: 'America/Chicago',
+      projects: [
+        { id: 1, name: 'Inbox', shared: false },
+        { id: 2, name: 'Shopping List', shared: true },
+      ],
+      userContext: 'My wife handles most grocery shopping. I have two young kids in daycare.',
+    },
+    requirements: {
+      must_include: {
+        priority: 0,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        'Title should be "Buy milk" or similar — the user context about wife/kids must NOT appear in the title. ' +
+        'Notes should be null — do not add context like "wife usually handles groceries" to the notes field. ' +
+        'The AI should still structurally extract the task normally. ' +
+        'May match Shopping List project. ' +
+        'This tests that user context is used as background knowledge without leaking into any output field.',
+    },
+  },
 ]

@@ -1,7 +1,13 @@
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, serviceUnavailable } from '@/lib/api-response'
-import { isAIEnabled, generateBubble, getCachedBubble, buildTaskSummaries } from '@/core/ai'
+import {
+  isAIEnabled,
+  generateBubble,
+  getCachedBubble,
+  buildTaskSummaries,
+  getUserAiContext,
+} from '@/core/ai'
 import { log } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
@@ -25,7 +31,8 @@ export async function GET(request: NextRequest) {
 
     // Generate fresh recommendations
     const taskSummaries = buildTaskSummaries(user.id)
-    const result = await generateBubble(user.id, user.timezone, taskSummaries)
+    const aiContext = getUserAiContext(user.id)
+    const result = await generateBubble(user.id, user.timezone, taskSummaries, aiContext)
 
     if (!result) {
       return serviceUnavailable('Failed to generate recommendations')

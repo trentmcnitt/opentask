@@ -536,4 +536,84 @@ export const bubbleScenarios: AITestScenario[] = [
         'Three different situations requiring three different kinds of commentary.',
     },
   },
+  {
+    id: 'bubble-user-context-caregiver',
+    feature: 'bubble',
+    description:
+      'User context about caregiving should make medical/family tasks get more relevant commentary',
+    input: {
+      timezone: 'America/Chicago',
+      userContext:
+        "I'm a caregiver for my elderly father who has diabetes. I also have two kids under 5.",
+      tasks: [
+        {
+          id: 500,
+          title: "Refill dad's insulin prescription",
+          priority: 2,
+          due_at: '2026-02-08T15:00:00Z',
+          original_due_at: '2026-02-05T15:00:00Z',
+          created_at: '2026-01-25T16:00:00Z',
+          labels: ['health'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: 'Walgreens on Main St. Rx #4829.',
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 501,
+          title: 'Schedule kid flu shots',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-01-10T16:00:00Z',
+          labels: ['health'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 502,
+          title: 'Call insurance about home claim',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-01-20T16:00:00Z',
+          labels: ['finance'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        // Filler
+        ...Array.from({ length: 8 }, (_, i) => ({
+          id: 510 + i,
+          title: `Routine task ${i + 1}`,
+          priority: 0,
+          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
+          created_at: '2026-02-08T15:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        })),
+      ],
+    },
+    requirements: {
+      must_include: {},
+      quality_notes:
+        'MUST surface the insulin prescription (500) and kid flu shots (501). ' +
+        "The user context says they're a caregiver for a diabetic father — the insulin refill is especially important. " +
+        'Task 500 commentary should be contextually aware (caregiving role makes this more urgent than a generic errand). ' +
+        'Task 501 has been sitting for a month — easy to overlook with young kids. ' +
+        'Task 502 (insurance) is also old and should likely be surfaced. ' +
+        'Commentary should be grounded in task data and user context without hallucinating.',
+    },
+  },
 ]

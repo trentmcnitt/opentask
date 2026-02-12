@@ -394,12 +394,13 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-voice.ts`      | Voice preservation                            | 8     |
 | `enrichment-edge.ts`       | Edge cases                                    | 8     |
 | `bubble.ts`                | Bubble recommendations                        | 7     |
+| `review.ts`                | AI Review scoring and signals                 | 10    |
 | `index.ts`                 | Barrel export                                 | —     |
 
 Each scenario defines:
 
 - `id` — unique identifier (e.g., `enrich-garbled-dictation`)
-- `feature` — which AI feature (`enrichment`, `bubble`)
+- `feature` — which AI feature (`enrichment`, `bubble`, `review`)
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
 
@@ -414,7 +415,7 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | File                                | Purpose                                            |
 | ----------------------------------- | -------------------------------------------------- |
 | `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
-| `tests/quality/scenarios/`          | Test scenario definitions (~80 scenarios)          |
+| `tests/quality/scenarios/`          | Test scenario definitions (94 scenarios)           |
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |

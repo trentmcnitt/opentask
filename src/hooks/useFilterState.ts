@@ -38,6 +38,22 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
     )
   }, [])
 
+  const exclusivePriority = useCallback((priority: number) => {
+    setSelectedPriorities((prev) => (prev.length === 1 && prev[0] === priority ? [] : [priority]))
+  }, [])
+
+  const exclusiveLabel = useCallback(
+    (label: string) => {
+      onLabelToggle?.()
+      setSelectedLabels((prev) => (prev.length === 1 && prev[0] === label ? [] : [label]))
+    },
+    [onLabelToggle],
+  )
+
+  const exclusiveDateFilter = useCallback((filter: DueDateFilter) => {
+    setSelectedDateFilters((prev) => (prev.length === 1 && prev[0] === filter ? [] : [filter]))
+  }, [])
+
   const clearAllFilters = useCallback(() => {
     setSelectedLabels([])
     setSelectedPriorities([])
@@ -70,6 +86,9 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    exclusivePriority,
+    exclusiveLabel,
+    exclusiveDateFilter,
     clearAllFilters,
     filteredTasks,
   }

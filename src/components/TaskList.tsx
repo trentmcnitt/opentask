@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { Task, Project } from '@/types'
+import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
@@ -80,10 +81,27 @@ interface TaskListProps {
   onReprocess?: (taskId: number) => void
   /** Optional content rendered on the left side of the sort dropdown row */
   headerLeft?: React.ReactNode
+  /** Map of taskId -> review score (0-100) for AI review page */
+  reviewScoreMap?: Map<number, number>
+  /** Map of taskId -> signal keys for AI review page */
+  reviewSignalMap?: Map<number, string[]>
+  /** When true, shows AI Score in sort dropdown (even when disabled/grayed) */
+  showAiReview?: boolean
+  /** When true, the AI Score sort option is visible but grayed out */
+  aiScoreDisabled?: boolean
+  /** When true, hides the built-in sort dropdown (caller renders it externally) */
+  hideSortControl?: boolean
+  /** When true, suppresses the blue AI-highlight background on task cards */
+  suppressAiHighlight?: boolean
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
-export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = false): Task[] {
+export function sortTasks(
+  tasks: Task[],
+  sortOption: SortOption,
+  reversed = false,
+  reviewScoreMap?: Map<number, number>,
+): Task[] {
   const sorted = [...tasks]
   switch (sortOption) {
     case 'due_date':
@@ -139,6 +157,15 @@ export function sortTasks(tasks: Task[], sortOption: SortOption, reversed = fals
         return (b.priority || 0) - (a.priority || 0)
       })
       break
+    case 'ai_review':
+      // Default: highest score first (most attention needed). Tasks without scores → end.
+      sorted.sort((a, b) => {
+        const aScore = reviewScoreMap?.get(a.id) ?? -1
+        const bScore = reviewScoreMap?.get(b.id) ?? -1
+        const cmp = bScore - aScore
+        return reversed ? -cmp : cmp
+      })
+      break
   }
   return sorted
 }
@@ -151,6 +178,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   age: { default: 'Newest', reversed: 'Oldest' },
   modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
   original_due: { default: 'Original Due ↓', reversed: 'Original Due ↑' },
+  ai_review: { default: 'AI Score ↓', reversed: 'AI Score ↑' },
 }
 
 /** Labels shown in the dropdown menu items. */
@@ -161,6 +189,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   age: 'Date added',
   modified: 'Date modified',
   original_due: 'Original due date',
+  ai_review: 'AI score',
 }
 
 export function TaskList({
@@ -187,6 +216,12 @@ export function TaskList({
   showAnnotations = false,
   onReprocess,
   headerLeft,
+  reviewScoreMap,
+  reviewSignalMap,
+  showAiReview: showAiReviewProp,
+  aiScoreDisabled: aiScoreDisabledProp,
+  hideSortControl = false,
+  suppressAiHighlight = false,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -234,7 +269,7 @@ export function TaskList({
 
   // Build ordered ID list for range-select, applying the same sort as rendering
   const orderedIds = groups.flatMap((g) => {
-    return sortTasks(g.tasks, sortOption, reversed).map((t) => t.id)
+    return sortTasks(g.tasks, sortOption, reversed, reviewScoreMap).map((t) => t.id)
   })
 
   // Determine if we should show the "now" separator
@@ -255,13 +290,21 @@ export function TaskList({
       onBlur={onListBlur}
       className="outline-none"
     >
-      <div className="mb-4 flex items-center justify-between px-1">
-        {headerLeft ?? <div />}
-        <SortDropdown sortOption={sortOption} reversed={reversed} onSort={setSortOption} />
-      </div>
+      {!hideSortControl && (
+        <div className="mb-4 flex items-center justify-between px-1">
+          {headerLeft ?? <div />}
+          <SortDropdown
+            sortOption={sortOption}
+            reversed={reversed}
+            onSort={setSortOption}
+            showAiReview={showAiReviewProp ?? !!reviewScoreMap}
+            aiScoreDisabled={aiScoreDisabledProp ?? false}
+          />
+        </div>
+      )}
       <div className="space-y-6">
         {groups.map((group, groupIdx) => {
-          const sortedTasks = sortTasks(group.tasks, sortOption, reversed)
+          const sortedTasks = sortTasks(group.tasks, sortOption, reversed, reviewScoreMap)
           const collapsed = isCollapsed(group.label)
 
           return (
@@ -352,8 +395,10 @@ export function TaskList({
                           onActivate={onActivate ? () => onActivate(task.id) : undefined}
                           onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                           annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
-                          isAiHighlighted={annotationMap?.has(task.id)}
+                          isAiHighlighted={!suppressAiHighlight && annotationMap?.has(task.id)}
                           onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
+                          reviewScore={reviewScoreMap?.get(task.id)}
+                          reviewSignals={reviewSignalMap?.get(task.id)}
                         />
                       </SwipeableRow>
                     )
@@ -508,20 +553,29 @@ function GroupCheckbox({
   )
 }
 
-function SortDropdown({
+export function SortDropdown({
   sortOption,
   reversed,
   onSort,
+  showAiReview = false,
+  aiScoreDisabled = false,
 }: {
   sortOption: SortOption
   reversed: boolean
   onSort: (option: SortOption) => void
+  showAiReview?: boolean
+  /** When true, the AI score option is visible but grayed out and non-interactive */
+  aiScoreDisabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const isTouchRef = useRef(false)
   const label = reversed
     ? SORT_BUTTON_LABELS[sortOption].reversed
     : SORT_BUTTON_LABELS[sortOption].default
+
+  const options: SortOption[] = showAiReview
+    ? ['ai_review', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+    : ['due_date', 'priority', 'title', 'age', 'modified', 'original_due']
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -548,31 +602,35 @@ function SortDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {(['due_date', 'priority', 'title', 'age', 'modified', 'original_due'] as const).map(
-          (option) => {
-            const isActive = sortOption === option
-            const itemLabel =
-              isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
-            // Selecting the active option will toggle direction, so show what it will become
-            const hint = isActive
-              ? `→ ${reversed ? SORT_BUTTON_LABELS[option].default : SORT_BUTTON_LABELS[option].reversed}`
-              : null
-            return (
-              <DropdownMenuItem
-                key={option}
-                onClick={() => onSort(option)}
-                className={isActive ? 'font-semibold' : ''}
-              >
-                {itemLabel}
-                {hint && (
-                  <span className="text-muted-foreground ml-auto pl-3 text-[10px] font-normal">
-                    {hint}
-                  </span>
-                )}
-              </DropdownMenuItem>
-            )
-          },
-        )}
+        {options.map((option) => {
+          const isActive = sortOption === option
+          const isDisabled = option === 'ai_review' && aiScoreDisabled
+          const itemLabel =
+            isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
+          // Selecting the active option will toggle direction, so show what it will become
+          const hint = isActive
+            ? `→ ${reversed ? SORT_BUTTON_LABELS[option].default : SORT_BUTTON_LABELS[option].reversed}`
+            : null
+          return (
+            <DropdownMenuItem
+              key={option}
+              onClick={() => {
+                if (!isDisabled) onSort(option)
+              }}
+              className={cn(
+                isActive ? 'font-semibold' : '',
+                isDisabled ? 'pointer-events-none opacity-40' : '',
+              )}
+            >
+              {itemLabel}
+              {hint && (
+                <span className="text-muted-foreground ml-auto pl-3 text-[10px] font-normal">
+                  {hint}
+                </span>
+              )}
+            </DropdownMenuItem>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -138,6 +138,52 @@ For each scenario:
 
 ---
 
+## Review Evaluation Criteria
+
+### 1. Score Reasonableness
+
+- Does the score reflect "attention needed" (the OPPOSITE of urgency)?
+- Old forgotten P0 tasks (months old, no due date) should score HIGH (70+)
+- P4/Urgent tasks should ALWAYS score LOW (0-20), regardless of overdue status
+- Recurring tasks 1-2 days overdue should score LOW (0-20) — normal cadence
+- P0-2 tasks overdue by 1-2 days should score LOW (0-25) — routine reminder behavior
+- Well-organized tasks with clear due dates should score LOW (0-29)
+- P3 due today with consequences still days away should score MEDIUM (30-50)
+
+### 2. Signal Accuracy
+
+- Are signals from the correct vocabulary? (stale, act_soon, quick_win, vague, misprioritized, review)
+- Is "stale" applied to tasks sitting 3+ weeks with no progress?
+- Is "act_soon" applied only for real consequences (P3-4 deadline, filing window), NOT routine P0-2 overdue?
+- Is "quick_win" applied to small, concrete tasks doable in under 10 minutes?
+- Is "vague" applied only when the title is genuinely unclear AND notes don't clarify?
+- Is "misprioritized" applied when priority clearly doesn't match content?
+- Do 60-70% of tasks have NO signals?
+
+### 3. Commentary Quality
+
+- Is commentary specific, concise, and grounded in task data?
+- Does it reference concrete details (task age, due date, notes content)?
+- Is the tone direct and useful, not corporate-speak?
+- For low-scoring tasks, is commentary brief and positive?
+
+### 4. No Hallucination
+
+- Do all task_ids exist in the input?
+- Are dates, ages, and facts accurate?
+- Is no narrative fabricated about task history?
+
+### 5. Completeness
+
+- Does every input task appear in the output?
+
+### 6. Signal Restraint
+
+- Do most tasks (60-70%) have NO signals?
+- Does no task have more than 2 signals?
+
+---
+
 ## Scoring Scale
 
 | Score | Description                                                                                                  |

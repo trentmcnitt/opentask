@@ -182,6 +182,22 @@ function runMigrations(database: Database.Database): void {
     database.exec("ALTER TABLE users ADD COLUMN morning_time TEXT NOT NULL DEFAULT '09:00'")
   }
 
+  // Migration: Add ai_context to users
+  if (!hasColumn('users', 'ai_context')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_context TEXT')
+  }
+
+  // Migration: Add AI preference columns to users
+  if (!hasColumn('users', 'ai_mode')) {
+    database.exec("ALTER TABLE users ADD COLUMN ai_mode TEXT NOT NULL DEFAULT 'bubble'")
+  }
+  if (!hasColumn('users', 'ai_show_scores')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_show_scores INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn('users', 'ai_show_signals')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_show_signals INTEGER NOT NULL DEFAULT 1')
+  }
+
   // Migration: Rename snoozed_from to original_due_at
   if (hasColumn('tasks', 'snoozed_from') && !hasColumn('tasks', 'original_due_at')) {
     database.exec('ALTER TABLE tasks RENAME COLUMN snoozed_from TO original_due_at')

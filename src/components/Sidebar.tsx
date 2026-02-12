@@ -2,16 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  History,
-  Archive,
-  Trash2,
-  Settings,
-  Circle,
-  Plus,
-  Sparkles,
-} from 'lucide-react'
+import { LayoutDashboard, History, Archive, Trash2, Settings, Circle, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
@@ -40,7 +31,6 @@ export function Sidebar({ projects = [], onAddClick, onReorderProjects }: Sideba
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/review', label: 'AI Review', icon: Sparkles },
     { href: '/history', label: 'History', icon: History },
   ]
 

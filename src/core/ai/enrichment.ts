@@ -319,10 +319,10 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 async function enrichTask(row: PendingTaskRow): Promise<void> {
   const db = getDb()
 
-  // Get user's timezone for date conversion
-  const user = db.prepare('SELECT id, timezone FROM users WHERE id = ?').get(row.user_id) as
-    | { id: number; timezone: string }
-    | undefined
+  // Get user's timezone and AI context for date conversion and personalization
+  const user = db
+    .prepare('SELECT id, timezone, ai_context FROM users WHERE id = ?')
+    .get(row.user_id) as { id: number; timezone: string; ai_context: string | null } | undefined
   if (!user) {
     throw new Error(`User ${row.user_id} not found`)
   }
@@ -342,13 +342,15 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
   // Legacy tasks with null original_title fall back to current title.
   const textToEnrich = row.original_title || row.title
 
+  const userContextBlock = user.ai_context ? `\nUser context: ${user.ai_context}\n` : ''
+
   const prompt = `## Context
 
 User's timezone: ${user.timezone}
 Current UTC time: ${nowUtc()}
 
 Available projects:
-${projectList}
+${projectList}${userContextBlock}
 
 ## Task to parse
 

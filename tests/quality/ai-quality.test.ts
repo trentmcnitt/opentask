@@ -22,6 +22,7 @@ import type {
   AITestScenario,
   EnrichmentInput,
   BubbleInput,
+  ReviewInput,
   ScenarioOutput,
   RunSummary,
 } from './types'
@@ -116,7 +117,7 @@ afterAll(() => {
   LAYER 1 COMPLETE — LAYER 2 VALIDATION REQUIRED
 ======================================================================
 
-  Feature:   all (enrichment, bubble)
+  Feature:   all (enrichment, bubble, review)
   Model:     ${summary.model}
   Generated: ${generated}/${summary.total} outputs (${errors} errors)
   Duration:  ${durationSeconds}s total
@@ -177,6 +178,20 @@ describe('AI Quality — Layer 1', () => {
       })
     }
   })
+
+  // -------------------------------------------------------------------------
+  // Review scenarios
+  // -------------------------------------------------------------------------
+
+  describe('Review', () => {
+    const reviewTests = allScenarios.filter((s) => s.feature === 'review')
+
+    for (const scenario of reviewTests) {
+      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+        await runScenario(scenario)
+      })
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -215,6 +230,9 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
         break
       case 'bubble':
         ;({ output, durationMs } = await runBubble(scenario.input as BubbleInput))
+        break
+      case 'review':
+        ;({ output, durationMs } = await runReview(scenario.input as ReviewInput))
         break
     }
 
@@ -283,6 +301,8 @@ async function runEnrichment(
     .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
     .join('\n')
 
+  const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
+
   const prompt = `${ENRICHMENT_SYSTEM_PROMPT}
 
 ## Context
@@ -291,7 +311,7 @@ User's timezone: ${input.timezone}
 Current UTC time: ${new Date().toISOString()}
 
 Available projects:
-${projectList}
+${projectList}${userContextBlock}
 
 ## Task to parse
 
@@ -365,12 +385,14 @@ async function runBubble(
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
+  const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
+
   const prompt = `${BUBBLE_SYSTEM_PROMPT}
 
 ## Context
 
 Current time: ${currentTime}
-Total active tasks: ${input.tasks.length}
+Total active tasks: ${input.tasks.length}${userContextBlock}
 
 ## Tasks
 
@@ -410,6 +432,103 @@ Analyze these tasks and surface 3-7 that are easy to overlook but deserve attent
   }
 
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
+}
+
+async function runReview(
+  input: ReviewInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { REVIEW_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
+  const { aiQuery } = await import('@/core/ai/sdk')
+  const { ReviewBatchResultSchema } = await import('@/core/ai/types')
+  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { z } = await import('zod')
+  const { DateTime } = await import('luxon')
+
+  const now = DateTime.now().setZone(input.timezone)
+  const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
+
+  const formatLocal = (iso: string) =>
+    DateTime.fromISO(iso, { zone: 'utc' }).setZone(input.timezone).toFormat('ccc, LLL d, h:mm a')
+
+  const formatAge = (iso: string) => {
+    const dt = DateTime.fromISO(iso, { zone: 'utc' })
+    const days = Math.floor(now.diff(dt, 'days').days)
+    if (days <= 0) return 'today'
+    if (days === 1) return '1 day ago'
+    if (days < 7) return `${days} days ago`
+    const weeks = Math.floor(days / 7)
+    if (days < 30) return `${weeks} week${weeks > 1 ? 's' : ''} ago`
+    const months = Math.floor(days / 30)
+    return `${months} month${months > 1 ? 's' : ''} ago`
+  }
+
+  const taskLines = input.tasks
+    .map((t) => {
+      const due = t.due_at ? formatLocal(t.due_at) : 'none'
+      const originalDue =
+        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
+          ? ` (originally due: ${formatLocal(t.original_due_at)})`
+          : ''
+      const created = formatLocal(t.created_at)
+      const createdAge = formatAge(t.created_at)
+      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
+      const recMode =
+        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
+      const notes = t.notes ? ` | notes: ${t.notes}` : ''
+      return (
+        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
+        `created: ${created} (${createdAge}) | labels: ${t.labels.join(', ') || 'none'} | ` +
+        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
+      )
+    })
+    .join('\n')
+
+  const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
+
+  const prompt = `${REVIEW_SYSTEM_PROMPT}
+
+## Context
+
+Current time: ${currentTime}
+Total tasks in full list: ${input.tasks.length}
+Tasks in this batch: ${input.tasks.length}${userContextBlock}
+
+## Tasks
+
+${taskLines}
+
+Score every task in this batch. Return a JSON array with one entry per task.`
+
+  const jsonSchema = z.toJSONSchema(ReviewBatchResultSchema)
+
+  const result = await aiQuery({
+    prompt,
+    outputSchema: jsonSchema,
+    model: process.env.OPENTASK_AI_REVIEW_MODEL || 'haiku',
+    maxTurns: 1,
+    userId: QUALITY_TEST_USER_ID,
+    action: 'quality_test_review',
+    inputText: `${input.tasks.length} tasks`,
+  })
+
+  const parsed = parseAIResponse(result, ReviewBatchResultSchema, 'Review', (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    const arr = Array.isArray(json) ? json : json.tasks
+    if (!Array.isArray(arr)) return null
+    const attempt = ReviewBatchResultSchema.safeParse(arr)
+    return attempt.success ? attempt.data : null
+  })
+
+  if (!parsed) {
+    throw new Error(`Review query failed: ${result.error || 'Could not parse output'}`)
+  }
+
+  // Wrap the array in an object for consistent output handling
+  return {
+    output: { items: parsed } as unknown as Record<string, unknown>,
+    durationMs: result.durationMs,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +620,9 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     case 'bubble':
       validateBubbleSchema(scenario.id, output)
       break
+    case 'review':
+      validateReviewSchema(scenario.id, output, scenario.input as ReviewInput)
+      break
   }
 }
 
@@ -578,6 +700,55 @@ function validateBubbleSchema(id: string, output: Record<string, unknown>): void
   }
 }
 
+function validateReviewSchema(
+  id: string,
+  output: Record<string, unknown>,
+  input: ReviewInput,
+): void {
+  const items = output.items as Array<Record<string, unknown>>
+  if (!Array.isArray(items)) {
+    throw new Error(`[${id}] items must be an array`)
+  }
+
+  const inputTaskIds = new Set(input.tasks.map((t) => t.id))
+  const VALID_SIGNALS = ['review', 'stale', 'act_soon', 'quick_win', 'vague', 'misprioritized']
+
+  for (const item of items) {
+    if (typeof item.task_id !== 'number') {
+      throw new Error(`[${id}] each item must have a numeric task_id`)
+    }
+    if (!inputTaskIds.has(item.task_id)) {
+      throw new Error(`[${id}] task_id ${item.task_id} was not in the input task list`)
+    }
+    if (typeof item.score !== 'number' || item.score < 0 || item.score > 100) {
+      throw new Error(`[${id}] task ${item.task_id}: score must be 0-100, got ${item.score}`)
+    }
+    if (typeof item.commentary !== 'string' || item.commentary.length === 0) {
+      throw new Error(`[${id}] task ${item.task_id}: commentary must be a non-empty string`)
+    }
+    if (Array.isArray(item.signals)) {
+      if (item.signals.length > 2) {
+        throw new Error(
+          `[${id}] task ${item.task_id}: max 2 signals allowed, got ${item.signals.length}`,
+        )
+      }
+      for (const sig of item.signals as string[]) {
+        if (!VALID_SIGNALS.includes(sig)) {
+          throw new Error(`[${id}] task ${item.task_id}: invalid signal "${sig}"`)
+        }
+      }
+    }
+  }
+
+  // Every input task should have a result
+  const outputTaskIds = new Set(items.map((i) => i.task_id))
+  for (const inputId of inputTaskIds) {
+    if (!outputTaskIds.has(inputId)) {
+      throw new Error(`[${id}] input task ${inputId} is missing from the output`)
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -588,6 +759,8 @@ function getModelForFeature(feature: string): string {
       return process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
     case 'bubble':
       return process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku'
+    case 'review':
+      return process.env.OPENTASK_AI_REVIEW_MODEL || 'haiku'
     default:
       return 'haiku'
   }
