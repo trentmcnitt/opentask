@@ -90,8 +90,8 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        auto_snooze_minutes, labels, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_snooze_minutes, labels, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -109,6 +109,7 @@ export function createTask(options: CreateTaskOptions): Task {
         anchorDom,
         input.auto_snooze_minutes ?? null,
         labelsJson,
+        input.notes ?? null,
         now,
         now,
       )
@@ -126,7 +127,7 @@ export function createTask(options: CreateTaskOptions): Task {
     const snapshot = createTaskSnapshot(
       { id: taskId }, // before_state is essentially empty
       task,
-      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels'],
+      ['id', 'title', 'project_id', 'due_at', 'rrule', 'priority', 'labels', 'notes'],
     )
 
     logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])

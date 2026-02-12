@@ -148,24 +148,6 @@ export default function TaskDetailPage() {
   // Keep handleSaveAndLeave's undo ref in sync with the shared handler
   handleUndoRef.current = actions.handleUndo
 
-  const handleNotesSave = async (value: string | null) => {
-    if (!task) return
-
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: value }),
-      })
-      if (!res.ok) throw new Error('Failed to update notes')
-
-      const data = await res.json()
-      setTask(data.data as Task)
-    } catch {
-      fetchTask()
-    }
-  }
-
   const handleDelete = async () => {
     if (!task) return
     try {
@@ -276,7 +258,6 @@ export default function TaskDetailPage() {
             onDelete={handleDelete}
             onMarkDone={actions.handleDone}
             onDirtyChange={handleDirtyChange}
-            onNotesSave={handleNotesSave}
             saveRef={saveRef}
             onSaveAll={actions.handleSaveAllChanges}
             annotation={annotationMap.get(task.id)}

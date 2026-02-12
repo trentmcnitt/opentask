@@ -60,3 +60,20 @@ The AI saw `recurring: yes/no` but not the actual rrule pattern (daily vs monthl
 6. **Added 3 new quality scenarios** testing overdue/deadline distinction: high-priority real deadline, low-priority deferral pattern, and mixed priorities with from_completion
 
 **Rationale:** The previous approach treated all overdue tasks the same way, but OpenTask's auto-snooze model means most "overdue" tasks are just in their notification cycle. By giving the AI the full picture (rrule pattern, notes, recurrence mode) and explicit guidance on deadline semantics, the Bubble can produce more nuanced and useful commentary.
+
+---
+
+### Bubble Prompt Rewrite — Behavioral Model & Grounding
+
+**Problem:** The Bubble AI fabricated claims like "deferred twice" because it saw `original_due_at` and `due_at` for P0-2 tasks and invented narratives about what happened between those dates. For P0-2, this gap is pure bulk-snooze noise — users tap the snooze-all button 10+ times per day. The behavioral model was buried in the middle of the prompt, and there were no explicit grounding constraints telling the AI what it could and couldn't conclude from its data. The validator prompt also referenced "snooze count" which the AI never sees.
+
+**Solution:**
+
+1. **Removed `original_due_at` from P0-2 task lines** — the AI now only sees this for P3-4 tasks where due date changes were deliberate. For P0-2, it uses `created_at` as the age signal (reliable, never changes).
+2. **Restructured the prompt** — moved the behavioral model ("How OpenTask works") to the very top, before any surfacing instructions. LLMs weight early content more heavily.
+3. **Added explicit grounding rules** — "You CAN state: ..." / "You CANNOT state: ..." lists that prevent the AI from fabricating counts, implying intentional deferral for P0-2, or narrating paths between dates.
+4. **Fixed the example** — removed `(originally due: ...)` from P0-2 example tasks, changed commentary to age-based ("on your list for 3 weeks"), removed "keeps getting deferred" from summary.
+5. **Fixed the validator prompt** — removed all "snooze count" references, added "Factual Grounding" criterion.
+6. **Updated scenario quality_notes** — expectations now require age-based commentary (from `created_at`) instead of deferral-based commentary for P0-2 tasks.
+
+**Key insight:** The prompt should only reference data the AI actually receives. Mentioning data the AI doesn't see (even to say "don't use it") primes it to try to infer that data from other signals. The cleanest fix is to remove the problematic data from the input entirely for P0-2 tasks, and structure the prompt so the behavioral model comes first.

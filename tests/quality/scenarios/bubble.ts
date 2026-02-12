@@ -447,13 +447,13 @@ export const bubbleScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'MUST surface tasks 300, 301, 302. All are low priority (0-1) and overdue, but the interesting ' +
-        'story is NOT that they are overdue — it is the deferral pattern. ' +
-        'ID 300: originally due Jan 10, deferred ~1 month to Feb 8. ' +
-        'ID 301: originally due Jan 15, deferred ~3 weeks to Feb 7. ' +
-        'ID 302: originally due Jan 18, deferred ~3 weeks to Feb 9. ' +
-        'Commentary MUST focus on age/lingering/deferral (e.g., "been deferred for a month"), ' +
-        'NOT on "X hours overdue." The deferral gap (original_due_at vs current due_at) is the signal.',
+        'MUST surface tasks 300, 301, 302. All are low priority (0-1) and have been on the list for weeks. ' +
+        'ID 300: created Jan 5, priority 0 — on the list for over a month. ' +
+        'ID 301: created Jan 12, priority 1 — on the list for nearly a month. ' +
+        'ID 302: created Jan 15, priority 0 — on the list for nearly a month. ' +
+        'Commentary MUST focus on task age (how long since created_at), ' +
+        'NOT on "X hours overdue" or deferral patterns. ' +
+        'The AI does not see original_due_at for P0-2 tasks and must not reference deferral gaps.',
     },
   },
   {
@@ -529,11 +529,11 @@ export const bubbleScenarios: AITestScenario[] = [
         'MUST surface all three key tasks (400, 401, 402) with DIFFERENT commentary styles: ' +
         'ID 400 (priority 3, insurance claim): Must treat the deadline as real and consequential. ' +
         'Should reference notes (7-day filing window, claim #WD-9921). This is urgent. ' +
-        'ID 401 (priority 0, email inbox): Must focus on deferral pattern (originally due Jan 18, ' +
-        'deferred 3 weeks). NOT "X hours overdue." ' +
+        'ID 401 (priority 0, email inbox): Must focus on task age (created Jan 15, nearly a month ' +
+        'on the list). NOT "X hours overdue" or deferral patterns — original_due_at is not shown for P0-2. ' +
         'ID 402 (recurring from_completion, water plants): Must recognize that from_completion + overdue ' +
         'means the plants literally need watering — the task waits for completion before advancing. ' +
-        'Three different overdue situations requiring three different kinds of commentary.',
+        'Three different situations requiring three different kinds of commentary.',
     },
   },
 ]
