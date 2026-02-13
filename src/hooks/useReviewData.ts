@@ -37,6 +37,8 @@ export interface UseReviewDataReturn {
   activeSignals: SignalDef[]
   /** Whether any review results exist */
   hasResults: boolean
+  /** True when all tasks fit in a single AI call (no incremental progress) */
+  singleCall: boolean
   /** Start or refresh review generation */
   generate: () => Promise<void>
   /** Fetch cached results without generating */
@@ -58,6 +60,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
   const [progress, setProgress] = useState(0)
   const [totalTasks, setTotalTasks] = useState(0)
   const [completedTasks, setCompletedTasks] = useState(0)
+  const [singleCall, setSingleCall] = useState(false)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -136,6 +139,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
       }
 
       setTotalTasks(data.total_tasks)
+      setSingleCall(!!data.single_call)
       startPolling(data.session_id)
     } catch {
       setGenerating(false)
@@ -200,6 +204,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     progress,
     totalTasks,
     completedTasks,
+    singleCall,
     annotationMap,
     reviewScoreMap,
     reviewSignalMap,

@@ -15,6 +15,8 @@ export interface UseAiInsightsReturn {
   loading: boolean
   /** e.g. "2h ago" */
   freshnessText: string | null
+  /** Raw ISO timestamp from generation, for tooltip display */
+  generatedAt: string | null
   hasData: boolean
   refresh: () => void
 }
@@ -34,7 +36,9 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
   const hasFetched = useRef(false)
 
   const fetchRecommendations = useCallback(async (refresh = false) => {
-    setLoading(true)
+    // Only show loading indicator for manual refreshes — the initial mount fetch
+    // reads cached data from the DB (zero AI processing), so no spinner needed.
+    if (refresh) setLoading(true)
     try {
       const url = refresh ? '/api/ai/bubble?refresh=true' : '/api/ai/bubble'
       const res = await fetch(url)
@@ -47,7 +51,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     } catch {
       // Silent failure
     } finally {
-      setLoading(false)
+      if (refresh) setLoading(false)
     }
   }, [])
 
@@ -89,6 +93,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     summary,
     loading,
     freshnessText,
+    generatedAt: data?.generated_at || null,
     hasData,
     refresh,
   }

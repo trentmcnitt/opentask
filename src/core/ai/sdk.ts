@@ -65,6 +65,8 @@ export interface AIQueryOptions {
   action: string
   /** Raw input text for activity logging */
   inputText?: string
+  /** Per-call timeout in ms. Overrides OPENTASK_AI_QUERY_TIMEOUT_MS when provided. */
+  timeoutMs?: number
 }
 
 export interface AIQueryResult {
@@ -94,14 +96,23 @@ const DEFAULT_QUERY_TIMEOUT_MS = 60_000
  */
 
 export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
-  const { prompt, outputSchema, model, maxTurns = 3, userId, taskId, action, inputText } = options
+  const {
+    prompt,
+    outputSchema,
+    model,
+    maxTurns = 3,
+    userId,
+    taskId,
+    action,
+    inputText,
+    timeoutMs: perCallTimeout,
+  } = options
 
   const resolvedModel = model || 'haiku'
   const startTime = Date.now()
-  const timeoutMs = parseInt(
-    process.env.OPENTASK_AI_QUERY_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS),
-    10,
-  )
+  const timeoutMs =
+    perCallTimeout ??
+    parseInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS), 10)
 
   let timedOut = false
 

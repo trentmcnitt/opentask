@@ -91,8 +91,8 @@ interface TaskListProps {
   aiScoreDisabled?: boolean
   /** When true, hides the built-in sort dropdown (caller renders it externally) */
   hideSortControl?: boolean
-  /** When true, suppresses the blue AI-highlight background on task cards */
-  suppressAiHighlight?: boolean
+  /** Map of taskId -> review commentary text (shown as indigo Lightbulb annotation) */
+  reviewCommentaryMap?: Map<number, string>
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -221,7 +221,7 @@ export function TaskList({
   showAiReview: showAiReviewProp,
   aiScoreDisabled: aiScoreDisabledProp,
   hideSortControl = false,
-  suppressAiHighlight = false,
+  reviewCommentaryMap,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -395,10 +395,11 @@ export function TaskList({
                           onActivate={onActivate ? () => onActivate(task.id) : undefined}
                           onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                           annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
-                          isAiHighlighted={!suppressAiHighlight && annotationMap?.has(task.id)}
+                          isAiHighlighted={annotationMap?.has(task.id)}
                           onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
                           reviewScore={reviewScoreMap?.get(task.id)}
                           reviewSignals={reviewSignalMap?.get(task.id)}
+                          reviewCommentary={reviewCommentaryMap?.get(task.id)}
                         />
                       </SwipeableRow>
                     )

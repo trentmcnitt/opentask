@@ -182,6 +182,17 @@ For each scenario:
 - Do most tasks (60-70%) have NO signals?
 - Does no task have more than 2 signals?
 
+### 7. Large-List Specific (50+ task scenarios)
+
+For scenarios with 50+ tasks, evaluate these additional criteria:
+
+- **Score distribution**: Are scores meaningfully spread? Scores should not cluster around a single value. There should be clear differentiation between well-organized tasks (0-29), borderline tasks (30-60), and attention-needed tasks (70+).
+- **Anchor task accuracy**: For scenarios with anchor tasks (IDs 9001+), do the anchor tasks receive appropriate scores and signals as described in the requirements? These are hand-crafted to have obvious expected outcomes.
+- **Cross-task calibration**: Do similar tasks receive similar scores? A P0 task created 3 months ago should score comparably to another P0 task created 3 months ago, regardless of their position in the list.
+- **Signal restraint at scale**: With 50+ tasks, signal restraint becomes more important. The AI should not over-signal just because there are many tasks. At least 50% of tasks should have zero signals.
+- **Commentary consistency**: Is commentary quality maintained across the full list? Early and late tasks in the output should both get specific, grounded commentary — not generic filler.
+- **Chunked consistency** (for `review-large-chunked` only): If the scenario used the production chunking code path, check that anchor tasks were scored consistently despite being split across chunks. Score variance of ±15 points from the single-call scenario is acceptable for anchor tasks.
+
 ---
 
 ## Scoring Scale
@@ -243,6 +254,12 @@ For the `layer2-summary.md`, use:
 | ...      | ...   | ...  | ...         |
 
 ### Bubble
+
+| Scenario | Score | Pass | Key Finding |
+| -------- | ----- | ---- | ----------- |
+| ...      | ...   | ...  | ...         |
+
+### Review
 
 | Scenario | Score | Pass | Key Finding |
 | -------- | ----- | ---- | ----------- |

@@ -14,6 +14,7 @@ import { enrichmentVoiceScenarios } from './enrichment-voice'
 import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { bubbleScenarios } from './bubble'
 import { reviewScenarios } from './review'
+import { reviewLargeScenarios } from './review-large'
 
 export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentCoreScenarios,
@@ -28,6 +29,7 @@ export const allScenarios: AITestScenario[] = [
   ...enrichmentScenarios,
   ...bubbleScenarios,
   ...reviewScenarios,
+  ...reviewLargeScenarios,
 ]
 
-export { bubbleScenarios, reviewScenarios }
+export { bubbleScenarios, reviewScenarios, reviewLargeScenarios }

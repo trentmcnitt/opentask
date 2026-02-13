@@ -10,6 +10,7 @@ import {
   Clock,
   Eye,
   HelpCircle,
+  Lightbulb,
   RefreshCw,
   Repeat,
   Sparkles,
@@ -98,6 +99,8 @@ interface TaskRowProps {
   reviewScore?: number
   /** AI review signal keys — only shown on the review page */
   reviewSignals?: string[]
+  /** Per-task review commentary (from AI review) — shown as indigo text with Lightbulb icon */
+  reviewCommentary?: string
 }
 
 /** Signal icon + color mapping for AI review indicators */
@@ -171,6 +174,7 @@ export function TaskRow({
   onReprocess,
   reviewScore,
   reviewSignals,
+  reviewCommentary,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -506,6 +510,13 @@ export function TaskRow({
           <p className="mt-0.5 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
             <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {annotation}
+          </p>
+        )}
+
+        {reviewCommentary && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-indigo-600/80 dark:text-indigo-400/80">
+            <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
+            {reviewCommentary}
           </p>
         )}
 

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useCallback } from 'react'
-import { Loader2, Sparkles, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
@@ -30,19 +30,16 @@ function getSignalRingClass(key: string): string {
  * Filter bar layout adapts based on AI mode:
  *
  * Off mode:
- *   Row 1: date filter chips — horizontal scroll
+ *   Row 1: date filter chips — horizontal scroll + X
  *   Row 2: Priority chips | label chips — wraps
  *
- * Bubble mode:
- *   Row 1: AI chip (toggle + count) | date filter chips — horizontal scroll
- *   Row 2: Priority chips | label chips — wraps
+ * On mode:
+ *   AI Row:  [Bubble 6] [Review 6] [Stale 4] [Quick Win 1]    ← scrollable
+ *            ─────────────────────────────────────────────      ← subtle border
+ *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                   ← scrollable + X
+ *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...         ← wrapping
  *
- * Insight mode:
- *   Row 0: Signal chips (All, Review, Stale, ...) — horizontal scroll
- *   Row 1: date filter chips — horizontal scroll
- *   Row 2: Priority chips | label chips — wraps
- *
- * Clear-all X button anchors to the top-right, spanning the full container height.
+ * Clear-all X button stays on the date filter row (it clears everything including AI filters).
  */
 export function FilterBar({
   tasks,
@@ -62,12 +59,12 @@ export function FilterBar({
   aiFilterActive = false,
   aiFilterLoading = false,
   onToggleAiFilter,
-  // Insight signal chips
+  // Signal chips (visible when AI on + showSignals + data)
+  showSignals = false,
   signalChips,
   selectedSignals = [],
   onSignalClick,
   onSignalLongPress,
-  totalResultCount,
 }: {
   tasks: Task[]
   selectedPriorities: number[]
@@ -86,12 +83,12 @@ export function FilterBar({
   aiFilterActive?: boolean
   aiFilterLoading?: boolean
   onToggleAiFilter?: () => void
-  // Insight mode signal chips
+  // Signal chips (visible when AI on + showSignals + data)
+  showSignals?: boolean
   signalChips?: { key: string; label: string; count: number; description: string }[]
   selectedSignals?: string[]
   onSignalClick?: (key: string, e: React.MouseEvent) => void
   onSignalLongPress?: (key: string) => void
-  totalResultCount?: number
 }) {
   const hasLabels = tasks.some((t) => t.labels.length > 0)
 
@@ -113,10 +110,10 @@ export function FilterBar({
   if (tasks.length === 0) return null
 
   const aiChipVisible =
-    aiMode === 'bubble' && onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0
+    aiMode !== 'off' && onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0
   const signalRowVisible =
-    aiMode === 'insight' && signalChips && signalChips.length > 0 && onSignalClick
-  const row1Visible = aiChipVisible || dateFilterVisible
+    aiMode !== 'off' && showSignals && signalChips && signalChips.length > 0 && onSignalClick
+  const aiRowVisible = aiChipVisible || signalRowVisible
 
   const hasSelection =
     selectedPriorities.length > 0 ||
@@ -128,48 +125,64 @@ export function FilterBar({
   return (
     <div className="relative mb-4">
       <div className="flex flex-col gap-2">
-        {/* Row 0 (Insight mode only): Signal filter chips */}
-        {signalRowVisible && (
-          <div className="scrollbar-hide flex items-center gap-1.5 overflow-x-auto">
-            <SignalChipRow
-              chips={signalChips!}
-              selectedSignals={selectedSignals}
-              onClick={onSignalClick!}
-              onLongPress={onSignalLongPress}
-              totalCount={totalResultCount ?? 0}
-            />
+        {/* AI Row: Bubble chip + signal chips — scrollable, visually separated from standard filters */}
+        {aiRowVisible && (
+          <div className="border-border/40 border-b pb-2">
+            <div className="relative">
+              <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto pr-8">
+                {aiChipVisible && (
+                  <AiChip
+                    active={aiFilterActive}
+                    loading={aiFilterLoading}
+                    count={aiInsightsCount!}
+                    onToggleFilter={onToggleAiFilter!}
+                  />
+                )}
+
+                {aiChipVisible && signalRowVisible && (
+                  <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+                )}
+
+                {signalRowVisible && (
+                  <SignalChipRow
+                    chips={signalChips!}
+                    selectedSignals={selectedSignals}
+                    onClick={onSignalClick!}
+                    onLongPress={onSignalLongPress}
+                  />
+                )}
+              </div>
+
+              {/* Clear-all X on AI row when date filter row is not visible */}
+              {hasSelection && !dateFilterVisible && (
+                <div className="from-background pointer-events-none absolute top-0 right-0 flex h-full items-center bg-gradient-to-l from-50% to-transparent pl-4">
+                  <button
+                    onClick={onClearAll}
+                    className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
+                    aria-label="Clear all filters"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Row 1: AI chip (bubble) + date filters — horizontal scroll */}
-        {row1Visible && (
+        {/* Row 1: date filter chips — horizontal scroll + clear-all X */}
+        {dateFilterVisible && (
           <div className="relative">
             <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto pr-8">
-              {aiChipVisible && (
-                <AiChip
-                  active={aiFilterActive}
-                  loading={aiFilterLoading}
-                  count={aiInsightsCount!}
-                  onToggleFilter={onToggleAiFilter!}
-                />
-              )}
-
-              {aiChipVisible && dateFilterVisible && (
-                <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
-              )}
-
-              {dateFilterVisible && (
-                <DueDateFilterBar
-                  tasks={tasks}
-                  selectedDateFilters={selectedDateFilters}
-                  onToggleDateFilter={onToggleDateFilter!}
-                  timezone={timezone!}
-                  onExclusiveDateFilter={onExclusiveDateFilter}
-                />
-              )}
+              <DueDateFilterBar
+                tasks={tasks}
+                selectedDateFilters={selectedDateFilters}
+                onToggleDateFilter={onToggleDateFilter!}
+                timezone={timezone!}
+                onExclusiveDateFilter={onExclusiveDateFilter}
+              />
             </div>
 
-            {/* Clear-all X anchored to scroll row */}
+            {/* Clear-all X anchored to date filter row */}
             {hasSelection && (
               <div className="from-background pointer-events-none absolute top-0 right-0 flex h-full items-center bg-gradient-to-l from-50% to-transparent pl-4">
                 <button
@@ -229,11 +242,11 @@ function AiChip({
         'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         active
           ? 'bg-blue-600 text-white'
-          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
+          : 'bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900',
       )}
     >
-      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-      AI
+      {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+      Bubble
       <span className="opacity-60">{count}</span>
     </button>
   )
@@ -241,35 +254,21 @@ function AiChip({
 
 /**
  * Signal chip row for Insight mode. Colored chips with multi-select and
- * Cmd+click exclusive select. An "All (N)" chip clears the signal filter.
+ * Cmd+click exclusive select. Click a selected signal again to deselect.
  */
 function SignalChipRow({
   chips,
   selectedSignals,
   onClick,
   onLongPress,
-  totalCount,
 }: {
   chips: { key: string; label: string; count: number; description: string }[]
   selectedSignals: string[]
   onClick: (key: string, e: React.MouseEvent) => void
   onLongPress?: (key: string) => void
-  totalCount: number
 }) {
   return (
     <>
-      {/* "All" chip — clears signal filter */}
-      <button
-        onClick={(e) => onClick('__clear_all__', e)}
-        className={cn(
-          'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-          selectedSignals.length === 0
-            ? 'bg-foreground text-background'
-            : 'bg-muted text-muted-foreground hover:bg-muted/80',
-        )}
-      >
-        All ({totalCount})
-      </button>
       {chips.map((chip) => {
         const isSelected = selectedSignals.includes(chip.key)
         const sig = SIGNAL_ICONS[chip.key]
@@ -350,7 +349,7 @@ function SignalChipButton({
       }}
       onPointerLeave={cancel}
       className={cn(
-        'flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+        'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         isSelected
           ? cn(sig?.bg, sig?.text, 'ring-2', getSignalRingClass(chipKey))
           : cn(sig?.bg, sig?.text, 'opacity-60 hover:opacity-80'),

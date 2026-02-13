@@ -14,7 +14,7 @@ import { log } from '@/lib/logger'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project'] as const
-const VALID_AI_MODES = ['off', 'bubble', 'insight'] as const
+const VALID_AI_MODES = ['off', 'on'] as const
 
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     const db = getDb()
     const row = db
       .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals FROM users WHERE id = ?',
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary FROM users WHERE id = ?',
       )
       .get(user.id) as
       | {
@@ -71,6 +71,8 @@ export async function GET(request: NextRequest) {
           ai_mode: string
           ai_show_scores: number
           ai_show_signals: number
+          ai_show_bubble_text: number
+          ai_show_commentary: number
         }
       | undefined
 
@@ -86,9 +88,11 @@ export async function GET(request: NextRequest) {
       default_snooze_option: row?.default_snooze_option ?? '60',
       morning_time: row?.morning_time ?? '09:00',
       ai_context: row?.ai_context ?? null,
-      ai_mode: row?.ai_mode ?? 'bubble',
+      ai_mode: row?.ai_mode ?? 'on',
       ai_show_scores: row?.ai_show_scores !== 0,
       ai_show_signals: row?.ai_show_signals !== 0,
+      ai_show_bubble_text: row?.ai_show_bubble_text !== 0,
+      ai_show_commentary: row?.ai_show_commentary !== 0,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -228,7 +232,7 @@ function validateAiFields(
 
   if (body.ai_mode !== undefined) {
     if (!VALID_AI_MODES.includes(body.ai_mode as (typeof VALID_AI_MODES)[number]))
-      return 'ai_mode must be "off", "bubble", or "insight"'
+      return 'ai_mode must be "off" or "on"'
     updates.push('ai_mode = ?')
     params.push(body.ai_mode)
   }
@@ -243,6 +247,19 @@ function validateAiFields(
     if (typeof body.ai_show_signals !== 'boolean') return 'ai_show_signals must be a boolean'
     updates.push('ai_show_signals = ?')
     params.push(body.ai_show_signals ? 1 : 0)
+  }
+
+  if (body.ai_show_bubble_text !== undefined) {
+    if (typeof body.ai_show_bubble_text !== 'boolean')
+      return 'ai_show_bubble_text must be a boolean'
+    updates.push('ai_show_bubble_text = ?')
+    params.push(body.ai_show_bubble_text ? 1 : 0)
+  }
+
+  if (body.ai_show_commentary !== undefined) {
+    if (typeof body.ai_show_commentary !== 'boolean') return 'ai_show_commentary must be a boolean'
+    updates.push('ai_show_commentary = ?')
+    params.push(body.ai_show_commentary ? 1 : 0)
   }
 
   return null
@@ -268,7 +285,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -281,6 +298,8 @@ interface PreferencesRow {
   ai_mode: string
   ai_show_scores: number
   ai_show_signals: number
+  ai_show_bubble_text: number
+  ai_show_commentary: number
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -296,6 +315,8 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
+    ai_show_bubble_text: row.ai_show_bubble_text !== 0,
+    ai_show_commentary: row.ai_show_commentary !== 0,
   }
 }
 

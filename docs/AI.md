@@ -381,21 +381,36 @@ After Layer 1 completes, it prints instructions to stdout. The evaluating agent 
 
 For each scenario, the evaluator writes a `validation.md` with a score (0-10), pass/fail, and per-criterion results. A `layer2-summary.md` summarizes the full run.
 
+### Testing philosophy
+
+Production has essentially no feedback loop for AI quality — no user ratings, no A/B testing, no telemetry on output quality. The quality test suite is the _only_ mechanism for measuring and maintaining AI output quality. This means:
+
+- **Coverage = quality.** If a pattern isn't tested, assume it doesn't work correctly. Scenarios must cover the full range of real-world inputs: dictation artifacts (Siri homophones, garbled speech, run-togethers), edge cases, ambiguous phrasing, and every field combination.
+- **Both layers are necessary.** Layer 1 catches structural regressions (broken JSON, missing fields, schema violations). Layer 2 catches quality regressions (wrong scores, bad commentary, misapplied signals). Skipping Layer 2 means shipping blind.
+- **Realism is non-negotiable.** The task generator produces task lists with realistic distributions: semantic labels (not random), dictation artifact titles (~3-5%), notes on 10-15% of tasks, snoozed tasks with `due_at !== original_due_at`, diverse time-of-day ranges, and full life-domain coverage. Sanitized, uniform test data gives false confidence.
+- **`review_expectations` enforce hard rules.** Machine-checkable score ranges and signal checks catch deterministic regressions automatically in Layer 1. `quality_notes` capture the subjective expectations for Layer 2. Both are needed — expectations catch the easy regressions, quality notes catch the nuanced ones.
+- **Signal restraint is a core quality metric.** 60-70% of tasks should receive zero signals. Over-signaling is as bad as under-signaling — it makes the signal noise, not information. The `min_zero_signal_pct` expectation enforces this.
+- **When to add scenarios:** Any new AI behavior, any prompt change, any new signal or scoring rule. Untested behavior is unverified behavior. Run both layers on ALL scenarios after changes, not just new ones.
+
 ### Scenario organization
 
 Scenarios live in `tests/quality/scenarios/`, organized by category:
 
-| File                       | Category                                      | Count |
-| -------------------------- | --------------------------------------------- | ----- |
-| `enrichment-core.ts`       | Core enrichment (title, date, priority, etc.) | 30    |
-| `enrichment-labels.ts`     | Explicit-only label extraction                | 10    |
-| `enrichment-dictation.ts`  | Dictation realism and typo tolerance          | 10    |
-| `enrichment-recurrence.ts` | Expanded recurrence patterns                  | 10    |
-| `enrichment-voice.ts`      | Voice preservation                            | 8     |
-| `enrichment-edge.ts`       | Edge cases                                    | 8     |
-| `bubble.ts`                | Bubble recommendations                        | 7     |
-| `review.ts`                | AI Review scoring and signals                 | 10    |
-| `index.ts`                 | Barrel export                                 | —     |
+| File                        | Category                                             | Count |
+| --------------------------- | ---------------------------------------------------- | ----- |
+| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)        | 30    |
+| `enrichment-labels.ts`      | Explicit-only label extraction                       | 10    |
+| `enrichment-dictation.ts`   | Dictation realism and typo tolerance                 | 10    |
+| `enrichment-recurrence.ts`  | Expanded recurrence patterns                         | 10    |
+| `enrichment-voice.ts`       | Voice preservation                                   | 8     |
+| `enrichment-edge.ts`        | Edge cases                                           | 8     |
+| `bubble.ts`                 | Bubble recommendations                               | 7     |
+| `review.ts`                 | AI Review scoring and signals                        | 10    |
+| `review-large.ts`           | Large-scale review (50-600 tasks, production)        | 3     |
+| `helpers/generate-tasks.ts` | Realistic task list generator (used by review-large) | —     |
+| `index.ts`                  | Barrel export                                        | —     |
+
+**Total: 96 scenarios** (76 enrichment + 7 bubble + 13 review)
 
 Each scenario defines:
 
@@ -415,7 +430,7 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | File                                | Purpose                                            |
 | ----------------------------------- | -------------------------------------------------- |
 | `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
-| `tests/quality/scenarios/`          | Test scenario definitions (94 scenarios)           |
+| `tests/quality/scenarios/`          | Test scenario definitions (96 scenarios)           |
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |

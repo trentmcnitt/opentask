@@ -25,6 +25,7 @@ export default defineConfig({
     // logging doesn't depend on the dev database existing
     env: {
       OPENTASK_DB_PATH: path.resolve(__dirname, 'data', 'test-quality.db'),
+      OPENTASK_AI_ENABLED: 'true',
     },
   },
   resolve: {

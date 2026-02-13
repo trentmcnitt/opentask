@@ -156,6 +156,16 @@
   animation: ai-processing 2s ease-in-out infinite;
 }
 
+/* Indeterminate progress bar shimmer for single-call AI review */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
 /* Safe area insets for mobile */
 @supports (padding: max(0px)) {
   .safe-bottom {
