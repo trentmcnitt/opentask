@@ -155,7 +155,7 @@ describe('startReviewGeneration', () => {
     expect(session!.total_tasks).toBe(1)
   })
 
-  test('clears old results before starting', () => {
+  test('preserves old results during generation and cleans up stale on completion', async () => {
     // Create a task row for the FK constraint, then insert a fake old result
     const db = getDb()
     db.prepare(
@@ -173,10 +173,16 @@ describe('startReviewGeneration', () => {
     const tasks = makeTasks(1)
     startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
-    // Old results should be cleared (even before AI completes)
-    const { results } = getReviewResults(TEST_USER_ID)
-    const oldResult = results.find((r) => r.task_id === 999)
-    expect(oldResult).toBeUndefined()
+    // Old results are preserved during generation (not wiped upfront)
+    const { results: immediateResults } = getReviewResults(TEST_USER_ID)
+    expect(immediateResults.find((r) => r.task_id === 999)).toBeDefined()
+
+    // After generation completes, stale results (task 999 not in new batch) are cleaned up
+    await vi.waitFor(() => {
+      const { results } = getReviewResults(TEST_USER_ID)
+      const oldResult = results.find((r) => r.task_id === 999)
+      expect(oldResult).toBeUndefined()
+    })
   })
 })
 

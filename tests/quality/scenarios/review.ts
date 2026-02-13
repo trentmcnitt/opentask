@@ -392,7 +392,7 @@ export const reviewScenarios: AITestScenario[] = [
         {
           id: 31,
           title: 'RSVP to company holiday party',
-          priority: 0,
+          priority: 3,
           due_at: '2026-02-12T22:00:00Z',
           original_due_at: '2026-02-12T22:00:00Z',
           created_at: '2026-02-01T16:00:00Z',
@@ -480,7 +480,7 @@ export const reviewScenarios: AITestScenario[] = [
       quality_notes:
         'This scenario is designed to trigger multiple signal types. Expected signals: ' +
         'ID 30 (old clothes, created Oct 1): "stale" — sitting for 4+ months. ' +
-        'ID 31 (RSVP, deadline Feb 12): "act_soon" — deadline in 3 days, time-sensitive. ' +
+        'ID 31 (RSVP, P3, deadline Feb 12): "act_soon" — P3 deadline in 3 days, time-sensitive. ' +
         'ID 32 (unsubscribe): "quick_win" — small task, easy to knock out. ' +
         'ID 33 ("Thing", no details): "vague" — completely unclear what this task requires. ' +
         'ID 34 (whole house P4, moderate scope): "misprioritized" — P4/Urgent for a house cleaning task is probably wrong. ' +

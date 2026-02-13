@@ -16,7 +16,8 @@ import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
-import { REVIEW_SYSTEM_PROMPT } from './prompts'
+import { REVIEW_SYSTEM_PROMPT, REVIEW_REMINDERS } from './prompts'
+import { formatTaskLine, getScheduleBlock } from './format'
 import { ReviewBatchResultSchema } from './types'
 import type { ReviewItem, ReviewSignalKey, TaskSummary } from './types'
 import { log } from '@/lib/logger'
@@ -174,49 +175,6 @@ const SINGLE_CALL_THRESHOLD = 500
 const REVIEW_TIMEOUT_MS = 300_000
 
 /**
- * Format a task as a human-readable line for the review prompt.
- * Same format as bubble.ts for consistency.
- */
-export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
-  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
-  const originalDue =
-    t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
-      ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
-      : ''
-  const created = formatLocalDate(t.created_at, timezone)
-  const createdAge = formatAge(t.created_at, now)
-  const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
-  const recMode = t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
-  const notes = t.notes ? ` | notes: ${t.notes}` : ''
-  return (
-    `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
-    `created: ${created} (${createdAge}) | labels: ${t.labels.join(', ') || 'none'} | ` +
-    `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
-  )
-}
-
-function formatLocalDate(isoUtc: string, timezone: string): string {
-  const dt = DateTime.fromISO(isoUtc, { zone: 'utc' }).setZone(timezone)
-  return dt.toFormat('ccc, LLL d, h:mm a')
-}
-
-/**
- * Pre-compute a human-readable age string from a UTC timestamp.
- * Prevents the AI from miscounting task age (a common hallucination).
- */
-export function formatAge(isoUtc: string, now: DateTime): string {
-  const dt = DateTime.fromISO(isoUtc, { zone: 'utc' })
-  const days = Math.floor(now.diff(dt, 'days').days)
-  if (days <= 0) return 'today'
-  if (days === 1) return '1 day ago'
-  if (days < 7) return `${days} days ago`
-  const weeks = Math.floor(days / 7)
-  if (days < 30) return `${weeks} week${weeks > 1 ? 's' : ''} ago`
-  const months = Math.floor(days / 30)
-  return `${months} month${months > 1 ? 's' : ''} ago`
-}
-
-/**
  * Fisher-Yates shuffle — returns a new array in random order.
  */
 function shuffleArray<T>(arr: T[]): T[] {
@@ -295,19 +253,19 @@ export async function generateReviewForUser(
   timezone: string,
   tasks: TaskSummary[],
   userContext?: string | null,
+  source?: 'scheduled' | 'on-demand',
 ): Promise<void> {
   const sessionId = uuid()
   const now = nowUtc()
   const db = getDb()
 
-  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(userId)
   db.prepare(
     `INSERT INTO ai_review_sessions (id, user_id, status, total_tasks, completed, started_at)
      VALUES (?, ?, 'running', ?, 0, ?)`,
   ).run(sessionId, userId, tasks.length, now)
 
   try {
-    await processReviewChunks(sessionId, userId, timezone, tasks, userContext)
+    await processReviewChunks(sessionId, userId, timezone, tasks, userContext, source)
   } catch (err) {
     log.error('ai', 'Review generation failed:', err)
     db.prepare(
@@ -329,14 +287,12 @@ export function startReviewGeneration(
   timezone: string,
   tasks: TaskSummary[],
   userContext?: string | null,
+  source?: 'scheduled' | 'on-demand',
 ): { sessionId: string; totalTasks: number; singleCall: boolean } {
   const sessionId = uuid()
   const now = nowUtc()
   const db = getDb()
   const singleCall = tasks.length <= SINGLE_CALL_THRESHOLD
-
-  // Clear old results for this user
-  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(userId)
 
   // Create session
   db.prepare(
@@ -345,7 +301,7 @@ export function startReviewGeneration(
   ).run(sessionId, userId, tasks.length, now)
 
   // Start processing in background (fire-and-forget)
-  processReviewChunks(sessionId, userId, timezone, tasks, userContext).catch((err) => {
+  processReviewChunks(sessionId, userId, timezone, tasks, userContext, source).catch((err) => {
     log.error('ai', 'Review generation failed:', err)
     db.prepare(
       `UPDATE ai_review_sessions SET status = 'failed', error = ?, finished_at = ?
@@ -369,12 +325,17 @@ async function processReviewChunks(
   timezone: string,
   tasks: TaskSummary[],
   userContext?: string | null,
+  source?: 'scheduled' | 'on-demand',
 ): Promise<void> {
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
   const jsonSchema = z.toJSONSchema(ReviewBatchResultSchema)
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  const scheduleBlock = getScheduleBlock(userId)
+
+  const sourceBlock = source === 'scheduled' ? '\nThis is an automated review run.\n' : ''
 
   // Build chunks: single call for small lists, shuffled equal chunks for large ones
   let chunks: TaskSummary[][]
@@ -414,13 +375,14 @@ ${summaryBlock}
 ## Context
 
 Current time: ${currentTime}
-${contextBlock}${userContextBlock}
-
-## Tasks
-
+${contextBlock}${scheduleBlock}${sourceBlock}${userContextBlock}
+<tasks>
 ${taskLines}
+</tasks>
 
-Score every task below. Return a JSON array with one entry per task.`
+${REVIEW_REMINDERS}
+Current time: ${currentTime}
+Score every task above. Return a JSON array with one entry per task.`
 
     const inputLabel =
       chunks.length === 1
@@ -475,11 +437,24 @@ Score every task below. Return a JSON array with one entry per task.`
     )
   }
 
-  // Mark session complete
-  db.prepare(
-    `UPDATE ai_review_sessions SET status = 'complete', completed = ?, finished_at = ?
-     WHERE id = ?`,
-  ).run(processedCount, nowUtc(), sessionId)
+  // Mark session complete. The AND status = 'running' guard ensures cleanup only
+  // runs if this session is still valid (not deleted or superseded by another run).
+  const updateResult = db
+    .prepare(
+      `UPDATE ai_review_sessions SET status = 'complete', completed = ?, finished_at = ?
+       WHERE id = ? AND status = 'running'`,
+    )
+    .run(processedCount, nowUtc(), sessionId)
+
+  // Clean up stale results (tasks no longer in the active list) only on successful
+  // completion. Old results are preserved during generation so failures don't wipe data.
+  if (updateResult.changes > 0 && tasks.length > 0) {
+    const allTaskIds = tasks.map((t) => t.id)
+    const placeholders = allTaskIds.map(() => '?').join(',')
+    db.prepare(
+      `DELETE FROM ai_review_results WHERE user_id = ? AND task_id NOT IN (${placeholders})`,
+    ).run(userId, ...allTaskIds)
+  }
 }
 
 /**

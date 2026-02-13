@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
       taskSummaries,
       aiContext,
       bubbleModel,
+      'on-demand',
     )
 
     if (!result) {

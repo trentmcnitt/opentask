@@ -1,9 +1,9 @@
 /**
  * Bubble AI recommendations
  *
- * Surfaces tasks that would be easily overlooked — social obligations,
- * old lingering tasks, idle tasks, and things without hard deadlines
- * that would become regrets. Replaces the previous "What's Next?" feature.
+ * Helps the user decide what to focus on next — surfacing tasks that
+ * deserve attention, things that are easy to forget, and opportunities
+ * to make meaningful progress.
  *
  * Uses per-query subprocess (not the warm enrichment slot) because it runs
  * infrequently (3 AM cron + on-demand refresh). Cache persists in ai_activity_log.
@@ -12,7 +12,8 @@
 import { nowUtc } from '@/core/recurrence'
 import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
-import { BUBBLE_SYSTEM_PROMPT } from './prompts'
+import { BUBBLE_SYSTEM_PROMPT, BUBBLE_REMINDERS } from './prompts'
+import { formatTaskLine, getScheduleBlock } from './format'
 import { BubbleResultSchema } from './types'
 import type { BubbleResult, TaskSummary } from './types'
 import { logAIActivity, getAIActivity } from './activity'
@@ -23,7 +24,7 @@ import { DateTime } from 'luxon'
  * Generate Bubble recommendations for a user.
  *
  * Sends a summary of the user's active tasks to AI and returns
- * tasks that are easy to overlook with reasons + summary.
+ * tasks that deserve attention with reasons + summary.
  * Caches the result in ai_activity_log for same-day retrieval.
  */
 export async function generateBubble(
@@ -33,6 +34,8 @@ export async function generateBubble(
   userContext?: string | null,
   /** Override model for this call. Used by the API route to pass the user's preference. */
   modelOverride?: string,
+  /** Whether this is a scheduled cron run or an on-demand user request. */
+  source?: 'scheduled' | 'on-demand',
 ): Promise<BubbleResult | null> {
   if (tasks.length === 0) {
     return {
@@ -53,44 +56,32 @@ export async function generateBubble(
   }
 
   const now = DateTime.now().setZone(timezone)
-  const taskList = relevantTasks
-    .map((t) => {
-      const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
-      // Only show original_due_at for P3-4 tasks where due date changes are deliberate.
-      // For P0-2, the gap between original and current due_at is bulk-snooze noise.
-      const originalDue =
-        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
-          ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`
-          : ''
-      const created = formatLocalDate(t.created_at, timezone)
-      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
-      const recMode =
-        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
-      const notes = t.notes ? ` | notes: ${t.notes}` : ''
-      return (
-        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
-        `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
-      )
-    })
-    .join('\n')
+  const taskList = relevantTasks.map((t) => formatTaskLine(t, timezone, now)).join('\n')
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  const scheduleBlock = getScheduleBlock(userId)
+
+  const sourceBlock =
+    source === 'scheduled'
+      ? '\nThis is an automated briefing. Focus on what the user should have on their radar for the day ahead.\n'
+      : '\nThe user is actively looking for what to do next. Focus on what is actionable right now.\n'
 
   const prompt = `${BUBBLE_SYSTEM_PROMPT}
 
 ## Context
 
 Current time: ${currentTime}
-Total active tasks: ${tasks.length}${userContextBlock}
-
-## Tasks
-
+Total active tasks: ${tasks.length}${scheduleBlock}${sourceBlock}${userContextBlock}
+<tasks>
 ${taskList}
+</tasks>
 
-Analyze these tasks and surface 3-7 that are easy to overlook but deserve attention.`
+${BUBBLE_REMINDERS}
+Current time: ${currentTime}
+Surface 3-7 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(BubbleResultSchema)
 
@@ -181,15 +172,6 @@ export function getCachedBubble(userId: number): BubbleResult | null {
   }
 
   return null
-}
-
-/**
- * Format an ISO UTC date as human-readable local time for the AI prompt.
- * Example: "Mon, Feb 9, 4:00 PM"
- */
-function formatLocalDate(isoUtc: string, timezone: string): string {
-  const dt = DateTime.fromISO(isoUtc, { zone: 'utc' }).setZone(timezone)
-  return dt.toFormat('ccc, LLL d, h:mm a')
 }
 
 /**

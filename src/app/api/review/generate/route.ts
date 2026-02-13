@@ -7,9 +7,13 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { isAIEnabled, getUserAiContext } from '@/core/ai'
-import { buildTaskSummaries } from '@/core/ai'
-import { startReviewGeneration, getActiveReviewSession } from '@/core/ai'
+import {
+  isAIEnabled,
+  getUserAiContext,
+  buildTaskSummaries,
+  startReviewGeneration,
+  getActiveReviewSession,
+} from '@/core/ai'
 import { success, unauthorized, badRequest, conflict, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
@@ -42,6 +46,7 @@ export async function POST(request: NextRequest) {
       user.timezone,
       tasks,
       aiContext,
+      'on-demand',
     )
 
     return success({ session_id: sessionId, total_tasks: totalTasks, single_call: singleCall })

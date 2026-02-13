@@ -34,6 +34,7 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { formatMorningTime } from '@/lib/snooze'
 import { isAIEnabled } from './sdk'
+import { ENRICHMENT_REMINDERS } from './prompts'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
@@ -360,10 +361,12 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
   const formattedWake = formatMorningTime(user.wake_time)
   const formattedSleep = formatMorningTime(user.sleep_time)
 
+  const currentUtcTime = nowUtc()
+
   const prompt = `## Context
 
 User's timezone: ${user.timezone}
-Current UTC time: ${nowUtc()}
+Current UTC time: ${currentUtcTime}
 
 User's schedule:
 - Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
@@ -380,11 +383,13 @@ When resolving time-of-day language:
 Available projects:
 ${projectList}${userContextBlock}
 
-## Task to parse
+<task>
+${textToEnrich}
+</task>
 
-"${textToEnrich}"
-
-Parse this task and return the structured result.`
+${ENRICHMENT_REMINDERS}
+User's timezone: ${user.timezone} | Current UTC time: ${currentUtcTime}
+Parse the task above and return the structured result.`
 
   const result = await enrichmentQuery(prompt, {
     userId: row.user_id,

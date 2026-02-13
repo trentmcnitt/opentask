@@ -57,15 +57,15 @@ export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
 /**
  * Bubble recommendation schema.
  *
- * Surfaces tasks that would be easily overlooked — not just urgent/overdue items,
- * but things like social obligations, tasks sitting idle, and things that don't
- * have hard deadlines but would become regrets.
+ * Helps the user decide what to focus on next — surfacing tasks that
+ * deserve attention, are easy to forget, or represent opportunities
+ * to make meaningful progress.
  */
 export const BubbleResultSchema = z.object({
   tasks: z.array(
     z.object({
       task_id: z.number().describe('ID of the surfaced task'),
-      reason: z.string().describe('Why this task was surfaced — what makes it easy to overlook'),
+      reason: z.string().describe('Why this task deserves attention right now'),
     }),
   ),
   summary: z
@@ -83,7 +83,7 @@ export type BubbleResult = z.infer<typeof BubbleResultSchema>
  * Includes only the fields AI needs to make decisions.
  *
  * Dates are stored as ISO UTC here and converted to human-readable
- * local time when building the prompt (see bubble.ts).
+ * local time when building the prompt (see format.ts).
  */
 export interface TaskSummary {
   id: number

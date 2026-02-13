@@ -39,6 +39,8 @@ export interface UseReviewDataReturn {
   hasResults: boolean
   /** True when all tasks fit in a single AI call (no incremental progress) */
   singleCall: boolean
+  /** Error message from the last failed generation attempt, cleared on next generate() */
+  error: string | null
   /** Start or refresh review generation */
   generate: () => Promise<void>
   /** Fetch cached results without generating */
@@ -61,6 +63,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
   const [totalTasks, setTotalTasks] = useState(0)
   const [completedTasks, setCompletedTasks] = useState(0)
   const [singleCall, setSingleCall] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -100,6 +103,9 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
             if (pollRef.current) clearInterval(pollRef.current)
             pollRef.current = null
             setGenerating(false)
+            if (data.status === 'failed') {
+              setError(data.error || 'Insights generation failed')
+            }
             await fetchResults()
           }
         } catch {
@@ -122,11 +128,13 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     setGenerating(true)
     setProgress(0)
     setCompletedTasks(0)
+    setError(null)
 
     try {
       const res = await fetch('/api/review/generate', { method: 'POST' })
       if (!res.ok) {
         setGenerating(false)
+        setError('Failed to start insights generation')
         return
       }
       const json = await res.json()
@@ -143,6 +151,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
       startPolling(data.session_id)
     } catch {
       setGenerating(false)
+      setError('Failed to start insights generation')
     }
   }, [startPolling])
 
@@ -210,6 +219,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     reviewSignalMap,
     activeSignals,
     hasResults,
+    error,
     generate,
     fetchResults,
   }

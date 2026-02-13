@@ -415,7 +415,8 @@ Parse this task and return the structured result.`
 async function runBubble(
   input: BubbleInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { BUBBLE_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
+  const { BUBBLE_SYSTEM_PROMPT, BUBBLE_REMINDERS } = await import('@/core/ai/prompts')
+  const { formatTaskLine } = await import('@/core/ai/format')
   const { aiQuery } = await import('@/core/ai/sdk')
   const { BubbleResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
@@ -424,29 +425,7 @@ async function runBubble(
   const { DateTime } = await import('luxon')
   const now = DateTime.now().setZone(input.timezone)
 
-  const formatLocal = (iso: string) =>
-    DateTime.fromISO(iso, { zone: 'utc' }).setZone(input.timezone).toFormat('ccc, LLL d, h:mm a')
-
-  const taskList = input.tasks
-    .map((t) => {
-      const due = t.due_at ? formatLocal(t.due_at) : 'none'
-      // Only show original_due_at for P3-4 (deliberate changes); P0-2 gap is bulk-snooze noise
-      const originalDue =
-        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
-          ? ` (originally due: ${formatLocal(t.original_due_at)})`
-          : ''
-      const created = formatLocal(t.created_at)
-      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
-      const recMode =
-        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
-      const notes = t.notes ? ` | notes: ${t.notes}` : ''
-      return (
-        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
-        `created: ${created} | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
-      )
-    })
-    .join('\n')
+  const taskList = input.tasks.map((t) => formatTaskLine(t, input.timezone, now)).join('\n')
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
@@ -458,12 +437,13 @@ async function runBubble(
 
 Current time: ${currentTime}
 Total active tasks: ${input.tasks.length}${userContextBlock}
-
-## Tasks
-
+<tasks>
 ${taskList}
+</tasks>
 
-Analyze these tasks and surface 3-7 that are easy to overlook but deserve attention.`
+${BUBBLE_REMINDERS}
+Current time: ${currentTime}
+Surface 3-7 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(BubbleResultSchema)
 
@@ -510,7 +490,8 @@ async function runReview(
   const { aiQuery } = await import('@/core/ai/sdk')
   const { ReviewBatchResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
-  const { formatTaskLine, sanitizeSignals } = await import('@/core/ai/review')
+  const { formatTaskLine } = await import('@/core/ai/format')
+  const { sanitizeSignals } = await import('@/core/ai/review')
   const { z } = await import('zod')
   const { DateTime } = await import('luxon')
 
