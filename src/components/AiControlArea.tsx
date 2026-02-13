@@ -192,12 +192,15 @@ export function AiControlArea({
             </div>
             {isActive && showInsights && (
               <div className="flex items-center gap-1.5">
-                {!reviewGenerating && reviewFreshnessText && (
-                  <FreshnessWithTooltip
-                    freshnessText={reviewFreshnessText}
-                    generatedAt={reviewGeneratedAt}
-                  />
-                )}
+                {!reviewGenerating &&
+                  (reviewFreshnessText ? (
+                    <FreshnessWithTooltip
+                      freshnessText={reviewFreshnessText}
+                      generatedAt={reviewGeneratedAt}
+                    />
+                  ) : (
+                    <span className="text-muted-foreground/50 text-[11px]">Not generated</span>
+                  ))}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -317,8 +320,10 @@ function SectionHeader({
       </span>
       {active && (
         <div className="flex items-center gap-1.5">
-          {freshnessText && (
+          {freshnessText ? (
             <FreshnessWithTooltip freshnessText={freshnessText} generatedAt={generatedAt} />
+          ) : (
+            <span className="text-muted-foreground/50 text-[11px]">Not generated</span>
           )}
           <button
             onClick={(e) => {
