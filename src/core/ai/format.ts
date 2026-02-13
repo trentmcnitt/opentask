@@ -1,7 +1,7 @@
 /**
  * Shared formatting utilities for AI prompts
  *
- * Used by Bubble, Review, and quality tests to format task data
+ * Used by What's Next, Insights, and quality tests to format task data
  * consistently for the AI model.
  */
 
@@ -37,7 +37,7 @@ export function formatAge(isoUtc: string, now: DateTime): string {
 
 /**
  * Format a task as a human-readable line for AI prompts.
- * Used by both Bubble and Review for consistent task representation.
+ * Used by both What's Next and Insights for consistent task representation.
  */
 export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
   const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'

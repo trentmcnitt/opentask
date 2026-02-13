@@ -22,7 +22,7 @@ import { log } from '@/lib/logger'
  *
  * @param result - The AIQueryResult from aiQuery()
  * @param schema - Zod schema to validate the parsed output
- * @param action - Feature name for log messages (e.g., 'enrichment', 'bubble')
+ * @param action - Feature name for log messages (e.g., 'enrichment', 'whats_next')
  * @param textFallback - Optional function to parse markdown/text output when JSON parsing fails
  */
 export function parseAIResponse<T>(

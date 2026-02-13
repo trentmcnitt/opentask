@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { formatRelativeTime } from '@/lib/quick-select-dates'
-import type { BubbleResult } from '@/core/ai/types'
+import type { WhatsNextResult } from '@/core/ai/types'
 import type { Task } from '@/types'
 
 export interface UseAiInsightsReturn {
@@ -24,16 +24,16 @@ export interface UseAiInsightsReturn {
 }
 
 /**
- * Hook that fetches AI bubble recommendations and resolves them against
- * the current task list. Replaces BubblePanel's fetch/cache logic.
+ * Hook that fetches AI What's Next recommendations and resolves them against
+ * the current task list.
  *
- * - Fetches GET /api/ai/bubble on mount (once, when tasks are available)
+ * - Fetches GET /api/ai/whats-next on mount (once, when tasks are available)
  * - Resolves task IDs against current task list (skips completed/deleted)
- * - refresh() calls /api/ai/bubble?refresh=true
+ * - refresh() calls /api/ai/whats-next?refresh=true
  * - Silent failure on 503 (AI disabled) — returns empty maps
  */
 export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
-  const [data, setData] = useState<BubbleResult | null>(null)
+  const [data, setData] = useState<WhatsNextResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasFetched = useRef(false)
@@ -46,11 +46,11 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
       setError(null)
     }
     try {
-      const url = refresh ? '/api/ai/bubble?refresh=true' : '/api/ai/bubble'
+      const url = refresh ? '/api/ai/whats-next?refresh=true' : '/api/ai/whats-next'
       const res = await fetch(url)
       if (res.status === 503) return
       if (!res.ok) {
-        if (refresh) setError('Bubble refresh failed')
+        if (refresh) setError("What's Next refresh failed")
         return
       }
       const json = await res.json()
@@ -58,7 +58,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
         setData(json.data)
       }
     } catch {
-      if (refresh) setError('Bubble refresh failed')
+      if (refresh) setError("What's Next refresh failed")
     } finally {
       if (refresh) setLoading(false)
     }
@@ -72,7 +72,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     }
   }, [tasks.length, fetchRecommendations])
 
-  // Resolve bubble task IDs against the current task list
+  // Resolve What's Next task IDs against the current task list
   const taskIdSet = useMemo(() => new Set(tasks.map((t) => t.id)), [tasks])
 
   const annotationMap = useMemo(() => {

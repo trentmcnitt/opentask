@@ -1,12 +1,12 @@
 /**
- * GET /api/review/status?session_id=X — Poll review generation progress
+ * GET /api/ai/insights/status?session_id=X — Poll insights generation progress
  *
  * Returns the session status, progress count, and percentage.
  */
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { getReviewSessionStatus } from '@/core/ai'
+import { getInsightsSessionStatus } from '@/core/ai'
 import { success, unauthorized, badRequest, notFound, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
@@ -19,9 +19,9 @@ export async function GET(request: NextRequest) {
       return badRequest('session_id query parameter is required')
     }
 
-    const session = getReviewSessionStatus(sessionId, user.id)
+    const session = getInsightsSessionStatus(sessionId, user.id)
     if (!session) {
-      return notFound('Review session not found')
+      return notFound('Insights session not found')
     }
 
     return success({
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'GET /api/review/status error:', err)
+    log.error('api', 'GET /api/ai/insights/status error:', err)
     return handleError(err)
   }
 }

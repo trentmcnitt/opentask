@@ -1,7 +1,7 @@
 /**
- * Large-list AI Review scenarios
+ * Large-list AI Insights scenarios
  *
- * Tests review quality at realistic production scale. These scenarios use
+ * Tests insights quality at realistic production scale. These scenarios use
  * the task generator to create lists of 50-600 tasks with hand-crafted
  * "anchor tasks" (IDs 9001+) whose scores and signals can be verified
  * deterministically.
@@ -185,10 +185,10 @@ const ALL_ANCHORS: TaskSummary[] = [
 
 const TIMEZONE = 'America/Chicago'
 
-export const reviewLargeScenarios: AITestScenario[] = [
+export const insightsLargeScenarios: AITestScenario[] = [
   {
-    id: 'review-medium-list',
-    feature: 'review',
+    id: 'insights-medium-list',
+    feature: 'insights',
     description:
       'Score calibration at moderate scale (~50 tasks). Verifies signal restraint holds when ' +
       'there are enough tasks for distribution to matter.',
@@ -216,14 +216,14 @@ export const reviewLargeScenarios: AITestScenario[] = [
         'P4 tasks should score 0-20 with no signals. ' +
         'Score spread should be meaningful (std dev > 10). ' +
         'This scenario validates that the AI does not over-signal at moderate scale.',
-      review_expectations: {
+      insights_expectations: {
         min_zero_signal_pct: 40,
       },
     },
   },
   {
-    id: 'review-large-realistic',
-    feature: 'review',
+    id: 'insights-large-realistic',
+    feature: 'insights',
     description:
       'Max single-call test (~400 tasks). Realistic power-user list with anchor tasks for ' +
       'deterministic checks. Core "does the AI hold up at scale" test.',
@@ -257,7 +257,7 @@ export const reviewLargeScenarios: AITestScenario[] = [
         '- 1 misprioritized anchor (9040): P4 for mundane task, should get "misprioritized" signal ' +
         'Overall: signal restraint should hold (55%+ zero signals). ' +
         'Score spread should be wide (std dev > 10).',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           9001: { min: 70, max: 100 },
           9002: { min: 70, max: 100 },
@@ -285,10 +285,10 @@ export const reviewLargeScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-large-chunked',
-    feature: 'review',
+    id: 'insights-large-chunked',
+    feature: 'insights',
     description:
-      'Multi-chunk production code path (~600 tasks). Uses startReviewGeneration + polling ' +
+      'Multi-chunk production code path (~600 tasks). Uses startInsightsGeneration + polling ' +
       'to test chunking, shuffle, calibration summary, and cross-chunk consistency.',
     input: {
       timezone: TIMEZONE,
@@ -312,13 +312,13 @@ export const reviewLargeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'Multi-chunk production code path (~600 tasks). Tests the real chunking, shuffling, ' +
-        'calibration summary, and result merging via startReviewGeneration + polling. ' +
-        'The same anchor tasks are used as in review-large-realistic. ' +
+        'calibration summary, and result merging via startInsightsGeneration + polling. ' +
+        'The same anchor tasks are used as in insights-large-realistic. ' +
         'Cross-chunk consistency: anchor task scores and signals should be similar to the ' +
         'single-call scenario, even though tasks are split across multiple chunks. ' +
         'Signal restraint should hold at 50%+ zero signals. ' +
         'P4 anchors must still score 0-20 with no signals.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           9001: { min: 60, max: 100 },
           9002: { min: 60, max: 100 },

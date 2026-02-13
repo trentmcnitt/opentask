@@ -16,13 +16,13 @@ export function getUserAiContext(userId: number): string | null {
 }
 
 /**
- * Get the user's preferred model for on-demand Bubble generation.
+ * Get the user's preferred model for on-demand What's Next generation.
  * Defaults to 'haiku' (fast) if not set.
  */
-export function getUserBubbleModel(userId: number): string {
+export function getUserWhatsNextModel(userId: number): string {
   const db = getDb()
-  const row = db.prepare('SELECT ai_bubble_model FROM users WHERE id = ?').get(userId) as
-    | { ai_bubble_model: string | null }
+  const row = db.prepare('SELECT ai_whats_next_model FROM users WHERE id = ?').get(userId) as
+    | { ai_whats_next_model: string | null }
     | undefined
-  return row?.ai_bubble_model ?? 'haiku'
+  return row?.ai_whats_next_model ?? 'haiku'
 }

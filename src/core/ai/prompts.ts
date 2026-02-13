@@ -237,7 +237,7 @@ Timezone: America/Chicago
 \`\`\``
 
 /**
- * System prompt for Bubble recommendations.
+ * System prompt for What's Next recommendations.
  *
  * Helps the user decide what to focus on next — surfacing tasks that
  * deserve attention, things that are easy to forget, and opportunities
@@ -252,7 +252,7 @@ Timezone: America/Chicago
  */
 
 /**
- * Shared sections used by both Bubble and Review prompts.
+ * Shared sections used by both What's Next and Insights prompts.
  * Extracted so the behavioral model and grounding rules stay in sync.
  */
 const SHARED_BEHAVIORAL_MODEL = `## How OpenTask works
@@ -283,7 +283,7 @@ You cannot state:
 2. That a P0-2 task was deliberately "deferred" or "pushed back" — you have no due date history for these tasks
 3. Any count, frequency, or narrative not directly derivable from the data you see`
 
-export const BUBBLE_SYSTEM_PROMPT = `You are a task awareness assistant for OpenTask. Your job is to help the user decide what to focus on next — surfacing tasks that deserve attention, things that are easy to forget, and opportunities to make meaningful progress.
+export const WHATS_NEXT_SYSTEM_PROMPT = `You are a task awareness assistant for OpenTask. Your job is to help the user decide what to focus on next — surfacing tasks that deserve attention, things that are easy to forget, and opportunities to make meaningful progress.
 
 ${SHARED_BEHAVIORAL_MODEL}
 
@@ -375,18 +375,18 @@ Notes:
 - Task 88: commentary references the notes field with the filing window detail.`
 
 /**
- * REVIEW_SYSTEM_PROMPT — scores every task 0-100 and assigns optional signals.
+ * INSIGHTS_SYSTEM_PROMPT — scores every task 0-100 and assigns optional signals.
  *
- * Used for the AI Review screen, which processes the entire task list in batches.
- * Unlike Bubble (which surfaces 3-7 tasks to focus on next), Review gives commentary on
+ * Used for the AI Insights screen, which processes the entire task list in batches.
+ * Unlike What's Next (which surfaces 3-7 tasks to focus on next), Insights gives commentary on
  * every task and ranks them by how much attention they need.
  *
  * Key design decisions:
  * - Score philosophy: P4 due today = LOW score (already visible), old forgotten P0 = HIGH score
  * - Signals are from a preset vocabulary (6 types), AI assigns 0-2 per task
- * - Shares the same behavioral model and grounding rules as Bubble
+ * - Shares the same behavioral model and grounding rules as What's Next
  */
-export const REVIEW_SYSTEM_PROMPT = `You are a task review assistant for OpenTask. Score each task 0-100 based on how much it needs the user's attention right now.
+export const INSIGHTS_SYSTEM_PROMPT = `You are a task review assistant for OpenTask. Score each task 0-100 based on how much it needs the user's attention right now.
 
 IMPORTANT: "Attention needed" is the OPPOSITE of conventional urgency. Tasks the user already sees and will handle (urgent, due today, high priority) need LOW scores. Tasks the user has forgotten about or might never revisit need HIGH scores. Your job is to surface what falls through the cracks, not echo the priority system.
 
@@ -541,7 +541,7 @@ Key points:
  * data block.
  */
 
-export const BUBBLE_REMINDERS = `## Reminders
+export const WHATS_NEXT_REMINDERS = `## Reminders
 - Do NOT surface daily recurring tasks (FREQ=DAILY)
 - P4/Urgent: skip if on track, but surface if overdue for days or notes have time-sensitive details
 - Pick 2-8 tasks — output valid JSON only (no text outside the JSON object)
@@ -549,7 +549,7 @@ export const BUBBLE_REMINDERS = `## Reminders
 - For P0-2, due dates are reminders — being "overdue" is routine, not urgent
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)`
 
-export const REVIEW_REMINDERS = `## Reminders
+export const INSIGHTS_REMINDERS = `## Reminders
 - P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
 - stale → ONLY for tasks 21+ days old (never under 21 days)
 - act_soon → ONLY for P3-4 with consequence within 7 days (never P0-2)

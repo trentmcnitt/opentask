@@ -1,13 +1,13 @@
 /**
- * GET /api/review/results — Get cached AI review results
+ * GET /api/ai/insights/results — Get cached AI insights results
  *
- * Returns all review results for the authenticated user, sorted by score desc.
+ * Returns all insights results for the authenticated user, sorted by score desc.
  * Includes signal_counts for filter chip rendering.
  */
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { getReviewResults, REVIEW_SIGNALS } from '@/core/ai'
+import { getInsightsResults, INSIGHTS_SIGNALS } from '@/core/ai'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
@@ -15,13 +15,13 @@ export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
 
-    const { results, generatedAt, signalCounts } = getReviewResults(user.id)
+    const { results, generatedAt, signalCounts } = getInsightsResults(user.id)
 
     return success({
       results,
       generated_at: generatedAt,
       signal_counts: signalCounts,
-      signals: REVIEW_SIGNALS.map((s) => ({
+      signals: INSIGHTS_SIGNALS.map((s) => ({
         key: s.key,
         label: s.label,
         color: s.color,
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'GET /api/review/results error:', err)
+    log.error('api', 'GET /api/ai/insights/results error:', err)
     return handleError(err)
   }
 }

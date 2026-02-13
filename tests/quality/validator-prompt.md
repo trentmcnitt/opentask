@@ -95,7 +95,7 @@ For each scenario:
 
 ---
 
-## Bubble Evaluation Criteria
+## What's Next Evaluation Criteria
 
 ### 1. Task Selection
 
@@ -138,7 +138,7 @@ For each scenario:
 
 ---
 
-## Review Evaluation Criteria
+## Insights Evaluation Criteria
 
 ### 1. Score Reasonableness
 
@@ -253,13 +253,13 @@ For the `layer2-summary.md`, use:
 | -------- | ----- | ---- | ----------- |
 | ...      | ...   | ...  | ...         |
 
-### Bubble
+### What's Next
 
 | Scenario | Score | Pass | Key Finding |
 | -------- | ----- | ---- | ----------- |
 | ...      | ...   | ...  | ...         |
 
-### Review
+### Insights
 
 | Scenario | Score | Pass | Key Finding |
 | -------- | ----- | ---- | ----------- |

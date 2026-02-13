@@ -31,14 +31,15 @@ export interface AIStatusData {
 
 const ACTION_LABELS: Record<string, string> = {
   enrich: 'Enrichment',
-  bubble: 'Bubble',
   whats_next: "What's Next",
+  insights: 'Insights',
 }
 
 const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'enrich', label: 'Enrichment' },
-  { value: 'bubble', label: 'Bubble' },
+  { value: 'whats_next', label: "What's Next" },
+  { value: 'insights', label: 'Insights' },
 ]
 
 interface AIStatusContentProps {

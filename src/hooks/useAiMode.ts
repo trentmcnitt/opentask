@@ -12,8 +12,8 @@ export interface UseAiModeReturn {
   setShowScores: (show: boolean) => void
   showSignals: boolean
   setShowSignals: (show: boolean) => void
-  showBubbleText: boolean
-  setShowBubbleText: (show: boolean) => void
+  showWhatsNext: boolean
+  setShowWhatsNext: (show: boolean) => void
   showInsights: boolean
   setShowInsights: (show: boolean) => void
   showCommentary: boolean
@@ -30,8 +30,8 @@ function patchPreference(fields: Record<string, unknown>) {
 }
 
 /**
- * Manages AI mode toggle state (Off / Bubble / Insights), sub-feature checkboxes
- * (Scores, Signals, Bubble text, Commentary). Backed by PreferencesProvider
+ * Manages AI mode toggle state (Off / On), sub-feature checkboxes
+ * (Scores, Signals, What's Next, Commentary). Backed by PreferencesProvider
  * (server-persisted per user).
  *
  * On first load, migrates any leftover localStorage keys to the server
@@ -45,8 +45,8 @@ export function useAiMode(): UseAiModeReturn {
     setAiShowScores,
     aiShowSignals,
     setAiShowSignals,
-    aiShowBubbleText,
-    setAiShowBubbleText,
+    aiShowWhatsNext,
+    setAiShowWhatsNext,
     aiShowInsights,
     setAiShowInsights,
     aiShowCommentary,
@@ -112,12 +112,12 @@ export function useAiMode(): UseAiModeReturn {
     [setAiShowSignals],
   )
 
-  const setShowBubbleText = useCallback(
+  const setShowWhatsNext = useCallback(
     (show: boolean) => {
-      setAiShowBubbleText(show)
-      patchPreference({ ai_show_bubble_text: show })
+      setAiShowWhatsNext(show)
+      patchPreference({ ai_show_whats_next: show })
     },
-    [setAiShowBubbleText],
+    [setAiShowWhatsNext],
   )
 
   const setShowInsights = useCallback(
@@ -143,8 +143,8 @@ export function useAiMode(): UseAiModeReturn {
     setShowScores,
     showSignals: aiShowSignals,
     setShowSignals,
-    showBubbleText: aiShowBubbleText,
-    setShowBubbleText,
+    showWhatsNext: aiShowWhatsNext,
+    setShowWhatsNext,
     showInsights: aiShowInsights,
     setShowInsights,
     showCommentary: aiShowCommentary,

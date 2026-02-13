@@ -17,7 +17,7 @@ import {
   useAiContext,
   useAiPreferences,
 } from '@/components/PreferencesProvider'
-import type { BubbleModel } from '@/components/PreferencesProvider'
+import type { WhatsNextModel } from '@/components/PreferencesProvider'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
@@ -36,7 +36,7 @@ export default function SettingsPage() {
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
   const { aiContext, setAiContext } = useAiContext()
-  const { aiBubbleModel, setAiBubbleModel } = useAiPreferences()
+  const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
   const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
@@ -194,19 +194,19 @@ export default function SettingsPage() {
     }
   }
 
-  const handleBubbleModelChange = async (value: BubbleModel) => {
-    const prev = aiBubbleModel
-    setAiBubbleModel(value)
+  const handleWhatsNextModelChange = async (value: WhatsNextModel) => {
+    const prev = aiWhatsNextModel
+    setAiWhatsNextModel(value)
     try {
       const res = await fetch('/api/user/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_bubble_model: value }),
+        body: JSON.stringify({ ai_whats_next_model: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
       showToast({ message: 'Preference saved' })
     } catch {
-      setAiBubbleModel(prev)
+      setAiWhatsNextModel(prev)
       showToast({ message: 'Failed to save preference' })
     }
   }
@@ -487,7 +487,7 @@ export default function SettingsPage() {
           </h2>
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
             Help the AI understand your situation. This context is included in all AI features
-            (enrichment, bubble, review) to improve relevance.
+            (enrichment, what&apos;s next, insights) to improve relevance.
           </p>
           <Textarea
             value={aiContextDraft}
@@ -513,14 +513,14 @@ export default function SettingsPage() {
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <div>
-              <div className="text-sm">Bubble model</div>
+              <div className="text-sm">What&apos;s Next model</div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                Model for on-demand Bubble refresh. Opus is slower but more insightful.
+                Model for on-demand What&apos;s Next refresh. Opus is slower but more insightful.
               </div>
             </div>
             <select
-              value={aiBubbleModel}
-              onChange={(e) => handleBubbleModelChange(e.target.value as BubbleModel)}
+              value={aiWhatsNextModel}
+              onChange={(e) => handleWhatsNextModelChange(e.target.value as WhatsNextModel)}
               className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             >
               <option value="haiku">Haiku (fast)</option>

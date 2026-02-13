@@ -1,11 +1,11 @@
 /**
- * Realistic task list generator for AI review quality testing
+ * Realistic task list generator for AI insights quality testing
  *
  * Generates task lists at configurable scale with realistic distributions
  * of priorities, ages, projects, labels, and recurrence patterns.
  *
  * Anchor tasks (hand-crafted, injected at known IDs in the 9001+ range)
- * can be mixed in so that review_expectations can reference them by ID.
+ * can be mixed in so that insights_expectations can reference them by ID.
  *
  * Realism features:
  * - Semantic label matching (labels match task content, not random)

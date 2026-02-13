@@ -154,7 +154,7 @@ export interface QuickActionPanelProps {
    * with a single undo entry. Falls back to individual callbacks if not provided.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
-  /** AI annotation text to display (e.g., bubble recommendation reason) */
+  /** AI annotation text to display (e.g., What's Next recommendation reason) */
   annotation?: string
   /** Enables create mode — panel is used for new task creation instead of editing */
   createMode?: boolean

@@ -3,11 +3,11 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, serviceUnavailable } from '@/lib/api-response'
 import {
   isAIEnabled,
-  generateBubble,
-  getCachedBubble,
+  generateWhatsNext,
+  getCachedWhatsNext,
   buildTaskSummaries,
   getUserAiContext,
-  getUserBubbleModel,
+  getUserWhatsNextModel,
 } from '@/core/ai'
 import { log } from '@/lib/logger'
 
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     // Return cached result if available and not requesting refresh
     if (!refresh) {
-      const cached = getCachedBubble(user.id)
+      const cached = getCachedWhatsNext(user.id)
       if (cached) {
         return success(cached)
       }
@@ -34,13 +34,13 @@ export async function GET(request: NextRequest) {
     // On-demand uses the user's preferred model (default: haiku for speed)
     const taskSummaries = buildTaskSummaries(user.id)
     const aiContext = getUserAiContext(user.id)
-    const bubbleModel = getUserBubbleModel(user.id)
-    const result = await generateBubble(
+    const whatsNextModel = getUserWhatsNextModel(user.id)
+    const result = await generateWhatsNext(
       user.id,
       user.timezone,
       taskSummaries,
       aiContext,
-      bubbleModel,
+      whatsNextModel,
       'on-demand',
     )
 
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     return success(result)
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'GET /api/ai/bubble error:', err)
+    log.error('api', 'GET /api/ai/whats-next error:', err)
     return handleError(err)
   }
 }

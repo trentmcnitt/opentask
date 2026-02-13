@@ -58,7 +58,7 @@ Different features have different latency and intelligence requirements:
 | Use case                  | Model       | Why                                |
 | ------------------------- | ----------- | ---------------------------------- |
 | Task enrichment (parsing) | Haiku       | Fast, cheap, structured extraction |
-| Bubble                    | Haiku       | Infrequent, 3 AM cron + on-demand  |
+| What's Next               | Haiku       | Infrequent, 3 AM cron + on-demand  |
 | Shopping labels           | Haiku       | Simple classification              |
 | Chat sidebar              | Sonnet      | Conversational, needs reasoning    |
 | Complex analysis          | Sonnet/Opus | Needs deep understanding           |
@@ -67,7 +67,7 @@ The SDK supports per-query model selection, so each feature chooses its own mode
 
 ### Give AI the fullest picture possible
 
-Only filter things that are truly safe to filter (like tasks due far in the future). The more context AI has, the better its insights. For example, the Bubble prompt includes `rrule`, `notes`, and `recurrence_mode` — not just `recurring: yes/no` — because the pattern (daily vs monthly), the context (notes from dictation), and the advancement mode (from_due vs from_completion) all affect how the AI should interpret a task's state.
+Only filter things that are truly safe to filter (like tasks due far in the future). The more context AI has, the better its insights. For example, the What's Next prompt includes `rrule`, `notes`, and `recurrence_mode` — not just `recurring: yes/no` — because the pattern (daily vs monthly), the context (notes from dictation), and the advancement mode (from_due vs from_completion) all affect how the AI should interpret a task's state.
 
 ### AI-locked protection
 
@@ -106,7 +106,7 @@ How it works:
 5. Circuit breaker: 5 recycles in 5 seconds marks the slot as dead
 6. FIFO wait queue handles concurrent access to the single slot
 
-**2. Per-query subprocess** (`sdk.ts → aiQuery()`): For infrequent features (Bubble, shopping labels). Cold-start latency doesn't matter when nobody's waiting. Each gets its own `outputFormat` per-query.
+**2. Per-query subprocess** (`sdk.ts → aiQuery()`): For infrequent features (What's Next, shopping labels). Cold-start latency doesn't matter when nobody's waiting. Each gets its own `outputFormat` per-query.
 
 ### On-demand enrichment
 
@@ -141,7 +141,7 @@ Enrichment queries both owned and shared projects when building the project list
 
 ### Concurrent request management
 
-A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (Bubble, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
+A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (What's Next, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
 
 ---
 
@@ -160,7 +160,7 @@ src/core/ai/
 ├── message-channel.ts  — Async iterable for subprocess communication
 ├── enrichment-slot.ts  — Warm slot for enrichment (MessageChannel + consumer + lifecycle)
 ├── enrichment.ts       — Task enrichment pipeline (on-demand + safety-net cron)
-├── bubble.ts           — Bubble recommendations (surfaces overlooked tasks)
+├── whats-next.ts       — What's Next recommendations (surfaces overlooked tasks)
 ├── shopping.ts         — Shopping list label classification
 ├── purge.ts            — Activity log data retention
 ├── task-summaries.ts   — Compact task data builder for AI prompts
@@ -170,7 +170,7 @@ src/core/ai/
 ### `types.ts`
 
 - `EnrichmentResultSchema` — Zod schema for task enrichment output
-- `BubbleResultSchema` — surfaced tasks + reasons + summary
+- `WhatsNextResultSchema` — surfaced tasks + reasons + summary
 - `ShoppingLabelResultSchema` — store section + reasoning
 - `TaskSummary` — compact task representation for AI prompts
 - `AIActivityEntry` — shape of activity log rows
@@ -178,7 +178,7 @@ src/core/ai/
 ### `prompts.ts`
 
 - `ENRICHMENT_SYSTEM_PROMPT` — task parsing with transcriptionist philosophy
-- `BUBBLE_SYSTEM_PROMPT` — surface overlooked tasks (social obligations, snoozed items, idle tasks)
+- `WHATS_NEXT_SYSTEM_PROMPT` — surface overlooked tasks (social obligations, snoozed items, idle tasks)
 - `SHOPPING_LABEL_SYSTEM_PROMPT` — classify items by store section
 
 ### `message-channel.ts`
@@ -212,10 +212,10 @@ Generic async iterable that buffers messages and yields them when the SDK calls 
 - `applyEnrichment(task, result, user)` — applies changes via `withTransaction()` + `logAction()`
 - `resetStuckTasks()` — resets `'processing'` tasks to `'pending'` on startup
 
-### `bubble.ts`
+### `whats-next.ts`
 
-- `generateBubble(userId, timezone, tasks)` — surfaces overlooked tasks via per-query subprocess
-- `getCachedBubble(userId)` — returns cached result from `ai_activity_log` if generated today
+- `generateWhatsNext(userId, timezone, tasks)` — surfaces overlooked tasks via per-query subprocess
+- `getCachedWhatsNext(userId)` — returns cached result from `ai_activity_log` if generated today
 - Task selection scoring: high snooze count, no deadline, non-recurring (penalizes already-urgent tasks)
 
 ### `shopping.ts`
@@ -268,7 +268,7 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                  |
 | Enrichment slot dies           | Marked dead, queries throw error                     | Enrichment falls back to safety net |
 | Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error   |
-| Bubble cache hit               | Cached result returned immediately                   | Instant response                    |
+| What's Next cache hit          | Cached result returned immediately                   | Instant response                    |
 
 **No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway.
 
@@ -281,7 +281,7 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | Feature         | Description                                 | Model | Trigger               | Cache           |
 | --------------- | ------------------------------------------- | ----- | --------------------- | --------------- |
 | Task enrichment | Parse natural language into structured task | Haiku | Task creation (async) | —               |
-| Bubble          | Surface easily overlooked tasks             | Haiku | 3 AM cron + on-demand | ai_activity_log |
+| What's Next     | Surface easily overlooked tasks             | Haiku | 3 AM cron + on-demand | ai_activity_log |
 | Shopping labels | Auto-label items by store section           | Haiku | During enrichment     | —               |
 
 ### Considered / Deferred
@@ -294,19 +294,19 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ## Configuration
 
-| Env var                               | Default           | Description                                                        |
-| ------------------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `OPENTASK_AI_ENABLED`                 | `false`           | Master switch — all AI features disabled when false                |
-| `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku`           | Model for task enrichment                                          |
-| `OPENTASK_AI_MAX_REUSES`              | `8`               | Max queries per warm enrichment subprocess                         |
-| `OPENTASK_AI_REVIEW_MODEL`            | `claude-opus-4-6` | Model for AI Review (scoring + signals). Extended thinking enabled |
-| `OPENTASK_AI_BUBBLE_MODEL`            | `claude-opus-4-6` | Model for Bubble cron (3 AM daily). On-demand uses user pref       |
-| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku`           | Model for shopping label classification                            |
-| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000`           | Timeout for SDK queries in milliseconds                            |
-| `OPENTASK_AI_CLI_PATH`                | (auto)            | Path to Claude Code CLI executable                                 |
-| `OPENTASK_AI_MAX_CONCURRENT`          | `2`               | Maximum concurrent SDK subprocesses (per-query)                    |
-| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000`           | Maximum wait time for semaphore slot                               |
-| `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`              | Days to retain AI activity log entries                             |
+| Env var                               | Default           | Description                                                          |
+| ------------------------------------- | ----------------- | -------------------------------------------------------------------- |
+| `OPENTASK_AI_ENABLED`                 | `false`           | Master switch — all AI features disabled when false                  |
+| `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku`           | Model for task enrichment                                            |
+| `OPENTASK_AI_MAX_REUSES`              | `8`               | Max queries per warm enrichment subprocess                           |
+| `OPENTASK_AI_INSIGHTS_MODEL`          | `claude-opus-4-6` | Model for AI Insights (scoring + signals). Extended thinking enabled |
+| `OPENTASK_AI_WHATS_NEXT_MODEL`        | `claude-opus-4-6` | Model for What's Next cron (3 AM daily). On-demand uses user pref    |
+| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku`           | Model for shopping label classification                              |
+| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000`           | Timeout for SDK queries in milliseconds                              |
+| `OPENTASK_AI_CLI_PATH`                | (auto)            | Path to Claude Code CLI executable                                   |
+| `OPENTASK_AI_MAX_CONCURRENT`          | `2`               | Maximum concurrent SDK subprocesses (per-query)                      |
+| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000`           | Maximum wait time for semaphore slot                                 |
+| `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`              | Days to retain AI activity log entries                               |
 
 No API key needed — the SDK uses Claude Code's authentication on the server.
 
@@ -316,21 +316,21 @@ No API key needed — the SDK uses Claude Code's authentication on the server.
 
 Every AI operation is logged in the `ai_activity_log` table:
 
-| Column        | Type    | Description                                                |
-| ------------- | ------- | ---------------------------------------------------------- |
-| `id`          | INTEGER | Primary key                                                |
-| `user_id`     | INTEGER | Who owns the task                                          |
-| `task_id`     | INTEGER | Which task (nullable for non-task operations)              |
-| `action`      | TEXT    | Operation type: `'enrich'`, `'bubble'`, `'shopping_label'` |
-| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                        |
-| `input`       | TEXT    | Raw input (e.g., original task text)                       |
-| `output`      | TEXT    | JSON result from AI                                        |
-| `model`       | TEXT    | Which model was used                                       |
-| `duration_ms` | INTEGER | How long the query took                                    |
-| `error`       | TEXT    | Error message if failed                                    |
-| `created_at`  | TEXT    | ISO 8601 timestamp                                         |
+| Column        | Type    | Description                                                    |
+| ------------- | ------- | -------------------------------------------------------------- |
+| `id`          | INTEGER | Primary key                                                    |
+| `user_id`     | INTEGER | Who owns the task                                              |
+| `task_id`     | INTEGER | Which task (nullable for non-task operations)                  |
+| `action`      | TEXT    | Operation type: `'enrich'`, `'whats_next'`, `'shopping_label'` |
+| `status`      | TEXT    | `'success'`, `'error'`, `'skipped'`                            |
+| `input`       | TEXT    | Raw input (e.g., original task text)                           |
+| `output`      | TEXT    | JSON result from AI                                            |
+| `model`       | TEXT    | Which model was used                                           |
+| `duration_ms` | INTEGER | How long the query took                                        |
+| `error`       | TEXT    | Error message if failed                                        |
+| `created_at`  | TEXT    | ISO 8601 timestamp                                             |
 
-The Bubble feature uses this table for cache persistence.
+The What's Next feature uses this table for cache persistence.
 
 The History → AI tab shows enrichment slot status and recent activity entries for debugging and observability.
 
@@ -389,7 +389,7 @@ Production has essentially no feedback loop for AI quality — no user ratings, 
 - **Coverage = quality.** If a pattern isn't tested, assume it doesn't work correctly. Scenarios must cover the full range of real-world inputs: dictation artifacts (Siri homophones, garbled speech, run-togethers), edge cases, ambiguous phrasing, and every field combination.
 - **Both layers are necessary.** Layer 1 catches structural regressions (broken JSON, missing fields, schema violations). Layer 2 catches quality regressions (wrong scores, bad commentary, misapplied signals). Skipping Layer 2 means shipping blind.
 - **Realism is non-negotiable.** The task generator produces task lists with realistic distributions: semantic labels (not random), dictation artifact titles (~3-5%), notes on 10-15% of tasks, snoozed tasks with `due_at !== original_due_at`, diverse time-of-day ranges, and full life-domain coverage. Sanitized, uniform test data gives false confidence.
-- **`review_expectations` enforce hard rules.** Machine-checkable score ranges and signal checks catch deterministic regressions automatically in Layer 1. `quality_notes` capture the subjective expectations for Layer 2. Both are needed — expectations catch the easy regressions, quality notes catch the nuanced ones.
+- **`insights_expectations` enforce hard rules.** Machine-checkable score ranges and signal checks catch deterministic regressions automatically in Layer 1. `quality_notes` capture the subjective expectations for Layer 2. Both are needed — expectations catch the easy regressions, quality notes catch the nuanced ones.
 - **Signal restraint is a core quality metric.** 60-70% of tasks should receive zero signals. Over-signaling is as bad as under-signaling — it makes the signal noise, not information. The `min_zero_signal_pct` expectation enforces this.
 - **When to add scenarios:** Any new AI behavior, any prompt change, any new signal or scoring rule. Untested behavior is unverified behavior. Run both layers on ALL scenarios after changes, not just new ones.
 
@@ -397,26 +397,26 @@ Production has essentially no feedback loop for AI quality — no user ratings, 
 
 Scenarios live in `tests/quality/scenarios/`, organized by category:
 
-| File                        | Category                                             | Count |
-| --------------------------- | ---------------------------------------------------- | ----- |
-| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)        | 30    |
-| `enrichment-labels.ts`      | Explicit-only label extraction                       | 10    |
-| `enrichment-dictation.ts`   | Dictation realism and typo tolerance                 | 10    |
-| `enrichment-recurrence.ts`  | Expanded recurrence patterns                         | 10    |
-| `enrichment-voice.ts`       | Voice preservation                                   | 8     |
-| `enrichment-edge.ts`        | Edge cases                                           | 8     |
-| `bubble.ts`                 | Bubble recommendations                               | 7     |
-| `review.ts`                 | AI Review scoring and signals                        | 10    |
-| `review-large.ts`           | Large-scale review (50-600 tasks, production)        | 3     |
-| `helpers/generate-tasks.ts` | Realistic task list generator (used by review-large) | —     |
-| `index.ts`                  | Barrel export                                        | —     |
+| File                        | Category                                               | Count |
+| --------------------------- | ------------------------------------------------------ | ----- |
+| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)          | 30    |
+| `enrichment-labels.ts`      | Explicit-only label extraction                         | 10    |
+| `enrichment-dictation.ts`   | Dictation realism and typo tolerance                   | 10    |
+| `enrichment-recurrence.ts`  | Expanded recurrence patterns                           | 10    |
+| `enrichment-voice.ts`       | Voice preservation                                     | 8     |
+| `enrichment-edge.ts`        | Edge cases                                             | 8     |
+| `whats-next.ts`             | What's Next recommendations                            | 8     |
+| `insights.ts`               | AI Insights scoring and signals                        | 10    |
+| `insights-large.ts`         | Large-scale insights (50-600 tasks, production)        | 3     |
+| `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
+| `index.ts`                  | Barrel export                                          | —     |
 
-**Total: 96 scenarios** (76 enrichment + 7 bubble + 13 review)
+**Total: 97 scenarios** (76 enrichment + 8 whats_next + 13 insights)
 
 Each scenario defines:
 
 - `id` — unique identifier (e.g., `enrich-garbled-dictation`)
-- `feature` — which AI feature (`enrichment`, `bubble`, `review`)
+- `feature` — which AI feature (`enrichment`, `whats_next`, `insights`)
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
 

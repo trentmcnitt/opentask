@@ -22,10 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
   ai_mode       TEXT NOT NULL DEFAULT 'on',
   ai_show_scores INTEGER NOT NULL DEFAULT 1,
   ai_show_signals INTEGER NOT NULL DEFAULT 1,
-  ai_show_bubble_text INTEGER NOT NULL DEFAULT 1,
+  ai_show_whats_next INTEGER NOT NULL DEFAULT 1,
   ai_show_insights INTEGER NOT NULL DEFAULT 1,
   ai_show_commentary INTEGER NOT NULL DEFAULT 1,
-  ai_bubble_model TEXT NOT NULL DEFAULT 'haiku',
+  ai_whats_next_model TEXT NOT NULL DEFAULT 'haiku',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -169,8 +169,8 @@ CREATE TABLE IF NOT EXISTS ai_activity_log (
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_user_id ON ai_activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_activity_log_task_id ON ai_activity_log(task_id);
 
--- AI review results (cached per-task scores, commentary, and signals from AI review)
-CREATE TABLE IF NOT EXISTS ai_review_results (
+-- AI insights results (cached per-task scores, commentary, and signals from AI insights)
+CREATE TABLE IF NOT EXISTS ai_insights_results (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id      INTEGER NOT NULL REFERENCES users(id),
   task_id      INTEGER NOT NULL REFERENCES tasks(id),
@@ -181,11 +181,11 @@ CREATE TABLE IF NOT EXISTS ai_review_results (
   UNIQUE(user_id, task_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_ai_review_results_user
-  ON ai_review_results(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_insights_results_user
+  ON ai_insights_results(user_id);
 
--- AI review sessions (tracks generation progress for polling)
-CREATE TABLE IF NOT EXISTS ai_review_sessions (
+-- AI insights sessions (tracks generation progress for polling)
+CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   id           TEXT PRIMARY KEY,
   user_id      INTEGER NOT NULL REFERENCES users(id),
   status       TEXT NOT NULL DEFAULT 'running',

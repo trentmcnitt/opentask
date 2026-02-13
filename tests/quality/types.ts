@@ -12,11 +12,11 @@ export interface AITestScenario {
   /** Unique scenario ID, e.g., "enrich-garbled-dictation" */
   id: string
   /** Which AI feature this scenario tests */
-  feature: 'enrichment' | 'bubble' | 'review'
+  feature: 'enrichment' | 'whats_next' | 'insights'
   /** Human-readable description of what this scenario tests */
   description: string
   /** Input data specific to the feature being tested */
-  input: EnrichmentInput | BubbleInput | ReviewInput
+  input: EnrichmentInput | WhatsNextInput | InsightsInput
   /** Requirements for Layer 1 structural checks and Layer 2 quality evaluation */
   requirements: ScenarioRequirements
 }
@@ -44,8 +44,8 @@ export interface ProjectInfo {
   shared: boolean
 }
 
-export interface BubbleInput {
-  /** Task list sent to bubble */
+export interface WhatsNextInput {
+  /** Task list sent to What's Next */
   tasks: TaskSummary[]
   /** User's timezone */
   timezone: string
@@ -53,14 +53,14 @@ export interface BubbleInput {
   userContext?: string
 }
 
-export interface ReviewInput {
-  /** Task list sent to review */
+export interface InsightsInput {
+  /** Task list sent to insights */
   tasks: TaskSummary[]
   /** User's timezone */
   timezone: string
   /** Optional user-provided AI context for personalization */
   userContext?: string
-  /** If true, use production processReviewChunks code path instead of direct AI call */
+  /** If true, use production processInsightsChunks code path instead of direct AI call */
   useProductionCodePath?: boolean
 }
 
@@ -71,8 +71,8 @@ export interface ScenarioRequirements {
   must_not_include?: Record<string, unknown>
   /** Guidance for the Layer 2 judge (qualitative expectations) */
   quality_notes?: string
-  /** Deterministic review checks enforced automatically in Layer 1 */
-  review_expectations?: {
+  /** Deterministic insights checks enforced automatically in Layer 1 */
+  insights_expectations?: {
     /** task_id -> { min, max } score range */
     score_ranges?: Record<number, { min: number; max: number }>
     /** task_id -> required/forbidden signals */

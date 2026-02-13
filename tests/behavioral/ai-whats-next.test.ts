@@ -1,5 +1,5 @@
 /**
- * Behavioral tests for AI Bubble recommendations
+ * Behavioral tests for AI What's Next recommendations
  *
  * Tests the recommendation logic, caching, and task selection.
  * SDK is mocked — no real AI calls.
@@ -16,7 +16,7 @@ vi.mock('@/core/ai/sdk', () => ({
   aiQuery: vi.fn(),
 }))
 
-import { generateBubble, getCachedBubble } from '@/core/ai/bubble'
+import { generateWhatsNext, getCachedWhatsNext } from '@/core/ai/whats-next'
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
 
@@ -50,13 +50,13 @@ afterAll(() => {
 
 afterEach(() => {
   mockAiQuery.mockReset()
-  // Clear cached bubble entries so tests don't leak state
-  getDb().prepare("DELETE FROM ai_activity_log WHERE action = 'bubble'").run()
+  // Clear cached whats_next entries so tests don't leak state
+  getDb().prepare("DELETE FROM ai_activity_log WHERE action = 'whats_next'").run()
 })
 
-describe('generateBubble', () => {
+describe('generateWhatsNext', () => {
   test('returns empty summary when no tasks', async () => {
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, [])
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, [])
     expect(result).not.toBeNull()
     expect(result!.tasks).toEqual([])
     expect(result!.summary).toContain('No active tasks')
@@ -79,7 +79,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     expect(result).not.toBeNull()
     expect(result!.tasks).toHaveLength(2)
@@ -105,7 +105,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(3)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     expect(result).not.toBeNull()
     expect(result!.tasks).toHaveLength(1)
@@ -122,7 +122,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(result).toBeNull()
   })
 
@@ -140,7 +140,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(result).not.toBeNull()
     expect(result!.summary).toBe('Parsed from text')
   })
@@ -163,7 +163,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(result).not.toBeNull()
     expect(result!.tasks).toHaveLength(2)
     expect(result!.tasks[0].task_id).toBe(1)
@@ -188,7 +188,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(result).not.toBeNull()
     expect(result!.tasks).toHaveLength(1)
     expect(result!.tasks[0].task_id).toBe(2)
@@ -213,7 +213,7 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(5)
-    const result = await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const result = await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
     expect(result).not.toBeNull()
     expect(result!.tasks).toHaveLength(2)
     // Extra per-task fields (title, summary) should be stripped by Zod
@@ -235,20 +235,20 @@ describe('generateBubble', () => {
     })
 
     const tasks = makeTasks(3)
-    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
-    // getCachedBubble should return the cached result
-    const cached = getCachedBubble(TEST_USER_ID)
+    // getCachedWhatsNext should return the cached result
+    const cached = getCachedWhatsNext(TEST_USER_ID)
     expect(cached).not.toBeNull()
     expect(cached!.summary).toBe('Cached')
     expect(cached!.tasks).toHaveLength(1)
   })
 })
 
-describe('getCachedBubble', () => {
+describe('getCachedWhatsNext', () => {
   test('returns null when no cached data', () => {
     // Use a user ID that has no cached data
-    const result = getCachedBubble(99999)
+    const result = getCachedWhatsNext(99999)
     expect(result).toBeNull()
   })
 })
@@ -257,19 +257,19 @@ describe('cache expiry', () => {
   test('cache expires after midnight', () => {
     vi.setSystemTime(new Date('2026-02-09T23:00:00Z'))
 
-    // Insert a cache entry from "yesterday" — getCachedBubble should ignore it
+    // Insert a cache entry from "yesterday" — getCachedWhatsNext should ignore it
     const db = getDb()
     const yesterday = '2026-02-08T22:00:00Z'
     db.prepare(
       `INSERT INTO ai_activity_log (user_id, task_id, action, status, input, output, model, duration_ms, error, created_at)
-       VALUES (?, NULL, 'bubble', 'success', NULL, ?, 'haiku', 100, NULL, ?)`,
+       VALUES (?, NULL, 'whats_next', 'success', NULL, ?, 'haiku', 100, NULL, ?)`,
     ).run(
       TEST_USER_ID,
       JSON.stringify({ tasks: [], summary: 'Old', generated_at: yesterday }),
       yesterday,
     )
 
-    const cached = getCachedBubble(TEST_USER_ID)
+    const cached = getCachedWhatsNext(TEST_USER_ID)
     expect(cached).toBeNull()
 
     vi.useRealTimers()
@@ -289,10 +289,10 @@ describe('cache expiry', () => {
     })
 
     const tasks = makeTasks(3)
-    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     // Different user should not see user 1's cache
-    const cached = getCachedBubble(99998)
+    const cached = getCachedWhatsNext(99998)
     expect(cached).toBeNull()
   })
 })

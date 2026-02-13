@@ -55,13 +55,13 @@ export const EnrichmentResultSchema = z.object({
 export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema>
 
 /**
- * Bubble recommendation schema.
+ * What's Next recommendation schema.
  *
  * Helps the user decide what to focus on next — surfacing tasks that
  * deserve attention, are easy to forget, or represent opportunities
  * to make meaningful progress.
  */
-export const BubbleResultSchema = z.object({
+export const WhatsNextResultSchema = z.object({
   tasks: z.array(
     z.object({
       task_id: z.number().describe('ID of the surfaced task'),
@@ -76,7 +76,7 @@ export const BubbleResultSchema = z.object({
   generated_at: z.string().optional().default('').describe('ISO 8601 generation timestamp'),
 })
 
-export type BubbleResult = z.infer<typeof BubbleResultSchema>
+export type WhatsNextResult = z.infer<typeof WhatsNextResultSchema>
 
 /**
  * Compact task summary for AI prompts.
@@ -101,12 +101,12 @@ export interface TaskSummary {
 }
 
 /**
- * AI review result schema.
+ * AI insights result schema.
  *
  * Each task gets a score (0-100), one-line commentary, and 0-2 signals
- * from a preset vocabulary. Used for batch review of the entire task list.
+ * from a preset vocabulary. Used for batch insights of the entire task list.
  */
-export const REVIEW_SIGNAL_KEYS = [
+export const INSIGHTS_SIGNAL_KEYS = [
   'review',
   'stale',
   'act_soon',
@@ -115,22 +115,22 @@ export const REVIEW_SIGNAL_KEYS = [
   'misprioritized',
 ] as const
 
-export type ReviewSignalKey = (typeof REVIEW_SIGNAL_KEYS)[number]
+export type InsightsSignalKey = (typeof INSIGHTS_SIGNAL_KEYS)[number]
 
-export const ReviewItemSchema = z.object({
+export const InsightsItemSchema = z.object({
   task_id: z.number().describe('ID of the reviewed task'),
   score: z.number().int().min(0).max(100).describe('0-100 attention score'),
   commentary: z.string().describe('One-line reason for the score'),
   signals: z
-    .array(z.enum(REVIEW_SIGNAL_KEYS))
+    .array(z.enum(INSIGHTS_SIGNAL_KEYS))
     .max(2)
     .default([])
     .describe('0-2 signal keys from the preset vocabulary'),
 })
 
-export const ReviewBatchResultSchema = z.array(ReviewItemSchema)
+export const InsightsBatchResultSchema = z.array(InsightsItemSchema)
 
-export type ReviewItem = z.infer<typeof ReviewItemSchema>
+export type InsightsItem = z.infer<typeof InsightsItemSchema>
 
 /**
  * Shape of rows in the ai_activity_log table.

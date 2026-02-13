@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { Task } from '@/types'
 
-export interface ReviewResultItem {
+export interface InsightsResultItem {
   task_id: number
   score: number
   commentary: string
@@ -18,8 +18,8 @@ export interface SignalDef {
   description: string
 }
 
-export interface UseReviewDataReturn {
-  results: ReviewResultItem[]
+export interface UseInsightsDataReturn {
+  results: InsightsResultItem[]
   signals: SignalDef[]
   signalCounts: Record<string, number>
   generatedAt: string | null
@@ -29,32 +29,32 @@ export interface UseReviewDataReturn {
   completedTasks: number
   /** Map of taskId -> commentary text */
   annotationMap: Map<number, string>
-  /** Map of taskId -> review score (0-100) */
-  reviewScoreMap: Map<number, number>
+  /** Map of taskId -> insights score (0-100) */
+  insightsScoreMap: Map<number, number>
   /** Map of taskId -> signal keys */
-  reviewSignalMap: Map<number, string[]>
+  insightsSignalMap: Map<number, string[]>
   /** Signals that have at least one task */
   activeSignals: SignalDef[]
-  /** Whether any review results exist */
+  /** Whether any insights results exist */
   hasResults: boolean
   /** True when all tasks fit in a single AI call (no incremental progress) */
   singleCall: boolean
   /** Error message from the last failed generation attempt, cleared on next generate() */
   error: string | null
-  /** Start or refresh review generation */
+  /** Start or refresh insights generation */
   generate: () => Promise<void>
   /** Fetch cached results without generating */
   fetchResults: () => Promise<void>
 }
 
 /**
- * Hook that manages AI review data: fetching cached results, triggering
+ * Hook that manages AI insights data: fetching cached results, triggering
  * generation, polling for progress, and deriving annotation/score/signal maps.
  *
- * Extracted from review/page.tsx to enable reuse in the dashboard.
+ * Extracted to enable reuse in the dashboard.
  */
-export function useReviewData(tasks: Task[]): UseReviewDataReturn {
-  const [results, setResults] = useState<ReviewResultItem[]>([])
+export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
+  const [results, setResults] = useState<InsightsResultItem[]>([])
   const [signals, setSignals] = useState<SignalDef[]>([])
   const [signalCounts, setSignalCounts] = useState<Record<string, number>>({})
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
@@ -67,10 +67,10 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Fetch cached review results
+  // Fetch cached insights results
   const fetchResults = useCallback(async () => {
     try {
-      const res = await fetch('/api/review/results')
+      const res = await fetch('/api/ai/insights/results')
       if (!res.ok) return
       const json = await res.json()
       if (json.data) {
@@ -91,7 +91,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
 
       pollRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/review/status?session_id=${sessionId}`)
+          const res = await fetch(`/api/ai/insights/status?session_id=${sessionId}`)
           if (!res.ok) return
           const json = await res.json()
           const data = json.data
@@ -123,7 +123,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     }
   }, [])
 
-  // Generate review
+  // Generate insights
   const generate = useCallback(async () => {
     setGenerating(true)
     setProgress(0)
@@ -131,7 +131,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     setError(null)
 
     try {
-      const res = await fetch('/api/review/generate', { method: 'POST' })
+      const res = await fetch('/api/ai/insights/generate', { method: 'POST' })
       if (!res.ok) {
         setGenerating(false)
         setError('Failed to start insights generation')
@@ -141,7 +141,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
       const data = json.data
 
       if (!data.session_id) {
-        // No tasks to review
+        // No tasks to analyze
         setGenerating(false)
         return
       }
@@ -156,7 +156,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
   }, [startPolling])
 
   // Build derived maps from results
-  const { annotationMap, reviewScoreMap, reviewSignalMap } = useMemo(() => {
+  const { annotationMap, insightsScoreMap, insightsSignalMap } = useMemo(() => {
     const annMap = new Map<number, string>()
     const scoreMap = new Map<number, number>()
     const sigMap = new Map<number, string[]>()
@@ -169,8 +169,8 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
 
     return {
       annotationMap: annMap,
-      reviewScoreMap: scoreMap,
-      reviewSignalMap: sigMap,
+      insightsScoreMap: scoreMap,
+      insightsSignalMap: sigMap,
     }
   }, [results])
 
@@ -189,7 +189,7 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     if (hasFetched.current || tasks.length === 0) return
     hasFetched.current = true
     let cancelled = false
-    fetch('/api/review/results')
+    fetch('/api/ai/insights/results')
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (cancelled || !json?.data) return
@@ -215,8 +215,8 @@ export function useReviewData(tasks: Task[]): UseReviewDataReturn {
     completedTasks,
     singleCall,
     annotationMap,
-    reviewScoreMap,
-    reviewSignalMap,
+    insightsScoreMap,
+    insightsSignalMap,
     activeSignals,
     hasResults,
     error,

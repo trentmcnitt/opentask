@@ -9,7 +9,7 @@ export type SortOption =
   | 'age'
   | 'modified'
   | 'original_due'
-  | 'ai_review'
+  | 'ai_insights'
 
 /**
  * Dashboard-level sort state shared across all group headers.

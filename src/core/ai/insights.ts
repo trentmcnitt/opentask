@@ -1,12 +1,12 @@
 /**
- * AI Review — batch task scoring, commentary, and signal detection
+ * AI Insights — batch task scoring, commentary, and signal detection
  *
  * Processes the user's entire task list in batches, scoring each task 0-100
  * based on how much it needs attention, adding one-line commentary, and
  * optionally tagging tasks with signals from a preset vocabulary.
  *
- * Results are cached in `ai_review_results` for fast retrieval.
- * Generation progress is tracked in `ai_review_sessions` for polling.
+ * Results are cached in `ai_insights_results` for fast retrieval.
+ * Generation progress is tracked in `ai_insights_sessions` for polling.
  */
 
 import { v4 as uuid } from 'uuid'
@@ -16,18 +16,18 @@ import { getDb } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
-import { REVIEW_SYSTEM_PROMPT, REVIEW_REMINDERS } from './prompts'
+import { INSIGHTS_SYSTEM_PROMPT, INSIGHTS_REMINDERS } from './prompts'
 import { formatTaskLine, getScheduleBlock } from './format'
-import { ReviewBatchResultSchema } from './types'
-import type { ReviewItem, ReviewSignalKey, TaskSummary } from './types'
+import { InsightsBatchResultSchema } from './types'
+import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
 import { log } from '@/lib/logger'
 
 // ---------------------------------------------------------------------------
 // Signal vocabulary — display properties for UI rendering
 // ---------------------------------------------------------------------------
 
-export interface ReviewSignal {
-  key: ReviewSignalKey
+export interface InsightsSignal {
+  key: InsightsSignalKey
   label: string
   /** Tailwind color class prefix (e.g., 'indigo' → use bg-indigo-100, text-indigo-700) */
   color: string
@@ -36,7 +36,7 @@ export interface ReviewSignal {
   description: string
 }
 
-export const REVIEW_SIGNALS: ReviewSignal[] = [
+export const INSIGHTS_SIGNALS: InsightsSignal[] = [
   {
     key: 'review',
     label: 'Review',
@@ -81,13 +81,13 @@ export const REVIEW_SIGNALS: ReviewSignal[] = [
   },
 ]
 
-export const SIGNAL_MAP = new Map(REVIEW_SIGNALS.map((s) => [s.key, s]))
+export const SIGNAL_MAP = new Map(INSIGHTS_SIGNALS.map((s) => [s.key, s]))
 
 // ---------------------------------------------------------------------------
-// Review session types
+// Insights session types
 // ---------------------------------------------------------------------------
 
-export interface ReviewSession {
+export interface InsightsSession {
   id: string
   user_id: number
   status: 'running' | 'complete' | 'failed'
@@ -98,11 +98,11 @@ export interface ReviewSession {
   error: string | null
 }
 
-export interface ReviewResult {
+export interface InsightsResult {
   task_id: number
   score: number
   commentary: string
-  signals: ReviewSignalKey[]
+  signals: InsightsSignalKey[]
   generated_at: string
 }
 
@@ -125,7 +125,7 @@ const P4_SCORE_CEILING = 25
  * - act_soon requires P3+ (never P0-2)
  * - stale requires 21+ days old
  */
-export function sanitizeSignals(items: ReviewItem[], taskMap: Map<number, TaskSummary>): void {
+export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, TaskSummary>): void {
   for (const item of items) {
     const task = taskMap.get(item.task_id)
     if (!task) continue
@@ -171,8 +171,8 @@ export function sanitizeSignals(items: ReviewItem[], taskMap: Map<number, TaskSu
  */
 const SINGLE_CALL_THRESHOLD = 500
 
-/** Timeout for review AI calls (5 minutes) to accommodate large task lists. */
-const REVIEW_TIMEOUT_MS = 300_000
+/** Timeout for insights AI calls (5 minutes) to accommodate large task lists. */
+const INSIGHTS_TIMEOUT_MS = 300_000
 
 /**
  * Fisher-Yates shuffle — returns a new array in random order.
@@ -242,13 +242,13 @@ function buildTaskListSummary(tasks: TaskSummary[], now: DateTime): string {
 }
 
 /**
- * Generate a review for a single user and await completion.
+ * Generate insights for a single user and await completion.
  *
- * Unlike startReviewGeneration (fire-and-forget), this awaits processReviewChunks
+ * Unlike startInsightsGeneration (fire-and-forget), this awaits processInsightsChunks
  * directly so the caller blocks until results are cached. Used by the nightly cron
  * to process users sequentially.
  */
-export async function generateReviewForUser(
+export async function generateInsightsForUser(
   userId: number,
   timezone: string,
   tasks: TaskSummary[],
@@ -260,16 +260,16 @@ export async function generateReviewForUser(
   const db = getDb()
 
   db.prepare(
-    `INSERT INTO ai_review_sessions (id, user_id, status, total_tasks, completed, started_at)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
      VALUES (?, ?, 'running', ?, 0, ?)`,
   ).run(sessionId, userId, tasks.length, now)
 
   try {
-    await processReviewChunks(sessionId, userId, timezone, tasks, userContext, source)
+    await processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source)
   } catch (err) {
-    log.error('ai', 'Review generation failed:', err)
+    log.error('ai', 'Insights generation failed:', err)
     db.prepare(
-      `UPDATE ai_review_sessions SET status = 'failed', error = ?, finished_at = ?
+      `UPDATE ai_insights_sessions SET status = 'failed', error = ?, finished_at = ?
        WHERE id = ?`,
     ).run(String(err), nowUtc(), sessionId)
     throw err
@@ -277,12 +277,12 @@ export async function generateReviewForUser(
 }
 
 /**
- * Start a review generation session and process tasks in background.
+ * Start an insights generation session and process tasks in background.
  *
- * Returns the session ID immediately. The caller polls getReviewSessionStatus()
+ * Returns the session ID immediately. The caller polls getInsightsSessionStatus()
  * to track progress.
  */
-export function startReviewGeneration(
+export function startInsightsGeneration(
   userId: number,
   timezone: string,
   tasks: TaskSummary[],
@@ -296,15 +296,15 @@ export function startReviewGeneration(
 
   // Create session
   db.prepare(
-    `INSERT INTO ai_review_sessions (id, user_id, status, total_tasks, completed, started_at)
+    `INSERT INTO ai_insights_sessions (id, user_id, status, total_tasks, completed, started_at)
      VALUES (?, ?, 'running', ?, 0, ?)`,
   ).run(sessionId, userId, tasks.length, now)
 
   // Start processing in background (fire-and-forget)
-  processReviewChunks(sessionId, userId, timezone, tasks, userContext, source).catch((err) => {
-    log.error('ai', 'Review generation failed:', err)
+  processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source).catch((err) => {
+    log.error('ai', 'Insights generation failed:', err)
     db.prepare(
-      `UPDATE ai_review_sessions SET status = 'failed', error = ?, finished_at = ?
+      `UPDATE ai_insights_sessions SET status = 'failed', error = ?, finished_at = ?
        WHERE id = ?`,
     ).run(String(err), nowUtc(), sessionId)
   })
@@ -319,7 +319,7 @@ export function startReviewGeneration(
  * equal-sized chunks. Each chunk's prompt includes a calibration summary of the full
  * list so the LLM can score relative to the whole.
  */
-async function processReviewChunks(
+async function processInsightsChunks(
   sessionId: string,
   userId: number,
   timezone: string,
@@ -330,12 +330,12 @@ async function processReviewChunks(
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
-  const jsonSchema = z.toJSONSchema(ReviewBatchResultSchema)
+  const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
   const scheduleBlock = getScheduleBlock(userId)
 
-  const sourceBlock = source === 'scheduled' ? '\nThis is an automated review run.\n' : ''
+  const sourceBlock = source === 'scheduled' ? '\nThis is an automated insights run.\n' : ''
 
   // Build chunks: single call for small lists, shuffled equal chunks for large ones
   let chunks: TaskSummary[][]
@@ -370,7 +370,7 @@ async function processReviewChunks(
 
     const summaryBlock = summaryHeader ? `\n${summaryHeader}\n` : ''
 
-    const prompt = `${REVIEW_SYSTEM_PROMPT}
+    const prompt = `${INSIGHTS_SYSTEM_PROMPT}
 ${summaryBlock}
 ## Context
 
@@ -380,7 +380,7 @@ ${contextBlock}${scheduleBlock}${sourceBlock}${userContextBlock}
 ${taskLines}
 </tasks>
 
-${REVIEW_REMINDERS}
+${INSIGHTS_REMINDERS}
 Current time: ${currentTime}
 Score every task above. Return a JSON array with one entry per task.`
 
@@ -390,21 +390,21 @@ Score every task above. Return a JSON array with one entry per task.`
         : `chunk ${ci + 1}/${chunks.length} (${chunk.length} tasks)`
 
     try {
-      const reviewModel = process.env.OPENTASK_AI_REVIEW_MODEL || 'claude-opus-4-6'
+      const insightsModel = process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6'
       const result = await aiQuery({
         prompt,
         outputSchema: jsonSchema,
-        model: reviewModel,
+        model: insightsModel,
         maxTurns: 1,
         // Enable extended thinking for Opus models to improve scoring quality
-        ...(reviewModel.includes('opus') && { maxThinkingTokens: 10000 }),
+        ...(insightsModel.includes('opus') && { maxThinkingTokens: 10000 }),
         userId,
-        action: 'review',
+        action: 'insights',
         inputText: inputLabel,
-        timeoutMs: REVIEW_TIMEOUT_MS,
+        timeoutMs: INSIGHTS_TIMEOUT_MS,
       })
 
-      const parsed = parseAIResponse(result, ReviewBatchResultSchema, 'Review', (text) => {
+      const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
         const json = extractJsonFromText(text)
         if (!json) return null
 
@@ -412,26 +412,26 @@ Score every task above. Return a JSON array with one entry per task.`
         const arr = Array.isArray(json) ? json : json.tasks
         if (!Array.isArray(arr)) return null
 
-        const attempt = ReviewBatchResultSchema.safeParse(arr)
+        const attempt = InsightsBatchResultSchema.safeParse(arr)
         return attempt.success ? attempt.data : null
       })
 
       if (parsed) {
         const validItems = parsed.filter((item) => taskIds.has(item.task_id))
         sanitizeSignals(validItems, taskMap)
-        storeReviewResults(userId, validItems)
+        storeInsightsResults(userId, validItems)
         processedCount += chunk.length
       } else {
-        log.warn('ai', `Review chunk ${ci + 1} failed to parse — skipping ${chunk.length} tasks`)
+        log.warn('ai', `Insights chunk ${ci + 1} failed to parse — skipping ${chunk.length} tasks`)
         processedCount += chunk.length
       }
     } catch (err) {
-      log.error('ai', `Review chunk ${ci + 1} error:`, err)
+      log.error('ai', `Insights chunk ${ci + 1} error:`, err)
       processedCount += chunk.length
     }
 
     // Update session progress
-    db.prepare('UPDATE ai_review_sessions SET completed = ? WHERE id = ?').run(
+    db.prepare('UPDATE ai_insights_sessions SET completed = ? WHERE id = ?').run(
       processedCount,
       sessionId,
     )
@@ -441,7 +441,7 @@ Score every task above. Return a JSON array with one entry per task.`
   // runs if this session is still valid (not deleted or superseded by another run).
   const updateResult = db
     .prepare(
-      `UPDATE ai_review_sessions SET status = 'complete', completed = ?, finished_at = ?
+      `UPDATE ai_insights_sessions SET status = 'complete', completed = ?, finished_at = ?
        WHERE id = ? AND status = 'running'`,
     )
     .run(processedCount, nowUtc(), sessionId)
@@ -452,20 +452,20 @@ Score every task above. Return a JSON array with one entry per task.`
     const allTaskIds = tasks.map((t) => t.id)
     const placeholders = allTaskIds.map(() => '?').join(',')
     db.prepare(
-      `DELETE FROM ai_review_results WHERE user_id = ? AND task_id NOT IN (${placeholders})`,
+      `DELETE FROM ai_insights_results WHERE user_id = ? AND task_id NOT IN (${placeholders})`,
     ).run(userId, ...allTaskIds)
   }
 }
 
 /**
- * Store review results for a batch (upsert).
+ * Store insights results for a batch (upsert).
  */
-function storeReviewResults(userId: number, items: ReviewItem[]): void {
+function storeInsightsResults(userId: number, items: InsightsItem[]): void {
   const db = getDb()
   const now = nowUtc()
 
   const stmt = db.prepare(
-    `INSERT INTO ai_review_results (user_id, task_id, score, commentary, signals, generated_at)
+    `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id, task_id) DO UPDATE SET
        score = excluded.score,
@@ -485,22 +485,25 @@ function storeReviewResults(userId: number, items: ReviewItem[]): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Get the status of a review session for progress polling.
+ * Get the status of an insights session for progress polling.
  */
-export function getReviewSessionStatus(sessionId: string, userId: number): ReviewSession | null {
+export function getInsightsSessionStatus(
+  sessionId: string,
+  userId: number,
+): InsightsSession | null {
   const db = getDb()
   const row = db
-    .prepare('SELECT * FROM ai_review_sessions WHERE id = ? AND user_id = ?')
-    .get(sessionId, userId) as ReviewSession | undefined
+    .prepare('SELECT * FROM ai_insights_sessions WHERE id = ? AND user_id = ?')
+    .get(sessionId, userId) as InsightsSession | undefined
   return row ?? null
 }
 
 /**
- * Get cached review results for a user.
+ * Get cached insights results for a user.
  * Returns results sorted by score descending.
  */
-export function getReviewResults(userId: number): {
-  results: ReviewResult[]
+export function getInsightsResults(userId: number): {
+  results: InsightsResult[]
   generatedAt: string | null
   signalCounts: Record<string, number>
 } {
@@ -508,7 +511,7 @@ export function getReviewResults(userId: number): {
   const rows = db
     .prepare(
       `SELECT task_id, score, commentary, signals, generated_at
-       FROM ai_review_results
+       FROM ai_insights_results
        WHERE user_id = ?
        ORDER BY score DESC`,
     )
@@ -521,8 +524,8 @@ export function getReviewResults(userId: number): {
   }[]
 
   const signalCounts: Record<string, number> = {}
-  const results: ReviewResult[] = rows.map((row) => {
-    const signals: ReviewSignalKey[] = row.signals ? JSON.parse(row.signals) : []
+  const results: InsightsResult[] = rows.map((row) => {
+    const signals: InsightsSignalKey[] = row.signals ? JSON.parse(row.signals) : []
     for (const s of signals) {
       signalCounts[s] = (signalCounts[s] || 0) + 1
     }
@@ -543,12 +546,12 @@ export function getReviewResults(userId: number): {
 }
 
 /**
- * Check if a user has any review results (for showing cached vs empty state).
+ * Check if a user has any insights results (for showing cached vs empty state).
  */
-export function hasReviewResults(userId: number): boolean {
+export function hasInsightsResults(userId: number): boolean {
   const db = getDb()
   const row = db
-    .prepare('SELECT COUNT(*) as count FROM ai_review_results WHERE user_id = ?')
+    .prepare('SELECT COUNT(*) as count FROM ai_insights_results WHERE user_id = ?')
     .get(userId) as { count: number }
   return row.count > 0
 }
@@ -556,14 +559,14 @@ export function hasReviewResults(userId: number): boolean {
 /**
  * Get the most recent active session for a user (if any is still running).
  */
-export function getActiveReviewSession(userId: number): ReviewSession | null {
+export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
   const row = db
     .prepare(
-      `SELECT * FROM ai_review_sessions
+      `SELECT * FROM ai_insights_sessions
        WHERE user_id = ? AND status = 'running'
        ORDER BY started_at DESC LIMIT 1`,
     )
-    .get(userId) as ReviewSession | undefined
+    .get(userId) as InsightsSession | undefined
   return row ?? null
 }

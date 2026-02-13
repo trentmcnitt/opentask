@@ -16,7 +16,7 @@ vi.mock('@/core/ai/sdk', () => ({
 }))
 
 import { getUserAiContext } from '@/core/ai/user-context'
-import { generateBubble } from '@/core/ai/bubble'
+import { generateWhatsNext } from '@/core/ai/whats-next'
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
 
@@ -49,7 +49,7 @@ afterAll(() => {
 
 afterEach(() => {
   mockAiQuery.mockReset()
-  getDb().prepare("DELETE FROM ai_activity_log WHERE action = 'bubble'").run()
+  getDb().prepare("DELETE FROM ai_activity_log WHERE action = 'whats_next'").run()
 })
 
 describe('getUserAiContext', () => {
@@ -78,7 +78,7 @@ describe('getUserAiContext', () => {
   })
 })
 
-describe('Bubble prompt includes user context', () => {
+describe("What's Next prompt includes user context", () => {
   test('includes "User context:" when userContext is provided', async () => {
     mockAiQuery.mockResolvedValue({
       structuredOutput: {
@@ -92,7 +92,7 @@ describe('Bubble prompt includes user context', () => {
       error: null,
     })
 
-    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3), 'I am a caregiver')
+    await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3), 'I am a caregiver')
 
     expect(mockAiQuery).toHaveBeenCalledTimes(1)
     const prompt = mockAiQuery.mock.calls[0][0].prompt as string
@@ -112,7 +112,7 @@ describe('Bubble prompt includes user context', () => {
       error: null,
     })
 
-    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3), null)
+    await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3), null)
 
     expect(mockAiQuery).toHaveBeenCalledTimes(1)
     const prompt = mockAiQuery.mock.calls[0][0].prompt as string
@@ -135,7 +135,7 @@ describe('Bubble prompt includes user context', () => {
       error: null,
     })
 
-    await generateBubble(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3))
+    await generateWhatsNext(TEST_USER_ID, TEST_TIMEZONE, makeTasks(3))
 
     expect(mockAiQuery).toHaveBeenCalledTimes(1)
     const prompt = mockAiQuery.mock.calls[0][0].prompt as string
