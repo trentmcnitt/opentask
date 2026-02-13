@@ -14,6 +14,8 @@ export interface UseAiModeReturn {
   setShowSignals: (show: boolean) => void
   showBubbleText: boolean
   setShowBubbleText: (show: boolean) => void
+  showInsights: boolean
+  setShowInsights: (show: boolean) => void
   showCommentary: boolean
   setShowCommentary: (show: boolean) => void
 }
@@ -45,6 +47,8 @@ export function useAiMode(): UseAiModeReturn {
     setAiShowSignals,
     aiShowBubbleText,
     setAiShowBubbleText,
+    aiShowInsights,
+    setAiShowInsights,
     aiShowCommentary,
     setAiShowCommentary,
   } = useAiPreferences()
@@ -116,6 +120,14 @@ export function useAiMode(): UseAiModeReturn {
     [setAiShowBubbleText],
   )
 
+  const setShowInsights = useCallback(
+    (show: boolean) => {
+      setAiShowInsights(show)
+      patchPreference({ ai_show_insights: show })
+    },
+    [setAiShowInsights],
+  )
+
   const setShowCommentary = useCallback(
     (show: boolean) => {
       setAiShowCommentary(show)
@@ -133,6 +145,8 @@ export function useAiMode(): UseAiModeReturn {
     setShowSignals,
     showBubbleText: aiShowBubbleText,
     setShowBubbleText,
+    showInsights: aiShowInsights,
+    setShowInsights,
     showCommentary: aiShowCommentary,
     setShowCommentary,
   }

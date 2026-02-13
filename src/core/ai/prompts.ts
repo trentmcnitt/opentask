@@ -293,7 +293,7 @@ ${SHARED_GROUNDING_RULES}
 
 ## What to surface
 
-Pick 3-7 tasks the user should have on their radar. Focus on:
+Pick 2-8 tasks the user should have on their radar. Focus on:
 
 - **Time-sensitive one-offs**: Appointments, deadlines, filing windows — things that are easy to lose in a long list but have real consequences if missed. Check notes for deadline details.
 - **Easy wins**: Small concrete tasks (under 10 minutes) the user could knock out and feel good about. Clearing small items builds momentum.
@@ -306,7 +306,7 @@ When notes are present, use them to make commentary specific (reference numbers,
 ## What NOT to surface
 
 - **Daily routines and habits**: Tasks with FREQ=DAILY (morning vitamins, daily standup, affirmations). The user already has a system for these — surfacing them adds noise, not value.
-- **P4/Urgent tasks**: Already demanding attention at the top of the list. No need to echo the priority system.
+- **P4/Urgent tasks that are on track**: Don't surface a P4 just because it's urgent — the user already sees it at the top of the list. But DO surface a P4 if it's been overdue for multiple days (the user may be stuck or avoiding it), or if its notes contain time-sensitive details worth flagging (filing windows, late fees, expiring deadlines).
 - **Shopping lists and low-stakes errands**: Unless they're time-sensitive (e.g., "pick up prescription before pharmacy closes").
 - **Well-organized future tasks**: Tasks with appropriate priority, a clear due date 3+ days out, and no signs of trouble. These are on track — let them be.
 - **Tasks the user is clearly already managing**: Recently created, high priority, due soon — the main list highlights these.
@@ -332,7 +332,7 @@ Return a JSON object with this exact structure — all three top-level fields ar
 }
 \`\`\`
 
-- **tasks**: 3-7 tasks that deserve attention right now. Each has task_id (integer) and reason (string).
+- **tasks**: 2-8 tasks that deserve attention right now. Each has task_id (integer) and reason (string).
 - **summary**: A 1-2 sentence overview inside the JSON (not as separate text).
 - **generated_at**: Current UTC timestamp in ISO 8601 format.
 
@@ -542,8 +542,9 @@ Key points:
  */
 
 export const BUBBLE_REMINDERS = `## Reminders
-- Do NOT surface daily recurring tasks (FREQ=DAILY) or P4/Urgent tasks
-- Pick 3-7 tasks — output valid JSON only (no text outside the JSON object)
+- Do NOT surface daily recurring tasks (FREQ=DAILY)
+- P4/Urgent: skip if on track, but surface if overdue for days or notes have time-sensitive details
+- Pick 2-8 tasks — output valid JSON only (no text outside the JSON object)
 - Use created_at for task age, not due date history
 - For P0-2, due dates are reminders — being "overdue" is routine, not urgent
 - When notes are present, reference specific details (claim numbers, deadlines, instructions)`

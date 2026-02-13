@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, Eye, EyeOff, RefreshCw, Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -19,6 +19,8 @@ interface AiControlAreaProps {
   onShowSignalsChange: (show: boolean) => void
   showBubbleText: boolean
   onShowBubbleTextChange: (show: boolean) => void
+  showInsights: boolean
+  onShowInsightsChange: (show: boolean) => void
   showCommentary: boolean
   onShowCommentaryChange: (show: boolean) => void
   // Bubble
@@ -59,6 +61,8 @@ export function AiControlArea({
   onShowSignalsChange,
   showBubbleText,
   onShowBubbleTextChange,
+  showInsights,
+  onShowInsightsChange,
   showCommentary,
   onShowCommentaryChange,
   annotationGeneratedAt,
@@ -127,7 +131,7 @@ export function AiControlArea({
           />
         </div>
 
-        {/* Bubble section */}
+        {/* Bubble section (blue accent) */}
         <div className="mt-4">
           <SectionHeader
             label="Bubble"
@@ -136,6 +140,7 @@ export function AiControlArea({
             refreshing={annotationRefreshLoading}
             onRefresh={handleRefreshAnnotations}
             active={isActive}
+            color="blue"
           />
           <div className="mt-1.5">
             <FeatureCheckbox
@@ -144,6 +149,7 @@ export function AiControlArea({
               checked={showBubbleText}
               onChange={onShowBubbleTextChange}
               disabled={!isActive}
+              color="blue"
             />
           </div>
           {isActive && annotationError && (
@@ -154,46 +160,95 @@ export function AiControlArea({
         {/* Divider */}
         <div className="my-3 border-t" />
 
-        {/* Insights section */}
+        {/* Insights section (indigo accent) */}
         <div>
-          <SectionHeader
-            label="Insights"
-            freshnessText={reviewGenerating ? null : reviewFreshnessText}
-            generatedAt={reviewGenerating ? null : reviewGeneratedAt}
-            refreshing={reviewGenerating}
-            onRefresh={handleRefreshReview}
-            active={isActive}
-          />
-          <div className="mt-1.5 space-y-2.5">
-            <FeatureCheckbox
-              label="Attention scores"
-              description="Priority scores from 0–100"
-              checked={showScores}
-              onChange={onShowScoresChange}
-              disabled={!isActive}
-            />
-            <FeatureCheckbox
-              label="Signal tags"
-              description="Stale, Quick Win, Review, etc."
-              checked={showSignals}
-              onChange={onShowSignalsChange}
-              disabled={!isActive}
-            />
-            <FeatureCheckbox
-              label="Commentary"
-              description="Detailed per-task analysis"
-              checked={showCommentary}
-              onChange={onShowCommentaryChange}
-              disabled={!isActive}
-            />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  'text-xs font-semibold',
+                  isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted-foreground',
+                )}
+              >
+                Insights
+              </span>
+              {isActive && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onShowInsightsChange(!showInsights)
+                  }}
+                  className={cn(
+                    'rounded-full p-0.5 transition-colors',
+                    showInsights
+                      ? 'text-muted-foreground hover:text-foreground'
+                      : 'text-muted-foreground/40 hover:text-muted-foreground',
+                  )}
+                  aria-label={showInsights ? 'Hide insights' : 'Show insights'}
+                >
+                  {showInsights ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                </button>
+              )}
+            </div>
+            {isActive && showInsights && (
+              <div className="flex items-center gap-1.5">
+                {!reviewGenerating && reviewFreshnessText && (
+                  <FreshnessWithTooltip
+                    freshnessText={reviewFreshnessText}
+                    generatedAt={reviewGeneratedAt}
+                  />
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRefreshReview()
+                  }}
+                  disabled={reviewGenerating}
+                  className="text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors disabled:opacity-40"
+                  aria-label="Refresh insights"
+                >
+                  <RefreshCw className={cn('size-3', reviewGenerating && 'animate-spin')} />
+                </button>
+              </div>
+            )}
           </div>
 
-          {isActive && reviewError && !reviewGenerating && (
+          {/* Checkboxes always visible when AI is on (disabled when insights eye is off) */}
+          {isActive && (
+            <div className="mt-1.5 space-y-2.5">
+              <FeatureCheckbox
+                label="Attention scores"
+                description="Priority scores from 0–100"
+                checked={showScores}
+                onChange={onShowScoresChange}
+                disabled={!showInsights}
+                color="indigo"
+              />
+              <FeatureCheckbox
+                label="Signal tags"
+                description="Stale, Quick Win, Review, etc."
+                checked={showSignals}
+                onChange={onShowSignalsChange}
+                disabled={!showInsights}
+                color="indigo"
+              />
+              <FeatureCheckbox
+                label="Commentary"
+                description="Detailed per-task analysis"
+                checked={showCommentary}
+                onChange={onShowCommentaryChange}
+                disabled={!showInsights}
+                color="indigo"
+              />
+            </div>
+          )}
+
+          {isActive && showInsights && reviewError && !reviewGenerating && (
             <p className="mt-1.5 text-[11px] text-red-500">{reviewError}</p>
           )}
 
-          {/* Progress bar (inside popover during insights generation) */}
-          {reviewGenerating && (
+          {/* Progress bar — visible even when insights eye is off since generation is in progress */}
+          {isActive && reviewGenerating && (
             <div className="mt-3">
               {reviewSingleCall ? (
                 <div className="bg-muted h-1.5 overflow-hidden rounded-full">
@@ -208,8 +263,7 @@ export function AiControlArea({
                 </div>
               )}
               <p className="text-muted-foreground mt-1 text-[11px]">
-                Analyzing {reviewCompletedTasks}/{reviewTotalTasks} tasks... This may take a few
-                minutes.
+                Analyzing {reviewCompletedTasks}/{reviewTotalTasks} tasks... <ElapsedTimer />
               </p>
             </div>
           )}
@@ -233,6 +287,7 @@ function SectionHeader({
   refreshing,
   onRefresh,
   active,
+  color,
 }: {
   label: string
   freshnessText: string | null
@@ -240,10 +295,24 @@ function SectionHeader({
   refreshing: boolean
   onRefresh: () => void
   active: boolean
+  color?: 'blue' | 'indigo'
 }) {
+  const colorClass =
+    color === 'blue'
+      ? 'text-blue-600 dark:text-blue-400'
+      : color === 'indigo'
+        ? 'text-indigo-600 dark:text-indigo-400'
+        : ''
+
   return (
     <div className="flex items-center justify-between">
-      <span className={cn('text-xs font-semibold', !active && 'text-muted-foreground')}>
+      <span
+        className={cn(
+          'text-xs font-semibold',
+          active && colorClass,
+          !active && 'text-muted-foreground',
+        )}
+      >
         {label}
       </span>
       {active && (
@@ -315,13 +384,22 @@ function FeatureCheckbox({
   checked,
   onChange,
   disabled,
+  color,
 }: {
   label: string
   description: string
   checked: boolean
   onChange: (v: boolean) => void
   disabled: boolean
+  color?: 'blue' | 'indigo'
 }) {
+  const checkedColorClass =
+    color === 'blue'
+      ? 'data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500'
+      : color === 'indigo'
+        ? 'data-[state=checked]:bg-indigo-500 data-[state=checked]:border-indigo-500'
+        : ''
+
   return (
     <label
       className={cn(
@@ -332,7 +410,7 @@ function FeatureCheckbox({
       <Checkbox
         checked={checked}
         onCheckedChange={(val) => onChange(val === true)}
-        className="mt-0.5 size-3.5"
+        className={cn('mt-0.5 size-3.5', checkedColorClass)}
         disabled={disabled}
       />
       <div className="min-w-0">
@@ -340,5 +418,24 @@ function FeatureCheckbox({
         <div className="text-muted-foreground text-[11px] leading-tight">{description}</div>
       </div>
     </label>
+  )
+}
+
+/** Live elapsed timer that counts up from mount. Resets when unmounted (i.e. generation stops). */
+function ElapsedTimer() {
+  const [seconds, setSeconds] = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  if (mins === 0) return <span>{secs}s</span>
+  return (
+    <span>
+      {mins}m {secs.toString().padStart(2, '0')}s
+    </span>
   )
 }
