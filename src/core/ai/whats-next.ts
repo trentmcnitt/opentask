@@ -1,5 +1,5 @@
 /**
- * Bubble AI recommendations
+ * What's Next AI recommendations
  *
  * Helps the user decide what to focus on next — surfacing tasks that
  * deserve attention, things that are easy to forget, and opportunities
@@ -12,22 +12,22 @@
 import { nowUtc } from '@/core/recurrence'
 import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
-import { BUBBLE_SYSTEM_PROMPT, BUBBLE_REMINDERS } from './prompts'
+import { WHATS_NEXT_SYSTEM_PROMPT, WHATS_NEXT_REMINDERS } from './prompts'
 import { formatTaskLine, getScheduleBlock } from './format'
-import { BubbleResultSchema } from './types'
-import type { BubbleResult, TaskSummary } from './types'
+import { WhatsNextResultSchema } from './types'
+import type { WhatsNextResult, TaskSummary } from './types'
 import { logAIActivity, getAIActivity } from './activity'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 
 /**
- * Generate Bubble recommendations for a user.
+ * Generate What's Next recommendations for a user.
  *
  * Sends a summary of the user's active tasks to AI and returns
  * tasks that deserve attention with reasons + summary.
  * Caches the result in ai_activity_log for same-day retrieval.
  */
-export async function generateBubble(
+export async function generateWhatsNext(
   userId: number,
   timezone: string,
   tasks: TaskSummary[],
@@ -36,7 +36,7 @@ export async function generateBubble(
   modelOverride?: string,
   /** Whether this is a scheduled cron run or an on-demand user request. */
   source?: 'scheduled' | 'on-demand',
-): Promise<BubbleResult | null> {
+): Promise<WhatsNextResult | null> {
   if (tasks.length === 0) {
     return {
       tasks: [],
@@ -69,7 +69,7 @@ export async function generateBubble(
       ? '\nThis is an automated briefing. Focus on what the user should have on their radar for the day ahead.\n'
       : '\nThe user is actively looking for what to do next. Focus on what is actionable right now.\n'
 
-  const prompt = `${BUBBLE_SYSTEM_PROMPT}
+  const prompt = `${WHATS_NEXT_SYSTEM_PROMPT}
 
 ## Context
 
@@ -79,22 +79,22 @@ Total active tasks: ${tasks.length}${scheduleBlock}${sourceBlock}${userContextBl
 ${taskList}
 </tasks>
 
-${BUBBLE_REMINDERS}
+${WHATS_NEXT_REMINDERS}
 Current time: ${currentTime}
 Surface 2-8 tasks and return the JSON result.`
 
-  const jsonSchema = z.toJSONSchema(BubbleResultSchema)
+  const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
-  const bubbleModel = modelOverride || process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku'
+  const whatsNextModel = modelOverride || process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku'
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: bubbleModel,
+    model: whatsNextModel,
     maxTurns: 1,
     // Enable extended thinking for Opus models to improve recommendation quality
-    ...(bubbleModel.includes('opus') && { maxThinkingTokens: 10000 }),
+    ...(whatsNextModel.includes('opus') && { maxThinkingTokens: 10000 }),
     userId,
-    action: 'bubble',
+    action: 'whats_next',
     inputText: `${tasks.length} tasks`,
   })
 
@@ -102,7 +102,7 @@ Surface 2-8 tasks and return the JSON result.`
   // structured output, and may use alternative field names (e.g., "tasks_to_surface"
   // instead of "tasks") or omit optional fields like "summary". The textFallback
   // normalizes these variations before Zod validation.
-  const parsed = parseAIResponse(result, BubbleResultSchema, 'Bubble', (text) => {
+  const parsed = parseAIResponse(result, WhatsNextResultSchema, "What's Next", (text) => {
     const json = extractJsonFromText(text)
     if (!json) return null
 
@@ -117,14 +117,14 @@ Surface 2-8 tasks and return the JSON result.`
       json.generated_at = nowUtc()
     }
 
-    const attempt = BubbleResultSchema.safeParse(json)
+    const attempt = WhatsNextResultSchema.safeParse(json)
     return attempt.success ? attempt.data : null
   })
   if (!parsed) return null
 
   // Filter to only include tasks that exist in the provided list
   const taskIds = new Set(tasks.map((t) => t.id))
-  const validResult: BubbleResult = {
+  const validResult: WhatsNextResult = {
     tasks: parsed.tasks.filter((t) => taskIds.has(t.task_id)),
     summary: parsed.summary,
     generated_at: parsed.generated_at || nowUtc(),
@@ -134,11 +134,11 @@ Surface 2-8 tasks and return the JSON result.`
   logAIActivity({
     user_id: userId,
     task_id: null,
-    action: 'bubble',
+    action: 'whats_next',
     status: 'success',
     input: `${tasks.length} tasks`,
     output: JSON.stringify(validResult),
-    model: bubbleModel,
+    model: whatsNextModel,
     duration_ms: result.durationMs,
     error: null,
   })
@@ -147,13 +147,13 @@ Surface 2-8 tasks and return the JSON result.`
 }
 
 /**
- * Get cached Bubble result for a user.
+ * Get cached What's Next result for a user.
  *
- * Returns the most recent successful Bubble result from today,
+ * Returns the most recent successful What's Next result from today,
  * or null if none exists or it's stale.
  */
-export function getCachedBubble(userId: number): BubbleResult | null {
-  const entries = getAIActivity(userId, { action: 'bubble', limit: 1 })
+export function getCachedWhatsNext(userId: number): WhatsNextResult | null {
+  const entries = getAIActivity(userId, { action: 'whats_next', limit: 1 })
   if (entries.length === 0) return null
 
   const entry = entries[0]
@@ -165,7 +165,7 @@ export function getCachedBubble(userId: number): BubbleResult | null {
   if (generatedDate !== todayDate) return null
 
   try {
-    const parsed = BubbleResultSchema.safeParse(JSON.parse(entry.output))
+    const parsed = WhatsNextResultSchema.safeParse(JSON.parse(entry.output))
     if (parsed.success) return parsed.data
   } catch {
     // Invalid cached data
@@ -175,7 +175,7 @@ export function getCachedBubble(userId: number): BubbleResult | null {
 }
 
 /**
- * Select tasks relevant for the Bubble prompt.
+ * Select tasks relevant for the What's Next prompt.
  *
  * Simple filter: include everything except tasks due more than 7 days out.
  * Overdue tasks, tasks due within 7 days, and tasks with no due date are all included.

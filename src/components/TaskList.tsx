@@ -81,18 +81,18 @@ interface TaskListProps {
   onReprocess?: (taskId: number) => void
   /** Optional content rendered on the left side of the sort dropdown row */
   headerLeft?: React.ReactNode
-  /** Map of taskId -> review score (0-100) for AI review page */
-  reviewScoreMap?: Map<number, number>
-  /** Map of taskId -> signal keys for AI review page */
-  reviewSignalMap?: Map<number, string[]>
+  /** Map of taskId -> insights score (0-100) for AI insights */
+  insightsScoreMap?: Map<number, number>
+  /** Map of taskId -> signal keys for AI insights */
+  insightsSignalMap?: Map<number, string[]>
   /** When true, shows AI Score in sort dropdown (even when disabled/grayed) */
-  showAiReview?: boolean
+  showAiInsights?: boolean
   /** When true, the AI Score sort option is visible but grayed out */
   aiScoreDisabled?: boolean
   /** When true, hides the built-in sort dropdown (caller renders it externally) */
   hideSortControl?: boolean
-  /** Map of taskId -> review commentary text (shown as indigo Lightbulb annotation) */
-  reviewCommentaryMap?: Map<number, string>
+  /** Map of taskId -> insights commentary text (shown as indigo Lightbulb annotation) */
+  insightsCommentaryMap?: Map<number, string>
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -100,7 +100,7 @@ export function sortTasks(
   tasks: Task[],
   sortOption: SortOption,
   reversed = false,
-  reviewScoreMap?: Map<number, number>,
+  insightsScoreMap?: Map<number, number>,
 ): Task[] {
   const sorted = [...tasks]
   switch (sortOption) {
@@ -157,11 +157,11 @@ export function sortTasks(
         return (b.priority || 0) - (a.priority || 0)
       })
       break
-    case 'ai_review':
+    case 'ai_insights':
       // Default: highest score first (most attention needed). Tasks without scores → end.
       sorted.sort((a, b) => {
-        const aScore = reviewScoreMap?.get(a.id) ?? -1
-        const bScore = reviewScoreMap?.get(b.id) ?? -1
+        const aScore = insightsScoreMap?.get(a.id) ?? -1
+        const bScore = insightsScoreMap?.get(b.id) ?? -1
         const cmp = bScore - aScore
         return reversed ? -cmp : cmp
       })
@@ -178,7 +178,7 @@ const SORT_BUTTON_LABELS: Record<SortOption, { default: string; reversed: string
   age: { default: 'Newest', reversed: 'Oldest' },
   modified: { default: 'Modified ↓', reversed: 'Modified ↑' },
   original_due: { default: 'Original Due ↓', reversed: 'Original Due ↑' },
-  ai_review: { default: 'AI Score ↓', reversed: 'AI Score ↑' },
+  ai_insights: { default: 'AI Score ↓', reversed: 'AI Score ↑' },
 }
 
 /** Labels shown in the dropdown menu items. */
@@ -189,7 +189,7 @@ const SORT_MENU_LABELS: Record<SortOption, string> = {
   age: 'Date added',
   modified: 'Date modified',
   original_due: 'Original due date',
-  ai_review: 'AI score',
+  ai_insights: 'AI score',
 }
 
 export function TaskList({
@@ -216,12 +216,12 @@ export function TaskList({
   showAnnotations = false,
   onReprocess,
   headerLeft,
-  reviewScoreMap,
-  reviewSignalMap,
-  showAiReview: showAiReviewProp,
+  insightsScoreMap,
+  insightsSignalMap,
+  showAiInsights: showAiInsightsProp,
   aiScoreDisabled: aiScoreDisabledProp,
   hideSortControl = false,
-  reviewCommentaryMap,
+  insightsCommentaryMap,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -269,7 +269,7 @@ export function TaskList({
 
   // Build ordered ID list for range-select, applying the same sort as rendering
   const orderedIds = groups.flatMap((g) => {
-    return sortTasks(g.tasks, sortOption, reversed, reviewScoreMap).map((t) => t.id)
+    return sortTasks(g.tasks, sortOption, reversed, insightsScoreMap).map((t) => t.id)
   })
 
   // Determine if we should show the "now" separator
@@ -297,14 +297,14 @@ export function TaskList({
             sortOption={sortOption}
             reversed={reversed}
             onSort={setSortOption}
-            showAiReview={showAiReviewProp ?? !!reviewScoreMap}
+            showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
             aiScoreDisabled={aiScoreDisabledProp ?? false}
           />
         </div>
       )}
       <div className="space-y-6">
         {groups.map((group, groupIdx) => {
-          const sortedTasks = sortTasks(group.tasks, sortOption, reversed, reviewScoreMap)
+          const sortedTasks = sortTasks(group.tasks, sortOption, reversed, insightsScoreMap)
           const collapsed = isCollapsed(group.label)
 
           return (
@@ -397,9 +397,9 @@ export function TaskList({
                           annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
                           isAiHighlighted={annotationMap?.has(task.id)}
                           onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
-                          reviewScore={reviewScoreMap?.get(task.id)}
-                          reviewSignals={reviewSignalMap?.get(task.id)}
-                          reviewCommentary={reviewCommentaryMap?.get(task.id)}
+                          insightsScore={insightsScoreMap?.get(task.id)}
+                          insightsSignals={insightsSignalMap?.get(task.id)}
+                          insightsCommentary={insightsCommentaryMap?.get(task.id)}
                         />
                       </SwipeableRow>
                     )
@@ -558,13 +558,13 @@ export function SortDropdown({
   sortOption,
   reversed,
   onSort,
-  showAiReview = false,
+  showAiInsights = false,
   aiScoreDisabled = false,
 }: {
   sortOption: SortOption
   reversed: boolean
   onSort: (option: SortOption) => void
-  showAiReview?: boolean
+  showAiInsights?: boolean
   /** When true, the AI score option is visible but grayed out and non-interactive */
   aiScoreDisabled?: boolean
 }) {
@@ -574,8 +574,8 @@ export function SortDropdown({
     ? SORT_BUTTON_LABELS[sortOption].reversed
     : SORT_BUTTON_LABELS[sortOption].default
 
-  const options: SortOption[] = showAiReview
-    ? ['ai_review', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
+  const options: SortOption[] = showAiInsights
+    ? ['ai_insights', 'due_date', 'priority', 'title', 'age', 'modified', 'original_due']
     : ['due_date', 'priority', 'title', 'age', 'modified', 'original_due']
 
   return (
@@ -605,7 +605,7 @@ export function SortDropdown({
       <DropdownMenuContent align="end">
         {options.map((option) => {
           const isActive = sortOption === option
-          const isDisabled = option === 'ai_review' && aiScoreDisabled
+          const isDisabled = option === 'ai_insights' && aiScoreDisabled
           const itemLabel =
             isActive && reversed ? SORT_BUTTON_LABELS[option].reversed : SORT_MENU_LABELS[option]
           // Selecting the active option will toggle direction, so show what it will become

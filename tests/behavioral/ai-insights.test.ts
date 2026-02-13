@@ -1,7 +1,7 @@
 /**
- * Behavioral tests for AI Review
+ * Behavioral tests for AI Insights
  *
- * Tests the review logic: batch processing, result caching, session tracking,
+ * Tests the insights logic: batch processing, result caching, session tracking,
  * and signal vocabulary. SDK is mocked — no real AI calls.
  */
 
@@ -17,24 +17,24 @@ vi.mock('@/core/ai/sdk', () => ({
 }))
 
 import {
-  startReviewGeneration,
-  getReviewSessionStatus,
-  getReviewResults,
-  hasReviewResults,
-  getActiveReviewSession,
-  REVIEW_SIGNALS,
+  startInsightsGeneration,
+  getInsightsSessionStatus,
+  getInsightsResults,
+  hasInsightsResults,
+  getActiveInsightsSession,
+  INSIGHTS_SIGNALS,
   SIGNAL_MAP,
-} from '@/core/ai/review'
+} from '@/core/ai/insights'
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
-import { REVIEW_SIGNAL_KEYS } from '@/core/ai/types'
+import { INSIGHTS_SIGNAL_KEYS } from '@/core/ai/types'
 
 const mockAiQuery = vi.mocked(aiQuery)
 
 /**
  * Create TaskSummary objects AND insert corresponding task rows in the DB.
- * The ai_review_results table has a FK constraint on task_id → tasks(id),
- * so actual task rows must exist for storeReviewResults to succeed.
+ * The ai_insights_results table has a FK constraint on task_id → tasks(id),
+ * so actual task rows must exist for storeInsightsResults to succeed.
  */
 function makeTasks(count: number, overrides?: Partial<TaskSummary>[]): TaskSummary[] {
   const db = getDb()
@@ -65,8 +65,8 @@ function makeTasks(count: number, overrides?: Partial<TaskSummary>[]): TaskSumma
   })
 }
 
-function makeReviewResponse(taskIds: number[]) {
-  // Review returns an array, but AIQueryResult types structuredOutput as Record<string, unknown>.
+function makeInsightsResponse(taskIds: number[]) {
+  // Insights returns an array, but AIQueryResult types structuredOutput as Record<string, unknown>.
   // At runtime the array passes through to Zod's safeParse, which handles it correctly.
   const items = taskIds.map((id) => ({
     task_id: id,
@@ -93,25 +93,25 @@ afterAll(() => {
 
 afterEach(() => {
   mockAiQuery.mockReset()
-  // Clear review tables and test tasks between tests
+  // Clear insights tables and test tasks between tests
   const db = getDb()
-  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(TEST_USER_ID)
-  db.prepare('DELETE FROM ai_review_sessions').run()
+  db.prepare('DELETE FROM ai_insights_results WHERE user_id = ?').run(TEST_USER_ID)
+  db.prepare('DELETE FROM ai_insights_sessions').run()
   db.prepare('DELETE FROM tasks WHERE user_id = ?').run(TEST_USER_ID)
 })
 
 describe('Signal vocabulary', () => {
-  test('REVIEW_SIGNALS has 6 entries', () => {
-    expect(REVIEW_SIGNALS).toHaveLength(6)
+  test('INSIGHTS_SIGNALS has 6 entries', () => {
+    expect(INSIGHTS_SIGNALS).toHaveLength(6)
   })
 
-  test('REVIEW_SIGNAL_KEYS matches REVIEW_SIGNALS keys', () => {
-    const signalKeys = REVIEW_SIGNALS.map((s) => s.key)
-    expect(signalKeys).toEqual([...REVIEW_SIGNAL_KEYS])
+  test('INSIGHTS_SIGNAL_KEYS matches INSIGHTS_SIGNALS keys', () => {
+    const signalKeys = INSIGHTS_SIGNALS.map((s) => s.key)
+    expect(signalKeys).toEqual([...INSIGHTS_SIGNAL_KEYS])
   })
 
   test('SIGNAL_MAP provides lookup by key', () => {
-    for (const signal of REVIEW_SIGNALS) {
+    for (const signal of INSIGHTS_SIGNALS) {
       const found = SIGNAL_MAP.get(signal.key)
       expect(found).toBeDefined()
       expect(found!.label).toBe(signal.label)
@@ -121,7 +121,7 @@ describe('Signal vocabulary', () => {
   })
 
   test('every signal has required display properties', () => {
-    for (const signal of REVIEW_SIGNALS) {
+    for (const signal of INSIGHTS_SIGNALS) {
       expect(signal.key).toBeTruthy()
       expect(signal.label).toBeTruthy()
       expect(signal.color).toBeTruthy()
@@ -131,12 +131,12 @@ describe('Signal vocabulary', () => {
   })
 })
 
-describe('startReviewGeneration', () => {
+describe('startInsightsGeneration', () => {
   test('creates session and returns session ID', () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1, 2, 3]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2, 3]))
 
     const tasks = makeTasks(3)
-    const { sessionId, totalTasks } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { sessionId, totalTasks } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     expect(sessionId).toBeTruthy()
     expect(typeof sessionId).toBe('string')
@@ -144,12 +144,12 @@ describe('startReviewGeneration', () => {
   })
 
   test('creates a running session in the database', () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    const { sessionId } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
-    const session = getReviewSessionStatus(sessionId, TEST_USER_ID)
+    const session = getInsightsSessionStatus(sessionId, TEST_USER_ID)
     expect(session).not.toBeNull()
     expect(session!.status).toBe('running')
     expect(session!.total_tasks).toBe(1)
@@ -163,23 +163,23 @@ describe('startReviewGeneration', () => {
        VALUES (999, ?, 1, 'Old task', 0, '2026-01-01T00:00:00Z', '[]')`,
     ).run(TEST_USER_ID)
     db.prepare(
-      `INSERT INTO ai_review_results (user_id, task_id, score, commentary, signals, generated_at)
+      `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
        VALUES (?, ?, ?, ?, NULL, ?)`,
     ).run(TEST_USER_ID, 999, 50, 'Old result', '2026-01-01T00:00:00Z')
 
-    expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+    expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
 
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     // Old results are preserved during generation (not wiped upfront)
-    const { results: immediateResults } = getReviewResults(TEST_USER_ID)
+    const { results: immediateResults } = getInsightsResults(TEST_USER_ID)
     expect(immediateResults.find((r) => r.task_id === 999)).toBeDefined()
 
     // After generation completes, stale results (task 999 not in new batch) are cleaned up
     await vi.waitFor(() => {
-      const { results } = getReviewResults(TEST_USER_ID)
+      const { results } = getInsightsResults(TEST_USER_ID)
       const oldResult = results.find((r) => r.task_id === 999)
       expect(oldResult).toBeUndefined()
     })
@@ -188,18 +188,18 @@ describe('startReviewGeneration', () => {
 
 describe('Result storage and retrieval', () => {
   test('stores results after batch processing completes', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1, 2, 3]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2, 3]))
 
     const tasks = makeTasks(3)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     // Wait for async processing
     await vi.waitFor(() => {
-      const { results } = getReviewResults(TEST_USER_ID)
+      const { results } = getInsightsResults(TEST_USER_ID)
       expect(results.length).toBe(3)
     })
 
-    const { results } = getReviewResults(TEST_USER_ID)
+    const { results } = getInsightsResults(TEST_USER_ID)
     expect(results).toHaveLength(3)
     // Results sorted by score descending
     expect(results[0].score).toBeGreaterThanOrEqual(results[1].score)
@@ -207,16 +207,16 @@ describe('Result storage and retrieval', () => {
   })
 
   test('results include commentary', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
-    const { results } = getReviewResults(TEST_USER_ID)
+    const { results } = getInsightsResults(TEST_USER_ID)
     expect(results[0].commentary).toBe('Commentary for task 1')
   })
 
@@ -234,14 +234,14 @@ describe('Result storage and retrieval', () => {
 
     // Task 1 needs to be 21+ days old so the stale signal passes sanitization
     const tasks = makeTasks(2, [{ created_at: '2025-12-01T12:00:00Z' }])
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      const { results } = getReviewResults(TEST_USER_ID)
+      const { results } = getInsightsResults(TEST_USER_ID)
       expect(results.length).toBe(2)
     })
 
-    const { results, signalCounts } = getReviewResults(TEST_USER_ID)
+    const { results, signalCounts } = getInsightsResults(TEST_USER_ID)
     const staleTask = results.find((r) => r.task_id === 1)
     expect(staleTask!.signals).toEqual(['stale', 'vague'])
 
@@ -253,96 +253,96 @@ describe('Result storage and retrieval', () => {
   })
 
   test('generatedAt is set after processing', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
-    const { generatedAt } = getReviewResults(TEST_USER_ID)
+    const { generatedAt } = getInsightsResults(TEST_USER_ID)
     expect(generatedAt).toBeTruthy()
     expect(new Date(generatedAt!).getTime()).toBeGreaterThan(0)
   })
 
   test('multi-user isolation — results are per-user', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
     // Different user should not see results
-    expect(hasReviewResults(99999)).toBe(false)
-    const { results } = getReviewResults(99999)
+    expect(hasInsightsResults(99999)).toBe(false)
+    const { results } = getInsightsResults(99999)
     expect(results).toHaveLength(0)
   })
 })
 
 describe('Session tracking', () => {
   test('session status transitions from running to complete', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    const { sessionId } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     // Initially running
-    const initial = getReviewSessionStatus(sessionId, TEST_USER_ID)
+    const initial = getInsightsSessionStatus(sessionId, TEST_USER_ID)
     expect(initial).not.toBeNull()
     expect(initial!.status).toBe('running')
 
     // Wait for completion
     await vi.waitFor(() => {
-      const session = getReviewSessionStatus(sessionId, TEST_USER_ID)
+      const session = getInsightsSessionStatus(sessionId, TEST_USER_ID)
       expect(session!.status).toBe('complete')
     })
 
-    const final = getReviewSessionStatus(sessionId, TEST_USER_ID)
+    const final = getInsightsSessionStatus(sessionId, TEST_USER_ID)
     expect(final!.status).toBe('complete')
     expect(final!.completed).toBe(1)
     expect(final!.finished_at).toBeTruthy()
   })
 
-  test('getActiveReviewSession returns running session', () => {
+  test('getActiveInsightsSession returns running session', () => {
     mockAiQuery.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(makeReviewResponse([1])), 100)),
+      () => new Promise((resolve) => setTimeout(() => resolve(makeInsightsResponse([1])), 100)),
     )
 
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
-    const active = getActiveReviewSession(TEST_USER_ID)
+    const active = getActiveInsightsSession(TEST_USER_ID)
     expect(active).not.toBeNull()
     expect(active!.status).toBe('running')
   })
 
   test('session status returns null for wrong user', () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    const { sessionId } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { sessionId } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
-    const wrongUser = getReviewSessionStatus(sessionId, 99999)
+    const wrongUser = getInsightsSessionStatus(sessionId, 99999)
     expect(wrongUser).toBeNull()
   })
 })
 
 describe('Chunk splitting', () => {
   test('processes tasks under threshold in a single AI call', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1, 2, 3]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1, 2, 3]))
 
     const tasks = makeTasks(3)
-    const { singleCall } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     expect(singleCall).toBe(true)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
     expect(mockAiQuery).toHaveBeenCalledOnce()
@@ -355,15 +355,15 @@ describe('Chunk splitting', () => {
     // Return all task IDs on every call — the code filters by chunk membership.
     // After shuffle + split, each chunk gets ~300 tasks. The filter keeps only
     // the IDs that appear in that chunk, so all 600 end up stored across 2 calls.
-    mockAiQuery.mockResolvedValue(makeReviewResponse(allIds))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse(allIds))
 
     const tasks = makeTasks(taskCount)
-    const { singleCall } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { singleCall } = startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     expect(singleCall).toBe(false)
 
     await vi.waitFor(() => {
-      const { results } = getReviewResults(TEST_USER_ID)
+      const { results } = getInsightsResults(TEST_USER_ID)
       expect(results.length).toBe(taskCount)
     })
 
@@ -380,19 +380,19 @@ describe('Error handling', () => {
     const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
 
     mockAiQuery
-      .mockResolvedValueOnce(makeReviewResponse(allIds))
+      .mockResolvedValueOnce(makeInsightsResponse(allIds))
       .mockRejectedValueOnce(new Error('AI service unavailable'))
 
     const tasks = makeTasks(taskCount)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      const session = getActiveReviewSession(TEST_USER_ID)
+      const session = getActiveInsightsSession(TEST_USER_ID)
       expect(session).toBeNull() // No longer active = completed
     })
 
     // First chunk's results should be stored, second chunk failed
-    const { results } = getReviewResults(TEST_USER_ID)
+    const { results } = getInsightsResults(TEST_USER_ID)
     expect(results.length).toBeGreaterThan(0)
     expect(results.length).toBeLessThan(taskCount)
   })
@@ -411,13 +411,13 @@ describe('Error handling', () => {
     })
 
     const tasks = makeTasks(2)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
-    const { results } = getReviewResults(TEST_USER_ID)
+    const { results } = getInsightsResults(TEST_USER_ID)
     const hallucinated = results.find((r) => r.task_id === 999)
     expect(hallucinated).toBeUndefined()
   })
@@ -435,31 +435,31 @@ describe('Error handling', () => {
 
     // Task needs to be 21+ days old so stale signal passes sanitization
     const tasks = makeTasks(1, [{ created_at: '2025-12-01T12:00:00Z' }])
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
 
-    const { results } = getReviewResults(TEST_USER_ID)
+    const { results } = getInsightsResults(TEST_USER_ID)
     expect(results[0].commentary).toBe('From text fallback')
     expect(results[0].signals).toEqual(['stale'])
   })
 })
 
-describe('hasReviewResults', () => {
+describe('hasInsightsResults', () => {
   test('returns false when no results exist', () => {
-    expect(hasReviewResults(TEST_USER_ID)).toBe(false)
+    expect(hasInsightsResults(TEST_USER_ID)).toBe(false)
   })
 
   test('returns true after results are stored', async () => {
-    mockAiQuery.mockResolvedValue(makeReviewResponse([1]))
+    mockAiQuery.mockResolvedValue(makeInsightsResponse([1]))
 
     const tasks = makeTasks(1)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    startInsightsGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
-      expect(hasReviewResults(TEST_USER_ID)).toBe(true)
+      expect(hasInsightsResults(TEST_USER_ID)).toBe(true)
     })
   })
 })

@@ -34,7 +34,7 @@ function getSignalRingClass(key: string): string {
  *   Row 2: Priority chips | label chips — wraps
  *
  * On mode:
- *   AI Row:  [Bubble 6] [Review 6] [Stale 4] [Quick Win 1]    ← scrollable
+ *   AI Row:  [What's Next 6] [Stale 4] [Quick Win 1]           ← scrollable
  *            ─────────────────────────────────────────────      ← subtle border
  *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                   ← scrollable + X
  *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...         ← wrapping
@@ -125,7 +125,7 @@ export function FilterBar({
   return (
     <div className="relative mb-4">
       <div className="flex flex-col gap-2">
-        {/* AI Row: Bubble chip + signal chips — scrollable, visually separated from standard filters */}
+        {/* AI Row: What's Next chip + signal chips — scrollable, visually separated from standard filters */}
         {aiRowVisible && (
           <div className="border-border/40 border-b pb-2">
             <div className="relative">
@@ -221,7 +221,7 @@ export function FilterBar({
 }
 
 /**
- * Simplified AI chip for Bubble mode: filter toggle + count only.
+ * Simplified AI chip for What's Next mode: filter toggle + count only.
  * Freshness text and refresh button have moved to AiControlArea.
  */
 function AiChip({
@@ -246,7 +246,7 @@ function AiChip({
       )}
     >
       {loading && <Loader2 className="h-3 w-3 animate-spin" />}
-      Bubble
+      What&apos;s Next
       <span className="opacity-60">{count}</span>
     </button>
   )

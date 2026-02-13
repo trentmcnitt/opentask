@@ -20,7 +20,7 @@
  * Key principles:
  * - No production feedback loop — quality tests ARE the quality bar
  * - Scenarios must be realistic (dictation artifacts, real-world variety)
- * - review_expectations enforce hard rules; quality_notes guide Layer 2
+ * - insights_expectations enforce hard rules; quality_notes guide Layer 2
  * - Signal restraint: 60-70% of tasks should get zero signals
  * - Any prompt change requires full Layer 1 + Layer 2 on ALL scenarios
  */
@@ -32,8 +32,8 @@ import { allScenarios } from './scenarios/index'
 import type {
   AITestScenario,
   EnrichmentInput,
-  BubbleInput,
-  ReviewInput,
+  WhatsNextInput,
+  InsightsInput,
   ScenarioRequirements,
   ScenarioOutput,
   RunSummary,
@@ -100,8 +100,8 @@ beforeAll(async () => {
   }
 
   // Clean up any leftover data from previous runs
-  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
-  db.prepare('DELETE FROM ai_review_sessions WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  db.prepare('DELETE FROM ai_insights_results WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  db.prepare('DELETE FROM ai_insights_sessions WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
   db.prepare('DELETE FROM tasks WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
 
   // Create output directory: test-results/quality-{timestamp}/
@@ -146,7 +146,7 @@ afterAll(() => {
   LAYER 1 COMPLETE — LAYER 2 VALIDATION REQUIRED
 ======================================================================
 
-  Feature:   all (enrichment, bubble, review)
+  Feature:   all (enrichment, whats_next, insights)
   Model:     ${summary.model}
   Generated: ${generated}/${summary.total} outputs (${errors} errors)
   Duration:  ${durationSeconds}s total
@@ -195,13 +195,13 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Bubble scenarios
+  // What's Next scenarios
   // -------------------------------------------------------------------------
 
-  describe('Bubble', () => {
-    const bubbleTests = allScenarios.filter((s) => s.feature === 'bubble')
+  describe("What's Next", () => {
+    const whatsNextTests = allScenarios.filter((s) => s.feature === 'whats_next')
 
-    for (const scenario of bubbleTests) {
+    for (const scenario of whatsNextTests) {
       test.skipIf(!AI_ENABLED)(scenario.id, async () => {
         await runScenario(scenario)
       })
@@ -209,14 +209,14 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Review scenarios
+  // Insights scenarios
   // -------------------------------------------------------------------------
 
-  describe('Review', () => {
-    const reviewTests = allScenarios.filter((s) => s.feature === 'review')
+  describe('Insights', () => {
+    const insightsTests = allScenarios.filter((s) => s.feature === 'insights')
 
-    for (const scenario of reviewTests) {
-      const input = scenario.input as ReviewInput
+    for (const scenario of insightsTests) {
+      const input = scenario.input as InsightsInput
       const isLarge = input.tasks.length > 100
       const skipReason = !AI_ENABLED || (isLarge && !LARGE_TESTS_ENABLED)
 
@@ -266,15 +266,15 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
       case 'enrichment':
         ;({ output, durationMs } = await runEnrichment(scenario.input as EnrichmentInput))
         break
-      case 'bubble':
-        ;({ output, durationMs } = await runBubble(scenario.input as BubbleInput))
+      case 'whats_next':
+        ;({ output, durationMs } = await runWhatsNext(scenario.input as WhatsNextInput))
         break
-      case 'review': {
-        const reviewInput = scenario.input as ReviewInput
-        if (reviewInput.useProductionCodePath) {
-          ;({ output, durationMs } = await runReviewViaProduction(reviewInput))
+      case 'insights': {
+        const insightsInput = scenario.input as InsightsInput
+        if (insightsInput.useProductionCodePath) {
+          ;({ output, durationMs } = await runInsightsViaProduction(insightsInput))
         } else {
-          ;({ output, durationMs } = await runReview(reviewInput))
+          ;({ output, durationMs } = await runInsights(insightsInput))
         }
         break
       }
@@ -412,13 +412,13 @@ Parse this task and return the structured result.`
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
 }
 
-async function runBubble(
-  input: BubbleInput,
+async function runWhatsNext(
+  input: WhatsNextInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { BUBBLE_SYSTEM_PROMPT, BUBBLE_REMINDERS } = await import('@/core/ai/prompts')
+  const { WHATS_NEXT_SYSTEM_PROMPT, WHATS_NEXT_REMINDERS } = await import('@/core/ai/prompts')
   const { formatTaskLine } = await import('@/core/ai/format')
   const { aiQuery } = await import('@/core/ai/sdk')
-  const { BubbleResultSchema } = await import('@/core/ai/types')
+  const { WhatsNextResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { z } = await import('zod')
 
@@ -431,7 +431,7 @@ async function runBubble(
 
   const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
 
-  const prompt = `${BUBBLE_SYSTEM_PROMPT}
+  const prompt = `${WHATS_NEXT_SYSTEM_PROMPT}
 
 ## Context
 
@@ -441,28 +441,28 @@ Total active tasks: ${input.tasks.length}${userContextBlock}
 ${taskList}
 </tasks>
 
-${BUBBLE_REMINDERS}
+${WHATS_NEXT_REMINDERS}
 Current time: ${currentTime}
 Surface 3-7 tasks and return the JSON result.`
 
-  const jsonSchema = z.toJSONSchema(BubbleResultSchema)
+  const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku',
+    model: process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku',
     maxTurns: 1,
     // Match production: enable extended thinking for Opus models
-    ...((process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku').includes('opus') && {
+    ...((process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku').includes('opus') && {
       maxThinkingTokens: 10000,
     }),
     userId: QUALITY_TEST_USER_ID,
-    action: 'quality_test_bubble',
+    action: 'quality_test_whats_next',
     inputText: `${input.tasks.length} tasks`,
   })
 
-  // Use the same parsing + normalization as production bubble.ts
-  const parsed = parseAIResponse(result, BubbleResultSchema, 'Bubble', (text) => {
+  // Use the same parsing + normalization as production whats-next.ts
+  const parsed = parseAIResponse(result, WhatsNextResultSchema, "What's Next", (text) => {
     const json = extractJsonFromText(text)
     if (!json) return null
     if ('tasks_to_surface' in json && !('tasks' in json)) {
@@ -472,26 +472,26 @@ Surface 3-7 tasks and return the JSON result.`
     if (!json.generated_at) {
       json.generated_at = new Date().toISOString()
     }
-    const attempt = BubbleResultSchema.safeParse(json)
+    const attempt = WhatsNextResultSchema.safeParse(json)
     return attempt.success ? attempt.data : null
   })
 
   if (!parsed) {
-    throw new Error(`Bubble query failed: ${result.error || 'Could not parse output'}`)
+    throw new Error(`What's Next query failed: ${result.error || 'Could not parse output'}`)
   }
 
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
 }
 
-async function runReview(
-  input: ReviewInput,
+async function runInsights(
+  input: InsightsInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { REVIEW_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
+  const { INSIGHTS_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
-  const { ReviewBatchResultSchema } = await import('@/core/ai/types')
+  const { InsightsBatchResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { formatTaskLine } = await import('@/core/ai/format')
-  const { sanitizeSignals } = await import('@/core/ai/review')
+  const { sanitizeSignals } = await import('@/core/ai/insights')
   const { z } = await import('zod')
   const { DateTime } = await import('luxon')
 
@@ -502,7 +502,7 @@ async function runReview(
 
   const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
 
-  const prompt = `${REVIEW_SYSTEM_PROMPT}
+  const prompt = `${INSIGHTS_SYSTEM_PROMPT}
 
 ## Context
 
@@ -515,34 +515,34 @@ ${taskLines}
 
 Score every task below. Return a JSON array with one entry per task.`
 
-  const jsonSchema = z.toJSONSchema(ReviewBatchResultSchema)
+  const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
 
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_REVIEW_MODEL || 'claude-opus-4-6',
+    model: process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6',
     maxTurns: 1,
     // Match production: enable extended thinking for Opus models
-    ...((process.env.OPENTASK_AI_REVIEW_MODEL || 'claude-opus-4-6').includes('opus') && {
+    ...((process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6').includes('opus') && {
       maxThinkingTokens: 10000,
     }),
     userId: QUALITY_TEST_USER_ID,
-    action: 'quality_test_review',
+    action: 'quality_test_insights',
     inputText: `${input.tasks.length} tasks`,
     timeoutMs: 600_000,
   })
 
-  const parsed = parseAIResponse(result, ReviewBatchResultSchema, 'Review', (text) => {
+  const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
     const json = extractJsonFromText(text)
     if (!json) return null
     const arr = Array.isArray(json) ? json : json.tasks
     if (!Array.isArray(arr)) return null
-    const attempt = ReviewBatchResultSchema.safeParse(arr)
+    const attempt = InsightsBatchResultSchema.safeParse(arr)
     return attempt.success ? attempt.data : null
   })
 
   if (!parsed) {
-    throw new Error(`Review query failed: ${result.error || 'Could not parse output'}`)
+    throw new Error(`Insights query failed: ${result.error || 'Could not parse output'}`)
   }
 
   // Apply the same signal sanitization as production code
@@ -557,21 +557,21 @@ Score every task below. Return a JSON array with one entry per task.`
 }
 
 /**
- * Run review via the production processReviewChunks code path.
+ * Run insights via the production processInsightsChunks code path.
  *
- * Calls startReviewGeneration + polls getReviewSessionStatus to completion,
- * then retrieves results with getReviewResults. Tests real chunking, shuffle,
+ * Calls startInsightsGeneration + polls getInsightsSessionStatus to completion,
+ * then retrieves results with getInsightsResults. Tests real chunking, shuffle,
  * calibration summary, and result merging.
  */
-async function runReviewViaProduction(
-  input: ReviewInput,
+async function runInsightsViaProduction(
+  input: InsightsInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { startReviewGeneration, getReviewSessionStatus, getReviewResults } =
-    await import('@/core/ai/review')
+  const { startInsightsGeneration, getInsightsSessionStatus, getInsightsResults } =
+    await import('@/core/ai/insights')
   const { getDb } = await import('@/core/db')
 
-  // Insert task rows so storeReviewResults can satisfy FK constraint
-  // (ai_review_results.task_id → tasks.id)
+  // Insert task rows so storeInsightsResults can satisfy FK constraint
+  // (ai_insights_results.task_id → tasks.id)
   const db = getDb()
   const insertTask = db.prepare(
     `INSERT OR IGNORE INTO tasks (id, user_id, project_id, title, priority, created_at, labels)
@@ -582,7 +582,7 @@ async function runReviewViaProduction(
   }
 
   const startMs = Date.now()
-  const { sessionId } = startReviewGeneration(
+  const { sessionId } = startInsightsGeneration(
     QUALITY_TEST_USER_ID,
     input.timezone,
     input.tasks,
@@ -596,21 +596,21 @@ async function runReviewViaProduction(
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    const session = getReviewSessionStatus(sessionId, QUALITY_TEST_USER_ID)
-    if (!session) throw new Error('Review session not found')
+    const session = getInsightsSessionStatus(sessionId, QUALITY_TEST_USER_ID)
+    if (!session) throw new Error('Insights session not found')
     if (session.status === 'complete') break
-    if (session.status === 'failed') throw new Error(`Review failed: ${session.error}`)
+    if (session.status === 'failed') throw new Error(`Insights failed: ${session.error}`)
   }
 
-  const { results } = getReviewResults(QUALITY_TEST_USER_ID)
+  const { results } = getInsightsResults(QUALITY_TEST_USER_ID)
   const durationMs = Date.now() - startMs
 
-  // Clean up: remove review results and task rows created for this run
-  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
-  db.prepare('DELETE FROM ai_review_sessions WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  // Clean up: remove insights results and task rows created for this run
+  db.prepare('DELETE FROM ai_insights_results WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  db.prepare('DELETE FROM ai_insights_sessions WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
   db.prepare('DELETE FROM tasks WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
 
-  // Convert to the same { items: [...] } format as runReview
+  // Convert to the same { items: [...] } format as runInsights
   const items = results.map((r) => ({
     task_id: r.task_id,
     score: r.score,
@@ -710,15 +710,15 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
     case 'enrichment':
       validateEnrichmentSchema(scenario.id, output)
       break
-    case 'bubble':
-      validateBubbleSchema(scenario.id, output)
+    case 'whats_next':
+      validateWhatsNextSchema(scenario.id, output)
       break
-    case 'review':
-      validateReviewSchema(scenario.id, output, scenario.input as ReviewInput)
-      validateReviewExpectations(
+    case 'insights':
+      validateInsightsSchema(scenario.id, output, scenario.input as InsightsInput)
+      validateInsightsExpectations(
         scenario.id,
         output,
-        scenario.input as ReviewInput,
+        scenario.input as InsightsInput,
         scenario.requirements,
       )
       break
@@ -782,7 +782,7 @@ function validateEnrichmentSchema(id: string, output: Record<string, unknown>): 
   }
 }
 
-function validateBubbleSchema(id: string, output: Record<string, unknown>): void {
+function validateWhatsNextSchema(id: string, output: Record<string, unknown>): void {
   if (!Array.isArray(output.tasks)) {
     throw new Error(`[${id}] tasks must be an array`)
   }
@@ -799,10 +799,10 @@ function validateBubbleSchema(id: string, output: Record<string, unknown>): void
   }
 }
 
-function validateReviewSchema(
+function validateInsightsSchema(
   id: string,
   output: Record<string, unknown>,
-  input: ReviewInput,
+  input: InsightsInput,
 ): void {
   const items = output.items as Array<Record<string, unknown>>
   if (!Array.isArray(items)) {
@@ -860,13 +860,13 @@ function validateReviewSchema(
 }
 
 /**
- * Validate deterministic review expectations — both always-on rules
- * and per-scenario checks from review_expectations.
+ * Validate deterministic insights expectations — both always-on rules
+ * and per-scenario checks from insights_expectations.
  */
-function validateReviewExpectations(
+function validateInsightsExpectations(
   id: string,
   output: Record<string, unknown>,
-  input: ReviewInput,
+  input: InsightsInput,
   requirements: ScenarioRequirements,
 ): void {
   const items = output.items as Array<{
@@ -881,7 +881,7 @@ function validateReviewExpectations(
   const itemMap = new Map(items.map((item) => [item.task_id, item]))
   const taskMap = new Map(input.tasks.map((t) => [t.id, t]))
 
-  // --- Always-on checks (every review scenario) ---
+  // --- Always-on checks (every insights scenario) ---
 
   for (const item of items) {
     const task = taskMap.get(item.task_id)
@@ -936,8 +936,8 @@ function validateReviewExpectations(
   // Skip this check for scenarios with min_zero_signal_pct >= 60 — those are
   // intentionally homogeneous (all routine tasks) where low variance is expected.
   const isHomogeneous =
-    requirements.review_expectations?.min_zero_signal_pct != null &&
-    requirements.review_expectations.min_zero_signal_pct >= 60
+    requirements.insights_expectations?.min_zero_signal_pct != null &&
+    requirements.insights_expectations.min_zero_signal_pct >= 60
   if (items.length >= 10 && !isHomogeneous) {
     const scores = items.map((i) => i.score)
     const mean = scores.reduce((a, b) => a + b, 0) / scores.length
@@ -951,9 +951,9 @@ function validateReviewExpectations(
     }
   }
 
-  // --- Per-scenario checks (when review_expectations is set) ---
+  // --- Per-scenario checks (when insights_expectations is set) ---
 
-  const expectations = requirements.review_expectations
+  const expectations = requirements.insights_expectations
   if (!expectations) return
 
   // Score ranges
@@ -1031,10 +1031,10 @@ function getModelForFeature(feature: string): string {
   switch (feature) {
     case 'enrichment':
       return process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
-    case 'bubble':
-      return process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku'
-    case 'review':
-      return process.env.OPENTASK_AI_REVIEW_MODEL || 'claude-opus-4-6'
+    case 'whats_next':
+      return process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku'
+    case 'insights':
+      return process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6'
     default:
       return 'haiku'
   }

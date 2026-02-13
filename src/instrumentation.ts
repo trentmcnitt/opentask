@@ -6,8 +6,8 @@
  *
  * Cron schedule:
  * - Every 1 min: heartbeat (overdue + critical + enrichment safety net)
- * - 3:00 AM daily: undo purge + Bubble generation (AI)
- * - 3:15 AM daily: Review generation (AI)
+ * - 3:00 AM daily: undo purge + What's Next generation (AI)
+ * - 3:15 AM daily: Insights generation (AI)
  * - 3:30 AM daily: trash purge
  * - 4:00 AM daily: completions purge
  * - 4:30 AM Sunday: stats purge
@@ -122,23 +122,24 @@ export async function register() {
         log.error('ai', 'Enrichment slot startup failed:', err)
       })
 
-      // Bubble cron: generate recommendations for all active users at 3 AM
+      // What's Next cron: generate recommendations for all active users at 3 AM
       // Uses Opus for the scheduled batch (no time pressure, maximum quality)
       cron.schedule('0 3 * * *', async () => {
         try {
-          const { generateBubble, buildTaskSummaries, getUserAiContext } = await import('@/core/ai')
+          const { generateWhatsNext, buildTaskSummaries, getUserAiContext } =
+            await import('@/core/ai')
           const { getDb } = await import('@/core/db')
           const db = getDb()
           const users = db.prepare('SELECT id, timezone FROM users').all() as {
             id: number
             timezone: string
           }[]
-          const cronModel = process.env.OPENTASK_AI_BUBBLE_MODEL || 'claude-opus-4-6'
+          const cronModel = process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'claude-opus-4-6'
           for (const user of users) {
             const tasks = buildTaskSummaries(user.id)
             if (tasks.length > 0) {
               const aiContext = getUserAiContext(user.id)
-              await generateBubble(
+              await generateWhatsNext(
                 user.id,
                 user.timezone,
                 tasks,
@@ -146,21 +147,21 @@ export async function register() {
                 cronModel,
                 'scheduled',
               ).catch((err) => {
-                log.error('cron', `Bubble generation failed for user ${user.id}:`, err)
+                log.error('cron', `What's Next generation failed for user ${user.id}:`, err)
               })
             }
           }
-          log.info('cron', `Bubble cron: generated for ${users.length} users`)
+          log.info('cron', `What's Next cron: generated for ${users.length} users`)
         } catch (err) {
-          log.error('cron', 'Bubble cron error:', err)
+          log.error('cron', "What's Next cron error:", err)
         }
       })
 
-      // Review cron: score and annotate tasks for all active users at 3:15 AM
-      // Runs after Bubble to avoid semaphore contention (both hold 1 slot sequentially)
+      // Insights cron: score and annotate tasks for all active users at 3:15 AM
+      // Runs after What's Next to avoid semaphore contention (both hold 1 slot sequentially)
       cron.schedule('15 3 * * *', async () => {
         try {
-          const { generateReviewForUser, buildTaskSummaries, getUserAiContext } =
+          const { generateInsightsForUser, buildTaskSummaries, getUserAiContext } =
             await import('@/core/ai')
           const { getDb } = await import('@/core/db')
           const db = getDb()
@@ -173,21 +174,21 @@ export async function register() {
               const tasks = buildTaskSummaries(user.id)
               if (tasks.length > 0) {
                 const aiContext = getUserAiContext(user.id)
-                await generateReviewForUser(user.id, user.timezone, tasks, aiContext, 'scheduled')
+                await generateInsightsForUser(user.id, user.timezone, tasks, aiContext, 'scheduled')
               }
             } catch (err) {
-              log.error('cron', `Review generation failed for user ${user.id}:`, err)
+              log.error('cron', `Insights generation failed for user ${user.id}:`, err)
             }
           }
-          log.info('cron', `Review cron: generated for ${users.length} users`)
+          log.info('cron', `Insights cron: generated for ${users.length} users`)
         } catch (err) {
-          log.error('cron', 'Review cron error:', err)
+          log.error('cron', 'Insights cron error:', err)
         }
       })
 
       log.info(
         'ai',
-        'AI enrichment slot initializing, Bubble cron (3 AM) + Review cron (3:15 AM) scheduled',
+        "AI enrichment slot initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
       )
 
       // Graceful shutdown: close enrichment slot on SIGTERM

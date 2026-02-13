@@ -17,34 +17,34 @@ interface AiControlAreaProps {
   onShowScoresChange: (show: boolean) => void
   showSignals: boolean
   onShowSignalsChange: (show: boolean) => void
-  showBubbleText: boolean
-  onShowBubbleTextChange: (show: boolean) => void
+  showWhatsNext: boolean
+  onShowWhatsNextChange: (show: boolean) => void
   showInsights: boolean
   onShowInsightsChange: (show: boolean) => void
   showCommentary: boolean
   onShowCommentaryChange: (show: boolean) => void
-  // Bubble
+  // What's Next
   annotationGeneratedAt: string | null
   annotationFreshnessText: string | null
   annotationRefreshLoading: boolean
   annotationError: string | null
   onRefreshAnnotations: () => void
-  // Insights (Review)
-  reviewGeneratedAt: string | null
-  reviewGenerating: boolean
-  reviewProgress: number
-  reviewCompletedTasks: number
-  reviewTotalTasks: number
-  reviewSingleCall: boolean
-  reviewError: string | null
-  onRefreshReview: () => void
+  // Insights
+  insightsGeneratedAt: string | null
+  insightsGenerating: boolean
+  insightsProgress: number
+  insightsCompletedTasks: number
+  insightsTotalTasks: number
+  insightsSingleCall: boolean
+  insightsError: string | null
+  onRefreshInsights: () => void
 }
 
 /**
  * AI chip + popover — sits inline next to the QuickAdd input.
  *
  * The chip is a compact pill that opens a popover for configuration.
- * Two AI systems (Bubble and Insights) are clearly separated in the
+ * Two AI systems (What's Next and Insights) are clearly separated in the
  * popover with their own freshness timestamps and refresh buttons.
  *
  * When insights are generating, the AI button glows and the progress
@@ -59,8 +59,8 @@ export function AiControlArea({
   onShowScoresChange,
   showSignals,
   onShowSignalsChange,
-  showBubbleText,
-  onShowBubbleTextChange,
+  showWhatsNext,
+  onShowWhatsNextChange,
   showInsights,
   onShowInsightsChange,
   showCommentary,
@@ -70,26 +70,26 @@ export function AiControlArea({
   annotationRefreshLoading,
   annotationError,
   onRefreshAnnotations,
-  reviewGeneratedAt,
-  reviewGenerating,
-  reviewProgress,
-  reviewCompletedTasks,
-  reviewTotalTasks,
-  reviewSingleCall,
-  reviewError,
-  onRefreshReview,
+  insightsGeneratedAt,
+  insightsGenerating,
+  insightsProgress,
+  insightsCompletedTasks,
+  insightsTotalTasks,
+  insightsSingleCall,
+  insightsError,
+  onRefreshInsights,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
 
-  const reviewFreshnessText = reviewGeneratedAt ? formatRelativeTime(reviewGeneratedAt) : null
+  const insightsFreshnessText = insightsGeneratedAt ? formatRelativeTime(insightsGeneratedAt) : null
 
   const handleRefreshAnnotations = useCallback(() => {
     if (!annotationRefreshLoading) onRefreshAnnotations()
   }, [annotationRefreshLoading, onRefreshAnnotations])
 
-  const handleRefreshReview = useCallback(() => {
-    if (!reviewGenerating) onRefreshReview()
-  }, [reviewGenerating, onRefreshReview])
+  const handleRefreshInsights = useCallback(() => {
+    if (!insightsGenerating) onRefreshInsights()
+  }, [insightsGenerating, onRefreshInsights])
 
   return (
     <Popover>
@@ -100,7 +100,7 @@ export function AiControlArea({
             isActive
               ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-950/70'
               : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
-            reviewGenerating && 'animate-[ai-glow_2s_ease-in-out_infinite]',
+            insightsGenerating && 'animate-[ai-glow_2s_ease-in-out_infinite]',
           )}
           aria-label="AI settings"
         >
@@ -131,10 +131,10 @@ export function AiControlArea({
           />
         </div>
 
-        {/* Bubble section (blue accent) */}
+        {/* What's Next section (blue accent) */}
         <div className="mt-4">
           <SectionHeader
-            label="Bubble"
+            label="What's Next"
             freshnessText={annotationFreshnessText}
             generatedAt={annotationGeneratedAt}
             refreshing={annotationRefreshLoading}
@@ -146,8 +146,8 @@ export function AiControlArea({
             <FeatureCheckbox
               label="Task annotations"
               description="Short AI notes on each task"
-              checked={showBubbleText}
-              onChange={onShowBubbleTextChange}
+              checked={showWhatsNext}
+              onChange={onShowWhatsNextChange}
               disabled={!isActive}
               color="blue"
             />
@@ -192,11 +192,11 @@ export function AiControlArea({
             </div>
             {isActive && showInsights && (
               <div className="flex items-center gap-1.5">
-                {!reviewGenerating &&
-                  (reviewFreshnessText ? (
+                {!insightsGenerating &&
+                  (insightsFreshnessText ? (
                     <FreshnessWithTooltip
-                      freshnessText={reviewFreshnessText}
-                      generatedAt={reviewGeneratedAt}
+                      freshnessText={insightsFreshnessText}
+                      generatedAt={insightsGeneratedAt}
                     />
                   ) : (
                     <span className="text-muted-foreground/50 text-[11px]">Not generated</span>
@@ -204,13 +204,13 @@ export function AiControlArea({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleRefreshReview()
+                    handleRefreshInsights()
                   }}
-                  disabled={reviewGenerating}
+                  disabled={insightsGenerating}
                   className="text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors disabled:opacity-40"
                   aria-label="Refresh insights"
                 >
-                  <RefreshCw className={cn('size-3', reviewGenerating && 'animate-spin')} />
+                  <RefreshCw className={cn('size-3', insightsGenerating && 'animate-spin')} />
                 </button>
               </div>
             )}
@@ -246,14 +246,14 @@ export function AiControlArea({
             </div>
           )}
 
-          {isActive && showInsights && reviewError && !reviewGenerating && (
-            <p className="mt-1.5 text-[11px] text-red-500">{reviewError}</p>
+          {isActive && showInsights && insightsError && !insightsGenerating && (
+            <p className="mt-1.5 text-[11px] text-red-500">{insightsError}</p>
           )}
 
           {/* Progress bar — visible even when insights eye is off since generation is in progress */}
-          {isActive && reviewGenerating && (
+          {isActive && insightsGenerating && (
             <div className="mt-3">
-              {reviewSingleCall ? (
+              {insightsSingleCall ? (
                 <div className="bg-muted h-1.5 overflow-hidden rounded-full">
                   <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-400" />
                 </div>
@@ -261,12 +261,12 @@ export function AiControlArea({
                 <div className="bg-muted h-1.5 overflow-hidden rounded-full">
                   <div
                     className="h-full rounded-full bg-indigo-400 transition-all duration-500"
-                    style={{ width: `${reviewProgress}%` }}
+                    style={{ width: `${insightsProgress}%` }}
                   />
                 </div>
               )}
               <p className="text-muted-foreground mt-1 text-[11px]">
-                Analyzing {reviewCompletedTasks}/{reviewTotalTasks} tasks... <ElapsedTimer />
+                Analyzing {insightsCompletedTasks}/{insightsTotalTasks} tasks... <ElapsedTimer />
               </p>
             </div>
           )}

@@ -1,5 +1,5 @@
 /**
- * POST /api/review/generate — Kick off AI review generation
+ * POST /api/ai/insights/generate — Kick off AI insights generation
  *
  * Starts batch processing of all active tasks in the background.
  * Returns immediately with a session_id for progress polling.
@@ -11,8 +11,8 @@ import {
   isAIEnabled,
   getUserAiContext,
   buildTaskSummaries,
-  startReviewGeneration,
-  getActiveReviewSession,
+  startInsightsGeneration,
+  getActiveInsightsSession,
 } from '@/core/ai'
 import { success, unauthorized, badRequest, conflict, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for already-running session
-    const active = getActiveReviewSession(user.id)
+    const active = getActiveInsightsSession(user.id)
     if (active) {
-      return conflict('A review is already in progress', {
+      return conflict('Insights generation is already in progress', {
         session_id: active.id,
         completed: active.completed,
         total_tasks: active.total_tasks,
@@ -37,11 +37,15 @@ export async function POST(request: NextRequest) {
 
     const tasks = buildTaskSummaries(user.id)
     if (tasks.length === 0) {
-      return success({ session_id: null, total_tasks: 0, message: 'No active tasks to review' })
+      return success({
+        session_id: null,
+        total_tasks: 0,
+        message: 'No active tasks to analyze',
+      })
     }
 
     const aiContext = getUserAiContext(user.id)
-    const { sessionId, totalTasks, singleCall } = startReviewGeneration(
+    const { sessionId, totalTasks, singleCall } = startInsightsGeneration(
       user.id,
       user.timezone,
       tasks,
@@ -52,7 +56,7 @@ export async function POST(request: NextRequest) {
     return success({ session_id: sessionId, total_tasks: totalTasks, single_call: singleCall })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
-    log.error('api', 'POST /api/review/generate error:', err)
+    log.error('api', 'POST /api/ai/insights/generate error:', err)
     return handleError(err)
   }
 }

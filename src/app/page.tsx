@@ -34,7 +34,7 @@ import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { taskWord } from '@/lib/utils'
 import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
 import { useAiMode, type AiMode } from '@/hooks/useAiMode'
-import { useReviewData, type UseReviewDataReturn } from '@/hooks/useReviewData'
+import { useInsightsData, type UseInsightsDataReturn } from '@/hooks/useInsightsData'
 import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
 
@@ -373,59 +373,59 @@ function HomeContent() {
     setShowScores,
     showSignals,
     setShowSignals,
-    showBubbleText,
-    setShowBubbleText,
+    showWhatsNext,
+    setShowWhatsNext,
     showInsights,
     setShowInsights,
     showCommentary,
     setShowCommentary,
   } = useAiMode()
 
-  // AI insights (bubble): fetch recommendations and resolve against current task list
+  // AI What's Next: fetch recommendations and resolve against current task list
   const aiInsights = useAiInsights(baseTasks)
 
-  // AI review (insight): fetch/generate review results
-  const reviewData = useReviewData(baseTasks)
+  // AI Insights: fetch/generate insights results
+  const insightsData = useInsightsData(baseTasks)
 
   // Separate refresh handlers for each AI system
   const handleRefreshAnnotations = useCallback(() => {
     aiInsights.refresh()
   }, [aiInsights])
 
-  const handleRefreshReview = useCallback(() => {
-    if (!reviewData.generating) {
-      reviewData.generate()
+  const handleRefreshInsights = useCallback(() => {
+    if (!insightsData.generating) {
+      insightsData.generate()
     }
-  }, [reviewData])
+  }, [insightsData])
 
-  // Mode change handler: switching to 'on' auto-generates review if features checked and no data
+  // Mode change handler: switching to 'on' auto-generates insights if features checked and no data
   const handleModeChange = useCallback(
     (mode: AiMode) => {
       setAiMode(mode)
       if (mode === 'on') {
-        const hasReviewFeatures = showInsights && (showScores || showSignals || showCommentary)
-        if (hasReviewFeatures && !reviewData.hasResults && !reviewData.generating) {
-          reviewData.generate()
+        const hasInsightsFeatures = showInsights && (showScores || showSignals || showCommentary)
+        if (hasInsightsFeatures && !insightsData.hasResults && !insightsData.generating) {
+          insightsData.generate()
         }
       }
     },
-    [setAiMode, showInsights, showScores, showSignals, showCommentary, reviewData],
+    [setAiMode, showInsights, showScores, showSignals, showCommentary, insightsData],
   )
 
-  // Auto-trigger review generation when user checks a review feature and no review data exists
+  // Auto-trigger insights generation when user checks an insights feature and no insights data exists
   const handleSubFeatureChange = useCallback(
-    (setter: (v: boolean) => void, value: boolean, isReviewFeature: boolean) => {
+    (setter: (v: boolean) => void, value: boolean, isInsightsFeature: boolean) => {
       setter(value)
-      if (value && isReviewFeature && !reviewData.hasResults && !reviewData.generating) {
-        reviewData.generate()
+      if (value && isInsightsFeature && !insightsData.hasResults && !insightsData.generating) {
+        insightsData.generate()
       }
     },
-    [reviewData],
+    [insightsData],
   )
 
   // Toast on AI errors
   const prevAnnotationError = useRef<string | null>(null)
-  const prevReviewError = useRef<string | null>(null)
+  const prevInsightsError = useRef<string | null>(null)
   useEffect(() => {
     if (aiInsights.error && aiInsights.error !== prevAnnotationError.current) {
       showErrorToast(aiInsights.error)
@@ -433,13 +433,13 @@ function HomeContent() {
     prevAnnotationError.current = aiInsights.error
   }, [aiInsights.error])
   useEffect(() => {
-    if (reviewData.error && reviewData.error !== prevReviewError.current) {
-      showErrorToast(reviewData.error)
+    if (insightsData.error && insightsData.error !== prevInsightsError.current) {
+      showErrorToast(insightsData.error)
     }
-    prevReviewError.current = reviewData.error
-  }, [reviewData.error])
+    prevInsightsError.current = insightsData.error
+  }, [insightsData.error])
 
-  // Bubble-specific AI filter toggle (filter task list to only AI-highlighted tasks)
+  // What's Next AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
 
   // Signal filter state for Insight mode (multi-select with Cmd+click exclusive)
@@ -468,7 +468,7 @@ function HomeContent() {
   const tasks_ = useMemo(() => {
     let result = displayTasks
 
-    // Bubble/Insights: filter to Bubble-highlighted tasks when chip is active
+    // What's Next: filter to highlighted tasks when chip is active
     if (aiMode !== 'off' && aiFilterActive && aiInsights.aiTaskIds.size > 0) {
       result = result.filter((t) => aiInsights.aiTaskIds.has(t.id))
     }
@@ -476,7 +476,7 @@ function HomeContent() {
     // Filter by selected signals (union/OR) when AI on + Insights visible
     if (aiMode !== 'off' && showInsights && selectedSignals.length > 0) {
       result = result.filter((t) => {
-        const sigs = reviewData.reviewSignalMap.get(t.id)
+        const sigs = insightsData.insightsSignalMap.get(t.id)
         return sigs?.some((s) => selectedSignals.includes(s))
       })
     }
@@ -489,27 +489,27 @@ function HomeContent() {
     aiFilterActive,
     aiInsights.aiTaskIds,
     selectedSignals,
-    reviewData.reviewSignalMap,
+    insightsData.insightsSignalMap,
   ])
 
-  // Derive effective annotation map: Bubble annotations shown when AI on + "Bubble text" checked
+  // Derive effective annotation map: What's Next annotations shown when AI on + "What's Next" checked
   const effectiveAnnotationMap = useMemo(() => {
-    if (aiMode === 'off' || !showBubbleText) return new Map<number, string>()
+    if (aiMode === 'off' || !showWhatsNext) return new Map<number, string>()
     return aiInsights.annotationMap
-  }, [aiMode, showBubbleText, aiInsights.annotationMap])
+  }, [aiMode, showWhatsNext, aiInsights.annotationMap])
 
-  // Review commentary: shown when AI on + Insights visible + "Commentary" checked
+  // Insights commentary: shown when AI on + Insights visible + "Commentary" checked
   const effectiveCommentaryMap = useMemo(() => {
     if (aiMode === 'off' || !showInsights || !showCommentary) return new Map<number, string>()
-    return reviewData.annotationMap
-  }, [aiMode, showInsights, showCommentary, reviewData.annotationMap])
+    return insightsData.annotationMap
+  }, [aiMode, showInsights, showCommentary, insightsData.annotationMap])
 
   // Show annotations when AI mode is not off
   const showAnnotations = aiMode !== 'off'
 
   // Sort fallback: if scores not visible and sorting by AI score, revert to due_date
   useEffect(() => {
-    if ((!showScores || !showInsights) && sortOption === 'ai_review') {
+    if ((!showScores || !showInsights) && sortOption === 'ai_insights') {
       setSortOption('due_date')
     }
   }, [showScores, showInsights, sortOption, setSortOption])
@@ -819,16 +819,16 @@ function HomeContent() {
       onShowScoresChange={(v: boolean) => handleSubFeatureChange(setShowScores, v, true)}
       showSignals={showSignals}
       onShowSignalsChange={(v: boolean) => handleSubFeatureChange(setShowSignals, v, true)}
-      showBubbleText={showBubbleText}
-      onShowBubbleTextChange={(v: boolean) => handleSubFeatureChange(setShowBubbleText, v, false)}
+      showWhatsNext={showWhatsNext}
+      onShowWhatsNextChange={(v: boolean) => handleSubFeatureChange(setShowWhatsNext, v, false)}
       showInsights={showInsights}
       onShowInsightsChange={setShowInsights}
       showCommentary={showCommentary}
       onShowCommentaryChange={(v: boolean) => handleSubFeatureChange(setShowCommentary, v, true)}
       onRefreshAnnotations={handleRefreshAnnotations}
-      onRefreshReview={handleRefreshReview}
+      onRefreshInsights={handleRefreshInsights}
       aiInsights={aiInsights}
-      reviewData={reviewData}
+      insightsData={insightsData}
       aiFilterActive={aiFilterActive}
       onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
       effectiveAnnotationMap={effectiveAnnotationMap}
@@ -910,16 +910,16 @@ function DashboardView({
   onShowScoresChange,
   showSignals,
   onShowSignalsChange,
-  showBubbleText,
-  onShowBubbleTextChange,
+  showWhatsNext,
+  onShowWhatsNextChange,
   showInsights,
   onShowInsightsChange,
   showCommentary,
   onShowCommentaryChange,
   onRefreshAnnotations,
-  onRefreshReview,
+  onRefreshInsights,
   aiInsights,
-  reviewData,
+  insightsData,
   aiFilterActive,
   onToggleAiFilter,
   effectiveAnnotationMap,
@@ -998,16 +998,16 @@ function DashboardView({
   onShowScoresChange: (show: boolean) => void
   showSignals: boolean
   onShowSignalsChange: (show: boolean) => void
-  showBubbleText: boolean
-  onShowBubbleTextChange: (show: boolean) => void
+  showWhatsNext: boolean
+  onShowWhatsNextChange: (show: boolean) => void
   showInsights: boolean
   onShowInsightsChange: (show: boolean) => void
   showCommentary: boolean
   onShowCommentaryChange: (show: boolean) => void
   onRefreshAnnotations: () => void
-  onRefreshReview: () => void
+  onRefreshInsights: () => void
   aiInsights: UseAiInsightsReturn
-  reviewData: UseReviewDataReturn
+  insightsData: UseInsightsDataReturn
   aiFilterActive: boolean
   onToggleAiFilter: () => void
   effectiveAnnotationMap: Map<number, string>
@@ -1063,8 +1063,8 @@ function DashboardView({
             onShowScoresChange={onShowScoresChange}
             showSignals={showSignals}
             onShowSignalsChange={onShowSignalsChange}
-            showBubbleText={showBubbleText}
-            onShowBubbleTextChange={onShowBubbleTextChange}
+            showWhatsNext={showWhatsNext}
+            onShowWhatsNextChange={onShowWhatsNextChange}
             showInsights={showInsights}
             onShowInsightsChange={onShowInsightsChange}
             showCommentary={showCommentary}
@@ -1074,14 +1074,14 @@ function DashboardView({
             annotationRefreshLoading={aiInsights.loading}
             annotationError={aiInsights.error}
             onRefreshAnnotations={onRefreshAnnotations}
-            reviewGeneratedAt={reviewData.generatedAt}
-            reviewGenerating={reviewData.generating}
-            reviewProgress={reviewData.progress}
-            reviewCompletedTasks={reviewData.completedTasks}
-            reviewTotalTasks={reviewData.totalTasks}
-            reviewSingleCall={reviewData.singleCall}
-            reviewError={reviewData.error}
-            onRefreshReview={onRefreshReview}
+            insightsGeneratedAt={insightsData.generatedAt}
+            insightsGenerating={insightsData.generating}
+            insightsProgress={insightsData.progress}
+            insightsCompletedTasks={insightsData.completedTasks}
+            insightsTotalTasks={insightsData.totalTasks}
+            insightsSingleCall={insightsData.singleCall}
+            insightsError={insightsData.error}
+            onRefreshInsights={onRefreshInsights}
           />
         </div>
 
@@ -1105,11 +1105,11 @@ function DashboardView({
           onToggleAiFilter={onToggleAiFilter}
           showSignals={showSignals}
           signalChips={
-            aiMode !== 'off' && showInsights && showSignals && reviewData.hasResults
-              ? reviewData.activeSignals.map((s) => ({
+            aiMode !== 'off' && showInsights && showSignals && insightsData.hasResults
+              ? insightsData.activeSignals.map((s) => ({
                   key: s.key,
                   label: s.label,
-                  count: reviewData.signalCounts[s.key] || 0,
+                  count: insightsData.signalCounts[s.key] || 0,
                   description: s.description,
                 }))
               : undefined
@@ -1161,14 +1161,20 @@ function DashboardView({
           annotationMap={effectiveAnnotationMap}
           showAnnotations={showAnnotations}
           onReprocess={onReprocess}
-          reviewScoreMap={
-            showInsights && showScores && aiMode !== 'off' ? reviewData.reviewScoreMap : undefined
+          insightsScoreMap={
+            showInsights && showScores && aiMode !== 'off'
+              ? insightsData.insightsScoreMap
+              : undefined
           }
-          reviewSignalMap={
-            showInsights && showSignals && aiMode !== 'off' ? reviewData.reviewSignalMap : undefined
+          insightsSignalMap={
+            showInsights && showSignals && aiMode !== 'off'
+              ? insightsData.insightsSignalMap
+              : undefined
           }
-          reviewCommentaryMap={effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined}
-          showAiReview={reviewData.hasResults && aiMode !== 'off' && showInsights}
+          insightsCommentaryMap={
+            effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
+          }
+          showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
           aiScoreDisabled={!showInsights || !showScores || aiMode === 'off'}
           headerLeft={
             tasks.length > 0 ? (

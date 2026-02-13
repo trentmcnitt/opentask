@@ -167,7 +167,7 @@
   }
 }
 
-/* Indeterminate progress bar shimmer for single-call AI review */
+/* Indeterminate progress bar shimmer for single-call AI insights */
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);

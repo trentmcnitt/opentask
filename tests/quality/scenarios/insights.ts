@@ -1,7 +1,7 @@
 /**
- * AI Review scenarios
+ * AI Insights scenarios
  *
- * Tests the Review feature which scores every task 0-100 based on how much
+ * Tests the Insights feature which scores every task 0-100 based on how much
  * it needs human attention, adds one-line commentary, and assigns 0-2 signals
  * from a preset vocabulary (review, stale, act_soon, quick_win, vague, misprioritized).
  *
@@ -19,10 +19,10 @@
 
 import type { AITestScenario } from '../types'
 
-export const reviewScenarios: AITestScenario[] = [
+export const insightsScenarios: AITestScenario[] = [
   {
-    id: 'review-mixed-priorities',
-    feature: 'review',
+    id: 'insights-mixed-priorities',
+    feature: 'insights',
     description:
       'Mix of P0-4 with varying ages — old forgotten tasks should score high, visible recent tasks should score low',
     input: {
@@ -141,7 +141,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 3 (birthday present, mom birthday March 2): should score MEDIUM — time-sensitive but not urgent yet. ' +
         'IDs 1 and 6 should get "stale" signal. ID 4 should get NO signals. ' +
         'Commentary should be grounded — no fabricated details beyond what the task data shows.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           1: { min: 70, max: 100 },
           4: { min: 0, max: 20 },
@@ -160,8 +160,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-stale-detection',
-    feature: 'review',
+    id: 'insights-stale-detection',
+    feature: 'insights',
     description:
       'Tasks created months ago with no activity — should score high and get stale signal',
     input: {
@@ -248,7 +248,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 14 (groceries, created today, due tomorrow): should score LOW (0-29) — recent, straightforward, on track. ' +
         'Commentary should mention how long each task has been sitting (e.g., "on the list since October"). ' +
         'Commentary must NOT fabricate reasons for why the task was delayed.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           10: { min: 70, max: 100 },
           11: { min: 65, max: 100 },
@@ -266,8 +266,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-well-organized',
-    feature: 'review',
+    id: 'insights-well-organized',
+    feature: 'insights',
     description: 'Clean, well-organized tasks — should score low with no signals',
     input: {
       timezone: 'America/Chicago',
@@ -355,7 +355,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 23 (Q1 review, one-off, due in 5 days): LOW — recent, clear notes, on track. ' +
         'ID 24 (water plants, recurring weekly): LOW — routine. ' +
         'Commentary should be brief and positive (e.g., "On track", "Routine task running smoothly").',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           20: { min: 0, max: 39 },
           21: { min: 0, max: 39 },
@@ -368,8 +368,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-signal-variety',
-    feature: 'review',
+    id: 'insights-signal-variety',
+    feature: 'insights',
     description:
       'Tasks designed to trigger each of the 6 signal types — verify the full signal vocabulary works',
     input: {
@@ -488,7 +488,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 36 (taxes, P1, due Apr 15): this is LOW priority right now — well organized, plenty of time. ' +
         'At least 4 of the 6 signal types should appear across the batch. ' +
         'Commentary should explain WHY each signal applies, not just repeat the signal name.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           30: { min: 70, max: 100 },
           34: { min: 0, max: 25 },
@@ -505,8 +505,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-recurring-overdue',
-    feature: 'review',
+    id: 'insights-recurring-overdue',
+    feature: 'insights',
     description:
       'Recurring tasks overdue by varying amounts — tests that short overdue is LOW, long overdue is HIGH',
     input: {
@@ -595,7 +595,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 44 (weekly desk, 2 days overdue): LOW (0-20), no signals — within 1 cycle. ' +
         'The key test: overdue within one cycle (IDs 40, 41, 44) should score LOW, ' +
         'while overdue by multiple cycles (IDs 42, 43) should score progressively higher.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           40: { min: 0, max: 75 },
           41: { min: 0, max: 70 },
@@ -610,8 +610,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-p0p2-overdue',
-    feature: 'review',
+    id: 'insights-p0p2-overdue',
+    feature: 'insights',
     description:
       'P0-P2 tasks overdue by varying amounts — tests "reminder not deadline" philosophy',
     input: {
@@ -701,7 +701,7 @@ export const reviewScenarios: AITestScenario[] = [
         'The key test: P0-2 overdue by a few days should score LOW (reminders), ' +
         'while P0-2 overdue by 3+ weeks should score progressively higher (forgotten/drifting). ' +
         'act_soon should NEVER appear on P0-2 tasks.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           50: { min: 0, max: 30 },
           52: { min: 40, max: 90 },
@@ -719,8 +719,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-from-completion',
-    feature: 'review',
+    id: 'insights-from-completion',
+    feature: 'insights',
     description:
       'Tasks with from_completion recurrence mode — tests detection of genuinely stuck recurring tasks',
     input: {
@@ -793,7 +793,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 62 (weekly backup, from_completion, ~4 days overdue): LOW (0-40) — within 1 cycle, mostly normal. ' +
         'ID 63 (biweekly lawn, from_due, ~2 days overdue, created 4+ months ago): LOW-MEDIUM (0-50) — within 1 cycle of biweekly schedule. The task is months old so a "review" signal is acceptable but not required. ' +
         'The key test: from_completion overdue means the user has NOT done it, scoring higher than equivalent from_due overdue.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           60: { min: 30, max: 75 },
           61: { min: 65, max: 90 },
@@ -806,8 +806,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-consequences',
-    feature: 'review',
+    id: 'insights-consequences',
+    feature: 'insights',
     description: 'P3 tasks with varying consequence urgency — tests nuanced scoring of deadlines',
     input: {
       timezone: 'America/Chicago',
@@ -895,7 +895,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 74 (contractor bids, due Feb 15, decision by end of month): LOW-MEDIUM (15-40) — not due yet, plenty of time. ' +
         'Commentary should reference specific consequences from notes (filing window, RSVP date, processing time). ' +
         'The key test: consequences that have passed or are imminent score HIGH, consequences weeks away score lower.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           70: { min: 60, max: 95 },
           71: { min: 15, max: 75 },
@@ -910,8 +910,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-signal-restraint',
-    feature: 'review',
+    id: 'insights-signal-restraint',
+    feature: 'insights',
     description: 'Mix of 10 routine tasks — tests that 60-70% get NO signals',
     input: {
       timezone: 'America/Chicago',
@@ -1069,7 +1069,7 @@ export const reviewScenarios: AITestScenario[] = [
         'No task should receive act_soon or stale — nothing here is urgent or forgotten. ' +
         'ID 82 (book, P0, no due date, 11 days old) is the strongest candidate for a signal (review). At most 1-2 other tasks may get a mild signal (quick_win or review). ' +
         'Commentary should be brief and matter-of-fact for routine tasks.',
-      review_expectations: {
+      insights_expectations: {
         signal_checks: {
           80: { must_not_have: ['act_soon', 'stale'] },
           81: { must_not_have: ['act_soon', 'stale'] },
@@ -1083,8 +1083,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-boundary-stale',
-    feature: 'review',
+    id: 'insights-boundary-stale',
+    feature: 'insights',
     description:
       'Tasks at various ages — tests the staleness boundary (under 2 weeks, 2-3 weeks, 3+ weeks)',
     input: {
@@ -1188,7 +1188,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 95 (7+ weeks old): HIGH (70-85) — stale. Must get "stale" signal. ' +
         'Scores should increase monotonically with age. ' +
         'The key test: tasks under 2 weeks should NOT get "stale", tasks at 3+ weeks SHOULD.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           90: { min: 0, max: 25 },
           93: { min: 65, max: 85 },
@@ -1206,8 +1206,8 @@ export const reviewScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'review-user-context-job-hunting',
-    feature: 'review',
+    id: 'insights-user-context-job-hunting',
+    feature: 'insights',
     description:
       'User context about job hunting — career/networking tasks should get contextually appropriate commentary',
     input: {
@@ -1301,7 +1301,7 @@ export const reviewScenarios: AITestScenario[] = [
         'ID 104 (thank-you note, P1, overdue ~5 days): should score MEDIUM-HIGH (40-80) — ' +
         'social obligation + job hunting context. Notes mention 48-hour window which has passed. ' +
         'Commentary should be grounded — use task data and user context together.',
-      review_expectations: {
+      insights_expectations: {
         score_ranges: {
           100: { min: 40, max: 80 },
           102: { min: 0, max: 25 },

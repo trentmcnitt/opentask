@@ -1,17 +1,17 @@
 /**
- * Bubble recommendation scenarios
+ * What's Next recommendation scenarios
  *
- * Tests the Bubble feature which surfaces tasks that are easy to overlook:
+ * Tests the What's Next feature which surfaces tasks that are easy to overlook:
  * old lingering tasks, social obligations, routine-only lists,
  * time-sensitive tasks without hard deadlines, and overdue/deadline distinction.
  */
 
 import type { AITestScenario } from '../types'
 
-export const bubbleScenarios: AITestScenario[] = [
+export const whatsNextScenarios: AITestScenario[] = [
   {
-    id: 'bubble-old-lingering-tasks',
-    feature: 'bubble',
+    id: 'whats-next-old-lingering-tasks',
+    feature: 'whats_next',
     description: 'Old one-off tasks that have been lingering for weeks should be surfaced',
     input: {
       timezone: 'America/Chicago',
@@ -132,8 +132,8 @@ export const bubbleScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'bubble-social-obligations',
-    feature: 'bubble',
+    id: 'whats-next-social-obligations',
+    feature: 'whats_next',
     description: 'Social obligations should be surfaced',
     input: {
       timezone: 'America/Chicago',
@@ -237,8 +237,8 @@ export const bubbleScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'bubble-all-routine',
-    feature: 'bubble',
+    id: 'whats-next-all-routine',
+    feature: 'whats_next',
     description: 'All daily recurring tasks — should return few or no recommendations',
     input: {
       timezone: 'America/Chicago',
@@ -260,14 +260,14 @@ export const bubbleScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'With only recurring daily affirmations, Bubble should return an empty or very small ' +
+        "With only recurring daily affirmations, What's Next should return an empty or very small " +
         'task list (0-2 items). These are routine tasks the user already sees in their task list. ' +
         'Surfacing all 10 would be noise. Summary should reflect that nothing needs attention.',
     },
   },
   {
-    id: 'bubble-closing-windows',
-    feature: 'bubble',
+    id: 'whats-next-closing-windows',
+    feature: 'whats_next',
     description: 'Time-sensitive tasks without hard deadlines — closing opportunity windows',
     input: {
       timezone: 'America/Chicago',
@@ -330,8 +330,8 @@ export const bubbleScenarios: AITestScenario[] = [
   // --- New scenarios testing overdue/deadline distinction ---
 
   {
-    id: 'bubble-high-priority-overdue',
-    feature: 'bubble',
+    id: 'whats-next-high-priority-overdue',
+    feature: 'whats_next',
     description:
       'Priority 3 overdue task with real deadline — AI must treat deadline seriously and reference notes',
     input: {
@@ -378,8 +378,8 @@ export const bubbleScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'bubble-low-priority-overdue',
-    feature: 'bubble',
+    id: 'whats-next-low-priority-overdue',
+    feature: 'whats_next',
     description:
       'Low-priority overdue tasks that were snoozed multiple times — focus on age/deferral, not hours overdue',
     input: {
@@ -457,8 +457,8 @@ export const bubbleScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'bubble-mixed-priority-overdue',
-    feature: 'bubble',
+    id: 'whats-next-mixed-priority-overdue',
+    feature: 'whats_next',
     description:
       'Mix of priority 3 (real deadline), priority 0 (deferred), and recurring from_completion — different commentary styles',
     input: {
@@ -537,8 +537,8 @@ export const bubbleScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'bubble-user-context-caregiver',
-    feature: 'bubble',
+    id: 'whats-next-user-context-caregiver',
+    feature: 'whats_next',
     description:
       'User context about caregiving should make medical/family tasks get more relevant commentary',
     input: {

@@ -1,10 +1,10 @@
-# AI Review — Design Ideas
+# AI Insights — Design Ideas
 
-Quick capture of ideas for the AI Review feature (accessible from sidebar and hamburger menu).
+Quick capture of ideas for the AI Insights feature (accessible from sidebar and hamburger menu).
 
 ## Core concept
 
-A guided review experience where AI helps you maintain task hygiene:
+A guided insights experience where AI helps you maintain task hygiene:
 
 - **Flag tasks that need more detail/context** — vague titles, missing due dates, tasks with no project
 - **Suggest cleanup actions** — merge duplicates, archive stale tasks, update priorities
@@ -14,6 +14,6 @@ A guided review experience where AI helps you maintain task hygiene:
 ## Open questions
 
 - Chat-like interface vs. checklist/card-based review?
-- How often should review recommendations refresh?
+- How often should insights recommendations refresh?
 - Should completed review items be tracked (so the same suggestion doesn't repeat)?
-- Integration with enrichment — should review trigger re-enrichment of flagged tasks?
+- Integration with enrichment — should insights trigger re-enrichment of flagged tasks?

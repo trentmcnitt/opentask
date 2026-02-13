@@ -12,8 +12,8 @@ describe('AI endpoints integration', () => {
       expect(res.status).toBe(401)
     })
 
-    test('GET /api/ai/bubble returns 401 without auth', async () => {
-      const res = await apiAnon('/api/ai/bubble')
+    test('GET /api/ai/whats-next returns 401 without auth', async () => {
+      const res = await apiAnon('/api/ai/whats-next')
       expect(res.status).toBe(401)
     })
   })
@@ -27,16 +27,16 @@ describe('AI endpoints integration', () => {
       expect(body.code).toBe('SERVICE_UNAVAILABLE')
     })
 
-    test('GET /api/ai/bubble returns 503', async () => {
-      const res = await apiFetch('/api/ai/bubble')
+    test('GET /api/ai/whats-next returns 503', async () => {
+      const res = await apiFetch('/api/ai/whats-next')
       expect(res.status).toBe(503)
       const body = await res.json()
       expect(body.error).toBe('AI features are not enabled')
       expect(body.code).toBe('SERVICE_UNAVAILABLE')
     })
 
-    test('GET /api/ai/bubble?refresh=true returns 503', async () => {
-      const res = await apiFetch('/api/ai/bubble?refresh=true')
+    test('GET /api/ai/whats-next?refresh=true returns 503', async () => {
+      const res = await apiFetch('/api/ai/whats-next?refresh=true')
       expect(res.status).toBe(503)
       const body = await res.json()
       expect(body.code).toBe('SERVICE_UNAVAILABLE')

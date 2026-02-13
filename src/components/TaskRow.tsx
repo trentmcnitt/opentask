@@ -89,21 +89,21 @@ interface TaskRowProps {
   onActivate?: () => void
   /** Desktop double-click: open QuickActionPanel (alternative to entering selection mode) */
   onDoubleClick?: () => void
-  /** Optional annotation line below metadata (e.g., AI reason from Bubble) */
+  /** Optional annotation line below metadata (e.g., AI reason from What's Next) */
   annotation?: string
   /** When true, renders a sparkle icon before the title indicating AI insight */
   isAiHighlighted?: boolean
   /** Called when the user clicks the retry button on an ai-failed badge */
   onReprocess?: () => void
-  /** AI review score (0-100) — only shown on the review page */
-  reviewScore?: number
-  /** AI review signal keys — only shown on the review page */
-  reviewSignals?: string[]
-  /** Per-task review commentary (from AI review) — shown as indigo text with Lightbulb icon */
-  reviewCommentary?: string
+  /** AI insights score (0-100) */
+  insightsScore?: number
+  /** AI insights signal keys */
+  insightsSignals?: string[]
+  /** Per-task insights commentary — shown as indigo text with Lightbulb icon */
+  insightsCommentary?: string
 }
 
-/** Signal icon + color mapping for AI review indicators */
+/** Signal icon + color mapping for AI insights indicators */
 export const SIGNAL_ICONS: Record<
   string,
   { icon: React.ReactNode; label: string; bg: string; text: string }
@@ -146,7 +146,7 @@ export const SIGNAL_ICONS: Record<
   },
 }
 
-/** Color class for review score badge */
+/** Color class for insights score badge */
 function getScoreColor(score: number): string {
   if (score >= 70) return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
   if (score >= 40) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
@@ -172,9 +172,9 @@ export function TaskRow({
   annotation,
   isAiHighlighted = false,
   onReprocess,
-  reviewScore,
-  reviewSignals,
-  reviewCommentary,
+  insightsScore,
+  insightsSignals,
+  insightsCommentary,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -513,17 +513,17 @@ export function TaskRow({
           </p>
         )}
 
-        {reviewCommentary && (
+        {insightsCommentary && (
           <p className="mt-0.5 line-clamp-2 text-xs text-indigo-600/80 dark:text-indigo-400/80">
             <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
-            {reviewCommentary}
+            {insightsCommentary}
           </p>
         )}
 
-        {/* Review signal pills — below commentary for visual separation from task metadata icons */}
-        {reviewSignals && reviewSignals.length > 0 && (
+        {/* Insights signal pills — below commentary for visual separation from task metadata icons */}
+        {insightsSignals && insightsSignals.length > 0 && (
           <div className="mt-1 flex items-center gap-1">
-            {reviewSignals.map((key) => {
+            {insightsSignals.map((key) => {
               const sig = SIGNAL_ICONS[key]
               if (!sig) return null
               return (
@@ -545,16 +545,16 @@ export function TaskRow({
         )}
       </div>
 
-      {/* Review score badge (only on review page) */}
-      {reviewScore !== undefined && (
+      {/* Insights score badge */}
+      {insightsScore !== undefined && (
         <span
           className={cn(
             'flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
-            getScoreColor(reviewScore),
+            getScoreColor(insightsScore),
           )}
-          title={`AI attention score: ${reviewScore}/100`}
+          title={`AI attention score: ${insightsScore}/100`}
         >
-          {reviewScore}
+          {insightsScore}
         </span>
       )}
 

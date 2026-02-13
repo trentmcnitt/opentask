@@ -15,7 +15,7 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project'] as const
 const VALID_AI_MODES = ['off', 'on'] as const
-const VALID_BUBBLE_MODELS = ['haiku', 'claude-opus-4-6'] as const
+const VALID_WHATS_NEXT_MODELS = ['haiku', 'claude-opus-4-6'] as const
 
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const db = getDb()
     const row = db
       .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_insights, ai_show_commentary, ai_bubble_model FROM users WHERE id = ?',
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model FROM users WHERE id = ?',
       )
       .get(user.id) as
       | {
@@ -74,10 +74,10 @@ export async function GET(request: NextRequest) {
           ai_mode: string
           ai_show_scores: number
           ai_show_signals: number
-          ai_show_bubble_text: number
+          ai_show_whats_next: number
           ai_show_insights: number
           ai_show_commentary: number
-          ai_bubble_model: string
+          ai_whats_next_model: string
         }
       | undefined
 
@@ -98,10 +98,10 @@ export async function GET(request: NextRequest) {
       ai_mode: row?.ai_mode ?? 'on',
       ai_show_scores: row?.ai_show_scores !== 0,
       ai_show_signals: row?.ai_show_signals !== 0,
-      ai_show_bubble_text: row?.ai_show_bubble_text !== 0,
+      ai_show_whats_next: row?.ai_show_whats_next !== 0,
       ai_show_insights: row?.ai_show_insights !== 0,
       ai_show_commentary: row?.ai_show_commentary !== 0,
-      ai_bubble_model: row?.ai_bubble_model ?? 'haiku',
+      ai_whats_next_model: row?.ai_whats_next_model ?? 'haiku',
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -280,11 +280,10 @@ function validateAiFields(
     params.push(body.ai_show_signals ? 1 : 0)
   }
 
-  if (body.ai_show_bubble_text !== undefined) {
-    if (typeof body.ai_show_bubble_text !== 'boolean')
-      return 'ai_show_bubble_text must be a boolean'
-    updates.push('ai_show_bubble_text = ?')
-    params.push(body.ai_show_bubble_text ? 1 : 0)
+  if (body.ai_show_whats_next !== undefined) {
+    if (typeof body.ai_show_whats_next !== 'boolean') return 'ai_show_whats_next must be a boolean'
+    updates.push('ai_show_whats_next = ?')
+    params.push(body.ai_show_whats_next ? 1 : 0)
   }
 
   if (body.ai_show_insights !== undefined) {
@@ -299,11 +298,15 @@ function validateAiFields(
     params.push(body.ai_show_commentary ? 1 : 0)
   }
 
-  if (body.ai_bubble_model !== undefined) {
-    if (!VALID_BUBBLE_MODELS.includes(body.ai_bubble_model as (typeof VALID_BUBBLE_MODELS)[number]))
-      return `ai_bubble_model must be one of: ${VALID_BUBBLE_MODELS.join(', ')}`
-    updates.push('ai_bubble_model = ?')
-    params.push(body.ai_bubble_model)
+  if (body.ai_whats_next_model !== undefined) {
+    if (
+      !VALID_WHATS_NEXT_MODELS.includes(
+        body.ai_whats_next_model as (typeof VALID_WHATS_NEXT_MODELS)[number],
+      )
+    )
+      return `ai_whats_next_model must be one of: ${VALID_WHATS_NEXT_MODELS.join(', ')}`
+    updates.push('ai_whats_next_model = ?')
+    params.push(body.ai_whats_next_model)
   }
 
   return null
@@ -329,7 +332,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_insights, ai_show_commentary, ai_bubble_model FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -344,10 +347,10 @@ interface PreferencesRow {
   ai_mode: string
   ai_show_scores: number
   ai_show_signals: number
-  ai_show_bubble_text: number
+  ai_show_whats_next: number
   ai_show_insights: number
   ai_show_commentary: number
-  ai_bubble_model: string
+  ai_whats_next_model: string
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -365,10 +368,10 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
-    ai_show_bubble_text: row.ai_show_bubble_text !== 0,
+    ai_show_whats_next: row.ai_show_whats_next !== 0,
     ai_show_insights: row.ai_show_insights !== 0,
     ai_show_commentary: row.ai_show_commentary !== 0,
-    ai_bubble_model: row.ai_bubble_model,
+    ai_whats_next_model: row.ai_whats_next_model,
   }
 }
 

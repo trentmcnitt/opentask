@@ -210,8 +210,12 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('users', 'ai_show_signals')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_signals INTEGER NOT NULL DEFAULT 1')
   }
-  if (!hasColumn('users', 'ai_show_bubble_text')) {
-    database.exec('ALTER TABLE users ADD COLUMN ai_show_bubble_text INTEGER NOT NULL DEFAULT 1')
+  if (!hasColumn('users', 'ai_show_whats_next')) {
+    if (hasColumn('users', 'ai_show_bubble_text')) {
+      database.exec('ALTER TABLE users RENAME COLUMN ai_show_bubble_text TO ai_show_whats_next')
+    } else {
+      database.exec('ALTER TABLE users ADD COLUMN ai_show_whats_next INTEGER NOT NULL DEFAULT 1')
+    }
   }
   if (!hasColumn('users', 'ai_show_insights')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_insights INTEGER NOT NULL DEFAULT 1')
@@ -220,10 +224,36 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_commentary INTEGER NOT NULL DEFAULT 1')
   }
 
-  // Migration: Add ai_bubble_model to users (user preference for on-demand Bubble model)
-  if (!hasColumn('users', 'ai_bubble_model')) {
-    database.exec("ALTER TABLE users ADD COLUMN ai_bubble_model TEXT NOT NULL DEFAULT 'haiku'")
+  // Migration: Add ai_whats_next_model to users (user preference for on-demand What's Next model)
+  if (!hasColumn('users', 'ai_whats_next_model')) {
+    if (hasColumn('users', 'ai_bubble_model')) {
+      database.exec('ALTER TABLE users RENAME COLUMN ai_bubble_model TO ai_whats_next_model')
+    } else {
+      database.exec(
+        "ALTER TABLE users ADD COLUMN ai_whats_next_model TEXT NOT NULL DEFAULT 'haiku'",
+      )
+    }
   }
+
+  // Migration: Rename 'bubble' action to 'whats_next' in ai_activity_log
+  database.exec("UPDATE ai_activity_log SET action = 'whats_next' WHERE action = 'bubble'")
+
+  // Migration: Rename ai_review_* tables to ai_insights_*
+  const hasReviewResultsTable = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_review_results'")
+    .get()
+  if (hasReviewResultsTable) {
+    database.exec('ALTER TABLE ai_review_results RENAME TO ai_insights_results')
+  }
+  const hasReviewSessionsTable = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_review_sessions'")
+    .get()
+  if (hasReviewSessionsTable) {
+    database.exec('ALTER TABLE ai_review_sessions RENAME TO ai_insights_sessions')
+  }
+
+  // Migration: Rename 'review' action to 'insights' in ai_activity_log
+  database.exec("UPDATE ai_activity_log SET action = 'insights' WHERE action = 'review'")
 
   // Migration: Rename snoozed_from to original_due_at
   if (hasColumn('tasks', 'snoozed_from') && !hasColumn('tasks', 'original_due_at')) {

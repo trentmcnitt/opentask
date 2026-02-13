@@ -1,5 +1,5 @@
 /**
- * Integration tests for user preference fields: wake_time, sleep_time, ai_bubble_model
+ * Integration tests for user preference fields: wake_time, sleep_time, ai_whats_next_model
  *
  * Tests GET/PATCH /api/user/preferences for the new preference fields,
  * including default values, valid updates, and validation rejections.
@@ -228,107 +228,107 @@ describe('sleep_time preference', () => {
   })
 })
 
-describe('ai_bubble_model preference', () => {
-  test('GET returns default ai_bubble_model of haiku', async () => {
+describe('ai_whats_next_model preference', () => {
+  test('GET returns default ai_whats_next_model of haiku', async () => {
     const res = await apiFetch('/api/user/preferences')
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_bubble_model).toBe('haiku')
+    expect(body.data.ai_whats_next_model).toBe('haiku')
   })
 
   test('PATCH with claude-opus-4-6 saves and returns updated value', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: 'claude-opus-4-6' },
+      body: { ai_whats_next_model: 'claude-opus-4-6' },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_bubble_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
   })
 
-  test('GET returns the updated ai_bubble_model', async () => {
+  test('GET returns the updated ai_whats_next_model', async () => {
     const res = await apiFetch('/api/user/preferences')
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_bubble_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
   })
 
   test('PATCH back to haiku succeeds', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: 'haiku' },
+      body: { ai_whats_next_model: 'haiku' },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_bubble_model).toBe('haiku')
+    expect(body.data.ai_whats_next_model).toBe('haiku')
   })
 
   test('PATCH with "gpt-4" returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: 'gpt-4' },
+      body: { ai_whats_next_model: 'gpt-4' },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_bubble_model')
+    expect(body.error).toContain('ai_whats_next_model')
   })
 
   test('PATCH with "sonnet" returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: 'sonnet' },
+      body: { ai_whats_next_model: 'sonnet' },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_bubble_model')
+    expect(body.error).toContain('ai_whats_next_model')
   })
 
   test('PATCH with empty string returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: '' },
+      body: { ai_whats_next_model: '' },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_bubble_model')
+    expect(body.error).toContain('ai_whats_next_model')
   })
 
   test('PATCH with numeric value returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: 123 },
+      body: { ai_whats_next_model: 123 },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_bubble_model')
+    expect(body.error).toContain('ai_whats_next_model')
   })
 
   test('PATCH with null returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_bubble_model: null },
+      body: { ai_whats_next_model: null },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_bubble_model')
+    expect(body.error).toContain('ai_whats_next_model')
   })
 })
 
 describe('combined preference updates', () => {
-  test('PATCH with wake_time, sleep_time, and ai_bubble_model together', async () => {
+  test('PATCH with wake_time, sleep_time, and ai_whats_next_model together', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: {
         wake_time: '08:00',
         sleep_time: '23:00',
-        ai_bubble_model: 'claude-opus-4-6',
+        ai_whats_next_model: 'claude-opus-4-6',
       },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.data.wake_time).toBe('08:00')
     expect(body.data.sleep_time).toBe('23:00')
-    expect(body.data.ai_bubble_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
 
     // Reset all to defaults
     await apiFetch('/api/user/preferences', {
@@ -336,7 +336,7 @@ describe('combined preference updates', () => {
       body: {
         wake_time: '07:00',
         sleep_time: '22:00',
-        ai_bubble_model: 'haiku',
+        ai_whats_next_model: 'haiku',
       },
     })
   })

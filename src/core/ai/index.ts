@@ -2,19 +2,19 @@ export { isAIEnabled, initAI, aiQuery } from './sdk'
 export { processEnrichmentQueue, enrichSingleTask } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
-export { generateBubble, getCachedBubble } from './bubble'
+export { generateWhatsNext, getCachedWhatsNext } from './whats-next'
 export {
-  REVIEW_SIGNALS,
+  INSIGHTS_SIGNALS,
   SIGNAL_MAP,
-  generateReviewForUser,
-  startReviewGeneration,
-  getReviewSessionStatus,
-  getReviewResults,
-  hasReviewResults,
-  getActiveReviewSession,
-} from './review'
+  generateInsightsForUser,
+  startInsightsGeneration,
+  getInsightsSessionStatus,
+  getInsightsResults,
+  hasInsightsResults,
+  getActiveInsightsSession,
+} from './insights'
 export { buildTaskSummaries } from './task-summaries'
-export { getUserAiContext, getUserBubbleModel } from './user-context'
+export { getUserAiContext, getUserWhatsNextModel } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {
   initEnrichmentSlot,
@@ -25,9 +25,9 @@ export {
 export type {
   EnrichmentResult,
   AIActivityEntry,
-  BubbleResult,
+  WhatsNextResult,
   TaskSummary,
-  ReviewItem,
-  ReviewSignalKey,
+  InsightsItem,
+  InsightsSignalKey,
 } from './types'
-export type { ReviewSignal, ReviewSession, ReviewResult } from './review'
+export type { InsightsSignal, InsightsSession, InsightsResult } from './insights'

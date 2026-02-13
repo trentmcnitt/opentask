@@ -11,7 +11,7 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   rightBorder: false,
 }
 
-export type BubbleModel = 'haiku' | 'claude-opus-4-6'
+export type WhatsNextModel = 'haiku' | 'claude-opus-4-6'
 
 interface PreferencesContextValue {
   labelConfig: LabelConfig[]
@@ -38,14 +38,14 @@ interface PreferencesContextValue {
   setAiShowScores: (show: boolean) => void
   aiShowSignals: boolean
   setAiShowSignals: (show: boolean) => void
-  aiShowBubbleText: boolean
-  setAiShowBubbleText: (show: boolean) => void
+  aiShowWhatsNext: boolean
+  setAiShowWhatsNext: (show: boolean) => void
   aiShowInsights: boolean
   setAiShowInsights: (show: boolean) => void
   aiShowCommentary: boolean
   setAiShowCommentary: (show: boolean) => void
-  aiBubbleModel: BubbleModel
-  setAiBubbleModel: (model: BubbleModel) => void
+  aiWhatsNextModel: WhatsNextModel
+  setAiWhatsNextModel: (model: WhatsNextModel) => void
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -73,14 +73,14 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiShowScores: () => {},
   aiShowSignals: true,
   setAiShowSignals: () => {},
-  aiShowBubbleText: true,
-  setAiShowBubbleText: () => {},
+  aiShowWhatsNext: true,
+  setAiShowWhatsNext: () => {},
   aiShowInsights: true,
   setAiShowInsights: () => {},
   aiShowCommentary: true,
   setAiShowCommentary: () => {},
-  aiBubbleModel: 'haiku',
-  setAiBubbleModel: () => {},
+  aiWhatsNextModel: 'haiku',
+  setAiWhatsNextModel: () => {},
 })
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
@@ -98,10 +98,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
   const [aiShowSignals, setAiShowSignalsState] = useState(true)
-  const [aiShowBubbleText, setAiShowBubbleTextState] = useState(true)
+  const [aiShowWhatsNext, setAiShowWhatsNextState] = useState(true)
   const [aiShowInsights, setAiShowInsightsState] = useState(true)
   const [aiShowCommentary, setAiShowCommentaryState] = useState(true)
-  const [aiBubbleModel, setAiBubbleModelState] = useState<BubbleModel>('haiku')
+  const [aiWhatsNextModel, setAiWhatsNextModelState] = useState<WhatsNextModel>('haiku')
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -150,8 +150,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_show_signals !== undefined) {
           setAiShowSignalsState(data.data.ai_show_signals)
         }
-        if (data?.data?.ai_show_bubble_text !== undefined) {
-          setAiShowBubbleTextState(data.data.ai_show_bubble_text)
+        if (data?.data?.ai_show_whats_next !== undefined) {
+          setAiShowWhatsNextState(data.data.ai_show_whats_next)
         }
         if (data?.data?.ai_show_insights !== undefined) {
           setAiShowInsightsState(data.data.ai_show_insights)
@@ -159,10 +159,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_show_commentary !== undefined) {
           setAiShowCommentaryState(data.data.ai_show_commentary)
         }
-        if (data?.data?.ai_bubble_model) {
-          const model = data.data.ai_bubble_model
+        if (data?.data?.ai_whats_next_model) {
+          const model = data.data.ai_whats_next_model
           if (model === 'haiku' || model === 'claude-opus-4-6') {
-            setAiBubbleModelState(model)
+            setAiWhatsNextModelState(model)
           }
         }
       })
@@ -196,14 +196,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiShowScores: setAiShowScoresState,
         aiShowSignals,
         setAiShowSignals: setAiShowSignalsState,
-        aiShowBubbleText,
-        setAiShowBubbleText: setAiShowBubbleTextState,
+        aiShowWhatsNext,
+        setAiShowWhatsNext: setAiShowWhatsNextState,
         aiShowInsights,
         setAiShowInsights: setAiShowInsightsState,
         aiShowCommentary,
         setAiShowCommentary: setAiShowCommentaryState,
-        aiBubbleModel,
-        setAiBubbleModel: setAiBubbleModelState,
+        aiWhatsNextModel,
+        setAiWhatsNextModel: setAiWhatsNextModelState,
       }}
     >
       {children}
@@ -254,14 +254,14 @@ export function useAiPreferences() {
     setAiShowScores,
     aiShowSignals,
     setAiShowSignals,
-    aiShowBubbleText,
-    setAiShowBubbleText,
+    aiShowWhatsNext,
+    setAiShowWhatsNext,
     aiShowInsights,
     setAiShowInsights,
     aiShowCommentary,
     setAiShowCommentary,
-    aiBubbleModel,
-    setAiBubbleModel,
+    aiWhatsNextModel,
+    setAiWhatsNextModel,
   } = useContext(PreferencesContext)
   return {
     aiMode,
@@ -270,13 +270,13 @@ export function useAiPreferences() {
     setAiShowScores,
     aiShowSignals,
     setAiShowSignals,
-    aiShowBubbleText,
-    setAiShowBubbleText,
+    aiShowWhatsNext,
+    setAiShowWhatsNext,
     aiShowInsights,
     setAiShowInsights,
     aiShowCommentary,
     setAiShowCommentary,
-    aiBubbleModel,
-    setAiBubbleModel,
+    aiWhatsNextModel,
+    setAiWhatsNextModel,
   }
 }
