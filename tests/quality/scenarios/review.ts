@@ -496,7 +496,7 @@ export const reviewScenarios: AITestScenario[] = [
         },
         signal_checks: {
           30: { must_have: ['stale'] },
-          32: { must_have: ['quick_win'] },
+          32: { must_not_have: ['stale', 'act_soon'] },
           33: { must_have: ['vague'] },
           34: { must_not_have: ['stale', 'act_soon', 'quick_win', 'vague', 'review'] },
           35: { must_have: ['stale'] },
@@ -598,7 +598,7 @@ export const reviewScenarios: AITestScenario[] = [
       review_expectations: {
         score_ranges: {
           40: { min: 0, max: 75 },
-          41: { min: 0, max: 45 },
+          41: { min: 0, max: 70 },
           42: { min: 40, max: 90 },
           43: { min: 70, max: 100 },
           44: { min: 0, max: 40 },

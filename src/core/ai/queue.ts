@@ -8,7 +8,7 @@
 
 import { log } from '@/lib/logger'
 
-const DEFAULT_MAX_CONCURRENT = 2
+const DEFAULT_MAX_CONCURRENT = 4
 const DEFAULT_QUEUE_TIMEOUT_MS = 30_000 // 30 seconds max wait
 
 interface QueueEntry {

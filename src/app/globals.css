@@ -156,6 +156,17 @@
   animation: ai-processing 2s ease-in-out infinite;
 }
 
+/* Glow effect on AI button during insights generation */
+@keyframes ai-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(129, 140, 248, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(129, 140, 248, 0.55);
+  }
+}
+
 /* Indeterminate progress bar shimmer for single-call AI review */
 @keyframes shimmer {
   0% {

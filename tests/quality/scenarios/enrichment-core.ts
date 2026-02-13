@@ -764,4 +764,52 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Labels must be an empty array — no explicit label request in input.',
     },
   },
+
+  // -------------------------------------------------------------------------
+  // Time-of-Day Resolution
+  // -------------------------------------------------------------------------
+
+  {
+    id: 'enrich-time-tomorrow-evening',
+    feature: 'enrichment',
+    description: 'Time-of-day: "tomorrow evening" should resolve to evening hours',
+    input: {
+      text: 'remind me about this tomorrow evening',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        priority: 0,
+        rrule: null,
+        labels: [],
+      },
+      quality_notes:
+        'Title: "Remind me about this" or similar. ' +
+        'due_at should be tomorrow evening in UTC — typically 5-8 PM local time. ' +
+        'The AI has time-of-day guidance: "evening" should use judgment, typically early evening. ' +
+        'Labels must be an empty array — no explicit label request in input.',
+    },
+  },
+  {
+    id: 'enrich-time-before-bed',
+    feature: 'enrichment',
+    description: 'Time-of-day: "before bed" should resolve to user sleep time (10 PM default)',
+    input: {
+      text: 'take vitamins before bed every night',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+      },
+      quality_notes:
+        'Title: "Take vitamins" or similar. ' +
+        'rrule should be FREQ=DAILY. ' +
+        'due_at should use the sleep time (10:00 PM / 22:00 local by default) converted to UTC. ' +
+        'The AI has guidance: "before bed" / "bedtime" → sleep time (10:00 PM). ' +
+        'Labels must be an empty array — no explicit label request in input.',
+    },
+  },
 ]

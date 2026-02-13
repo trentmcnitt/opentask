@@ -31,6 +31,8 @@ export async function generateBubble(
   timezone: string,
   tasks: TaskSummary[],
   userContext?: string | null,
+  /** Override model for this call. Used by the API route to pass the user's preference. */
+  modelOverride?: string,
 ): Promise<BubbleResult | null> {
   if (tasks.length === 0) {
     return {
@@ -92,11 +94,14 @@ Analyze these tasks and surface 3-7 that are easy to overlook but deserve attent
 
   const jsonSchema = z.toJSONSchema(BubbleResultSchema)
 
+  const bubbleModel = modelOverride || process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku'
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku',
+    model: bubbleModel,
     maxTurns: 1,
+    // Enable extended thinking for Opus models to improve recommendation quality
+    ...(bubbleModel.includes('opus') && { maxThinkingTokens: 10000 }),
     userId,
     action: 'bubble',
     inputText: `${tasks.length} tasks`,
@@ -142,7 +147,7 @@ Analyze these tasks and surface 3-7 that are easy to overlook but deserve attent
     status: 'success',
     input: `${tasks.length} tasks`,
     output: JSON.stringify(validResult),
-    model: process.env.OPENTASK_AI_BUBBLE_MODEL || 'haiku',
+    model: bubbleModel,
     duration_ms: result.durationMs,
     error: null,
   })

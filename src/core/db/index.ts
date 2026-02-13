@@ -182,6 +182,14 @@ function runMigrations(database: Database.Database): void {
     database.exec("ALTER TABLE users ADD COLUMN morning_time TEXT NOT NULL DEFAULT '09:00'")
   }
 
+  // Migration: Add wake_time and sleep_time to users
+  if (!hasColumn('users', 'wake_time')) {
+    database.exec("ALTER TABLE users ADD COLUMN wake_time TEXT NOT NULL DEFAULT '07:00'")
+  }
+  if (!hasColumn('users', 'sleep_time')) {
+    database.exec("ALTER TABLE users ADD COLUMN sleep_time TEXT NOT NULL DEFAULT '22:00'")
+  }
+
   // Migration: Add ai_context to users
   if (!hasColumn('users', 'ai_context')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_context TEXT')
@@ -207,6 +215,11 @@ function runMigrations(database: Database.Database): void {
   }
   if (!hasColumn('users', 'ai_show_commentary')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_commentary INTEGER NOT NULL DEFAULT 1')
+  }
+
+  // Migration: Add ai_bubble_model to users (user preference for on-demand Bubble model)
+  if (!hasColumn('users', 'ai_bubble_model')) {
+    database.exec("ALTER TABLE users ADD COLUMN ai_bubble_model TEXT NOT NULL DEFAULT 'haiku'")
   }
 
   // Migration: Rename snoozed_from to original_due_at

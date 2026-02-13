@@ -294,18 +294,19 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ## Configuration
 
-| Env var                               | Default | Description                                         |
-| ------------------------------------- | ------- | --------------------------------------------------- |
-| `OPENTASK_AI_ENABLED`                 | `false` | Master switch — all AI features disabled when false |
-| `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku` | Model for task enrichment                           |
-| `OPENTASK_AI_MAX_REUSES`              | `8`     | Max queries per warm enrichment subprocess          |
-| `OPENTASK_AI_BUBBLE_MODEL`            | `haiku` | Model for Bubble recommendations                    |
-| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku` | Model for shopping label classification             |
-| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000` | Timeout for SDK queries in milliseconds             |
-| `OPENTASK_AI_CLI_PATH`                | (auto)  | Path to Claude Code CLI executable                  |
-| `OPENTASK_AI_MAX_CONCURRENT`          | `2`     | Maximum concurrent SDK subprocesses (per-query)     |
-| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000` | Maximum wait time for semaphore slot                |
-| `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`    | Days to retain AI activity log entries              |
+| Env var                               | Default           | Description                                                        |
+| ------------------------------------- | ----------------- | ------------------------------------------------------------------ |
+| `OPENTASK_AI_ENABLED`                 | `false`           | Master switch — all AI features disabled when false                |
+| `OPENTASK_AI_ENRICHMENT_MODEL`        | `haiku`           | Model for task enrichment                                          |
+| `OPENTASK_AI_MAX_REUSES`              | `8`               | Max queries per warm enrichment subprocess                         |
+| `OPENTASK_AI_REVIEW_MODEL`            | `claude-opus-4-6` | Model for AI Review (scoring + signals). Extended thinking enabled |
+| `OPENTASK_AI_BUBBLE_MODEL`            | `claude-opus-4-6` | Model for Bubble cron (3 AM daily). On-demand uses user pref       |
+| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku`           | Model for shopping label classification                            |
+| `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000`           | Timeout for SDK queries in milliseconds                            |
+| `OPENTASK_AI_CLI_PATH`                | (auto)            | Path to Claude Code CLI executable                                 |
+| `OPENTASK_AI_MAX_CONCURRENT`          | `2`               | Maximum concurrent SDK subprocesses (per-query)                    |
+| `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000`           | Maximum wait time for semaphore slot                               |
+| `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`              | Days to retain AI activity log entries                             |
 
 No API key needed — the SDK uses Claude Code's authentication on the server.
 

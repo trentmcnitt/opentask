@@ -1042,42 +1042,19 @@ function DashboardView({
             onShowBubbleTextChange={onShowBubbleTextChange}
             showCommentary={showCommentary}
             onShowCommentaryChange={onShowCommentaryChange}
+            annotationGeneratedAt={aiInsights.generatedAt}
             annotationFreshnessText={aiInsights.freshnessText}
             annotationRefreshLoading={aiInsights.loading}
             onRefreshAnnotations={onRefreshAnnotations}
             reviewGeneratedAt={reviewData.generatedAt}
             reviewGenerating={reviewData.generating}
+            reviewProgress={reviewData.progress}
+            reviewCompletedTasks={reviewData.completedTasks}
+            reviewTotalTasks={reviewData.totalTasks}
+            reviewSingleCall={reviewData.singleCall}
             onRefreshReview={onRefreshReview}
           />
         </div>
-
-        {/* Insights generation progress bar */}
-        {reviewData.generating && (
-          <div className="mb-4">
-            {reviewData.singleCall ? (
-              <>
-                <div className="bg-muted mb-1 h-2 overflow-hidden rounded-full">
-                  <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-500" />
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  Analyzing {reviewData.totalTasks} tasks...
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="bg-muted mb-1 h-2 overflow-hidden rounded-full">
-                  <div
-                    className="h-full rounded-full bg-indigo-500 transition-all duration-500"
-                    style={{ width: `${reviewData.progress}%` }}
-                  />
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  Analyzing tasks... {reviewData.completedTasks}/{reviewData.totalTasks}
-                </p>
-              </>
-            )}
-          </div>
-        )}
 
         <FilterBar
           tasks={allTasks}

@@ -13,8 +13,11 @@ import {
   usePriorityDisplay,
   useAutoSnoozeDefault,
   useSnoozePreferences,
+  useSchedulePreferences,
   useAiContext,
+  useAiPreferences,
 } from '@/components/PreferencesProvider'
+import type { BubbleModel } from '@/components/PreferencesProvider'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
@@ -31,7 +34,9 @@ export default function SettingsPage() {
   const { autoSnoozeDefault, setAutoSnoozeDefault } = useAutoSnoozeDefault()
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
+  const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
   const { aiContext, setAiContext } = useAiContext()
+  const { aiBubbleModel, setAiBubbleModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
   const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
@@ -135,6 +140,40 @@ export default function SettingsPage() {
     }
   }
 
+  const handleWakeTimeChange = async (value: string) => {
+    const prev = wakeTime
+    setWakeTime(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wake_time: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setWakeTime(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
+
+  const handleSleepTimeChange = async (value: string) => {
+    const prev = sleepTime
+    setSleepTime(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sleep_time: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setSleepTime(prev)
+      showToast({ message: 'Failed to save preference' })
+    }
+  }
+
   const aiContextDirty = aiContextDraft !== (aiContext ?? '')
 
   const handleAiContextSave = async () => {
@@ -152,6 +191,23 @@ export default function SettingsPage() {
     } catch {
       setAiContext(prev)
       showToast({ message: 'Failed to save AI context' })
+    }
+  }
+
+  const handleBubbleModelChange = async (value: BubbleModel) => {
+    const prev = aiBubbleModel
+    setAiBubbleModel(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai_bubble_model: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved' })
+    } catch {
+      setAiBubbleModel(prev)
+      showToast({ message: 'Failed to save preference' })
     }
   }
 
@@ -365,7 +421,7 @@ export default function SettingsPage() {
               <div>
                 <div className="text-sm">Morning time</div>
                 <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Used for &ldquo;Tomorrow at...&rdquo; snooze option
+                  Default task time for snooze and AI enrichment
                 </div>
               </div>
               <input
@@ -373,6 +429,39 @@ export default function SettingsPage() {
                 value={morningTime}
                 onChange={(e) => {
                   if (e.target.value) handleMorningTimeChange(e.target.value)
+                }}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Wake time</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  When your day starts (used by AI for time-of-day context)
+                </div>
+              </div>
+              <input
+                type="time"
+                value={wakeTime}
+                onChange={(e) => {
+                  if (e.target.value) handleWakeTimeChange(e.target.value)
+                }}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Sleep time</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  When you go to bed (used by AI for &ldquo;tonight&rdquo; and
+                  &ldquo;bedtime&rdquo;)
+                </div>
+              </div>
+              <input
+                type="time"
+                value={sleepTime}
+                onChange={(e) => {
+                  if (e.target.value) handleSleepTimeChange(e.target.value)
                 }}
                 className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               />
@@ -421,6 +510,22 @@ export default function SettingsPage() {
             >
               Save
             </Button>
+          </div>
+          <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <div>
+              <div className="text-sm">Bubble model</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Model for on-demand Bubble refresh. Opus is slower but more insightful.
+              </div>
+            </div>
+            <select
+              value={aiBubbleModel}
+              onChange={(e) => handleBubbleModelChange(e.target.value as BubbleModel)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="haiku">Haiku (fast)</option>
+              <option value="claude-opus-4-6">Opus (powerful)</option>
+            </select>
           </div>
         </section>
 
