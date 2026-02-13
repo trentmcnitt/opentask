@@ -36,6 +36,7 @@ interface AiControlAreaProps {
   insightsCompletedTasks: number
   insightsTotalTasks: number
   insightsSingleCall: boolean
+  insightsGenerationStartedAt: string | null
   insightsError: string | null
   onRefreshInsights: () => void
 }
@@ -76,6 +77,7 @@ export function AiControlArea({
   insightsCompletedTasks,
   insightsTotalTasks,
   insightsSingleCall,
+  insightsGenerationStartedAt,
   insightsError,
   onRefreshInsights,
 }: AiControlAreaProps) {
@@ -100,7 +102,8 @@ export function AiControlArea({
             isActive
               ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-950/70'
               : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
-            insightsGenerating && 'animate-[ai-glow_2s_ease-in-out_infinite]',
+            (insightsGenerating || annotationRefreshLoading) &&
+              'animate-[ai-glow_2s_ease-in-out_infinite]',
           )}
           aria-label="AI settings"
         >
@@ -152,6 +155,19 @@ export function AiControlArea({
               color="blue"
             />
           </div>
+          {isActive && annotationRefreshLoading && (
+            <div className="mt-2">
+              <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-blue-400" />
+              </div>
+              <p className="text-muted-foreground mt-1 text-[11px]">
+                Refreshing… <ElapsedTimer />
+              </p>
+              <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
+                Should take less than a minute.
+              </p>
+            </div>
+          )}
           {isActive && annotationError && (
             <p className="mt-1.5 text-[11px] text-red-500">{annotationError}</p>
           )}
@@ -266,7 +282,11 @@ export function AiControlArea({
                 </div>
               )}
               <p className="text-muted-foreground mt-1 text-[11px]">
-                Analyzing {insightsCompletedTasks}/{insightsTotalTasks} tasks... <ElapsedTimer />
+                Analyzing {insightsCompletedTasks}/{insightsTotalTasks} tasks…{' '}
+                <ElapsedTimer startedAt={insightsGenerationStartedAt} />
+              </p>
+              <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
+                This can take a minute or two.
               </p>
             </div>
           )}
@@ -426,14 +446,28 @@ function FeatureCheckbox({
   )
 }
 
-/** Live elapsed timer that counts up from mount. Resets when unmounted (i.e. generation stops). */
-function ElapsedTimer() {
-  const [seconds, setSeconds] = useState(0)
+/**
+ * Live elapsed timer that counts up from a start time.
+ * When `startedAt` is provided (ISO string), calculates elapsed from that timestamp
+ * so the timer survives page refreshes. Falls back to counting from mount time.
+ */
+function ElapsedTimer({ startedAt }: { startedAt?: string | null }) {
+  const [seconds, setSeconds] = useState(() => {
+    if (!startedAt) return 0
+    return Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+  })
 
   useEffect(() => {
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000)
+    const startMs = startedAt ? new Date(startedAt).getTime() : null
+    const id = setInterval(() => {
+      if (startMs !== null) {
+        setSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)))
+      } else {
+        setSeconds((s) => s + 1)
+      }
+    }, 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [startedAt])
 
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60

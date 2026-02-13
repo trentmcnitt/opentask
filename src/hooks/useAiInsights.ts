@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { formatRelativeTime } from '@/lib/quick-select-dates'
+import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
 import type { WhatsNextResult } from '@/core/ai/types'
 import type { Task } from '@/types'
 
@@ -44,21 +45,31 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     if (refresh) {
       setLoading(true)
       setError(null)
+      showToast({ message: "Refreshing What's Next…" })
     }
     try {
       const url = refresh ? '/api/ai/whats-next?refresh=true' : '/api/ai/whats-next'
       const res = await fetch(url)
       if (res.status === 503) return
       if (!res.ok) {
-        if (refresh) setError("What's Next refresh failed")
+        if (refresh) {
+          const msg = "What's Next refresh failed"
+          setError(msg)
+          showErrorToast(msg)
+        }
         return
       }
       const json = await res.json()
       if (json.data) {
         setData(json.data)
+        if (refresh) showAiSuccessToast("What's Next updated")
       }
     } catch {
-      if (refresh) setError("What's Next refresh failed")
+      if (refresh) {
+        const msg = "What's Next refresh failed"
+        setError(msg)
+        showErrorToast(msg)
+      }
     } finally {
       if (refresh) setLoading(false)
     }

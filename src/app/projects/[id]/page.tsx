@@ -112,7 +112,7 @@ export default function ProjectDetailPage() {
         showToast({ message: 'Retrying AI enrichment...' })
       } catch {
         fetchTasks()
-        showToast({ message: 'Failed to retry enrichment' })
+        showToast({ message: 'Failed to retry enrichment', type: 'error' })
       }
     },
     [setTasks, fetchTasks],
@@ -126,10 +126,11 @@ export default function ProjectDetailPage() {
         fetchTasks()
         showToast({
           message: 'Task moved to trash',
+          type: 'success',
           action: { label: 'Undo', onClick: actions.handleUndo },
         })
       } catch {
-        showToast({ message: 'Delete failed' })
+        showToast({ message: 'Delete failed', type: 'error' })
       }
     },
     [fetchTasks, actions.handleUndo],

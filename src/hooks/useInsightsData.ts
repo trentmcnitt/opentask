@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
 export interface InsightsResultItem {
@@ -41,6 +42,8 @@ export interface UseInsightsDataReturn {
   singleCall: boolean
   /** Error message from the last failed generation attempt, cleared on next generate() */
   error: string | null
+  /** ISO timestamp of when the current generation started (for elapsed timer continuity across refreshes) */
+  generationStartedAt: string | null
   /** Start or refresh insights generation */
   generate: () => Promise<void>
   /** Fetch cached results without generating */
@@ -64,6 +67,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
   const [completedTasks, setCompletedTasks] = useState(0)
   const [singleCall, setSingleCall] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [generationStartedAt, setGenerationStartedAt] = useState<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -103,8 +107,13 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
             if (pollRef.current) clearInterval(pollRef.current)
             pollRef.current = null
             setGenerating(false)
+            setGenerationStartedAt(null)
             if (data.status === 'failed') {
-              setError(data.error || 'Insights generation failed')
+              const msg = data.error || 'Insights generation failed'
+              setError(msg)
+              showErrorToast(msg)
+            } else {
+              showAiSuccessToast('Insights updated')
             }
             await fetchResults()
           }
@@ -123,37 +132,71 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
     }
   }, [])
 
+  /** Resume polling for an existing session (used by 409 handling and mount recovery). */
+  const resumeSession = useCallback(
+    (sessionId: string, completed: number, total: number, startedAt?: string) => {
+      setGenerating(true)
+      setTotalTasks(total)
+      setCompletedTasks(completed)
+      setProgress(total > 0 ? Math.round((completed / total) * 100) : 0)
+      setSingleCall(false)
+      setGenerationStartedAt(startedAt || null)
+      startPolling(sessionId)
+    },
+    [startPolling],
+  )
+
   // Generate insights
   const generate = useCallback(async () => {
-    setGenerating(true)
-    setProgress(0)
-    setCompletedTasks(0)
     setError(null)
 
     try {
       const res = await fetch('/api/ai/insights/generate', { method: 'POST' })
+
+      // Session already running — resume polling instead of showing error
+      if (res.status === 409) {
+        const json = await res.json()
+        const details = json.details
+        if (details?.session_id) {
+          resumeSession(
+            details.session_id,
+            details.completed || 0,
+            details.total_tasks || 0,
+            details.started_at,
+          )
+          return
+        }
+      }
+
       if (!res.ok) {
-        setGenerating(false)
-        setError('Failed to start insights generation')
+        const msg = 'Failed to start insights generation'
+        setError(msg)
+        showErrorToast(msg)
         return
       }
+
       const json = await res.json()
       const data = json.data
 
       if (!data.session_id) {
         // No tasks to analyze
-        setGenerating(false)
         return
       }
 
+      setGenerating(true)
+      setProgress(0)
+      setCompletedTasks(0)
       setTotalTasks(data.total_tasks)
       setSingleCall(!!data.single_call)
+      setGenerationStartedAt(data.started_at)
+      showToast({ message: 'Generating insights…' })
       startPolling(data.session_id)
     } catch {
-      setGenerating(false)
-      setError('Failed to start insights generation')
+      const msg = 'Failed to start insights generation'
+      setError(msg)
+      showErrorToast(msg)
     }
-  }, [startPolling])
+  }, [startPolling, resumeSession])
 
   // Build derived maps from results
   const { annotationMap, insightsScoreMap, insightsSignalMap } = useMemo(() => {
@@ -182,8 +225,8 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
   const hasResults = results.length > 0
 
   // Fetch results on mount when tasks are available.
-  // Uses an AbortController pattern to satisfy the set-state-in-effect lint rule:
-  // the fetch is kicked off inline but setState only fires in the .then() callback.
+  // Also checks for an active generation session and resumes polling if found
+  // (handles page refresh mid-generation).
   const hasFetched = useRef(false)
   useEffect(() => {
     if (hasFetched.current || tasks.length === 0) return
@@ -197,12 +240,23 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
         setSignals(json.data.signals || [])
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
+
+        // Resume polling if a session is actively running (e.g. page was refreshed mid-generation)
+        const active = json.data.active_session
+        if (active?.session_id) {
+          resumeSession(
+            active.session_id,
+            active.completed || 0,
+            active.total_tasks || 0,
+            active.started_at,
+          )
+        }
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [tasks.length])
+  }, [tasks.length, resumeSession])
 
   return {
     results,
@@ -214,6 +268,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
     totalTasks,
     completedTasks,
     singleCall,
+    generationStartedAt,
     annotationMap,
     insightsScoreMap,
     insightsSignalMap,

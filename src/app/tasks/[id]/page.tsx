@@ -76,6 +76,7 @@ export default function TaskDetailPage() {
       await saveRef.current?.()
       showToast({
         message: 'Changes saved',
+        type: 'success',
         action: {
           label: 'Undo',
           onClick: async () => {
@@ -85,7 +86,7 @@ export default function TaskDetailPage() {
         },
       })
     } catch {
-      showToast({ message: 'Save failed' })
+      showToast({ message: 'Save failed', type: 'error' })
       setShowLeaveConfirm(false)
       return
     }
@@ -155,11 +156,12 @@ export default function TaskDetailPage() {
       if (!res.ok) throw new Error('Failed to delete')
       showToast({
         message: 'Task moved to trash',
+        type: 'success',
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
       router.push('/')
     } catch {
-      showToast({ message: 'Delete failed' })
+      showToast({ message: 'Delete failed', type: 'error' })
     }
   }
 

@@ -92,10 +92,11 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
 
         showToast({
           message,
+          type: 'success',
           action: tasksAffected > 0 ? { label: 'Undo', onClick: handleUndo } : undefined,
         })
       } catch {
-        showToast({ message: 'Snooze failed' })
+        showToast({ message: 'Snooze failed', type: 'error' })
       }
     },
     [displayTasks, fetchTasks, handleUndo, timezone, defaultSnoozeOption, morningTime],

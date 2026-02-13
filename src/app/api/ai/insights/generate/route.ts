@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
         session_id: active.id,
         completed: active.completed,
         total_tasks: active.total_tasks,
+        started_at: active.started_at,
       })
     }
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     const aiContext = getUserAiContext(user.id)
-    const { sessionId, totalTasks, singleCall } = startInsightsGeneration(
+    const { sessionId, totalTasks, singleCall, startedAt } = startInsightsGeneration(
       user.id,
       user.timezone,
       tasks,
@@ -53,7 +54,12 @@ export async function POST(request: NextRequest) {
       'on-demand',
     )
 
-    return success({ session_id: sessionId, total_tasks: totalTasks, single_call: singleCall })
+    return success({
+      session_id: sessionId,
+      total_tasks: totalTasks,
+      single_call: singleCall,
+      started_at: startedAt,
+    })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'POST /api/ai/insights/generate error:', err)
