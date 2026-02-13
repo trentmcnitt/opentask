@@ -15,6 +15,7 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project'] as const
 const VALID_AI_MODES = ['off', 'on'] as const
+const VALID_BUBBLE_MODELS = ['haiku', 'claude-opus-4-6'] as const
 
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     const db = getDb()
     const row = db
       .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary FROM users WHERE id = ?',
+        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary, ai_bubble_model FROM users WHERE id = ?',
       )
       .get(user.id) as
       | {
@@ -67,12 +68,15 @@ export async function GET(request: NextRequest) {
           auto_snooze_minutes: number
           default_snooze_option: string
           morning_time: string
+          wake_time: string
+          sleep_time: string
           ai_context: string | null
           ai_mode: string
           ai_show_scores: number
           ai_show_signals: number
           ai_show_bubble_text: number
           ai_show_commentary: number
+          ai_bubble_model: string
         }
       | undefined
 
@@ -87,12 +91,15 @@ export async function GET(request: NextRequest) {
       auto_snooze_minutes: row?.auto_snooze_minutes ?? 30,
       default_snooze_option: row?.default_snooze_option ?? '60',
       morning_time: row?.morning_time ?? '09:00',
+      wake_time: row?.wake_time ?? '07:00',
+      sleep_time: row?.sleep_time ?? '22:00',
       ai_context: row?.ai_context ?? null,
       ai_mode: row?.ai_mode ?? 'on',
       ai_show_scores: row?.ai_show_scores !== 0,
       ai_show_signals: row?.ai_show_signals !== 0,
       ai_show_bubble_text: row?.ai_show_bubble_text !== 0,
       ai_show_commentary: row?.ai_show_commentary !== 0,
+      ai_bubble_model: row?.ai_bubble_model ?? 'haiku',
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -208,6 +215,28 @@ function validateGeneralFields(
     params.push(val)
   }
 
+  if (body.wake_time !== undefined) {
+    const val = body.wake_time
+    if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
+      return 'wake_time must be in HH:MM format'
+    const [hours, minutes] = val.split(':').map(Number)
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
+      return 'wake_time must have valid hours (0-23) and minutes (0-59)'
+    updates.push('wake_time = ?')
+    params.push(val)
+  }
+
+  if (body.sleep_time !== undefined) {
+    const val = body.sleep_time
+    if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
+      return 'sleep_time must be in HH:MM format'
+    const [hours, minutes] = val.split(':').map(Number)
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59)
+      return 'sleep_time must have valid hours (0-23) and minutes (0-59)'
+    updates.push('sleep_time = ?')
+    params.push(val)
+  }
+
   return null
 }
 
@@ -262,6 +291,13 @@ function validateAiFields(
     params.push(body.ai_show_commentary ? 1 : 0)
   }
 
+  if (body.ai_bubble_model !== undefined) {
+    if (!VALID_BUBBLE_MODELS.includes(body.ai_bubble_model as (typeof VALID_BUBBLE_MODELS)[number]))
+      return `ai_bubble_model must be one of: ${VALID_BUBBLE_MODELS.join(', ')}`
+    updates.push('ai_bubble_model = ?')
+    params.push(body.ai_bubble_model)
+  }
+
   return null
 }
 
@@ -285,7 +321,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_bubble_text, ai_show_commentary, ai_bubble_model FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -294,12 +330,15 @@ interface PreferencesRow {
   auto_snooze_minutes: number
   default_snooze_option: string
   morning_time: string
+  wake_time: string
+  sleep_time: string
   ai_context: string | null
   ai_mode: string
   ai_show_scores: number
   ai_show_signals: number
   ai_show_bubble_text: number
   ai_show_commentary: number
+  ai_bubble_model: string
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -311,12 +350,15 @@ function formatPreferencesResponse(row: PreferencesRow) {
     auto_snooze_minutes: row.auto_snooze_minutes,
     default_snooze_option: row.default_snooze_option,
     morning_time: row.morning_time,
+    wake_time: row.wake_time,
+    sleep_time: row.sleep_time,
     ai_context: row.ai_context,
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
     ai_show_bubble_text: row.ai_show_bubble_text !== 0,
     ai_show_commentary: row.ai_show_commentary !== 0,
+    ai_bubble_model: row.ai_bubble_model,
   }
 }
 

@@ -57,6 +57,8 @@ export interface AIQueryOptions {
   model?: string
   /** Maximum conversation turns (default: 3) */
   maxTurns?: number
+  /** Maximum thinking tokens for extended thinking (Opus 4.6). Omit to disable. */
+  maxThinkingTokens?: number
   /** User ID for activity logging */
   userId: number
   /** Task ID for activity logging (optional) */
@@ -101,6 +103,7 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     outputSchema,
     model,
     maxTurns = 3,
+    maxThinkingTokens,
     userId,
     taskId,
     action,
@@ -134,6 +137,7 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         persistSession: false,
+        ...(maxThinkingTokens && { maxThinkingTokens }),
         ...(process.env.OPENTASK_AI_CLI_PATH && {
           pathToClaudeCodeExecutable: process.env.OPENTASK_AI_CLI_PATH,
         }),

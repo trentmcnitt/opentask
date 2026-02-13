@@ -30,6 +30,12 @@ export interface EnrichmentInput {
   projects: ProjectInfo[]
   /** Optional user-provided AI context for personalization */
   userContext?: string
+  /** User's morning time preference in HH:MM format (default: '09:00') */
+  morningTime?: string
+  /** User's wake time preference in HH:MM format (default: '07:00') */
+  wakeTime?: string
+  /** User's sleep time preference in HH:MM format (default: '22:00') */
+  sleepTime?: string
 }
 
 export interface ProjectInfo {

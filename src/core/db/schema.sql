@@ -16,12 +16,15 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
+  wake_time     TEXT NOT NULL DEFAULT '07:00',
+  sleep_time    TEXT NOT NULL DEFAULT '22:00',
   ai_context    TEXT,
   ai_mode       TEXT NOT NULL DEFAULT 'on',
   ai_show_scores INTEGER NOT NULL DEFAULT 1,
   ai_show_signals INTEGER NOT NULL DEFAULT 1,
   ai_show_bubble_text INTEGER NOT NULL DEFAULT 1,
   ai_show_commentary INTEGER NOT NULL DEFAULT 1,
+  ai_bubble_model TEXT NOT NULL DEFAULT 'haiku',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

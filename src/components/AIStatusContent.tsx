@@ -20,7 +20,7 @@ interface SlotStats {
 interface QueueStats {
   active: number
   waiting: number
-  max: number
+  maxConcurrent: number
 }
 
 export interface AIStatusData {
@@ -132,7 +132,7 @@ export function AIStatusContent({
           </div>
           <div>
             <span className="text-zinc-500">Max</span>
-            <p className="mt-0.5 font-medium">{data.queue.max}</p>
+            <p className="mt-0.5 font-medium">{data.queue.maxConcurrent}</p>
           </div>
         </div>
       </div>

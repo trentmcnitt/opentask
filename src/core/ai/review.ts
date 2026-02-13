@@ -115,16 +115,30 @@ export interface ReviewResult {
 
 const STALE_MIN_AGE_DAYS = 21
 const ACT_SOON_MIN_PRIORITY = 3
+/** Score ceiling for P4 tasks — they're already visible, don't inflate. */
+const P4_SCORE_CEILING = 25
 
 /**
- * Strip signals that violate hard rules:
+ * Enforce hard rules that the AI sometimes ignores:
+ * - P4 score ceiling: clamp P4 task scores to 25 (user already sees these)
  * - act_soon requires P3+ (never P0-2)
  * - stale requires 21+ days old
  */
 export function sanitizeSignals(items: ReviewItem[], taskMap: Map<number, TaskSummary>): void {
   for (const item of items) {
     const task = taskMap.get(item.task_id)
-    if (!task || item.signals.length === 0) continue
+    if (!task) continue
+
+    // P4 score clamping: these tasks are already demanding attention
+    if (task.priority === 4 && item.score > P4_SCORE_CEILING) {
+      log.debug(
+        'ai',
+        `Clamped P4 task ${item.task_id} score from ${item.score} to ${P4_SCORE_CEILING}`,
+      )
+      item.score = P4_SCORE_CEILING
+    }
+
+    if (item.signals.length === 0) continue
 
     const original = item.signals.length
     item.signals = item.signals.filter((signal) => {
@@ -270,6 +284,41 @@ function buildTaskListSummary(tasks: TaskSummary[], now: DateTime): string {
 }
 
 /**
+ * Generate a review for a single user and await completion.
+ *
+ * Unlike startReviewGeneration (fire-and-forget), this awaits processReviewChunks
+ * directly so the caller blocks until results are cached. Used by the nightly cron
+ * to process users sequentially.
+ */
+export async function generateReviewForUser(
+  userId: number,
+  timezone: string,
+  tasks: TaskSummary[],
+  userContext?: string | null,
+): Promise<void> {
+  const sessionId = uuid()
+  const now = nowUtc()
+  const db = getDb()
+
+  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(userId)
+  db.prepare(
+    `INSERT INTO ai_review_sessions (id, user_id, status, total_tasks, completed, started_at)
+     VALUES (?, ?, 'running', ?, 0, ?)`,
+  ).run(sessionId, userId, tasks.length, now)
+
+  try {
+    await processReviewChunks(sessionId, userId, timezone, tasks, userContext)
+  } catch (err) {
+    log.error('ai', 'Review generation failed:', err)
+    db.prepare(
+      `UPDATE ai_review_sessions SET status = 'failed', error = ?, finished_at = ?
+       WHERE id = ?`,
+    ).run(String(err), nowUtc(), sessionId)
+    throw err
+  }
+}
+
+/**
  * Start a review generation session and process tasks in background.
  *
  * Returns the session ID immediately. The caller polls getReviewSessionStatus()
@@ -379,11 +428,14 @@ Score every task below. Return a JSON array with one entry per task.`
         : `chunk ${ci + 1}/${chunks.length} (${chunk.length} tasks)`
 
     try {
+      const reviewModel = process.env.OPENTASK_AI_REVIEW_MODEL || 'claude-opus-4-6'
       const result = await aiQuery({
         prompt,
         outputSchema: jsonSchema,
-        model: process.env.OPENTASK_AI_REVIEW_MODEL || 'haiku',
+        model: reviewModel,
         maxTurns: 1,
+        // Enable extended thinking for Opus models to improve scoring quality
+        ...(reviewModel.includes('opus') && { maxThinkingTokens: 10000 }),
         userId,
         action: 'review',
         inputText: inputLabel,

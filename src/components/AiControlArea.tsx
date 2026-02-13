@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/quick-select-dates'
 import type { AiMode } from '@/hooks/useAiMode'
@@ -21,12 +22,17 @@ interface AiControlAreaProps {
   showCommentary: boolean
   onShowCommentaryChange: (show: boolean) => void
   // Bubble
+  annotationGeneratedAt: string | null
   annotationFreshnessText: string | null
   annotationRefreshLoading: boolean
   onRefreshAnnotations: () => void
   // Insights (Review)
   reviewGeneratedAt: string | null
   reviewGenerating: boolean
+  reviewProgress: number
+  reviewCompletedTasks: number
+  reviewTotalTasks: number
+  reviewSingleCall: boolean
   onRefreshReview: () => void
 }
 
@@ -37,8 +43,10 @@ interface AiControlAreaProps {
  * Two AI systems (Bubble and Insights) are clearly separated in the
  * popover with their own freshness timestamps and refresh buttons.
  *
- * The progress bar for insights generation is rendered separately in
- * page.tsx (between this row and the filter bar) so it can span full width.
+ * When insights are generating, the AI button glows and the progress
+ * bar appears inside the popover's Insights section (not on the dashboard).
+ *
+ * Freshness timestamps ("3h ago") show the absolute time on hover/tap.
  */
 export function AiControlArea({
   mode,
@@ -51,11 +59,16 @@ export function AiControlArea({
   onShowBubbleTextChange,
   showCommentary,
   onShowCommentaryChange,
+  annotationGeneratedAt,
   annotationFreshnessText,
   annotationRefreshLoading,
   onRefreshAnnotations,
   reviewGeneratedAt,
   reviewGenerating,
+  reviewProgress,
+  reviewCompletedTasks,
+  reviewTotalTasks,
+  reviewSingleCall,
   onRefreshReview,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
@@ -75,10 +88,11 @@ export function AiControlArea({
       <PopoverTrigger asChild>
         <button
           className={cn(
-            'flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors',
+            'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-[14px] text-sm transition-colors',
             isActive
-              ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80',
+              ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-950/70'
+              : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
+            reviewGenerating && 'animate-[ai-glow_2s_ease-in-out_infinite]',
           )}
           aria-label="AI settings"
         >
@@ -87,12 +101,12 @@ export function AiControlArea({
               <svg className="absolute size-0" aria-hidden="true">
                 <defs>
                   <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#8b5cf6" />
+                    <stop offset="0%" stopColor="#818cf8" />
+                    <stop offset="100%" stopColor="#a78bfa" />
                   </linearGradient>
                 </defs>
               </svg>
-              <Sparkles className="size-4" style={{ stroke: 'url(#ai-gradient)' }} />
+              <Sparkles className="size-5" style={{ stroke: 'url(#ai-gradient)' }} />
             </>
           )}
           <span>{isActive ? 'AI' : 'AI Off'}</span>
@@ -114,6 +128,7 @@ export function AiControlArea({
           <SectionHeader
             label="Bubble"
             freshnessText={annotationFreshnessText}
+            generatedAt={annotationGeneratedAt}
             refreshing={annotationRefreshLoading}
             onRefresh={handleRefreshAnnotations}
             active={isActive}
@@ -136,7 +151,8 @@ export function AiControlArea({
         <div>
           <SectionHeader
             label="Insights"
-            freshnessText={reviewGenerating ? 'Analyzing...' : reviewFreshnessText}
+            freshnessText={reviewGenerating ? null : reviewFreshnessText}
+            generatedAt={reviewGenerating ? null : reviewGeneratedAt}
             refreshing={reviewGenerating}
             onRefresh={handleRefreshReview}
             active={isActive}
@@ -164,22 +180,52 @@ export function AiControlArea({
               disabled={!isActive}
             />
           </div>
+
+          {/* Progress bar (inside popover during insights generation) */}
+          {reviewGenerating && (
+            <div className="mt-3">
+              {reviewSingleCall ? (
+                <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                  <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-400" />
+                </div>
+              ) : (
+                <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                  <div
+                    className="h-full rounded-full bg-indigo-400 transition-all duration-500"
+                    style={{ width: `${reviewProgress}%` }}
+                  />
+                </div>
+              )}
+              <p className="text-muted-foreground mt-1 text-[11px]">
+                Analyzing {reviewCompletedTasks}/{reviewTotalTasks} tasks... This may take a few
+                minutes.
+              </p>
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
   )
 }
 
-/** Section header: label + freshness + refresh (only when AI is active) */
+/** Format an ISO timestamp as a readable absolute time in the user's local timezone. */
+function formatAbsoluteTime(isoString: string): string {
+  const date = new Date(isoString)
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+/** Section header: label + freshness (with tooltip) + refresh button */
 function SectionHeader({
   label,
   freshnessText,
+  generatedAt,
   refreshing,
   onRefresh,
   active,
 }: {
   label: string
   freshnessText: string | null
+  generatedAt: string | null
   refreshing: boolean
   onRefresh: () => void
   active: boolean
@@ -192,14 +238,7 @@ function SectionHeader({
       {active && (
         <div className="flex items-center gap-1.5">
           {freshnessText && (
-            <span
-              className={cn(
-                'text-[11px]',
-                refreshing ? 'animate-pulse text-indigo-500' : 'text-muted-foreground',
-              )}
-            >
-              {freshnessText}
-            </span>
+            <FreshnessWithTooltip freshnessText={freshnessText} generatedAt={generatedAt} />
           )}
           <button
             onClick={(e) => {
@@ -215,6 +254,47 @@ function SectionHeader({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Freshness text with absolute-time tooltip.
+ * Desktop: hover shows tooltip. Mobile: tap toggles to absolute time briefly.
+ */
+function FreshnessWithTooltip({
+  freshnessText,
+  generatedAt,
+}: {
+  freshnessText: string
+  generatedAt: string | null
+}) {
+  const [showAbsolute, setShowAbsolute] = useState(false)
+  const absoluteTime = generatedAt ? formatAbsoluteTime(generatedAt) : null
+
+  if (!absoluteTime) {
+    return <span className="text-muted-foreground text-[11px]">{freshnessText}</span>
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="text-muted-foreground cursor-default text-[11px]"
+          onClick={(e) => {
+            // Mobile: toggle to absolute time on tap, revert after 2s
+            e.stopPropagation()
+            setShowAbsolute(true)
+            setTimeout(() => setShowAbsolute(false), 2000)
+          }}
+        >
+          {showAbsolute ? absoluteTime : freshnessText}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={4}>
+        {absoluteTime}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

@@ -11,6 +11,8 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   rightBorder: false,
 }
 
+export type BubbleModel = 'haiku' | 'claude-opus-4-6'
+
 interface PreferencesContextValue {
   labelConfig: LabelConfig[]
   setLabelConfig: (config: LabelConfig[]) => void
@@ -22,6 +24,10 @@ interface PreferencesContextValue {
   setDefaultSnoozeOption: (option: string) => void
   morningTime: string
   setMorningTime: (time: string) => void
+  wakeTime: string
+  setWakeTime: (time: string) => void
+  sleepTime: string
+  setSleepTime: (time: string) => void
   defaultGrouping: 'time' | 'project'
   setDefaultGrouping: (grouping: 'time' | 'project') => void
   aiContext: string | null
@@ -36,6 +42,8 @@ interface PreferencesContextValue {
   setAiShowBubbleText: (show: boolean) => void
   aiShowCommentary: boolean
   setAiShowCommentary: (show: boolean) => void
+  aiBubbleModel: BubbleModel
+  setAiBubbleModel: (model: BubbleModel) => void
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -49,6 +57,10 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setDefaultSnoozeOption: () => {},
   morningTime: '09:00',
   setMorningTime: () => {},
+  wakeTime: '07:00',
+  setWakeTime: () => {},
+  sleepTime: '22:00',
+  setSleepTime: () => {},
   defaultGrouping: 'time',
   setDefaultGrouping: () => {},
   aiContext: null,
@@ -63,6 +75,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiShowBubbleText: () => {},
   aiShowCommentary: true,
   setAiShowCommentary: () => {},
+  aiBubbleModel: 'haiku',
+  setAiBubbleModel: () => {},
 })
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
@@ -73,6 +87,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
   const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
   const [morningTime, setMorningTimeState] = useState('09:00')
+  const [wakeTime, setWakeTimeState] = useState('07:00')
+  const [sleepTime, setSleepTimeState] = useState('22:00')
   const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project'>('time')
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
@@ -80,6 +96,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiShowSignals, setAiShowSignalsState] = useState(true)
   const [aiShowBubbleText, setAiShowBubbleTextState] = useState(true)
   const [aiShowCommentary, setAiShowCommentaryState] = useState(true)
+  const [aiBubbleModel, setAiBubbleModelState] = useState<BubbleModel>('haiku')
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -100,6 +117,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (data?.data?.morning_time) {
           setMorningTimeState(data.data.morning_time)
+        }
+        if (data?.data?.wake_time) {
+          setWakeTimeState(data.data.wake_time)
+        }
+        if (data?.data?.sleep_time) {
+          setSleepTimeState(data.data.sleep_time)
         }
         if (data?.data?.default_grouping) {
           setDefaultGroupingState(data.data.default_grouping)
@@ -128,6 +151,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_show_commentary !== undefined) {
           setAiShowCommentaryState(data.data.ai_show_commentary)
         }
+        if (data?.data?.ai_bubble_model) {
+          const model = data.data.ai_bubble_model
+          if (model === 'haiku' || model === 'claude-opus-4-6') {
+            setAiBubbleModelState(model)
+          }
+        }
       })
       .catch(() => {})
   }, [status])
@@ -145,6 +174,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setDefaultSnoozeOption: setDefaultSnoozeOptionState,
         morningTime,
         setMorningTime: setMorningTimeState,
+        wakeTime,
+        setWakeTime: setWakeTimeState,
+        sleepTime,
+        setSleepTime: setSleepTimeState,
         defaultGrouping,
         setDefaultGrouping: setDefaultGroupingState,
         aiContext,
@@ -159,6 +192,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiShowBubbleText: setAiShowBubbleTextState,
         aiShowCommentary,
         setAiShowCommentary: setAiShowCommentaryState,
+        aiBubbleModel,
+        setAiBubbleModel: setAiBubbleModelState,
       }}
     >
       {children}
@@ -186,6 +221,11 @@ export function useSnoozePreferences() {
   return { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime }
 }
 
+export function useSchedulePreferences() {
+  const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useContext(PreferencesContext)
+  return { wakeTime, setWakeTime, sleepTime, setSleepTime }
+}
+
 export function useDefaultGrouping() {
   const { defaultGrouping, setDefaultGrouping } = useContext(PreferencesContext)
   return { defaultGrouping, setDefaultGrouping }
@@ -208,6 +248,8 @@ export function useAiPreferences() {
     setAiShowBubbleText,
     aiShowCommentary,
     setAiShowCommentary,
+    aiBubbleModel,
+    setAiBubbleModel,
   } = useContext(PreferencesContext)
   return {
     aiMode,
@@ -220,5 +262,7 @@ export function useAiPreferences() {
     setAiShowBubbleText,
     aiShowCommentary,
     setAiShowCommentary,
+    aiBubbleModel,
+    setAiBubbleModel,
   }
 }

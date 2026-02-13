@@ -32,6 +32,7 @@ import { getTaskById } from '@/core/tasks'
 import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
+import { formatMorningTime } from '@/lib/snooze'
 import { isAIEnabled } from './sdk'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
@@ -319,10 +320,21 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 async function enrichTask(row: PendingTaskRow): Promise<void> {
   const db = getDb()
 
-  // Get user's timezone and AI context for date conversion and personalization
+  // Get user's timezone, AI context, and schedule preferences
   const user = db
-    .prepare('SELECT id, timezone, ai_context FROM users WHERE id = ?')
-    .get(row.user_id) as { id: number; timezone: string; ai_context: string | null } | undefined
+    .prepare(
+      'SELECT id, timezone, ai_context, morning_time, wake_time, sleep_time FROM users WHERE id = ?',
+    )
+    .get(row.user_id) as
+    | {
+        id: number
+        timezone: string
+        ai_context: string | null
+        morning_time: string
+        wake_time: string
+        sleep_time: string
+      }
+    | undefined
   if (!user) {
     throw new Error(`User ${row.user_id} not found`)
   }
@@ -344,10 +356,26 @@ async function enrichTask(row: PendingTaskRow): Promise<void> {
 
   const userContextBlock = user.ai_context ? `\nUser context: ${user.ai_context}\n` : ''
 
+  const formattedMorning = formatMorningTime(user.morning_time)
+  const formattedWake = formatMorningTime(user.wake_time)
+  const formattedSleep = formatMorningTime(user.sleep_time)
+
   const prompt = `## Context
 
 User's timezone: ${user.timezone}
 Current UTC time: ${nowUtc()}
+
+User's schedule:
+- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
+- Wakes up: ${formattedWake}
+- Goes to sleep: ${formattedSleep}
+
+When resolving time-of-day language:
+- "tomorrow" with no time specified → default task time (${formattedMorning})
+- "morning" → default task time (${formattedMorning})
+- "afternoon" → use your judgment, typically early afternoon
+- "evening" → use your judgment, typically early evening
+- "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
 
 Available projects:
 ${projectList}${userContextBlock}

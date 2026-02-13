@@ -6,6 +6,7 @@ export { generateBubble, getCachedBubble } from './bubble'
 export {
   REVIEW_SIGNALS,
   SIGNAL_MAP,
+  generateReviewForUser,
   startReviewGeneration,
   getReviewSessionStatus,
   getReviewResults,
@@ -13,7 +14,7 @@ export {
   getActiveReviewSession,
 } from './review'
 export { buildTaskSummaries } from './task-summaries'
-export { getUserAiContext } from './user-context'
+export { getUserAiContext, getUserBubbleModel } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {
   initEnrichmentSlot,

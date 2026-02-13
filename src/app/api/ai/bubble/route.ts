@@ -7,6 +7,7 @@ import {
   getCachedBubble,
   buildTaskSummaries,
   getUserAiContext,
+  getUserBubbleModel,
 } from '@/core/ai'
 import { log } from '@/lib/logger'
 
@@ -30,9 +31,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate fresh recommendations
+    // On-demand uses the user's preferred model (default: haiku for speed)
     const taskSummaries = buildTaskSummaries(user.id)
     const aiContext = getUserAiContext(user.id)
-    const result = await generateBubble(user.id, user.timezone, taskSummaries, aiContext)
+    const bubbleModel = getUserBubbleModel(user.id)
+    const result = await generateBubble(
+      user.id,
+      user.timezone,
+      taskSummaries,
+      aiContext,
+      bubbleModel,
+    )
 
     if (!result) {
       return serviceUnavailable('Failed to generate recommendations')
