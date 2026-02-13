@@ -365,7 +365,7 @@ function HomeContent() {
     filteredTasks: displayTasks,
   } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
 
-  // AI mode: three-way toggle (Off / Bubble / Insight)
+  // AI mode: Off / Bubble / Insights toggle
   const {
     mode: aiMode,
     setMode: setAiMode,
@@ -373,6 +373,10 @@ function HomeContent() {
     setShowScores,
     showSignals,
     setShowSignals,
+    showBubbleText,
+    setShowBubbleText,
+    showCommentary,
+    setShowCommentary,
   } = useAiMode()
 
   // AI insights (bubble): fetch recommendations and resolve against current task list
@@ -380,6 +384,42 @@ function HomeContent() {
 
   // AI review (insight): fetch/generate review results
   const reviewData = useReviewData(baseTasks)
+
+  // Separate refresh handlers for each AI system
+  const handleRefreshAnnotations = useCallback(() => {
+    aiInsights.refresh()
+  }, [aiInsights])
+
+  const handleRefreshReview = useCallback(() => {
+    if (!reviewData.generating) {
+      reviewData.generate()
+    }
+  }, [reviewData])
+
+  // Mode change handler: switching to 'on' auto-generates review if features checked and no data
+  const handleModeChange = useCallback(
+    (mode: AiMode) => {
+      setAiMode(mode)
+      if (mode === 'on') {
+        const hasReviewFeatures = showScores || showSignals || showCommentary
+        if (hasReviewFeatures && !reviewData.hasResults && !reviewData.generating) {
+          reviewData.generate()
+        }
+      }
+    },
+    [setAiMode, showScores, showSignals, showCommentary, reviewData],
+  )
+
+  // Auto-trigger review generation when user checks a review feature and no review data exists
+  const handleSubFeatureChange = useCallback(
+    (setter: (v: boolean) => void, value: boolean, isReviewFeature: boolean) => {
+      setter(value)
+      if (value && isReviewFeature && !reviewData.hasResults && !reviewData.generating) {
+        reviewData.generate()
+      }
+    },
+    [reviewData],
+  )
 
   // Bubble-specific AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
@@ -410,13 +450,13 @@ function HomeContent() {
   const tasks_ = useMemo(() => {
     let result = displayTasks
 
-    // Bubble mode: filter to AI-highlighted tasks when chip is active
-    if (aiMode === 'bubble' && aiFilterActive && aiInsights.aiTaskIds.size > 0) {
+    // Bubble/Insights: filter to Bubble-highlighted tasks when chip is active
+    if (aiMode !== 'off' && aiFilterActive && aiInsights.aiTaskIds.size > 0) {
       result = result.filter((t) => aiInsights.aiTaskIds.has(t.id))
     }
 
-    // Insight mode: filter by selected signals (union/OR)
-    if (aiMode === 'insight' && selectedSignals.length > 0) {
+    // Filter by selected signals (union/OR) when AI on
+    if (aiMode !== 'off' && selectedSignals.length > 0) {
       result = result.filter((t) => {
         const sigs = reviewData.reviewSignalMap.get(t.id)
         return sigs?.some((s) => selectedSignals.includes(s))
@@ -433,12 +473,17 @@ function HomeContent() {
     reviewData.reviewSignalMap,
   ])
 
-  // Derive effective annotation map based on AI mode
+  // Derive effective annotation map: Bubble annotations shown when AI on + "Bubble text" checked
   const effectiveAnnotationMap = useMemo(() => {
-    if (aiMode === 'bubble') return aiInsights.annotationMap
-    if (aiMode === 'insight') return reviewData.annotationMap
-    return new Map<number, string>()
-  }, [aiMode, aiInsights.annotationMap, reviewData.annotationMap])
+    if (aiMode === 'off' || !showBubbleText) return new Map<number, string>()
+    return aiInsights.annotationMap
+  }, [aiMode, showBubbleText, aiInsights.annotationMap])
+
+  // Review commentary: shown when AI on + "Commentary" checked
+  const effectiveCommentaryMap = useMemo(() => {
+    if (aiMode === 'off' || !showCommentary) return new Map<number, string>()
+    return reviewData.annotationMap
+  }, [aiMode, showCommentary, reviewData.annotationMap])
 
   // Show annotations when AI mode is not off
   const showAnnotations = aiMode !== 'off'
@@ -750,16 +795,23 @@ function HomeContent() {
         }
       }}
       aiMode={aiMode}
-      onAiModeChange={setAiMode}
+      onAiModeChange={handleModeChange}
       showScores={showScores}
-      onShowScoresChange={setShowScores}
+      onShowScoresChange={(v: boolean) => handleSubFeatureChange(setShowScores, v, true)}
       showSignals={showSignals}
-      onShowSignalsChange={setShowSignals}
+      onShowSignalsChange={(v: boolean) => handleSubFeatureChange(setShowSignals, v, true)}
+      showBubbleText={showBubbleText}
+      onShowBubbleTextChange={(v: boolean) => handleSubFeatureChange(setShowBubbleText, v, false)}
+      showCommentary={showCommentary}
+      onShowCommentaryChange={(v: boolean) => handleSubFeatureChange(setShowCommentary, v, true)}
+      onRefreshAnnotations={handleRefreshAnnotations}
+      onRefreshReview={handleRefreshReview}
       aiInsights={aiInsights}
       reviewData={reviewData}
       aiFilterActive={aiFilterActive}
       onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
       effectiveAnnotationMap={effectiveAnnotationMap}
+      effectiveCommentaryMap={effectiveCommentaryMap}
       showAnnotations={showAnnotations}
       selectedSignals={selectedSignals}
       onSignalClick={handleSignalClick}
@@ -837,11 +889,18 @@ function DashboardView({
   onShowScoresChange,
   showSignals,
   onShowSignalsChange,
+  showBubbleText,
+  onShowBubbleTextChange,
+  showCommentary,
+  onShowCommentaryChange,
+  onRefreshAnnotations,
+  onRefreshReview,
   aiInsights,
   reviewData,
   aiFilterActive,
   onToggleAiFilter,
   effectiveAnnotationMap,
+  effectiveCommentaryMap,
   showAnnotations,
   selectedSignals,
   onSignalClick,
@@ -916,11 +975,18 @@ function DashboardView({
   onShowScoresChange: (show: boolean) => void
   showSignals: boolean
   onShowSignalsChange: (show: boolean) => void
+  showBubbleText: boolean
+  onShowBubbleTextChange: (show: boolean) => void
+  showCommentary: boolean
+  onShowCommentaryChange: (show: boolean) => void
+  onRefreshAnnotations: () => void
+  onRefreshReview: () => void
   aiInsights: UseAiInsightsReturn
   reviewData: UseReviewDataReturn
   aiFilterActive: boolean
   onToggleAiFilter: () => void
   effectiveAnnotationMap: Map<number, string>
+  effectiveCommentaryMap: Map<number, string>
   showAnnotations: boolean
   selectedSignals: string[]
   onSignalClick: (key: string, e: React.MouseEvent) => void
@@ -931,8 +997,8 @@ function DashboardView({
     selectedLabels.length > 0 ||
     selectedPriorities.length > 0 ||
     selectedDateFilters.length > 0 ||
-    (aiMode === 'bubble' && aiFilterActive) ||
-    (aiMode === 'insight' && selectedSignals.length > 0)
+    (aiMode !== 'off' && aiFilterActive) ||
+    (aiMode !== 'off' && selectedSignals.length > 0)
 
   return (
     <div className="flex flex-1 flex-col">
@@ -955,31 +1021,63 @@ function DashboardView({
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
-        <QuickAdd
-          onAdd={actions.handleQuickAdd}
-          onOpenAddForm={(title) => {
-            window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
-          }}
-        />
+        {/* Quick add + AI chip row */}
+        <div className="mb-4 flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <QuickAdd
+              onAdd={actions.handleQuickAdd}
+              onOpenAddForm={(title) => {
+                window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
+              }}
+            />
+          </div>
+          <AiControlArea
+            mode={aiMode}
+            onModeChange={onAiModeChange}
+            showScores={showScores}
+            onShowScoresChange={onShowScoresChange}
+            showSignals={showSignals}
+            onShowSignalsChange={onShowSignalsChange}
+            showBubbleText={showBubbleText}
+            onShowBubbleTextChange={onShowBubbleTextChange}
+            showCommentary={showCommentary}
+            onShowCommentaryChange={onShowCommentaryChange}
+            annotationFreshnessText={aiInsights.freshnessText}
+            annotationRefreshLoading={aiInsights.loading}
+            onRefreshAnnotations={onRefreshAnnotations}
+            reviewGeneratedAt={reviewData.generatedAt}
+            reviewGenerating={reviewData.generating}
+            onRefreshReview={onRefreshReview}
+          />
+        </div>
 
-        <AiControlArea
-          mode={aiMode}
-          onModeChange={onAiModeChange}
-          showScores={showScores}
-          onShowScoresChange={onShowScoresChange}
-          showSignals={showSignals}
-          onShowSignalsChange={onShowSignalsChange}
-          hasScores={reviewData.hasResults}
-          bubbleFreshnessText={aiInsights.freshnessText}
-          bubbleLoading={aiInsights.loading}
-          onRefreshBubble={aiInsights.refresh}
-          reviewGeneratedAt={reviewData.generatedAt}
-          reviewGenerating={reviewData.generating}
-          reviewProgress={reviewData.progress}
-          reviewCompletedTasks={reviewData.completedTasks}
-          reviewTotalTasks={reviewData.totalTasks}
-          onGenerateReview={reviewData.generate}
-        />
+        {/* Insights generation progress bar */}
+        {reviewData.generating && (
+          <div className="mb-4">
+            {reviewData.singleCall ? (
+              <>
+                <div className="bg-muted mb-1 h-2 overflow-hidden rounded-full">
+                  <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-500" />
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Analyzing {reviewData.totalTasks} tasks...
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="bg-muted mb-1 h-2 overflow-hidden rounded-full">
+                  <div
+                    className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                    style={{ width: `${reviewData.progress}%` }}
+                  />
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Analyzing tasks... {reviewData.completedTasks}/{reviewData.totalTasks}
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         <FilterBar
           tasks={allTasks}
@@ -999,8 +1097,9 @@ function DashboardView({
           aiFilterActive={aiFilterActive}
           aiFilterLoading={aiInsights.loading}
           onToggleAiFilter={onToggleAiFilter}
+          showSignals={showSignals}
           signalChips={
-            aiMode === 'insight'
+            aiMode !== 'off' && showSignals && reviewData.hasResults
               ? reviewData.activeSignals.map((s) => ({
                   key: s.key,
                   label: s.label,
@@ -1012,7 +1111,6 @@ function DashboardView({
           selectedSignals={selectedSignals}
           onSignalClick={onSignalClick}
           onSignalLongPress={onSignalLongPress}
-          totalResultCount={reviewData.results.length}
         />
 
         {searchQuery && (
@@ -1059,9 +1157,9 @@ function DashboardView({
           onReprocess={onReprocess}
           reviewScoreMap={showScores && aiMode !== 'off' ? reviewData.reviewScoreMap : undefined}
           reviewSignalMap={showSignals && aiMode !== 'off' ? reviewData.reviewSignalMap : undefined}
-          showAiReview={reviewData.hasResults}
+          reviewCommentaryMap={effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined}
+          showAiReview={reviewData.hasResults && aiMode !== 'off'}
           aiScoreDisabled={!showScores || aiMode === 'off'}
-          suppressAiHighlight={aiMode === 'insight'}
           headerLeft={
             tasks.length > 0 ? (
               <button

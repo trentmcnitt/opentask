@@ -14,6 +14,17 @@
  * Run with: npm run test:quality
  */
 
+/**
+ * Testing philosophy: see docs/AI.md § "Testing Philosophy"
+ *
+ * Key principles:
+ * - No production feedback loop — quality tests ARE the quality bar
+ * - Scenarios must be realistic (dictation artifacts, real-world variety)
+ * - review_expectations enforce hard rules; quality_notes guide Layer 2
+ * - Signal restraint: 60-70% of tasks should get zero signals
+ * - Any prompt change requires full Layer 1 + Layer 2 on ALL scenarios
+ */
+
 import { describe, test, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import path from 'path'
@@ -23,6 +34,7 @@ import type {
   EnrichmentInput,
   BubbleInput,
   ReviewInput,
+  ScenarioRequirements,
   ScenarioOutput,
   RunSummary,
 } from './types'
@@ -32,6 +44,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const AI_ENABLED = process.env.OPENTASK_AI_ENABLED === 'true'
+const LARGE_TESTS_ENABLED = process.env.QUALITY_TEST_LARGE === 'true'
 
 // ---------------------------------------------------------------------------
 // Quality test user ID
@@ -72,6 +85,18 @@ beforeAll(async () => {
       'quality-test',
       'not-a-real-hash',
       'America/Chicago',
+    )
+  }
+
+  // Ensure a project exists for the tasks FK constraint (used by production code path)
+  const existingProject = db
+    .prepare('SELECT id FROM projects WHERE id = ? AND owner_id = ?')
+    .get(1, QUALITY_TEST_USER_ID)
+  if (!existingProject) {
+    db.prepare(`INSERT OR IGNORE INTO projects (id, name, owner_id) VALUES (?, ?, ?)`).run(
+      1,
+      'Quality Test',
+      QUALITY_TEST_USER_ID,
     )
   }
 
@@ -187,9 +212,18 @@ describe('AI Quality — Layer 1', () => {
     const reviewTests = allScenarios.filter((s) => s.feature === 'review')
 
     for (const scenario of reviewTests) {
-      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
-        await runScenario(scenario)
-      })
+      const input = scenario.input as ReviewInput
+      const isLarge = input.tasks.length > 100
+      const skipReason = !AI_ENABLED || (isLarge && !LARGE_TESTS_ENABLED)
+
+      test.skipIf(skipReason)(
+        isLarge ? `${scenario.id} [large - ${input.tasks.length} tasks]` : scenario.id,
+        async () => {
+          await runScenario(scenario)
+        },
+        // Large scenarios get a 12 minute timeout
+        isLarge ? 720_000 : undefined,
+      )
     }
   })
 })
@@ -231,9 +265,15 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
       case 'bubble':
         ;({ output, durationMs } = await runBubble(scenario.input as BubbleInput))
         break
-      case 'review':
-        ;({ output, durationMs } = await runReview(scenario.input as ReviewInput))
+      case 'review': {
+        const reviewInput = scenario.input as ReviewInput
+        if (reviewInput.useProductionCodePath) {
+          ;({ output, durationMs } = await runReviewViaProduction(reviewInput))
+        } else {
+          ;({ output, durationMs } = await runReview(reviewInput))
+        }
         break
+      }
     }
 
     // Save output
@@ -441,47 +481,14 @@ async function runReview(
   const { aiQuery } = await import('@/core/ai/sdk')
   const { ReviewBatchResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { formatTaskLine, sanitizeSignals } = await import('@/core/ai/review')
   const { z } = await import('zod')
   const { DateTime } = await import('luxon')
 
   const now = DateTime.now().setZone(input.timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
-  const formatLocal = (iso: string) =>
-    DateTime.fromISO(iso, { zone: 'utc' }).setZone(input.timezone).toFormat('ccc, LLL d, h:mm a')
-
-  const formatAge = (iso: string) => {
-    const dt = DateTime.fromISO(iso, { zone: 'utc' })
-    const days = Math.floor(now.diff(dt, 'days').days)
-    if (days <= 0) return 'today'
-    if (days === 1) return '1 day ago'
-    if (days < 7) return `${days} days ago`
-    const weeks = Math.floor(days / 7)
-    if (days < 30) return `${weeks} week${weeks > 1 ? 's' : ''} ago`
-    const months = Math.floor(days / 30)
-    return `${months} month${months > 1 ? 's' : ''} ago`
-  }
-
-  const taskLines = input.tasks
-    .map((t) => {
-      const due = t.due_at ? formatLocal(t.due_at) : 'none'
-      const originalDue =
-        t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
-          ? ` (originally due: ${formatLocal(t.original_due_at)})`
-          : ''
-      const created = formatLocal(t.created_at)
-      const createdAge = formatAge(t.created_at)
-      const rrule = t.rrule ? `rrule: ${t.rrule}` : 'one-off'
-      const recMode =
-        t.recurrence_mode !== 'from_due' ? ` | recurrence_mode: ${t.recurrence_mode}` : ''
-      const notes = t.notes ? ` | notes: ${t.notes}` : ''
-      return (
-        `- [${t.id}] "${t.title}" | priority: ${t.priority} | due: ${due}${originalDue} | ` +
-        `created: ${created} (${createdAge}) | labels: ${t.labels.join(', ') || 'none'} | ` +
-        `project: ${t.project_name || 'Inbox'} | ${rrule}${recMode}${notes}`
-      )
-    })
-    .join('\n')
+  const taskLines = input.tasks.map((t) => formatTaskLine(t, input.timezone, now)).join('\n')
 
   const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
 
@@ -490,14 +497,13 @@ async function runReview(
 ## Context
 
 Current time: ${currentTime}
-Total tasks in full list: ${input.tasks.length}
-Tasks in this batch: ${input.tasks.length}${userContextBlock}
+Total tasks: ${input.tasks.length}${userContextBlock}
 
 ## Tasks
 
 ${taskLines}
 
-Score every task in this batch. Return a JSON array with one entry per task.`
+Score every task below. Return a JSON array with one entry per task.`
 
   const jsonSchema = z.toJSONSchema(ReviewBatchResultSchema)
 
@@ -509,6 +515,7 @@ Score every task in this batch. Return a JSON array with one entry per task.`
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_review',
     inputText: `${input.tasks.length} tasks`,
+    timeoutMs: 600_000,
   })
 
   const parsed = parseAIResponse(result, ReviewBatchResultSchema, 'Review', (text) => {
@@ -524,10 +531,82 @@ Score every task in this batch. Return a JSON array with one entry per task.`
     throw new Error(`Review query failed: ${result.error || 'Could not parse output'}`)
   }
 
+  // Apply the same signal sanitization as production code
+  const taskMap = new Map(input.tasks.map((t) => [t.id, t]))
+  sanitizeSignals(parsed, taskMap)
+
   // Wrap the array in an object for consistent output handling
   return {
     output: { items: parsed } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
+  }
+}
+
+/**
+ * Run review via the production processReviewChunks code path.
+ *
+ * Calls startReviewGeneration + polls getReviewSessionStatus to completion,
+ * then retrieves results with getReviewResults. Tests real chunking, shuffle,
+ * calibration summary, and result merging.
+ */
+async function runReviewViaProduction(
+  input: ReviewInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { startReviewGeneration, getReviewSessionStatus, getReviewResults } =
+    await import('@/core/ai/review')
+  const { getDb } = await import('@/core/db')
+
+  // Insert task rows so storeReviewResults can satisfy FK constraint
+  // (ai_review_results.task_id → tasks.id)
+  const db = getDb()
+  const insertTask = db.prepare(
+    `INSERT OR IGNORE INTO tasks (id, user_id, project_id, title, priority, created_at, labels)
+     VALUES (?, ?, 1, ?, ?, ?, '[]')`,
+  )
+  for (const t of input.tasks) {
+    insertTask.run(t.id, QUALITY_TEST_USER_ID, t.title, t.priority, t.created_at)
+  }
+
+  const startMs = Date.now()
+  const { sessionId } = startReviewGeneration(
+    QUALITY_TEST_USER_ID,
+    input.timezone,
+    input.tasks,
+    input.userContext,
+  )
+
+  // Poll for completion (max 10 minutes for large lists)
+  const maxWaitMs = 600_000
+  const pollIntervalMs = 2_000
+  const deadline = Date.now() + maxWaitMs
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    const session = getReviewSessionStatus(sessionId, QUALITY_TEST_USER_ID)
+    if (!session) throw new Error('Review session not found')
+    if (session.status === 'complete') break
+    if (session.status === 'failed') throw new Error(`Review failed: ${session.error}`)
+  }
+
+  const { results } = getReviewResults(QUALITY_TEST_USER_ID)
+  const durationMs = Date.now() - startMs
+
+  // Clean up: remove review results and task rows created for this run
+  db.prepare('DELETE FROM ai_review_results WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  db.prepare('DELETE FROM ai_review_sessions WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+  db.prepare('DELETE FROM tasks WHERE user_id = ?').run(QUALITY_TEST_USER_ID)
+
+  // Convert to the same { items: [...] } format as runReview
+  const items = results.map((r) => ({
+    task_id: r.task_id,
+    score: r.score,
+    commentary: r.commentary,
+    signals: r.signals,
+  }))
+
+  return {
+    output: { items } as unknown as Record<string, unknown>,
+    durationMs,
   }
 }
 
@@ -622,6 +701,12 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
       break
     case 'review':
       validateReviewSchema(scenario.id, output, scenario.input as ReviewInput)
+      validateReviewExpectations(
+        scenario.id,
+        output,
+        scenario.input as ReviewInput,
+        scenario.requirements,
+      )
       break
   }
 }
@@ -745,6 +830,170 @@ function validateReviewSchema(
   for (const inputId of inputTaskIds) {
     if (!outputTaskIds.has(inputId)) {
       throw new Error(`[${id}] input task ${inputId} is missing from the output`)
+    }
+  }
+}
+
+/**
+ * Validate deterministic review expectations — both always-on rules
+ * and per-scenario checks from review_expectations.
+ */
+function validateReviewExpectations(
+  id: string,
+  output: Record<string, unknown>,
+  input: ReviewInput,
+  requirements: ScenarioRequirements,
+): void {
+  const items = output.items as Array<{
+    task_id: number
+    score: number
+    signals: string[]
+    commentary: string
+  }>
+  if (!Array.isArray(items)) return
+
+  // Build lookup maps
+  const itemMap = new Map(items.map((item) => [item.task_id, item]))
+  const taskMap = new Map(input.tasks.map((t) => [t.id, t]))
+
+  // --- Always-on checks (every review scenario) ---
+
+  for (const item of items) {
+    const task = taskMap.get(item.task_id)
+    if (!task) continue
+    const signals = item.signals || []
+
+    // P4 score ceiling: P4 tasks should score low because they're already visible.
+    // Allow a higher ceiling (50) when the AI flags the task as "misprioritized" —
+    // generated P4 tasks with mundane content (e.g. "Renew passport" at P4)
+    // are legitimately worth calling out, and the AI correctly scores them higher.
+    if (task.priority === 4) {
+      const hasMisprioritized = signals.includes('misprioritized')
+      const ceiling = hasMisprioritized ? 50 : 25
+      if (item.score > ceiling) {
+        throw new Error(
+          `[${id}] P4 task ${item.task_id} ("${task.title}") scored ${item.score}, ` +
+            `expected 0-${ceiling} (P4 tasks are already visible${hasMisprioritized ? ', misprioritized allows higher' : ''})`,
+        )
+      }
+      // P4 no signals (except misprioritized — the whole point is the priority is wrong)
+      const nonMisprioritizedSignals = signals.filter((s) => s !== 'misprioritized')
+      if (nonMisprioritizedSignals.length > 0) {
+        throw new Error(
+          `[${id}] P4 task ${item.task_id} ("${task.title}") has signals ` +
+            `[${nonMisprioritizedSignals.join(', ')}], expected none (except misprioritized)`,
+        )
+      }
+    }
+
+    // Stale age floor: stale signal requires task to be 21+ days old
+    if (signals.includes('stale') && task.created_at) {
+      const createdMs = new Date(task.created_at).getTime()
+      const age = Math.floor((Date.now() - createdMs) / (1000 * 60 * 60 * 24))
+      if (age < 21) {
+        throw new Error(
+          `[${id}] task ${item.task_id} ("${task.title}") has "stale" signal but is only ` +
+            `${age} days old (minimum 21 days)`,
+        )
+      }
+    }
+
+    // act_soon priority gate: act_soon requires P3+
+    if (signals.includes('act_soon') && task.priority < 3) {
+      throw new Error(
+        `[${id}] task ${item.task_id} ("${task.title}") has "act_soon" signal but is P${task.priority} ` +
+          `(act_soon requires P3+)`,
+      )
+    }
+  }
+
+  // Score spread: for 10+ tasks, std dev must be > 10
+  // Skip this check for scenarios with min_zero_signal_pct >= 60 — those are
+  // intentionally homogeneous (all routine tasks) where low variance is expected.
+  const isHomogeneous =
+    requirements.review_expectations?.min_zero_signal_pct != null &&
+    requirements.review_expectations.min_zero_signal_pct >= 60
+  if (items.length >= 10 && !isHomogeneous) {
+    const scores = items.map((i) => i.score)
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length
+    const variance = scores.reduce((a, s) => a + (s - mean) ** 2, 0) / scores.length
+    const stdDev = Math.sqrt(variance)
+    if (stdDev <= 10) {
+      throw new Error(
+        `[${id}] score std dev is ${stdDev.toFixed(1)} for ${items.length} tasks ` +
+          `(expected > 10 — scores should be spread out, not clustered)`,
+      )
+    }
+  }
+
+  // --- Per-scenario checks (when review_expectations is set) ---
+
+  const expectations = requirements.review_expectations
+  if (!expectations) return
+
+  // Score ranges
+  if (expectations.score_ranges) {
+    for (const [taskIdStr, range] of Object.entries(expectations.score_ranges)) {
+      const taskId = Number(taskIdStr)
+      const item = itemMap.get(taskId)
+      if (!item) {
+        throw new Error(`[${id}] expected score for task ${taskId} but it wasn't in output`)
+      }
+      if (item.score < range.min || item.score > range.max) {
+        const task = taskMap.get(taskId)
+        throw new Error(
+          `[${id}] task ${taskId} ("${task?.title}") scored ${item.score}, ` +
+            `expected ${range.min}-${range.max}`,
+        )
+      }
+    }
+  }
+
+  // Signal checks
+  if (expectations.signal_checks) {
+    for (const [taskIdStr, checks] of Object.entries(expectations.signal_checks)) {
+      const taskId = Number(taskIdStr)
+      const item = itemMap.get(taskId)
+      if (!item) {
+        throw new Error(`[${id}] expected signal check for task ${taskId} but it wasn't in output`)
+      }
+      const signals = item.signals || []
+
+      if (checks.must_have) {
+        for (const required of checks.must_have) {
+          if (!signals.includes(required)) {
+            const task = taskMap.get(taskId)
+            throw new Error(
+              `[${id}] task ${taskId} ("${task?.title}") missing required signal ` +
+                `"${required}" (has: [${signals.join(', ')}])`,
+            )
+          }
+        }
+      }
+
+      if (checks.must_not_have) {
+        for (const forbidden of checks.must_not_have) {
+          if (signals.includes(forbidden)) {
+            const task = taskMap.get(taskId)
+            throw new Error(
+              `[${id}] task ${taskId} ("${task?.title}") has forbidden signal ` +
+                `"${forbidden}" (has: [${signals.join(', ')}])`,
+            )
+          }
+        }
+      }
+    }
+  }
+
+  // Minimum zero-signal percentage
+  if (expectations.min_zero_signal_pct != null) {
+    const zeroSignalCount = items.filter((i) => !i.signals || i.signals.length === 0).length
+    const pct = (zeroSignalCount / items.length) * 100
+    if (pct < expectations.min_zero_signal_pct) {
+      throw new Error(
+        `[${id}] only ${pct.toFixed(0)}% of tasks have zero signals ` +
+          `(expected >= ${expectations.min_zero_signal_pct}%)`,
+      )
     }
   }
 }

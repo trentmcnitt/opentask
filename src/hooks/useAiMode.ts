@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useAiPreferences } from '@/components/PreferencesProvider'
 
-export type AiMode = 'off' | 'bubble' | 'insight'
+export type AiMode = 'off' | 'on'
 
 export interface UseAiModeReturn {
   mode: AiMode
@@ -12,6 +12,10 @@ export interface UseAiModeReturn {
   setShowScores: (show: boolean) => void
   showSignals: boolean
   setShowSignals: (show: boolean) => void
+  showBubbleText: boolean
+  setShowBubbleText: (show: boolean) => void
+  showCommentary: boolean
+  setShowCommentary: (show: boolean) => void
 }
 
 /** Fire-and-forget PATCH to persist a preference change server-side. */
@@ -24,16 +28,26 @@ function patchPreference(fields: Record<string, unknown>) {
 }
 
 /**
- * Manages AI mode toggle state (Off / Bubble / Insight), the "Scores"
- * checkbox, and the "Signals" checkbox. Backed by PreferencesProvider
+ * Manages AI mode toggle state (Off / Bubble / Insights), sub-feature checkboxes
+ * (Scores, Signals, Bubble text, Commentary). Backed by PreferencesProvider
  * (server-persisted per user).
  *
  * On first load, migrates any leftover localStorage keys to the server
  * and deletes them.
  */
 export function useAiMode(): UseAiModeReturn {
-  const { aiMode, setAiMode, aiShowScores, setAiShowScores, aiShowSignals, setAiShowSignals } =
-    useAiPreferences()
+  const {
+    aiMode,
+    setAiMode,
+    aiShowScores,
+    setAiShowScores,
+    aiShowSignals,
+    setAiShowSignals,
+    aiShowBubbleText,
+    setAiShowBubbleText,
+    aiShowCommentary,
+    setAiShowCommentary,
+  } = useAiPreferences()
   const migrated = useRef(false)
 
   // One-time migration from localStorage → server
@@ -46,9 +60,18 @@ export function useAiMode(): UseAiModeReturn {
     if (!storedMode && !storedScores) return
 
     const fields: Record<string, unknown> = {}
-    if (storedMode === 'off' || storedMode === 'bubble' || storedMode === 'insight') {
-      setAiMode(storedMode)
-      fields.ai_mode = storedMode
+    if (storedMode === 'off') {
+      setAiMode('off')
+      fields.ai_mode = 'off'
+    } else if (
+      storedMode === 'on' ||
+      storedMode === 'bubble' ||
+      storedMode === 'insight' ||
+      storedMode === 'insights'
+    ) {
+      // Legacy migration: map all non-off values to 'on'
+      setAiMode('on')
+      fields.ai_mode = 'on'
     }
     if (storedScores !== null) {
       const val = storedScores !== 'false'
@@ -85,6 +108,22 @@ export function useAiMode(): UseAiModeReturn {
     [setAiShowSignals],
   )
 
+  const setShowBubbleText = useCallback(
+    (show: boolean) => {
+      setAiShowBubbleText(show)
+      patchPreference({ ai_show_bubble_text: show })
+    },
+    [setAiShowBubbleText],
+  )
+
+  const setShowCommentary = useCallback(
+    (show: boolean) => {
+      setAiShowCommentary(show)
+      patchPreference({ ai_show_commentary: show })
+    },
+    [setAiShowCommentary],
+  )
+
   return {
     mode: aiMode,
     setMode,
@@ -92,5 +131,9 @@ export function useAiMode(): UseAiModeReturn {
     setShowScores,
     showSignals: aiShowSignals,
     setShowSignals,
+    showBubbleText: aiShowBubbleText,
+    setShowBubbleText,
+    showCommentary: aiShowCommentary,
+    setShowCommentary,
   }
 }

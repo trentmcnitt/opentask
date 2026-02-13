@@ -70,7 +70,7 @@ function makeReviewResponse(taskIds: number[]) {
   // At runtime the array passes through to Zod's safeParse, which handles it correctly.
   const items = taskIds.map((id) => ({
     task_id: id,
-    score: 50 + id,
+    score: id % 101, // Keep in 0-100 range for Zod validation
     commentary: `Commentary for task ${id}`,
     signals: [],
   }))
@@ -226,7 +226,8 @@ describe('Result storage and retrieval', () => {
       error: null,
     })
 
-    const tasks = makeTasks(2)
+    // Task 1 needs to be 21+ days old so the stale signal passes sanitization
+    const tasks = makeTasks(2, [{ created_at: '2025-12-01T12:00:00Z' }])
     startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
@@ -325,51 +326,58 @@ describe('Session tracking', () => {
   })
 })
 
-describe('Batch splitting', () => {
-  test('processes small batch in a single AI call', async () => {
+describe('Chunk splitting', () => {
+  test('processes tasks under threshold in a single AI call', async () => {
     mockAiQuery.mockResolvedValue(makeReviewResponse([1, 2, 3]))
 
     const tasks = makeTasks(3)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    const { singleCall } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+
+    expect(singleCall).toBe(true)
 
     await vi.waitFor(() => {
       expect(hasReviewResults(TEST_USER_ID)).toBe(true)
     })
 
-    // Should only need 1 call for 3 tasks (batch size is 25)
     expect(mockAiQuery).toHaveBeenCalledOnce()
   })
 
-  test('splits 30 tasks into 2 batches', async () => {
-    const taskIds = Array.from({ length: 30 }, (_, i) => i + 1)
-    // First batch: tasks 1-25, second batch: tasks 26-30
-    mockAiQuery
-      .mockResolvedValueOnce(makeReviewResponse(taskIds.slice(0, 25)))
-      .mockResolvedValueOnce(makeReviewResponse(taskIds.slice(25)))
+  test('splits tasks over 500 into multiple chunks', async () => {
+    const taskCount = 600
+    const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
 
-    const tasks = makeTasks(30)
-    startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+    // Return all task IDs on every call — the code filters by chunk membership.
+    // After shuffle + split, each chunk gets ~300 tasks. The filter keeps only
+    // the IDs that appear in that chunk, so all 600 end up stored across 2 calls.
+    mockAiQuery.mockResolvedValue(makeReviewResponse(allIds))
+
+    const tasks = makeTasks(taskCount)
+    const { singleCall } = startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
+
+    expect(singleCall).toBe(false)
 
     await vi.waitFor(() => {
       const { results } = getReviewResults(TEST_USER_ID)
-      expect(results.length).toBe(30)
+      expect(results.length).toBe(taskCount)
     })
 
+    // 600 tasks / 500 threshold = 2 chunks
     expect(mockAiQuery).toHaveBeenCalledTimes(2)
-
-    const { results } = getReviewResults(TEST_USER_ID)
-    expect(results).toHaveLength(30)
   })
 })
 
 describe('Error handling', () => {
-  test('continues on batch error — partial results are stored', async () => {
-    // First batch succeeds, second batch fails
+  test('continues on chunk error — partial results are stored', async () => {
+    // Use >500 tasks to trigger multi-chunk processing.
+    // First chunk succeeds, second chunk fails.
+    const taskCount = 600
+    const allIds = Array.from({ length: taskCount }, (_, i) => i + 1)
+
     mockAiQuery
-      .mockResolvedValueOnce(makeReviewResponse([1, 2, 3]))
+      .mockResolvedValueOnce(makeReviewResponse(allIds))
       .mockRejectedValueOnce(new Error('AI service unavailable'))
 
-    const tasks = makeTasks(30)
+    const tasks = makeTasks(taskCount)
     startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {
@@ -377,10 +385,10 @@ describe('Error handling', () => {
       expect(session).toBeNull() // No longer active = completed
     })
 
-    // First batch of results should be stored
+    // First chunk's results should be stored, second chunk failed
     const { results } = getReviewResults(TEST_USER_ID)
     expect(results.length).toBeGreaterThan(0)
-    expect(results.length).toBeLessThan(30) // Not all tasks processed
+    expect(results.length).toBeLessThan(taskCount)
   })
 
   test('filters out task IDs not in the input batch', async () => {
@@ -419,7 +427,8 @@ describe('Error handling', () => {
       error: null,
     })
 
-    const tasks = makeTasks(1)
+    // Task needs to be 21+ days old so stale signal passes sanitization
+    const tasks = makeTasks(1, [{ created_at: '2025-12-01T12:00:00Z' }])
     startReviewGeneration(TEST_USER_ID, TEST_TIMEZONE, tasks)
 
     await vi.waitFor(() => {

@@ -463,6 +463,13 @@ These mistakes come from a bias toward "finding problems." Most tasks are fine �
 4. **Over-signaling.** 60-70% of tasks should have ZERO signals. If you find yourself assigning signals to more than 40% of tasks, step back and remove the weakest ones.
 5. **Treating from_completion overdue within 1 cycle as urgent.** A weekly from_completion task 4 days overdue is normal — score 0-20, no signals.
 
+## HARD CONSTRAINTS — check BEFORE outputting each task
+
+Before writing each task's signals, verify:
+1. If the task's priority is P0, P1, or P2 → signals MUST NOT contain "act_soon". Delete it if you were about to include it.
+2. If the task was created fewer than 21 days ago → signals MUST NOT contain "stale". Delete it if you were about to include it.
+These are absolute rules with zero exceptions, regardless of context or urgency.
+
 ## Output format
 
 Return a JSON array with one entry per task:

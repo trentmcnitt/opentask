@@ -54,6 +54,8 @@ export interface ReviewInput {
   timezone: string
   /** Optional user-provided AI context for personalization */
   userContext?: string
+  /** If true, use production processReviewChunks code path instead of direct AI call */
+  useProductionCodePath?: boolean
 }
 
 export interface ScenarioRequirements {
@@ -63,6 +65,15 @@ export interface ScenarioRequirements {
   must_not_include?: Record<string, unknown>
   /** Guidance for the Layer 2 judge (qualitative expectations) */
   quality_notes?: string
+  /** Deterministic review checks enforced automatically in Layer 1 */
+  review_expectations?: {
+    /** task_id -> { min, max } score range */
+    score_ranges?: Record<number, { min: number; max: number }>
+    /** task_id -> required/forbidden signals */
+    signal_checks?: Record<number, { must_have?: string[]; must_not_have?: string[] }>
+    /** Minimum % of tasks with zero signals (default 50) */
+    min_zero_signal_pct?: number
+  }
 }
 
 export interface JudgmentResult {

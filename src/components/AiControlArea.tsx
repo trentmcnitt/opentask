@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { useCallback } from 'react'
+import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { formatRelativeTime } from '@/lib/quick-select-dates'
 import type { AiMode } from '@/hooks/useAiMode'
 
 interface AiControlAreaProps {
@@ -13,32 +16,29 @@ interface AiControlAreaProps {
   onShowScoresChange: (show: boolean) => void
   showSignals: boolean
   onShowSignalsChange: (show: boolean) => void
-  hasScores: boolean
+  showBubbleText: boolean
+  onShowBubbleTextChange: (show: boolean) => void
+  showCommentary: boolean
+  onShowCommentaryChange: (show: boolean) => void
   // Bubble
-  bubbleFreshnessText: string | null
-  bubbleLoading: boolean
-  onRefreshBubble: () => void
-  // Review
+  annotationFreshnessText: string | null
+  annotationRefreshLoading: boolean
+  onRefreshAnnotations: () => void
+  // Insights (Review)
   reviewGeneratedAt: string | null
   reviewGenerating: boolean
-  reviewProgress: number
-  reviewCompletedTasks: number
-  reviewTotalTasks: number
-  onGenerateReview: () => void
+  onRefreshReview: () => void
 }
 
-const MODE_OPTIONS: { value: AiMode; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'bubble', label: 'Bubble' },
-  { value: 'insight', label: 'Insight' },
-]
-
 /**
- * AI control area rendered between QuickAdd and FilterBar.
+ * AI chip + popover — sits inline next to the QuickAdd input.
  *
- * Layout:
- *   ✨ [Off | Bubble | Insight]  ☐ Scores  ☐ Signals  · 2h ago ↻
- *   [==================     ] 15/84 (18%)     ← only during generation
+ * The chip is a compact pill that opens a popover for configuration.
+ * Two AI systems (Bubble and Insights) are clearly separated in the
+ * popover with their own freshness timestamps and refresh buttons.
+ *
+ * The progress bar for insights generation is rendered separately in
+ * page.tsx (between this row and the filter bar) so it can span full width.
  */
 export function AiControlArea({
   mode,
@@ -47,242 +47,207 @@ export function AiControlArea({
   onShowScoresChange,
   showSignals,
   onShowSignalsChange,
-  hasScores,
-  bubbleFreshnessText,
-  bubbleLoading,
-  onRefreshBubble,
+  showBubbleText,
+  onShowBubbleTextChange,
+  showCommentary,
+  onShowCommentaryChange,
+  annotationFreshnessText,
+  annotationRefreshLoading,
+  onRefreshAnnotations,
   reviewGeneratedAt,
   reviewGenerating,
-  reviewProgress,
-  reviewCompletedTasks,
-  reviewTotalTasks,
-  onGenerateReview,
+  onRefreshReview,
 }: AiControlAreaProps) {
+  const isActive = mode !== 'off'
+
+  const reviewFreshnessText = reviewGeneratedAt ? formatRelativeTime(reviewGeneratedAt) : null
+
+  const handleRefreshAnnotations = useCallback(() => {
+    if (!annotationRefreshLoading) onRefreshAnnotations()
+  }, [annotationRefreshLoading, onRefreshAnnotations])
+
+  const handleRefreshReview = useCallback(() => {
+    if (!reviewGenerating) onRefreshReview()
+  }, [reviewGenerating, onRefreshReview])
+
   return (
-    <div className="mb-4 space-y-2">
-      {/* Main control row */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Sparkle icon + segmented toggle */}
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="text-muted-foreground size-3.5" />
-          <div className="bg-muted inline-flex rounded-lg p-0.5">
-            {MODE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => onModeChange(opt.value)}
-                className={cn(
-                  'rounded-md px-3 py-1 text-xs font-medium transition-all',
-                  mode === opt.value
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors',
+            isActive
+              ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900'
+              : 'bg-muted text-muted-foreground hover:bg-muted/80',
+          )}
+          aria-label="AI settings"
+        >
+          {isActive && (
+            <>
+              <svg className="absolute size-0" aria-hidden="true">
+                <defs>
+                  <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <Sparkles className="size-4" style={{ stroke: 'url(#ai-gradient)' }} />
+            </>
+          )}
+          <span>{isActive ? 'AI' : 'AI Off'}</span>
+          <ChevronDown className="size-3.5 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-4" align="start">
+        {/* Master on/off switch */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">AI</span>
+          <Switch
+            checked={mode === 'on'}
+            onCheckedChange={(checked) => onModeChange(checked ? 'on' : 'off')}
+          />
+        </div>
+
+        {/* Bubble section */}
+        <div className="mt-4">
+          <SectionHeader
+            label="Bubble"
+            freshnessText={annotationFreshnessText}
+            refreshing={annotationRefreshLoading}
+            onRefresh={handleRefreshAnnotations}
+            active={isActive}
+          />
+          <div className="mt-1.5">
+            <FeatureCheckbox
+              label="Task annotations"
+              description="Short AI notes on each task"
+              checked={showBubbleText}
+              onChange={onShowBubbleTextChange}
+              disabled={!isActive}
+            />
           </div>
         </div>
 
-        {/* Scores checkbox */}
-        {hasScores && mode !== 'off' && (
-          <label className="flex items-center gap-1.5 text-xs">
-            <Checkbox
-              checked={showScores}
-              onCheckedChange={(checked) => onShowScoresChange(checked === true)}
-              className="size-3.5"
-            />
-            <span className="text-muted-foreground">Scores</span>
-          </label>
-        )}
+        {/* Divider */}
+        <div className="my-3 border-t" />
 
-        {/* Signals checkbox */}
-        {hasScores && mode !== 'off' && (
-          <label className="flex items-center gap-1.5 text-xs">
-            <Checkbox
-              checked={showSignals}
-              onCheckedChange={(checked) => onShowSignalsChange(checked === true)}
-              className="size-3.5"
-            />
-            <span className="text-muted-foreground">Signals</span>
-          </label>
-        )}
-
-        {/* Bubble: freshness + refresh (blue) */}
-        {mode === 'bubble' && (
-          <div className="flex items-center gap-1.5">
-            {bubbleFreshnessText && (
-              <TimestampTooltip
-                label="Bubble AI"
-                rawDate={null}
-                freshnessText={bubbleFreshnessText}
-                colorClass="text-blue-500"
-              />
-            )}
-            <button
-              onClick={() => {
-                if (!bubbleLoading) onRefreshBubble()
-              }}
-              disabled={bubbleLoading}
-              className="rounded-full p-0.5 text-blue-500 transition-colors hover:text-blue-600 disabled:opacity-40"
-              aria-label="Refresh AI insights"
-            >
-              <RefreshCw className={cn('size-3', bubbleLoading && 'animate-spin')} />
-            </button>
-          </div>
-        )}
-
-        {/* Insight: timestamp + generate/refresh (indigo) */}
-        {mode === 'insight' && (
-          <div className="flex items-center gap-1.5">
-            {reviewGeneratedAt && !reviewGenerating && (
-              <TimestampTooltip
-                label="AI Review"
-                rawDate={reviewGeneratedAt}
-                freshnessText={null}
-                colorClass="text-indigo-500"
-              />
-            )}
-            <button
-              onClick={onGenerateReview}
-              disabled={reviewGenerating}
-              className="rounded-full p-0.5 text-indigo-500 transition-colors hover:text-indigo-600 disabled:opacity-40"
-              aria-label={hasScores ? 'Refresh review' : 'Generate review'}
-            >
-              {reviewGenerating ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <RefreshCw className="size-3" />
-              )}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Progress bar (Insight mode, during generation only) */}
-      {mode === 'insight' && reviewGenerating && (
+        {/* Insights section */}
         <div>
-          <div className="bg-muted mb-1 h-2 overflow-hidden rounded-full">
-            <div
-              className="h-full rounded-full bg-blue-500 transition-all duration-500"
-              style={{ width: `${reviewProgress}%` }}
+          <SectionHeader
+            label="Insights"
+            freshnessText={reviewGenerating ? 'Analyzing...' : reviewFreshnessText}
+            refreshing={reviewGenerating}
+            onRefresh={handleRefreshReview}
+            active={isActive}
+          />
+          <div className="mt-1.5 space-y-2.5">
+            <FeatureCheckbox
+              label="Attention scores"
+              description="Priority scores from 0–100"
+              checked={showScores}
+              onChange={onShowScoresChange}
+              disabled={!isActive}
+            />
+            <FeatureCheckbox
+              label="Signal tags"
+              description="Stale, Quick Win, Review, etc."
+              checked={showSignals}
+              onChange={onShowSignalsChange}
+              disabled={!isActive}
+            />
+            <FeatureCheckbox
+              label="Commentary"
+              description="Detailed per-task analysis"
+              checked={showCommentary}
+              onChange={onShowCommentaryChange}
+              disabled={!isActive}
             />
           </div>
-          <p className="text-muted-foreground text-xs">
-            Processing tasks... {reviewCompletedTasks}/{reviewTotalTasks} ({reviewProgress}%)
-          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** Section header: label + freshness + refresh (only when AI is active) */
+function SectionHeader({
+  label,
+  freshnessText,
+  refreshing,
+  onRefresh,
+  active,
+}: {
+  label: string
+  freshnessText: string | null
+  refreshing: boolean
+  onRefresh: () => void
+  active: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={cn('text-xs font-semibold', !active && 'text-muted-foreground')}>
+        {label}
+      </span>
+      {active && (
+        <div className="flex items-center gap-1.5">
+          {freshnessText && (
+            <span
+              className={cn(
+                'text-[11px]',
+                refreshing ? 'animate-pulse text-indigo-500' : 'text-muted-foreground',
+              )}
+            >
+              {freshnessText}
+            </span>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onRefresh()
+            }}
+            disabled={refreshing}
+            className="text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors disabled:opacity-40"
+            aria-label={`Refresh ${label.toLowerCase()}`}
+          >
+            <RefreshCw className={cn('size-3', refreshing && 'animate-spin')} />
+          </button>
         </div>
       )}
     </div>
   )
 }
 
-/**
- * Timestamp text with hover/tap tooltip.
- *
- * Desktop: hover shows the styled tooltip immediately; click also toggles it.
- * Mobile/touch: tapping toggles the tooltip, which auto-dismisses after 3s.
- */
-function TimestampTooltip({
+function FeatureCheckbox({
   label,
-  rawDate,
-  freshnessText,
-  colorClass,
+  description,
+  checked,
+  onChange,
+  disabled,
 }: {
   label: string
-  rawDate: string | null
-  freshnessText: string | null
-  colorClass: string
+  description: string
+  checked: boolean
+  onChange: (v: boolean) => void
+  disabled: boolean
 }) {
-  const [showTooltip, setShowTooltip] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const fullDate = rawDate
-    ? new Date(rawDate).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    : null
-
-  const displayText =
-    freshnessText ??
-    (rawDate
-      ? new Date(rawDate).toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })
-      : null)
-
-  const tooltipText = `${label} · ${fullDate ?? freshnessText ?? ''}`
-
-  const dismiss = useCallback(() => {
-    setShowTooltip(false)
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-  }, [])
-
-  const toggle = useCallback(() => {
-    setShowTooltip((prev) => {
-      if (!prev) {
-        timerRef.current = setTimeout(() => {
-          setShowTooltip(false)
-          timerRef.current = null
-        }, 3000)
-        return true
-      }
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-      return false
-    })
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [])
-
-  // Dismiss on outside click
-  const containerRef = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    if (!showTooltip) return
-    const handler = (e: MouseEvent | TouchEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        dismiss()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    document.addEventListener('touchstart', handler)
-    return () => {
-      document.removeEventListener('mousedown', handler)
-      document.removeEventListener('touchstart', handler)
-    }
-  }, [showTooltip, dismiss])
-
-  if (!displayText) return null
-
   return (
-    <span
-      ref={containerRef}
-      className="relative flex items-center"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={dismiss}
-    >
-      <button onClick={toggle} className={cn('text-xs leading-none', colorClass)} type="button">
-        {displayText}
-      </button>
-      {showTooltip && (
-        <span className="bg-foreground text-background absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 rounded px-2 py-1 text-xs font-medium whitespace-nowrap shadow-lg">
-          {tooltipText}
-        </span>
+    <label
+      className={cn(
+        'flex items-start gap-2.5',
+        disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
       )}
-    </span>
+    >
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(val) => onChange(val === true)}
+        className="mt-0.5 size-3.5"
+        disabled={disabled}
+      />
+      <div className="min-w-0">
+        <div className="text-xs font-medium">{label}</div>
+        <div className="text-muted-foreground text-[11px] leading-tight">{description}</div>
+      </div>
+    </label>
   )
 }

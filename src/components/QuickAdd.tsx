@@ -30,7 +30,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   }
 
   return (
-    <div className="mb-6">
+    <div>
       <div
         className={cn(
           'bg-card flex items-center gap-2 rounded-lg border p-3',

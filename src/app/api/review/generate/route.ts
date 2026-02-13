@@ -37,14 +37,14 @@ export async function POST(request: NextRequest) {
     }
 
     const aiContext = getUserAiContext(user.id)
-    const { sessionId, totalTasks } = startReviewGeneration(
+    const { sessionId, totalTasks, singleCall } = startReviewGeneration(
       user.id,
       user.timezone,
       tasks,
       aiContext,
     )
 
-    return success({ session_id: sessionId, total_tasks: totalTasks })
+    return success({ session_id: sessionId, total_tasks: totalTasks, single_call: singleCall })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'POST /api/review/generate error:', err)

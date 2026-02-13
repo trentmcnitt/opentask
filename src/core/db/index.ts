@@ -189,13 +189,24 @@ function runMigrations(database: Database.Database): void {
 
   // Migration: Add AI preference columns to users
   if (!hasColumn('users', 'ai_mode')) {
-    database.exec("ALTER TABLE users ADD COLUMN ai_mode TEXT NOT NULL DEFAULT 'bubble'")
+    database.exec("ALTER TABLE users ADD COLUMN ai_mode TEXT NOT NULL DEFAULT 'on'")
   }
+  // Migration: Map legacy ai_mode values to binary on/off system
+  // All non-off values map to 'on' — feature checkboxes control granularity
+  database.exec(
+    "UPDATE users SET ai_mode = 'on' WHERE ai_mode IN ('on', 'bubble', 'insights', 'insight')",
+  )
   if (!hasColumn('users', 'ai_show_scores')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_scores INTEGER NOT NULL DEFAULT 1')
   }
   if (!hasColumn('users', 'ai_show_signals')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_signals INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn('users', 'ai_show_bubble_text')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_show_bubble_text INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn('users', 'ai_show_commentary')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_show_commentary INTEGER NOT NULL DEFAULT 1')
   }
 
   // Migration: Rename snoozed_from to original_due_at
