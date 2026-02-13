@@ -25,6 +25,7 @@ interface AiControlAreaProps {
   annotationGeneratedAt: string | null
   annotationFreshnessText: string | null
   annotationRefreshLoading: boolean
+  annotationError: string | null
   onRefreshAnnotations: () => void
   // Insights (Review)
   reviewGeneratedAt: string | null
@@ -33,6 +34,7 @@ interface AiControlAreaProps {
   reviewCompletedTasks: number
   reviewTotalTasks: number
   reviewSingleCall: boolean
+  reviewError: string | null
   onRefreshReview: () => void
 }
 
@@ -62,6 +64,7 @@ export function AiControlArea({
   annotationGeneratedAt,
   annotationFreshnessText,
   annotationRefreshLoading,
+  annotationError,
   onRefreshAnnotations,
   reviewGeneratedAt,
   reviewGenerating,
@@ -69,6 +72,7 @@ export function AiControlArea({
   reviewCompletedTasks,
   reviewTotalTasks,
   reviewSingleCall,
+  reviewError,
   onRefreshReview,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
@@ -142,6 +146,9 @@ export function AiControlArea({
               disabled={!isActive}
             />
           </div>
+          {isActive && annotationError && (
+            <p className="mt-1.5 text-[11px] text-red-500">{annotationError}</p>
+          )}
         </div>
 
         {/* Divider */}
@@ -180,6 +187,10 @@ export function AiControlArea({
               disabled={!isActive}
             />
           </div>
+
+          {isActive && reviewError && !reviewGenerating && (
+            <p className="mt-1.5 text-[11px] text-red-500">{reviewError}</p>
+          )}
 
           {/* Progress bar (inside popover during insights generation) */}
           {reviewGenerating && (

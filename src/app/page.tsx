@@ -19,7 +19,7 @@ import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
-import { showToast } from '@/lib/toast'
+import { showToast, showErrorToast } from '@/lib/toast'
 import { useSnoozePreferences, useDefaultGrouping } from '@/components/PreferencesProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -420,6 +420,22 @@ function HomeContent() {
     },
     [reviewData],
   )
+
+  // Toast on AI errors
+  const prevAnnotationError = useRef<string | null>(null)
+  const prevReviewError = useRef<string | null>(null)
+  useEffect(() => {
+    if (aiInsights.error && aiInsights.error !== prevAnnotationError.current) {
+      showErrorToast(aiInsights.error)
+    }
+    prevAnnotationError.current = aiInsights.error
+  }, [aiInsights.error])
+  useEffect(() => {
+    if (reviewData.error && reviewData.error !== prevReviewError.current) {
+      showErrorToast(reviewData.error)
+    }
+    prevReviewError.current = reviewData.error
+  }, [reviewData.error])
 
   // Bubble-specific AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
@@ -1045,6 +1061,7 @@ function DashboardView({
             annotationGeneratedAt={aiInsights.generatedAt}
             annotationFreshnessText={aiInsights.freshnessText}
             annotationRefreshLoading={aiInsights.loading}
+            annotationError={aiInsights.error}
             onRefreshAnnotations={onRefreshAnnotations}
             reviewGeneratedAt={reviewData.generatedAt}
             reviewGenerating={reviewData.generating}
@@ -1052,6 +1069,7 @@ function DashboardView({
             reviewCompletedTasks={reviewData.completedTasks}
             reviewTotalTasks={reviewData.totalTasks}
             reviewSingleCall={reviewData.singleCall}
+            reviewError={reviewData.error}
             onRefreshReview={onRefreshReview}
           />
         </div>

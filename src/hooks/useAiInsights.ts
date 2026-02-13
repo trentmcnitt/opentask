@@ -18,6 +18,8 @@ export interface UseAiInsightsReturn {
   /** Raw ISO timestamp from generation, for tooltip display */
   generatedAt: string | null
   hasData: boolean
+  /** Error message from the last failed refresh, cleared on next refresh() */
+  error: string | null
   refresh: () => void
 }
 
@@ -33,23 +35,30 @@ export interface UseAiInsightsReturn {
 export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
   const [data, setData] = useState<BubbleResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const hasFetched = useRef(false)
 
   const fetchRecommendations = useCallback(async (refresh = false) => {
     // Only show loading indicator for manual refreshes — the initial mount fetch
     // reads cached data from the DB (zero AI processing), so no spinner needed.
-    if (refresh) setLoading(true)
+    if (refresh) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const url = refresh ? '/api/ai/bubble?refresh=true' : '/api/ai/bubble'
       const res = await fetch(url)
       if (res.status === 503) return
-      if (!res.ok) return
+      if (!res.ok) {
+        if (refresh) setError('Bubble refresh failed')
+        return
+      }
       const json = await res.json()
       if (json.data) {
         setData(json.data)
       }
     } catch {
-      // Silent failure
+      if (refresh) setError('Bubble refresh failed')
     } finally {
       if (refresh) setLoading(false)
     }
@@ -95,6 +104,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     freshnessText,
     generatedAt: data?.generated_at || null,
     hasData,
+    error,
     refresh,
   }
 }

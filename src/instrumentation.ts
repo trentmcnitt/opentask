@@ -138,11 +138,16 @@ export async function register() {
             const tasks = buildTaskSummaries(user.id)
             if (tasks.length > 0) {
               const aiContext = getUserAiContext(user.id)
-              await generateBubble(user.id, user.timezone, tasks, aiContext, cronModel).catch(
-                (err) => {
-                  log.error('cron', `Bubble generation failed for user ${user.id}:`, err)
-                },
-              )
+              await generateBubble(
+                user.id,
+                user.timezone,
+                tasks,
+                aiContext,
+                cronModel,
+                'scheduled',
+              ).catch((err) => {
+                log.error('cron', `Bubble generation failed for user ${user.id}:`, err)
+              })
             }
           }
           log.info('cron', `Bubble cron: generated for ${users.length} users`)
@@ -168,7 +173,7 @@ export async function register() {
               const tasks = buildTaskSummaries(user.id)
               if (tasks.length > 0) {
                 const aiContext = getUserAiContext(user.id)
-                await generateReviewForUser(user.id, user.timezone, tasks, aiContext)
+                await generateReviewForUser(user.id, user.timezone, tasks, aiContext, 'scheduled')
               }
             } catch (err) {
               log.error('cron', `Review generation failed for user ${user.id}:`, err)
