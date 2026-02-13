@@ -40,6 +40,8 @@ interface PreferencesContextValue {
   setAiShowSignals: (show: boolean) => void
   aiShowBubbleText: boolean
   setAiShowBubbleText: (show: boolean) => void
+  aiShowInsights: boolean
+  setAiShowInsights: (show: boolean) => void
   aiShowCommentary: boolean
   setAiShowCommentary: (show: boolean) => void
   aiBubbleModel: BubbleModel
@@ -73,6 +75,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiShowSignals: () => {},
   aiShowBubbleText: true,
   setAiShowBubbleText: () => {},
+  aiShowInsights: true,
+  setAiShowInsights: () => {},
   aiShowCommentary: true,
   setAiShowCommentary: () => {},
   aiBubbleModel: 'haiku',
@@ -95,6 +99,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiShowScores, setAiShowScoresState] = useState(true)
   const [aiShowSignals, setAiShowSignalsState] = useState(true)
   const [aiShowBubbleText, setAiShowBubbleTextState] = useState(true)
+  const [aiShowInsights, setAiShowInsightsState] = useState(true)
   const [aiShowCommentary, setAiShowCommentaryState] = useState(true)
   const [aiBubbleModel, setAiBubbleModelState] = useState<BubbleModel>('haiku')
 
@@ -148,6 +153,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_show_bubble_text !== undefined) {
           setAiShowBubbleTextState(data.data.ai_show_bubble_text)
         }
+        if (data?.data?.ai_show_insights !== undefined) {
+          setAiShowInsightsState(data.data.ai_show_insights)
+        }
         if (data?.data?.ai_show_commentary !== undefined) {
           setAiShowCommentaryState(data.data.ai_show_commentary)
         }
@@ -190,6 +198,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiShowSignals: setAiShowSignalsState,
         aiShowBubbleText,
         setAiShowBubbleText: setAiShowBubbleTextState,
+        aiShowInsights,
+        setAiShowInsights: setAiShowInsightsState,
         aiShowCommentary,
         setAiShowCommentary: setAiShowCommentaryState,
         aiBubbleModel,
@@ -246,6 +256,8 @@ export function useAiPreferences() {
     setAiShowSignals,
     aiShowBubbleText,
     setAiShowBubbleText,
+    aiShowInsights,
+    setAiShowInsights,
     aiShowCommentary,
     setAiShowCommentary,
     aiBubbleModel,
@@ -260,6 +272,8 @@ export function useAiPreferences() {
     setAiShowSignals,
     aiShowBubbleText,
     setAiShowBubbleText,
+    aiShowInsights,
+    setAiShowInsights,
     aiShowCommentary,
     setAiShowCommentary,
     aiBubbleModel,

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   ai_show_scores INTEGER NOT NULL DEFAULT 1,
   ai_show_signals INTEGER NOT NULL DEFAULT 1,
   ai_show_bubble_text INTEGER NOT NULL DEFAULT 1,
+  ai_show_insights INTEGER NOT NULL DEFAULT 1,
   ai_show_commentary INTEGER NOT NULL DEFAULT 1,
   ai_bubble_model TEXT NOT NULL DEFAULT 'haiku',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

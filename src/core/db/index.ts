@@ -213,6 +213,9 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn('users', 'ai_show_bubble_text')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_bubble_text INTEGER NOT NULL DEFAULT 1')
   }
+  if (!hasColumn('users', 'ai_show_insights')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_show_insights INTEGER NOT NULL DEFAULT 1')
+  }
   if (!hasColumn('users', 'ai_show_commentary')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_show_commentary INTEGER NOT NULL DEFAULT 1')
   }

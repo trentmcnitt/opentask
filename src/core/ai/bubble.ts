@@ -81,7 +81,7 @@ ${taskList}
 
 ${BUBBLE_REMINDERS}
 Current time: ${currentTime}
-Surface 3-7 tasks and return the JSON result.`
+Surface 2-8 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(BubbleResultSchema)
 
