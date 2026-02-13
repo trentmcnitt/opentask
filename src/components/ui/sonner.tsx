@@ -35,6 +35,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme="system"
+      richColors
       className="toaster group"
       // Push toasts above the mobile bottom nav bar (~78px + safe area inset + gap).
       // Sonner adds ~9px of internal padding below the toast, so we need extra room.

@@ -626,10 +626,11 @@ function ActivityTab({
       onRefresh()
       showToast({
         message: `Undid: ${data.data.description}`,
+        type: 'success',
         action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Undo failed' })
+      showToast({ message: 'Undo failed', type: 'error' })
     }
   }, [onRefresh])
 
@@ -644,10 +645,11 @@ function ActivityTab({
       onRefresh()
       showToast({
         message: `Redid: ${data.data.description}`,
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Redo failed' })
+      showToast({ message: 'Redo failed', type: 'error' })
     }
   }, [onRefresh])
 
@@ -696,16 +698,17 @@ function ActivityTab({
         body: JSON.stringify({ through_id: batchThroughId }),
       })
       if (!res.ok) {
-        showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed` })
+        showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed`, type: 'error' })
         return
       }
       const data = await res.json()
       showToast({
         message: `${batchMode === 'undo' ? 'Undid' : 'Redid'} ${data.data.count} actions`,
+        type: 'success',
       })
       onRefresh()
     } catch {
-      showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed` })
+      showToast({ message: `${batchMode === 'undo' ? 'Undo' : 'Redo'} failed`, type: 'error' })
     }
   }, [batchMode, batchThroughId, onRefresh])
 

@@ -131,10 +131,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       const countSuffix = typeof remaining === 'number' ? ` · ${remaining} left` : ''
       showToast({
         message: `Undid: ${data.data.description}${countSuffix}`,
+        type: 'success',
         action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Undo failed' })
+      showToast({ message: 'Undo failed', type: 'error' })
     }
   }, [updateCounts])
 
@@ -152,10 +153,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       const countSuffix = typeof remaining === 'number' ? ` · ${remaining} left` : ''
       showToast({
         message: `Redid: ${data.data.description}${countSuffix}`,
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Redo failed' })
+      showToast({ message: 'Redo failed', type: 'error' })
     }
   }, [updateCounts])
 
@@ -188,10 +190,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       configRef.current.onRefresh()
       showToast({
         message: `Undid ${data.data.count} actions`,
+        type: 'success',
         action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Batch undo failed' })
+      showToast({ message: 'Batch undo failed', type: 'error' })
     }
   }, [updateCounts])
 
@@ -211,10 +214,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       configRef.current.onRefresh()
       showToast({
         message: `Redid ${data.data.count} actions`,
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
-      showToast({ message: 'Batch redo failed' })
+      showToast({ message: 'Batch redo failed', type: 'error' })
     }
   }, [updateCounts])
 
@@ -243,6 +247,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       setRedoCount(0)
       showToast({
         message: task.rrule ? 'Task advanced' : 'Task completed',
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
@@ -287,6 +292,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       setRedoCount(0)
       showToast({
         message: 'Task snoozed',
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {
@@ -314,6 +320,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         setRedoCount(0)
         showToast({
           message: description || 'Changes saved',
+          type: 'success',
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
       } catch {
@@ -334,6 +341,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       setRedoCount(0)
       showToast({
         message: description || 'Changes saved',
+        type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
     } catch {

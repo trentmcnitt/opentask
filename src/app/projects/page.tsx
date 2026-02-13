@@ -65,7 +65,7 @@ export default function ProjectsPage() {
         window.dispatchEvent(new CustomEvent('projects-reordered'))
       } catch {
         setProjects(prevProjects)
-        showToast({ message: 'Failed to reorder projects' })
+        showToast({ message: 'Failed to reorder projects', type: 'error' })
       }
     },
     [projects],

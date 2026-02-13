@@ -98,8 +98,8 @@ export function useDashboardKeyboard({
           const text = formatTasksForClipboard(clipboardGroups, timezone, projMap, annotations)
           const n = clipboardGroups.reduce((sum, g) => sum + g.tasks.length, 0)
           navigator.clipboard.writeText(text).then(
-            () => showToast({ message: `Copied ${n} ${taskWord(n)}` }),
-            () => showToast({ message: 'Copy failed' }),
+            () => showToast({ message: `Copied ${n} ${taskWord(n)}`, type: 'success' }),
+            () => showToast({ message: 'Copy failed', type: 'error' }),
           )
         }
         return

@@ -288,7 +288,7 @@ export function startInsightsGeneration(
   tasks: TaskSummary[],
   userContext?: string | null,
   source?: 'scheduled' | 'on-demand',
-): { sessionId: string; totalTasks: number; singleCall: boolean } {
+): { sessionId: string; totalTasks: number; singleCall: boolean; startedAt: string } {
   const sessionId = uuid()
   const now = nowUtc()
   const db = getDb()
@@ -309,7 +309,7 @@ export function startInsightsGeneration(
     ).run(String(err), nowUtc(), sessionId)
   })
 
-  return { sessionId, totalTasks: tasks.length, singleCall }
+  return { sessionId, totalTasks: tasks.length, singleCall, startedAt: now }
 }
 
 /**
@@ -556,8 +556,13 @@ export function hasInsightsResults(userId: number): boolean {
   return row.count > 0
 }
 
+/** Sessions running longer than this are considered crashed (e.g. server restart) and auto-failed. */
+const SESSION_STALE_TIMEOUT_MS = 10 * 60 * 1000
+
 /**
  * Get the most recent active session for a user (if any is still running).
+ * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
+ * after server restarts kill background generation.
  */
 export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
@@ -568,5 +573,16 @@ export function getActiveInsightsSession(userId: number): InsightsSession | null
        ORDER BY started_at DESC LIMIT 1`,
     )
     .get(userId) as InsightsSession | undefined
-  return row ?? null
+  if (!row) return null
+
+  const ageMs = Date.now() - new Date(row.started_at).getTime()
+  if (ageMs > SESSION_STALE_TIMEOUT_MS) {
+    db.prepare(
+      `UPDATE ai_insights_sessions SET status = 'failed', error = 'Generation timed out', finished_at = ?
+       WHERE id = ? AND status = 'running'`,
+    ).run(nowUtc(), row.id)
+    return null
+  }
+
+  return row
 }

@@ -19,7 +19,7 @@ import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { ProjectPickerSheet } from '@/components/ProjectPickerSheet'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog'
-import { showToast, showErrorToast } from '@/lib/toast'
+import { showToast } from '@/lib/toast'
 import { useSnoozePreferences, useDefaultGrouping } from '@/components/PreferencesProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -124,10 +124,11 @@ function useDashboardActions(
         fetchTasks()
         showToast({
           message: 'Task added',
+          type: 'success',
           action: { label: 'View', onClick: () => onViewTask(task) },
         })
       } catch {
-        showToast({ message: 'Failed to add task' })
+        showToast({ message: 'Failed to add task', type: 'error' })
       }
     },
     [fetchTasks, onViewTask],
@@ -161,10 +162,11 @@ function useBulkActions(
       const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
       showToast({
         message: `${tasksAffected} ${taskWord(tasksAffected)} updated${skippedMsg}`,
+        type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
-      showToast({ message: 'Action failed' })
+      showToast({ message: 'Action failed', type: 'error' })
     }
   }
 
@@ -187,10 +189,11 @@ function useBulkActions(
       const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
       showToast({
         message: `${tasksAffected} ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
+        type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
-      showToast({ message: 'Snooze failed' })
+      showToast({ message: 'Snooze failed', type: 'error' })
     }
   }
 
@@ -206,10 +209,11 @@ function useBulkActions(
       fetchTasks()
       showToast({
         message: 'Tasks deleted',
+        type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
-      showToast({ message: 'Delete failed' })
+      showToast({ message: 'Delete failed', type: 'error' })
     }
   }
 
@@ -230,10 +234,11 @@ function useBulkActions(
       fetchTasks()
       showToast({
         message: `${count} ${taskWord(count)} moved`,
+        type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
-      showToast({ message: 'Move failed' })
+      showToast({ message: 'Move failed', type: 'error' })
     }
   }
 
@@ -284,10 +289,11 @@ function HomeContent() {
         fetchTasks()
         showToast({
           message: 'Task moved to trash',
+          type: 'success',
           action: { label: 'Undo', onClick: actions.handleUndo },
         })
       } catch {
-        showToast({ message: 'Delete failed' })
+        showToast({ message: 'Delete failed', type: 'error' })
       }
     },
     [fetchTasks, actions.handleUndo],
@@ -309,7 +315,7 @@ function HomeContent() {
         showToast({ message: 'Retrying AI enrichment...' })
       } catch {
         fetchTasks() // Revert on failure
-        showToast({ message: 'Failed to retry enrichment' })
+        showToast({ message: 'Failed to retry enrichment', type: 'error' })
       }
     },
     [setTasks, fetchTasks],
@@ -422,22 +428,6 @@ function HomeContent() {
     },
     [insightsData],
   )
-
-  // Toast on AI errors
-  const prevAnnotationError = useRef<string | null>(null)
-  const prevInsightsError = useRef<string | null>(null)
-  useEffect(() => {
-    if (aiInsights.error && aiInsights.error !== prevAnnotationError.current) {
-      showErrorToast(aiInsights.error)
-    }
-    prevAnnotationError.current = aiInsights.error
-  }, [aiInsights.error])
-  useEffect(() => {
-    if (insightsData.error && insightsData.error !== prevInsightsError.current) {
-      showErrorToast(insightsData.error)
-    }
-    prevInsightsError.current = insightsData.error
-  }, [insightsData.error])
 
   // What's Next AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
@@ -575,10 +565,11 @@ function HomeContent() {
           fetchTasks()
           showToast({
             message: `${count} ${taskWord(count)} completed`,
+            type: 'success',
             action: { label: 'Undo', onClick: actions.handleUndo },
           })
         } catch {
-          showToast({ message: 'Action failed' })
+          showToast({ message: 'Action failed', type: 'error' })
         }
       }
     },
@@ -1080,6 +1071,7 @@ function DashboardView({
             insightsCompletedTasks={insightsData.completedTasks}
             insightsTotalTasks={insightsData.totalTasks}
             insightsSingleCall={insightsData.singleCall}
+            insightsGenerationStartedAt={insightsData.generationStartedAt}
             insightsError={insightsData.error}
             onRefreshInsights={onRefreshInsights}
           />

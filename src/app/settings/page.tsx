@@ -64,10 +64,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ label_config: newConfig }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Labels saved' })
+      showToast({ message: 'Labels saved', type: 'success' })
     } catch {
       setLabelConfig(prev)
-      showToast({ message: 'Failed to save labels' })
+      showToast({ message: 'Failed to save labels', type: 'error' })
     }
   }
 
@@ -82,10 +82,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ priority_display: newConfig }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setPriorityDisplay(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -99,10 +99,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ auto_snooze_minutes: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setAutoSnoozeDefault(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -116,10 +116,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ default_snooze_option: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setDefaultSnoozeOption(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -133,10 +133,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ morning_time: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setMorningTime(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -150,10 +150,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ wake_time: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setWakeTime(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -167,10 +167,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ sleep_time: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setSleepTime(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
@@ -187,10 +187,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ ai_context: newValue }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'AI context saved' })
+      showToast({ message: 'AI context saved', type: 'success' })
     } catch {
       setAiContext(prev)
-      showToast({ message: 'Failed to save AI context' })
+      showToast({ message: 'Failed to save AI context', type: 'error' })
     }
   }
 
@@ -204,10 +204,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ ai_whats_next_model: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved' })
+      showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setAiWhatsNextModel(prev)
-      showToast({ message: 'Failed to save preference' })
+      showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
 
