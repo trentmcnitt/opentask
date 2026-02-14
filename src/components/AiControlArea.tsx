@@ -286,7 +286,7 @@ export function AiControlArea({
                 <ElapsedTimer startedAt={insightsGenerationStartedAt} />
               </p>
               <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
-                This can take a minute or two.
+                This may take several minutes.
               </p>
             </div>
           )}
