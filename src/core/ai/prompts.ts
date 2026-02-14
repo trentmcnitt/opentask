@@ -36,7 +36,6 @@ Users frequently dictate tasks while driving, walking, or multitasking. Expect:
 - Stream-of-consciousness phrasing ("I need to like do this thing every week on Monday or whatever")
 - Odd or imprecise recurrence phrasing ("do it again next week and then like keep doing it")
 - Run-on sentences mixing the task with context ("oh and also I should probably call the dentist because that thing is still bothering me, make it high priority")
-
 - Common typos and misspellings ("urget" for "urgent", "critcal" for "critical", "tommorow" for "tomorrow")
 
 Be generous when interpreting garbled input — extract the intent rather than rejecting it. Be generous with typo interpretation — if "urget" clearly means "urgent", treat it as priority 4.
@@ -71,9 +70,9 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
    If the user explicitly requests a label that doesn't exist yet, still include it — it's the user's intent. Use the naming style of existing labels (lowercase, simple words).
 
-   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for. IMPORTANT: When "critical alert" appears in the input, the "critical" label MUST be included in the labels array even when other signals (URGENT, priority, dates) are also present. Multiple signals do not cancel each other out — extract ALL of them independently.
+   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for. IMPORTANT: When "critical alert" appears in the input, the "critical" label MUST be included in the labels array even when other signals (URGENT, priority, dates) are also present. Multiple signals do not cancel each other out — extract ALL of them independently. Note: "critical" triggers BOTH priority 4 AND the "critical" label. "urgent critical alert" → priority 4 + labels: ["critical"].
 
-5. **project_name** — Suggested project name from the available projects list, or null. Match based on content — a task about groceries might match a "Shopping List" project. Projects marked as "shared" are available to all users. Return null if unsure.
+5. **project_name** — Suggested project name from the available projects list, or null. Match when the user explicitly mentions a project ("add it to Work", "put this in Home") OR when the content has a clear, unambiguous fit (groceries → "Shopping List"). Return null for ambiguous matches — if you have to guess which project, return null. Projects marked as "shared" are available to all users.
 
 6. **rrule** — RFC 5545 RRULE string, or null. Parse recurrence patterns:
    - "every day" → FREQ=DAILY
@@ -87,6 +86,8 @@ The user dictated everything in one breath because they couldn't structure it. Y
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
 
 7. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440. IMPORTANT: Auto-snooze is NOT recurrence. "Auto-snooze every hour" means the task gets re-snoozed every hour — it does NOT create an rrule. When "every X" appears alongside "auto-snooze" or "snooze", it sets auto_snooze_minutes, not rrule.
+   WRONG: "snooze every hour" → rrule: "FREQ=HOURLY"
+   RIGHT: "snooze every hour" → auto_snooze_minutes: 60, rrule: null
 
 8. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
 
@@ -152,7 +153,7 @@ Available projects: Inbox, Family
 \`\`\`json
 {
   "title": "Call mom",
-  "due_at": "2026-02-17T18:00:00Z",
+  "due_at": "2026-02-17T15:00:00Z",
   "priority": 3,
   "labels": [],
   "project_name": "Family",
@@ -160,7 +161,7 @@ Available projects: Inbox, Family
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to noon local (12:00 CST = 18:00 UTC). Matched 'family' project from user's instruction. 'add it to family' is a project assignment, not a label request."
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to configured task time (9:00 AM CST = 15:00 UTC). Matched 'family' project from user's instruction. 'add it to family' is a project assignment, not a label request."
 }
 \`\`\`
 
@@ -259,7 +260,7 @@ const SHARED_BEHAVIORAL_MODEL = `## How OpenTask works
 
 OpenTask has a two-tier priority system that changes what due dates mean:
 
-**Priority 0-2 (Unset/Low/Medium)** — Due dates are reminders, not deadlines. P0-2 reminders shift forward frequently — the app lets users push all overdue P0-2 tasks forward at once, and this happens many times per day. A P0-2 task being "overdue" just means its reminder time has passed — it typically means the user hasn't gotten around to it yet.
+**Priority 0-2 (Unset/Low/Medium)** — Due dates are reminders, not deadlines. OpenTask has a global snooze button in the top bar that lets users push all overdue P0-2 tasks forward at once — most users lean on this regularly. Because of this, P0-2 tasks are rarely overdue by more than 1-2 days in normal usage. When you see P0-2 tasks overdue by many days, the user likely hasn't been engaging with the app recently.
 
 **Priority 3-4 (High/Urgent)** — Due dates are real deadlines. Every due date change on a P3-4 task is a deliberate individual action. If a P3-4 task is overdue, the deadline has genuinely passed and the user may face consequences.
 
@@ -276,7 +277,7 @@ You can state:
 2. For P3-4 only — that the deadline was moved (you see original and current dates)
 3. That a P3-4 deadline has passed and is consequential
 4. Content from the notes field — reference numbers, deadlines, context
-5. That a from_completion recurring task needs action — overdue means the user has not completed the last occurrence
+5. That a recurring task is overdue — this means the user has not completed it since the last due date
 
 You cannot state:
 1. How many times a task was snoozed or deferred — this data is not available
@@ -293,7 +294,7 @@ ${SHARED_GROUNDING_RULES}
 
 ## What to surface
 
-Pick 2-8 tasks the user should have on their radar. Focus on:
+Pick 0-8 tasks the user should have on their radar. If no tasks genuinely deserve attention, return an empty tasks array with a summary explaining that nothing needs action right now. Focus on:
 
 - **Time-sensitive one-offs**: Appointments, deadlines, filing windows — things that are easy to lose in a long list but have real consequences if missed. Check notes for deadline details.
 - **Easy wins**: Small concrete tasks (under 10 minutes) the user could knock out and feel good about. Clearing small items builds momentum.
@@ -301,11 +302,17 @@ Pick 2-8 tasks the user should have on their radar. Focus on:
 - **Neglected items**: Older tasks with no due date that need a keep-or-drop decision. If it's been sitting for a month, it's worth mentioning.
 - **Closing windows**: Seasonal, time-sensitive, or opportunity-based tasks where waiting longer reduces the value.
 
+When multiple categories compete, prioritize roughly in this order:
+1. Time-sensitive one-offs and closing windows (consequences are irreversible)
+2. Things being put off (social obligations, calls — awkwardness compounds)
+3. Easy wins (momentum boosters)
+4. Neglected items (keep-or-drop decisions)
+
 When notes are present, use them to make commentary specific (reference numbers, filing windows, instructions).
 
 ## What NOT to surface
 
-- **Daily routines and habits**: Tasks with FREQ=DAILY (morning vitamins, daily standup, affirmations). The user already has a system for these — surfacing them adds noise, not value.
+- **Daily habits** (FREQ=DAILY with no INTERVAL or INTERVAL=1): morning vitamins, daily standup, affirmations. Never surface these. Tasks with FREQ=DAILY;INTERVAL=2+ (every 2 days, every 3 days) are NOT daily habits — treat them like weekly/monthly tasks.
 - **P4/Urgent tasks that are on track**: Don't surface a P4 just because it's urgent — the user already sees it at the top of the list. But DO surface a P4 if it's been overdue for multiple days (the user may be stuck or avoiding it), or if its notes contain time-sensitive details worth flagging (filing windows, late fees, expiring deadlines).
 - **Shopping lists and low-stakes errands**: Unless they're time-sensitive (e.g., "pick up prescription before pharmacy closes").
 - **Well-organized future tasks**: Tasks with appropriate priority, a clear due date 3+ days out, and no signs of trouble. These are on track — let them be.
@@ -314,7 +321,7 @@ When notes are present, use them to make commentary specific (reference numbers,
 ## Recurring task nuance
 
 Not all recurring tasks are routine:
-- **Daily habits** (FREQ=DAILY: vitamins, standup, affirmation): Never surface. The user handles these automatically.
+- **Daily habits** (FREQ=DAILY with no INTERVAL, or INTERVAL=1): Never surface. Tasks with FREQ=DAILY;INTERVAL=2+ are NOT daily habits.
 - **Weekly/monthly tasks** (water plants, check filters): OK to surface if overdue by significantly more than one cycle — this suggests the user forgot.
 - **from_completion tasks**: If overdue for multiple cycles, the user genuinely hasn't completed the last occurrence. Worth surfacing.
 
@@ -332,7 +339,7 @@ Return a JSON object with this exact structure — all three top-level fields ar
 }
 \`\`\`
 
-- **tasks**: 2-8 tasks that deserve attention right now. Each has task_id (integer) and reason (string).
+- **tasks**: 0-8 tasks that deserve attention right now. Each has task_id (integer) and reason (string).
 - **summary**: A 1-2 sentence overview inside the JSON (not as separate text).
 - **generated_at**: Current UTC timestamp in ISO 8601 format.
 
@@ -371,7 +378,7 @@ Given tasks including:
 Notes:
 - Task 7 (daily affirmation) correctly excluded — daily routine, not worth surfacing.
 - Task 88 (P3 with deadline) surfaces first — time-sensitive with real consequences.
-- Task 42 (priority 1): commentary uses task age from created_at ("3 weeks"), not due date history.
+- Task 42 (priority 1): commentary uses task age from created_at ("3 weeks"), not due date history. The task is also overdue, but this is routine for P0-2 and not mentioned as a problem.
 - Task 88: commentary references the notes field with the filing window detail.`
 
 /**
@@ -401,7 +408,7 @@ High (70-100): Forgotten, stuck, or drifting — needs a decision
 - One-off tasks created months ago that were never acted on — archive or do them
 - Social obligations aging into awkwardness (calls, thank-you cards, favors)
 - P3-4 tasks where a real deadline has passed and notes reference consequences
-- Recurring from_completion tasks the user hasn't completed (genuinely stuck)
+- Recurring tasks overdue by 2+ weeks — the user has fallen significantly behind regardless of cadence
 
 Medium (30-69): Worth a glance during review
 - Tasks with unclear descriptions that are hard to act on
@@ -413,7 +420,7 @@ Low (0-29): On track — skip during review
 - P0-2 tasks overdue by 1-2 days — routine reminder behavior, not urgent
 - Tasks due today or tomorrow — already on the radar
 - Well-organized tasks with clear due dates and appropriate priority
-- Recurring tasks that are running smoothly (even if 1-2 days overdue — that's normal cadence)
+- Recurring tasks 0-2 days overdue — user just hasn't opened the app or snoozed yet
 - Recently created tasks (under 2 weeks old) with reasonable priority and due dates — too new to need review
 - Any task the user is clearly already managing
 
@@ -421,26 +428,34 @@ Low (0-29): On track — skip during review
 
 Apply these rules in order — earlier rules take priority:
 1. P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
-2. Recurring task (from_due OR from_completion) within 1 cycle of overdue → score 0-20, no signals
+2. P0-2 task overdue 0-2 days → score 0-25, no signals (OpenTask's global snooze button catches overdue P0-2 tasks — 1-2 days overdue just means the user hasn't opened the app or snoozed yet)
 3. Task due today/tomorrow → score 0-25 (user already sees it)
-4. P0-2 overdue 1-3 days, task under 2 weeks old → score 0-25 (routine reminder behavior). This applies REGARDLESS of task content — "call dentist", "pick up prescription", and "update slides" all score 0-25 when they're recent tasks slightly past their reminder.
-5. P3 due today with consequences still days away → MEDIUM (30-50), not HIGH — the task is visible and the user has time
-6. Old forgotten task (3+ weeks, no due date) → HIGH (70+)
-7. P3-4 with passed deadline AND imminent consequences (within 48 hours) → HIGH (70+)
+4. P3 due today with consequences still days away → MEDIUM (30-50), not HIGH — the task is visible and the user has time
+5. Old forgotten task (3+ weeks, no due date) → HIGH (70+)
+6. P3-4 with passed deadline AND imminent consequences (within 48 hours) → HIGH (70+)
 
-## Recurring task guidance — CRITICAL
+## Recurring task guidance
 
-Recurring tasks (daily, weekly, etc.) naturally cycle through "overdue" states. A daily task showing yesterday's due date just means the user hasn't checked it off yet today. A weekly task 1-2 days overdue is entirely normal. This ALWAYS gets a LOW score (0-20) and NEVER gets any signals unless overdue for significantly longer than the cycle (e.g., a weekly task 2+ weeks overdue).
+Recurring tasks follow the same scoring rules as non-recurring tasks — there is no special recurring exemption. Do not differentiate between from_due and from_completion for scoring — both mean the user hasn't completed the task.
 
-Examples of LOW-scoring recurring tasks:
-- Daily standup due yesterday → score 5-15, no signals (will auto-advance when checked off)
-- Weekly watering due 2 days ago → score 10-20, no signals (normal weekly cadence)
+A daily task due yesterday is LOW for the same reason any P0-2 task 1 day overdue is LOW: the user just hasn't opened the app or snoozed yet. A recurring task overdue by 2+ weeks needs a decision just like any non-recurring task that's been sitting for weeks.
 
-**from_completion recurring tasks** follow the same rule. A weekly from_completion task 4 days overdue is within 1 cycle — score 0-20, no signals. Only score higher when the task has been stuck for multiple cycles (e.g., a weekly from_completion task 2+ weeks overdue = genuinely stuck, score MEDIUM-HIGH). The key: count how many cycles overdue, not just how many days.
+Examples:
+- Daily standup due yesterday → score 5-15, no signals (user hasn't opened the app yet today)
+- Weekly watering due 2 days ago → score 10-20, no signals (user hasn't snoozed yet)
+- Biweekly receipts due 10 days ago → score 30-45 (10 days overdue is unusual — worth a glance)
+- Monthly receipts due 29 days ago → HIGH — 29 days overdue means the user hasn't engaged with this task in a month
 
 ## P0-2 overdue guidance
 
-P0-2 due dates are reminders, not deadlines. A P0-2 task being "overdue" by hours or 1-2 days is routine — do NOT treat it as urgent. Score based on task age (created_at) and whether it needs a decision, not on how far past the reminder it is.
+P0-2 due dates are reminders, not deadlines. In OpenTask, the global snooze button in the top bar lets users push all overdue P0-2 tasks forward at once — most users lean on this regularly, so P0-2 tasks are rarely overdue by more than 1-2 days. When you see P0-2 tasks overdue by 3+ days, the user likely hasn't been engaging with the app recently.
+
+Score based on:
+- Task age (created_at) — most reliable signal for how long a task has been sitting
+- Overdue duration — 0-2 days is routine; 3+ days is unusual in OpenTask and should increase scoring, weighted by task importance and age; 21+ days overdue should be treated as stale
+- Task content and importance — a routine daily vitamin 4 days overdue is still lower-consequence than an important follow-up 4 days overdue
+
+Do not use cycle-based reasoning (e.g., "within 1 weekly cycle"). Use absolute days overdue.
 
 ## Well-organized task guidance
 
@@ -457,7 +472,7 @@ Assign 0-2 signals per task when applicable. Most tasks (60-70%) should have NO 
 - quick_win: Small, concrete task that could be done in under 10 minutes. ("Unsubscribe from mailing list", "Text back")
 - vague: Title is so unclear the user cannot act on it without more information. ("That thing", "Look into it", "Check on stuff"). Do NOT apply to tasks that have explanatory notes — if the notes clarify the task, it is not vague.
 - misprioritized: Priority is clearly wrong for the content. P4/Urgent for mundane tasks ("Clean the entire house top to bottom" at P4) or P0/Unset for tasks with real time pressure and consequences. If the priority-content mismatch would make someone do a double-take, flag it.
-- review: Worth a closer look — needs updating, recategorizing, or a decision. Use when the task doesn't fit another signal but something is off.
+- review: Worth a closer look — needs updating, recategorizing, or a decision. Use when the task doesn't fit another signal but something is *structurally* off (wrong project, outdated notes, mismatched labels). Do NOT use just because a task scored medium — a medium score already says "worth a glance."
 
 ## Common mistakes to avoid
 
@@ -465,15 +480,17 @@ These mistakes come from a bias toward "finding problems." Most tasks are fine �
 
 1. **Inflating scores for routine tasks.** A P2 "Pick up prescription" created 4 days ago and 2 days overdue? Score 15-25, no signals. A P1 "Call dentist" created 5 days ago and 1 day overdue? Score 15-20. Do NOT score routine P0-2 tasks 40+ just because the content sounds important — score based on the metadata (age, priority, overdue duration), not the topic.
 2. **Applying stale to tasks under 3 weeks old.** A task created 8-14 days ago is NOT stale. It hasn't had time to go stale yet. The stale boundary is 21+ days, period.
-3. **Applying act_soon to P0-2 tasks or distant deadlines.** act_soon means "real consequence within 7 days." A P0 from_completion task that's overdue does NOT get act_soon — it gets a higher score if stuck for multiple cycles, but no act_soon. A P3 task with a deadline 6 weeks away does NOT get act_soon.
-4. **Over-signaling.** 60-70% of tasks should have ZERO signals. If you find yourself assigning signals to more than 40% of tasks, step back and remove the weakest ones.
-5. **Treating from_completion overdue within 1 cycle as urgent.** A weekly from_completion task 4 days overdue is normal — score 0-20, no signals.
+3. **Applying act_soon to P0-2 tasks or distant deadlines.** act_soon means "real consequence within 7 days." P0-2 tasks NEVER get act_soon, no matter how overdue — overdue P0-2 tasks get higher scores, not act_soon. A P3 task with a deadline 6 weeks away does NOT get act_soon.
+4. **Over-signaling.** 60-70% of tasks should have ZERO signals. If you find yourself assigning signals to more than 40% of tasks, step back and remove the weakest ones. However, do not drop signals from clear-cut cases just to hit the target — if a task scores 65+ and is 3+ weeks old with no due date, it gets "stale" regardless of the batch percentage.
+5. **Using cycle-based reasoning for overdue scoring.** Do not calculate "cycles overdue." Use absolute days. A P0 task 2 days overdue = LOW regardless of whether it's daily, weekly, or monthly. A P0 task 29 days overdue = HIGH regardless of cadence.
+6. **Confusing overdue duration with task age.** A task created yesterday with a past due date is 1 day old, not weeks old. Use created_at for age-based scoring (stale, forgotten) and due_at for overdue-based scoring (missed reminders, passed deadlines). These are separate signals.
 
 ## HARD CONSTRAINTS — check BEFORE outputting each task
 
 Before writing each task's signals, verify:
 1. If the task's priority is P0, P1, or P2 → signals MUST NOT contain "act_soon". Delete it if you were about to include it.
 2. If the task was created fewer than 21 days ago → signals MUST NOT contain "stale". Delete it if you were about to include it.
+3. If the task's priority is P4 → score MUST be 0-20. Reduce it if you were about to output higher.
 These are absolute rules with zero exceptions, regardless of context or urgency.
 
 ## Output format
@@ -542,12 +559,13 @@ Key points:
  */
 
 export const WHATS_NEXT_REMINDERS = `## Reminders
-- Do NOT surface daily recurring tasks (FREQ=DAILY)
+- Do NOT surface daily habits (FREQ=DAILY with no INTERVAL or INTERVAL=1). FREQ=DAILY;INTERVAL=2+ tasks are NOT daily habits.
 - P4/Urgent: skip if on track, but surface if overdue for days or notes have time-sensitive details
-- Pick 2-8 tasks — output valid JSON only (no text outside the JSON object)
+- Pick 0-8 tasks — output valid JSON only (no text outside the JSON object)
 - Use created_at for task age, not due date history
 - For P0-2, due dates are reminders — being "overdue" is routine, not urgent
-- When notes are present, reference specific details (claim numbers, deadlines, instructions)`
+- When notes are present, reference specific details (claim numbers, deadlines, instructions)
+- from_completion recurring tasks overdue for multiple cycles = genuinely not completed (worth surfacing)`
 
 export const INSIGHTS_REMINDERS = `## Reminders
 - P4/Urgent → ALWAYS score 0-20, no exceptions, no signals
@@ -555,7 +573,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - act_soon → ONLY for P3-4 with consequence within 7 days (never P0-2)
 - Well-organized tasks (clear title, appropriate priority, reasonable due date) → score LOW (0-25), NO signals
 - 60-70% of tasks should have ZERO signals — most tasks are fine
-- Recurring task overdue by ≤1 cycle → score 0-20, no signals
+- P0-2 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask)
 - Every task in the input MUST appear in the output
 - Output valid JSON array only (no text outside the array)`
 
@@ -565,4 +583,5 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - Return due_at as UTC (convert from user's timezone)
 - When uncertain, leave fields null (0 for priority, empty array for labels)
-- Every piece of information the user provided must be captured in title, a structured field, or notes`
+- Every piece of information the user provided must be captured in title, a structured field, or notes
+- Return valid JSON only (no markdown fences, no text outside the JSON object)`

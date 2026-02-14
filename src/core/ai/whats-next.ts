@@ -81,7 +81,7 @@ ${taskList}
 
 ${WHATS_NEXT_REMINDERS}
 Current time: ${currentTime}
-Surface 2-8 tasks and return the JSON result.`
+Surface 0-8 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
@@ -124,8 +124,18 @@ Surface 2-8 tasks and return the JSON result.`
 
   // Filter to only include tasks that exist in the provided list
   const taskIds = new Set(tasks.map((t) => t.id))
+  const taskMap = new Map(tasks.map((t) => [t.id, t]))
+  const validTasks = parsed.tasks.filter((t) => {
+    if (!taskIds.has(t.task_id)) return false
+    // Defense-in-depth: strip daily habits the AI may have surfaced
+    const task = taskMap.get(t.task_id)
+    if (task?.rrule?.startsWith('FREQ=DAILY') && !task.rrule.match(/INTERVAL=([2-9]|\d{2,})/)) {
+      return false
+    }
+    return true
+  })
   const validResult: WhatsNextResult = {
-    tasks: parsed.tasks.filter((t) => taskIds.has(t.task_id)),
+    tasks: validTasks,
     summary: parsed.summary,
     generated_at: parsed.generated_at || nowUtc(),
   }

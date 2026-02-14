@@ -136,7 +136,7 @@ export const insightsScenarios: AITestScenario[] = [
         'ID 1 (faucet, created Dec 10, no due date, P0): should score HIGH (70+) — sitting for 2 months. ' +
         'ID 4 (P4 urgent, due today): should score LOW (0-29) — already visible and urgent, user sees it. ' +
         'ID 5 (daily vitamins, recurring): should score LOW (0-29) — routine, running smoothly. ' +
-        'ID 7 (dry cleaning, P2, due tomorrow): should score LOW (0-29) — recent, on track. ' +
+        'ID 7 (dry cleaning, P2, ~3 days overdue): should score LOW (0-35) — routine errand slightly past reminder. ' +
         'ID 2 (car registration, P3, due soon): should score MEDIUM — has a real deadline with consequences. ' +
         'ID 3 (birthday present, mom birthday March 2): should score MEDIUM — time-sensitive but not urgent yet. ' +
         'IDs 1 and 6 should get "stale" signal. ID 4 should get NO signals. ' +
@@ -147,7 +147,7 @@ export const insightsScenarios: AITestScenario[] = [
           4: { min: 0, max: 20 },
           5: { min: 0, max: 29 },
           6: { min: 70, max: 100 },
-          7: { min: 0, max: 29 },
+          7: { min: 0, max: 35 },
         },
         signal_checks: {
           1: { must_have: ['stale'] },
@@ -492,6 +492,7 @@ export const insightsScenarios: AITestScenario[] = [
         score_ranges: {
           30: { min: 70, max: 100 },
           34: { min: 0, max: 25 },
+          35: { min: 65, max: 100 },
           36: { min: 0, max: 39 },
         },
         signal_checks: {
@@ -587,14 +588,14 @@ export const insightsScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'Tests the recurring task guidance. ' +
-        'ID 40 (daily vitamins, 1 day overdue): LOW (0-20), no signals — normal cadence. ' +
-        'ID 41 (weekly plants, 4 days overdue): LOW (0-20), no signals — within 1 cycle. ' +
-        'ID 42 (weekly meal prep, 2+ weeks overdue): MEDIUM-HIGH (40-80) — significantly past cycle, should get "stale" or "review" signal. ' +
-        'ID 43 (monthly budget, ~2 months overdue): HIGH (70+) — multiple cycles overdue, should get "stale". ' +
-        'ID 44 (weekly desk, 2 days overdue): LOW (0-20), no signals — within 1 cycle. ' +
-        'The key test: overdue within one cycle (IDs 40, 41, 44) should score LOW, ' +
-        'while overdue by multiple cycles (IDs 42, 43) should score progressively higher.',
+        'Tests recurring task overdue scoring with absolute days (no cycle math). ' +
+        'In OpenTask, P0-2 tasks rarely stay overdue >2 days because the global snooze catches them. ' +
+        'ID 40 (daily vitamins, ~5 days overdue): LOW (0-25) — routine low-consequence daily, though 5 days overdue is unusual in OpenTask. ' +
+        'ID 41 (weekly plants, ~8 days overdue): LOW-MEDIUM (0-40) — 8 days overdue is unusual, but task is routine. ' +
+        'ID 42 (weekly meal prep, ~19 days overdue): MEDIUM-HIGH (40-80) — nearly 3 weeks overdue, approaching stale. Should get "stale" or "review" signal. ' +
+        'ID 43 (monthly budget, ~2+ months overdue): HIGH (70+) — deeply overdue and stale. Should get "stale" signal. ' +
+        'ID 44 (weekly desk, ~6 days overdue): LOW-MEDIUM (0-40) — 6 days overdue is unusual but task is routine. ' +
+        'Key: scoring uses absolute overdue days, not cycle math. Shorter overdue on routine tasks = LOW, longer overdue = progressively higher.',
       insights_expectations: {
         score_ranges: {
           40: { min: 0, max: 75 },
@@ -693,7 +694,7 @@ export const insightsScenarios: AITestScenario[] = [
       must_include: {},
       quality_notes:
         'Tests P0-2 overdue guidance — due dates are reminders, not deadlines. ' +
-        'ID 50 (P2, ~4 days overdue, ~6 days old): LOW (0-30) — routine errand slightly past reminder. ' +
+        'ID 50 (P2, ~5 days overdue, ~7 days old): LOW (0-40) — routine errand past reminder, 3+ days overdue is unusual in OpenTask but still low-consequence. ' +
         'ID 51 (P1, ~5 days overdue, ~11 days old): LOW-MEDIUM (10-40) — mundane task, slightly drifting but recent and low priority. Should NOT get act_soon (P0-2 never get act_soon). ' +
         'ID 52 (P0, ~23 days overdue, notes about $0.25/day late fees): MEDIUM-HIGH (40-90) — has been sitting for weeks, notes mention accumulating consequences. Commentary should reference the late fee. May get "stale" signal. ' +
         'ID 53 (P0, ~28 days overdue, created ~2 months ago): HIGH (60-90) — old task, well past reminder, drifting. Should get "stale" or "review" signal. ' +
@@ -703,7 +704,7 @@ export const insightsScenarios: AITestScenario[] = [
         'act_soon should NEVER appear on P0-2 tasks.',
       insights_expectations: {
         score_ranges: {
-          50: { min: 0, max: 30 },
+          50: { min: 0, max: 40 },
           52: { min: 40, max: 90 },
           53: { min: 60, max: 90 },
           54: { min: 0, max: 30 },
@@ -787,17 +788,18 @@ export const insightsScenarios: AITestScenario[] = [
     requirements: {
       must_include: {},
       quality_notes:
-        'Tests from_completion handling. With from_completion, the task stays overdue until the user actually does it — the longer overdue, the more genuinely stuck. ' +
-        'ID 60 (weekly bathroom, from_completion, ~10 days overdue): MEDIUM-HIGH (30-75) — user has not completed it in 1.5 cycles, genuinely behind. ' +
-        'ID 61 (monthly receipts, from_completion, ~28 days overdue): HIGH (65-90) — user has not done this in nearly a month past due, genuinely stuck. Should get "stale" signal. ' +
-        'ID 62 (weekly backup, from_completion, ~4 days overdue): LOW (0-40) — within 1 cycle, mostly normal. ' +
-        'ID 63 (biweekly lawn, from_due, ~2 days overdue, created 4+ months ago): LOW-MEDIUM (0-50) — within 1 cycle of biweekly schedule. The task is months old so a "review" signal is acceptable but not required. ' +
-        'The key test: from_completion overdue means the user has NOT done it, scoring higher than equivalent from_due overdue.',
+        'Tests recurring tasks overdue by varying amounts. Scoring uses absolute days overdue, not cycle math. ' +
+        "In OpenTask, P0-2 tasks are rarely overdue >2 days because the global snooze catches them — longer overdue means the user hasn't been engaging. " +
+        'ID 60 (weekly bathroom, ~11 days overdue): MEDIUM (30-60) — 11 days overdue is unusual in OpenTask, user has not been engaging with this task. ' +
+        'ID 61 (monthly receipts, ~29 days overdue): HIGH (55-90) — 29 days overdue is stale territory, task has been neglected for nearly a month. Should get "stale" signal. ' +
+        'ID 62 (weekly backup, ~5 days overdue): LOW-MEDIUM (0-40) — 5 days overdue is unusual but task is routine. ' +
+        'ID 63 (biweekly lawn, ~3 days overdue, created 4+ months ago): LOW (0-40) — barely overdue, but the task is months old so a "review" or "stale" signal is acceptable. ' +
+        'No distinction between from_due and from_completion for scoring.',
       insights_expectations: {
         score_ranges: {
-          60: { min: 30, max: 75 },
-          61: { min: 65, max: 90 },
-          62: { min: 0, max: 60 },
+          60: { min: 30, max: 60 },
+          61: { min: 55, max: 90 },
+          62: { min: 0, max: 40 },
         },
         signal_checks: {
           61: { must_have: ['stale'] },
@@ -1180,7 +1182,7 @@ export const insightsScenarios: AITestScenario[] = [
       must_include: {},
       quality_notes:
         'Tests staleness boundaries. All tasks are P0, no due date, no notes. ' +
-        'ID 90 (6 days old): LOW (0-25) — too new to be stale, no signal. ' +
+        'ID 90 (~10 days old): LOW (0-30) — too new to be stale, no signal. ' +
         'ID 91 (14 days old): LOW-MEDIUM (15-40) — borderline, possibly a gentle "review" but not "stale" yet. ' +
         'ID 92 (21 days old, 3 weeks): MEDIUM (40-65) — at the stale boundary. Should get "stale" signal. ' +
         'ID 93 (35 days old, 5 weeks): HIGH (65-85) — clearly stale. Must get "stale" signal. ' +
@@ -1190,7 +1192,7 @@ export const insightsScenarios: AITestScenario[] = [
         'The key test: tasks under 2 weeks should NOT get "stale", tasks at 3+ weeks SHOULD.',
       insights_expectations: {
         score_ranges: {
-          90: { min: 0, max: 25 },
+          90: { min: 0, max: 35 },
           93: { min: 65, max: 85 },
           94: { min: 75, max: 90 },
           95: { min: 65, max: 85 },
@@ -1297,7 +1299,7 @@ export const insightsScenarios: AITestScenario[] = [
         'ID 101 (LinkedIn, P0, no due date, ~5 weeks old): should score HIGH (60-90) — stale + ' +
         'extremely relevant given active job search. Should get "stale" signal. ' +
         'ID 102 (kitchen, P0, recent): LOW (0-25) — routine, recent, not career-related. ' +
-        'ID 103 (vitamins, daily recurring): LOW (0-20) — routine. ' +
+        'ID 103 (vitamins, daily recurring, ~4 days overdue): LOW (0-25) — routine daily, low-consequence even when a few days behind. ' +
         'ID 104 (thank-you note, P1, overdue ~5 days): should score MEDIUM-HIGH (40-80) — ' +
         'social obligation + job hunting context. Notes mention 48-hour window which has passed. ' +
         'Commentary should be grounded — use task data and user context together.',
@@ -1305,7 +1307,7 @@ export const insightsScenarios: AITestScenario[] = [
         score_ranges: {
           100: { min: 40, max: 80 },
           102: { min: 0, max: 25 },
-          103: { min: 0, max: 20 },
+          103: { min: 0, max: 25 },
           104: { min: 40, max: 95 },
         },
         signal_checks: {

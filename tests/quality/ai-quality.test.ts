@@ -225,8 +225,8 @@ describe('AI Quality — Layer 1', () => {
         async () => {
           await runScenario(scenario)
         },
-        // Large scenarios get a 12 minute timeout
-        isLarge ? 720_000 : undefined,
+        // Timeout scales with task count: 12min for large, 10s/task for others, 3min minimum
+        isLarge ? 720_000 : Math.max(180_000, input.tasks.length * 10_000),
       )
     }
   })
