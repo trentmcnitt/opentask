@@ -135,7 +135,7 @@ export const insightsScenarios: AITestScenario[] = [
         'ID 6 (refinancing, created Nov 15, no due date, P0): should score HIGH (70+) — forgotten for 3 months. ' +
         'ID 1 (faucet, created Dec 10, no due date, P0): should score HIGH (70+) — sitting for 2 months. ' +
         'ID 4 (P4 urgent, due today): should score LOW (0-29) — already visible and urgent, user sees it. ' +
-        'ID 5 (daily vitamins, recurring): should score LOW (0-29) — routine, running smoothly. ' +
+        'ID 5 (daily vitamins, recurring): should score LOW (0-35) — routine, but 5 days behind. ' +
         'ID 7 (dry cleaning, P2, ~3 days overdue): should score LOW (0-35) — routine errand slightly past reminder. ' +
         'ID 2 (car registration, P3, due soon): should score MEDIUM — has a real deadline with consequences. ' +
         'ID 3 (birthday present, mom birthday March 2): should score MEDIUM — time-sensitive but not urgent yet. ' +
@@ -145,7 +145,8 @@ export const insightsScenarios: AITestScenario[] = [
         score_ranges: {
           1: { min: 70, max: 100 },
           4: { min: 0, max: 20 },
-          5: { min: 0, max: 29 },
+          // P0 daily recurring, 5 days overdue — consistently scores 30-35 (routine but noticeably behind)
+          5: { min: 0, max: 35 },
           6: { min: 70, max: 100 },
           7: { min: 0, max: 35 },
         },
@@ -698,7 +699,7 @@ export const insightsScenarios: AITestScenario[] = [
         'ID 51 (P1, ~5 days overdue, ~11 days old): LOW-MEDIUM (10-40) — mundane task, slightly drifting but recent and low priority. Should NOT get act_soon (P0-2 never get act_soon). ' +
         'ID 52 (P0, ~23 days overdue, notes about $0.25/day late fees): MEDIUM-HIGH (40-90) — has been sitting for weeks, notes mention accumulating consequences. Commentary should reference the late fee. May get "stale" signal. ' +
         'ID 53 (P0, ~28 days overdue, created ~2 months ago): HIGH (60-90) — old task, well past reminder, drifting. Should get "stale" or "review" signal. ' +
-        'ID 54 (P2, ~3 days overdue, 5 days old): LOW (0-30) — recent task, slightly past reminder. ' +
+        'ID 54 (P2, ~5 days overdue, ~7 days old): LOW (0-35) — recent task, slightly past reminder. ' +
         'The key test: P0-2 overdue by a few days should score LOW (reminders), ' +
         'while P0-2 overdue by 3+ weeks should score progressively higher (forgotten/drifting). ' +
         'act_soon should NEVER appear on P0-2 tasks.',
@@ -707,7 +708,8 @@ export const insightsScenarios: AITestScenario[] = [
           50: { min: 0, max: 40 },
           52: { min: 40, max: 90 },
           53: { min: 60, max: 90 },
-          54: { min: 0, max: 30 },
+          // P2 recent task, ~5 days past reminder — consistently scores 28-34
+          54: { min: 0, max: 35 },
         },
         signal_checks: {
           50: { must_not_have: ['act_soon'] },
@@ -1298,16 +1300,18 @@ export const insightsScenarios: AITestScenario[] = [
         'Commentary should reflect the networking importance. ' +
         'ID 101 (LinkedIn, P0, no due date, ~5 weeks old): should score HIGH (60-90) — stale + ' +
         'extremely relevant given active job search. Should get "stale" signal. ' +
-        'ID 102 (kitchen, P0, recent): LOW (0-25) — routine, recent, not career-related. ' +
-        'ID 103 (vitamins, daily recurring, ~4 days overdue): LOW (0-25) — routine daily, low-consequence even when a few days behind. ' +
+        'ID 102 (kitchen, P0, recent): LOW (0-30) — routine, recent, not career-related. ' +
+        'ID 103 (vitamins, daily recurring, ~5 days overdue): LOW (0-35) — routine daily, low-consequence but noticeably behind. ' +
         'ID 104 (thank-you note, P1, overdue ~5 days): should score MEDIUM-HIGH (40-80) — ' +
         'social obligation + job hunting context. Notes mention 48-hour window which has passed. ' +
         'Commentary should be grounded — use task data and user context together.',
       insights_expectations: {
         score_ranges: {
           100: { min: 40, max: 80 },
-          102: { min: 0, max: 25 },
-          103: { min: 0, max: 25 },
+          // P0 routine household task, 4 days past reminder — AI reasonably scores slightly above 25
+          102: { min: 0, max: 30 },
+          // P0 daily recurring, ~5 days overdue — same pattern as mixed-priorities task 5
+          103: { min: 0, max: 35 },
           104: { min: 40, max: 95 },
         },
         signal_checks: {

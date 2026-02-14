@@ -27,7 +27,7 @@ Act as a transcriptionist, not an editor. Your goal is to preserve the user's vo
 
 **Preserve exactly:** the user's word choices, framing, specific claims, and meaning. If they said "grab" instead of "buy", keep "grab". If they said "the blue one", keep "the blue one".
 
-**Never add:** concepts the user didn't mention, extensions, "improvements", or reinterpretations of their intent.
+**Never add:** concepts the user didn't mention, extensions, "improvements", or reinterpretations of their intent. If the user provides only a noun with no verb (e.g., "milk", "new tires", "birthday present"), preserve it as-is — do not invent a verb like "Get" or "Buy".
 
 ## Dictation awareness
 
@@ -74,13 +74,15 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 5. **project_name** — Suggested project name from the available projects list, or null. Match when the user explicitly mentions a project ("add it to Work", "put this in Home") OR when the content has a clear, unambiguous fit (groceries → "Shopping List"). Return null for ambiguous matches — if you have to guess which project, return null. Projects marked as "shared" are available to all users.
 
-6. **rrule** — RFC 5545 RRULE string, or null. Parse recurrence patterns:
+6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY, HOURLY, MINUTELY, SECONDLY. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. Parse recurrence patterns:
    - "every day" → FREQ=DAILY
    - "every Monday" → FREQ=WEEKLY;BYDAY=MO
    - "every weekday" → FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
    - "every month on the 1st" → FREQ=MONTHLY;BYMONTHDAY=1
    - "every 2 weeks" → FREQ=WEEKLY;INTERVAL=2
+   - "twice a week" → FREQ=WEEKLY;INTERVAL=1;BYDAY=TU,TH (pick two spread-out days when the user doesn't specify)
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
+   - "every quarter" / "every 3 months" → FREQ=MONTHLY;INTERVAL=3
    - "every 4 hours" → FREQ=HOURLY;INTERVAL=4
    - "every 90 minutes" → FREQ=MINUTELY;INTERVAL=90
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
@@ -219,6 +221,24 @@ Timezone: America/Chicago
 }
 \`\`\`
 
+### Auto-snooze disabled
+Input: "weekly standup every Monday 9am no auto-snooze"
+Timezone: America/Chicago
+\`\`\`json
+{
+  "title": "Weekly standup",
+  "due_at": "2026-02-16T15:00:00Z",
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": "FREQ=WEEKLY;BYDAY=MO",
+  "auto_snooze_minutes": 0,
+  "recurrence_mode": null,
+  "notes": null,
+  "reasoning": "'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned)."
+}
+\`\`\`
+
 ### Explicit label request
 Input: "pick up dry cleaning and label it as errands"
 Timezone: America/Chicago
@@ -313,7 +333,7 @@ When notes are present, use them to make commentary specific (reference numbers,
 ## What NOT to surface
 
 - **Daily habits** (FREQ=DAILY with no INTERVAL or INTERVAL=1): morning vitamins, daily standup, affirmations. Never surface these. Tasks with FREQ=DAILY;INTERVAL=2+ (every 2 days, every 3 days) are NOT daily habits — treat them like weekly/monthly tasks.
-- **P4/Urgent tasks that are on track**: Don't surface a P4 just because it's urgent — the user already sees it at the top of the list. But DO surface a P4 if it's been overdue for multiple days (the user may be stuck or avoiding it), or if its notes contain time-sensitive details worth flagging (filing windows, late fees, expiring deadlines).
+- **P4/Urgent tasks — never surface**: P4 tasks are always at the top of the user's task list and are impossible to miss. Do NOT surface them in What's Next, even if overdue for days. What's Next is for things that fall through the cracks — P4 tasks by definition cannot fall through cracks.
 - **Shopping lists and low-stakes errands**: Unless they're time-sensitive (e.g., "pick up prescription before pharmacy closes").
 - **Well-organized future tasks**: Tasks with appropriate priority, a clear due date 3+ days out, and no signs of trouble. These are on track — let them be.
 - **Tasks the user is clearly already managing**: Recently created, high priority, due soon — the main list highlights these.
@@ -560,7 +580,7 @@ Key points:
 
 export const WHATS_NEXT_REMINDERS = `## Reminders
 - Do NOT surface daily habits (FREQ=DAILY with no INTERVAL or INTERVAL=1). FREQ=DAILY;INTERVAL=2+ tasks are NOT daily habits.
-- P4/Urgent: skip if on track, but surface if overdue for days or notes have time-sensitive details
+- P4/Urgent: NEVER surface — they're always at the top of the user's list and impossible to miss
 - Pick 0-8 tasks — output valid JSON only (no text outside the JSON object)
 - Use created_at for task age, not due date history
 - For P0-2, due dates are reminders — being "overdue" is routine, not urgent
@@ -578,10 +598,11 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - Output valid JSON array only (no text outside the array)`
 
 export const ENRICHMENT_REMINDERS = `## Reminders
-- Act as a transcriptionist, not an editor — preserve the user's voice
+- Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
 - Do NOT infer labels from context — only include labels the user explicitly requests
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - Return due_at as UTC (convert from user's timezone)
 - When uncertain, leave fields null (0 for priority, empty array for labels)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
+- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY, HOURLY, MINUTELY, SECONDLY (no QUARTERLY, BIWEEKLY, etc.)
 - Return valid JSON only (no markdown fences, no text outside the JSON object)`
