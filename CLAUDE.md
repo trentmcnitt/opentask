@@ -17,6 +17,7 @@ npm run test:integration # Integration tests (HTTP against built server)
 npm run test:e2e         # Playwright E2E tests (headless)
 npm run test:e2e:ui      # Playwright with UI
 npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
+npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality testing)
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
@@ -342,8 +343,20 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 **`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details.
 
+**Before modifying AI prompts**, dump and review the fully rendered prompts. The prompt source in `src/core/ai/prompts.ts` uses shared sections and template literals that are hard to read in isolation — `dump-prompts` assembles them into the final text the AI actually sees, which is the only reliable way to review them.
+
+```bash
+npm run dump-prompts                              # All 3 prompts (templates only) → .tmp/prompts.txt
+npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
+npm run dump-prompts -- --feature insights         # Just the insights prompt
+npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
+npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
+npm run dump-prompts -- --list                     # List available scenarios
+```
+
 **When modifying AI prompts or enrichment logic:**
 
+- Dump and review the rendered prompt first — check for contradictions, stale rules, and redundancy
 - Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones)
 - If any scenario regresses, fix the prompt before proceeding
 - When adding new behavior, add scenarios that test it — untested behavior is unverified behavior

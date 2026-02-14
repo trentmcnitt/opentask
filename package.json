@@ -19,6 +19,7 @@
     "db:create-token": "tsx scripts/create-token.ts",
     "db:seed-dev": "tsx scripts/seed-dev.ts",
     "db:migrate-due": "tsx scripts/migrate-due.ts",
+    "dump-prompts": "tsx scripts/dump-prompts.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"

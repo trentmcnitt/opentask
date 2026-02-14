@@ -418,6 +418,12 @@ Score every task above. Return a JSON array with one entry per task.`
 
       if (parsed) {
         const validItems = parsed.filter((item) => taskIds.has(item.task_id))
+        if (validItems.length < chunk.length) {
+          log.warn(
+            'ai',
+            `Insights chunk ${ci + 1}: AI returned ${validItems.length}/${chunk.length} tasks (${chunk.length - validItems.length} missing)`,
+          )
+        }
         sanitizeSignals(validItems, taskMap)
         storeInsightsResults(userId, validItems)
         processedCount += chunk.length
