@@ -9,6 +9,7 @@ import { getDb, withTransaction } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivity } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
@@ -90,6 +91,16 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       projectName,
     })
     logAction(userId, 'edit', description, data.fieldsChanged, [snapshot])
+
+    logActivity({
+      userId,
+      taskId,
+      action: data.isSnoozeScenario ? 'snooze' : 'edit',
+      fields: data.fieldsChanged,
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+      metadata: data.isSnoozeScenario ? { snooze_detected: true } : undefined,
+    })
 
     // Increment snooze stats if this was a snooze operation
     if (data.isSnoozeScenario) {

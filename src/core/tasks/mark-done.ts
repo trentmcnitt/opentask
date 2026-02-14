@@ -8,6 +8,7 @@ import { withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivity } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
@@ -68,6 +69,19 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
 
     // Log to undo
     logAction(userId, 'done', `Marked "${task.title}" done`, computation.fieldsChanged, [snapshot])
+
+    logActivity({
+      userId,
+      taskId: task.id,
+      action: 'complete',
+      fields: computation.fieldsChanged,
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+      metadata: {
+        recurring: computation.type === 'recurring',
+        ...(computation.type === 'recurring' ? { next_due_at: computation.nextDueAt } : {}),
+      },
+    })
 
     // Increment daily stats
     incrementDailyStat(userId, 'completions', userTimezone)
@@ -149,6 +163,15 @@ export function markUndone(options: MarkDoneOptions): Task {
       ['done', 'done_at', 'archived_at'],
       [snapshot],
     )
+
+    logActivity({
+      userId,
+      taskId,
+      action: 'uncomplete',
+      fields: ['done', 'done_at', 'archived_at'],
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+    })
 
     // Return updated task
     const updatedTask = getTaskById(taskId)

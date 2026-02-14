@@ -184,6 +184,30 @@ CREATE TABLE IF NOT EXISTS ai_insights_results (
 CREATE INDEX IF NOT EXISTS idx_ai_insights_results_user
   ON ai_insights_results(user_id);
 
+-- Activity log (permanent mutation history for AI pattern analysis)
+CREATE TABLE IF NOT EXISTS activity_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL,
+  task_id     INTEGER NOT NULL,
+  action      TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'single',
+  batch_id    TEXT,
+  fields      TEXT,
+  before      TEXT,
+  after       TEXT,
+  metadata    TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_log_user_created
+  ON activity_log(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_log_task
+  ON activity_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_action
+  ON activity_log(user_id, action);
+CREATE INDEX IF NOT EXISTS idx_activity_log_batch
+  ON activity_log(batch_id);
+
 -- AI insights sessions (tracks generation progress for polling)
 CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   id           TEXT PRIMARY KEY,

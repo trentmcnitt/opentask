@@ -10,6 +10,7 @@ import { withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivity } from '@/core/activity'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -62,6 +63,15 @@ export function reprocessTask(options: ReprocessTaskOptions): Task {
       ['labels'],
     )
     logAction(userId, 'edit', `Retrying AI enrichment for "${task.title}"`, ['labels'], [snapshot])
+
+    logActivity({
+      userId,
+      taskId,
+      action: 'reprocess',
+      fields: ['labels'],
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+    })
 
     const updatedTask = getTaskById(taskId)
     if (!updatedTask) {
