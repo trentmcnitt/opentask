@@ -8,6 +8,8 @@ import { getDb, withTransaction } from '@/core/db'
 import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivityBatch } from '@/core/activity'
+import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
@@ -102,6 +104,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const tasks = validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true })
 
   const snapshots: UndoSnapshot[] = []
+  const activityEntries: ActivityEntry[] = []
+  const batchId = crypto.randomUUID()
   let recurringCount = 0
   let oneOffCount = 0
 
@@ -120,6 +124,21 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       // Execute database operations using shared helper
       const { snapshot } = executeMarkDone(tx, task, computation, userId, nowStr)
       snapshots.push(snapshot)
+
+      activityEntries.push({
+        userId,
+        taskId: task.id,
+        action: 'complete',
+        source: 'bulk',
+        batchId,
+        fields: computation.fieldsChanged,
+        before: snapshot.before_state,
+        after: snapshot.after_state,
+        metadata: {
+          recurring: computation.type === 'recurring',
+          ...(computation.type === 'recurring' ? { next_due_at: computation.nextDueAt } : {}),
+        },
+      })
     }
 
     // Single undo entry for entire batch (BO-004)
@@ -133,6 +152,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
           : ['done', 'done_at', 'archived_at', ...baseStatsFields]
 
     logAction(userId, 'bulk_done', `Marked ${tasks.length} tasks done`, fieldsChanged, snapshots)
+    logActivityBatch(activityEntries)
 
     // Increment daily stats for all completed tasks
     incrementDailyStat(userId, 'completions', userTimezone, tasks.length)
@@ -269,6 +289,8 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   }
 
   const snapshots: UndoSnapshot[] = []
+  const activityEntries: ActivityEntry[] = []
+  const batchId = crypto.randomUUID()
 
   return withTransaction((tx) => {
     for (const task of eligible) {
@@ -315,6 +337,18 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       }
 
       snapshots.push(createTaskSnapshot(beforeState, afterState, fieldsChanged))
+
+      activityEntries.push({
+        userId,
+        taskId: task.id,
+        action: 'snooze',
+        source: 'bulk',
+        batchId,
+        fields: fieldsChanged,
+        before: beforeState,
+        after: afterState,
+        metadata: { tier },
+      })
     }
 
     // snooze_count always changes now
@@ -331,6 +365,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     }
 
     logAction(userId, 'bulk_snooze', bulkSnoozeDesc, allFieldsChanged, snapshots)
+    logActivityBatch(activityEntries)
 
     // Increment daily stats for ALL snoozes (every snooze counts now)
     incrementDailyStat(userId, 'snoozes', userTimezone, eligible.length)
@@ -390,6 +425,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const nowStr = nowUtc()
   const nowDate = new Date()
   const snapshots: UndoSnapshot[] = []
+  const activityEntries: ActivityEntry[] = []
+  const batchId = crypto.randomUUID()
   const allFieldsChanged = new Set<string>()
   let totalSnoozedCount = 0
 
@@ -433,6 +470,17 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
           ),
         )
 
+        activityEntries.push({
+          userId,
+          taskId: task.id,
+          action: data.isSnoozeScenario ? 'snooze' : 'edit',
+          source: 'bulk',
+          batchId,
+          fields: data.fieldsChanged,
+          before: data.beforeState,
+          after: data.afterState,
+        })
+
         data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
 
         // Track snooze count for stats (handled at end)
@@ -451,6 +499,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         snapshots,
       )
     }
+    logActivityBatch(activityEntries)
 
     // Increment daily snooze stats if any tasks were snoozed
     if (totalSnoozedCount > 0) {
@@ -486,6 +535,8 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   const nowStr = nowUtc()
   const tasks = validateBulkTasks(taskIds, userId)
   const snapshots: UndoSnapshot[] = []
+  const activityEntries: ActivityEntry[] = []
+  const batchId = crypto.randomUUID()
 
   return withTransaction((tx) => {
     for (const task of tasks) {
@@ -502,9 +553,21 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
           'deleted_at',
         ]),
       )
+
+      activityEntries.push({
+        userId,
+        taskId: task.id,
+        action: 'delete',
+        source: 'bulk',
+        batchId,
+        fields: ['deleted_at'],
+        before: { id: task.id, deleted_at: null },
+        after: { id: task.id, deleted_at: nowStr },
+      })
     }
 
     logAction(userId, 'bulk_delete', `Deleted ${tasks.length} tasks`, ['deleted_at'], snapshots)
+    logActivityBatch(activityEntries)
 
     return {
       tasksAffected: tasks.length,

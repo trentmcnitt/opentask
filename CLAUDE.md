@@ -17,6 +17,8 @@ npm run test:integration # Integration tests (HTTP against built server)
 npm run test:e2e         # Playwright E2E tests (headless)
 npm run test:e2e:ui      # Playwright with UI
 npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
+npm run test:quality:retry  # Re-run failed scenarios from last quality run
+npm run test:quality:run # Run specific scenarios: npm run test:quality:run -- <id> [id ...]
 npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality testing)
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
@@ -352,6 +354,14 @@ npm run dump-prompts -- --feature insights         # Just the insights prompt
 npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
 npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
 npm run dump-prompts -- --list                     # List available scenarios
+```
+
+**Targeted re-runs** for iterating on failures without re-running the full suite. Layer 2 evaluation still applies to these re-runs — follow the same two-step process.
+
+```bash
+npm run test:quality:retry                                    # Re-run failures from last run
+npm run test:quality:run -- enrich-simple-clean               # Run one scenario
+npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  # Run multiple
 ```
 
 **When modifying AI prompts or enrichment logic:**

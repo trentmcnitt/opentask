@@ -6,6 +6,7 @@ import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivity } from '@/core/activity'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -57,6 +58,15 @@ export function deleteTask(options: DeleteTaskOptions): Task {
     )
     logAction(userId, 'delete', `Deleted "${task.title}"`, ['deleted_at'], [snapshot])
 
+    logActivity({
+      userId,
+      taskId,
+      action: 'delete',
+      fields: ['deleted_at'],
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+    })
+
     // Return updated task
     const deletedTask = getTaskById(taskId)
     if (!deletedTask) {
@@ -103,6 +113,15 @@ export function restoreTask(options: RestoreTaskOptions): Task {
       ['deleted_at'],
     )
     logAction(userId, 'restore', `Restored "${task.title}"`, ['deleted_at'], [snapshot])
+
+    logActivity({
+      userId,
+      taskId,
+      action: 'restore',
+      fields: ['deleted_at'],
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+    })
 
     // Return updated task
     const restoredTask = getTaskById(taskId)

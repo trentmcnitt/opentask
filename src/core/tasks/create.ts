@@ -7,6 +7,7 @@ import type { Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
+import { logActivity } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError } from '@/core/errors'
 import { isAIEnabled } from '@/core/ai'
@@ -131,6 +132,16 @@ export function createTask(options: CreateTaskOptions): Task {
     )
 
     logAction(userId, 'create', `Created "${input.title}"`, ['created'], [snapshot])
+
+    logActivity({
+      userId,
+      taskId,
+      action: 'create',
+      fields: snapshot.after_state
+        ? Object.keys(snapshot.after_state).filter((k) => k !== 'id')
+        : [],
+      after: snapshot.after_state,
+    })
 
     // Increment daily stats
     incrementDailyStat(userId, 'tasks_created', userTimezone)
