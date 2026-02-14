@@ -171,8 +171,8 @@ export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, Task
  */
 const SINGLE_CALL_THRESHOLD = 500
 
-/** Timeout for insights AI calls (5 minutes) to accommodate large task lists. */
-const INSIGHTS_TIMEOUT_MS = 300_000
+/** Timeout for insights AI calls (15 minutes) to accommodate Opus with extended thinking on large task lists. */
+const INSIGHTS_TIMEOUT_MS = 15 * 60 * 1000
 
 /**
  * Fisher-Yates shuffle — returns a new array in random order.
@@ -563,7 +563,7 @@ export function hasInsightsResults(userId: number): boolean {
 }
 
 /** Sessions running longer than this are considered crashed (e.g. server restart) and auto-failed. */
-const SESSION_STALE_TIMEOUT_MS = 10 * 60 * 1000
+const SESSION_STALE_TIMEOUT_MS = 20 * 60 * 1000
 
 /**
  * Get the most recent active session for a user (if any is still running).
