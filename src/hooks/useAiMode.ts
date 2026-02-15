@@ -8,16 +8,16 @@ export type AiMode = 'off' | 'on'
 export interface UseAiModeReturn {
   mode: AiMode
   setMode: (mode: AiMode) => void
-  showScores: boolean
-  setShowScores: (show: boolean) => void
-  showSignals: boolean
-  setShowSignals: (show: boolean) => void
-  showWhatsNext: boolean
-  setShowWhatsNext: (show: boolean) => void
   showInsights: boolean
   setShowInsights: (show: boolean) => void
-  showCommentary: boolean
-  setShowCommentary: (show: boolean) => void
+  wnCommentaryUnfiltered: boolean
+  setWnCommentaryUnfiltered: (show: boolean) => void
+  wnHighlight: boolean
+  setWnHighlight: (show: boolean) => void
+  insightsSignalChips: boolean
+  setInsightsSignalChips: (show: boolean) => void
+  insightsScoreChips: boolean
+  setInsightsScoreChips: (show: boolean) => void
 }
 
 /** Fire-and-forget PATCH to persist a preference change server-side. */
@@ -30,9 +30,12 @@ function patchPreference(fields: Record<string, unknown>) {
 }
 
 /**
- * Manages AI mode toggle state (Off / On), sub-feature checkboxes
- * (Scores, Signals, What's Next, Commentary). Backed by PreferencesProvider
- * (server-persisted per user).
+ * Manages AI mode toggle state (Off / On) and visibility preferences:
+ * - Insights chip toggle (showInsights)
+ * - WN commentary when not filtering, WN background highlight
+ * - Signal/score chip visibility when Insights chip is off
+ *
+ * Backed by PreferencesProvider (server-persisted per user).
  *
  * On first load, migrates any leftover localStorage keys to the server
  * and deletes them.
@@ -41,16 +44,17 @@ export function useAiMode(): UseAiModeReturn {
   const {
     aiMode,
     setAiMode,
-    aiShowScores,
     setAiShowScores,
-    aiShowSignals,
-    setAiShowSignals,
-    aiShowWhatsNext,
-    setAiShowWhatsNext,
     aiShowInsights,
     setAiShowInsights,
-    aiShowCommentary,
-    setAiShowCommentary,
+    aiWnCommentaryUnfiltered,
+    setAiWnCommentaryUnfiltered,
+    aiWnHighlight,
+    setAiWnHighlight,
+    aiInsightsSignalChips,
+    setAiInsightsSignalChips,
+    aiInsightsScoreChips,
+    setAiInsightsScoreChips,
   } = useAiPreferences()
   const migrated = useRef(false)
 
@@ -96,30 +100,6 @@ export function useAiMode(): UseAiModeReturn {
     [setAiMode],
   )
 
-  const setShowScores = useCallback(
-    (show: boolean) => {
-      setAiShowScores(show)
-      patchPreference({ ai_show_scores: show })
-    },
-    [setAiShowScores],
-  )
-
-  const setShowSignals = useCallback(
-    (show: boolean) => {
-      setAiShowSignals(show)
-      patchPreference({ ai_show_signals: show })
-    },
-    [setAiShowSignals],
-  )
-
-  const setShowWhatsNext = useCallback(
-    (show: boolean) => {
-      setAiShowWhatsNext(show)
-      patchPreference({ ai_show_whats_next: show })
-    },
-    [setAiShowWhatsNext],
-  )
-
   const setShowInsights = useCallback(
     (show: boolean) => {
       setAiShowInsights(show)
@@ -128,26 +108,50 @@ export function useAiMode(): UseAiModeReturn {
     [setAiShowInsights],
   )
 
-  const setShowCommentary = useCallback(
+  const setWnCommentaryUnfiltered = useCallback(
     (show: boolean) => {
-      setAiShowCommentary(show)
-      patchPreference({ ai_show_commentary: show })
+      setAiWnCommentaryUnfiltered(show)
+      patchPreference({ ai_wn_commentary_unfiltered: show })
     },
-    [setAiShowCommentary],
+    [setAiWnCommentaryUnfiltered],
+  )
+
+  const setWnHighlight = useCallback(
+    (show: boolean) => {
+      setAiWnHighlight(show)
+      patchPreference({ ai_wn_highlight: show })
+    },
+    [setAiWnHighlight],
+  )
+
+  const setInsightsSignalChips = useCallback(
+    (show: boolean) => {
+      setAiInsightsSignalChips(show)
+      patchPreference({ ai_insights_signal_chips: show })
+    },
+    [setAiInsightsSignalChips],
+  )
+
+  const setInsightsScoreChips = useCallback(
+    (show: boolean) => {
+      setAiInsightsScoreChips(show)
+      patchPreference({ ai_insights_score_chips: show })
+    },
+    [setAiInsightsScoreChips],
   )
 
   return {
     mode: aiMode,
     setMode,
-    showScores: aiShowScores,
-    setShowScores,
-    showSignals: aiShowSignals,
-    setShowSignals,
-    showWhatsNext: aiShowWhatsNext,
-    setShowWhatsNext,
     showInsights: aiShowInsights,
     setShowInsights,
-    showCommentary: aiShowCommentary,
-    setShowCommentary,
+    wnCommentaryUnfiltered: aiWnCommentaryUnfiltered,
+    setWnCommentaryUnfiltered,
+    wnHighlight: aiWnHighlight,
+    setWnHighlight,
+    insightsSignalChips: aiInsightsSignalChips,
+    setInsightsSignalChips,
+    insightsScoreChips: aiInsightsScoreChips,
+    setInsightsScoreChips,
   }
 }

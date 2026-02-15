@@ -33,6 +33,37 @@ export function getDb(): Database.Database {
   return db
 }
 
+function hasColumn(database: Database.Database, table: string, column: string): boolean {
+  const cols = database.pragma(`table_info(${table})`) as { name: string }[]
+  return cols.some((c) => c.name === column)
+}
+
+/**
+ * Run migrations for existing databases that need new columns.
+ * Each migration uses hasColumn() to be idempotent.
+ */
+function runMigrations(database: Database.Database): void {
+  // AI UX refactor: new preference columns (2026-02)
+  if (!hasColumn(database, 'users', 'ai_wn_commentary_unfiltered')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN ai_wn_commentary_unfiltered INTEGER NOT NULL DEFAULT 0',
+    )
+    // Preserve existing behavior: users who had WN annotations on should see them without filtering
+    database.exec('UPDATE users SET ai_wn_commentary_unfiltered = 1 WHERE ai_show_whats_next = 1')
+  }
+  if (!hasColumn(database, 'users', 'ai_wn_highlight')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_wn_highlight INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn(database, 'users', 'ai_insights_signal_chips')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN ai_insights_signal_chips INTEGER NOT NULL DEFAULT 1',
+    )
+  }
+  if (!hasColumn(database, 'users', 'ai_insights_score_chips')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_insights_score_chips INTEGER NOT NULL DEFAULT 1')
+  }
+}
+
 function initSchema(database: Database.Database): void {
   const schemaPath = path.join(__dirname, 'schema.sql')
 
@@ -52,6 +83,9 @@ function initSchema(database: Database.Database): void {
 
   // Execute schema (CREATE IF NOT EXISTS is idempotent)
   database.exec(schema)
+
+  // Run migrations for existing databases
+  runMigrations(database)
 }
 
 export function closeDb(): void {

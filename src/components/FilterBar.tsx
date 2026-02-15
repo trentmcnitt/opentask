@@ -13,17 +13,17 @@ import { SIGNAL_ICONS } from '@/components/TaskRow'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { Task } from '@/types'
 
-/** Ring color for signal chip selection indicator */
-function getSignalRingClass(key: string): string {
+/** Solid fill classes for selected signal chips */
+function getSignalSelectedClass(key: string): string {
   const map: Record<string, string> = {
-    review: 'ring-indigo-400',
-    stale: 'ring-zinc-400',
-    act_soon: 'ring-amber-400',
-    quick_win: 'ring-green-400',
-    vague: 'ring-blue-400',
-    misprioritized: 'ring-purple-400',
+    review: 'bg-indigo-600 text-white dark:bg-indigo-500',
+    stale: 'bg-zinc-600 text-white dark:bg-zinc-500',
+    act_soon: 'bg-amber-600 text-white dark:bg-amber-500',
+    quick_win: 'bg-green-600 text-white dark:bg-green-500',
+    vague: 'bg-blue-600 text-white dark:bg-blue-500',
+    misprioritized: 'bg-purple-600 text-white dark:bg-purple-500',
   }
-  return map[key] || 'ring-foreground'
+  return map[key] || 'bg-foreground text-background'
 }
 
 /**
@@ -59,8 +59,12 @@ export function FilterBar({
   aiFilterActive = false,
   aiFilterLoading = false,
   onToggleAiFilter,
-  // Signal chips (visible when AI on + showSignals + data)
-  showSignals = false,
+  // Insights chip (visibility toggle in FilterBar)
+  insightsActive = false,
+  onToggleInsights,
+  hasInsightsData = false,
+  insightsSignalChipsVisible = true,
+  // Signal chips
   signalChips,
   selectedSignals = [],
   onSignalClick,
@@ -83,8 +87,12 @@ export function FilterBar({
   aiFilterActive?: boolean
   aiFilterLoading?: boolean
   onToggleAiFilter?: () => void
-  // Signal chips (visible when AI on + showSignals + data)
-  showSignals?: boolean
+  // Insights chip (visibility toggle in FilterBar)
+  insightsActive?: boolean
+  onToggleInsights?: () => void
+  hasInsightsData?: boolean
+  insightsSignalChipsVisible?: boolean
+  // Signal chips
   signalChips?: { key: string; label: string; count: number; description: string }[]
   selectedSignals?: string[]
   onSignalClick?: (key: string, e: React.MouseEvent) => void
@@ -111,9 +119,15 @@ export function FilterBar({
 
   const aiChipVisible =
     aiMode !== 'off' && onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0
+  const insightsChipVisible = aiMode !== 'off' && hasInsightsData && onToggleInsights
+  // Signal chips visible when Insights chip is ON, or when OFF + user preference allows it
   const signalRowVisible =
-    aiMode !== 'off' && showSignals && signalChips && signalChips.length > 0 && onSignalClick
-  const aiRowVisible = aiChipVisible || signalRowVisible
+    aiMode !== 'off' &&
+    signalChips &&
+    signalChips.length > 0 &&
+    onSignalClick &&
+    (insightsActive || insightsSignalChipsVisible)
+  const aiRowVisible = aiChipVisible || insightsChipVisible || signalRowVisible
 
   const hasSelection =
     selectedPriorities.length > 0 ||
@@ -139,7 +153,14 @@ export function FilterBar({
                   />
                 )}
 
-                {aiChipVisible && signalRowVisible && (
+                {insightsChipVisible && (
+                  <>
+                    {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+                    <InsightsChip active={insightsActive} onToggle={onToggleInsights!} />
+                  </>
+                )}
+
+                {(aiChipVisible || insightsChipVisible) && signalRowVisible && (
                   <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
                 )}
 
@@ -252,6 +273,23 @@ function AiChip({
   )
 }
 
+/** Insights visibility toggle chip (indigo accent). */
+function InsightsChip({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={cn(
+        'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'bg-indigo-600 text-white dark:bg-indigo-500'
+          : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900',
+      )}
+    >
+      Insights
+    </button>
+  )
+}
+
 /**
  * Signal chip row for Insight mode. Colored chips with multi-select and
  * Cmd+click exclusive select. Click a selected signal again to deselect.
@@ -351,7 +389,7 @@ function SignalChipButton({
       className={cn(
         'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         isSelected
-          ? cn(sig?.bg, sig?.text, 'ring-2', getSignalRingClass(chipKey))
+          ? getSignalSelectedClass(chipKey)
           : cn(sig?.bg, sig?.text, 'opacity-60 hover:opacity-80'),
       )}
       title={description}

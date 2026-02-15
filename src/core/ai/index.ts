@@ -12,6 +12,7 @@ export {
   getInsightsResults,
   hasInsightsResults,
   getActiveInsightsSession,
+  getLastInsightsDurationMs,
 } from './insights'
 export { buildTaskSummaries } from './task-summaries'
 export { getUserAiContext, getUserWhatsNextModel } from './user-context'

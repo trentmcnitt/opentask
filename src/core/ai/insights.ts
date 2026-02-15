@@ -570,6 +570,22 @@ const SESSION_STALE_TIMEOUT_MS = 20 * 60 * 1000
  * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
  * after server restarts kill background generation.
  */
+/**
+ * Get the duration in milliseconds of the most recent completed insights session.
+ */
+export function getLastInsightsDurationMs(userId: number): number | null {
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT started_at, finished_at FROM ai_insights_sessions
+       WHERE user_id = ? AND status = 'complete' AND finished_at IS NOT NULL
+       ORDER BY finished_at DESC LIMIT 1`,
+    )
+    .get(userId) as { started_at: string; finished_at: string } | undefined
+  if (!row) return null
+  return new Date(row.finished_at).getTime() - new Date(row.started_at).getTime()
+}
+
 export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
   const row = db

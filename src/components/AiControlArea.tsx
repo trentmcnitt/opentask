@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, Eye, EyeOff, RefreshCw, Sparkles } from 'lucide-react'
+import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -13,24 +13,26 @@ import type { AiMode } from '@/hooks/useAiMode'
 interface AiControlAreaProps {
   mode: AiMode
   onModeChange: (mode: AiMode) => void
-  showScores: boolean
-  onShowScoresChange: (show: boolean) => void
-  showSignals: boolean
-  onShowSignalsChange: (show: boolean) => void
-  showWhatsNext: boolean
-  onShowWhatsNextChange: (show: boolean) => void
-  showInsights: boolean
-  onShowInsightsChange: (show: boolean) => void
-  showCommentary: boolean
-  onShowCommentaryChange: (show: boolean) => void
-  // What's Next
+  // What's Next preferences
+  wnCommentaryUnfiltered: boolean
+  onWnCommentaryUnfilteredChange: (show: boolean) => void
+  wnHighlight: boolean
+  onWnHighlightChange: (show: boolean) => void
+  // Insights preferences (when Insights chip is off)
+  insightsSignalChips: boolean
+  onInsightsSignalChipsChange: (show: boolean) => void
+  insightsScoreChips: boolean
+  onInsightsScoreChipsChange: (show: boolean) => void
+  // What's Next status
   annotationGeneratedAt: string | null
+  annotationDurationMs: number | null
   annotationFreshnessText: string | null
   annotationRefreshLoading: boolean
   annotationError: string | null
   onRefreshAnnotations: () => void
-  // Insights
+  // Insights status
   insightsGeneratedAt: string | null
+  insightsDurationMs: number | null
   insightsGenerating: boolean
   insightsProgress: number
   insightsCompletedTasks: number
@@ -56,22 +58,22 @@ interface AiControlAreaProps {
 export function AiControlArea({
   mode,
   onModeChange,
-  showScores,
-  onShowScoresChange,
-  showSignals,
-  onShowSignalsChange,
-  showWhatsNext,
-  onShowWhatsNextChange,
-  showInsights,
-  onShowInsightsChange,
-  showCommentary,
-  onShowCommentaryChange,
+  wnCommentaryUnfiltered,
+  onWnCommentaryUnfilteredChange,
+  wnHighlight,
+  onWnHighlightChange,
+  insightsSignalChips,
+  onInsightsSignalChipsChange,
+  insightsScoreChips,
+  onInsightsScoreChipsChange,
   annotationGeneratedAt,
+  annotationDurationMs,
   annotationFreshnessText,
   annotationRefreshLoading,
   annotationError,
   onRefreshAnnotations,
   insightsGeneratedAt,
+  insightsDurationMs,
   insightsGenerating,
   insightsProgress,
   insightsCompletedTasks,
@@ -140,21 +142,32 @@ export function AiControlArea({
             label="What's Next"
             freshnessText={annotationFreshnessText}
             generatedAt={annotationGeneratedAt}
+            durationMs={annotationDurationMs}
             refreshing={annotationRefreshLoading}
             onRefresh={handleRefreshAnnotations}
             active={isActive}
             color="blue"
           />
-          <div className="mt-1.5">
-            <FeatureCheckbox
-              label="Task annotations"
-              description="Short AI notes on each task"
-              checked={showWhatsNext}
-              onChange={onShowWhatsNextChange}
-              disabled={!isActive}
-              color="blue"
-            />
-          </div>
+          {isActive && (
+            <div className="mt-1.5 space-y-2.5">
+              <FeatureCheckbox
+                label="Show commentary when not filtering"
+                description="Display annotations on all What's Next tasks"
+                checked={wnCommentaryUnfiltered}
+                onChange={onWnCommentaryUnfilteredChange}
+                disabled={false}
+                color="blue"
+              />
+              <FeatureCheckbox
+                label="Show background highlight"
+                description="Subtle color on What's Next tasks"
+                checked={wnHighlight}
+                onChange={onWnHighlightChange}
+                disabled={false}
+                color="blue"
+              />
+            </div>
+          )}
           {isActive && annotationRefreshLoading && (
             <div className="mt-2">
               <div className="bg-muted h-1.5 overflow-hidden rounded-full">
@@ -176,97 +189,51 @@ export function AiControlArea({
         {/* Divider */}
         <div className="my-3 border-t" />
 
-        {/* Insights section (indigo accent) */}
+        {/* Insights section (indigo accent) — settings + refresh only */}
         <div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  'text-xs font-semibold',
-                  isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted-foreground',
-                )}
-              >
-                Insights
-              </span>
-              {isActive && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onShowInsightsChange(!showInsights)
-                  }}
-                  className={cn(
-                    'rounded-full p-0.5 transition-colors',
-                    showInsights
-                      ? 'text-muted-foreground hover:text-foreground'
-                      : 'text-muted-foreground/40 hover:text-muted-foreground',
-                  )}
-                  aria-label={showInsights ? 'Hide insights' : 'Show insights'}
-                >
-                  {showInsights ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                </button>
-              )}
-            </div>
-            {isActive && showInsights && (
-              <div className="flex items-center gap-1.5">
-                {!insightsGenerating &&
-                  (insightsFreshnessText ? (
-                    <FreshnessWithTooltip
-                      freshnessText={insightsFreshnessText}
-                      generatedAt={insightsGeneratedAt}
-                    />
-                  ) : (
-                    <span className="text-muted-foreground/50 text-[11px]">Not generated</span>
-                  ))}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleRefreshInsights()
-                  }}
-                  disabled={insightsGenerating}
-                  className="text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors disabled:opacity-40"
-                  aria-label="Refresh insights"
-                >
-                  <RefreshCw className={cn('size-3', insightsGenerating && 'animate-spin')} />
-                </button>
-              </div>
-            )}
-          </div>
+          <SectionHeader
+            label="Insights"
+            freshnessText={insightsFreshnessText}
+            generatedAt={insightsGeneratedAt}
+            durationMs={insightsDurationMs}
+            refreshing={insightsGenerating}
+            onRefresh={handleRefreshInsights}
+            active={isActive}
+            color="indigo"
+          />
 
-          {/* Checkboxes always visible when AI is on (disabled when insights eye is off) */}
+          {/* Preferences for what shows in the FilterBar when Insights chip is off */}
           {isActive && (
-            <div className="mt-1.5 space-y-2.5">
-              <FeatureCheckbox
-                label="Attention scores"
-                description="Priority scores from 0–100"
-                checked={showScores}
-                onChange={onShowScoresChange}
-                disabled={!showInsights}
-                color="indigo"
-              />
-              <FeatureCheckbox
-                label="Signal tags"
-                description="Stale, Quick Win, Review, etc."
-                checked={showSignals}
-                onChange={onShowSignalsChange}
-                disabled={!showInsights}
-                color="indigo"
-              />
-              <FeatureCheckbox
-                label="Commentary"
-                description="Detailed per-task analysis"
-                checked={showCommentary}
-                onChange={onShowCommentaryChange}
-                disabled={!showInsights}
-                color="indigo"
-              />
+            <div className="mt-2">
+              <p className="text-muted-foreground mb-1.5 text-[11px]">
+                When Insights is off, show:
+              </p>
+              <div className="space-y-2.5">
+                <FeatureCheckbox
+                  label="Signal counts"
+                  description="Stale, Quick Win, Review chips"
+                  checked={insightsSignalChips}
+                  onChange={onInsightsSignalChipsChange}
+                  disabled={false}
+                  color="indigo"
+                />
+                <FeatureCheckbox
+                  label="Score ranges"
+                  description="Attention score filter chips"
+                  checked={insightsScoreChips}
+                  onChange={onInsightsScoreChipsChange}
+                  disabled={false}
+                  color="indigo"
+                />
+              </div>
             </div>
           )}
 
-          {isActive && showInsights && insightsError && !insightsGenerating && (
+          {isActive && insightsError && !insightsGenerating && (
             <p className="mt-1.5 text-[11px] text-red-500">{insightsError}</p>
           )}
 
-          {/* Progress bar — visible even when insights eye is off since generation is in progress */}
+          {/* Progress bar — visible during generation */}
           {isActive && insightsGenerating && (
             <div className="mt-3">
               {insightsSingleCall ? (
@@ -307,6 +274,7 @@ function SectionHeader({
   label,
   freshnessText,
   generatedAt,
+  durationMs,
   refreshing,
   onRefresh,
   active,
@@ -315,6 +283,7 @@ function SectionHeader({
   label: string
   freshnessText: string | null
   generatedAt: string | null
+  durationMs?: number | null
   refreshing: boolean
   onRefresh: () => void
   active: boolean
@@ -341,7 +310,11 @@ function SectionHeader({
       {active && (
         <div className="flex items-center gap-1.5">
           {freshnessText ? (
-            <FreshnessWithTooltip freshnessText={freshnessText} generatedAt={generatedAt} />
+            <FreshnessWithTooltip
+              freshnessText={freshnessText}
+              generatedAt={generatedAt}
+              durationMs={durationMs}
+            />
           ) : (
             <span className="text-muted-foreground/50 text-[11px]">Not generated</span>
           )}
@@ -362,42 +335,55 @@ function SectionHeader({
   )
 }
 
+/** Format a duration in ms as a human-readable string (e.g. "took 47s", "took 2m 15s") */
+function formatDuration(ms: number): string {
+  const totalSec = Math.round(ms / 1000)
+  if (totalSec < 60) return `took ${totalSec}s`
+  const mins = Math.floor(totalSec / 60)
+  const secs = totalSec % 60
+  return secs > 0 ? `took ${mins}m ${secs}s` : `took ${mins}m`
+}
+
 /**
  * Freshness text with absolute-time tooltip.
- * Desktop: hover shows tooltip. Mobile: tap toggles to absolute time briefly.
+ * Desktop: hover shows tooltip. Mobile: tap opens/closes tooltip.
+ * Uses controlled open state so click works on touch devices
+ * (Radix Tooltip is hover-only by default).
  */
 function FreshnessWithTooltip({
   freshnessText,
   generatedAt,
+  durationMs,
 }: {
   freshnessText: string
   generatedAt: string | null
+  durationMs?: number | null
 }) {
-  const [showAbsolute, setShowAbsolute] = useState(false)
+  const [open, setOpen] = useState(false)
   const absoluteTime = generatedAt ? formatAbsoluteTime(generatedAt) : null
 
   if (!absoluteTime) {
-    return <span className="text-muted-foreground text-[11px]">{freshnessText}</span>
+    return <span className="text-muted-foreground text-[11px] select-none">{freshnessText}</span>
   }
 
+  const tooltipText = durationMs ? `${absoluteTime} (${formatDuration(durationMs)})` : absoluteTime
+
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="text-muted-foreground cursor-default text-[11px]"
+          className="text-muted-foreground cursor-default text-[11px] select-none"
           onClick={(e) => {
-            // Mobile: toggle to absolute time on tap, revert after 2s
             e.stopPropagation()
-            setShowAbsolute(true)
-            setTimeout(() => setShowAbsolute(false), 2000)
+            setOpen((prev) => !prev)
           }}
         >
-          {showAbsolute ? absoluteTime : freshnessText}
+          {freshnessText}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={4}>
-        {absoluteTime}
+        {tooltipText}
       </TooltipContent>
     </Tooltip>
   )

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     if (!refresh) {
       const cached = getCachedWhatsNext(user.id)
       if (cached) {
-        return success(cached)
+        return success({ ...cached.result, duration_ms: cached.durationMs })
       }
     }
 
@@ -48,7 +48,9 @@ export async function GET(request: NextRequest) {
       return serviceUnavailable('Failed to generate recommendations')
     }
 
-    return success(result)
+    // Re-fetch from cache to get the logged duration_ms
+    const fresh = getCachedWhatsNext(user.id)
+    return success({ ...result, duration_ms: fresh?.durationMs ?? null })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'GET /api/ai/whats-next error:', err)
