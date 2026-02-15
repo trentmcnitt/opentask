@@ -162,7 +162,9 @@ Surface 0-8 tasks and return the JSON result.`
  * Returns the most recent successful What's Next result from today,
  * or null if none exists or it's stale.
  */
-export function getCachedWhatsNext(userId: number): WhatsNextResult | null {
+export function getCachedWhatsNext(
+  userId: number,
+): { result: WhatsNextResult; durationMs: number | null } | null {
   const entries = getAIActivity(userId, { action: 'whats_next', limit: 1 })
   if (entries.length === 0) return null
 
@@ -176,7 +178,9 @@ export function getCachedWhatsNext(userId: number): WhatsNextResult | null {
 
   try {
     const parsed = WhatsNextResultSchema.safeParse(JSON.parse(entry.output))
-    if (parsed.success) return parsed.data
+    if (parsed.success) {
+      return { result: parsed.data, durationMs: entry.duration_ms ?? null }
+    }
   } catch {
     // Invalid cached data
   }

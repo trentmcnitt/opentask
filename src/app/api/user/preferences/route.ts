@@ -13,7 +13,7 @@ import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
-const VALID_GROUPINGS = ['time', 'project'] as const
+const VALID_GROUPINGS = ['time', 'project', 'unified'] as const
 const VALID_AI_MODES = ['off', 'on'] as const
 const VALID_WHATS_NEXT_MODELS = ['haiku', 'claude-opus-4-6'] as const
 
@@ -56,53 +56,10 @@ export async function GET(request: NextRequest) {
     if (!user) return unauthorized()
 
     const db = getDb()
-    const row = db
-      .prepare(
-        'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model FROM users WHERE id = ?',
-      )
-      .get(user.id) as
-      | {
-          default_grouping: string
-          label_config: string
-          priority_display: string
-          auto_snooze_minutes: number
-          default_snooze_option: string
-          morning_time: string
-          wake_time: string
-          sleep_time: string
-          ai_context: string | null
-          ai_mode: string
-          ai_show_scores: number
-          ai_show_signals: number
-          ai_show_whats_next: number
-          ai_show_insights: number
-          ai_show_commentary: number
-          ai_whats_next_model: string
-        }
-      | undefined
+    const row = db.prepare(PREFERENCES_SELECT).get(user.id) as PreferencesRow | undefined
+    if (!row) return success(formatPreferencesResponse(DEFAULT_PREFERENCES_ROW))
 
-    const { labelConfig, priorityDisplay } = parsePreferencesRow(
-      row ?? { label_config: '', priority_display: '' },
-    )
-
-    return success({
-      default_grouping: row?.default_grouping ?? 'project',
-      label_config: labelConfig,
-      priority_display: priorityDisplay,
-      auto_snooze_minutes: row?.auto_snooze_minutes ?? 30,
-      default_snooze_option: row?.default_snooze_option ?? '60',
-      morning_time: row?.morning_time ?? '09:00',
-      wake_time: row?.wake_time ?? '07:00',
-      sleep_time: row?.sleep_time ?? '22:00',
-      ai_context: row?.ai_context ?? null,
-      ai_mode: row?.ai_mode ?? 'on',
-      ai_show_scores: row?.ai_show_scores !== 0,
-      ai_show_signals: row?.ai_show_signals !== 0,
-      ai_show_whats_next: row?.ai_show_whats_next !== 0,
-      ai_show_insights: row?.ai_show_insights !== 0,
-      ai_show_commentary: row?.ai_show_commentary !== 0,
-      ai_whats_next_model: row?.ai_whats_next_model ?? 'haiku',
-    })
+    return success(formatPreferencesResponse(row))
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'GET /api/user/preferences error:', err)
@@ -309,6 +266,33 @@ function validateAiFields(
     params.push(body.ai_whats_next_model)
   }
 
+  if (body.ai_wn_commentary_unfiltered !== undefined) {
+    if (typeof body.ai_wn_commentary_unfiltered !== 'boolean')
+      return 'ai_wn_commentary_unfiltered must be a boolean'
+    updates.push('ai_wn_commentary_unfiltered = ?')
+    params.push(body.ai_wn_commentary_unfiltered ? 1 : 0)
+  }
+
+  if (body.ai_wn_highlight !== undefined) {
+    if (typeof body.ai_wn_highlight !== 'boolean') return 'ai_wn_highlight must be a boolean'
+    updates.push('ai_wn_highlight = ?')
+    params.push(body.ai_wn_highlight ? 1 : 0)
+  }
+
+  if (body.ai_insights_signal_chips !== undefined) {
+    if (typeof body.ai_insights_signal_chips !== 'boolean')
+      return 'ai_insights_signal_chips must be a boolean'
+    updates.push('ai_insights_signal_chips = ?')
+    params.push(body.ai_insights_signal_chips ? 1 : 0)
+  }
+
+  if (body.ai_insights_score_chips !== undefined) {
+    if (typeof body.ai_insights_score_chips !== 'boolean')
+      return 'ai_insights_score_chips must be a boolean'
+    updates.push('ai_insights_score_chips = ?')
+    params.push(body.ai_insights_score_chips ? 1 : 0)
+  }
+
   return null
 }
 
@@ -332,7 +316,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, default_snooze_option, morning_time, wake_time, sleep_time, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -351,6 +335,34 @@ interface PreferencesRow {
   ai_show_insights: number
   ai_show_commentary: number
   ai_whats_next_model: string
+  ai_wn_commentary_unfiltered: number
+  ai_wn_highlight: number
+  ai_insights_signal_chips: number
+  ai_insights_score_chips: number
+}
+
+/** Fallback row when user record is missing (should not happen in practice). */
+const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
+  default_grouping: 'project',
+  label_config: '[]',
+  priority_display: JSON.stringify(DEFAULT_PRIORITY_DISPLAY),
+  auto_snooze_minutes: 30,
+  default_snooze_option: '60',
+  morning_time: '09:00',
+  wake_time: '07:00',
+  sleep_time: '22:00',
+  ai_context: null,
+  ai_mode: 'on',
+  ai_show_scores: 1,
+  ai_show_signals: 1,
+  ai_show_whats_next: 1,
+  ai_show_insights: 1,
+  ai_show_commentary: 1,
+  ai_whats_next_model: 'haiku',
+  ai_wn_commentary_unfiltered: 0,
+  ai_wn_highlight: 1,
+  ai_insights_signal_chips: 1,
+  ai_insights_score_chips: 1,
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -372,6 +384,10 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_show_insights: row.ai_show_insights !== 0,
     ai_show_commentary: row.ai_show_commentary !== 0,
     ai_whats_next_model: row.ai_whats_next_model,
+    ai_wn_commentary_unfiltered: row.ai_wn_commentary_unfiltered !== 0,
+    ai_wn_highlight: row.ai_wn_highlight !== 0,
+    ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
+    ai_insights_score_chips: row.ai_insights_score_chips !== 0,
   }
 }
 

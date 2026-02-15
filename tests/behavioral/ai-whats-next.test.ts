@@ -240,8 +240,8 @@ describe('generateWhatsNext', () => {
     // getCachedWhatsNext should return the cached result
     const cached = getCachedWhatsNext(TEST_USER_ID)
     expect(cached).not.toBeNull()
-    expect(cached!.summary).toBe('Cached')
-    expect(cached!.tasks).toHaveLength(1)
+    expect(cached!.result.summary).toBe('Cached')
+    expect(cached!.result.tasks).toHaveLength(1)
   })
 })
 

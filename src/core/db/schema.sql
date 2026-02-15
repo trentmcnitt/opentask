@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS users (
   ai_show_insights INTEGER NOT NULL DEFAULT 1,
   ai_show_commentary INTEGER NOT NULL DEFAULT 1,
   ai_whats_next_model TEXT NOT NULL DEFAULT 'haiku',
+  ai_wn_commentary_unfiltered INTEGER NOT NULL DEFAULT 0,
+  ai_wn_highlight INTEGER NOT NULL DEFAULT 1,
+  ai_insights_signal_chips INTEGER NOT NULL DEFAULT 1,
+  ai_insights_score_chips INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

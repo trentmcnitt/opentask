@@ -18,6 +18,8 @@ export interface UseAiInsightsReturn {
   freshnessText: string | null
   /** Raw ISO timestamp from generation, for tooltip display */
   generatedAt: string | null
+  /** Duration in ms of the last generation */
+  durationMs: number | null
   hasData: boolean
   /** Error message from the last failed refresh, cleared on next refresh() */
   error: string | null
@@ -35,6 +37,7 @@ export interface UseAiInsightsReturn {
  */
 export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
   const [data, setData] = useState<WhatsNextResult | null>(null)
+  const [durationMs, setDurationMs] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasFetched = useRef(false)
@@ -62,6 +65,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
       const json = await res.json()
       if (json.data) {
         setData(json.data)
+        setDurationMs(json.data.duration_ms ?? null)
         if (refresh) showAiSuccessToast("What's Next updated")
       }
     } catch {
@@ -114,6 +118,7 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
     loading,
     freshnessText,
     generatedAt: data?.generated_at || null,
+    durationMs,
     hasData,
     error,
     refresh,

@@ -7,7 +7,12 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { getInsightsResults, getActiveInsightsSession, INSIGHTS_SIGNALS } from '@/core/ai'
+import {
+  getInsightsResults,
+  getActiveInsightsSession,
+  getLastInsightsDurationMs,
+  INSIGHTS_SIGNALS,
+} from '@/core/ai'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
@@ -17,10 +22,12 @@ export async function GET(request: NextRequest) {
 
     const { results, generatedAt, signalCounts } = getInsightsResults(user.id)
     const activeSession = getActiveInsightsSession(user.id)
+    const durationMs = getLastInsightsDurationMs(user.id)
 
     return success({
       results,
       generated_at: generatedAt,
+      duration_ms: durationMs,
       signal_counts: signalCounts,
       signals: INSIGHTS_SIGNALS.map((s) => ({
         key: s.key,

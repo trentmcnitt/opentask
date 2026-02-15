@@ -351,7 +351,7 @@ function HomeContent() {
     selectedCount: selection.selectedIds.size,
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
-  const { defaultGrouping: grouping } = useDefaultGrouping()
+  const { defaultGrouping: grouping, setDefaultGrouping } = useDefaultGrouping()
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
@@ -375,16 +375,16 @@ function HomeContent() {
   const {
     mode: aiMode,
     setMode: setAiMode,
-    showScores,
-    setShowScores,
-    showSignals,
-    setShowSignals,
-    showWhatsNext,
-    setShowWhatsNext,
     showInsights,
     setShowInsights,
-    showCommentary,
-    setShowCommentary,
+    wnCommentaryUnfiltered,
+    setWnCommentaryUnfiltered,
+    wnHighlight,
+    setWnHighlight,
+    insightsSignalChips,
+    setInsightsSignalChips,
+    insightsScoreChips,
+    setInsightsScoreChips,
   } = useAiMode()
 
   // AI What's Next: fetch recommendations and resolve against current task list
@@ -393,41 +393,30 @@ function HomeContent() {
   // AI Insights: fetch/generate insights results
   const insightsData = useInsightsData(baseTasks)
 
-  // Separate refresh handlers for each AI system
-  const handleRefreshAnnotations = useCallback(() => {
-    aiInsights.refresh()
-  }, [aiInsights])
+  // Refresh handlers for each AI system (guards are in AiControlArea)
+  const handleRefreshAnnotations = aiInsights.refresh
 
-  const handleRefreshInsights = useCallback(() => {
-    if (!insightsData.generating) {
-      insightsData.generate()
-    }
-  }, [insightsData])
+  const handleRefreshInsights = insightsData.generate
 
-  // Mode change handler: switching to 'on' auto-generates insights if features checked and no data
+  // Mode change handler: switching to 'on' auto-generates insights if no data
   const handleModeChange = useCallback(
     (mode: AiMode) => {
       setAiMode(mode)
-      if (mode === 'on') {
-        const hasInsightsFeatures = showInsights && (showScores || showSignals || showCommentary)
-        if (hasInsightsFeatures && !insightsData.hasResults && !insightsData.generating) {
-          insightsData.generate()
-        }
-      }
-    },
-    [setAiMode, showInsights, showScores, showSignals, showCommentary, insightsData],
-  )
-
-  // Auto-trigger insights generation when user checks an insights feature and no insights data exists
-  const handleSubFeatureChange = useCallback(
-    (setter: (v: boolean) => void, value: boolean, isInsightsFeature: boolean) => {
-      setter(value)
-      if (value && isInsightsFeature && !insightsData.hasResults && !insightsData.generating) {
+      if (mode === 'on' && !insightsData.hasResults && !insightsData.generating) {
         insightsData.generate()
       }
     },
-    [insightsData],
+    [setAiMode, insightsData],
   )
+
+  // Insights chip toggle: when turning ON with no data, auto-generate
+  const handleInsightsChipToggle = useCallback(() => {
+    const newValue = !showInsights
+    setShowInsights(newValue)
+    if (newValue && !insightsData.hasResults && !insightsData.generating) {
+      insightsData.generate()
+    }
+  }, [showInsights, setShowInsights, insightsData])
 
   // What's Next AI filter toggle (filter task list to only AI-highlighted tasks)
   const [aiFilterActive, setAiFilterActive] = useState(false)
@@ -463,8 +452,8 @@ function HomeContent() {
       result = result.filter((t) => aiInsights.aiTaskIds.has(t.id))
     }
 
-    // Filter by selected signals (union/OR) when AI on + Insights visible
-    if (aiMode !== 'off' && showInsights && selectedSignals.length > 0) {
+    // Filter by selected signals (union/OR) — signal chips visible via Insights chip or preference
+    if (aiMode !== 'off' && selectedSignals.length > 0) {
       result = result.filter((t) => {
         const sigs = insightsData.insightsSignalMap.get(t.id)
         return sigs?.some((s) => selectedSignals.includes(s))
@@ -475,34 +464,45 @@ function HomeContent() {
   }, [
     displayTasks,
     aiMode,
-    showInsights,
     aiFilterActive,
     aiInsights.aiTaskIds,
     selectedSignals,
     insightsData.insightsSignalMap,
   ])
 
-  // Derive effective annotation map: What's Next annotations shown when AI on + "What's Next" checked
+  // WN annotations: shown when WN filter active OR wnCommentaryUnfiltered pref is on
   const effectiveAnnotationMap = useMemo(() => {
-    if (aiMode === 'off' || !showWhatsNext) return new Map<number, string>()
-    return aiInsights.annotationMap
-  }, [aiMode, showWhatsNext, aiInsights.annotationMap])
+    if (aiMode === 'off') return new Map<number, string>()
+    if (aiFilterActive || wnCommentaryUnfiltered) return aiInsights.annotationMap
+    return new Map<number, string>()
+  }, [aiMode, aiFilterActive, wnCommentaryUnfiltered, aiInsights.annotationMap])
 
-  // Insights commentary: shown when AI on + Insights visible + "Commentary" checked
+  // Insights commentary: shown when Insights chip is ON (all overlays together)
   const effectiveCommentaryMap = useMemo(() => {
-    if (aiMode === 'off' || !showInsights || !showCommentary) return new Map<number, string>()
+    if (aiMode === 'off' || !showInsights) return new Map<number, string>()
     return insightsData.annotationMap
-  }, [aiMode, showInsights, showCommentary, insightsData.annotationMap])
+  }, [aiMode, showInsights, insightsData.annotationMap])
+
+  // WN highlight: decoupled from annotation visibility — based on preference + WN task set
+  const showWnHighlight = aiMode !== 'off' && wnHighlight
 
   // Show annotations when AI mode is not off
   const showAnnotations = aiMode !== 'off'
 
-  // Sort fallback: if scores not visible and sorting by AI score, revert to due_date
+  // Sort fallback: if Insights chip off and sorting by AI score, revert to due_date
   useEffect(() => {
-    if ((!showScores || !showInsights) && sortOption === 'ai_insights') {
+    if (!showInsights && sortOption === 'ai_insights') {
       setSortOption('due_date')
     }
-  }, [showScores, showInsights, sortOption, setSortOption])
+  }, [showInsights, sortOption, setSortOption])
+
+  // Clear signal selections when signal chips become invisible to prevent hidden filtering
+  useEffect(() => {
+    const chipsVisible = aiMode !== 'off' && (showInsights || insightsSignalChips)
+    if (!chipsVisible && selectedSignals.length > 0) {
+      setSelectedSignals([])
+    }
+  }, [aiMode, showInsights, insightsSignalChips, selectedSignals.length])
 
   // Wrap clearAllFilters to also clear selection, AI filter, and signal filters
   const handleClearFilters = useCallback(() => {
@@ -730,7 +730,7 @@ function HomeContent() {
       tasks={tasks_}
       allTasks={baseTasks}
       projects={projects}
-      grouping={grouping}
+      grouping={sortOption === 'ai_insights' ? 'unified' : grouping}
       searchQuery={searchQuery}
       searchResultCount={searchResults.length}
       overdueCount={overdueCount}
@@ -806,16 +806,16 @@ function HomeContent() {
       }}
       aiMode={aiMode}
       onAiModeChange={handleModeChange}
-      showScores={showScores}
-      onShowScoresChange={(v: boolean) => handleSubFeatureChange(setShowScores, v, true)}
-      showSignals={showSignals}
-      onShowSignalsChange={(v: boolean) => handleSubFeatureChange(setShowSignals, v, true)}
-      showWhatsNext={showWhatsNext}
-      onShowWhatsNextChange={(v: boolean) => handleSubFeatureChange(setShowWhatsNext, v, false)}
       showInsights={showInsights}
-      onShowInsightsChange={setShowInsights}
-      showCommentary={showCommentary}
-      onShowCommentaryChange={(v: boolean) => handleSubFeatureChange(setShowCommentary, v, true)}
+      onToggleInsights={handleInsightsChipToggle}
+      wnCommentaryUnfiltered={wnCommentaryUnfiltered}
+      onWnCommentaryUnfilteredChange={setWnCommentaryUnfiltered}
+      wnHighlight={wnHighlight}
+      onWnHighlightChange={setWnHighlight}
+      insightsSignalChips={insightsSignalChips}
+      onInsightsSignalChipsChange={setInsightsSignalChips}
+      insightsScoreChips={insightsScoreChips}
+      onInsightsScoreChipsChange={setInsightsScoreChips}
       onRefreshAnnotations={handleRefreshAnnotations}
       onRefreshInsights={handleRefreshInsights}
       aiInsights={aiInsights}
@@ -825,11 +825,13 @@ function HomeContent() {
       effectiveAnnotationMap={effectiveAnnotationMap}
       effectiveCommentaryMap={effectiveCommentaryMap}
       showAnnotations={showAnnotations}
+      showWnHighlight={showWnHighlight}
       selectedSignals={selectedSignals}
       onSignalClick={handleSignalClick}
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
+      onUnifiedChange={(unified) => setDefaultGrouping(unified ? 'unified' : 'project')}
     />
   )
 }
@@ -897,16 +899,16 @@ function DashboardView({
   onBatchConfirm,
   aiMode,
   onAiModeChange,
-  showScores,
-  onShowScoresChange,
-  showSignals,
-  onShowSignalsChange,
-  showWhatsNext,
-  onShowWhatsNextChange,
   showInsights,
-  onShowInsightsChange,
-  showCommentary,
-  onShowCommentaryChange,
+  onToggleInsights,
+  wnCommentaryUnfiltered,
+  onWnCommentaryUnfilteredChange,
+  wnHighlight,
+  onWnHighlightChange,
+  insightsSignalChips,
+  onInsightsSignalChipsChange,
+  insightsScoreChips,
+  onInsightsScoreChipsChange,
   onRefreshAnnotations,
   onRefreshInsights,
   aiInsights,
@@ -916,11 +918,13 @@ function DashboardView({
   effectiveAnnotationMap,
   effectiveCommentaryMap,
   showAnnotations,
+  showWnHighlight,
   selectedSignals,
   onSignalClick,
   onSignalLongPress,
   onQuickActionDelete,
   onReprocess,
+  onUnifiedChange,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -985,16 +989,16 @@ function DashboardView({
   onBatchConfirm: () => void
   aiMode: AiMode
   onAiModeChange: (mode: AiMode) => void
-  showScores: boolean
-  onShowScoresChange: (show: boolean) => void
-  showSignals: boolean
-  onShowSignalsChange: (show: boolean) => void
-  showWhatsNext: boolean
-  onShowWhatsNextChange: (show: boolean) => void
   showInsights: boolean
-  onShowInsightsChange: (show: boolean) => void
-  showCommentary: boolean
-  onShowCommentaryChange: (show: boolean) => void
+  onToggleInsights: () => void
+  wnCommentaryUnfiltered: boolean
+  onWnCommentaryUnfilteredChange: (show: boolean) => void
+  wnHighlight: boolean
+  onWnHighlightChange: (show: boolean) => void
+  insightsSignalChips: boolean
+  onInsightsSignalChipsChange: (show: boolean) => void
+  insightsScoreChips: boolean
+  onInsightsScoreChipsChange: (show: boolean) => void
   onRefreshAnnotations: () => void
   onRefreshInsights: () => void
   aiInsights: UseAiInsightsReturn
@@ -1004,17 +1008,19 @@ function DashboardView({
   effectiveAnnotationMap: Map<number, string>
   effectiveCommentaryMap: Map<number, string>
   showAnnotations: boolean
+  showWnHighlight: boolean
   selectedSignals: string[]
   onSignalClick: (key: string, e: React.MouseEvent) => void
   onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
+  onUnifiedChange: (unified: boolean) => void
 }) {
   const anyFilterActive =
     selectedLabels.length > 0 ||
     selectedPriorities.length > 0 ||
     selectedDateFilters.length > 0 ||
     (aiMode !== 'off' && aiFilterActive) ||
-    (aiMode !== 'off' && showInsights && selectedSignals.length > 0)
+    (aiMode !== 'off' && selectedSignals.length > 0)
 
   return (
     <div className="flex flex-1 flex-col">
@@ -1050,22 +1056,22 @@ function DashboardView({
           <AiControlArea
             mode={aiMode}
             onModeChange={onAiModeChange}
-            showScores={showScores}
-            onShowScoresChange={onShowScoresChange}
-            showSignals={showSignals}
-            onShowSignalsChange={onShowSignalsChange}
-            showWhatsNext={showWhatsNext}
-            onShowWhatsNextChange={onShowWhatsNextChange}
-            showInsights={showInsights}
-            onShowInsightsChange={onShowInsightsChange}
-            showCommentary={showCommentary}
-            onShowCommentaryChange={onShowCommentaryChange}
+            wnCommentaryUnfiltered={wnCommentaryUnfiltered}
+            onWnCommentaryUnfilteredChange={onWnCommentaryUnfilteredChange}
+            wnHighlight={wnHighlight}
+            onWnHighlightChange={onWnHighlightChange}
+            insightsSignalChips={insightsSignalChips}
+            onInsightsSignalChipsChange={onInsightsSignalChipsChange}
+            insightsScoreChips={insightsScoreChips}
+            onInsightsScoreChipsChange={onInsightsScoreChipsChange}
             annotationGeneratedAt={aiInsights.generatedAt}
+            annotationDurationMs={aiInsights.durationMs}
             annotationFreshnessText={aiInsights.freshnessText}
             annotationRefreshLoading={aiInsights.loading}
             annotationError={aiInsights.error}
             onRefreshAnnotations={onRefreshAnnotations}
             insightsGeneratedAt={insightsData.generatedAt}
+            insightsDurationMs={insightsData.durationMs}
             insightsGenerating={insightsData.generating}
             insightsProgress={insightsData.progress}
             insightsCompletedTasks={insightsData.completedTasks}
@@ -1095,9 +1101,12 @@ function DashboardView({
           aiFilterActive={aiFilterActive}
           aiFilterLoading={aiInsights.loading}
           onToggleAiFilter={onToggleAiFilter}
-          showSignals={showSignals}
+          insightsActive={showInsights}
+          onToggleInsights={onToggleInsights}
+          hasInsightsData={insightsData.hasResults}
+          insightsSignalChipsVisible={insightsSignalChips}
           signalChips={
-            aiMode !== 'off' && showInsights && showSignals && insightsData.hasResults
+            aiMode !== 'off' && insightsData.hasResults
               ? insightsData.activeSignals.map((s) => ({
                   key: s.key,
                   label: s.label,
@@ -1152,22 +1161,20 @@ function DashboardView({
           onDoubleClick={onDoubleClick}
           annotationMap={effectiveAnnotationMap}
           showAnnotations={showAnnotations}
+          wnTaskIds={aiInsights.aiTaskIds}
+          showWnHighlight={showWnHighlight}
           onReprocess={onReprocess}
           insightsScoreMap={
-            showInsights && showScores && aiMode !== 'off'
-              ? insightsData.insightsScoreMap
-              : undefined
+            showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
           }
           insightsSignalMap={
-            showInsights && showSignals && aiMode !== 'off'
-              ? insightsData.insightsSignalMap
-              : undefined
+            showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
           }
           insightsCommentaryMap={
             effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
           }
           showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
-          aiScoreDisabled={!showInsights || !showScores || aiMode === 'off'}
+          aiScoreDisabled={!showInsights || aiMode === 'off'}
           headerLeft={
             tasks.length > 0 ? (
               <button
@@ -1188,6 +1195,7 @@ function DashboardView({
               </button>
             ) : undefined
           }
+          onUnifiedChange={onUnifiedChange}
         />
       </main>
 

@@ -22,6 +22,11 @@ export function toAuthUser(row: UserRow): AuthUser {
     email: row.email,
     name: row.name,
     timezone: row.timezone,
-    default_grouping: row.default_grouping === 'time' ? 'time' : 'project',
+    default_grouping:
+      row.default_grouping === 'time'
+        ? 'time'
+        : row.default_grouping === 'unified'
+          ? 'unified'
+          : 'project',
   }
 }

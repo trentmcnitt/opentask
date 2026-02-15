@@ -2,7 +2,7 @@
 
 // Selection integration via context
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { ArrowUpDown, ChevronDown } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Layers } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
 
-export type GroupingMode = 'time' | 'project'
+export type GroupingMode = 'time' | 'project' | 'unified'
 
 import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
@@ -77,6 +77,10 @@ interface TaskListProps {
   annotationMap?: Map<number, string>
   /** Whether to show annotation text below task metadata (sparkle icon always shows) */
   showAnnotations?: boolean
+  /** Set of task IDs in the What's Next set (for highlight, decoupled from annotations) */
+  wnTaskIds?: Set<number>
+  /** Whether to show the WN background highlight on tasks in wnTaskIds */
+  showWnHighlight?: boolean
   /** Called when user clicks retry on an ai-failed badge */
   onReprocess?: (taskId: number) => void
   /** Optional content rendered on the left side of the sort dropdown row */
@@ -93,6 +97,8 @@ interface TaskListProps {
   hideSortControl?: boolean
   /** Map of taskId -> insights commentary text (shown as indigo Lightbulb annotation) */
   insightsCommentaryMap?: Map<number, string>
+  /** Whether unified view is active (toggle callback) */
+  onUnifiedChange?: (unified: boolean) => void
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -214,6 +220,8 @@ export function TaskList({
   toggleCollapse: toggleCollapseProp,
   annotationMap,
   showAnnotations = false,
+  wnTaskIds,
+  showWnHighlight = false,
   onReprocess,
   headerLeft,
   insightsScoreMap,
@@ -222,6 +230,7 @@ export function TaskList({
   aiScoreDisabled: aiScoreDisabledProp,
   hideSortControl = false,
   insightsCommentaryMap,
+  onUnifiedChange,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -264,8 +273,16 @@ export function TaskList({
     )
   }
 
-  const groups =
-    grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
+  const isUnified = grouping === 'unified'
+
+  // Build a project name lookup for unified view (project badge on each task row)
+  const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+
+  const groups = isUnified
+    ? [{ label: '_unified', tasks }]
+    : grouping === 'project'
+      ? groupByProject(tasks, projects)
+      : groupByTime(tasks, timezone)
 
   // Build ordered ID list for range-select, applying the same sort as rendering
   const orderedIds = groups.flatMap((g) => {
@@ -293,75 +310,97 @@ export function TaskList({
       {!hideSortControl && (
         <div className="mb-4 flex items-center justify-between px-1">
           {headerLeft ?? <div />}
-          <SortDropdown
-            sortOption={sortOption}
-            reversed={reversed}
-            onSort={setSortOption}
-            showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
-            aiScoreDisabled={aiScoreDisabledProp ?? false}
-          />
+          <div className="flex items-center gap-1">
+            {onUnifiedChange && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'h-6 px-2 text-xs',
+                  isUnified
+                    ? 'text-foreground bg-muted font-medium'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => onUnifiedChange(!isUnified)}
+                title={isUnified ? 'Show grouped by project' : 'Show all tasks in one list'}
+              >
+                <Layers className="mr-1 size-3" />
+                Unified
+              </Button>
+            )}
+            <SortDropdown
+              sortOption={sortOption}
+              reversed={reversed}
+              onSort={setSortOption}
+              showAiInsights={showAiInsightsProp ?? !!insightsScoreMap}
+              aiScoreDisabled={aiScoreDisabledProp ?? false}
+            />
+          </div>
         </div>
       )}
-      <div className="space-y-6">
+      <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
         {groups.map((group, groupIdx) => {
           const sortedTasks = sortTasks(group.tasks, sortOption, reversed, insightsScoreMap)
-          const collapsed = isCollapsed(group.label)
+          const collapsed = !isUnified && isCollapsed(group.label)
 
           return (
             <section key={group.label}>
               {/* "Now" separator between Overdue and the next group */}
               {hasOverdue && hasUpcoming && groupIdx === 1 && <NowSeparator timezone={timezone} />}
 
-              <div
-                className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleCollapse(group.label)}
-                    aria-expanded={!collapsed}
-                    aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
-                    className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
-                  >
-                    <ChevronDown
-                      className={`size-3 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
-                    />
-                  </button>
-                  {!collapsed && selection.isSelectionMode && (
-                    <GroupCheckbox
-                      groupTaskIds={sortedTasks.map((t) => t.id)}
-                      selection={selection}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // When collapsed, clicking the label expands the group
-                      if (collapsed) {
-                        toggleCollapse(group.label)
-                        return
-                      }
-                      const ids = sortedTasks.map((t) => t.id)
-                      if (selection.isSelectionMode) {
-                        // Toggle: if all selected, deselect all; otherwise select all
-                        const allSelected = ids.every((id) => selection.selectedIds.has(id))
-                        if (allSelected) {
-                          selection.removeAll(ids)
+              {/* Skip group header in unified mode — all tasks render in a single flat list */}
+              {!isUnified && (
+                <div
+                  className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(group.label)}
+                      aria-expanded={!collapsed}
+                      aria-label={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
+                      className="text-muted-foreground hover:text-foreground -mr-1.5 flex items-center justify-center p-0.5 transition-colors"
+                    >
+                      <ChevronDown
+                        className={`size-3 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}
+                      />
+                    </button>
+                    {!collapsed && selection.isSelectionMode && (
+                      <GroupCheckbox
+                        groupTaskIds={sortedTasks.map((t) => t.id)}
+                        selection={selection}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // When collapsed, clicking the label expands the group
+                        if (collapsed) {
+                          toggleCollapse(group.label)
+                          return
+                        }
+                        const ids = sortedTasks.map((t) => t.id)
+                        if (selection.isSelectionMode) {
+                          // Toggle: if all selected, deselect all; otherwise select all
+                          const allSelected = ids.every((id) => selection.selectedIds.has(id))
+                          if (allSelected) {
+                            selection.removeAll(ids)
+                          } else {
+                            selection.addAll(ids)
+                          }
                         } else {
+                          // Enter selection mode and select all in this group
                           selection.addAll(ids)
                         }
-                      } else {
-                        // Enter selection mode and select all in this group
-                        selection.addAll(ids)
-                      }
-                    }}
-                    className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
-                  >
-                    {group.label}
-                    <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
-                  </button>
+                      }}
+                      className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
+                    >
+                      {group.label}
+                      <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               {!collapsed && (
                 <div className="space-y-1">
                   {sortedTasks.map((task) => {
@@ -395,11 +434,12 @@ export function TaskList({
                           onActivate={onActivate ? () => onActivate(task.id) : undefined}
                           onDoubleClick={onDoubleClick ? () => onDoubleClick(task) : undefined}
                           annotation={showAnnotations ? annotationMap?.get(task.id) : undefined}
-                          isAiHighlighted={annotationMap?.has(task.id)}
+                          isAiHighlighted={showWnHighlight && (wnTaskIds?.has(task.id) ?? false)}
                           onReprocess={onReprocess ? () => onReprocess(task.id) : undefined}
                           insightsScore={insightsScoreMap?.get(task.id)}
                           insightsSignals={insightsSignalMap?.get(task.id)}
                           insightsCommentary={insightsCommentaryMap?.get(task.id)}
+                          projectName={projectNameMap?.get(task.project_id)}
                         />
                       </SwipeableRow>
                     )
@@ -667,5 +707,6 @@ export function buildTaskGroups(
   grouping: GroupingMode,
   timezone: string,
 ): TaskGroup[] {
+  if (grouping === 'unified') return [{ label: '_unified', tasks }]
   return grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
 }

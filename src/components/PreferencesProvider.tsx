@@ -28,8 +28,8 @@ interface PreferencesContextValue {
   setWakeTime: (time: string) => void
   sleepTime: string
   setSleepTime: (time: string) => void
-  defaultGrouping: 'time' | 'project'
-  setDefaultGrouping: (grouping: 'time' | 'project') => void
+  defaultGrouping: 'time' | 'project' | 'unified'
+  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
   aiMode: AiMode
@@ -46,6 +46,14 @@ interface PreferencesContextValue {
   setAiShowCommentary: (show: boolean) => void
   aiWhatsNextModel: WhatsNextModel
   setAiWhatsNextModel: (model: WhatsNextModel) => void
+  aiWnCommentaryUnfiltered: boolean
+  setAiWnCommentaryUnfiltered: (show: boolean) => void
+  aiWnHighlight: boolean
+  setAiWnHighlight: (show: boolean) => void
+  aiInsightsSignalChips: boolean
+  setAiInsightsSignalChips: (show: boolean) => void
+  aiInsightsScoreChips: boolean
+  setAiInsightsScoreChips: (show: boolean) => void
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -81,6 +89,14 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiShowCommentary: () => {},
   aiWhatsNextModel: 'haiku',
   setAiWhatsNextModel: () => {},
+  aiWnCommentaryUnfiltered: false,
+  setAiWnCommentaryUnfiltered: () => {},
+  aiWnHighlight: true,
+  setAiWnHighlight: () => {},
+  aiInsightsSignalChips: true,
+  setAiInsightsSignalChips: () => {},
+  aiInsightsScoreChips: true,
+  setAiInsightsScoreChips: () => {},
 })
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
@@ -93,7 +109,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
-  const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project'>('time')
+  const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
+    'project',
+  )
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
@@ -102,6 +120,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiShowInsights, setAiShowInsightsState] = useState(true)
   const [aiShowCommentary, setAiShowCommentaryState] = useState(true)
   const [aiWhatsNextModel, setAiWhatsNextModelState] = useState<WhatsNextModel>('haiku')
+  const [aiWnCommentaryUnfiltered, setAiWnCommentaryUnfilteredState] = useState(false)
+  const [aiWnHighlight, setAiWnHighlightState] = useState(true)
+  const [aiInsightsSignalChips, setAiInsightsSignalChipsState] = useState(true)
+  const [aiInsightsScoreChips, setAiInsightsScoreChipsState] = useState(true)
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -165,6 +187,18 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             setAiWhatsNextModelState(model)
           }
         }
+        if (data?.data?.ai_wn_commentary_unfiltered !== undefined) {
+          setAiWnCommentaryUnfilteredState(data.data.ai_wn_commentary_unfiltered)
+        }
+        if (data?.data?.ai_wn_highlight !== undefined) {
+          setAiWnHighlightState(data.data.ai_wn_highlight)
+        }
+        if (data?.data?.ai_insights_signal_chips !== undefined) {
+          setAiInsightsSignalChipsState(data.data.ai_insights_signal_chips)
+        }
+        if (data?.data?.ai_insights_score_chips !== undefined) {
+          setAiInsightsScoreChipsState(data.data.ai_insights_score_chips)
+        }
       })
       .catch(() => {})
   }, [status])
@@ -187,7 +221,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         sleepTime,
         setSleepTime: setSleepTimeState,
         defaultGrouping,
-        setDefaultGrouping: setDefaultGroupingState,
+        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => {
+          setDefaultGroupingState(grouping)
+          fetch('/api/user/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ default_grouping: grouping }),
+          }).catch(() => {})
+        },
         aiContext,
         setAiContext: setAiContextState,
         aiMode,
@@ -204,6 +245,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiShowCommentary: setAiShowCommentaryState,
         aiWhatsNextModel,
         setAiWhatsNextModel: setAiWhatsNextModelState,
+        aiWnCommentaryUnfiltered,
+        setAiWnCommentaryUnfiltered: setAiWnCommentaryUnfilteredState,
+        aiWnHighlight,
+        setAiWnHighlight: setAiWnHighlightState,
+        aiInsightsSignalChips,
+        setAiInsightsSignalChips: setAiInsightsSignalChipsState,
+        aiInsightsScoreChips,
+        setAiInsightsScoreChips: setAiInsightsScoreChipsState,
       }}
     >
       {children}
@@ -262,6 +311,14 @@ export function useAiPreferences() {
     setAiShowCommentary,
     aiWhatsNextModel,
     setAiWhatsNextModel,
+    aiWnCommentaryUnfiltered,
+    setAiWnCommentaryUnfiltered,
+    aiWnHighlight,
+    setAiWnHighlight,
+    aiInsightsSignalChips,
+    setAiInsightsSignalChips,
+    aiInsightsScoreChips,
+    setAiInsightsScoreChips,
   } = useContext(PreferencesContext)
   return {
     aiMode,
@@ -278,5 +335,13 @@ export function useAiPreferences() {
     setAiShowCommentary,
     aiWhatsNextModel,
     setAiWhatsNextModel,
+    aiWnCommentaryUnfiltered,
+    setAiWnCommentaryUnfiltered,
+    aiWnHighlight,
+    setAiWnHighlight,
+    aiInsightsSignalChips,
+    setAiInsightsSignalChips,
+    aiInsightsScoreChips,
+    setAiInsightsScoreChips,
   }
 }

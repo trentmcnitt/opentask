@@ -9,6 +9,7 @@ import {
   Check,
   Clock,
   Eye,
+  FolderOpen,
   HelpCircle,
   Lightbulb,
   RefreshCw,
@@ -101,6 +102,8 @@ interface TaskRowProps {
   insightsSignals?: string[]
   /** Per-task insights commentary — shown as indigo text with Lightbulb icon */
   insightsCommentary?: string
+  /** Project name shown as a subtle badge on line 1 (used in unified view) */
+  projectName?: string
 }
 
 /** Signal icon + color mapping for AI insights indicators */
@@ -175,6 +178,7 @@ export function TaskRow({
   insightsScore,
   insightsSignals,
   insightsCommentary,
+  projectName,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -491,6 +495,18 @@ export function TaskRow({
                 onLabelClick={onLabelClick}
                 onReprocess={onReprocess}
               />
+            </span>
+          )}
+
+          {projectName && (
+            <span
+              className={cn(
+                'text-muted-foreground/60 flex shrink-0 items-center gap-0.5 text-[11px]',
+                iconHeight,
+              )}
+            >
+              <FolderOpen className="size-2.5" />
+              {projectName}
             </span>
           )}
         </div>

@@ -42,6 +42,8 @@ export interface UseInsightsDataReturn {
   singleCall: boolean
   /** Error message from the last failed generation attempt, cleared on next generate() */
   error: string | null
+  /** Duration in ms of the last completed generation */
+  durationMs: number | null
   /** ISO timestamp of when the current generation started (for elapsed timer continuity across refreshes) */
   generationStartedAt: string | null
   /** Start or refresh insights generation */
@@ -67,6 +69,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
   const [completedTasks, setCompletedTasks] = useState(0)
   const [singleCall, setSingleCall] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [durationMs, setDurationMs] = useState<number | null>(null)
   const [generationStartedAt, setGenerationStartedAt] = useState<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -82,6 +85,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
         setSignals(json.data.signals || [])
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
+        setDurationMs(json.data.duration_ms ?? null)
       }
     } catch {
       // Silently fail
@@ -240,6 +244,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
         setSignals(json.data.signals || [])
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
+        setDurationMs(json.data.duration_ms ?? null)
 
         // Resume polling if a session is actively running (e.g. page was refreshed mid-generation)
         const active = json.data.active_session
@@ -268,6 +273,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
     totalTasks,
     completedTasks,
     singleCall,
+    durationMs,
     generationStartedAt,
     annotationMap,
     insightsScoreMap,
