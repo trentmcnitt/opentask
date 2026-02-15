@@ -32,9 +32,9 @@ const recurrenceMode = z.enum(['from_due', 'from_completion'])
 const labels = z.array(z.string())
 
 /**
- * Auto-snooze minutes: null = use user default, 0 = off, 1-1440 = custom minutes
+ * Auto-snooze minutes: null = use user default, 0 = off, 1-360 = custom minutes
  */
-const autoSnoozeMinutes = z.number().int().min(0).max(1440).nullable()
+const autoSnoozeMinutes = z.number().int().min(0).max(360).nullable()
 
 /**
  * RRULE string validator

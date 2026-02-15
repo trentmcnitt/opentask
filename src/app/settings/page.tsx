@@ -24,6 +24,7 @@ import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
 import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
+import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 
 export default function SettingsPage() {
@@ -41,6 +42,8 @@ export default function SettingsPage() {
   const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
   const [showCustomSnooze, setShowCustomSnooze] = useState(false)
+  const [customAutoSnoozeMinutes, setCustomAutoSnoozeMinutes] = useState('')
+  const [showCustomAutoSnooze, setShowCustomAutoSnooze] = useState(false)
 
   // Sync draft from loaded preference (once, when a non-null value first arrives)
   useEffect(() => {
@@ -308,18 +311,81 @@ export default function SettingsPage() {
                 How often to repeat notifications for overdue tasks
               </div>
             </div>
-            <select
-              value={autoSnoozeDefault}
-              onChange={(e) => handleAutoSnoozeChange(Number(e.target.value))}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            >
-              <option value={1}>1 min</option>
-              <option value={5}>5 min</option>
-              <option value={10}>10 min</option>
-              <option value={15}>15 min</option>
-              <option value={30}>30 min</option>
-              <option value={60}>1 hour</option>
-            </select>
+            {showCustomAutoSnooze ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={360}
+                  value={customAutoSnoozeMinutes}
+                  onChange={(e) => setCustomAutoSnoozeMinutes(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const val = parseInt(customAutoSnoozeMinutes, 10)
+                      if (val >= 1 && val <= 360) {
+                        handleAutoSnoozeChange(val)
+                        setShowCustomAutoSnooze(false)
+                      }
+                    }
+                    if (e.key === 'Escape') setShowCustomAutoSnooze(false)
+                  }}
+                  className="h-8 w-20 text-sm"
+                  placeholder="min"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => {
+                    const val = parseInt(customAutoSnoozeMinutes, 10)
+                    if (val >= 1 && val <= 360) {
+                      handleAutoSnoozeChange(val)
+                      setShowCustomAutoSnooze(false)
+                    }
+                  }}
+                >
+                  Set
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  onClick={() => setShowCustomAutoSnooze(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <select
+                value={
+                  [1, 5, 10, 15, 30, 60].includes(autoSnoozeDefault) ? autoSnoozeDefault : 'custom'
+                }
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === 'custom') {
+                    setCustomAutoSnoozeMinutes(String(autoSnoozeDefault))
+                    setShowCustomAutoSnooze(true)
+                  } else {
+                    handleAutoSnoozeChange(Number(val))
+                  }
+                }}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value={1}>1 min</option>
+                <option value={5}>5 min</option>
+                <option value={10}>10 min</option>
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={60}>1 hour</option>
+                {![1, 5, 10, 15, 30, 60].includes(autoSnoozeDefault) && (
+                  <option value={autoSnoozeDefault}>
+                    {formatAutoSnoozeLabel(autoSnoozeDefault)}
+                  </option>
+                )}
+                <option value="custom">Custom...</option>
+              </select>
+            )}
           </div>
         </section>
 

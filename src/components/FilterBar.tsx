@@ -3,6 +3,7 @@ import { Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
+import { AttributeFilterBar } from '@/components/AttributeFilterBar'
 import {
   DueDateFilterBar,
   classifyTaskDueDate,
@@ -64,6 +65,10 @@ export function FilterBar({
   onToggleInsights,
   hasInsightsData = false,
   insightsSignalChipsVisible = true,
+  // Attribute filters (recurring, custom auto-snooze)
+  attributeFilters,
+  onToggleAttribute,
+  onExclusiveAttribute,
   // Signal chips
   signalChips,
   selectedSignals = [],
@@ -92,6 +97,10 @@ export function FilterBar({
   onToggleInsights?: () => void
   hasInsightsData?: boolean
   insightsSignalChipsVisible?: boolean
+  // Attribute filters (recurring, custom auto-snooze)
+  attributeFilters?: Set<string>
+  onToggleAttribute?: (key: string) => void
+  onExclusiveAttribute?: (key: string) => void
   // Signal chips
   signalChips?: { key: string; label: string; count: number; description: string }[]
   selectedSignals?: string[]
@@ -129,10 +138,13 @@ export function FilterBar({
     (insightsActive || insightsSignalChipsVisible)
   const aiRowVisible = aiChipVisible || insightsChipVisible || signalRowVisible
 
+  const hasAttributes = tasks.some((t) => t.rrule != null || t.auto_snooze_minutes != null)
+
   const hasSelection =
     selectedPriorities.length > 0 ||
     selectedLabels.length > 0 ||
     selectedDateFilters.length > 0 ||
+    (attributeFilters?.size ?? 0) > 0 ||
     aiFilterActive ||
     selectedSignals.length > 0
 
@@ -234,6 +246,18 @@ export function FilterBar({
               onToggleLabel={onToggleLabel}
               onExclusiveLabel={onExclusiveLabel}
             />
+          )}
+
+          {hasAttributes && onToggleAttribute && (
+            <>
+              <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+              <AttributeFilterBar
+                tasks={tasks}
+                attributeFilters={attributeFilters ?? new Set()}
+                onToggleAttribute={onToggleAttribute}
+                onExclusiveAttribute={onExclusiveAttribute}
+              />
+            </>
           )}
         </div>
       </div>

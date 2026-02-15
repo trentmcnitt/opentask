@@ -14,7 +14,7 @@ interface UserRow {
 
 /**
  * Convert a database user row to an AuthUser, coercing default_grouping
- * to the union type ('time' | 'project').
+ * to the union type ('time' | 'project' | 'unified').
  */
 export function toAuthUser(row: UserRow): AuthUser {
   return {
