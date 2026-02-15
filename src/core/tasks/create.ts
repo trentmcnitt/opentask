@@ -255,10 +255,10 @@ export function getTasks(options: GetTasksOptions): Task[] {
     conditions.push('tasks.rrule IS NULL')
   }
 
-  // Search by title
+  // Search by title and notes
   if (options.search) {
-    conditions.push('tasks.title LIKE ?')
-    params.push(`%${options.search}%`)
+    conditions.push('(tasks.title LIKE ? OR tasks.notes LIKE ?)')
+    params.push(`%${options.search}%`, `%${options.search}%`)
   }
 
   // Filter by label

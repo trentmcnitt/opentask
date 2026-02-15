@@ -15,6 +15,7 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
   const [selectedDateFilters, setSelectedDateFilters] = useState<DueDateFilter[]>([])
+  const [attributeFilters, setAttributeFilters] = useState<Set<string>>(new Set())
 
   const toggleLabel = useCallback(
     (label: string) => {
@@ -54,10 +55,24 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
     setSelectedDateFilters((prev) => (prev.length === 1 && prev[0] === filter ? [] : [filter]))
   }, [])
 
+  const toggleAttribute = useCallback((key: string) => {
+    setAttributeFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const exclusiveAttribute = useCallback((key: string) => {
+    setAttributeFilters((prev) => (prev.size === 1 && prev.has(key) ? new Set() : new Set([key])))
+  }, [])
+
   const clearAllFilters = useCallback(() => {
     setSelectedLabels([])
     setSelectedPriorities([])
     setSelectedDateFilters([])
+    setAttributeFilters(new Set())
   }, [])
 
   const filteredTasks = useMemo(() => {
@@ -76,19 +91,29 @@ export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStat
         return buckets.some((b) => selectedDateFilters.includes(b))
       })
     }
+    if (attributeFilters.size > 0) {
+      filtered = filtered.filter((t) => {
+        if (attributeFilters.has('recurring') && t.rrule != null) return true
+        if (attributeFilters.has('custom_auto_snooze') && t.auto_snooze_minutes != null) return true
+        return false
+      })
+    }
     return filtered
-  }, [tasks, selectedLabels, selectedPriorities, selectedDateFilters, timezone])
+  }, [tasks, selectedLabels, selectedPriorities, selectedDateFilters, timezone, attributeFilters])
 
   return {
     selectedLabels,
     selectedPriorities,
     selectedDateFilters,
+    attributeFilters,
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    toggleAttribute,
     exclusivePriority,
     exclusiveLabel,
     exclusiveDateFilter,
+    exclusiveAttribute,
     clearAllFilters,
     filteredTasks,
   }

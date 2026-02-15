@@ -43,9 +43,12 @@ export default function ProjectDetailPage() {
     selectedLabels,
     selectedPriorities,
     selectedDateFilters,
+    attributeFilters,
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    toggleAttribute,
+    exclusiveAttribute,
     clearAllFilters,
     filteredTasks: displayTasks,
   } = useFilterState({ tasks, timezone })
@@ -189,6 +192,9 @@ export default function ProjectDetailPage() {
           onToggleLabel={toggleLabel}
           onToggleDateFilter={toggleDateFilter}
           onClearAll={clearAllFilters}
+          attributeFilters={attributeFilters}
+          onToggleAttribute={toggleAttribute}
+          onExclusiveAttribute={exclusiveAttribute}
           timezone={timezone}
         />
         <TaskList

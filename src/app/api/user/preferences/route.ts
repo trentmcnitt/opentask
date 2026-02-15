@@ -124,7 +124,7 @@ function validateGeneralFields(
 ): string | null {
   if (body.default_grouping !== undefined) {
     if (!VALID_GROUPINGS.includes(body.default_grouping as (typeof VALID_GROUPINGS)[number]))
-      return 'default_grouping must be "time" or "project"'
+      return 'default_grouping must be "time", "project", or "unified"'
     updates.push('default_grouping = ?')
     params.push(body.default_grouping)
   }
@@ -145,8 +145,8 @@ function validateGeneralFields(
 
   if (body.auto_snooze_minutes !== undefined) {
     const val = body.auto_snooze_minutes
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440)
-      return 'auto_snooze_minutes must be an integer between 1 and 1440'
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 360)
+      return 'auto_snooze_minutes must be an integer between 1 and 360'
     updates.push('auto_snooze_minutes = ?')
     params.push(val)
   }

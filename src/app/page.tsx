@@ -361,12 +361,15 @@ function HomeContent() {
     selectedLabels,
     selectedPriorities,
     selectedDateFilters,
+    attributeFilters,
     toggleLabel,
     togglePriority,
     toggleDateFilter,
+    toggleAttribute,
     exclusivePriority,
     exclusiveLabel,
     exclusiveDateFilter,
+    exclusiveAttribute,
     clearAllFilters,
     filteredTasks: displayTasks,
   } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
@@ -513,7 +516,7 @@ function HomeContent() {
   }, [selection, clearAllFilters])
 
   // Build task groups for keyboard navigation
-  const effectiveGrouping = grouping
+  const effectiveGrouping = sortOption === 'ai_insights' ? 'unified' : grouping
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, effectiveGrouping, timezone),
     [tasks_, projects, effectiveGrouping, timezone],
@@ -749,6 +752,9 @@ function HomeContent() {
       onToggleDateFilter={toggleDateFilter}
       onExclusiveDateFilter={exclusiveDateFilter}
       onExclusiveLabel={exclusiveLabel}
+      attributeFilters={attributeFilters}
+      onToggleAttribute={toggleAttribute}
+      onExclusiveAttribute={exclusiveAttribute}
       timezone={timezone}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
@@ -859,6 +865,9 @@ function DashboardView({
   onToggleDateFilter,
   onExclusiveDateFilter,
   onExclusiveLabel,
+  attributeFilters,
+  onToggleAttribute,
+  onExclusiveAttribute,
   timezone,
   onSearch,
   onSearchClear,
@@ -948,6 +957,9 @@ function DashboardView({
   onToggleDateFilter: (filter: DueDateFilter) => void
   onExclusiveDateFilter: (filter: DueDateFilter) => void
   onExclusiveLabel: (label: string) => void
+  attributeFilters: Set<string>
+  onToggleAttribute: (key: string) => void
+  onExclusiveAttribute: (key: string) => void
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -1019,6 +1031,7 @@ function DashboardView({
     selectedLabels.length > 0 ||
     selectedPriorities.length > 0 ||
     selectedDateFilters.length > 0 ||
+    attributeFilters.size > 0 ||
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
@@ -1095,6 +1108,9 @@ function DashboardView({
           onToggleDateFilter={onToggleDateFilter}
           onExclusiveDateFilter={onExclusiveDateFilter}
           onClearAll={onClearFilters}
+          attributeFilters={attributeFilters}
+          onToggleAttribute={onToggleAttribute}
+          onExclusiveAttribute={onExclusiveAttribute}
           timezone={timezone}
           aiMode={aiMode}
           aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
