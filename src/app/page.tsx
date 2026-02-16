@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
@@ -40,9 +40,11 @@ import { useExitModes } from '@/hooks/useExitModes'
 
 export default function Home() {
   return (
-    <SelectionProvider>
-      <HomeContent />
-    </SelectionProvider>
+    <Suspense>
+      <SelectionProvider>
+        <HomeContent />
+      </SelectionProvider>
+    </Suspense>
   )
 }
 
@@ -261,6 +263,7 @@ function useBulkActions(
 function HomeContent() {
   const { status } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const selection = useSelection()
   const timezone = useTimezone()
   const data = useFetchData(router)
@@ -357,6 +360,22 @@ function HomeContent() {
 
   const baseTasks = searchQuery ? searchResults : tasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
+
+  // Support ?filter=overdue from notification links — read once, then clear from URL
+  const filterParamProcessed = useRef(false)
+  const initialDateFilters = useMemo(() => {
+    if (filterParamProcessed.current) return undefined
+    filterParamProcessed.current = true
+    const filter = searchParams.get('filter')
+    if (filter === 'overdue') return ['overdue'] as DueDateFilter[]
+    return undefined
+  }, [searchParams])
+  useEffect(() => {
+    if (searchParams.get('filter')) {
+      router.replace('/', { scroll: false })
+    }
+  }, [searchParams, router])
+
   const {
     selectedLabels,
     selectedPriorities,
@@ -372,7 +391,7 @@ function HomeContent() {
     exclusiveAttribute,
     clearAllFilters,
     filteredTasks: displayTasks,
-  } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone })
+  } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone, initialDateFilters })
 
   // AI mode: Off / On toggle + feature preferences
   const {

@@ -9,12 +9,20 @@ interface UseFilterStateOptions {
   tasks: Task[]
   onLabelToggle?: () => void
   timezone?: string
+  initialDateFilters?: DueDateFilter[]
 }
 
-export function useFilterState({ tasks, onLabelToggle, timezone }: UseFilterStateOptions) {
+export function useFilterState({
+  tasks,
+  onLabelToggle,
+  timezone,
+  initialDateFilters,
+}: UseFilterStateOptions) {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
-  const [selectedDateFilters, setSelectedDateFilters] = useState<DueDateFilter[]>([])
+  const [selectedDateFilters, setSelectedDateFilters] = useState<DueDateFilter[]>(
+    initialDateFilters ?? [],
+  )
   const [attributeFilters, setAttributeFilters] = useState<Set<string>>(new Set())
 
   const toggleLabel = useCallback(

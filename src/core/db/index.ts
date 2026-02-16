@@ -62,6 +62,21 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'ai_insights_score_chips')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_insights_score_chips INTEGER NOT NULL DEFAULT 1')
   }
+  // Priority-based notification intervals (2026-02)
+  if (!hasColumn(database, 'users', 'auto_snooze_urgent_minutes')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN auto_snooze_urgent_minutes INTEGER NOT NULL DEFAULT 5',
+    )
+  }
+  if (!hasColumn(database, 'users', 'auto_snooze_high_minutes')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15',
+    )
+  }
+  // Per-user Pushover notification key (2026-02)
+  if (!hasColumn(database, 'users', 'pushover_user_key')) {
+    database.exec('ALTER TABLE users ADD COLUMN pushover_user_key TEXT')
+  }
 }
 
 function initSchema(database: Database.Database): void {

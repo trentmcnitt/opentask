@@ -39,6 +39,31 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 02-15-26
+
+### Priority-Based Notification Icons
+
+**Problem:** All notifications used the same `icon-192.png` regardless of priority. High and Urgent notifications looked identical to routine ones, making it impossible to gauge severity at a glance from the notification shade.
+
+**Solution:** Generated icon variants using ImageMagick — the base sun logo with exclamation point badges overlaid. Selected V5 (synthwave neon glow, top-right) as the active set, with V4 (red circle badge) kept as backups.
+
+- `icon-192-high.png` — single `!` badge for P3 (High) tasks
+- `icon-192-urgent.png` — double `!!` badge for P4 (Urgent) and critical tasks
+- P0-P2 tasks continue using the default `icon-192.png`
+
+Wired into `sendIndividualNotification` (overdue checker), `sendCriticalNtfy` (critical alerts), and the test notification endpoint. Added a "High" test button in Settings so all icon variants can be verified from the phone.
+
+**Files touched:**
+
+- `public/icon-192-high.png`, `public/icon-192-urgent.png` — new V5 neon glow icons
+- `public/icon-192-high-v4.png`, `public/icon-192-urgent-v4.png` — V4 red badge backups
+- `src/core/notifications/overdue-checker.ts` — priority-based icon selection in `sendIndividualNotification`
+- `src/core/notifications/critical-alerts.ts` — use urgent icon for critical alerts
+- `src/app/api/notifications/test/route.ts` — added `high` type, updated critical icon
+- `src/app/settings/page.tsx` — added High test button
+
+---
+
 ## 02-11-26
 
 ### Bubble AI Input Pipeline Improvements

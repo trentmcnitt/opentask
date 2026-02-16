@@ -20,6 +20,10 @@ interface PreferencesContextValue {
   setPriorityDisplay: (config: PriorityDisplayConfig) => void
   autoSnoozeDefault: number
   setAutoSnoozeDefault: (minutes: number) => void
+  autoSnoozeUrgent: number
+  setAutoSnoozeUrgent: (minutes: number) => void
+  autoSnoozeHigh: number
+  setAutoSnoozeHigh: (minutes: number) => void
   defaultSnoozeOption: string
   setDefaultSnoozeOption: (option: string) => void
   morningTime: string
@@ -30,6 +34,12 @@ interface PreferencesContextValue {
   setSleepTime: (time: string) => void
   defaultGrouping: 'time' | 'project' | 'unified'
   setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
+  ntfyServer: string | null
+  setNtfyServer: (server: string | null) => void
+  ntfyTopic: string | null
+  setNtfyTopic: (topic: string | null) => void
+  pushoverUserKey: string | null
+  setPushoverUserKey: (key: string | null) => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
   aiMode: AiMode
@@ -63,6 +73,10 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setPriorityDisplay: () => {},
   autoSnoozeDefault: 30,
   setAutoSnoozeDefault: () => {},
+  autoSnoozeUrgent: 5,
+  setAutoSnoozeUrgent: () => {},
+  autoSnoozeHigh: 15,
+  setAutoSnoozeHigh: () => {},
   defaultSnoozeOption: '60',
   setDefaultSnoozeOption: () => {},
   morningTime: '09:00',
@@ -73,6 +87,12 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSleepTime: () => {},
   defaultGrouping: 'time',
   setDefaultGrouping: () => {},
+  ntfyServer: null,
+  setNtfyServer: () => {},
+  ntfyTopic: null,
+  setNtfyTopic: () => {},
+  pushoverUserKey: null,
+  setPushoverUserKey: () => {},
   aiContext: null,
   setAiContext: () => {},
   aiMode: 'on',
@@ -105,6 +125,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [priorityDisplay, setPriorityDisplayState] =
     useState<PriorityDisplayConfig>(DEFAULT_PRIORITY_DISPLAY)
   const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
+  const [autoSnoozeUrgent, setAutoSnoozeUrgentState] = useState(5)
+  const [autoSnoozeHigh, setAutoSnoozeHighState] = useState(15)
   const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
@@ -112,6 +134,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
     'project',
   )
+  const [ntfyServer, setNtfyServerState] = useState<string | null>(null)
+  const [ntfyTopic, setNtfyTopicState] = useState<string | null>(null)
+  const [pushoverUserKey, setPushoverUserKeyState] = useState<string | null>(null)
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
@@ -139,6 +164,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.auto_snooze_minutes) {
           setAutoSnoozeDefaultState(data.data.auto_snooze_minutes)
         }
+        if (data?.data?.auto_snooze_urgent_minutes) {
+          setAutoSnoozeUrgentState(data.data.auto_snooze_urgent_minutes)
+        }
+        if (data?.data?.auto_snooze_high_minutes) {
+          setAutoSnoozeHighState(data.data.auto_snooze_high_minutes)
+        }
         if (data?.data?.default_snooze_option) {
           setDefaultSnoozeOptionState(data.data.default_snooze_option)
         }
@@ -153,6 +184,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (data?.data?.default_grouping) {
           setDefaultGroupingState(data.data.default_grouping)
+        }
+        if (data?.data?.ntfy_server !== undefined) {
+          setNtfyServerState(data.data.ntfy_server)
+        }
+        if (data?.data?.ntfy_topic !== undefined) {
+          setNtfyTopicState(data.data.ntfy_topic)
+        }
+        if (data?.data?.pushover_user_key !== undefined) {
+          setPushoverUserKeyState(data.data.pushover_user_key)
         }
         if (data?.data?.ai_context !== undefined) {
           setAiContextState(data.data.ai_context)
@@ -212,6 +252,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setPriorityDisplay: setPriorityDisplayState,
         autoSnoozeDefault,
         setAutoSnoozeDefault: setAutoSnoozeDefaultState,
+        autoSnoozeUrgent,
+        setAutoSnoozeUrgent: setAutoSnoozeUrgentState,
+        autoSnoozeHigh,
+        setAutoSnoozeHigh: setAutoSnoozeHighState,
         defaultSnoozeOption,
         setDefaultSnoozeOption: setDefaultSnoozeOptionState,
         morningTime,
@@ -229,6 +273,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             body: JSON.stringify({ default_grouping: grouping }),
           }).catch(() => {})
         },
+        ntfyServer,
+        setNtfyServer: setNtfyServerState,
+        ntfyTopic,
+        setNtfyTopic: setNtfyTopicState,
+        pushoverUserKey,
+        setPushoverUserKey: setPushoverUserKeyState,
         aiContext,
         setAiContext: setAiContextState,
         aiMode,
@@ -270,8 +320,22 @@ export function usePriorityDisplay() {
 }
 
 export function useAutoSnoozeDefault() {
-  const { autoSnoozeDefault, setAutoSnoozeDefault } = useContext(PreferencesContext)
-  return { autoSnoozeDefault, setAutoSnoozeDefault }
+  const {
+    autoSnoozeDefault,
+    setAutoSnoozeDefault,
+    autoSnoozeUrgent,
+    setAutoSnoozeUrgent,
+    autoSnoozeHigh,
+    setAutoSnoozeHigh,
+  } = useContext(PreferencesContext)
+  return {
+    autoSnoozeDefault,
+    setAutoSnoozeDefault,
+    autoSnoozeUrgent,
+    setAutoSnoozeUrgent,
+    autoSnoozeHigh,
+    setAutoSnoozeHigh,
+  }
 }
 
 export function useSnoozePreferences() {
@@ -293,6 +357,25 @@ export function useDefaultGrouping() {
 export function useAiContext() {
   const { aiContext, setAiContext } = useContext(PreferencesContext)
   return { aiContext, setAiContext }
+}
+
+export function useNotificationConfig() {
+  const {
+    ntfyServer,
+    setNtfyServer,
+    ntfyTopic,
+    setNtfyTopic,
+    pushoverUserKey,
+    setPushoverUserKey,
+  } = useContext(PreferencesContext)
+  return {
+    ntfyServer,
+    setNtfyServer,
+    ntfyTopic,
+    setNtfyTopic,
+    pushoverUserKey,
+    setPushoverUserKey,
+  }
 }
 
 export function useAiPreferences() {
