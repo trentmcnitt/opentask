@@ -1421,10 +1421,21 @@ export function QuickActionPanel({
                   ))}
                 {/* Auto-snooze picker — per-task notification repeat interval */}
                 {(() => {
+                  // In bulk mode, compute common auto-snooze across selected tasks
+                  const bulkCommonAutoSnooze =
+                    isBulkMode &&
+                    selectedTasks &&
+                    selectedTasks.length > 1 &&
+                    selectedTasks.every(
+                      (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
+                    )
+                      ? (selectedTasks[0].auto_snooze_minutes ?? null)
+                      : null
                   const effectiveAutoSnooze =
                     pendingAutoSnooze !== undefined
                       ? pendingAutoSnooze
-                      : (effectiveTask?.auto_snooze_minutes ?? null)
+                      : (effectiveTask?.auto_snooze_minutes ??
+                        (isBulkMode ? bulkCommonAutoSnooze : null))
                   const isOff = effectiveAutoSnooze === 0
                   const isDefault = effectiveAutoSnooze === null
                   const effectiveMinutes = isDefault

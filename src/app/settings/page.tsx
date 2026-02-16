@@ -14,6 +14,7 @@ import {
   useAutoSnoozeDefault,
   useSnoozePreferences,
   useSchedulePreferences,
+  useNotificationConfig,
   useAiContext,
   useAiPreferences,
 } from '@/components/PreferencesProvider'
@@ -32,10 +33,25 @@ export default function SettingsPage() {
   const router = useRouter()
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
-  const { autoSnoozeDefault, setAutoSnoozeDefault } = useAutoSnoozeDefault()
+  const {
+    autoSnoozeDefault,
+    setAutoSnoozeDefault,
+    autoSnoozeUrgent,
+    setAutoSnoozeUrgent,
+    autoSnoozeHigh,
+    setAutoSnoozeHigh,
+  } = useAutoSnoozeDefault()
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
+  const {
+    ntfyServer,
+    setNtfyServer,
+    ntfyTopic,
+    setNtfyTopic,
+    pushoverUserKey,
+    setPushoverUserKey,
+  } = useNotificationConfig()
   const { aiContext, setAiContext } = useAiContext()
   const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
@@ -44,6 +60,20 @@ export default function SettingsPage() {
   const [showCustomSnooze, setShowCustomSnooze] = useState(false)
   const [customAutoSnoozeMinutes, setCustomAutoSnoozeMinutes] = useState('')
   const [showCustomAutoSnooze, setShowCustomAutoSnooze] = useState(false)
+  const [customAutoSnoozeUrgentMinutes, setCustomAutoSnoozeUrgentMinutes] = useState('')
+  const [showCustomAutoSnoozeUrgent, setShowCustomAutoSnoozeUrgent] = useState(false)
+  const [customAutoSnoozeHighMinutes, setCustomAutoSnoozeHighMinutes] = useState('')
+  const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
+  const [ntfyServerDraft, setNtfyServerDraft] = useState('')
+  const [ntfyTopicDraft, setNtfyTopicDraft] = useState('')
+  const [pushoverKeyDraft, setPushoverKeyDraft] = useState('')
+  const [ntfyConfigSynced, setNtfyConfigSynced] = useState(false)
+  const [pushoverValidation, setPushoverValidation] = useState<{
+    status: 'idle' | 'validating' | 'valid' | 'invalid'
+    devices?: string[]
+    error?: string
+  }>({ status: 'idle' })
+  const [testingSending, setTestingSending] = useState<string | null>(null)
 
   // Sync draft from loaded preference (once, when a non-null value first arrives)
   useEffect(() => {
@@ -52,6 +82,17 @@ export default function SettingsPage() {
       setAiContextSynced(true)
     }
   }, [aiContext, aiContextSynced])
+
+  // Sync notification config drafts from loaded preferences (once)
+  useEffect(() => {
+    if (ntfyConfigSynced) return
+    if (ntfyServer !== null || ntfyTopic !== null || pushoverUserKey !== null) {
+      setNtfyServerDraft(ntfyServer ?? '')
+      setNtfyTopicDraft(ntfyTopic ?? '')
+      setPushoverKeyDraft(pushoverUserKey ?? '')
+      setNtfyConfigSynced(true)
+    }
+  }, [ntfyServer, ntfyTopic, pushoverUserKey, ntfyConfigSynced])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -105,6 +146,40 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setAutoSnoozeDefault(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleAutoSnoozeUrgentChange = async (value: number) => {
+    const prev = autoSnoozeUrgent
+    setAutoSnoozeUrgent(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_snooze_urgent_minutes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setAutoSnoozeUrgent(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleAutoSnoozeHighChange = async (value: number) => {
+    const prev = autoSnoozeHigh
+    setAutoSnoozeHigh(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_snooze_high_minutes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setAutoSnoozeHigh(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -174,6 +249,66 @@ export default function SettingsPage() {
     } catch {
       setSleepTime(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const saveNotificationConfig = async (
+    field: string,
+    value: string | null,
+    setter: (v: string | null) => void,
+  ) => {
+    const prev =
+      field === 'ntfy_server' ? ntfyServer : field === 'ntfy_topic' ? ntfyTopic : pushoverUserKey
+    setter(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setter(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const validatePushoverKey = async () => {
+    const key = pushoverKeyDraft.trim()
+    if (!key) return
+    setPushoverValidation({ status: 'validating' })
+    try {
+      const res = await fetch('/api/notifications/validate-pushover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_key: key }),
+      })
+      const data = await res.json()
+      if (data.data?.valid) {
+        setPushoverValidation({ status: 'valid', devices: data.data.devices })
+      } else {
+        setPushoverValidation({ status: 'invalid', error: data.data?.error || 'Invalid key' })
+      }
+    } catch {
+      setPushoverValidation({ status: 'invalid', error: 'Validation request failed' })
+    }
+  }
+
+  const sendTestNotification = async (type: 'individual' | 'high' | 'bulk' | 'critical') => {
+    setTestingSending(type)
+    try {
+      const res = await fetch('/api/notifications/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type }),
+      })
+      if (!res.ok) throw new Error('Failed to send')
+      showToast({ message: `Test ${type} notification sent`, type: 'success' })
+    } catch {
+      showToast({ message: `Failed to send test notification`, type: 'error' })
+    } finally {
+      setTestingSending(null)
     }
   }
 
@@ -304,88 +439,203 @@ export default function SettingsPage() {
           <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
             Notifications
           </h2>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm">Auto-snooze interval</div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                How often to repeat notifications for overdue tasks
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            How often to repeat notifications for overdue tasks, by priority tier.
+          </p>
+          <div className="space-y-3">
+            {/* Default auto-snooze */}
+            <AutoSnoozeRow
+              label="Default auto-snooze"
+              description="Repeat interval for other overdue tasks"
+              value={autoSnoozeDefault}
+              customValue={customAutoSnoozeMinutes}
+              setCustomValue={setCustomAutoSnoozeMinutes}
+              showCustom={showCustomAutoSnooze}
+              setShowCustom={setShowCustomAutoSnooze}
+              onChange={handleAutoSnoozeChange}
+            />
+            {/* High auto-snooze */}
+            <AutoSnoozeRow
+              label="High auto-snooze"
+              description="Repeat interval for high (P3) overdue tasks"
+              value={autoSnoozeHigh}
+              customValue={customAutoSnoozeHighMinutes}
+              setCustomValue={setCustomAutoSnoozeHighMinutes}
+              showCustom={showCustomAutoSnoozeHigh}
+              setShowCustom={setShowCustomAutoSnoozeHigh}
+              onChange={handleAutoSnoozeHighChange}
+              labelColor="text-orange-500"
+            />
+            {/* Urgent auto-snooze */}
+            <AutoSnoozeRow
+              label="Urgent auto-snooze"
+              description="Repeat interval for urgent (P4) overdue tasks"
+              value={autoSnoozeUrgent}
+              customValue={customAutoSnoozeUrgentMinutes}
+              setCustomValue={setCustomAutoSnoozeUrgentMinutes}
+              showCustom={showCustomAutoSnoozeUrgent}
+              setShowCustom={setShowCustomAutoSnoozeUrgent}
+              onChange={handleAutoSnoozeUrgentChange}
+              labelColor="text-red-500"
+            />
+          </div>
+
+          {/* Notification Endpoints */}
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Notification Endpoints
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-sm">ntfy Server</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="url"
+                    value={ntfyServerDraft}
+                    onChange={(e) => setNtfyServerDraft(e.target.value)}
+                    placeholder="https://ntfy.sh"
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0"
+                    disabled={ntfyServerDraft === (ntfyServer ?? '')}
+                    onClick={() =>
+                      saveNotificationConfig(
+                        'ntfy_server',
+                        ntfyServerDraft.trim() || null,
+                        setNtfyServer,
+                      )
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm">ntfy Topic</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    value={ntfyTopicDraft}
+                    onChange={(e) => setNtfyTopicDraft(e.target.value)}
+                    placeholder="opentask"
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0"
+                    disabled={ntfyTopicDraft === (ntfyTopic ?? '')}
+                    onClick={() =>
+                      saveNotificationConfig(
+                        'ntfy_topic',
+                        ntfyTopicDraft.trim() || null,
+                        setNtfyTopic,
+                      )
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm">Pushover User Key</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    value={pushoverKeyDraft}
+                    onChange={(e) => {
+                      setPushoverKeyDraft(e.target.value)
+                      setPushoverValidation({ status: 'idle' })
+                    }}
+                    placeholder="Enter your Pushover user key"
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0"
+                    disabled={pushoverKeyDraft === (pushoverUserKey ?? '')}
+                    onClick={() =>
+                      saveNotificationConfig(
+                        'pushover_user_key',
+                        pushoverKeyDraft.trim() || null,
+                        setPushoverUserKey,
+                      )
+                    }
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0"
+                    disabled={
+                      !pushoverKeyDraft.trim() || pushoverValidation.status === 'validating'
+                    }
+                    onClick={validatePushoverKey}
+                  >
+                    {pushoverValidation.status === 'validating' ? 'Checking...' : 'Validate'}
+                  </Button>
+                </div>
+                {pushoverValidation.status === 'valid' && (
+                  <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                    Valid — devices: {pushoverValidation.devices?.join(', ') || 'none'}
+                  </p>
+                )}
+                {pushoverValidation.status === 'invalid' && (
+                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                    {pushoverValidation.error}
+                  </p>
+                )}
               </div>
             </div>
-            {showCustomAutoSnooze ? (
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={360}
-                  value={customAutoSnoozeMinutes}
-                  onChange={(e) => setCustomAutoSnoozeMinutes(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const val = parseInt(customAutoSnoozeMinutes, 10)
-                      if (val >= 1 && val <= 360) {
-                        handleAutoSnoozeChange(val)
-                        setShowCustomAutoSnooze(false)
-                      }
-                    }
-                    if (e.key === 'Escape') setShowCustomAutoSnooze(false)
-                  }}
-                  className="h-8 w-20 text-sm"
-                  placeholder="min"
-                  autoFocus
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => {
-                    const val = parseInt(customAutoSnoozeMinutes, 10)
-                    if (val >= 1 && val <= 360) {
-                      handleAutoSnoozeChange(val)
-                      setShowCustomAutoSnooze(false)
-                    }
-                  }}
-                >
-                  Set
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8"
-                  onClick={() => setShowCustomAutoSnooze(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <select
-                value={
-                  [1, 5, 10, 15, 30, 60].includes(autoSnoozeDefault) ? autoSnoozeDefault : 'custom'
-                }
-                onChange={(e) => {
-                  const val = e.target.value
-                  if (val === 'custom') {
-                    setCustomAutoSnoozeMinutes(String(autoSnoozeDefault))
-                    setShowCustomAutoSnooze(true)
-                  } else {
-                    handleAutoSnoozeChange(Number(val))
-                  }
-                }}
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          </div>
+
+          {/* Test Notifications */}
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Test Notifications
+            </h3>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Send a test notification to verify your endpoints are configured correctly.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingSending !== null}
+                onClick={() => sendTestNotification('individual')}
               >
-                <option value={1}>1 min</option>
-                <option value={5}>5 min</option>
-                <option value={10}>10 min</option>
-                <option value={15}>15 min</option>
-                <option value={30}>30 min</option>
-                <option value={60}>1 hour</option>
-                {![1, 5, 10, 15, 30, 60].includes(autoSnoozeDefault) && (
-                  <option value={autoSnoozeDefault}>
-                    {formatAutoSnoozeLabel(autoSnoozeDefault)}
-                  </option>
-                )}
-                <option value="custom">Custom...</option>
-              </select>
-            )}
+                {testingSending === 'individual' ? 'Sending...' : 'Individual'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingSending !== null}
+                onClick={() => sendTestNotification('high')}
+              >
+                {testingSending === 'high' ? 'Sending...' : 'High'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingSending !== null}
+                onClick={() => sendTestNotification('bulk')}
+              >
+                {testingSending === 'bulk' ? 'Sending...' : 'Bulk'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingSending !== null}
+                onClick={() => sendTestNotification('critical')}
+              >
+                {testingSending === 'critical' ? 'Sending...' : 'Critical'}
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -764,6 +1014,105 @@ function LabelEditor({
           Add
         </Button>
       </div>
+    </div>
+  )
+}
+
+const SNOOZE_PRESETS = [1, 5, 10, 15, 30, 60]
+
+function AutoSnoozeRow({
+  label,
+  description,
+  value,
+  customValue,
+  setCustomValue,
+  showCustom,
+  setShowCustom,
+  onChange,
+  labelColor,
+}: {
+  label: string
+  description: string
+  value: number
+  customValue: string
+  setCustomValue: (v: string) => void
+  showCustom: boolean
+  setShowCustom: (v: boolean) => void
+  onChange: (v: number) => void
+  labelColor?: string
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div className={`text-sm ${labelColor ?? ''}`}>{label}</div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">{description}</div>
+      </div>
+      {showCustom ? (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={360}
+            value={customValue}
+            onChange={(e) => setCustomValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const val = parseInt(customValue, 10)
+                if (val >= 1 && val <= 360) {
+                  onChange(val)
+                  setShowCustom(false)
+                }
+              }
+              if (e.key === 'Escape') setShowCustom(false)
+            }}
+            className="h-8 w-20 text-sm"
+            placeholder="min"
+            autoFocus
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => {
+              const val = parseInt(customValue, 10)
+              if (val >= 1 && val <= 360) {
+                onChange(val)
+                setShowCustom(false)
+              }
+            }}
+          >
+            Set
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={() => setShowCustom(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <select
+          value={value}
+          onChange={(e) => {
+            const val = e.target.value
+            if (val === 'custom') {
+              setCustomValue(String(value))
+              setShowCustom(true)
+            } else {
+              onChange(Number(val))
+            }
+          }}
+          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value={1}>1 min</option>
+          <option value={5}>5 min</option>
+          <option value={10}>10 min</option>
+          <option value={15}>15 min</option>
+          <option value={30}>30 min</option>
+          <option value={60}>1 hour</option>
+          {!SNOOZE_PRESETS.includes(value) && (
+            <option value={value}>{formatAutoSnoozeLabel(value)}</option>
+          )}
+          <option value="custom">Custom...</option>
+        </select>
+      )}
     </div>
   )
 }

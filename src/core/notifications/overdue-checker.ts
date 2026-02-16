@@ -1,16 +1,23 @@
 /**
- * Overdue task checker - runs every 30 minutes
+ * Overdue task checker - runs every minute
  *
  * Checks for overdue tasks and sends notifications via ntfy.
- * Features:
- * - 30-minute per-task cooldown to prevent spam
- * - Action buttons: Done, +30m, +1hr, +2hr
- * - Per-user notification routing via ntfy settings
+ *
+ * Notification strategy by priority:
+ * - P2+ (Medium/High/Urgent): Individual notification per task with action buttons
+ * - P0-P1 (Unset/Low), single task: Individual notification (same as P2+)
+ * - P0-P1 (Unset/Low), multiple tasks: Bulk summary linking to dashboard filtered by overdue
+ *
+ * Auto-snooze (notification repeat interval) by priority:
+ * - P4 (Urgent): user.auto_snooze_urgent_minutes (default 5 min)
+ * - P3 (High): user.auto_snooze_high_minutes (default 15 min)
+ * - P0-P2: user.auto_snooze_minutes (default 30 min)
+ * - Per-task auto_snooze_minutes override takes precedence over all tiers
  */
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { MEDIUM_PRIORITY_THRESHOLD, HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 
 const DEFAULT_NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
 const DEFAULT_NTFY_TOPIC = process.env.NTFY_TOPIC || 'opentask'
@@ -25,6 +32,8 @@ interface OverdueTask {
   last_notified_at: string | null
   auto_snooze_minutes: number | null
   user_auto_snooze_minutes: number
+  user_auto_snooze_urgent_minutes: number
+  user_auto_snooze_high_minutes: number
 }
 
 interface UserNotificationSettings {
@@ -34,21 +43,137 @@ interface UserNotificationSettings {
   api_token: string | null
 }
 
+/**
+ * Get the effective notification repeat interval for a task in minutes.
+ * Per-task override > priority-based user default.
+ */
+function getEffectiveInterval(task: OverdueTask): number {
+  if (task.auto_snooze_minutes !== null) return task.auto_snooze_minutes
+  if (task.priority >= 4) return task.user_auto_snooze_urgent_minutes
+  if (task.priority >= HIGH_PRIORITY_THRESHOLD) return task.user_auto_snooze_high_minutes
+  return task.user_auto_snooze_minutes
+}
+
+/** Check whether a task's cooldown has elapsed and it's eligible for notification. */
+function isEligibleForNotification(task: OverdueTask, now: Date): boolean {
+  if (!task.last_notified_at) return true
+  const interval = getEffectiveInterval(task)
+  if (interval === 0) return false
+  const lastNotified = new Date(task.last_notified_at)
+  const cooldownMs = interval * 60 * 1000
+  return now.getTime() - lastNotified.getTime() >= cooldownMs
+}
+
+/**
+ * Build ntfy action buttons for a specific task.
+ * ntfy supports max 3 action buttons. "Open" is handled by the Click header
+ * (tapping the notification body), so we use all 3 slots for: Done, +30m, +1hr.
+ */
+function buildTaskActions(task: OverdueTask, apiToken: string | null): NtfyAction[] {
+  if (!apiToken) return []
+
+  const actionBase = `${APP_URL}/api/notifications/actions`
+  return [
+    {
+      action: 'http',
+      label: 'Done',
+      url: actionBase,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'done', task_id: task.id, token: apiToken }),
+    },
+    {
+      action: 'http',
+      label: '+30m',
+      url: actionBase,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'snooze30', task_id: task.id, token: apiToken }),
+    },
+    {
+      action: 'http',
+      label: '+1hr',
+      url: actionBase,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'snooze', task_id: task.id, token: apiToken }),
+    },
+  ]
+}
+
+/** Send an individual notification for a single task. */
+async function sendIndividualNotification(
+  task: OverdueTask,
+  settings: UserNotificationSettings,
+  ntfyServer: string,
+  ntfyTopic: string,
+): Promise<void> {
+  const ntfyPriority = task.priority >= 4 ? 5 : task.priority >= HIGH_PRIORITY_THRESHOLD ? 4 : 3
+  const tags = task.priority >= HIGH_PRIORITY_THRESHOLD ? ['warning'] : []
+
+  const icon =
+    task.priority >= 4
+      ? `${APP_URL}/icon-192-urgent.png`
+      : task.priority >= HIGH_PRIORITY_THRESHOLD
+        ? `${APP_URL}/icon-192-high.png`
+        : `${APP_URL}/icon-192.png`
+
+  await sendNtfyNotification({
+    server: ntfyServer,
+    topic: ntfyTopic,
+    title: task.title,
+    message: 'Overdue task',
+    priority: ntfyPriority,
+    tags,
+    click: `${APP_URL}/tasks/${task.id}`,
+    icon,
+    actions: buildTaskActions(task, settings.api_token),
+  })
+}
+
+/** Send a bulk summary notification for multiple low-priority tasks. */
+async function sendBulkNotification(
+  tasks: OverdueTask[],
+  ntfyServer: string,
+  ntfyTopic: string,
+): Promise<void> {
+  const maxDisplay = 5
+  let message = ''
+  tasks.slice(0, maxDisplay).forEach((t) => {
+    message += `- ${t.title}\n`
+  })
+  if (tasks.length > maxDisplay) {
+    message += `... and ${tasks.length - maxDisplay} more`
+  }
+
+  await sendNtfyNotification({
+    server: ntfyServer,
+    topic: ntfyTopic,
+    title: `${tasks.length} overdue tasks`,
+    message: message.trim(),
+    priority: 3,
+    tags: [],
+    click: `${APP_URL}/?filter=overdue`,
+    icon: `${APP_URL}/icon-192.png`,
+    actions: [{ action: 'view', label: 'View All', url: `${APP_URL}/?filter=overdue` }],
+  })
+}
+
 export async function checkOverdueTasks(): Promise<void> {
   try {
     const db = getDb()
     const now = new Date()
 
-    // Get overdue tasks eligible for notification.
-    // Per-task interval: COALESCE(task.auto_snooze_minutes, user.auto_snooze_minutes).
-    // - last_notified_at IS NULL: initial notification (always send)
-    // - effective interval > 0 AND cooldown elapsed: repeat notification
-    // - effective interval = 0 AND already notified: excluded (one-shot)
+    // Fetch all overdue tasks. Cooldown filtering is done in JS because the
+    // repeat interval varies by task priority (urgent=5m, high=15m, default=30m).
     const overdueTasks = db
       .prepare(
         `
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id, t.last_notified_at,
-               t.auto_snooze_minutes, u.auto_snooze_minutes as user_auto_snooze_minutes
+               t.auto_snooze_minutes,
+               u.auto_snooze_minutes as user_auto_snooze_minutes,
+               u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
+               u.auto_snooze_high_minutes as user_auto_snooze_high_minutes
         FROM tasks t
         INNER JOIN projects p ON t.project_id = p.id
         INNER JOIN users u ON t.user_id = u.id
@@ -57,23 +182,18 @@ export async function checkOverdueTasks(): Promise<void> {
           AND t.archived_at IS NULL
           AND t.due_at IS NOT NULL
           AND t.due_at < datetime('now')
-          AND (
-            t.last_notified_at IS NULL
-            OR (
-              COALESCE(t.auto_snooze_minutes, u.auto_snooze_minutes) > 0
-              AND t.last_notified_at < datetime('now', '-' || COALESCE(t.auto_snooze_minutes, u.auto_snooze_minutes) || ' minutes')
-            )
-          )
-        ORDER BY t.due_at ASC
-        LIMIT 50
+        ORDER BY t.priority DESC, t.due_at ASC
+        LIMIT 100
       `,
       )
       .all() as OverdueTask[]
 
-    if (overdueTasks.length === 0) return
+    // Apply priority-aware cooldown filtering
+    const eligibleTasks = overdueTasks.filter((t) => isEligibleForNotification(t, now))
+    if (eligibleTasks.length === 0) return
 
     // Get user notification settings and API tokens
-    const userIds = [...new Set(overdueTasks.map((t) => t.user_id))]
+    const userIds = [...new Set(eligibleTasks.map((t) => t.user_id))]
     const userSettings = new Map<number, UserNotificationSettings>()
 
     for (const userId of userIds) {
@@ -93,123 +213,48 @@ export async function checkOverdueTasks(): Promise<void> {
       }
     }
 
-    // Group tasks by user for batched notifications
+    // Group tasks by user
     const tasksByUser = new Map<number, OverdueTask[]>()
-    for (const task of overdueTasks) {
+    for (const task of eligibleTasks) {
       const list = tasksByUser.get(task.user_id) || []
       list.push(task)
       tasksByUser.set(task.user_id, list)
     }
 
-    // Send notifications per user
+    // Send notifications per user with priority-based splitting
     for (const [userId, tasks] of tasksByUser) {
       const settings = userSettings.get(userId)
       if (!settings) continue
 
-      // Determine ntfy endpoint for this user
       const ntfyServer = settings.ntfy_server || DEFAULT_NTFY_URL
       const ntfyTopic = settings.ntfy_topic || DEFAULT_NTFY_TOPIC
 
-      // Group by priority for notification formatting
-      const urgent = tasks.filter((t) => t.priority >= HIGH_PRIORITY_THRESHOLD)
-      const normal = tasks.filter((t) => t.priority < HIGH_PRIORITY_THRESHOLD)
+      // Split by priority: P2+ get individual notifications, P0-P1 get bulk
+      const individualTasks = tasks.filter((t) => t.priority >= MEDIUM_PRIORITY_THRESHOLD)
+      const bulkCandidates = tasks.filter((t) => t.priority < MEDIUM_PRIORITY_THRESHOLD)
 
-      let message = ''
-      if (urgent.length > 0) {
-        message += `${urgent.length} urgent/high:\n`
-        urgent.forEach((t) => {
-          message += `  - ${t.title}\n`
-        })
-      }
-      if (normal.length > 0) {
-        message += `${normal.length} other overdue:\n`
-        normal.slice(0, 5).forEach((t) => {
-          message += `  - ${t.title}\n`
-        })
-        if (normal.length > 5) {
-          message += `  ... and ${normal.length - 5} more\n`
-        }
-      }
-
-      // Build action buttons for the first task (most actionable)
-      const firstTask = tasks[0]
-      const actions: NtfyAction[] = [
-        {
-          action: 'view',
-          label: 'Open',
-          url: `${APP_URL}/tasks/${firstTask.id}`,
-        },
-      ]
-
-      // Add action buttons if user has an API token
-      if (settings.api_token) {
-        const actionBase = `${APP_URL}/api/notifications/actions`
-
-        actions.push(
-          {
-            action: 'http',
-            label: 'Done',
-            url: actionBase,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'done',
-              task_id: firstTask.id,
-              token: settings.api_token,
-            }),
-          },
-          {
-            action: 'http',
-            label: '+30m',
-            url: actionBase,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'snooze30',
-              task_id: firstTask.id,
-              token: settings.api_token,
-            }),
-          },
-          {
-            action: 'http',
-            label: '+1hr',
-            url: actionBase,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'snooze',
-              task_id: firstTask.id,
-              token: settings.api_token,
-            }),
-          },
-          {
-            action: 'http',
-            label: '+2hr',
-            url: actionBase,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'snooze2h',
-              task_id: firstTask.id,
-              token: settings.api_token,
-            }),
-          },
+      if (individualTasks.length > 20) {
+        log.warn(
+          'notifications',
+          `Sending ${individualTasks.length} individual notifications for user ${userId}`,
         )
       }
 
-      // Send ntfy notification
-      await sendNtfyNotification({
-        server: ntfyServer,
-        topic: ntfyTopic,
-        title: `${tasks.length} overdue task${tasks.length > 1 ? 's' : ''}`,
-        message: message.trim(),
-        priority: urgent.length > 0 ? 4 : 3,
-        tags: ['warning'],
-        actions,
-      })
+      // Individual notification for each medium+ task
+      for (const task of individualTasks) {
+        await sendIndividualNotification(task, settings, ntfyServer, ntfyTopic)
+      }
+
+      // Low/unset tasks: individual if only one, bulk if multiple
+      if (bulkCandidates.length === 1) {
+        await sendIndividualNotification(bulkCandidates[0], settings, ntfyServer, ntfyTopic)
+      } else if (bulkCandidates.length > 1) {
+        await sendBulkNotification(bulkCandidates, ntfyServer, ntfyTopic)
+      }
 
       // Update last_notified_at for all notified tasks
-      const taskIds = tasks.map((t) => t.id)
+      const allNotified = [...individualTasks, ...bulkCandidates]
+      const taskIds = allNotified.map((t) => t.id)
       const placeholders = taskIds.map(() => '?').join(',')
       db.prepare(`UPDATE tasks SET last_notified_at = ? WHERE id IN (${placeholders})`).run(
         now.toISOString(),
@@ -237,6 +282,8 @@ interface NtfyOptions {
   message: string
   priority?: number
   tags?: string[]
+  click?: string
+  icon?: string
   actions?: NtfyAction[]
 }
 
@@ -249,6 +296,14 @@ async function sendNtfyNotification(opts: NtfyOptions): Promise<void> {
 
     if (opts.tags?.length) {
       headers.Tags = opts.tags.join(',')
+    }
+
+    if (opts.click) {
+      headers.Click = opts.click
+    }
+
+    if (opts.icon) {
+      headers.Icon = opts.icon
     }
 
     if (opts.actions?.length) {
