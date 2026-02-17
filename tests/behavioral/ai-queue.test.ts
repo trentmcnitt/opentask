@@ -28,13 +28,15 @@ describe('semaphore', () => {
   })
 
   test('queues requests beyond the limit', async () => {
-    // Fill both slots
+    // Fill all 4 slots
+    await acquireSlot()
+    await acquireSlot()
     await acquireSlot()
     await acquireSlot()
 
-    // Third request should be queued
+    // Fifth request should be queued
     let resolved = false
-    const thirdSlot = acquireSlot().then(() => {
+    const fifthSlot = acquireSlot().then(() => {
       resolved = true
     })
 
@@ -45,9 +47,10 @@ describe('semaphore', () => {
 
     // Release one slot — the queued request should resolve
     releaseSlot()
-    await thirdSlot
+    await fifthSlot
     expect(resolved).toBe(true)
 
+    releaseSlot()
     releaseSlot()
     releaseSlot()
   })
@@ -76,7 +79,7 @@ describe('semaphore', () => {
     const stats = getQueueStats()
     expect(stats.active).toBe(0)
     expect(stats.waiting).toBe(0)
-    expect(stats.maxConcurrent).toBe(2) // default
+    expect(stats.maxConcurrent).toBe(4) // default
   })
 })
 
@@ -85,13 +88,17 @@ describe('timeout and stress', () => {
     const origTimeout = process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS
     process.env.OPENTASK_AI_QUEUE_TIMEOUT_MS = '100'
 
-    // Fill both slots
+    // Fill all 4 slots
+    await acquireSlot()
+    await acquireSlot()
     await acquireSlot()
     await acquireSlot()
 
-    // Third should timeout
+    // Fifth should timeout
     await expect(acquireSlot()).rejects.toThrow(/timeout/)
 
+    releaseSlot()
+    releaseSlot()
     releaseSlot()
     releaseSlot()
     if (origTimeout === undefined) {
