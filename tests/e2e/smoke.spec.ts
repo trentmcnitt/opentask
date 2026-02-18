@@ -4,7 +4,6 @@ import { test, expect } from '@playwright/test'
  * Smoke tests for OpenTask
  *
  * These tests verify basic functionality is working.
- * More comprehensive E2E tests will be added in Phase 2.
  */
 
 test.describe('OpenTask Smoke Tests', () => {
@@ -12,7 +11,6 @@ test.describe('OpenTask Smoke Tests', () => {
     await page.goto('/')
 
     // Verify page loads without errors
-    // In Phase 2, this will check for login page or dashboard
     await expect(page).toHaveTitle(/OpenTask/i)
   })
 

@@ -14,7 +14,13 @@ import {
   startInsightsGeneration,
   getActiveInsightsSession,
 } from '@/core/ai'
-import { success, unauthorized, badRequest, conflict, handleError } from '@/lib/api-response'
+import {
+  success,
+  unauthorized,
+  serviceUnavailable,
+  conflict,
+  handleError,
+} from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
@@ -22,7 +28,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request)
 
     if (!isAIEnabled()) {
-      return badRequest('AI features are not enabled')
+      return serviceUnavailable('AI features are not enabled')
     }
 
     // Check for already-running session

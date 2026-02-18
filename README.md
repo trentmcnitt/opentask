@@ -66,7 +66,7 @@ See `.env.example` for required configuration:
 | `npm run build`         | Build for production                     |
 | `npm run start`         | Start production server                  |
 | `npm run lint`          | Run ESLint                               |
-| `npm test`              | Run unit and integration tests           |
+| `npm test`              | Run behavioral tests (vitest)            |
 | `npm run test:watch`    | Run tests in watch mode                  |
 | `npm run test:coverage` | Run tests with coverage report           |
 | `npm run test:e2e`      | Run Playwright E2E tests                 |
@@ -130,7 +130,7 @@ npm test
 # Watch mode
 npm run test:watch
 
-# E2E tests (requires dev server running)
+# E2E tests (auto-manages server via globalSetup)
 npm run test:e2e
 ```
 

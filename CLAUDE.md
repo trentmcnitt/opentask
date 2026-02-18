@@ -46,7 +46,7 @@ withTransaction((db) => {
 })
 ```
 
-Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to build the before/after snapshot. The `completionId` parameter is only needed when completing a recurring task — it links the `task_completions` row to the undo snapshot (see `markDone()` in `src/core/tasks/mark-done.ts` for the pattern).
+Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to build the before/after snapshot. The `completionId` parameter is only needed when completing a recurring task — it links the `completions` row to the undo snapshot (see `markDone()` in `src/core/tasks/mark-done.ts` for the pattern).
 
 For task creation, pass `{ id: taskId }` as `beforeTask` (there is no full before-state). On undo, the `'create'` action value triggers special handling to soft-delete the task. See `createTask()` in `src/core/tasks/create.ts` for the pattern.
 
@@ -124,7 +124,7 @@ Dual authentication checked in order:
 - `requireAuth(request)` — Returns `AuthUser` or throws `AuthError`. Preferred for new endpoints.
 - `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the 401 response (e.g., returning a different message or status code based on context). Most existing route handlers use this with a manual null check.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' }`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' }`.
 
 **Login is username-based, not email-based.** The login form accepts a username (the `name` column, case-insensitive). Email is stored but is not a user-facing login field. Dev credentials are in `.secrets` at the project root.
 

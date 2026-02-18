@@ -37,7 +37,7 @@ This is especially important because users often dictate tasks while driving or 
 
 There are two distinct failure modes:
 
-1. **Request failed in chain** — the SDK subprocess didn't start, the model timed out, the response was malformed. The task is untouched, `ai_status` is set to `'failed'`, and the error is logged. The user sees a warning icon on the task but their raw text is intact.
+1. **Request failed in chain** — the SDK subprocess didn't start, the model timed out, the response was malformed. The task is untouched, the `ai-failed` label is applied, and the error is logged. The user sees a warning icon on the task but their raw text is intact.
 
 2. **AI did something wrong** — the model returned valid JSON but extracted the wrong priority, misunderstood the due date, or assigned the wrong project. The changes were applied and logged in the undo system. The user can Cmd+Z (or tap undo) to revert all AI changes atomically.
 
@@ -71,7 +71,7 @@ Only filter things that are truly safe to filter (like tasks due far in the futu
 
 ### AI-locked protection
 
-Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written. The queue checks for this label and skips the task (setting `ai_status` to null).
+Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written. The queue checks for this label and skips the task (removing AI processing labels).
 
 ---
 
@@ -110,22 +110,22 @@ How it works:
 
 ### On-demand enrichment
 
-Task enrichment is on-demand: when a task is created, the API route fires and forgets `enrichSingleTask()` which sends the query through the warm enrichment slot. A 1-minute safety-net cron (`processEnrichmentQueue()`) picks up any `ai_status='pending'` tasks that the on-demand path missed.
+Task enrichment is on-demand: when a task is created, the API route fires and forgets `enrichSingleTask()` which sends the query through the warm enrichment slot. A 1-minute safety-net cron (`processEnrichmentQueue()`) picks up any tasks with the `ai-to-process` label that the on-demand path missed.
 
 ```
-User types → Task saved immediately → ai_status = 'pending'
+User types → Task saved immediately → `ai-to-process` label added
                                            ↓
                                     Fire-and-forget enrichSingleTask()
                                            ↓
-                                    ai_status = 'processing'
+                                    Processing begins
                                            ↓
                                     Warm enrichment slot query
                                            ↓
                                   ┌─── Success ───┐── Failure ──┐
                                   ↓                              ↓
-                          Apply changes              ai_status = 'failed'
+                          Apply changes              `ai-failed` label applied
                           Log for undo               Log error
-                          ai_status = 'complete'     User sees warning
+                          `ai-to-process` removed    User sees warning
 ```
 
 Safety net: cron runs every 1 minute, picks up pending tasks with round-robin fairness across users.
@@ -141,7 +141,7 @@ Enrichment queries both owned and shared projects when building the project list
 
 ### Concurrent request management
 
-A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 2). All per-query AI operations (What's Next, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
+A semaphore in `queue.ts` limits concurrent SDK subprocesses (default: 4). All per-query AI operations (What's Next, shopping labels) acquire a slot before spawning a subprocess. The warm enrichment slot operates independently and does not use the semaphore.
 
 ---
 
@@ -161,7 +161,9 @@ src/core/ai/
 ├── enrichment-slot.ts  — Warm slot for enrichment (MessageChannel + consumer + lifecycle)
 ├── enrichment.ts       — Task enrichment pipeline (on-demand + safety-net cron)
 ├── whats-next.ts       — What's Next recommendations (surfaces overlooked tasks)
-├── shopping.ts         — Shopping list label classification
+├── insights.ts         — AI Insights batch scoring and signals
+├── format.ts           — Response formatting utilities
+├── user-context.ts     — User AI context/preferences
 ├── purge.ts            — Activity log data retention
 ├── task-summaries.ts   — Compact task data builder for AI prompts
 └── index.ts            — Barrel exports
@@ -171,7 +173,6 @@ src/core/ai/
 
 - `EnrichmentResultSchema` — Zod schema for task enrichment output
 - `WhatsNextResultSchema` — surfaced tasks + reasons + summary
-- `ShoppingLabelResultSchema` — store section + reasoning
 - `TaskSummary` — compact task representation for AI prompts
 - `AIActivityEntry` — shape of activity log rows
 
@@ -242,11 +243,11 @@ Every SDK query has a configurable timeout (default 60 seconds). If the subproce
 
 ### Stuck task detection
 
-Each queue cycle checks for tasks stuck in `'processing'` for longer than 2 minutes. These are reset to `'pending'`. On server startup, `resetStuckTasks()` resets all `'processing'` tasks.
+Each queue cycle checks for tasks stuck with the `ai-to-process` label for longer than 2 minutes. These are reset for reprocessing. On server startup, `resetStuckTasks()` resets all in-progress tasks.
 
 ### Concurrent request limiting
 
-The semaphore in `queue.ts` (default max 2) prevents resource exhaustion from multiple simultaneous per-query AI features. Queue waiters time out after 30 seconds. The warm enrichment slot uses its own FIFO queue.
+The semaphore in `queue.ts` (default max 4) prevents resource exhaustion from multiple simultaneous per-query AI features. Queue waiters time out after 30 seconds. The warm enrichment slot uses its own FIFO queue.
 
 ### Round-robin fairness
 
@@ -256,19 +257,19 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 
 ## Failure Modes
 
-| Failure                        | What happens                                         | User sees                           |
-| ------------------------------ | ---------------------------------------------------- | ----------------------------------- |
-| SDK not installed              | `isAIEnabled()` returns false                        | Nothing — app works normally        |
-| Subprocess fails to start      | `ai_status` stays `'pending'`, retried next cycle    | Spinner continues                   |
-| Subprocess hangs               | Timeout kills after 60s, `ai_status = 'failed'`      | Warning icon, raw text preserved    |
-| Model returns invalid output   | `ai_status = 'failed'`, error logged                 | Warning icon, raw text preserved    |
-| Model extracts wrong fields    | Changes applied and logged in undo                   | User can Cmd+Z to revert            |
-| Server restarts mid-enrichment | `'processing'` tasks reset to `'pending'` on startup | Re-processed automatically          |
-| Task has `ai-locked` label     | Enrichment skipped, `ai_status` set to null          | No AI processing                    |
-| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes           | Pending tasks wait                  |
-| Enrichment slot dies           | Marked dead, queries throw error                     | Enrichment falls back to safety net |
-| Semaphore full                 | Request queued FIFO, times out after 30 seconds      | Loading indicator, eventual error   |
-| What's Next cache hit          | Cached result returned immediately                   | Instant response                    |
+| Failure                        | What happens                                        | User sees                           |
+| ------------------------------ | --------------------------------------------------- | ----------------------------------- |
+| SDK not installed              | `isAIEnabled()` returns false                       | Nothing — app works normally        |
+| Subprocess fails to start      | `ai-to-process` label stays, retried next cycle     | Spinner continues                   |
+| Subprocess hangs               | Timeout kills after 60s, `ai-failed` label applied  | Warning icon, raw text preserved    |
+| Model returns invalid output   | `ai-failed` label applied, error logged             | Warning icon, raw text preserved    |
+| Model extracts wrong fields    | Changes applied and logged in undo                  | User can Cmd+Z to revert            |
+| Server restarts mid-enrichment | In-progress tasks reset for reprocessing on startup | Re-processed automatically          |
+| Task has `ai-locked` label     | Enrichment skipped, AI labels removed               | No AI processing                    |
+| Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes          | Pending tasks wait                  |
+| Enrichment slot dies           | Marked dead, queries throw error                    | Enrichment falls back to safety net |
+| Semaphore full                 | Request queued FIFO, times out after 30 seconds     | Loading indicator, eventual error   |
+| What's Next cache hit          | Cached result returned immediately                  | Instant response                    |
 
 **No auto-retry on failure.** Failed tasks stay failed to prevent cost runaway.
 
@@ -301,10 +302,9 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | `OPENTASK_AI_MAX_REUSES`              | `8`               | Max queries per warm enrichment subprocess                           |
 | `OPENTASK_AI_INSIGHTS_MODEL`          | `claude-opus-4-6` | Model for AI Insights (scoring + signals). Extended thinking enabled |
 | `OPENTASK_AI_WHATS_NEXT_MODEL`        | `claude-opus-4-6` | Model for What's Next cron (3 AM daily). On-demand uses user pref    |
-| `OPENTASK_AI_SHOPPING_MODEL`          | `haiku`           | Model for shopping label classification                              |
 | `OPENTASK_AI_QUERY_TIMEOUT_MS`        | `60000`           | Timeout for SDK queries in milliseconds                              |
 | `OPENTASK_AI_CLI_PATH`                | (auto)            | Path to Claude Code CLI executable                                   |
-| `OPENTASK_AI_MAX_CONCURRENT`          | `2`               | Maximum concurrent SDK subprocesses (per-query)                      |
+| `OPENTASK_AI_MAX_CONCURRENT`          | `4`               | Maximum concurrent SDK subprocesses (per-query)                      |
 | `OPENTASK_AI_QUEUE_TIMEOUT_MS`        | `30000`           | Maximum wait time for semaphore slot                                 |
 | `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` | `90`              | Days to retain AI activity log entries                               |
 
@@ -343,7 +343,7 @@ The History → AI tab shows enrichment slot status and recent activity entries 
 | Undo log        | 30 days   | Daily at 3:00 AM      | `OPENTASK_RETENTION_UNDO_DAYS`        |
 | Trash           | 30 days   | Daily at 3:30 AM      | `OPENTASK_RETENTION_TRASH_DAYS`       |
 | Completions     | 30 days   | Daily at 4:00 AM      | `OPENTASK_RETENTION_COMPLETIONS_DAYS` |
-| Daily stats     | 4 weeks   | Weekly Sunday 4:30 AM | —                                     |
+| Daily stats     | 365 days  | Weekly Sunday 4:30 AM | `OPENTASK_RETENTION_STATS_DAYS`       |
 | AI activity log | 90 days   | Daily at 5:00 AM      | `OPENTASK_RETENTION_AI_ACTIVITY_DAYS` |
 
 AI activity has a longer retention than other data because it's useful for prompt tuning and cost analysis.
@@ -399,19 +399,19 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 
 | File                        | Category                                               | Count |
 | --------------------------- | ------------------------------------------------------ | ----- |
-| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)          | 30    |
+| `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)          | 32    |
 | `enrichment-labels.ts`      | Explicit-only label extraction                         | 10    |
 | `enrichment-dictation.ts`   | Dictation realism and typo tolerance                   | 10    |
 | `enrichment-recurrence.ts`  | Expanded recurrence patterns                           | 10    |
 | `enrichment-voice.ts`       | Voice preservation                                     | 8     |
-| `enrichment-edge.ts`        | Edge cases                                             | 8     |
+| `enrichment-edge.ts`        | Edge cases                                             | 10    |
 | `whats-next.ts`             | What's Next recommendations                            | 8     |
-| `insights.ts`               | AI Insights scoring and signals                        | 10    |
+| `insights.ts`               | AI Insights scoring and signals                        | 11    |
 | `insights-large.ts`         | Large-scale insights (50-600 tasks, production)        | 3     |
 | `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
 | `index.ts`                  | Barrel export                                          | —     |
 
-**Total: 97 scenarios** (76 enrichment + 8 whats_next + 13 insights)
+**Total: 102 scenarios** (80 enrichment + 8 whats_next + 14 insights)
 
 Each scenario defines:
 
@@ -431,7 +431,7 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | File                                | Purpose                                            |
 | ----------------------------------- | -------------------------------------------------- |
 | `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
-| `tests/quality/scenarios/`          | Test scenario definitions (96 scenarios)           |
+| `tests/quality/scenarios/`          | Test scenario definitions (102 scenarios)          |
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |
