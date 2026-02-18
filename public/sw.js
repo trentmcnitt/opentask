@@ -22,6 +22,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim()
 })
 
+// Web Push: show notification when push message arrives
+self.addEventListener('push', (event) => {
+  const data = event.data?.json() ?? {}
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'OpenTask', {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      data: data.data || {},
+      tag: data.tag || undefined,
+    }),
+  )
+})
+
+// Web Push: handle notification tap — open or focus the PWA at the target URL
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      return clients.openWindow(url)
+    }),
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   // Only handle navigation requests with cache fallback
   if (event.request.mode === 'navigate') {

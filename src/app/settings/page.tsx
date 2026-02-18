@@ -22,6 +22,7 @@ import type { WhatsNextModel } from '@/components/PreferencesProvider'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
+import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { showToast } from '@/lib/toast'
 import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
@@ -74,6 +75,7 @@ export default function SettingsPage() {
     error?: string
   }>({ status: 'idle' })
   const [testingSending, setTestingSending] = useState<string | null>(null)
+  const push = usePushSubscription()
 
   // Sync draft from loaded preference (once, when a non-null value first arrives)
   useEffect(() => {
@@ -592,6 +594,76 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Browser Push */}
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Browser Push
+            </h3>
+            {!push.isSupported ? (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Push notifications are not supported in this browser. On iOS, add the app to your
+                home screen first.
+              </p>
+            ) : push.permission === 'denied' ? (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Push notifications are blocked. Reset the permission in your browser settings to
+                enable them.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm">Push notifications</div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {push.isSubscribed
+                        ? 'Receiving push notifications on this device'
+                        : 'Enable browser push notifications'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={push.isSubscribed}
+                    disabled={push.isLoading}
+                    onCheckedChange={async (checked) => {
+                      try {
+                        if (checked) {
+                          await push.subscribe()
+                          showToast({ message: 'Push notifications enabled', type: 'success' })
+                        } else {
+                          await push.unsubscribe()
+                          showToast({ message: 'Push notifications disabled', type: 'success' })
+                        }
+                      } catch {
+                        showToast({ message: 'Failed to update push subscription', type: 'error' })
+                      }
+                    }}
+                    aria-label="Toggle push notifications"
+                  />
+                </div>
+                {push.isSubscribed && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={testingSending === 'push'}
+                    onClick={async () => {
+                      setTestingSending('push')
+                      try {
+                        const res = await fetch('/api/push/test', { method: 'POST' })
+                        if (!res.ok) throw new Error('Failed to send')
+                        showToast({ message: 'Test push sent', type: 'success' })
+                      } catch {
+                        showToast({ message: 'Failed to send test push', type: 'error' })
+                      } finally {
+                        setTestingSending(null)
+                      }
+                    }}
+                  >
+                    {testingSending === 'push' ? 'Sending...' : 'Send Test Push'}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Test Notifications */}
