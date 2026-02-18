@@ -7,7 +7,7 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
+import { success, unauthorized, badRequest, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
 import { getTasks, createTask } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.has('project')) {
       projectId = parseInt(searchParams.get('project')!)
       if (isNaN(projectId)) {
-        return handleError(new Error('Invalid project ID'))
+        return badRequest('Invalid project ID')
       }
     }
 
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.has('limit')) {
       limit = parseInt(searchParams.get('limit')!)
       if (isNaN(limit) || limit < 1) {
-        return handleError(new Error('Invalid limit parameter'))
+        return badRequest('Invalid limit parameter')
       }
     }
 
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.has('offset')) {
       offset = parseInt(searchParams.get('offset')!)
       if (isNaN(offset) || offset < 0) {
-        return handleError(new Error('Invalid offset parameter'))
+        return badRequest('Invalid offset parameter')
       }
     }
 

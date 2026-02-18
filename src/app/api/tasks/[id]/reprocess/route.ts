@@ -9,7 +9,7 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError } from '@/lib/api-response'
+import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { reprocessTask } from '@/core/tasks'
 import { isAIEnabled, enrichSingleTask } from '@/core/ai'
@@ -20,10 +20,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
+    const taskId = parseInt(id)
+    if (isNaN(taskId)) {
+      return notFound('Task not found', { id })
+    }
 
     const task = reprocessTask({
       userId: user.id,
-      taskId: parseInt(id),
+      taskId,
     })
 
     // Fire-and-forget: trigger immediate enrichment

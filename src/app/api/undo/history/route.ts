@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError } from '@/lib/api-response'
+import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getUndoHistory } from '@/core/undo'
 import { log } from '@/lib/logger'
 
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.has('limit')) {
       limit = parseInt(searchParams.get('limit')!)
       if (isNaN(limit) || limit < 1) {
-        return handleError(new Error('Invalid limit parameter'))
+        return badRequest('Invalid limit parameter')
       }
     }
 

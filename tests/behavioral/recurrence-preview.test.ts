@@ -82,8 +82,7 @@ describe('Recurrence preview timezone handling', () => {
     const previewDt = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)
     expect(previewDt.hour).toBe(10)
     expect(previewDt.minute).toBe(0)
-    // Next 15th could be today (Jan 15) or next month depending on time
-    expect([15, 15]).toContain(previewDt.day)
+    expect(previewDt.day).toBe(15)
   })
 
   test('preview works correctly in different timezones', () => {

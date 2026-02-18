@@ -25,14 +25,25 @@ import { ZodError } from 'zod'
 import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 import type { RouteContext } from '@/types/api'
 
-function getProjectById(projectId: number): ProjectRow | null {
+function getProjectById(projectId: number, userId: number): ProjectRow | null {
   const db = getDb()
+  const now = nowUtc()
   return (
     (db
       .prepare(
-        'SELECT id, name, owner_id, shared, sort_order, created_at FROM projects WHERE id = ?',
+        `SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.created_at,
+          (SELECT COUNT(*) FROM tasks t
+           WHERE t.project_id = p.id AND t.user_id = ?
+             AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
+          ) AS active_count,
+          (SELECT COUNT(*) FROM tasks t
+           WHERE t.project_id = p.id AND t.user_id = ?
+             AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
+             AND t.due_at IS NOT NULL AND t.due_at < ?
+          ) AS overdue_count
+        FROM projects p WHERE p.id = ?`,
       )
-      .get(projectId) as ProjectRow | undefined) ?? null
+      .get(userId, userId, now, projectId) as ProjectRow | undefined) ?? null
   )
 }
 
@@ -54,7 +65,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return notFound('Project not found', { id })
     }
 
-    const project = getProjectById(projectId)
+    const project = getProjectById(projectId, user.id)
     if (!project) {
       return notFound('Project not found', { project_id: projectId })
     }
@@ -87,7 +98,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return notFound('Project not found', { id })
     }
 
-    const project = getProjectById(projectId)
+    const project = getProjectById(projectId, user.id)
     if (!project) {
       return notFound('Project not found', { project_id: projectId })
     }
@@ -127,7 +138,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const sql = `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`
     db.prepare(sql).run(...values)
 
-    const updated = getProjectById(projectId)!
+    const updated = getProjectById(projectId, user.id)!
 
     return success(formatProjectResponse(updated))
   } catch (err) {
@@ -152,7 +163,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return notFound('Project not found', { id })
     }
 
-    const project = getProjectById(projectId)
+    const project = getProjectById(projectId, user.id)
     if (!project) {
       return notFound('Project not found', { project_id: projectId })
     }

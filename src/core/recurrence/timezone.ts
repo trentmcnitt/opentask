@@ -120,5 +120,9 @@ export function rruleDayToDow(day: string): number {
     SA: 5,
     SU: 6,
   }
-  return days[day.toUpperCase()]
+  const result = days[day.toUpperCase()]
+  if (result === undefined) {
+    throw new Error(`Invalid RRULE day abbreviation: ${day}`)
+  }
+  return result
 }

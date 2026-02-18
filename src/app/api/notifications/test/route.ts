@@ -107,11 +107,14 @@ async function sendTestNtfy(
   message: string,
   headers: Record<string, string>,
 ): Promise<void> {
-  await fetch(`${server}/${topic}`, {
+  const res = await fetch(`${server}/${topic}`, {
     method: 'POST',
     headers,
     body: message,
   })
+  if (!res.ok) {
+    throw new Error(`ntfy returned ${res.status}: ${await res.text()}`)
+  }
 }
 
 async function sendTestPushover(pushoverUser: string): Promise<void> {
@@ -125,8 +128,11 @@ async function sendTestPushover(pushoverUser: string): Promise<void> {
     expire: '3600',
   })
 
-  await fetch('https://api.pushover.net/1/messages.json', {
+  const res = await fetch('https://api.pushover.net/1/messages.json', {
     method: 'POST',
     body: params,
   })
+  if (!res.ok) {
+    throw new Error(`Pushover returned ${res.status}: ${await res.text()}`)
+  }
 }
