@@ -39,6 +39,7 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     original_title: null,
     original_due_at: null,
     last_notified_at: null,
+    last_critical_alert_at: null,
     auto_snooze_minutes: null,
     deleted_at: null,
     archived_at: null,

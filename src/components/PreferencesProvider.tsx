@@ -34,12 +34,12 @@ interface PreferencesContextValue {
   setSleepTime: (time: string) => void
   defaultGrouping: 'time' | 'project' | 'unified'
   setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
-  ntfyServer: string | null
-  setNtfyServer: (server: string | null) => void
-  ntfyTopic: string | null
-  setNtfyTopic: (topic: string | null) => void
+  notificationsEnabled: boolean
+  setNotificationsEnabled: (enabled: boolean) => void
   pushoverUserKey: string | null
   setPushoverUserKey: (key: string | null) => void
+  pushoverSound: string
+  setPushoverSound: (sound: string) => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
   aiMode: AiMode
@@ -87,12 +87,12 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSleepTime: () => {},
   defaultGrouping: 'time',
   setDefaultGrouping: () => {},
-  ntfyServer: null,
-  setNtfyServer: () => {},
-  ntfyTopic: null,
-  setNtfyTopic: () => {},
+  notificationsEnabled: true,
+  setNotificationsEnabled: () => {},
   pushoverUserKey: null,
   setPushoverUserKey: () => {},
+  pushoverSound: 'echo',
+  setPushoverSound: () => {},
   aiContext: null,
   setAiContext: () => {},
   aiMode: 'on',
@@ -134,9 +134,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
     'project',
   )
-  const [ntfyServer, setNtfyServerState] = useState<string | null>(null)
-  const [ntfyTopic, setNtfyTopicState] = useState<string | null>(null)
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
   const [pushoverUserKey, setPushoverUserKeyState] = useState<string | null>(null)
+  const [pushoverSound, setPushoverSoundState] = useState('echo')
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
@@ -185,14 +185,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.default_grouping) {
           setDefaultGroupingState(data.data.default_grouping)
         }
-        if (data?.data?.ntfy_server !== undefined) {
-          setNtfyServerState(data.data.ntfy_server)
-        }
-        if (data?.data?.ntfy_topic !== undefined) {
-          setNtfyTopicState(data.data.ntfy_topic)
-        }
         if (data?.data?.pushover_user_key !== undefined) {
           setPushoverUserKeyState(data.data.pushover_user_key)
+        }
+        if (data?.data?.pushover_sound) {
+          setPushoverSoundState(data.data.pushover_sound)
+        }
+        if (data?.data?.notifications_enabled !== undefined) {
+          setNotificationsEnabledState(data.data.notifications_enabled)
         }
         if (data?.data?.ai_context !== undefined) {
           setAiContextState(data.data.ai_context)
@@ -273,12 +273,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             body: JSON.stringify({ default_grouping: grouping }),
           }).catch(() => {})
         },
-        ntfyServer,
-        setNtfyServer: setNtfyServerState,
-        ntfyTopic,
-        setNtfyTopic: setNtfyTopicState,
+        notificationsEnabled,
+        setNotificationsEnabled: setNotificationsEnabledState,
         pushoverUserKey,
         setPushoverUserKey: setPushoverUserKeyState,
+        pushoverSound,
+        setPushoverSound: setPushoverSoundState,
         aiContext,
         setAiContext: setAiContextState,
         aiMode,
@@ -361,20 +361,20 @@ export function useAiContext() {
 
 export function useNotificationConfig() {
   const {
-    ntfyServer,
-    setNtfyServer,
-    ntfyTopic,
-    setNtfyTopic,
+    notificationsEnabled,
+    setNotificationsEnabled,
     pushoverUserKey,
     setPushoverUserKey,
+    pushoverSound,
+    setPushoverSound,
   } = useContext(PreferencesContext)
   return {
-    ntfyServer,
-    setNtfyServer,
-    ntfyTopic,
-    setNtfyTopic,
+    notificationsEnabled,
+    setNotificationsEnabled,
     pushoverUserKey,
     setPushoverUserKey,
+    pushoverSound,
+    setPushoverSound,
   }
 }
 

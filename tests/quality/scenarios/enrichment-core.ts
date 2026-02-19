@@ -3,7 +3,7 @@
  *
  * These test fundamental enrichment capabilities: title cleaning, date extraction,
  * priority inference, recurrence, auto-snooze, recurrence mode, notes,
- * wall-of-text decomposition, critical labels, and complex combinations.
+ * wall-of-text decomposition, "critical" keyword handling, and complex combinations.
  *
  * Labels policy: labels must be empty unless the user explicitly requests one.
  */
@@ -503,13 +503,13 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
   },
 
   // -------------------------------------------------------------------------
-  // Critical Labels
+  // "Critical" keyword — maps to P4 priority, not a label
   // -------------------------------------------------------------------------
 
   {
     id: 'enrich-critical-explicit',
     feature: 'enrichment',
-    description: 'Explicit "critical alert" — labels must include critical',
+    description: 'Explicit "critical alert" — maps to P4 priority, no label',
     input: {
       text: "pick up Ellie's EpiPen before Friday critical alert",
       timezone: 'America/Chicago',
@@ -517,20 +517,21 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        labels: ['critical'],
+        priority: 4,
+        labels: [],
         auto_snooze_minutes: null,
       },
       quality_notes:
         'Title: "Pick up Ellie\'s EpiPen" or similar (date/alert phrase removed). ' +
-        'Labels MUST include "critical" — explicit "critical alert" language. ' +
-        'due_at should be Friday. ' +
-        'Priority should be >= 3 given the medical urgency context.',
+        'Priority MUST be 4 — "critical" is a P4 keyword. ' +
+        'Labels must be empty — "critical" is not a label, it maps to priority. ' +
+        'due_at should be Friday.',
     },
   },
   {
     id: 'enrich-critical-false-positive',
     feature: 'enrichment',
-    description: 'Emotional urgency without "critical" keyword — must NOT trigger critical label',
+    description: 'Emotional urgency without "critical"/"urgent" keyword — must NOT trigger P4',
     input: {
       text: 'really really important submit the quarterly report by Wednesday end of day',
       timezone: 'America/Chicago',
@@ -540,22 +541,23 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       ],
     },
     requirements: {
+      must_include: {
+        labels: [],
+      },
       must_not_include: {
-        labels: ['critical'],
         priority: 0,
       },
       quality_notes:
         'Title: "Submit the quarterly report" or similar (urgency phrase removed). ' +
-        'Labels must NOT include "critical" — "really really important" is emotional urgency, not a critical alert. ' +
         'Labels should be an empty array — no explicit label request in input. ' +
-        'Priority should be 2-3 (importance signal without "urgent" keyword). ' +
+        'Priority should be 2-3 (importance signal without "urgent"/"critical" keyword — NOT 4). ' +
         'due_at should be Wednesday EOD. May match Work project.',
     },
   },
   {
     id: 'enrich-critical-non-alert-context',
     feature: 'enrichment',
-    description: 'Word "critical" used in non-alert context — must NOT trigger critical label',
+    description: 'Word "critical" in non-urgency context — must NOT trigger P4 priority',
     input: {
       text: 'read the critical thinking chapter for philosophy class by Monday',
       timezone: 'America/Chicago',
@@ -566,14 +568,11 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         priority: 0,
         labels: [],
       },
-      must_not_include: {
-        labels: ['critical'],
-      },
       quality_notes:
         'Title: "Read the critical thinking chapter" or similar. ' +
-        'Labels must NOT include "critical" — "critical thinking" is an academic concept, not an alert. ' +
+        'Priority MUST be 0 — "critical thinking" is an academic concept, not an urgency signal. ' +
         'Labels must be an empty array — no explicit label request in input. ' +
-        'Priority should be 0 (no urgency signal). due_at should be Monday.',
+        'due_at should be Monday.',
     },
   },
 
@@ -611,7 +610,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
   {
     id: 'enrich-combo-critical-urgent-date',
     feature: 'enrichment',
-    description: 'Critical + urgent + time-sensitive — all high-signal fields at once',
+    description: 'Urgent + critical + time-sensitive — all high-signal fields at once',
     input: {
       text: "urgent critical alert refill mom's heart medication prescription number RX-7742190 Walgreens on Main closes at 9pm tonight",
       timezone: 'America/Chicago',
@@ -620,12 +619,12 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         priority: 4,
-        labels: ['critical'],
+        labels: [],
       },
       quality_notes:
         'Title: "Refill mom\'s heart medication" or similar (urgency/alert phrases removed). ' +
-        'Priority MUST be 4 (explicit "urgent"). ' +
-        'Labels MUST include "critical" (explicit "critical alert"). ' +
+        'Priority MUST be 4 (explicit "urgent" and "critical"). ' +
+        'Labels must be empty — no explicit label request in input. ' +
         'due_at should be tonight at 9pm Chicago time in UTC. ' +
         'notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
     },

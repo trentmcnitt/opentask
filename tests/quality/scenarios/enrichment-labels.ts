@@ -190,9 +190,9 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'enrich-label-critical-still-works',
+    id: 'enrich-label-critical-maps-to-priority',
     feature: 'enrichment',
-    description: 'Critical label still applies when explicitly requested',
+    description: '"Critical alert" maps to P4 priority, not a label',
     input: {
       text: 'pick up emergency inhaler critical alert before 5pm',
       timezone: 'America/Chicago',
@@ -200,11 +200,13 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        labels: ['critical'],
+        priority: 4,
+        labels: [],
       },
       quality_notes:
         'Title: "Pick up emergency inhaler" or similar. ' +
-        'Labels MUST include "critical" — "critical alert" is an explicit trigger. ' +
+        'Priority MUST be 4 — "critical" is a P4 keyword. ' +
+        'Labels must be empty — "critical" is not a label, it maps to priority. ' +
         'due_at should be today at 5pm.',
     },
   },

@@ -28,20 +28,18 @@ export function isWebPushConfigured(): boolean {
   return Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_EMAIL)
 }
 
-export async function sendPushNotification(userId: number, payload: PushPayload): Promise<void> {
-  if (!isWebPushConfigured()) {
-    log.warn('web-push', 'VAPID keys not configured, skipping push')
-    return
-  }
-
+/**
+ * Send a raw payload to all push subscriptions for a user.
+ * Shared between regular notifications and dismiss signals.
+ * Cleans up stale subscriptions (410/404) automatically.
+ */
+async function sendToAllSubscriptions(userId: number, jsonPayload: string): Promise<void> {
   const db = getDb()
   const subscriptions = db
     .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
     .all(userId) as PushSubscriptionRow[]
 
   if (subscriptions.length === 0) return
-
-  const jsonPayload = JSON.stringify(payload)
 
   const results = await Promise.allSettled(
     subscriptions.map(async (sub) => {
@@ -56,7 +54,6 @@ export async function sendPushNotification(userId: number, payload: PushPayload)
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode
         if (statusCode === 410 || statusCode === 404) {
-          // Subscription expired or invalid — remove it
           db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(sub.id)
           log.info('web-push', `Removed stale subscription ${sub.id} (${statusCode})`)
         } else {
@@ -73,4 +70,23 @@ export async function sendPushNotification(userId: number, payload: PushPayload)
       `Failed to send ${failures.length}/${subscriptions.length} push notifications`,
     )
   }
+}
+
+export async function sendPushNotification(userId: number, payload: PushPayload): Promise<void> {
+  if (!isWebPushConfigured()) {
+    log.warn('web-push', 'VAPID keys not configured, skipping push')
+    return
+  }
+  await sendToAllSubscriptions(userId, JSON.stringify(payload))
+}
+
+/**
+ * Dismiss notifications for specific tasks across all user devices.
+ * Sends a special push message that the service worker handles by closing
+ * matching notifications instead of showing a new one.
+ * Fire-and-forget — failures are logged but don't affect the caller.
+ */
+export async function dismissTaskNotifications(userId: number, taskIds: number[]): Promise<void> {
+  if (!isWebPushConfigured() || taskIds.length === 0) return
+  await sendToAllSubscriptions(userId, JSON.stringify({ type: 'dismiss', taskIds }))
 }

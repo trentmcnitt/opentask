@@ -11,6 +11,8 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById, updateTask, deleteTask, canUserAccessTask } from '@/core/tasks'
+import { dismissTaskNotifications } from '@/core/notifications/web-push'
+import { dismissApnsNotifications } from '@/core/notifications/apns'
 import { validateTaskUpdate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -73,6 +75,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       taskId,
       input,
     })
+
+    // Dismiss notifications when due_at or done changes (snooze/completion via PATCH)
+    if (fieldsChanged.includes('due_at') || fieldsChanged.includes('done')) {
+      dismissTaskNotifications(user.id, [taskId]).catch((err) =>
+        log.error('api', 'Dismiss notification error:', err),
+      )
+      dismissApnsNotifications(user.id, [taskId]).catch((err) =>
+        log.error('api', 'Dismiss APNs notification error:', err),
+      )
+    }
 
     return success({
       ...formatTaskResponse(task),

@@ -435,7 +435,7 @@ Parse the task above and return the structured result.`
  * contains explicit label-intent language. The prompt already tells the AI not
  * to infer labels, but this catches any leakage.
  *
- * - If the input has no label-intent keywords, only "critical" passes through.
+ * - If the input has no label-intent keywords, all labels are stripped.
  * - If label-intent keywords are present, trust the AI's extraction.
  */
 function filterExplicitLabels(labels: string[], inputText: string): string[] {
@@ -443,7 +443,7 @@ function filterExplicitLabels(labels: string[], inputText: string): string[] {
   if (labelIntentPattern.test(inputText)) {
     return labels
   }
-  return labels.filter((l) => l === 'critical')
+  return []
 }
 
 interface FieldChanges {

@@ -179,3 +179,19 @@ export function validateBulkEdit(input: unknown): BulkEditInput {
 export function validateBulkDelete(input: unknown): BulkDeleteInput {
   return bulkDeleteSchema.parse(input)
 }
+
+/**
+ * Bulk snooze-overdue input schema
+ *
+ * Server-side convenience for the iOS "All" button — no task IDs needed.
+ * Server queries overdue P0/P1 tasks for the user.
+ */
+export const bulkSnoozeOverdueSchema = z.object({
+  delta_minutes: z.number().int().positive('delta_minutes must be positive'),
+})
+
+export type BulkSnoozeOverdueInput = z.infer<typeof bulkSnoozeOverdueSchema>
+
+export function validateBulkSnoozeOverdue(input: unknown): BulkSnoozeOverdueInput {
+  return bulkSnoozeOverdueSchema.parse(input)
+}

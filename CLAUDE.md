@@ -505,3 +505,18 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 **Database inspection:** `sqlite3 data/tasks.db` (local) or `ssh admin@tk11.mcnitt.io` then `sqlite3 /opt/opentask/data/tasks.db` (prod) / `sqlite3 /opt/opentask-dev/data/tasks.db` (dev).
 
 **First-time server setup:** The deploy script assumes the systemd service already exists. For a new environment, create a systemd unit file on the server (use `opentask-dev.service` as a template) and run `systemctl enable` before the first deploy.
+
+## iOS App (`ios/`)
+
+Project uses xcodegen — `project.yml` generates `.xcodeproj`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
+
+### Simulator limitations
+
+- **Notification content extensions cannot be tested in the simulator.** Long-press expansion is a known Apple limitation across all Xcode versions. Use a physical device.
+- `xcrun simctl push` delivers banners but does not invoke service or content extensions.
+- iOS 18.2 simulator: apps don't appear in Settings (known bug, fixed in 18.4+).
+
+### XcodeBuildMCP tips
+
+- On iOS 26+, use `touch` (down+up) instead of `tap` to focus SwiftUI text fields — `tap` doesn't reliably activate them.
+- WKWebView content is not exposed in the accessibility tree. Use screenshot coordinates for web view interactions.

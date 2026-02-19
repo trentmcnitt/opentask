@@ -161,7 +161,7 @@ export function getTaskById(taskId: number): Task | null {
       `
     SELECT id, user_id, project_id, title, original_title, done, done_at, priority, due_at,
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-           original_due_at, last_notified_at, auto_snooze_minutes,
+           original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
            completion_count, snooze_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
@@ -238,7 +238,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
 
   // Filter by overdue
   if (options.overdue) {
-    conditions.push("tasks.due_at IS NOT NULL AND tasks.due_at < datetime('now')")
+    conditions.push("tasks.due_at IS NOT NULL AND datetime(tasks.due_at) < datetime('now')")
   }
 
   // Filter by recurring
@@ -276,7 +276,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.done_at, tasks.priority, tasks.due_at,
            tasks.rrule, tasks.recurrence_mode, tasks.anchor_time,
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
-           tasks.last_notified_at, tasks.auto_snooze_minutes,
+           tasks.last_notified_at, tasks.last_critical_alert_at, tasks.auto_snooze_minutes,
            tasks.deleted_at, tasks.archived_at,
            tasks.labels, tasks.completion_count, tasks.snooze_count,
            tasks.first_completed_at, tasks.last_completed_at,
@@ -310,6 +310,7 @@ interface TaskRow {
   anchor_dom: number | null
   original_due_at: string | null
   last_notified_at: string | null
+  last_critical_alert_at: string | null
   auto_snooze_minutes: number | null
   deleted_at: string | null
   archived_at: string | null
@@ -341,6 +342,7 @@ function rowToTask(row: TaskRow): Task {
     anchor_dom: row.anchor_dom,
     original_due_at: row.original_due_at,
     last_notified_at: row.last_notified_at,
+    last_critical_alert_at: row.last_critical_alert_at,
     auto_snooze_minutes: row.auto_snooze_minutes,
     deleted_at: row.deleted_at,
     archived_at: row.archived_at,

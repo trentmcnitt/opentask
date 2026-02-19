@@ -77,6 +77,18 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'pushover_user_key')) {
     database.exec('ALTER TABLE users ADD COLUMN pushover_user_key TEXT')
   }
+  // Independent cooldown for Pushover critical alerts (2026-02)
+  if (!hasColumn(database, 'tasks', 'last_critical_alert_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN last_critical_alert_at TEXT')
+  }
+  // Per-user notification toggle (2026-02)
+  if (!hasColumn(database, 'users', 'notifications_enabled')) {
+    database.exec('ALTER TABLE users ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 1')
+  }
+  // Pushover sound preference (2026-02)
+  if (!hasColumn(database, 'users', 'pushover_sound')) {
+    database.exec("ALTER TABLE users ADD COLUMN pushover_sound TEXT NOT NULL DEFAULT 'echo'")
+  }
 }
 
 function initSchema(database: Database.Database): void {

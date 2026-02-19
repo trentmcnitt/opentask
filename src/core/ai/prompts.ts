@@ -70,8 +70,6 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
    If the user explicitly requests a label that doesn't exist yet, still include it — it's the user's intent. Use the naming style of existing labels (lowercase, simple words).
 
-   **Critical label:** The \`"critical"\` label triggers emergency push notifications when overdue. Apply ONLY when the user explicitly says "critical", "critical alert", or "make it critical". Do NOT apply it for general importance — that's what priority 3-4 is for. IMPORTANT: When "critical alert" appears in the input, the "critical" label MUST be included in the labels array even when other signals (URGENT, priority, dates) are also present. Multiple signals do not cancel each other out — extract ALL of them independently. Note: "critical" triggers BOTH priority 4 AND the "critical" label. "urgent critical alert" → priority 4 + labels: ["critical"].
-
 5. **project_name** — Suggested project name from the available projects list, or null. Match when the user explicitly mentions a project ("add it to Work", "put this in Home") OR when the content has a clear, unambiguous fit (groceries → "Shopping List"). Return null for ambiguous matches — if you have to guess which project, return null. Projects marked as "shared" are available to all users.
 
 6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY, HOURLY, MINUTELY, SECONDLY. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. Parse recurrence patterns:

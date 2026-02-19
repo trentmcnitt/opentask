@@ -58,6 +58,7 @@ node_modules/
 
 # Secrets
 .secrets
+*.p8
 
 # Local Claude config (workspace-specific, not merged)
 CLAUDE.local.md

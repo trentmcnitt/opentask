@@ -10,6 +10,7 @@ export {
   bulkSnoozeSchema,
   bulkEditSchema,
   bulkDeleteSchema,
+  bulkSnoozeOverdueSchema,
   validateTaskCreate,
   validateTaskUpdate,
   validateSnooze,
@@ -17,6 +18,7 @@ export {
   validateBulkSnooze,
   validateBulkEdit,
   validateBulkDelete,
+  validateBulkSnoozeOverdue,
 } from './task'
 
 export type {
@@ -27,6 +29,7 @@ export type {
   BulkSnoozeInput,
   BulkEditInput,
   BulkDeleteInput,
+  BulkSnoozeOverdueInput,
 } from './task'
 
 export {

@@ -46,7 +46,6 @@ For each scenario:
 - Are labels empty when the user did NOT explicitly request a label? (This is the most common case — labels should almost always be `[]`)
 - When the user explicitly said "label it as X", "tag it X", "add the X label", or "mark it as X", was that label correctly extracted?
 - Were NO contextual labels inferred? ("dentist" must NOT produce "medical", "van" must NOT produce "car")
-- Critical label exception: "critical" / "critical alert" still triggers the critical label (it's a system alert, not a classification)
 
 ### 5. Project Matching
 
@@ -87,11 +86,11 @@ For each scenario:
 - Was `null` returned when there was nothing extra to capture? ("buy milk" has no notes)
 - Was information NOT duplicated? (if "Walgreens" is in the title, it shouldn't be repeated in notes)
 
-### 11. Critical Label Usage
+### 11. "Critical" Keyword as Priority Signal
 
-- Was the "critical" label applied only for explicit "critical" or "critical alert" language?
-- Was emotional urgency ("really important", "URGENT") NOT treated as a "critical" trigger? (those map to priority, not the critical label)
-- Was non-alert usage of the word "critical" correctly ignored? ("critical thinking" is not a critical alert)
+- Was "critical" / "critical alert" correctly mapped to priority 4 (not a label)?
+- Was emotional urgency ("really important") NOT treated as P4? (those map to priority 2-3)
+- Was non-urgency usage of "critical" correctly ignored? ("critical thinking" should NOT trigger P4)
 
 ---
 

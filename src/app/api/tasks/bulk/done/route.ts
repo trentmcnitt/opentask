@@ -10,6 +10,8 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkDone } from '@/core/tasks'
+import { dismissTaskNotifications } from '@/core/notifications/web-push'
+import { dismissApnsNotifications } from '@/core/notifications/apns'
 import { validateBulkDone } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -29,6 +31,13 @@ export async function POST(request: NextRequest) {
       userTimezone: user.timezone,
       taskIds: input.ids,
     })
+
+    dismissTaskNotifications(user.id, input.ids).catch((err) =>
+      log.error('api', 'Dismiss notification error:', err),
+    )
+    dismissApnsNotifications(user.id, input.ids).catch((err) =>
+      log.error('api', 'Dismiss APNs notification error:', err),
+    )
 
     return success({
       tasks_affected: result.tasksAffected,

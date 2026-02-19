@@ -811,14 +811,14 @@ describe('label merging', () => {
     expect(after.labels).not.toContain('ai-to-process')
   })
 
-  test('critical label always passes through even without label-intent keywords', async () => {
+  test('all inferred labels are stripped without label-intent keywords', async () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: { title: 'refill heart medication critical alert' },
     })
 
-    // AI returns both "critical" (allowed) and "medical" (inferred, stripped)
+    // AI returns inferred labels — all should be stripped without label-intent keywords
     mockEnrichmentQuery.mockResolvedValueOnce(
       mockResult({
         title: 'Refill heart medication',
@@ -830,7 +830,7 @@ describe('label merging', () => {
     await processEnrichmentQueue()
 
     const after = getTaskById(task.id)!
-    expect(after.labels).toContain('critical')
+    expect(after.labels).not.toContain('critical')
     expect(after.labels).not.toContain('medical')
     expect(after.labels).not.toContain('ai-to-process')
   })

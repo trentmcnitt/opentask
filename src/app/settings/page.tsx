@@ -46,12 +46,12 @@ export default function SettingsPage() {
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
   const {
-    ntfyServer,
-    setNtfyServer,
-    ntfyTopic,
-    setNtfyTopic,
+    notificationsEnabled,
+    setNotificationsEnabled,
     pushoverUserKey,
     setPushoverUserKey,
+    pushoverSound,
+    setPushoverSound,
   } = useNotificationConfig()
   const { aiContext, setAiContext } = useAiContext()
   const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
@@ -65,10 +65,8 @@ export default function SettingsPage() {
   const [showCustomAutoSnoozeUrgent, setShowCustomAutoSnoozeUrgent] = useState(false)
   const [customAutoSnoozeHighMinutes, setCustomAutoSnoozeHighMinutes] = useState('')
   const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
-  const [ntfyServerDraft, setNtfyServerDraft] = useState('')
-  const [ntfyTopicDraft, setNtfyTopicDraft] = useState('')
   const [pushoverKeyDraft, setPushoverKeyDraft] = useState('')
-  const [ntfyConfigSynced, setNtfyConfigSynced] = useState(false)
+  const [pushoverConfigSynced, setPushoverConfigSynced] = useState(false)
   const [pushoverValidation, setPushoverValidation] = useState<{
     status: 'idle' | 'validating' | 'valid' | 'invalid'
     devices?: string[]
@@ -85,16 +83,14 @@ export default function SettingsPage() {
     }
   }, [aiContext, aiContextSynced])
 
-  // Sync notification config drafts from loaded preferences (once)
+  // Sync Pushover config draft from loaded preferences (once)
   useEffect(() => {
-    if (ntfyConfigSynced) return
-    if (ntfyServer !== null || ntfyTopic !== null || pushoverUserKey !== null) {
-      setNtfyServerDraft(ntfyServer ?? '')
-      setNtfyTopicDraft(ntfyTopic ?? '')
+    if (pushoverConfigSynced) return
+    if (pushoverUserKey !== null) {
       setPushoverKeyDraft(pushoverUserKey ?? '')
-      setNtfyConfigSynced(true)
+      setPushoverConfigSynced(true)
     }
-  }, [ntfyServer, ntfyTopic, pushoverUserKey, ntfyConfigSynced])
+  }, [pushoverUserKey, pushoverConfigSynced])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -254,24 +250,19 @@ export default function SettingsPage() {
     }
   }
 
-  const saveNotificationConfig = async (
-    field: string,
-    value: string | null,
-    setter: (v: string | null) => void,
-  ) => {
-    const prev =
-      field === 'ntfy_server' ? ntfyServer : field === 'ntfy_topic' ? ntfyTopic : pushoverUserKey
-    setter(value)
+  const savePushoverKey = async (value: string | null) => {
+    const prev = pushoverUserKey
+    setPushoverUserKey(value)
     try {
       const res = await fetch('/api/user/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value }),
+        body: JSON.stringify({ pushover_user_key: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
-      setter(prev)
+      setPushoverUserKey(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -441,6 +432,37 @@ export default function SettingsPage() {
           <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
             Notifications
           </h2>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm">Notifications</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Send push notifications for overdue tasks
+              </div>
+            </div>
+            <Switch
+              checked={notificationsEnabled}
+              onCheckedChange={async (checked) => {
+                const prev = notificationsEnabled
+                setNotificationsEnabled(checked)
+                try {
+                  const res = await fetch('/api/user/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notifications_enabled: checked }),
+                  })
+                  if (!res.ok) throw new Error('Failed to save')
+                  showToast({
+                    message: checked ? 'Notifications enabled' : 'Notifications disabled',
+                    type: 'success',
+                  })
+                } catch {
+                  setNotificationsEnabled(prev)
+                  showToast({ message: 'Failed to save preference', type: 'error' })
+                }
+              }}
+              aria-label="Toggle notifications"
+            />
+          </div>
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
             How often to repeat notifications for overdue tasks, by priority tier.
           </p>
@@ -482,117 +504,110 @@ export default function SettingsPage() {
             />
           </div>
 
-          {/* Notification Endpoints */}
+          {/* Pushover (Critical Alerts) */}
           <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Notification Endpoints
+              Pushover (Critical Alerts)
             </h3>
-            <div className="space-y-3">
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Pushover sends emergency-priority alerts for overdue Urgent (P4) tasks. These bypass
+              Focus mode and Do Not Disturb.
+            </p>
+            <div>
+              <label className="mb-1 block text-sm">Pushover User Key</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  value={pushoverKeyDraft}
+                  onChange={(e) => {
+                    setPushoverKeyDraft(e.target.value)
+                    setPushoverValidation({ status: 'idle' })
+                  }}
+                  placeholder="Enter your Pushover user key"
+                  className="h-8 text-sm"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0"
+                  disabled={pushoverKeyDraft === (pushoverUserKey ?? '')}
+                  onClick={() => savePushoverKey(pushoverKeyDraft.trim() || null)}
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0"
+                  disabled={!pushoverKeyDraft.trim() || pushoverValidation.status === 'validating'}
+                  onClick={validatePushoverKey}
+                >
+                  {pushoverValidation.status === 'validating' ? 'Checking...' : 'Validate'}
+                </Button>
+              </div>
+              {pushoverValidation.status === 'valid' && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                  Valid — devices: {pushoverValidation.devices?.join(', ') || 'none'}
+                </p>
+              )}
+              {pushoverValidation.status === 'invalid' && (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {pushoverValidation.error}
+                </p>
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between">
               <div>
-                <label className="mb-1 block text-sm">ntfy Server</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="url"
-                    value={ntfyServerDraft}
-                    onChange={(e) => setNtfyServerDraft(e.target.value)}
-                    placeholder="https://ntfy.sh"
-                    className="h-8 text-sm"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 shrink-0"
-                    disabled={ntfyServerDraft === (ntfyServer ?? '')}
-                    onClick={() =>
-                      saveNotificationConfig(
-                        'ntfy_server',
-                        ntfyServerDraft.trim() || null,
-                        setNtfyServer,
-                      )
-                    }
-                  >
-                    Save
-                  </Button>
+                <div className="text-sm">Alert sound</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Sound for Pushover emergency alerts
                 </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm">ntfy Topic</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    value={ntfyTopicDraft}
-                    onChange={(e) => setNtfyTopicDraft(e.target.value)}
-                    placeholder="opentask"
-                    className="h-8 text-sm"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 shrink-0"
-                    disabled={ntfyTopicDraft === (ntfyTopic ?? '')}
-                    onClick={() =>
-                      saveNotificationConfig(
-                        'ntfy_topic',
-                        ntfyTopicDraft.trim() || null,
-                        setNtfyTopic,
-                      )
-                    }
-                  >
-                    Save
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm">Pushover User Key</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    value={pushoverKeyDraft}
-                    onChange={(e) => {
-                      setPushoverKeyDraft(e.target.value)
-                      setPushoverValidation({ status: 'idle' })
-                    }}
-                    placeholder="Enter your Pushover user key"
-                    className="h-8 text-sm"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 shrink-0"
-                    disabled={pushoverKeyDraft === (pushoverUserKey ?? '')}
-                    onClick={() =>
-                      saveNotificationConfig(
-                        'pushover_user_key',
-                        pushoverKeyDraft.trim() || null,
-                        setPushoverUserKey,
-                      )
-                    }
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 shrink-0"
-                    disabled={
-                      !pushoverKeyDraft.trim() || pushoverValidation.status === 'validating'
-                    }
-                    onClick={validatePushoverKey}
-                  >
-                    {pushoverValidation.status === 'validating' ? 'Checking...' : 'Validate'}
-                  </Button>
-                </div>
-                {pushoverValidation.status === 'valid' && (
-                  <p className="mt-1 text-xs text-green-600 dark:text-green-400">
-                    Valid — devices: {pushoverValidation.devices?.join(', ') || 'none'}
-                  </p>
-                )}
-                {pushoverValidation.status === 'invalid' && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                    {pushoverValidation.error}
-                  </p>
-                )}
-              </div>
+              <select
+                value={pushoverSound}
+                onChange={async (e) => {
+                  const newSound = e.target.value
+                  const prev = pushoverSound
+                  setPushoverSound(newSound)
+                  try {
+                    const res = await fetch('/api/user/preferences', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ pushover_sound: newSound }),
+                    })
+                    if (!res.ok) throw new Error('Failed to save')
+                    showToast({ message: 'Preference saved', type: 'success' })
+                  } catch {
+                    setPushoverSound(prev)
+                    showToast({ message: 'Failed to save preference', type: 'error' })
+                  }
+                }}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="echo">Echo</option>
+                <option value="pushover">Pushover (default)</option>
+                <option value="bike">Bike</option>
+                <option value="bugle">Bugle</option>
+                <option value="cashregister">Cash Register</option>
+                <option value="classical">Classical</option>
+                <option value="cosmic">Cosmic</option>
+                <option value="falling">Falling</option>
+                <option value="gamelan">Gamelan</option>
+                <option value="incoming">Incoming</option>
+                <option value="intermission">Intermission</option>
+                <option value="magic">Magic</option>
+                <option value="mechanical">Mechanical</option>
+                <option value="pianobar">Piano Bar</option>
+                <option value="siren">Siren</option>
+                <option value="spacealarm">Space Alarm</option>
+                <option value="tugboat">Tugboat</option>
+                <option value="alien">Alien</option>
+                <option value="climb">Climb</option>
+                <option value="persistent">Persistent</option>
+                <option value="updown">Up Down</option>
+                <option value="vibrate">Vibrate only</option>
+                <option value="none">None (silent)</option>
+              </select>
             </div>
           </div>
 
