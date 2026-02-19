@@ -376,6 +376,22 @@ function HomeContent() {
     }
   }, [searchParams, router])
 
+  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task
+  const taskParamProcessed = useRef(false)
+  useEffect(() => {
+    if (taskParamProcessed.current || loading) return
+    const taskIdParam = searchParams.get('task')
+    if (!taskIdParam) return
+    taskParamProcessed.current = true
+    const taskId = parseInt(taskIdParam, 10)
+    if (isNaN(taskId)) return
+    const task = tasks.find((t) => t.id === taskId)
+    if (task) {
+      handleViewTask(task)
+    }
+    router.replace('/', { scroll: false })
+  }, [searchParams, loading, tasks, handleViewTask, router])
+
   const {
     selectedLabels,
     selectedPriorities,

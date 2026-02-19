@@ -5,7 +5,6 @@ import {
   Repeat,
   Timer,
   TimerOff,
-  Bell,
   Trash2,
   MoreHorizontal,
   Info,
@@ -1534,10 +1533,6 @@ export function QuickActionPanel({
                           Task Details
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem disabled>
-                        <Bell className="mr-2 size-4" />
-                        Critical alert
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

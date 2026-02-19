@@ -4,8 +4,7 @@
  * POST /api/notifications/test
  * Body: { type: 'individual' | 'high' | 'bulk' | 'critical' }
  *
- * Sends a test notification of the requested type using the user's configured
- * ntfy/Pushover endpoints.
+ * Sends a test notification of the requested type via Web Push (and Pushover for critical).
  */
 
 import { NextRequest } from 'next/server'
@@ -13,21 +12,14 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 
-const DEFAULT_NTFY_URL = process.env.NTFY_URL || 'https://ntfy.tk11.mcnitt.io'
-const DEFAULT_NTFY_TOPIC = process.env.NTFY_TOPIC || 'opentask'
-const NTFY_CRITICAL_TOPIC = process.env.NTFY_CRITICAL_TOPIC || 'opentask-critical'
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN || ''
+const PUSHOVER_USER = process.env.PUSHOVER_USER || ''
 const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
 
 const VALID_TYPES = ['individual', 'high', 'bulk', 'critical'] as const
 type TestType = (typeof VALID_TYPES)[number]
-
-interface UserNotifConfig {
-  ntfy_server: string | null
-  ntfy_topic: string | null
-  pushover_user_key: string | null
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,57 +31,46 @@ export async function POST(request: NextRequest) {
       return badRequest(`type must be one of: ${VALID_TYPES.join(', ')}`)
     }
 
-    const db = getDb()
-    const config = db
-      .prepare('SELECT ntfy_server, ntfy_topic, pushover_user_key FROM users WHERE id = ?')
-      .get(user.id) as UserNotifConfig | undefined
-
-    const ntfyServer = config?.ntfy_server || DEFAULT_NTFY_URL
-    const ntfyTopic = config?.ntfy_topic || DEFAULT_NTFY_TOPIC
-    const icon = `${APP_URL}/icon-192.png`
+    if (!isWebPushConfigured()) {
+      return badRequest('Web Push is not configured (VAPID keys missing)')
+    }
 
     if (type === 'individual') {
-      await sendTestNtfy(ntfyServer, ntfyTopic, 'This is a test notification from OpenTask.', {
-        Title: 'Test: Individual Notification',
-        Priority: '3',
-        Click: `${APP_URL}`,
-        Icon: icon,
+      await sendPushNotification(user.id, {
+        title: 'Test: Individual Notification',
+        body: 'This is a test notification from OpenTask.',
+        data: { url: APP_URL },
       })
     } else if (type === 'high') {
-      await sendTestNtfy(ntfyServer, ntfyTopic, 'This is a test high-priority notification.', {
-        Title: 'Test: High Priority',
-        Priority: '4',
-        Tags: 'warning',
-        Click: `${APP_URL}`,
-        Icon: `${APP_URL}/icon-192-high.png`,
+      await sendPushNotification(user.id, {
+        title: 'Test: HIGH: Important Task',
+        body: 'This is a test high-priority notification.',
+        data: { url: APP_URL },
       })
     } else if (type === 'bulk') {
-      await sendTestNtfy(ntfyServer, ntfyTopic, '- Buy groceries\n- Call dentist\n- Review notes', {
-        Title: 'Test: 3 overdue tasks',
-        Priority: '3',
-        Click: `${APP_URL}/?filter=overdue`,
-        Icon: icon,
-        Actions: `view, View All, ${APP_URL}/?filter=overdue`,
+      await sendPushNotification(user.id, {
+        title: 'Test: 3 overdue tasks',
+        body: '- Buy groceries\n- Call dentist\n- Review notes',
+        data: { url: `${APP_URL}/?filter=overdue` },
       })
     } else if (type === 'critical') {
-      // Send critical ntfy (priority 5, separate topic)
-      await sendTestNtfy(
-        ntfyServer,
-        NTFY_CRITICAL_TOPIC,
-        'This is a test critical alert from OpenTask.',
-        {
-          Title: 'Test: Critical Alert',
-          Priority: '5',
-          Tags: 'rotating_light',
-          Click: `${APP_URL}`,
-          Icon: `${APP_URL}/icon-192-urgent.png`,
-        },
-      )
+      // Send Web Push (test sends both channels; production critical alerts only send Pushover)
+      await sendPushNotification(user.id, {
+        title: 'Test: URGENT Alert',
+        body: 'This is a test urgent/critical alert from OpenTask.',
+        data: { url: APP_URL },
+      })
 
       // Send Pushover if configured
-      const pushoverUser = config?.pushover_user_key
+      const db = getDb()
+      const config = db
+        .prepare('SELECT pushover_user_key, pushover_sound FROM users WHERE id = ?')
+        .get(user.id) as { pushover_user_key: string | null; pushover_sound: string } | undefined
+
+      const pushoverUser = config?.pushover_user_key || PUSHOVER_USER
+      const pushoverSound = config?.pushover_sound || 'echo'
       if (PUSHOVER_TOKEN && pushoverUser) {
-        await sendTestPushover(pushoverUser)
+        await sendTestPushover(pushoverUser, pushoverSound)
       }
     }
 
@@ -101,31 +82,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function sendTestNtfy(
-  server: string,
-  topic: string,
-  message: string,
-  headers: Record<string, string>,
-): Promise<void> {
-  const res = await fetch(`${server}/${topic}`, {
-    method: 'POST',
-    headers,
-    body: message,
-  })
-  if (!res.ok) {
-    throw new Error(`ntfy returned ${res.status}: ${await res.text()}`)
-  }
-}
-
-async function sendTestPushover(pushoverUser: string): Promise<void> {
+async function sendTestPushover(pushoverUser: string, sound: string): Promise<void> {
   const params = new URLSearchParams({
     token: PUSHOVER_TOKEN,
     user: pushoverUser,
-    title: 'Test: Critical Alert',
-    message: 'This is a test critical alert from OpenTask.',
+    title: 'Test: URGENT Alert',
+    message: 'This is a test urgent/critical alert from OpenTask.',
     priority: '2',
     retry: '300',
     expire: '3600',
+    sound,
+    url: APP_URL,
+    url_title: 'Open OpenTask',
   })
 
   const res = await fetch('https://api.pushover.net/1/messages.json', {

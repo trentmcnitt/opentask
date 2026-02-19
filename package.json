@@ -49,6 +49,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@use-gesture/react": "^10.3.1",
+    "apns2": "^12.2.0",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",

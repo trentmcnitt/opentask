@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   ntfy_topic    TEXT,
   ntfy_server   TEXT,
   pushover_user_key TEXT,
+  pushover_sound TEXT NOT NULL DEFAULT 'echo',
   default_grouping TEXT NOT NULL DEFAULT 'project',
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
   ai_wn_highlight INTEGER NOT NULL DEFAULT 1,
   ai_insights_signal_chips INTEGER NOT NULL DEFAULT 1,
   ai_insights_score_chips INTEGER NOT NULL DEFAULT 1,
+  notifications_enabled INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -77,6 +79,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   -- Notification tracking
   last_notified_at TEXT,
+  last_critical_alert_at TEXT,
   auto_snooze_minutes INTEGER,
 
   -- Per-task stats (survive beyond completions retention)
@@ -225,6 +228,27 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+
+-- APNs device tokens (iOS native app push notification endpoints)
+CREATE TABLE IF NOT EXISTS apns_devices (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  device_token TEXT NOT NULL UNIQUE,
+  bundle_id    TEXT NOT NULL,
+  environment  TEXT NOT NULL DEFAULT 'production',
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_apns_devices_user_id ON apns_devices(user_id);
+
+-- Pushover receipts (tracks emergency alert receipts for acknowledge callbacks)
+CREATE TABLE IF NOT EXISTS pushover_receipts (
+  receipt        TEXT PRIMARY KEY,
+  task_id        INTEGER NOT NULL REFERENCES tasks(id),
+  user_id        INTEGER NOT NULL REFERENCES users(id),
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  acknowledged   INTEGER NOT NULL DEFAULT 0,
+  acknowledged_at TEXT
+);
 
 -- AI insights sessions (tracks generation progress for polling)
 CREATE TABLE IF NOT EXISTS ai_insights_sessions (

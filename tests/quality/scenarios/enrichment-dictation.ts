@@ -133,7 +133,7 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
   {
     id: 'enrich-dictation-typo-critical',
     feature: 'enrichment',
-    description: 'Typo "critcal alert" — should still trigger critical label',
+    description: 'Typo "critcal alert" — should still trigger P4 priority',
     input: {
       text: 'critcal alert pick up seizure medication from pharmacy',
       timezone: 'America/Chicago',
@@ -141,10 +141,12 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        labels: ['critical'],
+        priority: 4,
+        labels: [],
       },
       quality_notes:
-        'Labels MUST include "critical" — "critcal alert" is clearly a typo for "critical alert". ' +
+        'Priority MUST be 4 — "critcal" is clearly a typo for "critical", a P4 keyword. ' +
+        'Labels must be empty — no explicit label request in input. ' +
         'Title: "Pick up seizure medication from pharmacy" or similar.',
     },
   },
