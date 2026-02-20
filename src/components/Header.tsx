@@ -109,11 +109,6 @@ export function Header({
     onShortPress: () => onUndo(),
   })
 
-  const redoPress = useSimpleLongPress({
-    onLongPress: () => onBatchRedo?.(),
-    onShortPress: () => onRedo(),
-  })
-
   return (
     <TooltipProvider delayDuration={300}>
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
@@ -265,59 +260,33 @@ export function Header({
               </SnoozeMenu>
             )}
 
-            {/* Mobile-only undo/redo buttons with count badges.
-                Single tap: undo/redo one action.
-                Long-press (400ms): triggers batch undo/redo. */}
-            <div className="flex md:hidden">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={undoPress.onClick}
-                    onPointerDown={undoPress.onPointerDown}
-                    onPointerUp={undoPress.onPointerUp}
-                    onPointerLeave={undoPress.onPointerLeave}
-                    aria-label={
-                      undoCount > 0 ? `Undo (${undoCount} available, hold for all)` : 'Undo'
-                    }
-                    className="relative"
-                  >
-                    <Undo2 className="size-5" />
-                    {undoCount > 0 && (
-                      <span className="bg-muted-foreground/80 absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-bold text-white">
-                        {undoCount > 99 ? '99+' : undoCount}
-                      </span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Undo (hold for all)</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={redoPress.onClick}
-                    onPointerDown={redoPress.onPointerDown}
-                    onPointerUp={redoPress.onPointerUp}
-                    onPointerLeave={redoPress.onPointerLeave}
-                    aria-label={
-                      redoCount > 0 ? `Redo (${redoCount} available, hold for all)` : 'Redo'
-                    }
-                    className="relative"
-                  >
-                    <Redo2 className="size-5" />
-                    {redoCount > 0 && (
-                      <span className="bg-muted-foreground/80 absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-bold text-white">
-                        {redoCount > 99 ? '99+' : redoCount}
-                      </span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Redo (hold for all)</TooltipContent>
-              </Tooltip>
-            </div>
+            {/* Undo button in toolbar — all viewports.
+                Single tap: undo one action.
+                Long-press (400ms): triggers batch undo. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={undoPress.onClick}
+                  onPointerDown={undoPress.onPointerDown}
+                  onPointerUp={undoPress.onPointerUp}
+                  onPointerLeave={undoPress.onPointerLeave}
+                  aria-label={
+                    undoCount > 0 ? `Undo (${undoCount} available, hold for all)` : 'Undo'
+                  }
+                  className="relative"
+                >
+                  <Undo2 className="size-5" />
+                  {undoCount > 0 && (
+                    <span className="absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-zinc-900 px-1 text-[10px] leading-none font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+                      {undoCount > 99 ? '99+' : undoCount}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Undo (hold for all)</TooltipContent>
+            </Tooltip>
 
             {/* Hamburger menu */}
             <DropdownMenu onOpenChange={handleMenuOpenChange}>
@@ -327,37 +296,16 @@ export function Header({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {/* Desktop-only: undo/redo in menu (mobile has header buttons) */}
-                <DropdownMenuItem onClick={onUndo} className="hidden md:flex">
-                  <Undo2 className="size-4" />
-                  Undo
-                  {undoCount > 0 && (
-                    <span className="text-muted-foreground ml-1 text-xs">({undoCount})</span>
-                  )}
-                  <span className="text-muted-foreground ml-auto text-xs">⌘Z</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onRedo} className="hidden md:flex">
+                <DropdownMenuItem onClick={onRedo}>
                   <Redo2 className="size-4" />
                   Redo
                   {redoCount > 0 && (
                     <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
                   )}
-                  <span className="text-muted-foreground ml-auto text-xs">⌘⇧Z</span>
+                  <span className="text-muted-foreground ml-auto hidden text-xs md:inline">
+                    ⌘⇧Z
+                  </span>
                 </DropdownMenuItem>
-                {onBatchUndo && undoCount > 1 && (
-                  <DropdownMenuItem onClick={onBatchUndo} className="hidden md:flex">
-                    <Undo2 className="size-4" />
-                    Undo Session...
-                    <span className="text-muted-foreground ml-1 text-xs">({undoCount})</span>
-                  </DropdownMenuItem>
-                )}
-                {onBatchRedo && redoCount > 1 && (
-                  <DropdownMenuItem onClick={onBatchRedo} className="hidden md:flex">
-                    <Redo2 className="size-4" />
-                    Redo All...
-                    <span className="text-muted-foreground ml-1 text-xs">({redoCount})</span>
-                  </DropdownMenuItem>
-                )}
                 {onShowKeyboardShortcuts && (
                   <DropdownMenuItem onClick={onShowKeyboardShortcuts} className="hidden md:flex">
                     <Keyboard className="size-4" />

@@ -124,7 +124,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
   const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
-    'project',
+    'unified',
   )
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
   const [aiContext, setAiContextState] = useState<string | null>(null)

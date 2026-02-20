@@ -93,6 +93,9 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply bg-background;
+  }
   body {
     @apply bg-background text-foreground;
     font-family:
@@ -177,9 +180,9 @@
   }
 }
 
-/* Safe area insets for mobile */
-@supports (padding: max(0px)) {
-  .safe-bottom {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
+/* Safe area insets for mobile — env(safe-area-inset-bottom) returns the correct
+   value per context: 0 in Safari (toolbar handles it), home indicator height in
+   standalone PWA/WKWebView. No minimum needed. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

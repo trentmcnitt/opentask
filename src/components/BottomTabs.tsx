@@ -21,7 +21,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
 
   return (
     <nav className="safe-bottom border-border bg-background fixed right-0 bottom-0 left-0 z-20 border-t select-none md:hidden">
-      <div className="flex items-center justify-around px-2 py-1">
+      <div className="flex items-center justify-around px-2 pt-1">
         {tabs.map((tab) => {
           const isActive =
             tab.href === '/'

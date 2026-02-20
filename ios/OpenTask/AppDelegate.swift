@@ -17,6 +17,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
+    /// Clear all delivered notifications when the app comes to foreground.
+    /// Prevents notification bombardment: when the cron sends 20 notifications and
+    /// the user taps the first one, the remaining delivered notifications are cleared
+    /// instead of continuing to chime.
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        application.applicationIconBadgeNumber = 0
+    }
+
     // MARK: - Notification Permission
 
     private func requestNotificationPermission(_ application: UIApplication) {
@@ -184,7 +193,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     break
 
                 case UNNotificationDefaultActionIdentifier:
-                    // User tapped the notification body — open the app (no API call needed)
+                    // User tapped the notification body — open the app.
+                    // Clear all other delivered notifications since the user is now in the app.
+                    UNUserNotificationCenter.current().removeAllDeliveredNotifications()
                     break
 
                 default:
@@ -199,12 +210,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     /// Called when a notification arrives while the app is in the foreground.
+    /// Suppresses all notifications when the app is open — the user is already looking
+    /// at their task list. This also prevents the remaining notifications from a cron
+    /// batch from chiming after the user opens the app from the first one.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Show banner + sound even when app is open
-        completionHandler([.banner, .sound])
+        completionHandler([])
     }
 }

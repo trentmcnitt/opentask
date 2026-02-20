@@ -37,8 +37,8 @@ import type { Task, LabelConfig } from '@/types'
 /**
  * TaskRow visual reference — complete rendered examples:
  *
- *   Line 1: [priority] [title] [recurrence icon] [auto-snooze icon] [labels]
- *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X]
+ *   Line 1: [priority] [title] [trailing priority dot]
+ *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X] · [↻] [⏱] [📝] [labels] [project]
  *
  * Due soon (< 3h, shows both relative + absolute):
  *   ┌─────────────────────────────────────────────────────────┐
@@ -327,7 +327,13 @@ export function TaskRow({
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
-  const hasLine2 = metaSegments.length > 0
+  const hasIndicators =
+    !!task.rrule ||
+    task.auto_snooze_minutes !== null ||
+    !!(task.notes && task.notes.trim()) ||
+    hasLabels ||
+    !!projectName
+  const hasLine2 = metaSegments.length > 0 || hasIndicators
   const iconHeight = getIconAlignHeight(task.title)
 
   return (
@@ -451,64 +457,6 @@ export function TaskRow({
               ●
             </span>
           )}
-
-          {task.rrule && (
-            <span
-              className={cn('text-muted-foreground flex shrink-0 items-center', iconHeight)}
-              title="Recurring"
-            >
-              <Repeat className="size-3.5" />
-            </span>
-          )}
-
-          {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
-            <span
-              className={cn('text-muted-foreground flex shrink-0 items-center', iconHeight)}
-              title="Auto-snooze off"
-            >
-              <TimerOff className="size-3.5" />
-            </span>
-          ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
-            <span
-              className={cn('text-muted-foreground flex shrink-0 items-center gap-0.5', iconHeight)}
-              title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
-            >
-              <Timer className="size-3.5" />
-              <span className="text-xs">{formatAutoSnoozeLabel(task.auto_snooze_minutes)}</span>
-            </span>
-          ) : null}
-
-          {task.notes && task.notes.trim() && (
-            <span
-              className={cn('flex shrink-0 items-center text-amber-400', iconHeight)}
-              title="Has notes"
-            >
-              <StickyNote className="size-3.5" />
-            </span>
-          )}
-
-          {hasLabels && (
-            <span className={cn('flex shrink-0 items-center', iconHeight)}>
-              <LabelBadges
-                labels={task.labels}
-                labelConfig={labelConfig}
-                onLabelClick={onLabelClick}
-                onReprocess={onReprocess}
-              />
-            </span>
-          )}
-
-          {projectName && (
-            <span
-              className={cn(
-                'text-muted-foreground/60 flex shrink-0 items-center gap-0.5 text-[11px]',
-                iconHeight,
-              )}
-            >
-              <FolderOpen className="size-2.5" />
-              {projectName}
-            </span>
-          )}
         </div>
 
         {hasLine2 && (
@@ -519,6 +467,62 @@ export function TaskRow({
                 {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
               </span>
             ))}
+
+            {hasIndicators && (
+              <span className="inline-flex items-center gap-1.5">
+                {metaSegments.length > 0 && <span className="text-muted-foreground/50">·</span>}
+
+                {task.rrule && (
+                  <span
+                    className="text-muted-foreground inline-flex items-center"
+                    title="Recurring"
+                  >
+                    <Repeat className="size-3" />
+                  </span>
+                )}
+
+                {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
+                  <span
+                    className="text-muted-foreground inline-flex items-center"
+                    title="Auto-snooze off"
+                  >
+                    <TimerOff className="size-3" />
+                  </span>
+                ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
+                  <span
+                    className="text-muted-foreground inline-flex items-center gap-0.5"
+                    title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
+                  >
+                    <Timer className="size-3" />
+                    <span className="text-[11px]">
+                      {formatAutoSnoozeLabel(task.auto_snooze_minutes)}
+                    </span>
+                  </span>
+                ) : null}
+
+                {task.notes && task.notes.trim() && (
+                  <span className="inline-flex items-center text-amber-400" title="Has notes">
+                    <StickyNote className="size-3" />
+                  </span>
+                )}
+
+                {hasLabels && (
+                  <LabelBadges
+                    labels={task.labels}
+                    labelConfig={labelConfig}
+                    onLabelClick={onLabelClick}
+                    onReprocess={onReprocess}
+                  />
+                )}
+
+                {projectName && (
+                  <span className="text-muted-foreground/60 inline-flex items-center gap-0.5 text-[11px]">
+                    <FolderOpen className="size-2.5" />
+                    {projectName}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         )}
 
