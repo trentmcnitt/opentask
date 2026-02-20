@@ -42,7 +42,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        #if DEBUG
         print("[OpenTask] APNs token: \(token)")
+        #endif
 
         AppConfig.shared.deviceToken = token
 
@@ -175,17 +177,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 case "SNOOZE_ALL_1HR":
                     try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
 
-                case "SNOOZE_CUSTOM":
-                    // Set by content extension — read the selected due_at from response
-                    if let selectedDueAt = response.notification.request.content.userInfo["selectedDueAt"] as? String {
-                        try await APIClient.shared.snoozeTo(taskId: taskId, dueAt: selectedDueAt)
-                    }
-
-                case "SNOOZE_ALL_CUSTOM":
-                    // Set by content extension — read the delta minutes
-                    if let deltaMinutes = response.notification.request.content.userInfo["selectedDeltaMinutes"] as? Int {
-                        try await APIClient.shared.snoozeOverdue(deltaMinutes: deltaMinutes)
-                    }
+                case "SNOOZE_CUSTOM", "SNOOZE_ALL_CUSTOM":
+                    // These actions are handled entirely by the content extension
+                    // (NotificationViewController) which makes the API call directly.
+                    // With .dismiss completion, this handler is not reached for these actions.
+                    break
 
                 case UNNotificationDefaultActionIdentifier:
                     // User tapped the notification body — open the app (no API call needed)

@@ -19,7 +19,6 @@ struct SnoozeGridView: View {
 
     @State private var workingDueAt: String
     @State private var isDirty = false
-    @State private var feedbackMessage: String?
 
     init(
         taskTitle: String,
@@ -85,14 +84,6 @@ struct SnoozeGridView: View {
 
             // 4x3 Grid
             gridSection
-
-            // Feedback message
-            if let message = feedbackMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
         }
         .padding(12)
     }
@@ -194,11 +185,15 @@ struct SnoozeGridView: View {
 
     // MARK: - Formatting
 
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "E, MMM d, h:mm a"
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
     private var formattedWorkingDate: String {
         guard let date = DateHelpers.parseISO(workingDueAt) else { return workingDueAt }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E, MMM d, h:mm a"
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        return Self.displayFormatter.string(from: date)
     }
 }
