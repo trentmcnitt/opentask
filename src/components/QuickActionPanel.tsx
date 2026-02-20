@@ -1706,9 +1706,6 @@ export function QuickActionPanel({
   )
 }
 
-/** Internal ref-forwarding wrapper for auto-save on dismiss */
-QuickActionPanel.displayName = 'QuickActionPanel'
-
 function GridButton({
   label,
   onClick,
