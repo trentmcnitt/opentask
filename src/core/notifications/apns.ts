@@ -52,11 +52,11 @@ interface ApnsDeviceRow {
 }
 
 /** Error reasons that indicate the device token is no longer valid. */
-const STALE_TOKEN_REASONS = new Set([Errors.badDeviceToken, Errors.unregistered])
+const STALE_TOKEN_REASONS: Set<string> = new Set([Errors.badDeviceToken, Errors.unregistered])
 
 function isStaleTokenError(err: unknown): boolean {
   const reason = (err as ApnsError)?.reason
-  return typeof reason === 'string' && STALE_TOKEN_REASONS.has(reason as never)
+  return typeof reason === 'string' && STALE_TOKEN_REASONS.has(reason)
 }
 
 export interface ApnsPushPayload {
@@ -120,9 +120,13 @@ export async function sendApnsNotification(
     }),
   )
 
-  const failures = results.filter((r) => r.status === 'rejected')
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
   if (failures.length > 0) {
-    log.error('apns', `Failed to send ${failures.length}/${devices.length} APNs notifications`)
+    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
+    log.error(
+      'apns',
+      `Failed to send ${failures.length}/${devices.length} APNs notifications: ${reasons}`,
+    )
   }
 }
 
@@ -161,8 +165,12 @@ export async function dismissApnsNotifications(userId: number, taskIds: number[]
     }),
   )
 
-  const failures = results.filter((r) => r.status === 'rejected')
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
   if (failures.length > 0) {
-    log.error('apns', `Failed to send ${failures.length}/${devices.length} APNs dismiss signals`)
+    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
+    log.error(
+      'apns',
+      `Failed to send ${failures.length}/${devices.length} APNs dismiss signals: ${reasons}`,
+    )
   }
 }
