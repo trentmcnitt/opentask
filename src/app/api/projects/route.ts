@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const projects = db
       .prepare(
         `
-      SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.created_at,
+      SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.color, p.created_at,
         (SELECT COUNT(*) FROM tasks t
          WHERE t.project_id = p.id AND t.user_id = ?
            AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
     const name = input.name.trim()
     const shared = input.shared
     const sortOrder = input.sort_order
+    const color = input.color ?? null
 
     const db = getDb()
     const now = nowUtc()
@@ -81,17 +82,17 @@ export async function POST(request: NextRequest) {
     const result = db
       .prepare(
         `
-      INSERT INTO projects (name, owner_id, shared, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO projects (name, owner_id, shared, sort_order, color, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
       )
-      .run(name, user.id, shared ? 1 : 0, sortOrder, now)
+      .run(name, user.id, shared ? 1 : 0, sortOrder, color, now)
 
     const projectId = Number(result.lastInsertRowid)
 
     const project = db
       .prepare(
-        'SELECT id, name, owner_id, shared, sort_order, created_at, 0 AS active_count, 0 AS overdue_count FROM projects WHERE id = ?',
+        'SELECT id, name, owner_id, shared, sort_order, color, created_at, 0 AS active_count, 0 AS overdue_count FROM projects WHERE id = ?',
       )
       .get(projectId) as ProjectRow
 

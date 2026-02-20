@@ -28,6 +28,7 @@ import { AIStatusModal } from '@/components/AIStatusModal'
 interface HeaderProps {
   backHref?: string
   title?: string
+  headerAction?: React.ReactNode
   taskCount: number
   overdueCount?: number
   todayCount?: number
@@ -43,11 +44,13 @@ interface HeaderProps {
   onSnoozeOverdue?: (until?: string) => void
   onShowKeyboardShortcuts?: () => void
   timezone?: string
+  searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function Header({
   backHref,
   title,
+  headerAction,
   taskCount,
   overdueCount = 0,
   todayCount = 0,
@@ -63,6 +66,7 @@ export function Header({
   onSnoozeOverdue,
   onShowKeyboardShortcuts,
   timezone,
+  searchFocusRef,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
@@ -154,6 +158,8 @@ export function Header({
             </Popover>
           )}
 
+          {headerAction}
+
           {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
           <div className="flex min-w-0 flex-1 items-center">
             {/* Badge container: @container enables container queries on mobile.
@@ -224,6 +230,7 @@ export function Header({
                 onSearch={onSearch}
                 onClear={onSearchClear}
                 onExpandedChange={setSearchExpanded}
+                focusRef={searchFocusRef}
               />
             )}
           </div>

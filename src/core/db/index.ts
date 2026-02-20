@@ -81,6 +81,10 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'notifications_enabled')) {
     database.exec('ALTER TABLE users ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 1')
   }
+  // Project colors (2026-02)
+  if (!hasColumn(database, 'projects', 'color')) {
+    database.exec('ALTER TABLE projects ADD COLUMN color TEXT')
+  }
 }
 
 function initSchema(database: Database.Database): void {

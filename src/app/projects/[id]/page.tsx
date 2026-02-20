@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
+import { MoreHorizontal, X } from 'lucide-react'
 import { TaskList } from '@/components/TaskList'
 import { FilterBar } from '@/components/FilterBar'
 import { Header } from '@/components/Header'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { QuickActionPopover, useQuickActionShortcut } from '@/components/QuickActionPopover'
-import type { Task } from '@/types'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import type { Task, Project, LabelColor } from '@/types'
 import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
@@ -19,6 +22,8 @@ import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import { useAiInsights } from '@/hooks/useAiInsights'
+import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
+import { cn } from '@/lib/utils'
 
 export default function ProjectDetailPage() {
   const { status } = useSession()
@@ -27,7 +32,7 @@ export default function ProjectDetailPage() {
   const projectId = params.id as string
 
   const [tasks, setTasks] = useState<Task[]>([])
-  const [projectName, setProjectName] = useState('')
+  const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const timezone = useTimezone()
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
@@ -80,13 +85,13 @@ export default function ProjectDetailPage() {
 
     fetchTasks()
 
-    // Fetch project name
+    // Fetch project details
     fetch('/api/projects')
       .then((r) => r.json())
       .then((data) => {
         const projects = data.data?.projects || []
-        const project = projects.find((p: { id: number }) => p.id === parseInt(projectId))
-        if (project) setProjectName(project.name)
+        const found = projects.find((p: Project) => p.id === parseInt(projectId))
+        if (found) setProject(found)
       })
       .catch(() => {})
   }, [status, router, projectId, fetchTasks])
@@ -162,7 +167,24 @@ export default function ProjectDetailPage() {
     <div className="flex-1">
       <Header
         backHref="/projects"
-        title={projectName || 'Project'}
+        title={project?.name || 'Project'}
+        headerAction={
+          project && (
+            <ProjectColorPicker
+              color={project.color}
+              onColorChange={(color) => {
+                setProject((prev) => (prev ? { ...prev, color } : prev))
+                fetch(`/api/projects/${projectId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ color }),
+                }).catch(() => {
+                  showToast({ message: 'Failed to update color', type: 'error' })
+                })
+              }}
+            />
+          )
+        }
         taskCount={tasks.length}
         overdueCount={overdueCount}
         todayCount={todayCount}
@@ -231,5 +253,69 @@ export default function ProjectDetailPage() {
         }}
       />
     </div>
+  )
+}
+
+function ProjectColorPicker({
+  color,
+  onColorChange,
+}: {
+  color: LabelColor | null
+  onColorChange: (color: LabelColor | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 flex-shrink-0"
+          aria-label="Project color"
+        >
+          {color ? (
+            <span className={cn('size-3 rounded-full', LABEL_COLORS[color].dot)} />
+          ) : (
+            <MoreHorizontal className="size-4" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3" sideOffset={6}>
+        <div className="grid grid-cols-4 gap-2">
+          {LABEL_COLOR_NAMES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                onColorChange(c)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex size-8 items-center justify-center rounded-full transition-transform hover:scale-110',
+                color === c && 'ring-ring ring-2 ring-offset-2',
+              )}
+              title={LABEL_COLORS[c].display}
+              aria-label={LABEL_COLORS[c].display}
+            >
+              <span className={cn('size-5 rounded-full', LABEL_COLORS[c].dot)} />
+            </button>
+          ))}
+        </div>
+        {color && (
+          <button
+            type="button"
+            onClick={() => {
+              onColorChange(null)
+              setOpen(false)
+            }}
+            className="text-muted-foreground hover:text-foreground mt-2 flex w-full items-center justify-center gap-1 text-xs transition-colors"
+          >
+            <X className="size-3" />
+            None
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
