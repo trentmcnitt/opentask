@@ -39,6 +39,25 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 02-20-26
+
+### watchOS Companion App for Notification Actions
+
+**Problem:** Apple Watch shows APNs notification action buttons (Done, +1hr, All +1hr) when notifications mirror from iPhone, but tapping them has no effect. The Watch forwards actions back to the iPhone app's `AppDelegate`, but this forwarding is unreliable — the iPhone may be locked, suspended, or terminated. Errors are silently swallowed, so there's zero feedback that the action didn't work.
+
+**Solution:** Minimal watchOS 10+ companion app (`OpenTaskWatch`) that handles notification actions directly on the Watch. Registers the same `TASK_REMINDER` category, makes API calls over the Watch's own network connection, and provides haptic feedback on success/failure. No separate APNs registration — notifications still arrive via iPhone mirroring. No server changes — same API endpoints. Credentials shared via App Group keychain, so no Watch-side setup needed.
+
+**Key decisions:**
+
+- watchOS 10.0 minimum (matches iOS 17.0 min, covers Apple Watch Series 4+)
+- No WatchConnectivity — App Group keychain is sufficient for credential sharing
+- Haptic + local error notification on failure solves the silent failure problem that made the old forwarding approach useless
+- Bare-bones scope: notification actions only, no task browsing UI
+
+**Status:** Built and compiles for both watchOS simulator and iOS (no regressions). Not yet tested on physical hardware — Apple Watch dev setup was painful (Developer Mode toggle only appears after Xcode "prepares" the device, Watch connects through the iPhone not directly, unpairing in Xcode made reconnection difficult). Physical device testing still needed to confirm notification actions actually work from the wrist.
+
+---
+
 ## 02-15-26
 
 ### Priority-Based Notification Icons

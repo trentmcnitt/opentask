@@ -10,9 +10,10 @@ interface SearchBarProps {
   onSearch: (query: string) => void
   onClear: () => void
   onExpandedChange?: (expanded: boolean) => void
+  focusRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProps) {
+export function SearchBar({ onSearch, onClear, onExpandedChange, focusRef }: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -43,15 +44,43 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
     [onSearch, onClear],
   )
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setQuery('')
     onClear()
     setExpandedState(false)
-  }
+  }, [onClear, setExpandedState])
 
   useEffect(() => {
     if (expanded) inputRef.current?.focus()
   }, [expanded])
+
+  // Register imperative focus callback for Cmd+K shortcut
+  useEffect(() => {
+    if (focusRef) {
+      focusRef.current = () => {
+        setExpandedState(true)
+        inputRef.current?.focus()
+      }
+      return () => {
+        focusRef.current = null
+      }
+    }
+  }, [focusRef, setExpandedState])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        if (query) {
+          handleClear()
+        } else {
+          ;(e.target as HTMLElement).blur()
+          setExpandedState(false)
+        }
+      }
+    },
+    [query, handleClear, setExpandedState],
+  )
 
   const isActive = expanded || !!query
 
@@ -76,6 +105,7 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
             onBlur={() => {
               if (!query) setExpandedState(false)
             }}
+            onKeyDown={handleKeyDown}
             placeholder="Search tasks..."
             className="pr-8 pl-9"
             aria-label="Search tasks"
@@ -101,6 +131,7 @@ export function SearchBar({ onSearch, onClear, onExpandedChange }: SearchBarProp
               type="text"
               value={query}
               onChange={(e) => handleChange(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Search..."
               className="min-w-0 flex-1"
               autoFocus

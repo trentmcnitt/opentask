@@ -15,6 +15,7 @@ import {
   XCircle,
   RotateCcw,
   Sparkles,
+  Lightbulb,
   CalendarDays,
   Pencil,
 } from 'lucide-react'
@@ -155,6 +156,8 @@ export interface QuickActionPanelProps {
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
   /** AI annotation text to display (e.g., What's Next recommendation reason) */
   annotation?: string
+  /** AI Insights commentary text to display */
+  insightsCommentary?: string
   /** Enables create mode — panel is used for new task creation instead of editing */
   createMode?: boolean
   /** Pre-fills title in create mode (from QuickAdd "+" button) */
@@ -204,6 +207,7 @@ export function QuickActionPanel({
   saveRef,
   onSaveAll,
   annotation,
+  insightsCommentary,
   createMode = false,
   initialTitle,
   onCreate,
@@ -269,7 +273,8 @@ export function QuickActionPanel({
   const [pendingProject, setPendingProject] = useState<number | null>(null)
   // pendingTitle stages title changes (previously auto-saved on blur)
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
-  // pendingDueAt stages date changes for batched save (only used when onSaveAll provided)
+  // pendingDueAt stages date changes for batched save (onSaveAll mode) and as an explicit
+  // override in create mode where the hook's dirty detection fails (see handleSmartButtonClick)
   const [pendingDueAt, setPendingDueAt] = useState<string | null>(null)
   // pendingDueAtCleared tracks when user wants to clear the due date (and recurrence)
   const [pendingDueAtCleared, setPendingDueAtCleared] = useState(false)
@@ -363,11 +368,12 @@ export function QuickActionPanel({
 
   // Use the appropriate hook based on mode
   // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook
-  const hasDateChanges = onSaveAll
-    ? pendingDueAt !== null || singleHook.isDirty
-    : isBulkMode
-      ? bulkHook.isDirty
-      : singleHook.isDirty
+  const hasDateChanges =
+    onSaveAll || isCreateMode
+      ? pendingDueAt !== null || singleHook.isDirty
+      : isBulkMode
+        ? bulkHook.isDirty
+        : singleHook.isDirty
   const hasPendingChanges =
     pendingPriority !== null ||
     pendingLabels !== null ||
@@ -431,9 +437,15 @@ export function QuickActionPanel({
   const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
   const deltaDisplay = isBulkMode ? bulkHook.deltaDisplay : singleHook.deltaDisplay
 
-  // Whether the date specifically has changed (separate from overall isDirty which includes
-  // priority, labels, etc.). Used for blue styling on the due date line.
-  const isDateDirty = isBulkMode ? bulkHook.isDirty : singleHook.isDirty
+  // Whether the date specifically has changed — used for blue styling on the due date line.
+  // Differs from hasDateChanges: in edit mode with onSaveAll, hasDateChanges also checks
+  // pendingDueAt (for batched save staging), but isDateDirty only checks the hook because
+  // the hook's dirty detection works correctly in edit mode (initial = task's real due_at).
+  const isDateDirty = isCreateMode
+    ? pendingDueAt !== null || singleHook.isDirty
+    : isBulkMode
+      ? bulkHook.isDirty
+      : singleHook.isDirty
 
   // Per-field dirty booleans — used for blue "modified" indicators on each field
   const isTitleDirty = pendingTitle !== null
@@ -490,6 +502,7 @@ export function QuickActionPanel({
   const handlePresetClick = useCallback(
     (hour: number, minute: number) => {
       setPendingDueAtCleared(false)
+      setPendingDueAt(null)
       applyPreset(hour, minute)
     },
     [applyPreset],
@@ -498,6 +511,7 @@ export function QuickActionPanel({
   const handleIncrementClick = useCallback(
     (inc: { minutes: number | null; days?: number }) => {
       setPendingDueAtCleared(false)
+      setPendingDueAt(null)
       applyIncrement(inc)
     },
     [applyIncrement],
@@ -506,9 +520,16 @@ export function QuickActionPanel({
   const handleSmartButtonClick = useCallback(
     (type: 'now' | 'nextHour') => {
       setPendingDueAtCleared(false)
+      // In create mode, "Now" can produce the same value as initWorkingDate(null)
+      // (both call snapToNearestFiveMinutes), so the hook's isDirty stays false.
+      // Explicitly set pendingDueAt to ensure the date is staged and displayed.
+      if (isCreateMode) {
+        const isoUtc = type === 'now' ? snapToNearestFiveMinutes() : snapToNextHour()
+        setPendingDueAt(isoUtc)
+      }
       handleSmartButton(type)
     },
-    [handleSmartButton],
+    [handleSmartButton, isCreateMode],
   )
 
   // Apply date changes - when onSaveAll provided, stage the change for batched save
@@ -614,10 +635,6 @@ export function QuickActionPanel({
   const handleCreate = useCallback(async () => {
     if (!onCreate) return
     const changes = collectPendingChanges()
-    // Include date from hook if user picked one
-    if (!changes.due_at && singleHook.isDirty) {
-      changes.due_at = singleHook.workingDate
-    }
     await onCreate({ ...changes, title: createTitle.trim() })
     resetAllPending()
     setCreateTitle('')
@@ -1010,11 +1027,16 @@ export function QuickActionPanel({
               onChange={(isoUtc) => {
                 if (isoUtc === null) {
                   setPendingDueAtCleared(true)
+                  setPendingDueAt(null)
                   if (effectiveTask?.rrule || pendingRrule) {
                     setPendingRrule(null)
                   }
                 } else {
                   setPendingDueAtCleared(false)
+                  // In create mode, the hook's initial date is a synthetic snap-to-now value,
+                  // so a calendar pick matching it would leave isDirty false. Use pendingDueAt
+                  // as an explicit override (same pattern as smart buttons).
+                  setPendingDueAt(isCreateMode ? isoUtc : null)
                   singleHook.setWorkingDate(isoUtc)
                 }
               }}
@@ -1604,9 +1626,17 @@ export function QuickActionPanel({
 
       {/* AI annotation — shown between date grid and action buttons */}
       {annotation && (
-        <p className="mt-2 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
+        <p className="mt-2 text-xs text-blue-600/80 dark:text-blue-400/80">
           <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
           {annotation}
+        </p>
+      )}
+
+      {/* AI Insights commentary */}
+      {insightsCommentary && (
+        <p className="mt-2 text-xs text-indigo-600/80 dark:text-indigo-400/80">
+          <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
+          {insightsCommentary}
         </p>
       )}
 

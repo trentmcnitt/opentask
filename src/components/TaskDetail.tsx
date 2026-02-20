@@ -35,6 +35,8 @@ interface TaskDetailProps {
   onSaveAll?: (changes: QuickActionPanelChanges) => void
   /** AI annotation text to display in the QuickActionPanel */
   annotation?: string
+  /** AI Insights commentary text to display in the QuickActionPanel */
+  insightsCommentary?: string
 }
 
 export function TaskDetail({
@@ -49,6 +51,7 @@ export function TaskDetail({
   saveRef,
   onSaveAll,
   annotation,
+  insightsCommentary,
 }: TaskDetailProps) {
   const timezone = useTimezone()
 
@@ -93,6 +96,7 @@ export function TaskDetail({
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}
               annotation={annotation}
+              insightsCommentary={insightsCommentary}
             />
           </div>
         )}

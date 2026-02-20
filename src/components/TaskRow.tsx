@@ -509,17 +509,13 @@ export function TaskRow({
             )}
 
             {projectName && (
-              <span className="text-muted-foreground/60 inline-flex items-center gap-0.5 text-[11px]">
-                {projectColor ? (
-                  <span
-                    className={cn(
-                      'inline-block size-2 rounded-full',
-                      LABEL_COLORS[projectColor].dot,
-                    )}
-                  />
-                ) : (
-                  <FolderOpen className="size-2.5" />
+              <span
+                className={cn(
+                  'inline-flex items-center gap-0.5 text-[11px]',
+                  projectColor ? LABEL_COLORS[projectColor].text : 'text-muted-foreground/60',
                 )}
+              >
+                <FolderOpen className="size-2.5" />
                 {projectName}
               </span>
             )}
