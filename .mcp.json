@@ -6,6 +6,10 @@
         "-c",
         "DIR=/tmp/mcp-playwright-$(basename \"$PWD\" | tr ' ' '-') && echo '{\"browser\":{\"browserName\":\"chromium\",\"launchOptions\":{\"args\":[\"--guest\",\"--password-store=basic\",\"--disable-features=PasswordLeakDetection,PasswordManager\",\"--disable-background-networking\",\"--disable-sync\"]}}}' > /tmp/pw-mcp-config.json && npx -y @playwright/mcp@latest --config /tmp/pw-mcp-config.json --user-data-dir=\"$DIR\""
       ]
+    },
+    "XcodeBuildMCP": {
+      "command": "npx",
+      "args": ["-y", "xcodebuildmcp@latest", "mcp"]
     }
   }
 }

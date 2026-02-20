@@ -16,6 +16,7 @@ export function showToast({ message, type, action }: ToastOptions) {
     type === 'success' ? sonnerToast.success : type === 'error' ? sonnerToast.error : sonnerToast
   if (action) {
     toastFn(message, {
+      duration: 5000,
       action: {
         label: action.label,
         onClick: action.onClick,
@@ -34,7 +35,10 @@ export function showSuccessToastWithAction(
   message: string,
   action: { label: string; onClick: () => void },
 ) {
-  sonnerToast.success(message, { action: { label: action.label, onClick: action.onClick } })
+  sonnerToast.success(message, {
+    duration: 5000,
+    action: { label: action.label, onClick: action.onClick },
+  })
 }
 
 export function showErrorToast(message: string) {

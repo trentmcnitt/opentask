@@ -57,7 +57,15 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 
 - [x] Server-side quick check passes (482 behavioral, 0 errors)
 - [x] Integration tests pass (128 tests, 15 files)
-- [ ] Physical device testing
+- [x] Simulator testing: setup form, WebView login, dashboard, push banners
+- [x] Content extension renders snooze grid in simulator (pull-down gesture)
+- [x] Grid buttons interactive: presets, increments, decrements all work
+- [x] Dynamic action button labels update with computed delta
+- [x] APNs env vars configured on dev server
+- [x] TestFlight build v1.0.0 (2) uploaded to App Store Connect
+- [ ] Physical device testing via TestFlight
+- [ ] APNs delivery verified on physical device
+- [ ] Content extension interaction verified on physical device
 - [ ] All checklist items verified
 
 ## Lessons Learned
@@ -65,8 +73,9 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 ### xcodegen gotchas
 
 - **Entitlements**: Use `entitlements: properties:` in `project.yml` — xcodegen generates the file content from properties. Using `entitlements: path:` alone causes xcodegen to overwrite the file with empty content.
-- **Info.plist for extensions**: xcodegen overwrites Info.plist on every generation. Workaround: backup before `xcodegen generate`, restore after. The `NSExtension` dict with custom keys gets wiped otherwise.
+- **Info.plist for extensions**: Do NOT use `info: path:` in project.yml — xcodegen overwrites the file on every generation, stripping the `NSExtension` dictionary. Instead, use `INFOPLIST_FILE` and `GENERATE_INFOPLIST_FILE: false` in build settings. This tells Xcode to use the plist as-is without xcodegen touching it.
 - **`info: properties:` without `path:`**: Fails with "Decoding failed at 'path': Nothing found". Must specify `info: path:` even for extension targets.
+- **Extension version numbers**: The extension's `CFBundleVersion` and `CFBundleShortVersionString` in Info.plist must match the main app's `CURRENT_PROJECT_VERSION` and `MARKETING_VERSION` in project.yml. Update both when bumping versions.
 
 ### Swift version
 
@@ -83,3 +92,18 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 - **Impact:** Same-day overdue tasks are not detected by the overdue checker. Tasks overdue from previous days work because `2026-02-18T...` < `2026-02-19 ...`
 - **Fix:** Wrap column in `datetime()` function: `datetime(due_at) < datetime('now')`
 - Applied fix in the new `snooze-overdue` endpoint; pre-existing instances in overdue-checker.ts and critical-alerts.ts still have the bug
+
+### UserNotificationsUI framework linking
+
+- The notification content extension requires `UserNotificationsUI` framework at runtime, not just `UserNotifications`
+- Swift auto-linking from `import UserNotificationsUI` alone is not sufficient — the framework must be explicitly listed as a dependency
+- In project.yml: `dependencies: - sdk: UserNotificationsUI.framework`
+- Without this, the extension loads but the view is blank. The crash log shows "Unable to find NSExtensionContextClass (\_UNNotificationContentExtensionVendorContext)"
+
+### Simulator notification testing
+
+- `xcrun simctl push` delivers banner notifications but content extensions are limited
+- **Pull-down gesture works** to expand notifications in the simulator — drag down on the banner when it appears
+- Content extension interaction (tapping buttons in the expanded view) works in the simulator
+- On iOS 26.2: use `touch` (down+up) instead of `tap` to focus SwiftUI text fields — `tap` doesn't reliably activate them
+- WKWebView content is not in the accessibility tree; use screenshot coordinates for web interactions
