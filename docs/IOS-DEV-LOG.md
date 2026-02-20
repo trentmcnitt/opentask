@@ -9,7 +9,7 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 ## Architecture
 
 - **App:** WKWebView shell loading the existing PWA. Native code handles push notifications only.
-- **Server:** APNs sends alongside existing Web Push + Pushover. `apns2` npm package with p8 token auth.
+- **Server:** APNs sends alongside existing Web Push. `apns2` npm package with p8 token auth.
 - **Distribution:** Ad Hoc for 2 devices. Other self-hosted users build from source with their own Apple Developer account.
 
 ## Progress
@@ -22,7 +22,7 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 - [x] `POST/DELETE /api/push/apns/register` — device registration
 - [x] `POST /api/tasks/bulk/snooze-overdue` — server-side overdue query for "All" button
 - [x] Overdue checker sends APNs alongside Web Push
-- [x] Critical alerts send APNs alongside Pushover
+- [x] Critical alerts send APNs with time-sensitive interruption level
 - [x] APNs dismissal added to all action/snooze/done endpoints
 - [x] Env vars and deploy config updated
 - [x] Behavioral tests for apns_devices CRUD
@@ -85,13 +85,10 @@ Web Push on iOS doesn't support action buttons. Users can't snooze or complete t
 
 - Originally planned iOS 16.0. Bumped to iOS 17.0 because `@Observable` macro requires it. iOS 17 covers 90%+ of devices so no practical concern for Ad Hoc distribution.
 
-### Pre-existing SQLite date comparison bug
+### SQLite date comparison bug (fixed)
 
-- `due_at < datetime('now')` is used in overdue-checker and critical-alerts queries
-- **Bug:** dates stored as ISO strings (with `T` separator) don't compare correctly to `datetime('now')` output (space separator) on the same day. `T` > space in ASCII, so `2026-02-19T10:00:00Z < '2026-02-19 17:00:00'` returns false
-- **Impact:** Same-day overdue tasks are not detected by the overdue checker. Tasks overdue from previous days work because `2026-02-18T...` < `2026-02-19 ...`
-- **Fix:** Wrap column in `datetime()` function: `datetime(due_at) < datetime('now')`
-- Applied fix in the new `snooze-overdue` endpoint; pre-existing instances in overdue-checker.ts and critical-alerts.ts still have the bug
+- `due_at < datetime('now')` compared ISO strings (with `T` separator) against `datetime('now')` output (space separator). On the same day, `T` > space in ASCII, so same-day overdue tasks weren't detected.
+- **Fix:** `datetime(due_at) < datetime('now')` — applied across all queries (overdue-checker, critical-alerts, snooze-overdue).
 
 ### UserNotificationsUI framework linking
 
