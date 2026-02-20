@@ -29,6 +29,7 @@ import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
+import { useInsightsData } from '@/hooks/useInsightsData'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 
 export default function TaskDetailPage() {
@@ -44,6 +45,7 @@ export default function TaskDetailPage() {
 
   const taskArray = useMemo(() => (task ? [task] : []), [task])
   const { annotationMap } = useAiInsights(taskArray)
+  const insightsData = useInsightsData(taskArray)
 
   // Track dirty state from QuickActionPanel for navigation protection
   const [isDirty, setIsDirty] = useState(false)
@@ -263,6 +265,7 @@ export default function TaskDetailPage() {
             saveRef={saveRef}
             onSaveAll={actions.handleSaveAllChanges}
             annotation={annotationMap.get(task.id)}
+            insightsCommentary={insightsData.annotationMap.get(task.id)}
           />
         </main>
 

@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { useEffect } from 'react'
 import { sortTasks } from '@/components/TaskList'
 import type { TaskGroup } from '@/components/TaskList'
@@ -33,6 +34,7 @@ interface UseDashboardKeyboardOptions {
   annotationMap?: Map<number, string>
   showAnnotations: boolean
   setShowShortcutsDialog: (show: boolean) => void
+  searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }
 
 /**
@@ -56,6 +58,7 @@ export function useDashboardKeyboard({
   annotationMap,
   showAnnotations,
   setShowShortcutsDialog,
+  searchFocusRef,
 }: UseDashboardKeyboardOptions) {
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -73,6 +76,13 @@ export function useDashboardKeyboard({
       if (e.key === '?' && !isInInput) {
         e.preventDefault()
         setShowShortcutsDialog(true)
+        return
+      }
+
+      // Cmd+K: Focus search bar (works even with dialogs open)
+      if (cmdKey && e.key === 'k' && !isInInput) {
+        e.preventDefault()
+        searchFocusRef?.current?.()
         return
       }
 
@@ -231,5 +241,6 @@ export function useDashboardKeyboard({
     annotationMap,
     projects,
     setShowShortcutsDialog,
+    searchFocusRef,
   ])
 }

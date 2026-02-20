@@ -158,15 +158,12 @@ function ProjectCard({
       />
       <Link href={`/projects/${project.id}`} className="flex flex-1 items-center justify-between">
         <div className="min-w-0 flex-1">
-          <span className="inline-flex items-center gap-1.5 truncate font-medium">
-            {color && (
-              <span
-                className={cn(
-                  'inline-block size-2.5 flex-shrink-0 rounded-full',
-                  LABEL_COLORS[color].dot,
-                )}
-              />
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 truncate font-medium',
+              color && LABEL_COLORS[color].text,
             )}
+          >
             {project.name}
           </span>
           {shared && <span className="ml-2 text-xs text-zinc-400">Shared</span>}

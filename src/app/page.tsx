@@ -334,6 +334,7 @@ function HomeContent() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [batchDialogMode, setBatchDialogMode] = useState<'undo' | 'redo'>('undo')
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
+  const searchFocusRef = useRef<(() => void) | null>(null)
 
   // Track when the CreateTaskPanel modal (in AppLayout) is open so we can disable keyboard shortcuts
   useEffect(() => {
@@ -681,6 +682,7 @@ function HomeContent() {
     annotationMap: effectiveAnnotationMap,
     showAnnotations,
     setShowShortcutsDialog,
+    searchFocusRef,
   })
 
   // Exit keyboard/selection modes on click/touch outside (extracted to hook)
@@ -873,6 +875,7 @@ function HomeContent() {
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
       onUnifiedChange={(unified) => setDefaultGrouping(unified ? 'unified' : 'project')}
+      searchFocusRef={searchFocusRef}
     />
   )
 }
@@ -969,6 +972,7 @@ function DashboardView({
   onQuickActionDelete,
   onReprocess,
   onUnifiedChange,
+  searchFocusRef,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -1061,6 +1065,7 @@ function DashboardView({
   onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
   onUnifiedChange: (unified: boolean) => void
+  searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
   const anyFilterActive =
     selectedLabels.length > 0 ||
@@ -1088,6 +1093,7 @@ function DashboardView({
         onSnoozeOverdue={onSnoozeOverdue}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
+        searchFocusRef={searchFocusRef}
       />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
@@ -1324,6 +1330,7 @@ function DashboardView({
         onNavigateToDetail={onQuickActionNavigate}
         projects={projects}
         annotation={focusedTask ? effectiveAnnotationMap.get(focusedTask.id) : undefined}
+        insightsCommentary={focusedTask ? effectiveCommentaryMap.get(focusedTask.id) : undefined}
       />
 
       <KeyboardShortcutsDialog

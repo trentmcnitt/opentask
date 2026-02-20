@@ -27,6 +27,8 @@ interface QuickActionPopoverProps {
   projects?: Project[]
   /** AI annotation text to display in the panel */
   annotation?: string
+  /** AI Insights commentary text to display in the panel */
+  insightsCommentary?: string
 }
 
 export function QuickActionPopover({
@@ -38,6 +40,7 @@ export function QuickActionPopover({
   onNavigateToDetail,
   projects,
   annotation,
+  insightsCommentary,
 }: QuickActionPopoverProps) {
   const timezone = useTimezone()
   const isMobile = useIsMobile()
@@ -109,6 +112,7 @@ export function QuickActionPopover({
         onDirtyChange={setIsPanelDirty}
         projects={projects}
         annotation={annotation}
+        insightsCommentary={insightsCommentary}
       />
     </div>
   )

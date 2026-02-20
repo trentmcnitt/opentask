@@ -4,7 +4,7 @@ OpenTask is a self-hosted task management PWA. This file is the authoritative re
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, and `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts).
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, and `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts).
 
 ### Source layout
 
@@ -17,6 +17,7 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
+- `ios/` — Native iOS companion app (see [iOS App](#ios-app-ios) section)
 - `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). Copy exports to `public/` when updated.
 
 ### UI vocabulary
@@ -528,13 +529,39 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 
 ## iOS App (`ios/`)
 
-This section applies only when working on the native iOS companion app in `ios/`.
+Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA in a WKWebView and adds APNs push notifications. All task data and business logic live on the server; the app stores no local data beyond connection credentials.
 
-The iOS project uses xcodegen — run `xcodegen` to generate `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
+**Three targets:**
+
+- `OpenTask` — Main app: WKWebView host, first-launch setup (server URL + Bearer token), APNs device registration, notification action handling, silent-push dismissal for cross-device sync
+- `OpenTaskNotification` — Content extension: interactive snooze grid on notification long-press, direct API calls for snooze/done without forwarding to the main app
+- `OpenTaskWatch` — watchOS companion (watchOS 10+): handles notification actions (Done/Snooze) directly on Apple Watch instead of forwarding to iPhone. Reads credentials from shared App Group keychain — no setup UI needed. Provides haptic feedback on success/failure.
+
+**Shared code** (`Shared/`): `APIClient.swift` (HTTP with Bearer auth), `KeychainHelper.swift` (App Group keychain for credential sharing between app, extension, and Watch app), `DateHelpers.swift` (ISO 8601, snap-to-preset, delta formatting). All shared code uses only `Foundation`/`Security` — no platform-specific imports, compiles on both iOS and watchOS.
+
+**Build:** xcodegen generates `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
+
+**Server API endpoints used by the iOS app:**
+
+- `POST /api/push/apns/register` — device token registration
+- `POST /api/notifications/actions` — done/snooze from notification actions
+- `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
+- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action
+- `DELETE /api/push/apns/register` — device token unregistration
+- `GET /api/user/preferences` — connection validation during setup
+
+**No automated tests** — the iOS app has no test targets. Testing is manual.
+
+### Notification phases
+
+1. **Default actions** (AppDelegate): Done, +1hr, All +1hr buttons — used from lock screen or when content extension is unavailable
+2. **Silent dismissal**: Server sends `content-available: 1` push with `type: "dismiss"` when a task is snoozed/completed from the web UI — iOS app removes matching delivered notifications
+3. **Content extension** (long-press): Interactive 3x4 snooze grid (presets, increments, decrements) — extension makes API calls directly and dismisses
 
 ### Simulator limitations
 
 - **Notification content extensions cannot be tested in the simulator.** Long-press expansion is a known Apple limitation across all Xcode versions. Use a physical device.
+- **watchOS notification actions cannot be tested in the simulator.** Mirrored notifications and action forwarding require a physical iPhone + Apple Watch pair.
 - `xcrun simctl push` delivers banners but does not invoke service or content extensions.
 - iOS 18.2 simulator: apps don't appear in Settings (known bug, fixed in 18.4+).
 

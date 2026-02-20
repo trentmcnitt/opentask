@@ -33,6 +33,7 @@ function getShortcuts(cmdSymbol: string) {
     { keys: [cmdSymbol, '⇧', 'Z'], action: 'Redo' },
     { keys: ['Home'], action: 'Jump to first task' },
     { keys: ['End'], action: 'Jump to last task' },
+    { keys: [cmdSymbol, 'K'], action: 'Focus search' },
     { keys: [cmdSymbol, 'L'], action: 'Focus task list' },
     { keys: ['Esc'], action: 'Clear selection / exit keyboard mode' },
     { keys: ['?'], action: 'Show this help' },
