@@ -77,6 +77,7 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
+- `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). Copy exports to `public/` when updated.
 
 ### UI vocabulary
 
