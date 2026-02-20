@@ -73,10 +73,6 @@ function runMigrations(database: Database.Database): void {
       'ALTER TABLE users ADD COLUMN auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15',
     )
   }
-  // Per-user Pushover notification key (2026-02)
-  if (!hasColumn(database, 'users', 'pushover_user_key')) {
-    database.exec('ALTER TABLE users ADD COLUMN pushover_user_key TEXT')
-  }
   // Independent cooldown for critical alerts (2026-02)
   if (!hasColumn(database, 'tasks', 'last_critical_alert_at')) {
     database.exec('ALTER TABLE tasks ADD COLUMN last_critical_alert_at TEXT')
@@ -85,12 +81,6 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'notifications_enabled')) {
     database.exec('ALTER TABLE users ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 1')
   }
-  // Pushover sound preference (2026-02)
-  if (!hasColumn(database, 'users', 'pushover_sound')) {
-    database.exec("ALTER TABLE users ADD COLUMN pushover_sound TEXT NOT NULL DEFAULT 'echo'")
-  }
-  // Pushover removal (2026-02) — drop receipts table, columns stay (SQLite can't drop columns easily)
-  database.exec('DROP TABLE IF EXISTS pushover_receipts')
 }
 
 function initSchema(database: Database.Database): void {
