@@ -45,14 +45,7 @@ export default function SettingsPage() {
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
-  const {
-    notificationsEnabled,
-    setNotificationsEnabled,
-    pushoverUserKey,
-    setPushoverUserKey,
-    pushoverSound,
-    setPushoverSound,
-  } = useNotificationConfig()
+  const { notificationsEnabled, setNotificationsEnabled } = useNotificationConfig()
   const { aiContext, setAiContext } = useAiContext()
   const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
@@ -65,13 +58,6 @@ export default function SettingsPage() {
   const [showCustomAutoSnoozeUrgent, setShowCustomAutoSnoozeUrgent] = useState(false)
   const [customAutoSnoozeHighMinutes, setCustomAutoSnoozeHighMinutes] = useState('')
   const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
-  const [pushoverKeyDraft, setPushoverKeyDraft] = useState('')
-  const [pushoverConfigSynced, setPushoverConfigSynced] = useState(false)
-  const [pushoverValidation, setPushoverValidation] = useState<{
-    status: 'idle' | 'validating' | 'valid' | 'invalid'
-    devices?: string[]
-    error?: string
-  }>({ status: 'idle' })
   const [testingSending, setTestingSending] = useState<string | null>(null)
   const push = usePushSubscription()
 
@@ -82,15 +68,6 @@ export default function SettingsPage() {
       setAiContextSynced(true)
     }
   }, [aiContext, aiContextSynced])
-
-  // Sync Pushover config draft from loaded preferences (once)
-  useEffect(() => {
-    if (pushoverConfigSynced) return
-    if (pushoverUserKey !== null) {
-      setPushoverKeyDraft(pushoverUserKey ?? '')
-      setPushoverConfigSynced(true)
-    }
-  }, [pushoverUserKey, pushoverConfigSynced])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -247,44 +224,6 @@ export default function SettingsPage() {
     } catch {
       setSleepTime(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const savePushoverKey = async (value: string | null) => {
-    const prev = pushoverUserKey
-    setPushoverUserKey(value)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pushover_user_key: value }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({ message: 'Preference saved', type: 'success' })
-    } catch {
-      setPushoverUserKey(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const validatePushoverKey = async () => {
-    const key = pushoverKeyDraft.trim()
-    if (!key) return
-    setPushoverValidation({ status: 'validating' })
-    try {
-      const res = await fetch('/api/notifications/validate-pushover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_key: key }),
-      })
-      const data = await res.json()
-      if (data.data?.valid) {
-        setPushoverValidation({ status: 'valid', devices: data.data.devices })
-      } else {
-        setPushoverValidation({ status: 'invalid', error: data.data?.error || 'Invalid key' })
-      }
-    } catch {
-      setPushoverValidation({ status: 'invalid', error: 'Validation request failed' })
     }
   }
 
@@ -502,113 +441,6 @@ export default function SettingsPage() {
               onChange={handleAutoSnoozeUrgentChange}
               labelColor="text-red-500"
             />
-          </div>
-
-          {/* Pushover (Critical Alerts) */}
-          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-            <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Pushover (Critical Alerts)
-            </h3>
-            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Pushover sends emergency-priority alerts for overdue Urgent (P4) tasks. These bypass
-              Focus mode and Do Not Disturb.
-            </p>
-            <div>
-              <label className="mb-1 block text-sm">Pushover User Key</label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="text"
-                  value={pushoverKeyDraft}
-                  onChange={(e) => {
-                    setPushoverKeyDraft(e.target.value)
-                    setPushoverValidation({ status: 'idle' })
-                  }}
-                  placeholder="Enter your Pushover user key"
-                  className="h-8 text-sm"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0"
-                  disabled={pushoverKeyDraft === (pushoverUserKey ?? '')}
-                  onClick={() => savePushoverKey(pushoverKeyDraft.trim() || null)}
-                >
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0"
-                  disabled={!pushoverKeyDraft.trim() || pushoverValidation.status === 'validating'}
-                  onClick={validatePushoverKey}
-                >
-                  {pushoverValidation.status === 'validating' ? 'Checking...' : 'Validate'}
-                </Button>
-              </div>
-              {pushoverValidation.status === 'valid' && (
-                <p className="mt-1 text-xs text-green-600 dark:text-green-400">
-                  Valid — devices: {pushoverValidation.devices?.join(', ') || 'none'}
-                </p>
-              )}
-              {pushoverValidation.status === 'invalid' && (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                  {pushoverValidation.error}
-                </p>
-              )}
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <div>
-                <div className="text-sm">Alert sound</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Sound for Pushover emergency alerts
-                </div>
-              </div>
-              <select
-                value={pushoverSound}
-                onChange={async (e) => {
-                  const newSound = e.target.value
-                  const prev = pushoverSound
-                  setPushoverSound(newSound)
-                  try {
-                    const res = await fetch('/api/user/preferences', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ pushover_sound: newSound }),
-                    })
-                    if (!res.ok) throw new Error('Failed to save')
-                    showToast({ message: 'Preference saved', type: 'success' })
-                  } catch {
-                    setPushoverSound(prev)
-                    showToast({ message: 'Failed to save preference', type: 'error' })
-                  }
-                }}
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                <option value="echo">Echo</option>
-                <option value="pushover">Pushover (default)</option>
-                <option value="bike">Bike</option>
-                <option value="bugle">Bugle</option>
-                <option value="cashregister">Cash Register</option>
-                <option value="classical">Classical</option>
-                <option value="cosmic">Cosmic</option>
-                <option value="falling">Falling</option>
-                <option value="gamelan">Gamelan</option>
-                <option value="incoming">Incoming</option>
-                <option value="intermission">Intermission</option>
-                <option value="magic">Magic</option>
-                <option value="mechanical">Mechanical</option>
-                <option value="pianobar">Piano Bar</option>
-                <option value="siren">Siren</option>
-                <option value="spacealarm">Space Alarm</option>
-                <option value="tugboat">Tugboat</option>
-                <option value="alien">Alien</option>
-                <option value="climb">Climb</option>
-                <option value="persistent">Persistent</option>
-                <option value="updown">Up Down</option>
-                <option value="vibrate">Vibrate only</option>
-                <option value="none">None (silent)</option>
-              </select>
-            </div>
           </div>
 
           {/* Browser Push */}

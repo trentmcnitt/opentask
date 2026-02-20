@@ -11,8 +11,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
-import { dismissTaskNotifications } from '@/core/notifications/web-push'
-import { dismissApnsNotifications } from '@/core/notifications/apns'
+import { dismissAllNotifications } from '@/core/notifications/dismiss'
 import { validateBulkSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -35,12 +34,7 @@ export async function POST(request: NextRequest) {
       deltaMinutes: input.delta_minutes,
     })
 
-    dismissTaskNotifications(user.id, input.ids).catch((err) =>
-      log.error('api', 'Dismiss notification error:', err),
-    )
-    dismissApnsNotifications(user.id, input.ids).catch((err) =>
-      log.error('api', 'Dismiss APNs notification error:', err),
-    )
+    dismissAllNotifications(user.id, input.ids)
 
     return success({
       tasks_affected: result.tasksAffected,

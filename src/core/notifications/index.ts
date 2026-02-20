@@ -7,3 +7,4 @@
 
 export { checkOverdueTasks } from './overdue-checker'
 export { checkCriticalTasks } from './critical-alerts'
+export { dismissAllNotifications } from './dismiss'

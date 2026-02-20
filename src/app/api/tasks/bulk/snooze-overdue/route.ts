@@ -13,8 +13,7 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
-import { dismissTaskNotifications } from '@/core/notifications/web-push'
-import { dismissApnsNotifications } from '@/core/notifications/apns'
+import { dismissAllNotifications } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
@@ -62,15 +61,24 @@ export async function POST(request: NextRequest) {
       deltaMinutes: input.delta_minutes,
     })
 
-    // Dismiss notifications for snoozed tasks (fire-and-forget)
-    // Re-query snoozed IDs from what we know was affected — use the overdue task IDs
-    // since bulkSnooze filtered internally. Best-effort: dismiss all overdue IDs.
-    dismissTaskNotifications(user.id, taskIds).catch((err) =>
-      log.error('api', 'Dismiss notification error:', err),
-    )
-    dismissApnsNotifications(user.id, taskIds).catch((err) =>
-      log.error('api', 'Dismiss APNs notification error:', err),
-    )
+    // Dismiss only the tasks that were actually snoozed, not tasks that were
+    // skipped by two-tier priority filtering (P2+ may still be overdue).
+    if (result.tasksAffected > 0) {
+      const stillOverdue = db
+        .prepare(
+          `SELECT id FROM tasks
+           WHERE user_id = ?
+             AND done = 0
+             AND deleted_at IS NULL
+             AND archived_at IS NULL
+             AND due_at IS NOT NULL
+             AND datetime(due_at) < datetime('now')`,
+        )
+        .all(user.id) as { id: number }[]
+      const stillOverdueIds = new Set(stillOverdue.map((t) => t.id))
+      const snoozedIds = taskIds.filter((id) => !stillOverdueIds.has(id))
+      dismissAllNotifications(user.id, snoozedIds)
+    }
 
     return success({
       tasks_affected: result.tasksAffected,

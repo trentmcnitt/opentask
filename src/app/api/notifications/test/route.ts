@@ -4,18 +4,16 @@
  * POST /api/notifications/test
  * Body: { type: 'individual' | 'high' | 'bulk' | 'critical' }
  *
- * Sends a test notification of the requested type via Web Push (and Pushover for critical).
+ * Sends a test notification of the requested type via Web Push (and APNs for critical).
  */
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
-import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
+import { sendApnsNotification, isApnsConfigured } from '@/core/notifications/apns'
 
-const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN || ''
-const PUSHOVER_USER = process.env.PUSHOVER_USER || ''
 const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
 
 const VALID_TYPES = ['individual', 'high', 'bulk', 'critical'] as const
@@ -54,23 +52,24 @@ export async function POST(request: NextRequest) {
         data: { url: `${APP_URL}/?filter=overdue` },
       })
     } else if (type === 'critical') {
-      // Send Web Push (test sends both channels; production critical alerts only send Pushover)
+      // Web Push
       await sendPushNotification(user.id, {
         title: 'Test: URGENT Alert',
         body: 'This is a test urgent/critical alert from OpenTask.',
         data: { url: APP_URL },
       })
 
-      // Send Pushover if configured
-      const db = getDb()
-      const config = db
-        .prepare('SELECT pushover_user_key, pushover_sound FROM users WHERE id = ?')
-        .get(user.id) as { pushover_user_key: string | null; pushover_sound: string } | undefined
-
-      const pushoverUser = config?.pushover_user_key || PUSHOVER_USER
-      const pushoverSound = config?.pushover_sound || 'echo'
-      if (PUSHOVER_TOKEN && pushoverUser) {
-        await sendTestPushover(pushoverUser, pushoverSound)
+      // APNs time-sensitive (if configured)
+      if (isApnsConfigured()) {
+        await sendApnsNotification(user.id, {
+          title: 'Test: URGENT Alert',
+          body: 'This is a test urgent/critical alert from OpenTask.',
+          taskId: 0,
+          dueAt: new Date().toISOString(),
+          priority: 4,
+          overdueCount: 0,
+          interruptionLevel: 'time-sensitive',
+        })
       }
     }
 
@@ -79,28 +78,5 @@ export async function POST(request: NextRequest) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'POST /api/notifications/test error:', err)
     return handleError(err)
-  }
-}
-
-async function sendTestPushover(pushoverUser: string, sound: string): Promise<void> {
-  const params = new URLSearchParams({
-    token: PUSHOVER_TOKEN,
-    user: pushoverUser,
-    title: 'Test: URGENT Alert',
-    message: 'This is a test urgent/critical alert from OpenTask.',
-    priority: '2',
-    retry: '300',
-    expire: '3600',
-    sound,
-    url: APP_URL,
-    url_title: 'Open OpenTask',
-  })
-
-  const res = await fetch('https://api.pushover.net/1/messages.json', {
-    method: 'POST',
-    body: params,
-  })
-  if (!res.ok) {
-    throw new Error(`Pushover returned ${res.status}: ${await res.text()}`)
   }
 }

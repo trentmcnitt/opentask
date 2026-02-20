@@ -16,32 +16,6 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 const VALID_GROUPINGS = ['time', 'project', 'unified'] as const
 const VALID_AI_MODES = ['off', 'on'] as const
 const VALID_WHATS_NEXT_MODELS = ['haiku', 'claude-opus-4-6'] as const
-const VALID_PUSHOVER_SOUNDS = [
-  'pushover',
-  'bike',
-  'bugle',
-  'cashregister',
-  'classical',
-  'cosmic',
-  'falling',
-  'gamelan',
-  'incoming',
-  'intermission',
-  'magic',
-  'mechanical',
-  'pianobar',
-  'siren',
-  'spacealarm',
-  'tugboat',
-  'alien',
-  'climb',
-  'persistent',
-  'echo',
-  'updown',
-  'vibrate',
-  'none',
-] as const
-
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
   colorTitle: false,
@@ -197,29 +171,6 @@ function validateGeneralFields(
       return 'notifications_enabled must be a boolean'
     updates.push('notifications_enabled = ?')
     params.push(body.notifications_enabled ? 1 : 0)
-  }
-
-  if (body.pushover_user_key !== undefined) {
-    const val = body.pushover_user_key
-    if (val !== null && typeof val !== 'string') return 'pushover_user_key must be a string or null'
-    if (typeof val === 'string') {
-      if (val.length > 50) return 'pushover_user_key must be at most 50 characters'
-      if (!/^[a-zA-Z0-9]+$/.test(val))
-        return 'pushover_user_key must contain only letters and numbers'
-    }
-    updates.push('pushover_user_key = ?')
-    params.push(val)
-  }
-
-  if (body.pushover_sound !== undefined) {
-    const val = body.pushover_sound
-    if (
-      typeof val !== 'string' ||
-      !VALID_PUSHOVER_SOUNDS.includes(val as (typeof VALID_PUSHOVER_SOUNDS)[number])
-    )
-      return `pushover_sound must be one of: ${VALID_PUSHOVER_SOUNDS.join(', ')}`
-    updates.push('pushover_sound = ?')
-    params.push(val)
   }
 
   if (body.default_snooze_option !== undefined) {
@@ -387,7 +338,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, pushover_user_key, pushover_sound, notifications_enabled, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -400,8 +351,6 @@ interface PreferencesRow {
   morning_time: string
   wake_time: string
   sleep_time: string
-  pushover_user_key: string | null
-  pushover_sound: string
   notifications_enabled: number
   ai_context: string | null
   ai_mode: string
@@ -429,8 +378,6 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   morning_time: '09:00',
   wake_time: '07:00',
   sleep_time: '22:00',
-  pushover_user_key: null,
-  pushover_sound: 'echo',
   notifications_enabled: 1,
   ai_context: null,
   ai_mode: 'on',
@@ -459,8 +406,6 @@ function formatPreferencesResponse(row: PreferencesRow) {
     morning_time: row.morning_time,
     wake_time: row.wake_time,
     sleep_time: row.sleep_time,
-    pushover_user_key: row.pushover_user_key,
-    pushover_sound: row.pushover_sound,
     notifications_enabled: row.notifications_enabled !== 0,
     ai_context: row.ai_context,
     ai_mode: row.ai_mode,

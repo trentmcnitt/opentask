@@ -117,8 +117,8 @@ export async function checkOverdueTasks(): Promise<void> {
 
     // Fetch all overdue tasks. Cooldown filtering is done in JS because the
     // repeat interval varies by task priority (urgent=5m, high=15m, default=30m).
-    // P4 tasks get Web Push here AND Pushover from checkCriticalTasks() — the two
-    // modules use independent cooldown columns (last_notified_at vs last_critical_alert_at).
+    // P4 tasks get Web Push here but APNs exclusively from checkCriticalTasks() —
+    // the two modules use independent cooldown columns (last_notified_at vs last_critical_alert_at).
     const overdueTasks = db
       .prepare(
         `
@@ -181,9 +181,11 @@ export async function checkOverdueTasks(): Promise<void> {
         }
       }
 
-      // APNs: always individual — each task gets its own snooze grid
+      // APNs: individual per task, but skip P4 — those get APNs exclusively
+      // from checkCriticalTasks() with time-sensitive interruption level
       if (apnsEnabled) {
-        for (const task of [...individualTasks, ...bulkCandidates]) {
+        const apnsTasks = [...individualTasks, ...bulkCandidates].filter((t) => t.priority < 4)
+        for (const task of apnsTasks) {
           await sendIndividualApns(task, overdueCount)
         }
       }

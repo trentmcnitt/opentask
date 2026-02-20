@@ -12,7 +12,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { markDone } from '@/core/tasks'
-import { dismissTaskNotifications } from '@/core/notifications/web-push'
+import { dismissAllNotifications } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 
@@ -36,9 +36,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       taskId,
     })
 
-    dismissTaskNotifications(user.id, [taskId]).catch((err) =>
-      log.error('api', 'Dismiss notification error:', err),
-    )
+    dismissAllNotifications(user.id, [taskId])
 
     return success({
       task: formatTaskResponse(result.task),

@@ -7,14 +7,16 @@ Reference for OpenTask's notification system: architecture, platform capabilitie
 Two channels:
 
 - **Web Push** — primary channel for all overdue task notifications. Browser-native via the Push API and VAPID keys. No third-party relay, no rate limit. Tap opens the PWA directly to the task page.
-- **Pushover** — critical alerts only. Emergency priority (2) with 5-minute retry, expires after 1 hour. Bypasses Focus mode and Do Not Disturb on iOS. Tapping opens the Pushover app (not the PWA) — the value is interruption, not navigation.
+- **APNs** — iOS native app push notifications. Token-based auth with a p8 key file. Supports `time-sensitive` interruption level for P4 tasks (breaks through Focus mode). Supports notification coalescing via `collapseId` and cross-device dismissal via silent push.
 
-ntfy was previously used but removed due to rate limiting (250 msg/day free tier via the ntfy.sh upstream relay required for iOS push delivery).
+ntfy was previously used but removed due to rate limiting. Pushover was previously used for critical alerts but removed — APNs `time-sensitive` interruption level handles P4 natively.
 
 Notifications run as in-process cron jobs via `node-cron` in `src/instrumentation.ts`. Two checks run sequentially every minute:
 
-1. `checkOverdueTasks()` — queries tasks where `due_at < now`, filters by per-task cooldown, sends via Web Push
-2. `checkCriticalTasks()` — queries overdue P4 (Urgent) tasks, sends via Pushover (emergency priority)
+1. `checkOverdueTasks()` — queries tasks where `due_at < now`, filters by per-task cooldown, sends via Web Push and APNs (P0-P3 only for APNs)
+2. `checkCriticalTasks()` — queries overdue P4 (Urgent) tasks, sends via APNs with `time-sensitive` interruption level (independent cooldown)
+
+P4 tasks get APNs exclusively from `checkCriticalTasks()` to avoid duplicate notifications. They still get Web Push from `checkOverdueTasks()` for desktop coverage.
 
 Both run on a poll-based model: the cron fires every ~60 seconds and looks for tasks that are already overdue.
 
@@ -33,12 +35,21 @@ Task becomes overdue
   -> P2+ tasks: individual Web Push notification
   -> P0-P1 single task: individual Web Push notification
   -> P0-P1 multiple tasks: bulk summary with link to /?filter=overdue
+  -> APNs: individual notification per task (P0-P3 only, P4 handled by critical alerts)
   -> Update last_notified_at
 
-Urgent (P4) tasks — Pushover critical alerts:
-  -> Pushover emergency alert (bypasses Focus/DND, 5-min retry, 1-hour expire)
+Urgent (P4) tasks — critical alerts:
+  -> APNs time-sensitive notification (breaks through Focus mode)
   -> Update last_critical_alert_at (independent cooldown, 60 min)
 ```
+
+### Notification dismissal
+
+When a task is snoozed, completed, or deleted from any device/web UI, `dismissAllNotifications()` sends dismiss signals to both Web Push and APNs. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
+
+### Notification coalescing
+
+APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) notifications for the same task across cooldown cycles.
 
 ### Repeat intervals (auto-snooze)
 
@@ -52,18 +63,19 @@ Per-task `auto_snooze_minutes` overrides the user default.
 
 ### Files
 
-| File                                                   | Purpose                                                               |
-| ------------------------------------------------------ | --------------------------------------------------------------------- |
-| `src/core/notifications/overdue-checker.ts`            | Overdue task polling, Web Push delivery                               |
-| `src/core/notifications/critical-alerts.ts`            | P4 (Urgent) alerts via Pushover emergency priority                    |
-| `src/core/notifications/web-push.ts`                   | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`) |
-| `src/hooks/usePushSubscription.ts`                     | Client-side push subscription management hook                         |
-| `src/app/api/push/subscribe/route.ts`                  | Push subscription storage endpoint                                    |
-| `src/app/api/push/test/route.ts`                       | Quick push test (sends to current user)                               |
-| `src/app/api/notifications/actions/route.ts`           | Action callback handler (done, snooze30, snooze, snooze2h)            |
-| `src/app/api/notifications/test/route.ts`              | Test notification endpoint (individual, high, bulk, critical)         |
-| `src/app/api/notifications/validate-pushover/route.ts` | Pushover key validation                                               |
-| `src/instrumentation.ts`                               | Cron scheduling                                                       |
+| File                                         | Purpose                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| `src/core/notifications/overdue-checker.ts`  | Overdue task polling, Web Push + APNs delivery                        |
+| `src/core/notifications/critical-alerts.ts`  | P4 (Urgent) alerts via APNs time-sensitive                            |
+| `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`) |
+| `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `isApnsConfigured`)        |
+| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissAllNotifications`)                     |
+| `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                         |
+| `src/app/api/push/subscribe/route.ts`        | Push subscription storage endpoint                                    |
+| `src/app/api/push/test/route.ts`             | Quick push test (sends to current user)                               |
+| `src/app/api/notifications/actions/route.ts` | Action callback handler (done, snooze30, snooze, snooze2h)            |
+| `src/app/api/notifications/test/route.ts`    | Test notification endpoint (individual, high, bulk, critical)         |
+| `src/instrumentation.ts`                     | Cron scheduling                                                       |
 
 ## Web Push
 
@@ -87,7 +99,7 @@ Browser-native push via the W3C Push API. Uses VAPID (Voluntary Application Serv
 - No silent push — every push must show a notification
 - `notification.data` works on iOS 18+
 - `notification.close()` works on iOS 18.3+
-- Tap opens PWA directly (unlike Pushover which opens its own app)
+- Tap opens PWA directly
 
 ### Apple Watch
 
@@ -103,66 +115,34 @@ Web Push notifications show on Apple Watch but are not interactive — no action
 
 Set in systemd service override files on the server (standalone Next.js does NOT read `.env.local`).
 
-## Pushover
+## APNs (iOS Native App)
 
-Proprietary service. $4.99 one-time per platform. 10,000 messages/month free per application.
+Token-based authentication with Apple's Push Notification service. Requires an Apple Developer Program membership and a p8 key file.
 
-### What works on iOS
+### How it works
 
-| Feature                       | Status                                                                             |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| Push delivery                 | Fast (sub-second typical)                                                          |
-| Critical Alerts               | Yes — Pushover has Apple's entitlement. User must enable in Pushover app settings. |
-| Emergency priority with retry | Repeats every N seconds until acknowledged                                         |
-| Emergency cancellation        | By receipt ID or by tag                                                            |
-| Custom sounds per message     | 23 built-in + user-uploaded custom sounds                                          |
-| Supplementary URL             | Clickable link below message text (not a button)                                   |
-| TTL (auto-expire)             | Messages can auto-delete after N seconds                                           |
-| Cross-device dismissal sync   | Supported but throttled on iOS                                                     |
+1. Server authenticates with APNs using a JWT signed with the p8 key
+2. Device registers for notifications and sends its device token to the server
+3. Server stores the device token in `apns_devices` table
+4. To send: server constructs a notification payload and POSTs to APNs
+5. APNs delivers to the device
+6. iOS shows the notification with registered action buttons (Done, +1hr, All +1hr)
 
-### What does not work
+### Features
 
-| Feature                | Status                                                                 |
-| ---------------------- | ---------------------------------------------------------------------- |
-| Open PWA directly      | Tap opens Pushover app; URL link opens Safari, never the installed PWA |
-| Action buttons         | Not supported. Only supplementary URL links.                           |
-| Per-notification icons | Icons are per-application only                                         |
-| Notification grouping  | No API control. All Pushover notifications stack together.             |
-| Scheduled delivery     | Not supported. Server must handle timing.                              |
-
-### Priority levels
-
-| Priority | Name      | iOS behavior                                                                                                       |
-| -------- | --------- | ------------------------------------------------------------------------------------------------------------------ |
-| -2       | Lowest    | No notification generated                                                                                          |
-| -1       | Low       | Banner, no sound                                                                                                   |
-| 0        | Normal    | Sound + banner per device settings                                                                                 |
-| 1        | High      | Bypasses quiet hours, always plays sound. Maps to Time Sensitive.                                                  |
-| 2        | Emergency | Repeats until acknowledged. Maps to Critical (if user enabled). Requires `retry` (min 30s) and `expire` (max 3hr). |
-
-### Critical Alerts
-
-Pushover is one of few third-party apps with Apple's Critical Alerts entitlement. Critical Alerts bypass the mute switch, Do Not Disturb, and all Focus modes.
-
-- User must enable in Pushover app settings (separate toggles for high and emergency priority)
-- Volume is controlled within Pushover, independent of device volume
-- The API cannot force a notification to be a Critical Alert — it sends priority 1 or 2, and the user's settings determine whether iOS treats it as critical
-
-### Current integration
-
-`critical-alerts.ts` sends Pushover emergency (priority 2) for overdue P4 (Urgent) tasks. Uses `last_critical_alert_at` for a 60-minute cooldown independent of Web Push. Requires:
-
-- `PUSHOVER_TOKEN` env var (application API token)
-- Per-user `pushover_user_key` in the database, or `PUSHOVER_USER` env var as fallback
-
-Pushover payloads include `url` and `url_title` params pointing to the task page in OpenTask.
+- **Interruption levels**: `active` for P0-P2, `time-sensitive` for P3-P4 (breaks Focus mode)
+- **Collapse ID**: `task-{id}` prevents stacking — same task replaces its previous notification
+- **Silent push dismiss**: Server sends `content-available: 1` with dismiss payload to clear notifications
+- **Stale token cleanup**: Automatically removes device tokens on `BadDeviceToken`/`Unregistered` errors
 
 ### Environment variables
 
-| Variable         | Purpose                                                  |
-| ---------------- | -------------------------------------------------------- |
-| `PUSHOVER_TOKEN` | Pushover application API token                           |
-| `PUSHOVER_USER`  | Default Pushover user key (fallback if not set per-user) |
+| Variable         | Purpose                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| `APNS_KEY_ID`    | Key ID from Apple Developer portal                                 |
+| `APNS_TEAM_ID`   | Team ID from Apple Developer portal                                |
+| `APNS_KEY_PATH`  | Path to .p8 key file (e.g., `/opt/opentask/AuthKey_XXXXXXXXXX.p8`) |
+| `APNS_BUNDLE_ID` | App bundle ID (e.g., `io.mcnitt.opentask`)                         |
 
 ## iOS platform constraints
 
@@ -187,26 +167,20 @@ Users can configure per-app in Settings > Notifications > [App] > Notification G
 - **By App**: All notifications from the app in one stack
 - **Off**: Every notification separate
 
-Neither Web Push (PWA) nor Pushover expose `thread-id` to the API. Only a native app can control fine-grained grouping.
-
 ### Cross-device notification dismissal
 
-Native apps remove delivered notifications via `removeDeliveredNotifications(withIdentifiers:)`, triggered by a silent push. This is how Todoist and Things clear notifications when a task is completed on another device.
+Native apps remove delivered notifications via `removeDeliveredNotifications(withIdentifiers:)`, triggered by a silent push. This is how OpenTask clears notifications when a task is snoozed/completed from the web UI.
 
-Third-party services cannot reliably do this:
-
-- Pushover's cross-device dismissal sync exists but is throttled by iOS
-- Web Push has no mechanism for dismissing delivered notifications
+Requires the `remote-notification` background mode in the app's entitlements.
 
 ### Notification actions
 
-Native apps can register up to 4 action buttons per notification category. Pushover has no action button support. PWA push notifications on iOS have no custom action support — only a default "View" action.
+Native apps can register up to 4 action buttons per notification category. OpenTask registers: Done, +1hr, All +1hr. The content extension (Phase 4) can dynamically replace these with a snooze grid.
 
 ## User settings
 
 Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
-- Pushover user key (with validation)
 - Auto-snooze intervals (tiered by priority)
 - Test notification buttons (individual, high, bulk, critical)

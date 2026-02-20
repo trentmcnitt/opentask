@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkDelete } from '@/core/tasks'
+import { dismissAllNotifications } from '@/core/notifications/dismiss'
 import { validateBulkDelete } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       taskIds: input.ids,
     })
+
+    dismissAllNotifications(user.id, input.ids)
 
     return success({
       tasks_affected: result.tasksAffected,
