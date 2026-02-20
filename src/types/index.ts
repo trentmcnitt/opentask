@@ -19,6 +19,7 @@ export interface Project {
   owner_id: number
   shared: boolean
   sort_order: number
+  color: LabelColor | null
   active_count: number
   overdue_count: number
   created_at: string

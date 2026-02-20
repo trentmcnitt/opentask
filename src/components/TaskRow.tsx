@@ -28,17 +28,18 @@ import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/fo
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useLabelConfig, useSnoozePreferences } from '@/components/PreferencesProvider'
-import { getLabelClasses } from '@/lib/label-colors'
+import { getLabelClasses, LABEL_COLORS } from '@/lib/label-colors'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
-import type { Task, LabelConfig } from '@/types'
+import type { Task, LabelConfig, LabelColor } from '@/types'
 
 /**
  * TaskRow visual reference — complete rendered examples:
  *
- *   Line 1: [priority] [title] [trailing priority dot]
- *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X] · [↻] [⏱] [📝] [labels] [project]
+ *   Line 1: [title]
+ *   Line 2: [relative time] · [absolute time] · [recurrence text] · [snoozed from X]
+ *   Line 3: [priority] [↻] [⏱] [📝] [labels] [project]
  *
  * Due soon (< 3h, shows both relative + absolute):
  *   ┌─────────────────────────────────────────────────────────┐
@@ -104,6 +105,8 @@ interface TaskRowProps {
   insightsCommentary?: string
   /** Project name shown as a subtle badge on line 1 (used in unified view) */
   projectName?: string
+  /** Project color for the project badge dot (used in unified view) */
+  projectColor?: LabelColor | null
 }
 
 /** Signal icon + color mapping for AI insights indicators */
@@ -179,6 +182,7 @@ export function TaskRow({
   insightsSignals,
   insightsCommentary,
   projectName,
+  projectColor,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig, priorityDisplay } = useLabelConfig()
@@ -328,13 +332,13 @@ export function TaskRow({
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
   const hasIndicators =
+    !!leadingPriorityIndicator ||
+    !!(priorityDisplay.trailingDot && trailingPriorityIndicator) ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
     hasLabels ||
     !!projectName
-  const hasLine2 = metaSegments.length > 0 || hasIndicators
-  const iconHeight = getIconAlignHeight(task.title)
 
   return (
     <div
@@ -404,19 +408,6 @@ export function TaskRow({
       {/* Task content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          {leadingPriorityIndicator && (
-            <span
-              className={cn(
-                'flex flex-shrink-0 items-center text-sm font-bold',
-                iconHeight,
-                leadingPriorityIndicator.color,
-              )}
-              title={leadingPriorityIndicator.title}
-            >
-              {leadingPriorityIndicator.icon}
-            </span>
-          )}
-
           {isSelectionMode ? (
             <span
               className={cn(
@@ -444,22 +435,9 @@ export function TaskRow({
               {task.title}
             </Link>
           )}
-
-          {priorityDisplay.trailingDot && trailingPriorityIndicator && (
-            <span
-              className={cn(
-                '-ml-1 flex flex-shrink-0 items-center text-[10px]',
-                iconHeight,
-                trailingPriorityIndicator.color,
-              )}
-              title={trailingPriorityIndicator.title}
-            >
-              ●
-            </span>
-          )}
         </div>
 
-        {hasLine2 && (
+        {metaSegments.length > 0 && (
           <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
             {metaSegments.map((seg, i) => (
               <span key={i} className="contents">
@@ -467,74 +445,96 @@ export function TaskRow({
                 {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
               </span>
             ))}
+          </div>
+        )}
 
-            {hasIndicators && (
-              <span className="inline-flex items-center gap-1.5">
-                {metaSegments.length > 0 && <span className="text-muted-foreground/50">·</span>}
+        {hasIndicators && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            {leadingPriorityIndicator && (
+              <span
+                className={cn('text-sm font-bold', leadingPriorityIndicator.color)}
+                title={leadingPriorityIndicator.title}
+              >
+                {leadingPriorityIndicator.icon}
+              </span>
+            )}
 
-                {task.rrule && (
+            {priorityDisplay.trailingDot && trailingPriorityIndicator && (
+              <span
+                className={cn('text-[10px]', trailingPriorityIndicator.color)}
+                title={trailingPriorityIndicator.title}
+              >
+                ●
+              </span>
+            )}
+
+            {task.rrule && (
+              <span className="text-muted-foreground inline-flex items-center" title="Recurring">
+                <Repeat className="size-3" />
+              </span>
+            )}
+
+            {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
+              <span
+                className="text-muted-foreground inline-flex items-center"
+                title="Auto-snooze off"
+              >
+                <TimerOff className="size-3" />
+              </span>
+            ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
+              <span
+                className="text-muted-foreground inline-flex items-center gap-0.5"
+                title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
+              >
+                <Timer className="size-3" />
+                <span className="text-[11px]">
+                  {formatAutoSnoozeLabel(task.auto_snooze_minutes)}
+                </span>
+              </span>
+            ) : null}
+
+            {task.notes && task.notes.trim() && (
+              <span className="inline-flex items-center text-amber-400" title="Has notes">
+                <StickyNote className="size-3" />
+              </span>
+            )}
+
+            {hasLabels && (
+              <LabelBadges
+                labels={task.labels}
+                labelConfig={labelConfig}
+                onLabelClick={onLabelClick}
+                onReprocess={onReprocess}
+              />
+            )}
+
+            {projectName && (
+              <span className="text-muted-foreground/60 inline-flex items-center gap-0.5 text-[11px]">
+                {projectColor ? (
                   <span
-                    className="text-muted-foreground inline-flex items-center"
-                    title="Recurring"
-                  >
-                    <Repeat className="size-3" />
-                  </span>
-                )}
-
-                {task.auto_snooze_minutes !== null && task.auto_snooze_minutes === 0 ? (
-                  <span
-                    className="text-muted-foreground inline-flex items-center"
-                    title="Auto-snooze off"
-                  >
-                    <TimerOff className="size-3" />
-                  </span>
-                ) : task.auto_snooze_minutes !== null && task.auto_snooze_minutes > 0 ? (
-                  <span
-                    className="text-muted-foreground inline-flex items-center gap-0.5"
-                    title={`Auto-snooze: ${formatAutoSnoozeLabel(task.auto_snooze_minutes)}`}
-                  >
-                    <Timer className="size-3" />
-                    <span className="text-[11px]">
-                      {formatAutoSnoozeLabel(task.auto_snooze_minutes)}
-                    </span>
-                  </span>
-                ) : null}
-
-                {task.notes && task.notes.trim() && (
-                  <span className="inline-flex items-center text-amber-400" title="Has notes">
-                    <StickyNote className="size-3" />
-                  </span>
-                )}
-
-                {hasLabels && (
-                  <LabelBadges
-                    labels={task.labels}
-                    labelConfig={labelConfig}
-                    onLabelClick={onLabelClick}
-                    onReprocess={onReprocess}
+                    className={cn(
+                      'inline-block size-2 rounded-full',
+                      LABEL_COLORS[projectColor].dot,
+                    )}
                   />
+                ) : (
+                  <FolderOpen className="size-2.5" />
                 )}
-
-                {projectName && (
-                  <span className="text-muted-foreground/60 inline-flex items-center gap-0.5 text-[11px]">
-                    <FolderOpen className="size-2.5" />
-                    {projectName}
-                  </span>
-                )}
+                {projectName}
               </span>
             )}
           </div>
         )}
 
         {annotation && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-blue-600/80 dark:text-blue-400/80">
+          <p className="mt-0.5 text-xs text-blue-600/80 dark:text-blue-400/80">
             <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {annotation}
           </p>
         )}
 
         {insightsCommentary && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-indigo-600/80 dark:text-indigo-400/80">
+          <p className="mt-0.5 text-xs text-indigo-600/80 dark:text-indigo-400/80">
             <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
             {insightsCommentary}
           </p>
@@ -726,19 +726,6 @@ function getTitleSizeClass(title: string): string {
   if (len <= 80) return ''
   if (len <= 160) return 'text-sm'
   return 'text-xs'
-}
-
-/**
- * Height class matching the text line-height for the title tier.
- * Used on indicator spans (with `flex items-center`) so icons are
- * vertically centered against the first line of text when the
- * parent uses `items-start`.
- */
-function getIconAlignHeight(title: string): string {
-  const len = title.length
-  if (len <= 80) return 'h-6' // 24px = text-base line-height
-  if (len <= 160) return 'h-5' // 20px = text-sm line-height
-  return 'h-4' // 16px = text-xs line-height
 }
 
 /**

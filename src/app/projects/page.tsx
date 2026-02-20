@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { Project } from '@/types'
+import type { Project, LabelColor } from '@/types'
 import {
   SortableProjectList,
   DragHandle,
@@ -13,6 +13,7 @@ import {
 import { showToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { CountBadge } from '@/components/CountBadge'
+import { LABEL_COLORS } from '@/lib/label-colors'
 
 export default function ProjectsPage() {
   const { status } = useSession()
@@ -114,6 +115,7 @@ export default function ProjectsPage() {
                 <ProjectCard
                   project={project}
                   shared={fullProject?.shared}
+                  color={fullProject?.color}
                   activeCount={fullProject?.active_count ?? 0}
                   overdueCount={fullProject?.overdue_count ?? 0}
                   dragHandle={dragHandle}
@@ -130,12 +132,14 @@ export default function ProjectsPage() {
 function ProjectCard({
   project,
   shared,
+  color,
   activeCount,
   overdueCount,
   dragHandle,
 }: {
   project: { id: number; name: string }
   shared?: boolean
+  color?: LabelColor | null
   activeCount: number
   overdueCount: number
   dragHandle: DragHandleProps
@@ -154,7 +158,17 @@ function ProjectCard({
       />
       <Link href={`/projects/${project.id}`} className="flex flex-1 items-center justify-between">
         <div className="min-w-0 flex-1">
-          <span className="truncate font-medium">{project.name}</span>
+          <span className="inline-flex items-center gap-1.5 truncate font-medium">
+            {color && (
+              <span
+                className={cn(
+                  'inline-block size-2.5 flex-shrink-0 rounded-full',
+                  LABEL_COLORS[color].dot,
+                )}
+              />
+            )}
+            {project.name}
+          </span>
           {shared && <span className="ml-2 text-xs text-zinc-400">Shared</span>}
         </div>
         <span className="flex flex-shrink-0 items-center gap-1">

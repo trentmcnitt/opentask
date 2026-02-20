@@ -31,7 +31,7 @@ function getProjectById(projectId: number, userId: number): ProjectRow | null {
   return (
     (db
       .prepare(
-        `SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.created_at,
+        `SELECT p.id, p.name, p.owner_id, p.shared, p.sort_order, p.color, p.created_at,
           (SELECT COUNT(*) FROM tasks t
            WHERE t.project_id = p.id AND t.user_id = ?
              AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
@@ -127,6 +127,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (input.shared !== undefined) {
       updates.push('shared = ?')
       values.push(input.shared ? 1 : 0)
+    }
+
+    if (input.color !== undefined) {
+      updates.push('color = ?')
+      values.push(input.color)
     }
 
     if (updates.length === 0) {

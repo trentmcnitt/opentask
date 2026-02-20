@@ -275,8 +275,9 @@ export function TaskList({
 
   const isUnified = grouping === 'unified'
 
-  // Build a project name lookup for unified view (project badge on each task row)
+  // Build project lookups for unified view (project badge + color on each task row)
   const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+  const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
   const groups = isUnified
     ? [{ label: '_unified', tasks }]
@@ -440,6 +441,7 @@ export function TaskList({
                           insightsSignals={insightsSignalMap?.get(task.id)}
                           insightsCommentary={insightsCommentaryMap?.get(task.id)}
                           projectName={projectNameMap?.get(task.project_id)}
+                          projectColor={projectColorMap?.get(task.project_id)}
                         />
                       </SwipeableRow>
                     )
