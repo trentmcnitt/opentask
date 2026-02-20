@@ -4,6 +4,10 @@
  * POST /api/notifications/actions - Handle notification action callbacks (done, snooze)
  *
  * Body: { action: "done" | "snooze" | "snooze30" | "snooze2h", task_id: number, token: string }
+ *
+ * Auth: Token is passed in the request body (not the Authorization header) because iOS
+ * Notification Content Extensions cannot set custom HTTP headers. The extension reads
+ * the token from the shared Keychain (App Group) and includes it in the JSON body.
  */
 
 import { NextRequest } from 'next/server'

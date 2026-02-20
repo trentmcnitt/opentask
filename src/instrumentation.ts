@@ -44,13 +44,21 @@ export async function register() {
 
     // Single 1-minute heartbeat cron replaces separate overdue (1m), critical (15m),
     // and enrichment (10s) crons. All three checks run sequentially each minute.
+    // Guard prevents overlapping runs if a previous heartbeat hasn't finished.
+    let isHeartbeatRunning = false
     cron.schedule('* * * * *', async () => {
-      await checkOverdueTasks()
-      await checkCriticalTasks()
-      if (isAIEnabled()) {
-        processEnrichmentQueue().catch((err) =>
-          log.error('cron', 'Enrichment safety-net error:', err),
-        )
+      if (isHeartbeatRunning) return
+      isHeartbeatRunning = true
+      try {
+        await checkOverdueTasks()
+        await checkCriticalTasks()
+        if (isAIEnabled()) {
+          processEnrichmentQueue().catch((err) =>
+            log.error('cron', 'Enrichment safety-net error:', err),
+          )
+        }
+      } finally {
+        isHeartbeatRunning = false
       }
     })
 
