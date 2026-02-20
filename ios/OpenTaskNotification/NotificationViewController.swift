@@ -112,8 +112,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 print("[OpenTask] Content extension action error: \(error)")
             }
 
-            // Dismiss and forward to main app for any additional handling
-            completion(.dismissAndForwardAction)
+            // Dismiss only — the extension already handled the action via API call.
+            // Using .dismissAndForwardAction would cause AppDelegate's didReceive to
+            // fire the same API call again (double action).
+            completion(.dismiss)
         }
     }
 

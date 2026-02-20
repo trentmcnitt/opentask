@@ -19,13 +19,19 @@ enum KeychainHelper {
             kSecAttrAccessGroup as String: accessGroup,
         ]
 
-        // Delete existing item first
-        SecItemDelete(query as CFDictionary)
+        // Delete existing item first (errSecItemNotFound is expected on first save)
+        let deleteStatus = SecItemDelete(query as CFDictionary)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            print("[OpenTask] Keychain delete failed for \(key): \(deleteStatus)")
+        }
 
         var addQuery = query
         addQuery[kSecValueData as String] = data
 
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess {
+            print("[OpenTask] Keychain save failed for \(key): \(addStatus)")
+        }
     }
 
     static func read(key: String) -> String? {
@@ -54,6 +60,9 @@ enum KeychainHelper {
             kSecAttrAccount as String: key,
             kSecAttrAccessGroup as String: accessGroup,
         ]
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            print("[OpenTask] Keychain delete failed for \(key): \(status)")
+        }
     }
 }

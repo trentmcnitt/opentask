@@ -6,21 +6,6 @@ import Foundation
 /// Uses the device's current timezone for display purposes.
 enum DateHelpers {
 
-    // MARK: - Preset Times
-
-    struct PresetTime {
-        let label: String
-        let hour: Int
-        let minute: Int
-    }
-
-    static let presetTimes: [PresetTime] = [
-        PresetTime(label: "9:00 AM", hour: 9, minute: 0),
-        PresetTime(label: "12:00 PM", hour: 12, minute: 0),
-        PresetTime(label: "4:00 PM", hour: 16, minute: 0),
-        PresetTime(label: "8:30 PM", hour: 20, minute: 30),
-    ]
-
     // MARK: - Snap to Next Preset
 
     /// Returns the next occurrence of a specific hour:minute in the device timezone.
@@ -64,26 +49,6 @@ enum DateHelpers {
             return isoDate
         }
         return formatISO(adjusted)
-    }
-
-    // MARK: - Snap to Next Hour
-
-    /// Advance 1+ hours from now, then snap to the nearest hour boundary.
-    /// Uses the same threshold as the web app (35 minutes).
-    static func snapToNextHour(now: Date = Date()) -> Date {
-        let hourRoundThreshold = 35
-        let oneHourLater = now.addingTimeInterval(3600)
-        let calendar = Calendar.current
-        let minutes = calendar.component(.minute, from: oneHourLater)
-
-        var snapped = calendar.date(bySetting: .minute, value: 0, of: oneHourLater) ?? oneHourLater
-        snapped = calendar.date(bySetting: .second, value: 0, of: snapped) ?? snapped
-
-        if minutes >= hourRoundThreshold {
-            snapped = calendar.date(byAdding: .hour, value: 1, to: snapped) ?? snapped
-        }
-
-        return snapped
     }
 
     // MARK: - Format Delta
