@@ -21,7 +21,17 @@ export function purgeOldTrash(): number {
 
   // Execute all deletes in a transaction
   const changes = withTransaction((tx) => {
-    // Delete any completions associated with these tasks
+    // Delete related records before tasks to avoid FK violations
+    tx.prepare(
+      `
+      DELETE FROM ai_insights_results
+      WHERE task_id IN (
+        SELECT id FROM tasks
+        WHERE deleted_at IS NOT NULL AND deleted_at < ?
+      )
+    `,
+    ).run(cutoffIso)
+
     tx.prepare(
       `
       DELETE FROM completions

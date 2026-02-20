@@ -159,6 +159,7 @@ export function emptyTrash(userId: number): number {
   const ids = trashedTasks.map((t) => t.id)
   const placeholders = ids.map(() => '?').join(',')
   withTransaction((tx) => {
+    tx.prepare(`DELETE FROM ai_insights_results WHERE task_id IN (${placeholders})`).run(...ids)
     tx.prepare(`DELETE FROM completions WHERE task_id IN (${placeholders})`).run(...ids)
     tx.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...ids)
     // Note: undo_log entries referencing these task IDs are intentionally NOT cleaned up.
