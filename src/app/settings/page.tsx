@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { showToast } from '@/lib/toast'
-import { BUILD_ID, formatBuildDate } from '@/lib/build-info'
+import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
@@ -795,7 +795,7 @@ export default function SettingsPage() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-zinc-500">Version</span>
-              <span>0.1.0</span>
+              <span>{VERSION}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-zinc-500">Build</span>
