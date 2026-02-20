@@ -240,16 +240,6 @@ CREATE TABLE IF NOT EXISTS apns_devices (
 );
 CREATE INDEX IF NOT EXISTS idx_apns_devices_user_id ON apns_devices(user_id);
 
--- Pushover receipts (tracks emergency alert receipts for acknowledge callbacks)
-CREATE TABLE IF NOT EXISTS pushover_receipts (
-  receipt        TEXT PRIMARY KEY,
-  task_id        INTEGER NOT NULL REFERENCES tasks(id),
-  user_id        INTEGER NOT NULL REFERENCES users(id),
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-  acknowledged   INTEGER NOT NULL DEFAULT 0,
-  acknowledged_at TEXT
-);
-
 -- AI insights sessions (tracks generation progress for polling)
 CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   id           TEXT PRIMARY KEY,

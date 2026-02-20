@@ -20,20 +20,25 @@ const APNS_TEAM_ID = process.env.APNS_TEAM_ID || ''
 const APNS_KEY_PATH = process.env.APNS_KEY_PATH || ''
 const APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || ''
 
-let client: ApnsClient | null = null
+/**
+ * Separate clients for production and development (sandbox) APNs endpoints.
+ * Debug/direct-to-device builds register as "development" and require the sandbox
+ * endpoint; TestFlight/App Store builds register as "production".
+ */
+const clients: Record<string, ApnsClient> = {}
 
-function getClient(): ApnsClient {
-  if (!client) {
+function getClient(environment: string): ApnsClient {
+  if (!clients[environment]) {
     const signingKey = readFileSync(APNS_KEY_PATH, 'utf8')
-    client = new ApnsClient({
+    clients[environment] = new ApnsClient({
       team: APNS_TEAM_ID,
       keyId: APNS_KEY_ID,
       signingKey,
       defaultTopic: APNS_BUNDLE_ID,
-      host: Host.production,
+      host: environment === 'development' ? Host.development : Host.production,
     })
   }
-  return client
+  return clients[environment]
 }
 
 export function isApnsConfigured(): boolean {
@@ -82,15 +87,15 @@ export async function sendApnsNotification(
 
   if (devices.length === 0) return
 
-  const apns = getClient()
-
   const results = await Promise.allSettled(
     devices.map(async (device) => {
+      const apns = getClient(device.environment)
       const notification = new Notification(device.device_token, {
         alert: { title: payload.title, body: payload.body },
         category: 'TASK_REMINDER',
         threadId: 'opentask-overdue',
         sound: 'default',
+        collapseId: `task-${payload.taskId}`,
         data: {
           taskId: payload.taskId,
           dueAt: payload.dueAt,
@@ -136,10 +141,9 @@ export async function dismissApnsNotifications(userId: number, taskIds: number[]
 
   if (devices.length === 0) return
 
-  const apns = getClient()
-
   const results = await Promise.allSettled(
     devices.map(async (device) => {
+      const apns = getClient(device.environment)
       const notification = new SilentNotification(device.device_token, {
         data: { type: 'dismiss', taskIds },
       })

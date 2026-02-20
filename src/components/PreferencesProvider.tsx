@@ -36,10 +36,6 @@ interface PreferencesContextValue {
   setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
-  pushoverUserKey: string | null
-  setPushoverUserKey: (key: string | null) => void
-  pushoverSound: string
-  setPushoverSound: (sound: string) => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
   aiMode: AiMode
@@ -89,10 +85,6 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setDefaultGrouping: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
-  pushoverUserKey: null,
-  setPushoverUserKey: () => {},
-  pushoverSound: 'echo',
-  setPushoverSound: () => {},
   aiContext: null,
   setAiContext: () => {},
   aiMode: 'on',
@@ -135,8 +127,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     'project',
   )
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
-  const [pushoverUserKey, setPushoverUserKeyState] = useState<string | null>(null)
-  const [pushoverSound, setPushoverSoundState] = useState('echo')
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
@@ -184,12 +174,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (data?.data?.default_grouping) {
           setDefaultGroupingState(data.data.default_grouping)
-        }
-        if (data?.data?.pushover_user_key !== undefined) {
-          setPushoverUserKeyState(data.data.pushover_user_key)
-        }
-        if (data?.data?.pushover_sound) {
-          setPushoverSoundState(data.data.pushover_sound)
         }
         if (data?.data?.notifications_enabled !== undefined) {
           setNotificationsEnabledState(data.data.notifications_enabled)
@@ -275,10 +259,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         },
         notificationsEnabled,
         setNotificationsEnabled: setNotificationsEnabledState,
-        pushoverUserKey,
-        setPushoverUserKey: setPushoverUserKeyState,
-        pushoverSound,
-        setPushoverSound: setPushoverSoundState,
         aiContext,
         setAiContext: setAiContextState,
         aiMode,
@@ -360,22 +340,8 @@ export function useAiContext() {
 }
 
 export function useNotificationConfig() {
-  const {
-    notificationsEnabled,
-    setNotificationsEnabled,
-    pushoverUserKey,
-    setPushoverUserKey,
-    pushoverSound,
-    setPushoverSound,
-  } = useContext(PreferencesContext)
-  return {
-    notificationsEnabled,
-    setNotificationsEnabled,
-    pushoverUserKey,
-    setPushoverUserKey,
-    pushoverSound,
-    setPushoverSound,
-  }
+  const { notificationsEnabled, setNotificationsEnabled } = useContext(PreferencesContext)
+  return { notificationsEnabled, setNotificationsEnabled }
 }
 
 export function useAiPreferences() {
