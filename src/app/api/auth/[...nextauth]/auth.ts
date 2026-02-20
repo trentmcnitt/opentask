@@ -1,12 +1,12 @@
 /**
  * NextAuth configuration for OpenTask
  *
- * Uses credentials provider for email/password authentication.
+ * Uses credentials provider for username/password authentication.
  */
 
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
-import { validateCredentials } from '@/core/auth/session'
+import { validateCredentials, getUserById } from '@/core/auth/session'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -43,12 +43,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     jwt({ token, user }) {
-      // On sign in, add user data to the token
+      // On sign in, store the user ID in the token
       if (user) {
         token.id = user.id
         token.timezone = user.timezone
         token.default_grouping = user.default_grouping
       }
+
+      // Refresh user data from DB on every request so preference changes
+      // (timezone, default_grouping) take effect without re-login
+      if (token.id) {
+        const freshUser = getUserById(Number(token.id))
+        if (freshUser) {
+          token.timezone = freshUser.timezone
+          token.default_grouping = freshUser.default_grouping
+        }
+      }
+
       return token
     },
     session({ session, token }) {
