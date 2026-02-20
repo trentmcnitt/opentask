@@ -8,10 +8,10 @@ CREATE TABLE IF NOT EXISTS users (
   name          TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   timezone      TEXT NOT NULL DEFAULT 'America/Chicago',
-  ntfy_topic    TEXT,
-  ntfy_server   TEXT,
-  pushover_user_key TEXT,
-  pushover_sound TEXT NOT NULL DEFAULT 'echo',
+  ntfy_topic    TEXT,            -- Vestigial (ntfy removed); kept for existing DB compat
+  ntfy_server   TEXT,           -- Vestigial (ntfy removed); kept for existing DB compat
+  pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
+  pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
   default_grouping TEXT NOT NULL DEFAULT 'project',
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
@@ -151,13 +151,12 @@ CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed
 CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_undo_log_user_id ON undo_log(user_id);
+-- idx_undo_log_user_id removed: redundant with idx_undo_log_undone (user_id is a prefix)
 CREATE INDEX IF NOT EXISTS idx_undo_log_undone ON undo_log(user_id, undone);
 
 CREATE INDEX IF NOT EXISTS idx_projects_owner_id ON projects(owner_id);
 
-CREATE INDEX IF NOT EXISTS idx_user_daily_stats_user_date
-  ON user_daily_stats(user_id, date);
+-- idx_user_daily_stats_user_date removed: redundant with UNIQUE(user_id, date) constraint
 CREATE INDEX IF NOT EXISTS idx_user_daily_stats_date
   ON user_daily_stats(date);
 
