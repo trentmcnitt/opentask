@@ -22,7 +22,11 @@ self.addEventListener('activate', (event) => {
   self.clients.claim()
 })
 
-// Web Push: show notification or handle dismiss when push message arrives
+// Web Push: show notification or handle dismiss when push message arrives.
+// Suppresses notifications when the app is already visible — the user is looking
+// at their task list and doesn't need push banners. This also prevents notification
+// bombardment: when the cron sends 20 notifications in sequence and the user taps the
+// first one (opening the app), the remaining notifications are silently discarded.
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {}
 
@@ -33,11 +37,21 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'OpenTask', {
-      body: data.body || '',
-      icon: '/icon-192.png',
-      data: data.data || {},
-      tag: data.tag || undefined,
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      const hasFocusedClient = windowClients.some((c) => c.visibilityState === 'visible')
+
+      if (hasFocusedClient) {
+        // App is open and visible — skip the notification.
+        // Having a visible client satisfies the browser's push event requirement.
+        return
+      }
+
+      return self.registration.showNotification(data.title || 'OpenTask', {
+        body: data.body || '',
+        icon: '/icon-192.png',
+        data: data.data || {},
+        tag: data.tag || undefined,
+      })
     }),
   )
 })
@@ -80,20 +94,28 @@ async function handleDismiss(taskIds) {
   }
 }
 
-// Web Push: handle notification tap — open or focus the PWA at the target URL
+// Web Push: handle notification tap — open or focus the PWA at the target URL.
+// Also clears all remaining delivered notifications since the user is now in the app.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const url = event.notification.data?.url || '/'
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ('focus' in client) {
-          client.navigate(url)
-          return client.focus()
+    // Clear all remaining OpenTask notifications — the user is opening the app
+    self.registration
+      .getNotifications()
+      .then((notifications) => {
+        notifications.forEach((n) => n.close())
+      })
+      .then(() => clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then((clientList) => {
+        for (const client of clientList) {
+          if ('focus' in client) {
+            client.navigate(url)
+            return client.focus()
+          }
         }
-      }
-      return clients.openWindow(url)
-    }),
+        return clients.openWindow(url)
+      }),
   )
 })
 

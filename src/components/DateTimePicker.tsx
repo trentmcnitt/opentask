@@ -19,18 +19,30 @@ interface DateTimePickerProps {
   children: React.ReactNode
 }
 
+/** Convert 24-hour to 12-hour display value (1-12) */
+function to12Hour(hour24: number): number {
+  return hour24 % 12 || 12
+}
+
+/** Convert 12-hour + period back to 24-hour */
+function to24Hour(hour12: number, period: 'AM' | 'PM'): number {
+  if (period === 'AM') return hour12 % 12
+  return (hour12 % 12) + 12
+}
+
 /**
  * Calendar + time picker popover.
  *
  * Wraps a trigger element (children prop) with a popover containing a shadcn
- * Calendar for date selection and hour/minute inputs for time. Converts the
- * selected local date+time to UTC using Luxon before calling onChange.
+ * Calendar for date selection and 12-hour time inputs with AM/PM toggle.
+ * Converts the selected local date+time to UTC using Luxon before calling onChange.
  */
 export function DateTimePicker({ value, timezone, onChange, children }: DateTimePickerProps) {
   const [open, setOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
-  const [hour, setHour] = useState(9)
+  const [hour12, setHour12] = useState(9)
   const [minute, setMinute] = useState(0)
+  const [period, setPeriod] = useState<'AM' | 'PM'>('AM')
 
   // Initialize internal state from external value when popover opens
   const handleOpenChange = useCallback(
@@ -39,16 +51,18 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
         if (value) {
           const dt = DateTime.fromISO(value, { zone: 'utc' }).setZone(timezone)
           setSelectedDate(dt.toJSDate())
-          setHour(dt.hour)
+          setHour12(to12Hour(dt.hour))
           setMinute(dt.minute)
+          setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
         } else {
           const tomorrow = DateTime.now()
             .setZone(timezone)
             .plus({ days: 1 })
             .set({ hour: 9, minute: 0 })
           setSelectedDate(tomorrow.toJSDate())
-          setHour(9)
+          setHour12(9)
           setMinute(0)
+          setPeriod('AM')
         }
       }
       setOpen(newOpen)
@@ -58,11 +72,12 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
 
   const handleSetDate = () => {
     if (!selectedDate) return
+    const hour24 = to24Hour(hour12, period)
     // Convert local date+time to UTC using Luxon.
     // fromJSDate + setZone with keepLocalTime interprets the calendar date in the user's timezone.
     const localDt = DateTime.fromJSDate(selectedDate)
       .setZone(timezone, { keepLocalTime: true })
-      .set({ hour, minute, second: 0, millisecond: 0 })
+      .set({ hour: hour24, minute, second: 0, millisecond: 0 })
     const utcIso = localDt.toUTC().toISO()
     if (utcIso) {
       onChange(utcIso)
@@ -88,15 +103,15 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
           defaultMonth={selectedDate}
         />
         <div className="border-t px-3 py-3">
-          {/* Time inputs */}
+          {/* Time inputs — 12-hour format with AM/PM toggle */}
           <div className="flex items-center gap-2">
             <label className="text-muted-foreground text-xs">Time:</label>
             <Input
               type="number"
-              min={0}
-              max={23}
-              value={hour}
-              onChange={(e) => setHour(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
+              min={1}
+              max={12}
+              value={hour12}
+              onChange={(e) => setHour12(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))}
               className="h-8 w-14 text-center text-sm"
               aria-label="Hour"
             />
@@ -110,6 +125,16 @@ export function DateTimePicker({ value, timezone, onChange, children }: DateTime
               className="h-8 w-14 text-center text-sm"
               aria-label="Minute"
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-12 text-xs font-medium"
+              onClick={() => setPeriod((p) => (p === 'AM' ? 'PM' : 'AM'))}
+              aria-label={`Toggle AM/PM, currently ${period}`}
+            >
+              {period}
+            </Button>
           </div>
           {/* Action buttons */}
           <div className="mt-2 flex gap-2">

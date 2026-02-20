@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   ntfy_server   TEXT,           -- Vestigial (ntfy removed); kept for existing DB compat
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
-  default_grouping TEXT NOT NULL DEFAULT 'project',
+  default_grouping TEXT NOT NULL DEFAULT 'unified',
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
