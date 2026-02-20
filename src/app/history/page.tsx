@@ -1007,6 +1007,12 @@ function AITab({ timezone }: { timezone: string }) {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
 
+  // Ref tracks current data so fetchStatus can read it without depending on it.
+  // This avoids a stale closure: the effect should re-run when actionFilter changes
+  // (to refetch), but not when data changes (which would cause an infinite loop).
+  const dataRef = useRef(data)
+  dataRef.current = data
+
   const fetchStatus = useCallback(
     async (opts: { append?: boolean; offset?: number } = {}) => {
       const { append = false, offset = 0 } = opts
@@ -1026,11 +1032,12 @@ function AITab({ timezone }: { timezone: string }) {
         }
         const json = await res.json()
         if (json.data) {
-          if (append && data) {
+          const current = dataRef.current
+          if (append && current) {
             // Append new activity entries to existing data
             setData({
               ...json.data,
-              recent_activity: [...data.recent_activity, ...json.data.recent_activity],
+              recent_activity: [...current.recent_activity, ...json.data.recent_activity],
             })
           } else {
             setData(json.data)
@@ -1044,13 +1051,12 @@ function AITab({ timezone }: { timezone: string }) {
         setLoadingMore(false)
       }
     },
-    [actionFilter, data],
+    [actionFilter],
   )
 
   useEffect(() => {
     fetchStatus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when filter changes, not on data change
-  }, [actionFilter])
+  }, [fetchStatus])
 
   const handleLoadMore = useCallback(() => {
     if (!data || loadingMore) return
