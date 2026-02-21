@@ -4,6 +4,39 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 02-21-26
+
+### Notification System Overhaul — Unified Checker + Consolidation
+
+**Problem:** The notification cron bundled three unrelated jobs (overdue check, critical alerts, AI enrichment) under a single `isHeartbeatRunning` guard. When AI enrichment hung (SEGV), the guard stayed locked and notifications were silently skipped for 10-12 minutes until the server crashed and restarted. Additionally, two separate checkers (`checkOverdueTasks` for P0-P3 and `checkCriticalTasks` for P4) duplicated boundary logic with inconsistent intervals — P4 used the user's configured 5-min interval for web push but a hardcoded 60-min interval for APNs. No notification consolidation meant a burst of 50 overdue tasks generated 50 individual notifications.
+
+**Solution:**
+
+1. **Separated notification cron from enrichment** — Two independent crons in `instrumentation.ts`, each with their own guard. Notification cron has a 30-second safety timeout that force-resets the guard if a check hangs, preventing permanent lockout. A stuck enrichment process can never block notification delivery.
+
+2. **Merged two checkers into one** — Deleted `critical-alerts.ts`. The unified `checkOverdueTasks()` handles all priorities (P0-P4) in a single query + boundary check. P4 now uses the user's configured `auto_snooze_urgent_minutes` for both web push and APNs (hardcoded 60-min interval deleted).
+
+3. **Added consolidation caps** — Three buckets prevent notification flooding:
+   - Regular (P0-P2): 4 individual + summary if more
+   - High (P3): 5 individual + summary if more
+   - Urgent (P4): unlimited, no summary
+
+   Within each bucket, highest priority tasks get individual slots first (P2 before P1 before P0), then most overdue. Both web push and APNs follow the same rules — no more channel-specific logic.
+
+4. **Marked vestigial columns** — `last_notified_at` and `last_critical_alert_at` on the tasks table (replaced by mod-based boundary detection) are now marked as vestigial in schema.sql.
+
+**Files touched:**
+
+- `src/instrumentation.ts` — Separated notification and enrichment crons
+- `src/core/notifications/overdue-checker.ts` — Unified checker with consolidation
+- `src/core/notifications/critical-alerts.ts` — Deleted (merged into overdue-checker)
+- `src/core/notifications/apns.ts` — Added `sendApnsSummaryNotification()`
+- `src/core/notifications/index.ts` — Removed `checkCriticalTasks` export
+- `src/core/db/schema.sql` — Marked vestigial columns
+- `tests/behavioral/notification-timing.test.ts` — Rewritten for unified checker + consolidation
+
+---
+
 ## 02-04-26
 
 ### Activity/Undo/Toast Consistency Overhaul

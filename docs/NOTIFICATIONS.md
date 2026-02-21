@@ -11,41 +11,37 @@ Two channels:
 
 ntfy was previously used but removed due to rate limiting. Pushover was previously used for critical alerts but removed — APNs `time-sensitive` interruption level handles P4 natively.
 
-Notifications run as in-process cron jobs via `node-cron` in `src/instrumentation.ts`. Two checks run sequentially every minute:
+Notifications run as an in-process cron job via `node-cron` in `src/instrumentation.ts`. A single unified `checkOverdueTasks()` runs every minute and handles all priorities (P0-P4) in one pass, sending via both Web Push and APNs. The notification cron is independent of the AI enrichment cron — a stuck enrichment process can never block notification delivery.
 
-1. `checkOverdueTasks()` — queries tasks where `due_at < now`, filters by per-task cooldown, sends via Web Push and APNs (P0-P3 only for APNs)
-2. `checkCriticalTasks()` — queries overdue P4 (Urgent) tasks, sends via APNs with `time-sensitive` interruption level (independent cooldown)
+Consolidation caps prevent notification flooding:
 
-P4 tasks get APNs exclusively from `checkCriticalTasks()` to avoid duplicate notifications. They still get Web Push from `checkOverdueTasks()` for desktop coverage.
+| Bucket  | Priorities | Individual cap | Summary if overflow                  |
+| ------- | ---------- | -------------- | ------------------------------------ |
+| Regular | P0-P2      | 4              | "N more tasks overdue"               |
+| High    | P3         | 5              | "N more high priority tasks overdue" |
+| Urgent  | P4         | Unlimited      | None                                 |
 
-Both run on a poll-based model: the cron fires every ~60 seconds and looks for tasks that are already overdue.
+Within each bucket, highest priority tasks get individual notification slots first (P2 before P1 before P0), then most overdue. Both Web Push and APNs follow the same consolidation rules.
 
 ### Timing precision
 
-The cron pattern `* * * * *` fires once per minute with no sub-second guarantee. A task due at 10:00:00 is first noticed at ~10:00:xx or ~10:01:xx. Sequential execution of both checkers and per-notification HTTP requests add further delay.
-
-Other task apps (Todoist, Things, Apple Reminders) pre-schedule notifications at the exact `due_at` time. A hybrid approach — pre-schedule for exact timing, poll as safety net — would improve precision. See `docs/NOTIFICATION-PLAN.md` for status.
+The cron pattern `* * * * *` (node-cron) fires at the start of each calendar minute. Notification sends use `Promise.allSettled` for parallelism, so delivery typically completes within 1-2 seconds of the minute boundary.
 
 ### Notification flow
 
 ```
 Task becomes overdue
-  -> Cron discovers it (up to ~60s delay)
-  -> Cooldown check: skip if notified within interval
-  -> P2+ tasks: individual Web Push notification
-  -> P0-P1 single task: individual Web Push notification
-  -> P0-P1 multiple tasks: bulk summary with link to /?filter=overdue
-  -> APNs: individual notification per task (P0-P3 only, P4 handled by critical alerts)
-  -> Update last_notified_at
-
-Urgent (P4) tasks — critical alerts:
-  -> APNs time-sensitive notification (breaks through Focus mode)
-  -> Update last_critical_alert_at (independent cooldown, 60 min)
+  → Cron fires at minute boundary
+  → Mod-based boundary check: floor((now - due_at) / 60000) % interval === 0
+  → Split eligible tasks into 3 buckets (Regular, High, Urgent)
+  → Per bucket: send individual Web Push + APNs up to cap
+  → If overflow: send 1 summary Web Push + 1 summary APNs
+  → No DB writes — boundary detection is stateless
 ```
 
 ### Notification dismissal
 
-When a task is snoozed, completed, or deleted from any device/web UI, `dismissAllNotifications()` sends dismiss signals to both Web Push and APNs. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
+When a task is snoozed, completed, or deleted from any device/web UI, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
 
 ### Notification coalescing
 
@@ -63,19 +59,18 @@ Per-task `auto_snooze_minutes` overrides the user default.
 
 ### Files
 
-| File                                         | Purpose                                                               |
-| -------------------------------------------- | --------------------------------------------------------------------- |
-| `src/core/notifications/overdue-checker.ts`  | Overdue task polling, Web Push + APNs delivery                        |
-| `src/core/notifications/critical-alerts.ts`  | P4 (Urgent) alerts via APNs time-sensitive                            |
-| `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`) |
-| `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `isApnsConfigured`)        |
-| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissAllNotifications`)                     |
-| `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                         |
-| `src/app/api/push/subscribe/route.ts`        | Push subscription storage endpoint                                    |
-| `src/app/api/push/test/route.ts`             | Quick push test (sends to current user)                               |
-| `src/app/api/notifications/actions/route.ts` | Action callback handler (done, snooze30, snooze, snooze2h)            |
-| `src/app/api/notifications/test/route.ts`    | Test notification endpoint (individual, high, bulk, critical)         |
-| `src/instrumentation.ts`                     | Cron scheduling                                                       |
+| File                                         | Purpose                                                                                       |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/core/notifications/overdue-checker.ts`  | Unified overdue checker with consolidation (all priorities)                                   |
+| `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
+| `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
+| `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissNotificationsForTasks`)                                        |
+| `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                                                 |
+| `src/app/api/push/subscribe/route.ts`        | Push subscription storage endpoint                                                            |
+| `src/app/api/push/test/route.ts`             | Quick push test (sends to current user)                                                       |
+| `src/app/api/notifications/actions/route.ts` | Action callback handler (done, snooze30, snooze, snooze2h)                                    |
+| `src/app/api/notifications/test/route.ts`    | Test notification endpoint (individual, high, bulk, critical)                                 |
+| `src/instrumentation.ts`                     | Cron scheduling                                                                               |
 
 ## Web Push
 

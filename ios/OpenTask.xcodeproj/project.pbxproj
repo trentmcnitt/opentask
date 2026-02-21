@@ -78,6 +78,7 @@
 
 /* Begin PBXFileReference section */
 		01EF2F2D55539C4136F5B174 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		186FCE9C574F0644BB68C310 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		214D7F74FAF79F1D94BCD4B8 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
 		29B9EAB91C2948947698CB10 /* OpenTask.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenTask.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3952E05AC781CACC6A68A620 /* OpenTaskNotification.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OpenTaskNotification.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -93,6 +94,7 @@
 		B761D724E9EABFA497BD0CF3 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C36650F41A76D5F4FEA0ECE8 /* OpenTaskWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F440FAD44D79476262EAD7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateHelpers.swift; sourceTree = "<group>"; };
 		E34F38A2233E6C7AD5D02FD9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E351757DF79BFD8A5FA11A08 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 			isa = PBXGroup;
 			children = (
 				E351757DF79BFD8A5FA11A08 /* Assets.xcassets */,
+				D4F440FAD44D79476262EAD7 /* Info.plist */,
 				A5CC8E2443EB8CFC907A4983 /* OpenTaskWatchApp.swift */,
 				A9DE5729A90E0CE58D2894BC /* StatusView.swift */,
 				FEC3579E8F57FB1C23A5ADE1 /* WatchAppDelegate.swift */,
@@ -159,6 +162,7 @@
 				E34F38A2233E6C7AD5D02FD9 /* AppDelegate.swift */,
 				B5F413C3A06EF7B3DEFE9AB1 /* Assets.xcassets */,
 				4BBF203FAC515A5C83498F70 /* ContentView.swift */,
+				186FCE9C574F0644BB68C310 /* Info.plist */,
 				955351AED16FD834316AB1EA /* OpenTaskApp.swift */,
 				01EF2F2D55539C4136F5B174 /* SetupView.swift */,
 				214D7F74FAF79F1D94BCD4B8 /* WebView.swift */,
@@ -496,9 +500,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OpenTaskWatch/OpenTaskWatch.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = io.mcnitt.opentask;
+				INFOPLIST_FILE = OpenTaskWatch/Info.plist;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.watchapp;
 				SDKROOT = watchos;
@@ -514,9 +516,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OpenTaskWatch/OpenTaskWatch.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = io.mcnitt.opentask;
+				INFOPLIST_FILE = OpenTaskWatch/Info.plist;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.watchapp;
 				SDKROOT = watchos;
@@ -551,11 +551,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenTask/OpenTask.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_FILE = OpenTask/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -575,11 +571,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenTask/OpenTask.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_FILE = OpenTask/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
