@@ -77,7 +77,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         fetchTasks()
 
         const skipBreakdown = buildSkipBreakdown(skippedMedium, skippedHigh, skippedUrgent)
-        const skipSuffix = skipBreakdown ? ` (${skipBreakdown} skipped)` : ''
+        const skipSuffix = skipBreakdown ? ` (skipped ${skipBreakdown})` : ''
 
         let message: string
         if (tasksAffected === 0) {

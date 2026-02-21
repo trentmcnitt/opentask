@@ -7,6 +7,7 @@
 
 import Database from 'better-sqlite3'
 import { getDb, withTransaction } from '@/core/db'
+import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot, UndoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
@@ -95,7 +96,7 @@ export function executeUndo(userId: number): UndoResult | null {
     snapshots: JSON.parse(entry.snapshot),
   }
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     undoEntry(tx, parsed)
 
     return {
@@ -104,4 +105,8 @@ export function executeUndo(userId: number): UndoResult | null {
       tasks_affected: parsed.snapshots.length,
     }
   })
+
+  emitSyncEvent(userId)
+
+  return result
 }
