@@ -59,13 +59,15 @@ export function AIStatusModal({ open, onOpenChange, timezone }: AIStatusModalPro
         </DialogHeader>
 
         {loading ? (
-          <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+          <div className="text-muted-foreground animate-pulse py-8 text-center">Loading...</div>
         ) : error || !data ? (
           <div className="py-8 text-center">
-            <p className="text-zinc-400">{error ? 'AI features are not available.' : 'No data.'}</p>
+            <p className="text-muted-foreground">
+              {error ? 'AI features are not available.' : 'No data.'}
+            </p>
             <button
               onClick={fetchStatus}
-              className="mt-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              className="text-muted-foreground hover:text-foreground mt-2 text-sm"
             >
               Retry
             </button>

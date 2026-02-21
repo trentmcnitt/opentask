@@ -8,6 +8,7 @@ import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError } from '@/core/errors'
 import { isAIEnabled } from '@/core/ai'
@@ -81,7 +82,7 @@ export function createTask(options: CreateTaskOptions): Task {
   const labelsJson = JSON.stringify(taskLabels)
 
   // Execute insert and undo log in a transaction
-  return withTransaction((tx) => {
+  const createdTask = withTransaction((tx) => {
     // Insert the task
     // Set original_due_at = due_at when creating with a due date, so the field
     // always tracks the "occurrence origin" timestamp (not just snooze state).
@@ -148,6 +149,9 @@ export function createTask(options: CreateTaskOptions): Task {
 
     return task
   })
+
+  emitSyncEvent(userId)
+  return createdTask
 }
 
 /**
@@ -263,8 +267,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
 
   // Filter by label
   if (options.label) {
-    conditions.push('tasks.labels LIKE ?')
-    params.push(`%"${options.label}"%`)
+    conditions.push('EXISTS (SELECT 1 FROM json_each(tasks.labels) WHERE value = ?)')
+    params.push(options.label)
   }
 
   // Add pagination

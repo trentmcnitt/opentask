@@ -566,11 +566,6 @@ export function hasInsightsResults(userId: number): boolean {
 const SESSION_STALE_TIMEOUT_MS = 20 * 60 * 1000
 
 /**
- * Get the most recent active session for a user (if any is still running).
- * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
- * after server restarts kill background generation.
- */
-/**
  * Get the duration in milliseconds of the most recent completed insights session.
  */
 export function getLastInsightsDurationMs(userId: number): number | null {
@@ -586,6 +581,11 @@ export function getLastInsightsDurationMs(userId: number): number | null {
   return new Date(row.finished_at).getTime() - new Date(row.started_at).getTime()
 }
 
+/**
+ * Get the most recent active session for a user (if any is still running).
+ * Auto-fails sessions older than SESSION_STALE_TIMEOUT_MS to prevent permanent 409s
+ * after server restarts kill background generation.
+ */
 export function getActiveInsightsSession(userId: number): InsightsSession | null {
   const db = getDb()
   const row = db

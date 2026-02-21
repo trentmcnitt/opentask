@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Interactive 4x3 snooze grid matching the web Quick Action Panel layout.
+/// Interactive snooze grid for the notification content extension.
 ///
 /// Row 1: Preset times (gray) — snap to next occurrence of that wall-clock time
 /// Row 2: Increments (green) — +1 min, +30 min, +1 hr, +1 day
 /// Row 3: Decrements (amber) — -5 min, -30 min, -1 hr, -1 day
+/// Row 4: Reset + Next Hour (blue) — snap to the next round hour
 ///
 /// Tapping a button updates `workingDueAt` and fires `onGridSelection` so the
 /// NotificationViewController can update the action button labels dynamically.
@@ -12,7 +13,6 @@ struct SnoozeGridView: View {
 
     let taskTitle: String
     let originalDueAt: String
-    let overdueCount: Int
 
     /// Called when the user taps a grid button. Passes the new working ISO date string.
     var onGridSelection: (String) -> Void
@@ -27,13 +27,11 @@ struct SnoozeGridView: View {
     init(
         taskTitle: String,
         originalDueAt: String,
-        overdueCount: Int,
         onGridSelection: @escaping (String) -> Void,
         onDirtyStateChanged: ((Bool) -> Void)? = nil
     ) {
         self.taskTitle = taskTitle
         self.originalDueAt = originalDueAt
-        self.overdueCount = overdueCount
         self.onGridSelection = onGridSelection
         self.onDirtyStateChanged = onDirtyStateChanged
         self._workingDueAt = State(initialValue: originalDueAt)
@@ -158,12 +156,10 @@ struct SnoozeGridView: View {
                 }
             }
 
-            // Row 4: Reset (when dirty) + Next Hour
+            // Row 4: Reset + Next Hour
             HStack(spacing: 6) {
-                if isDirty {
-                    gridButton(label: "Reset", color: .gray) {
-                        handleReset()
-                    }
+                gridButton(label: "Reset", color: .gray) {
+                    handleReset()
                 }
                 gridButton(label: nextHourLabel, color: .blue) {
                     handleNextHour()
@@ -236,12 +232,13 @@ struct SnoozeGridView: View {
         }
     }
 
-    /// Compare two ISO date strings by their minute-level value (ignoring sub-minute precision).
+    /// Check if two ISO date strings represent the same time.
+    /// All grid operations produce results via DateHelpers.formatISO (second-level precision),
+    /// so string equality is exact — no tolerance needed.
     private func isEffectivelyEqual(_ a: String, _ b: String) -> Bool {
         guard let dateA = DateHelpers.parseISO(a),
               let dateB = DateHelpers.parseISO(b) else { return a == b }
-        let delta = abs(dateA.timeIntervalSince(dateB))
-        return delta < 60
+        return dateA == dateB
     }
 
     // MARK: - Formatting

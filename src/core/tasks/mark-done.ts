@@ -9,6 +9,7 @@ import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
@@ -63,7 +64,7 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   // Compute state changes
   const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     // Execute database operations
     const { snapshot } = executeMarkDone(tx, task, computation, userId, nowStr)
 
@@ -105,6 +106,9 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
       }
     }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
 
 /**
@@ -140,7 +144,7 @@ export function markUndone(options: MarkDoneOptions): Task {
   const nowStr = nowUtc()
 
   // Execute update and undo log in a transaction
-  return withTransaction((tx) => {
+  const updatedTask = withTransaction((tx) => {
     // Update task: clear done, done_at, archived_at
     tx.prepare(
       `
@@ -174,11 +178,14 @@ export function markUndone(options: MarkDoneOptions): Task {
     })
 
     // Return updated task
-    const updatedTask = getTaskById(taskId)
-    if (!updatedTask) {
+    const result = getTaskById(taskId)
+    if (!result) {
       throw new Error('Failed to retrieve updated task')
     }
 
-    return updatedTask
+    return result
   })
+
+  emitSyncEvent(userId)
+  return updatedTask
 }

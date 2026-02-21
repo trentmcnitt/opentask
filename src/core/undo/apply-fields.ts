@@ -8,6 +8,7 @@
 import { getDb } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
+import { ValidationError } from '@/core/errors'
 
 /**
  * Field name mapping for backward compatibility.
@@ -16,6 +17,34 @@ import { nowUtc } from '@/core/recurrence'
 const LEGACY_FIELD_MAP: Record<string, string> = {
   snoozed_from: 'original_due_at',
 }
+
+/** Allowlist of task columns that undo/redo may write to (from schema.sql). */
+const VALID_TASK_COLUMNS = new Set([
+  'title',
+  'original_title',
+  'done',
+  'done_at',
+  'priority',
+  'due_at',
+  'rrule',
+  'recurrence_mode',
+  'anchor_time',
+  'anchor_dow',
+  'anchor_dom',
+  'original_due_at',
+  'deleted_at',
+  'archived_at',
+  'labels',
+  'last_notified_at',
+  'last_critical_alert_at',
+  'auto_snooze_minutes',
+  'completion_count',
+  'snooze_count',
+  'first_completed_at',
+  'last_completed_at',
+  'notes',
+  'project_id',
+])
 
 /**
  * Apply a partial state to a task, updating only the specified fields.
@@ -39,7 +68,13 @@ export function applyFieldsToTask(
     // Check both old and new field names in state object
     const stateKey = field in state ? field : dbColumn
 
-    if (stateKey in state && dbColumn !== 'id') {
+    // Validate column name against allowlist to prevent SQL injection
+    if (!VALID_TASK_COLUMNS.has(dbColumn)) {
+      if (dbColumn === 'id' || dbColumn === 'created') continue
+      throw new ValidationError(`Invalid field name in undo snapshot: ${dbColumn}`)
+    }
+
+    if (stateKey in state) {
       if (dbColumn === 'labels') {
         setClauses.push(`${dbColumn} = ?`)
         values.push(JSON.stringify(state[stateKey as keyof Task]))

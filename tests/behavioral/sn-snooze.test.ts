@@ -1,5 +1,5 @@
 /**
- * Snooze Behavioral Tests (SN-001 through SN-012)
+ * Snooze Behavioral Tests (SN-001 through SN-027)
  *
  * Tests the snooze system with original_due_at tracking.
  *

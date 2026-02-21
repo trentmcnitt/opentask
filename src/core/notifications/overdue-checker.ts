@@ -25,7 +25,7 @@
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { HIGH_PRIORITY_THRESHOLD, MEDIUM_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import {
   sendApnsNotification,
@@ -230,7 +230,7 @@ export async function checkOverdueTasks(): Promise<void> {
       const { regular, high, urgent } = splitIntoBuckets(tasks)
 
       // overdueCount for the iOS "All" button — count of P0-P1 tasks eligible this tick
-      const overdueCount = tasks.filter((t) => t.priority < 2).length
+      const overdueCount = tasks.filter((t) => t.priority < MEDIUM_PRIORITY_THRESHOLD).length
 
       await sendBucket(regular, userId, overdueCount, webPushEnabled, apnsEnabled)
       await sendBucket(high, userId, overdueCount, webPushEnabled, apnsEnabled)

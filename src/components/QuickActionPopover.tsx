@@ -68,14 +68,6 @@ export function QuickActionPopover({
     [focusedTask, onSaveAll, onClose],
   )
 
-  const handleSave = useCallback(() => {
-    onClose()
-  }, [onClose])
-
-  const handleCancel = useCallback(() => {
-    onClose()
-  }, [onClose])
-
   // Handle dialog/sheet close
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
@@ -107,8 +99,8 @@ export function QuickActionPopover({
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
-        onSave={handleSave}
-        onCancel={handleCancel}
+        onSave={onClose}
+        onCancel={onClose}
         onDirtyChange={setIsPanelDirty}
         projects={projects}
         annotation={annotation}

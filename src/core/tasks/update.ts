@@ -10,6 +10,7 @@ import type { Task, TaskUpdateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
@@ -74,7 +75,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     if (project) projectName = project.name
   }
 
-  return withTransaction((db) => {
+  const result = withTransaction((db) => {
     const sql = `UPDATE tasks SET ${data.setClauses.join(', ')} WHERE id = ?`
     db.prepare(sql).run(...data.values)
 
@@ -112,6 +113,9 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
 
     return { task: updatedTask, fieldsChanged: data.fieldsChanged, description }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
 
 /**

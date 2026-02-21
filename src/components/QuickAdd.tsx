@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 interface QuickAddProps {
-  onAdd: (title: string) => void
+  onAdd: (title: string) => void | Promise<void>
   onOpenAddForm?: (title: string) => void
 }
 
@@ -21,7 +21,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
 
     setSubmitting(true)
     try {
-      onAdd(trimmed)
+      await onAdd(trimmed)
       setTitle('')
       inputRef.current?.focus()
     } finally {

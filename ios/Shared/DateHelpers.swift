@@ -126,9 +126,10 @@ enum DateHelpers {
         let minutes = calendar.component(.minute, from: date)
         // Truncate to start of current hour (bySetting searches forward, so use dateComponents)
         let components = calendar.dateComponents([.year, .month, .day, .hour], from: date)
-        var result = calendar.date(from: components)!
+        guard var result = calendar.date(from: components) else { return date }
         if minutes >= hourRoundThreshold {
-            result = calendar.date(byAdding: .hour, value: 1, to: result)!
+            guard let advanced = calendar.date(byAdding: .hour, value: 1, to: result) else { return result }
+            result = advanced
         }
         return result
     }
@@ -143,11 +144,15 @@ enum DateHelpers {
     }
 
     /// Format a date as a short time string (e.g., "3:00 PM") in the device timezone.
-    static func formatShortTime(_ date: Date) -> String {
+    private static let shortTimeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         f.timeZone = TimeZone.current
-        return f.string(from: date)
+        return f
+    }()
+
+    static func formatShortTime(_ date: Date) -> String {
+        shortTimeFormatter.string(from: date)
     }
 
     // MARK: - ISO 8601 Parsing

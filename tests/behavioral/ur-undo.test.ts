@@ -1,5 +1,5 @@
 /**
- * Behavioral tests for Undo/Redo (UR-001 through UR-008)
+ * Behavioral tests for Undo/Redo (UR-001 through UR-012)
  *
  * These tests verify the surgical undo/redo functionality.
  */

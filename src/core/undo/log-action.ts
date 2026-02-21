@@ -5,7 +5,6 @@
  */
 
 import { getDb } from '@/core/db'
-import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoAction, UndoSnapshot, Task } from '@/types'
 
 /**
@@ -46,8 +45,6 @@ export function logAction(
   `,
     )
     .run(userId, action, description, JSON.stringify(fieldsChanged), JSON.stringify(snapshots))
-
-  emitSyncEvent(userId)
 
   return Number(result.lastInsertRowid)
 }
