@@ -6,6 +6,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { X } from 'lucide-react'
+import TokenManager from '@/components/TokenManager'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -791,6 +792,17 @@ export default function SettingsPage() {
               <option value="claude-opus-4-6">Opus (powerful)</option>
             </select>
           </div>
+        </section>
+
+        {/* API Tokens */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            API Tokens
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Tokens for API access from scripts, Shortcuts, and automation tools.
+          </p>
+          <TokenManager />
         </section>
 
         {/* Navigation links (mobile access to Archive & Trash) */}
