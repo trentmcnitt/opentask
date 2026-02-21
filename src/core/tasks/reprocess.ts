@@ -11,6 +11,7 @@ import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -50,7 +51,7 @@ export function reprocessTask(options: ReprocessTaskOptions): Task {
   const newLabels = task.labels.map((l) => (l === 'ai-failed' ? 'ai-to-process' : l))
   const labelsJson = JSON.stringify(newLabels)
 
-  return withTransaction((db) => {
+  const updatedTask = withTransaction((db) => {
     db.prepare('UPDATE tasks SET labels = ?, updated_at = ? WHERE id = ?').run(
       labelsJson,
       now,
@@ -73,11 +74,14 @@ export function reprocessTask(options: ReprocessTaskOptions): Task {
       after: snapshot.after_state,
     })
 
-    const updatedTask = getTaskById(taskId)
-    if (!updatedTask) {
+    const result = getTaskById(taskId)
+    if (!result) {
       throw new Error('Failed to retrieve updated task')
     }
 
-    return updatedTask
+    return result
   })
+
+  emitSyncEvent(userId)
+  return updatedTask
 }

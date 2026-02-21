@@ -24,14 +24,10 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     // Wait for redirect to dashboard
     await page.waitForURL('/', { timeout: 10_000 })
 
-    // Wait for tasks to load
-    await page
-      .waitForSelector('[data-testid="task-row"], .text-4xl', {
-        timeout: 10_000,
-      })
-      .catch(() => {
-        // Dashboard might be empty or task-row might not have testid — that's OK
-      })
+    // Wait for dashboard content to render (task rows or empty state)
+    await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 }).catch(() => {
+      // Dashboard might be empty — that's OK
+    })
 
     // Wait for hydration to complete
     await page.waitForLoadState('networkidle')

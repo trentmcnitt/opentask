@@ -22,8 +22,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     // Task data from APNs payload
     private var taskId: Int = 0
     private var dueAt: String = ""
-    private var priority: Int = 0
-    private var overdueCount: Int = 0
     private var selectedDueAt: String?
     private var selectedDeltaMinutes: Int?
     private var hasReceivedInitialNotification = false
@@ -62,8 +60,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         taskId = userInfo["taskId"] as? Int ?? 0
         dueAt = userInfo["dueAt"] as? String ?? ""
-        priority = userInfo["priority"] as? Int ?? 0
-        overdueCount = userInfo["overdueCount"] as? Int ?? 0
 
         // Remove existing hosting controller if re-receiving
         hostingController?.view.removeFromSuperview()
@@ -72,7 +68,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let gridView = SnoozeGridView(
             taskTitle: title,
             originalDueAt: dueAt,
-            overdueCount: overdueCount,
             onGridSelection: { [weak self] newDueAt in
                 self?.handleGridSelection(newDueAt)
             },
@@ -111,6 +106,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) {
         Task {
+            var bulkSnoozeTier: Int?
+
             do {
                 switch response.actionIdentifier {
                 case "DONE":
@@ -120,7 +117,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
 
                 case "SNOOZE_ALL_1HR":
-                    try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    bulkSnoozeTier = result.tier
 
                 case "SNOOZE_CUSTOM":
                     if let dueAt = selectedDueAt {
@@ -129,7 +127,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                 case "SNOOZE_ALL_CUSTOM":
                     if let delta = selectedDeltaMinutes {
-                        try await APIClient.shared.snoozeOverdue(deltaMinutes: delta)
+                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: delta)
+                        bulkSnoozeTier = result.tier
                     }
 
                 default:
@@ -137,6 +136,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 }
             } catch {
                 print("[OpenTask] Content extension action error: \(error)")
+            }
+
+            // After bulk snooze, dismiss notifications for tasks that were snoozed,
+            // then dismiss this notification. Tier 1 = P0/P1, Tier 2 = P2. P3/P4 never bulk-snoozed.
+            // We dismiss other notifications before calling completion so the callback
+            // finishes before iOS tears down the extension process.
+            if let tier = bulkSnoozeTier, tier > 0 {
+                let maxPriority = tier == 1 ? 1 : 2
+                await dismissNotifications(atOrBelowPriority: maxPriority)
             }
 
             // Dismiss only — the extension already handled the action via API call.
@@ -188,25 +196,33 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         let deltaLabel = DateHelpers.formatDelta(minutes: deltaMinutes)
 
-        // Build updated action buttons with the delta label
-        var actions: [UNNotificationAction] = [
+        // Dynamically replace the notification's action buttons
+        extensionContext?.notificationActions = [
             UNNotificationAction(identifier: "DONE", title: "Done", options: []),
             UNNotificationAction(identifier: "SNOOZE_CUSTOM", title: deltaLabel, options: []),
+            UNNotificationAction(identifier: "SNOOZE_ALL_CUSTOM", title: "All \(deltaLabel)", options: []),
         ]
+    }
 
-        // "All" button: only shown when there are overdue P0/P1 tasks
-        if overdueCount > 0 {
-            actions.append(
-                UNNotificationAction(
-                    identifier: "SNOOZE_ALL_CUSTOM",
-                    title: "All \(deltaLabel)",
-                    options: []
-                )
-            )
+    // MARK: - Notification Dismissal
+
+    /// Remove delivered notifications for tasks at or below the given priority.
+    /// Used after bulk snooze to clear notifications for tasks that were just snoozed.
+    /// Async so the caller can await completion before dismissing the extension.
+    private func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
+        let center = UNUserNotificationCenter.current()
+        let notifications = await center.deliveredNotifications()
+        let idsToRemove = notifications
+            .filter { notification in
+                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
+                return p <= maxPriority
+            }
+            .map { $0.request.identifier }
+
+        if !idsToRemove.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
+            print("[OpenTask] Dismissed \(idsToRemove.count) notifications after bulk snooze (tier priority <= \(maxPriority))")
         }
-
-        // Dynamically replace the notification's action buttons
-        extensionContext?.notificationActions = actions
     }
 
     // MARK: - Default Actions

@@ -74,7 +74,7 @@ export function AIStatusContent({
   return (
     <div className="space-y-6">
       {/* Enrichment slot status */}
-      <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="border-border rounded-lg border p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Enrichment Slot</h3>
           <Button variant="ghost" size="sm" onClick={onRefresh} className="text-xs">
@@ -84,26 +84,26 @@ export function AIStatusContent({
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <span className="text-zinc-500">State</span>
+            <span className="text-muted-foreground">State</span>
             <div className="mt-0.5">
               <SlotStateBadge state={data.enrichment_slot.state} />
             </div>
           </div>
           <div>
-            <span className="text-zinc-500">Model</span>
+            <span className="text-muted-foreground">Model</span>
             <p className="mt-0.5 font-medium">{data.enrichment_slot.model}</p>
           </div>
           <div>
-            <span className="text-zinc-500">Requests</span>
+            <span className="text-muted-foreground">Requests</span>
             <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRequests}</p>
           </div>
           <div>
-            <span className="text-zinc-500">Recycles</span>
+            <span className="text-muted-foreground">Recycles</span>
             <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRecycles}</p>
           </div>
           {data.enrichment_slot.activatedAt && (
             <div className="col-span-2">
-              <span className="text-zinc-500">Up since</span>
+              <span className="text-muted-foreground">Up since</span>
               <p className="mt-0.5 text-xs">
                 {new Date(data.enrichment_slot.activatedAt).toLocaleString('en-US', {
                   timeZone: timezone,
@@ -120,19 +120,19 @@ export function AIStatusContent({
       </div>
 
       {/* Queue status */}
-      <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="border-border rounded-lg border p-4">
         <h3 className="mb-3 text-sm font-semibold">Queue</h3>
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div>
-            <span className="text-zinc-500">Active</span>
+            <span className="text-muted-foreground">Active</span>
             <p className="mt-0.5 font-medium">{data.queue.active}</p>
           </div>
           <div>
-            <span className="text-zinc-500">Waiting</span>
+            <span className="text-muted-foreground">Waiting</span>
             <p className="mt-0.5 font-medium">{data.queue.waiting}</p>
           </div>
           <div>
-            <span className="text-zinc-500">Max</span>
+            <span className="text-muted-foreground">Max</span>
             <p className="mt-0.5 font-medium">{data.queue.maxConcurrent}</p>
           </div>
         </div>
@@ -148,8 +148,8 @@ export function AIStatusContent({
               className={cn(
                 'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                 actionFilter === opt.value
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-muted-foreground hover:bg-accent',
               )}
             >
               {opt.label}
@@ -162,7 +162,7 @@ export function AIStatusContent({
       <div>
         <h3 className="mb-3 text-sm font-semibold">Recent Activity</h3>
         {data.recent_activity.length === 0 ? (
-          <p className="py-4 text-center text-zinc-400">No AI activity recorded.</p>
+          <p className="text-muted-foreground py-4 text-center">No AI activity recorded.</p>
         ) : (
           <div className="space-y-2">
             {data.recent_activity.map((entry) => (
@@ -221,27 +221,27 @@ function ExpandableAIActivityRow({
       ? 'text-green-600 dark:text-green-400'
       : entry.status === 'error'
         ? 'text-red-600 dark:text-red-400'
-        : 'text-zinc-400'
+        : 'text-muted-foreground'
 
   const hasDetails = !!(entry.input || entry.output || entry.error || entry.model)
 
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <div className="border-border rounded-lg border">
       {/* Collapsed header */}
       <button
         onClick={() => hasDetails && setExpanded(!expanded)}
         className={cn(
           'flex w-full items-center gap-3 p-3 text-left',
-          hasDetails && 'cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+          hasDetails && 'hover:bg-muted/50 cursor-pointer',
         )}
         disabled={!hasDetails}
         type="button"
       >
         {hasDetails ? (
           expanded ? (
-            <ChevronDown className="size-4 flex-shrink-0 text-zinc-400" />
+            <ChevronDown className="text-muted-foreground size-4 flex-shrink-0" />
           ) : (
-            <ChevronRight className="size-4 flex-shrink-0 text-zinc-400" />
+            <ChevronRight className="text-muted-foreground size-4 flex-shrink-0" />
           )
         ) : (
           <span className="size-4 flex-shrink-0" />
@@ -254,12 +254,14 @@ function ExpandableAIActivityRow({
             </Badge>
             <span className={cn('text-xs font-medium', statusColor)}>{entry.status}</span>
             {entry.duration_ms != null && (
-              <span className="text-xs text-zinc-400">{entry.duration_ms}ms</span>
+              <span className="text-muted-foreground text-xs">{entry.duration_ms}ms</span>
             )}
           </div>
-          {entry.input && <p className="mt-0.5 truncate text-xs text-zinc-500">{entry.input}</p>}
+          {entry.input && (
+            <p className="text-muted-foreground mt-0.5 truncate text-xs">{entry.input}</p>
+          )}
         </div>
-        <span className="flex-shrink-0 text-xs text-zinc-400">
+        <span className="text-muted-foreground flex-shrink-0 text-xs">
           {entry.created_at
             ? new Date(entry.created_at).toLocaleString('en-US', {
                 timeZone: timezone,
@@ -275,17 +277,17 @@ function ExpandableAIActivityRow({
 
       {/* Expanded details */}
       {expanded && hasDetails && (
-        <div className="space-y-3 border-t border-zinc-100 p-3 text-xs dark:border-zinc-800">
+        <div className="border-border space-y-3 border-t p-3 text-xs">
           {entry.model && (
             <div>
-              <span className="font-medium text-zinc-500">Model</span>
-              <p className="mt-0.5 font-mono text-zinc-700 dark:text-zinc-300">{entry.model}</p>
+              <span className="text-muted-foreground font-medium">Model</span>
+              <p className="text-foreground mt-0.5 font-mono">{entry.model}</p>
             </div>
           )}
 
           {entry.task_id && (
             <div>
-              <span className="font-medium text-zinc-500">Task</span>
+              <span className="text-muted-foreground font-medium">Task</span>
               <p className="mt-0.5">
                 <Link
                   href={`/tasks/${entry.task_id}`}
@@ -299,8 +301,8 @@ function ExpandableAIActivityRow({
 
           {entry.duration_ms != null && (
             <div>
-              <span className="font-medium text-zinc-500">Duration</span>
-              <p className="mt-0.5 text-zinc-700 dark:text-zinc-300">
+              <span className="text-muted-foreground font-medium">Duration</span>
+              <p className="text-foreground mt-0.5">
                 {entry.duration_ms}ms
                 {entry.duration_ms >= 1000 && ` (${(entry.duration_ms / 1000).toFixed(1)}s)`}
               </p>
@@ -309,8 +311,8 @@ function ExpandableAIActivityRow({
 
           {entry.input && (
             <div>
-              <span className="font-medium text-zinc-500">Input</span>
-              <pre className="mt-0.5 max-h-40 overflow-auto rounded bg-zinc-100 p-2 whitespace-pre-wrap text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              <span className="text-muted-foreground font-medium">Input</span>
+              <pre className="bg-muted text-foreground mt-0.5 max-h-40 overflow-auto rounded p-2 whitespace-pre-wrap">
                 {entry.input}
               </pre>
             </div>
@@ -318,7 +320,7 @@ function ExpandableAIActivityRow({
 
           {entry.output && (
             <div>
-              <span className="font-medium text-zinc-500">Output</span>
+              <span className="text-muted-foreground font-medium">Output</span>
               <AIOutputDisplay output={entry.output} />
             </div>
           )}
@@ -361,11 +363,11 @@ function AIOutputDisplay({ output }: { output: string }) {
 
   if (entries) {
     return (
-      <div className="mt-0.5 space-y-1 rounded bg-zinc-100 p-2 dark:bg-zinc-800">
+      <div className="bg-muted mt-0.5 space-y-1 rounded p-2">
         {entries.map(([key, value]) => (
           <div key={key} className="flex gap-2">
-            <span className="flex-shrink-0 font-medium text-zinc-500">{key}:</span>
-            <span className="text-zinc-700 dark:text-zinc-300">
+            <span className="text-muted-foreground flex-shrink-0 font-medium">{key}:</span>
+            <span className="text-foreground">
               {typeof value === 'object' ? JSON.stringify(value) : String(value)}
             </span>
           </div>
@@ -375,7 +377,7 @@ function AIOutputDisplay({ output }: { output: string }) {
   }
 
   return (
-    <pre className="mt-0.5 max-h-40 overflow-auto rounded bg-zinc-100 p-2 whitespace-pre-wrap text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+    <pre className="bg-muted text-foreground mt-0.5 max-h-40 overflow-auto rounded p-2 whitespace-pre-wrap">
       {output}
     </pre>
   )
@@ -395,7 +397,7 @@ export function AIStatusDot({ state }: { state: string | null }) {
         ? 'bg-yellow-500'
         : state === 'dead' || state === 'uninitialized'
           ? 'bg-red-500'
-          : 'bg-zinc-400'
+          : 'bg-muted-foreground'
 
   return <span className={cn('ml-auto inline-block size-2 rounded-full', color)} />
 }

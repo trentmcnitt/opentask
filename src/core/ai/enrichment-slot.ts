@@ -360,14 +360,15 @@ function releaseSlot(): void {
  */
 async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
   const myGeneration = g.slot.generation
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const iterator = (stream as AsyncIterable<any>)[Symbol.asyncIterator]()
+  const iterator = stream[Symbol.asyncIterator]()
   try {
     let resultCount = 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let iterResult: IteratorResult<any>
+    let iterResult: IteratorResult<unknown>
     while (!(iterResult = await iterator.next()).done) {
-      const message = iterResult.value
+      const message = iterResult.value as { type: string; subtype?: string } & Record<
+        string,
+        unknown
+      >
 
       if (message.type === 'result') {
         resultCount++

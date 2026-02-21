@@ -7,6 +7,7 @@ import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -46,7 +47,7 @@ export function deleteTask(options: DeleteTaskOptions): Task {
   const now = nowUtc()
 
   // Execute delete and undo log in a transaction
-  return withTransaction((db) => {
+  const deletedTask = withTransaction((db) => {
     // Soft delete
     db.prepare('UPDATE tasks SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, taskId)
 
@@ -68,13 +69,16 @@ export function deleteTask(options: DeleteTaskOptions): Task {
     })
 
     // Return updated task
-    const deletedTask = getTaskById(taskId)
-    if (!deletedTask) {
+    const result = getTaskById(taskId)
+    if (!result) {
       throw new Error('Failed to retrieve deleted task')
     }
 
-    return deletedTask
+    return result
   })
+
+  emitSyncEvent(userId)
+  return deletedTask
 }
 
 /**
@@ -102,7 +106,7 @@ export function restoreTask(options: RestoreTaskOptions): Task {
   const now = nowUtc()
 
   // Execute restore and undo log in a transaction
-  return withTransaction((db) => {
+  const restoredTask = withTransaction((db) => {
     // Restore from trash
     db.prepare('UPDATE tasks SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(now, taskId)
 
@@ -124,13 +128,16 @@ export function restoreTask(options: RestoreTaskOptions): Task {
     })
 
     // Return updated task
-    const restoredTask = getTaskById(taskId)
-    if (!restoredTask) {
+    const result = getTaskById(taskId)
+    if (!result) {
       throw new Error('Failed to retrieve restored task')
     }
 
-    return restoredTask
+    return result
   })
+
+  emitSyncEvent(userId)
+  return restoredTask
 }
 
 /**

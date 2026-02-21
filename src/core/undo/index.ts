@@ -5,7 +5,7 @@
  * are restored, preventing clobbering of concurrent edits.
  */
 
-export { logAction, createSnapshot, createTaskSnapshot } from './log-action'
+export { logAction, createTaskSnapshot } from './log-action'
 export { executeUndo } from './execute-undo'
 export { executeRedo } from './execute-redo'
 export { executeBatchUndo, executeBatchRedo } from './batch'

@@ -11,9 +11,23 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, badRequest, handleError, handleZodError } from '@/lib/api-response'
 import { executeBatchUndo } from '@/core/undo'
 import { log } from '@/lib/logger'
+import { z, ZodError } from 'zod'
+
+const batchUndoSchema = z
+  .object({
+    session_start_id: z.number().int().positive().optional(),
+    through_id: z.number().int().positive().optional(),
+    count: z.number().int().positive().optional(),
+  })
+  .refine(
+    (d) => d.session_start_id !== undefined || d.through_id !== undefined || d.count !== undefined,
+    {
+      message: 'Must provide session_start_id, through_id, or count',
+    },
+  )
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,15 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { session_start_id, through_id, count } = body as {
-      session_start_id?: number
-      through_id?: number
-      count?: number
-    }
-
-    if (session_start_id === undefined && through_id === undefined && count === undefined) {
-      return badRequest('Must provide session_start_id, through_id, or count')
-    }
+    const { session_start_id, through_id, count } = batchUndoSchema.parse(body)
 
     const result = executeBatchUndo(user.id, {
       sessionStartId: session_start_id,
@@ -49,9 +55,8 @@ export async function POST(request: NextRequest) {
       redoable_count: result.remaining_redoable,
     })
   } catch (err) {
-    if (err instanceof AuthError) {
-      return unauthorized(err.message)
-    }
+    if (err instanceof AuthError) return unauthorized(err.message)
+    if (err instanceof ZodError) return handleZodError(err)
     log.error('api', 'POST /api/undo/batch error:', err)
     return handleError(err)
   }

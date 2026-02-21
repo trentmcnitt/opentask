@@ -9,6 +9,7 @@ import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
+import { emitSyncEvent } from '@/lib/sync-events'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
@@ -109,7 +110,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   let recurringCount = 0
   let oneOffCount = 0
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     for (const task of tasks) {
       // Compute state changes using shared helper
       const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
@@ -163,6 +164,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       oneOffCount,
     }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
 
 interface SkippedByPriority {
@@ -292,7 +296,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     for (const task of eligible) {
       // Compute the new due_at based on mode
       let newDueAt: string
@@ -377,6 +381,9 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       skippedByPriority,
     }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
 
 /** Type alias for bulk edit changes — same as FieldChangesInput (TaskUpdateInput + label operations) */
@@ -430,7 +437,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const allFieldsChanged = new Set<string>()
   let totalSnoozedCount = 0
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     // Validate project access once before processing tasks
     if (changes.project_id !== undefined) {
       const db = getDb()
@@ -511,6 +518,9 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       tasksSkipped: snoozeSkippedCount,
     }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
 
 export interface BulkDeleteOptions {
@@ -538,7 +548,7 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     for (const task of tasks) {
       tx.prepare(
         `
@@ -573,4 +583,7 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
       tasksAffected: tasks.length,
     }
   })
+
+  emitSyncEvent(userId)
+  return result
 }
