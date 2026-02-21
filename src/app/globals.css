@@ -20,6 +20,13 @@
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
+  /* Pre-blended badge colors: equivalent of 80% opacity on --background, but fully opaque
+     so underlying icons don't show through. Adjust L/C values to change perceived opacity. */
+  --badge-destructive: oklch(0.662 0.196 27.325);
+  --badge-neutral: oklch(0.368 0 0);
+  --ai-glow: oklch(0.7 0.15 270);
+  --ai-glow-shadow: rgba(129, 140, 248, 0.3);
+  --ai-glow-shadow-strong: rgba(129, 140, 248, 0.55);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -46,8 +53,13 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
+  --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
+  --badge-destructive: oklch(0.55 0.22 27.325);
+  --badge-neutral: oklch(0.803 0 0);
+  --ai-glow: oklch(0.6 0.18 270);
+  --ai-glow-shadow: rgba(129, 140, 248, 0.4);
+  --ai-glow-shadow-strong: rgba(129, 140, 248, 0.65);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.439 0 0);
@@ -75,6 +87,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-badge-destructive: var(--badge-destructive);
+  --color-badge-neutral: var(--badge-neutral);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -151,7 +165,7 @@
     border-color: var(--border);
   }
   50% {
-    border-color: oklch(0.7 0.15 270);
+    border-color: var(--ai-glow);
   }
 }
 
@@ -163,10 +177,10 @@
 @keyframes ai-glow {
   0%,
   100% {
-    box-shadow: 0 0 6px rgba(129, 140, 248, 0.3);
+    box-shadow: 0 0 6px var(--ai-glow-shadow);
   }
   50% {
-    box-shadow: 0 0 14px rgba(129, 140, 248, 0.55);
+    box-shadow: 0 0 14px var(--ai-glow-shadow-strong);
   }
 }
 
@@ -180,9 +194,12 @@
   }
 }
 
-/* Safe area insets for mobile — env(safe-area-inset-bottom) returns the correct
-   value per context: 0 in Safari (toolbar handles it), home indicator height in
-   standalone PWA/WKWebView. No minimum needed. */
+/* Safe area insets for mobile — env() returns the correct value per context:
+   0 in Safari (toolbar handles it), actual inset in standalone PWA/WKWebView.
+   No minimum needed. */
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
 }

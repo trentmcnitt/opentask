@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { useTheme } from 'next-themes'
 import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,7 @@ import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
 export default function SettingsPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const { theme, setTheme } = useTheme()
   const { labelConfig, setLabelConfig } = useLabelConfig()
   const { priorityDisplay, setPriorityDisplay } = usePriorityDisplay()
   const {
@@ -294,7 +296,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1">
-      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+      <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
@@ -315,6 +317,30 @@ export default function SettingsPage() {
               <span className="text-zinc-500">Email</span>
               <span>{session?.user?.email || '-'}</span>
             </div>
+          </div>
+        </section>
+
+        {/* Theme */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Theme
+          </h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm">Appearance</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Choose light, dark, or match your device
+              </div>
+            </div>
+            <select
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
           </div>
         </section>
 

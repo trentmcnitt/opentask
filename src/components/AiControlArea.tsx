@@ -102,7 +102,7 @@ export function AiControlArea({
           className={cn(
             'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-[14px] text-sm transition-colors',
             isActive
-              ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-950/70'
+              ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-700/50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50'
               : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
             (insightsGenerating || annotationRefreshLoading) &&
               'animate-[ai-glow_2s_ease-in-out_infinite]',

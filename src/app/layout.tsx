@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import { ThemeProvider } from 'next-themes'
 import { SessionProvider } from '@/components/SessionProvider'
 import { PreferencesProvider } from '@/components/PreferencesProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
@@ -34,14 +35,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased">
-        <SessionProvider>
-          <PreferencesProvider>
-            <AppLayoutWrapper>{children}</AppLayoutWrapper>
-            <Toaster position="bottom-center" />
-          </PreferencesProvider>
-        </SessionProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <SessionProvider>
+            <PreferencesProvider>
+              <AppLayoutWrapper>{children}</AppLayoutWrapper>
+              <Toaster position="bottom-center" />
+            </PreferencesProvider>
+          </SessionProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

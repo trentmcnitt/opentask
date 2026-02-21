@@ -17,6 +17,10 @@ struct SnoozeGridView: View {
     /// Called when the user taps a grid button. Passes the new working ISO date string.
     var onGridSelection: (String) -> Void
 
+    /// Called when the dirty state changes (preview bar appears/disappears), so the
+    /// view controller can update preferredContentSize to avoid clipping.
+    var onDirtyStateChanged: ((Bool) -> Void)?
+
     @State private var workingDueAt: String
     @State private var isDirty = false
 
@@ -24,12 +28,14 @@ struct SnoozeGridView: View {
         taskTitle: String,
         originalDueAt: String,
         overdueCount: Int,
-        onGridSelection: @escaping (String) -> Void
+        onGridSelection: @escaping (String) -> Void,
+        onDirtyStateChanged: ((Bool) -> Void)? = nil
     ) {
         self.taskTitle = taskTitle
         self.originalDueAt = originalDueAt
         self.overdueCount = overdueCount
         self.onGridSelection = onGridSelection
+        self.onDirtyStateChanged = onDirtyStateChanged
         self._workingDueAt = State(initialValue: originalDueAt)
     }
 
@@ -105,14 +111,17 @@ struct SnoozeGridView: View {
     // MARK: - Resolved Time
 
     private var resolvedTimeSection: some View {
-        HStack {
+        HStack(spacing: 4) {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.caption)
                 .foregroundColor(.blue)
             Text(formattedWorkingDate)
                 .font(.caption.weight(.medium))
                 .foregroundColor(.blue)
-            Text("(\(DateHelpers.formatDeltaBetween(from: originalDueAt, to: workingDueAt)))")
+            Text(DateHelpers.formatDeltaBetween(from: originalDueAt, to: workingDueAt))
+                .font(.caption)
+                .foregroundColor(.blue)
+            Text("(\(DateHelpers.formatRelativeTime(workingDueAt)))")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -148,15 +157,33 @@ struct SnoozeGridView: View {
                     }
                 }
             }
+
+            // Row 4: Reset (when dirty) + Next Hour
+            HStack(spacing: 6) {
+                if isDirty {
+                    gridButton(label: "Reset", color: .gray) {
+                        handleReset()
+                    }
+                }
+                gridButton(label: nextHourLabel, color: .blue) {
+                    handleNextHour()
+                }
+            }
         }
+    }
+
+    /// "Next Hour · 3:00 PM" — computed fresh on each render so the time stays current.
+    private var nextHourLabel: String {
+        let snapped = DateHelpers.snapToNextHour()
+        return "Next Hour · \(DateHelpers.formatShortTime(snapped))"
     }
 
     private func gridButton(label: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.caption2.weight(.medium))
+                .font(.caption.weight(.medium))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
                 .background(color.opacity(0.15))
                 .foregroundColor(color == .gray ? .primary : color)
                 .cornerRadius(6)
@@ -169,8 +196,21 @@ struct SnoozeGridView: View {
     private func handlePreset(_ preset: PresetButton) {
         let snapped = DateHelpers.snapToNextPreset(hour: preset.hour, minute: preset.minute)
         workingDueAt = DateHelpers.formatISO(snapped)
-        isDirty = true
+        commitChange()
+    }
+
+    private func handleReset() {
+        workingDueAt = originalDueAt
+        let wasDirty = isDirty
+        isDirty = false
         onGridSelection(workingDueAt)
+        if wasDirty { onDirtyStateChanged?(false) }
+    }
+
+    private func handleNextHour() {
+        let snapped = DateHelpers.snapToNextHour()
+        workingDueAt = DateHelpers.formatISO(snapped)
+        commitChange()
     }
 
     private func handleIncrement(_ inc: IncrementButton) {
@@ -179,8 +219,29 @@ struct SnoozeGridView: View {
         } else if let minutes = inc.minutes {
             workingDueAt = DateHelpers.adjustByMinutes(workingDueAt, minutes: minutes)
         }
-        isDirty = true
+        commitChange()
+    }
+
+    /// Shared post-action handler: fires callbacks and manages dirty state.
+    /// Net-zero changes (working time == original time) reset to clean.
+    private func commitChange() {
+        let isNetZero = isEffectivelyEqual(workingDueAt, originalDueAt)
+        let wasDirty = isDirty
+        isDirty = !isNetZero
+
         onGridSelection(workingDueAt)
+
+        if isDirty != wasDirty {
+            onDirtyStateChanged?(isDirty)
+        }
+    }
+
+    /// Compare two ISO date strings by their minute-level value (ignoring sub-minute precision).
+    private func isEffectivelyEqual(_ a: String, _ b: String) -> Bool {
+        guard let dateA = DateHelpers.parseISO(a),
+              let dateB = DateHelpers.parseISO(b) else { return a == b }
+        let delta = abs(dateA.timeIntervalSince(dateB))
+        return delta < 60
     }
 
     // MARK: - Formatting

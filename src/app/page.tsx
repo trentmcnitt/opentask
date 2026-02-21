@@ -748,7 +748,7 @@ function HomeContent() {
     onBulkDelete: bulk.bulkDelete,
   })
 
-  const { overdueCount, todayCount } = useTaskCounts(tasks, timezone)
+  const { overdueCount, todayCount } = useTaskCounts(tasks_, timezone)
 
   // Compute per-project today task counts for ProjectFilterBar
   const todayCounts = useMemo(() => {
@@ -756,14 +756,14 @@ function HomeContent() {
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
     const counts = new Map<number, number>()
-    for (const task of tasks) {
+    for (const task of tasks_) {
       const buckets = classifyTaskDueDate(task, now, boundaries)
       if (buckets.includes('today')) {
         counts.set(task.project_id, (counts.get(task.project_id) || 0) + 1)
       }
     }
     return counts
-  }, [tasks, timezone])
+  }, [tasks_, timezone])
 
   // Compute selected tasks for bulk operations
   const selectedTasks = useMemo(() => {

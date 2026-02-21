@@ -35,6 +35,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         view.backgroundColor = .systemBackground
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Reset state so the next long-press rebuilds the grid and action buttons fresh.
+        // iOS reuses the extension instance for the same notification, so without this
+        // the custom action buttons (e.g., "+3hr") persist even though the grid resets.
+        hasReceivedInitialNotification = false
+        selectedDueAt = nil
+        selectedDeltaMinutes = nil
+        restoreDefaultActions()
+    }
+
     // MARK: - UNNotificationContentExtension
 
     /// Called when the notification is expanded (long-press) and again for each
@@ -64,6 +75,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             overdueCount: overdueCount,
             onGridSelection: { [weak self] newDueAt in
                 self?.handleGridSelection(newDueAt)
+            },
+            onDirtyStateChanged: { [weak self] isDirty in
+                self?.updatePreferredContentSize()
+                if !isDirty {
+                    self?.selectedDueAt = nil
+                    self?.selectedDeltaMinutes = nil
+                    self?.restoreDefaultActions()
+                }
             }
         )
 
@@ -127,10 +146,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
     }
 
+    // MARK: - Size Management
+
+    /// Re-measure the SwiftUI hosting controller and update preferredContentSize
+    /// so the notification extension expands to fit the resolved-time preview bar.
+    private func updatePreferredContentSize() {
+        guard let hosting = hostingController else { return }
+        let targetSize = CGSize(width: view.bounds.width, height: UIView.layoutFittingCompressedSize.height)
+        let fittingSize = hosting.view.systemLayoutSizeFitting(
+            targetSize,
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        preferredContentSize = CGSize(width: view.bounds.width, height: fittingSize.height)
+    }
+
     // MARK: - Grid Selection Handler
 
     /// Called when the user taps a grid button. Updates the action buttons to reflect
-    /// the selected snooze time with delta labels.
+    /// the selected snooze time with delta labels. If the net change is zero (e.g.,
+    /// +1hr then -1hr), restores default action buttons.
     private func handleGridSelection(_ newDueAt: String) {
         selectedDueAt = newDueAt
 
@@ -142,6 +177,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let deltaSeconds = targetDate.timeIntervalSince(originalDate)
         let deltaMinutes = Int(deltaSeconds / 60)
         selectedDeltaMinutes = deltaMinutes
+
+        // Net-zero: user adjusted back to the original time — reset to defaults
+        if deltaMinutes == 0 {
+            selectedDueAt = nil
+            selectedDeltaMinutes = nil
+            restoreDefaultActions()
+            return
+        }
 
         let deltaLabel = DateHelpers.formatDelta(minutes: deltaMinutes)
 
@@ -164,5 +207,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         // Dynamically replace the notification's action buttons
         extensionContext?.notificationActions = actions
+    }
+
+    // MARK: - Default Actions
+
+    /// Restore the category's default action buttons (Done, +1hr, All +1hr).
+    /// Must match the actions registered in AppDelegate.registerNotificationCategories().
+    private func restoreDefaultActions() {
+        extensionContext?.notificationActions = [
+            UNNotificationAction(identifier: "DONE", title: "Done", options: []),
+            UNNotificationAction(identifier: "SNOOZE_1HR", title: "+1hr", options: []),
+            UNNotificationAction(identifier: "SNOOZE_ALL_1HR", title: "All +1hr", options: []),
+        ]
     }
 }

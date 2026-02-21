@@ -8,6 +8,7 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { toast, Toaster as Sonner, type ToasterProps } from 'sonner'
 
 /**
@@ -31,10 +32,11 @@ function useTapToDismiss() {
 
 const Toaster = ({ ...props }: ToasterProps) => {
   useTapToDismiss()
+  const { resolvedTheme } = useTheme()
 
   return (
     <Sonner
-      theme="system"
+      theme={(resolvedTheme as 'light' | 'dark') ?? 'light'}
       richColors
       className="toaster group"
       // Push toasts above the mobile bottom nav bar (~78px + safe area inset + gap).

@@ -83,7 +83,7 @@ export default function ArchivePage() {
 
   return (
     <div className="flex-1">
-      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+      <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3">
           <h1 className="text-xl font-semibold">Archive</h1>
         </div>

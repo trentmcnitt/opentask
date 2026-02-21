@@ -61,7 +61,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
             }
           }}
           placeholder="Add a task..."
-          className="h-auto flex-1 border-0 p-0 shadow-none focus-visible:ring-0"
+          className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           aria-label="Quick add task"
           disabled={submitting}
         />

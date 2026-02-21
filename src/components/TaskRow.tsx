@@ -523,7 +523,7 @@ export function TaskRow({
         )}
 
         {annotation && (
-          <p className="mt-0.5 text-xs text-blue-600/80 dark:text-blue-400/80">
+          <p className="mt-0.5 text-xs text-blue-600/80 dark:text-blue-300/90">
             <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {annotation}
           </p>
