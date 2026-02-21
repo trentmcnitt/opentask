@@ -55,7 +55,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
           '--border-radius': 'var(--radius)',
         } as React.CSSProperties
       }
-      pauseWhenPageIsHidden={false}
       {...props}
     />
   )

@@ -83,6 +83,15 @@ final class APIClient {
         ])
     }
 
+    // MARK: - Notification Dismiss
+
+    /// Tell the server to dismiss all notifications on all other devices.
+    /// Called when the app comes to foreground — the user can see their tasks,
+    /// so notification noise on other devices should clear.
+    func dismissAllNotifications() async throws {
+        try await post(path: "/api/notifications/dismiss-all", body: [:])
+    }
+
     // MARK: - Preferences (for setup validation)
 
     /// Validate the server connection by fetching user preferences.

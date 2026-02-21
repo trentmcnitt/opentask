@@ -30,6 +30,16 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {}
 
+  // Dismiss-all signal: close every notification (user opened the app on another device)
+  if (data.type === 'dismiss-all') {
+    event.waitUntil(
+      self.registration.getNotifications().then((notifications) => {
+        notifications.forEach((n) => n.close())
+      }),
+    )
+    return
+  }
+
   // Dismiss signal: close matching notifications instead of showing a new one
   if (data.type === 'dismiss') {
     event.waitUntil(handleDismiss(data.taskIds || []))

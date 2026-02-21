@@ -68,6 +68,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('task-created', handler)
   }, [loadProjects])
 
+  // When the app becomes visible, dismiss all notifications on other devices.
+  // The user can see their task list, so notification noise everywhere else should clear.
+  useEffect(() => {
+    let lastDismiss = 0
+    const handler = () => {
+      if (document.visibilityState !== 'visible') return
+      // Debounce: don't fire more than once per 30 seconds
+      const now = Date.now()
+      if (now - lastDismiss < 30_000) return
+      lastDismiss = now
+      fetch('/api/notifications/dismiss-all', { method: 'POST' }).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', handler)
+    // Also fire on initial mount (page just loaded = user opened the app)
+    handler()
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
+
   // Notify dashboard when CreateTaskPanel opens/closes so it can disable keyboard shortcuts
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open: showAddForm } }))
