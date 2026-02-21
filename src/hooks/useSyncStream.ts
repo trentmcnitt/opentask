@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react'
  * on the server (from any client — browser, iOS app, Watch, API).
  *
  * - Debounces rapid events (300ms) to coalesce quick successive mutations
+ * - Refetches on reconnect (catches up after server restart, deploy, or network blip)
  * - Disconnects when the tab is hidden (saves resources on mobile)
  * - Immediately syncs + reconnects when the tab becomes visible again
  * - EventSource handles reconnection automatically on network errors
@@ -34,7 +35,7 @@ export function useSyncStream(onSync: () => void) {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          if (data.type === 'sync') debouncedSync()
+          if (data.type === 'sync' || data.type === 'connected') debouncedSync()
         } catch {
           // Ignore malformed messages
         }
