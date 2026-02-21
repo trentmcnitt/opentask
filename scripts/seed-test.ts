@@ -61,40 +61,40 @@ export async function seedTestData(): Promise<void> {
   // Insert projects for User A
   db.prepare(
     `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, owner_id, shared, sort_order, color)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(1, 'Inbox', 1, 0, 0)
+  ).run(1, 'Inbox', 1, 0, 0, 'blue')
 
   db.prepare(
     `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, owner_id, shared, sort_order, color)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(2, 'Routine', 1, 0, 1)
+  ).run(2, 'Routine', 1, 0, 1, 'green')
 
   db.prepare(
     `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, owner_id, shared, sort_order, color)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(3, 'Work', 1, 0, 2)
+  ).run(3, 'Work', 1, 0, 2, 'orange')
 
   // Insert project for User B
   db.prepare(
     `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, owner_id, shared, sort_order, color)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(4, 'Inbox', 2, 0, 0)
+  ).run(4, 'Inbox', 2, 0, 0, 'blue')
 
   // Shared project (owned by User A)
   db.prepare(
     `
-    INSERT INTO projects (id, name, owner_id, shared, sort_order)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, owner_id, shared, sort_order, color)
+    VALUES (?, ?, ?, ?, ?, ?)
   `,
-  ).run(5, 'Family', 1, 1, 4)
+  ).run(5, 'Family', 1, 1, 4, 'pink')
 
   // Insert API tokens
   db.prepare(

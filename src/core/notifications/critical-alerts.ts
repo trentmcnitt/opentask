@@ -2,21 +2,22 @@
  * Critical alerts — sends APNs time-sensitive notifications for overdue Urgent (P4) tasks
  *
  * APNs `interruption-level: "time-sensitive"` breaks through iOS Focus mode.
- * This runs on its own cooldown (last_critical_alert_at), independent of the
- * overdue checker's APNs sends.
+ * This runs independently of the overdue checker's APNs sends.
  *
  * Web Push is NOT sent here — the overdue checker already handles Web Push
  * for all priority tiers, including P4. This module adds the APNs time-sensitive
  * layer on top.
  *
- * Cooldown: 60 minutes per task (via `last_critical_alert_at`).
+ * Timing uses mod-based boundary detection: a P4 task gets a critical alert
+ * when floor((now - due_at) / 60000) % 60 === 0, i.e. every 60 minutes
+ * aligned to the task's due_at. No state tracking needed.
  */
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { sendApnsNotification, isApnsConfigured } from '@/core/notifications/apns'
 
-const NOTIFICATION_COOLDOWN_MINUTES = 60
+const CRITICAL_ALERT_INTERVAL_MINUTES = 60
 
 interface CriticalTask {
   id: number
@@ -26,13 +27,18 @@ interface CriticalTask {
   user_id: number
 }
 
+/** Check whether this cron cycle is a 60-minute boundary for the task. */
+export function isCriticalAlertBoundary(task: CriticalTask, now: Date): boolean {
+  const minutesSinceDue = Math.floor((now.getTime() - new Date(task.due_at).getTime()) / 60000)
+  return minutesSinceDue >= 0 && minutesSinceDue % CRITICAL_ALERT_INTERVAL_MINUTES === 0
+}
+
 export async function checkCriticalTasks(): Promise<void> {
   try {
     if (!isApnsConfigured()) return
 
     const db = getDb()
     const now = new Date()
-    const cooldownCutoff = new Date(now.getTime() - NOTIFICATION_COOLDOWN_MINUTES * 60 * 1000)
 
     const criticalTasks = db
       .prepare(
@@ -46,17 +52,18 @@ export async function checkCriticalTasks(): Promise<void> {
           AND t.due_at IS NOT NULL
           AND datetime(t.due_at) < datetime('now')
           AND t.priority = 4
-          AND (t.last_critical_alert_at IS NULL OR t.last_critical_alert_at < ?)
           AND u.notifications_enabled = 1
         ORDER BY t.due_at ASC
         LIMIT 5
         `,
       )
-      .all(cooldownCutoff.toISOString()) as CriticalTask[]
+      .all() as CriticalTask[]
 
-    if (criticalTasks.length === 0) return
+    // Filter to tasks at a 60-minute boundary
+    const eligibleTasks = criticalTasks.filter((t) => isCriticalAlertBoundary(t, now))
+    if (eligibleTasks.length === 0) return
 
-    for (const task of criticalTasks) {
+    for (const task of eligibleTasks) {
       await sendApnsNotification(task.user_id, {
         title: `URGENT: ${task.title}`,
         body: 'Overdue task',
@@ -66,11 +73,6 @@ export async function checkCriticalTasks(): Promise<void> {
         overdueCount: 0,
         interruptionLevel: 'time-sensitive',
       })
-
-      db.prepare('UPDATE tasks SET last_critical_alert_at = ? WHERE id = ?').run(
-        now.toISOString(),
-        task.id,
-      )
     }
   } catch (err) {
     log.error('notifications', 'Critical alerts error:', err)

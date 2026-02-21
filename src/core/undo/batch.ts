@@ -9,6 +9,7 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
+import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot } from '@/types'
 import { undoEntry, type ParsedUndoEntry } from './execute-undo'
 import { redoEntry, type ParsedRedoEntry } from './execute-redo'
@@ -98,6 +99,8 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
     }
   })
 
+  emitSyncEvent(userId)
+
   return {
     count: parsed.length,
     remaining_undoable: countUndoable(userId),
@@ -158,6 +161,8 @@ export function executeBatchRedo(userId: number, options: BatchRedoOptions): Bat
       redoEntry(tx, entry)
     }
   })
+
+  emitSyncEvent(userId)
 
   return {
     count: parsed.length,

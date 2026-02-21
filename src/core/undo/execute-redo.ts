@@ -6,6 +6,7 @@
 
 import Database from 'better-sqlite3'
 import { getDb, withTransaction } from '@/core/db'
+import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot, RedoResult, Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
@@ -118,7 +119,7 @@ export function executeRedo(userId: number): RedoResult | null {
     snapshots: JSON.parse(entry.snapshot),
   }
 
-  return withTransaction((tx) => {
+  const result = withTransaction((tx) => {
     redoEntry(tx, parsed)
 
     return {
@@ -127,4 +128,8 @@ export function executeRedo(userId: number): RedoResult | null {
       tasks_affected: parsed.snapshots.length,
     }
   })
+
+  emitSyncEvent(userId)
+
+  return result
 }

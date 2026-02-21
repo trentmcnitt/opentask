@@ -11,7 +11,13 @@
  * APNs always sends individual notifications (no bulk summary) — each task
  * gets its own snooze grid in the iOS notification content extension.
  *
- * Auto-snooze (notification repeat interval) by priority:
+ * Timing uses mod-based boundary detection instead of tracking per-task state.
+ * Each task's notification interval is deterministic from its due_at:
+ *   floor((now - due_at) / 60000) % interval === 0
+ * This means no DB writes are needed — if the cron fires at a boundary minute,
+ * the task gets notified. No catch-up bursts after downtime, no mutable columns.
+ *
+ * Repeat intervals by priority:
  * - P4 (Urgent): user.auto_snooze_urgent_minutes (default 5 min)
  * - P3 (High): user.auto_snooze_high_minutes (default 15 min)
  * - P0-P2: user.auto_snooze_minutes (default 30 min)
@@ -32,7 +38,6 @@ interface OverdueTask {
   due_at: string
   priority: number
   user_id: number
-  last_notified_at: string | null
   auto_snooze_minutes: number | null
   user_auto_snooze_minutes: number
   user_auto_snooze_urgent_minutes: number
@@ -50,14 +55,12 @@ function getEffectiveInterval(task: OverdueTask): number {
   return task.user_auto_snooze_minutes
 }
 
-/** Check whether a task's cooldown has elapsed and it's eligible for notification. */
-function isEligibleForNotification(task: OverdueTask, now: Date): boolean {
-  if (!task.last_notified_at) return true
+/** Check whether this cron cycle is a notification boundary for the task. */
+export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
   const interval = getEffectiveInterval(task)
   if (interval === 0) return false
-  const lastNotified = new Date(task.last_notified_at)
-  const cooldownMs = interval * 60 * 1000
-  return now.getTime() - lastNotified.getTime() >= cooldownMs
+  const minutesSinceDue = Math.floor((now.getTime() - new Date(task.due_at).getTime()) / 60000)
+  return minutesSinceDue >= 0 && minutesSinceDue % interval === 0
 }
 
 /** Send an individual Web Push notification for a single task. */
@@ -115,14 +118,13 @@ export async function checkOverdueTasks(): Promise<void> {
     const db = getDb()
     const now = new Date()
 
-    // Fetch all overdue tasks. Cooldown filtering is done in JS because the
+    // Fetch all overdue tasks. Boundary filtering is done in JS because the
     // repeat interval varies by task priority (urgent=5m, high=15m, default=30m).
-    // P4 tasks get Web Push here but APNs exclusively from checkCriticalTasks() —
-    // the two modules use independent cooldown columns (last_notified_at vs last_critical_alert_at).
+    // P4 tasks get Web Push here but APNs exclusively from checkCriticalTasks().
     const overdueTasks = db
       .prepare(
         `
-        SELECT t.id, t.title, t.due_at, t.priority, t.user_id, t.last_notified_at,
+        SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
@@ -141,8 +143,8 @@ export async function checkOverdueTasks(): Promise<void> {
       )
       .all() as OverdueTask[]
 
-    // Apply priority-aware cooldown filtering
-    const eligibleTasks = overdueTasks.filter((t) => isEligibleForNotification(t, now))
+    // Filter to tasks whose due_at aligns with a notification boundary this minute
+    const eligibleTasks = overdueTasks.filter((t) => isNotificationBoundary(t, now))
     if (eligibleTasks.length === 0) return
 
     // Group tasks by user
@@ -189,15 +191,6 @@ export async function checkOverdueTasks(): Promise<void> {
           await sendIndividualApns(task, overdueCount)
         }
       }
-
-      // Update last_notified_at for all notified tasks
-      const allNotified = [...individualTasks, ...bulkCandidates]
-      const taskIds = allNotified.map((t) => t.id)
-      const placeholders = taskIds.map(() => '?').join(',')
-      db.prepare(`UPDATE tasks SET last_notified_at = ? WHERE id IN (${placeholders})`).run(
-        now.toISOString(),
-        ...taskIds,
-      )
     }
   } catch (err) {
     log.error('notifications', 'Overdue checker error:', err)
