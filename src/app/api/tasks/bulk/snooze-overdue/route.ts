@@ -13,7 +13,7 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
-import { dismissAllNotifications } from '@/core/notifications/dismiss'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         .all(user.id) as { id: number }[]
       const stillOverdueIds = new Set(stillOverdue.map((t) => t.id))
       const snoozedIds = taskIds.filter((id) => !stillOverdueIds.has(id))
-      dismissAllNotifications(user.id, snoozedIds)
+      dismissNotificationsForTasks(user.id, snoozedIds)
     }
 
     return success({

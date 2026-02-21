@@ -26,6 +26,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private var overdueCount: Int = 0
     private var selectedDueAt: String?
     private var selectedDeltaMinutes: Int?
+    private var hasReceivedInitialNotification = false
 
     // MARK: - Lifecycle
 
@@ -36,8 +37,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     // MARK: - UNNotificationContentExtension
 
-    /// Called when the notification is expanded (long-press). Reads payload and embeds the grid.
+    /// Called when the notification is expanded (long-press) and again for each
+    /// subsequent notification that arrives while the extension is visible.
+    /// We lock to the first notification so the UI stays stable while the user
+    /// is interacting with it — a burst of incoming notifications must not
+    /// swap the task out from under them.
     func didReceive(_ notification: UNNotification) {
+        if hasReceivedInitialNotification { return }
+        hasReceivedInitialNotification = true
+
         let userInfo = notification.request.content.userInfo
         let title = notification.request.content.title
 

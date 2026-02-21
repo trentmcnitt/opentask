@@ -1,11 +1,16 @@
 import UIKit
 import UserNotifications
+import WatchConnectivity
 
 /// Handles APNs registration, notification permission, and push handling.
 ///
 /// Notification categories are registered here so action buttons appear
 /// even without the content extension (Phase 3 fallback).
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+///
+/// Also manages WatchConnectivity to sync credentials to the Watch app.
+/// The Watch has its own keychain (separate device), so credentials must
+/// be transferred via WCSession.updateApplicationContext().
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, WCSessionDelegate {
 
     func application(
         _ application: UIApplication,
@@ -14,7 +19,60 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         registerNotificationCategories()
         requestNotificationPermission(application)
+        activateWatchSession()
         return true
+    }
+
+    // MARK: - WatchConnectivity
+
+    /// Activate WCSession so we can send credentials to the Watch app.
+    /// Also sends current credentials if already configured (handles the case
+    /// where the Watch app is installed after initial iPhone setup).
+    private func activateWatchSession() {
+        guard WCSession.isSupported() else { return }
+        WCSession.default.delegate = self
+        WCSession.default.activate()
+    }
+
+    /// Send credentials to Watch via application context.
+    /// Called from AppConfig.configure() and on session activation.
+    func sendCredentialsToWatch() {
+        guard WCSession.isSupported(),
+              WCSession.default.activationState == .activated,
+              WCSession.default.isPaired,
+              WCSession.default.isWatchAppInstalled else { return }
+
+        guard let url = KeychainHelper.read(key: "serverURL"),
+              let token = KeychainHelper.read(key: "bearerToken") else { return }
+
+        do {
+            try WCSession.default.updateApplicationContext([
+                "serverURL": url,
+                "bearerToken": token,
+            ])
+            print("[OpenTask] Sent credentials to Watch")
+        } catch {
+            print("[OpenTask] Failed to send credentials to Watch: \(error)")
+        }
+    }
+
+    // MARK: - WCSessionDelegate
+
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        if let error = error {
+            print("[OpenTask] WCSession activation failed: \(error)")
+            return
+        }
+        // Send credentials on activation (in case Watch app was installed after setup)
+        if activationState == .activated && AppConfig.shared.isConfigured {
+            sendCredentialsToWatch()
+        }
+    }
+
+    func sessionDidBecomeInactive(_ session: WCSession) {}
+    func sessionDidDeactivate(_ session: WCSession) {
+        // Re-activate for session switching (e.g., when user switches Watch)
+        WCSession.default.activate()
     }
 
     /// Clear all delivered notifications when the app comes to foreground.

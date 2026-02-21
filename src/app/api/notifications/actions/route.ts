@@ -14,7 +14,7 @@ import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
-import { dismissAllNotifications } from '@/core/notifications/dismiss'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Dismiss notifications fire-and-forget (before switch so it runs for all actions)
-    const dismissAfter = () => dismissAllNotifications(user.id, [task_id])
+    const dismissAfter = () => dismissNotificationsForTasks(user.id, [task_id])
 
     switch (action) {
       case 'done': {

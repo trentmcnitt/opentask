@@ -11,7 +11,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { snoozeTask } from '@/core/tasks'
-import { dismissAllNotifications } from '@/core/notifications/dismiss'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       until: input.until,
     })
 
-    dismissAllNotifications(user.id, [taskId])
+    dismissNotificationsForTasks(user.id, [taskId])
 
     return success({
       task: formatTaskResponse(result.task),

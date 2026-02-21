@@ -571,3 +571,9 @@ XcodeBuildMCP is an MCP tool server for building and interacting with iOS simula
 
 - On iOS 26+, use `touch` (down+up) instead of `tap` to focus SwiftUI text fields — `tap` doesn't reliably activate them.
 - WKWebView content is not exposed in the accessibility tree. Use screenshot coordinates for web view interactions.
+- **watchOS device builds**: XcodeBuildMCP's `build_device` and `install_app_device` don't work reliably for watchOS targets (hardcoded to iOS platform, install reports success but app isn't actually installed). Use xcodebuild and devicectl directly instead:
+  - Build: `xcodebuild -project OpenTask.xcodeproj -scheme OpenTaskWatch -destination 'platform=watchOS,id=DEVICE_ID' -allowProvisioningUpdates -allowProvisioningDeviceRegistration build`
+  - Get the Watch device ID: `xcodebuild -scheme OpenTaskWatch -showdestinations` (different from the UDID in `list_devices`)
+  - Install: `xcrun devicectl device install app --device WATCH_UDID path/to/OpenTaskWatch.app`
+  - Launch: `xcrun devicectl device process launch --device WATCH_UDID io.mcnitt.opentask.watchapp`
+  - Verify: `xcrun devicectl device info apps --device WATCH_UDID | grep opentask`

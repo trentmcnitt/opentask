@@ -48,6 +48,7 @@ export function isApnsConfigured(): boolean {
 interface ApnsDeviceRow {
   id: number
   device_token: string
+  bundle_id: string
   environment: string
 }
 
@@ -82,7 +83,7 @@ export async function sendApnsNotification(
 
   const db = getDb()
   const devices = db
-    .prepare('SELECT id, device_token, environment FROM apns_devices WHERE user_id = ?')
+    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
     .all(userId) as ApnsDeviceRow[]
 
   if (devices.length === 0) return
@@ -92,6 +93,7 @@ export async function sendApnsNotification(
       const apns = getClient(device.environment)
       const notification = new Notification(device.device_token, {
         alert: { title: payload.title, body: payload.body },
+        topic: device.bundle_id,
         category: 'TASK_REMINDER',
         threadId: 'opentask-overdue',
         sound: 'default',
@@ -140,7 +142,7 @@ export async function dismissApnsNotifications(userId: number, taskIds: number[]
 
   const db = getDb()
   const devices = db
-    .prepare('SELECT id, device_token, environment FROM apns_devices WHERE user_id = ?')
+    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
     .all(userId) as ApnsDeviceRow[]
 
   if (devices.length === 0) return
@@ -149,6 +151,7 @@ export async function dismissApnsNotifications(userId: number, taskIds: number[]
     devices.map(async (device) => {
       const apns = getClient(device.environment)
       const notification = new SilentNotification(device.device_token, {
+        topic: device.bundle_id,
         data: { type: 'dismiss', taskIds },
       })
 
