@@ -107,3 +107,20 @@ export async function dismissTaskNotifications(userId: number, taskIds: number[]
   )
   await sendToAllSubscriptions(userId, JSON.stringify({ type: 'dismiss', taskIds }))
 }
+
+/**
+ * Dismiss ALL notifications across all user devices.
+ * Used when the user opens the app on any device — clears notification noise everywhere.
+ */
+export async function dismissAllWebPushNotifications(userId: number): Promise<void> {
+  if (!isWebPushConfigured()) return
+  const db = getDb()
+  const count = (
+    db.prepare('SELECT COUNT(*) as c FROM push_subscriptions WHERE user_id = ?').get(userId) as {
+      c: number
+    }
+  ).c
+  if (count === 0) return
+  log.info('web-push', `Dismiss-all: sending to ${count} subscription(s) for user ${userId}`)
+  await sendToAllSubscriptions(userId, JSON.stringify({ type: 'dismiss-all' }))
+}

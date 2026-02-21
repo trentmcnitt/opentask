@@ -75,13 +75,22 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         WCSession.default.activate()
     }
 
-    /// Clear all delivered notifications when the app comes to foreground.
-    /// Prevents notification bombardment: when the cron sends 20 notifications and
-    /// the user taps the first one, the remaining delivered notifications are cleared
-    /// instead of continuing to chime.
+    /// Clear all delivered notifications when the app comes to foreground,
+    /// both locally and across all other devices (web, Watch).
+    /// The user can see their task list, so notification noise everywhere should clear.
     func applicationDidBecomeActive(_ application: UIApplication) {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         application.applicationIconBadgeNumber = 0
+
+        // Tell the server to dismiss notifications on all other devices (fire-and-forget)
+        guard APIClient.shared.isConfigured else { return }
+        Task {
+            do {
+                try await APIClient.shared.dismissAllNotifications()
+            } catch {
+                print("[OpenTask] Dismiss-all API error: \(error)")
+            }
+        }
     }
 
     // MARK: - Notification Permission
@@ -177,13 +186,28 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard let type = userInfo["type"] as? String, type == "dismiss",
-              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+        guard let type = userInfo["type"] as? String else {
             completionHandler(.noData)
             return
         }
 
         let center = UNUserNotificationCenter.current()
+
+        // Dismiss-all: user opened the app on another device, clear everything
+        if type == "dismiss-all" {
+            center.removeAllDeliveredNotifications()
+            print("[OpenTask] Dismiss-all: cleared all delivered notifications")
+            completionHandler(.newData)
+            return
+        }
+
+        // Dismiss specific tasks
+        guard type == "dismiss",
+              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+            completionHandler(.noData)
+            return
+        }
+
         center.getDeliveredNotifications { notifications in
             let idsToRemove = notifications
                 .filter { notification in

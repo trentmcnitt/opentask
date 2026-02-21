@@ -5,8 +5,11 @@
  * Fire-and-forget — errors are logged but never thrown to callers.
  */
 
-import { dismissTaskNotifications } from '@/core/notifications/web-push'
-import { dismissApnsNotifications } from '@/core/notifications/apns'
+import {
+  dismissTaskNotifications,
+  dismissAllWebPushNotifications,
+} from '@/core/notifications/web-push'
+import { dismissApnsNotifications, dismissAllApnsNotifications } from '@/core/notifications/apns'
 import { log } from '@/lib/logger'
 
 export function dismissNotificationsForTasks(userId: number, taskIds: number[]): void {
@@ -18,4 +21,19 @@ export function dismissNotificationsForTasks(userId: number, taskIds: number[]):
   dismissApnsNotifications(userId, taskIds)
     .then(() => log.info('notifications', `APNs dismiss sent for tasks [${taskIds.join(',')}]`))
     .catch((err) => log.error('notifications', 'APNs dismiss error:', err))
+}
+
+/**
+ * Dismiss ALL notifications on all devices for a user.
+ * Called when the user opens the app on any device — clears notification noise everywhere.
+ * Fire-and-forget — errors are logged but never thrown to callers.
+ */
+export function dismissAllNotifications(userId: number): void {
+  log.info('notifications', `Dismiss-all requested for user ${userId}`)
+  dismissAllWebPushNotifications(userId)
+    .then(() => log.info('notifications', `Web Push dismiss-all sent for user ${userId}`))
+    .catch((err) => log.error('notifications', 'Web Push dismiss-all error:', err))
+  dismissAllApnsNotifications(userId)
+    .then(() => log.info('notifications', `APNs dismiss-all sent for user ${userId}`))
+    .catch((err) => log.error('notifications', 'APNs dismiss-all error:', err))
 }

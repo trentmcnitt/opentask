@@ -82,13 +82,28 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         _ userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (WKBackgroundFetchResult) -> Void
     ) {
-        guard let type = userInfo["type"] as? String, type == "dismiss",
-              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+        guard let type = userInfo["type"] as? String else {
             completionHandler(.noData)
             return
         }
 
         let center = UNUserNotificationCenter.current()
+
+        // Dismiss-all: user opened the app on another device, clear everything
+        if type == "dismiss-all" {
+            center.removeAllDeliveredNotifications()
+            print("[OpenTaskWatch] Dismiss-all: cleared all delivered notifications")
+            completionHandler(.newData)
+            return
+        }
+
+        // Dismiss specific tasks
+        guard type == "dismiss",
+              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+            completionHandler(.noData)
+            return
+        }
+
         center.getDeliveredNotifications { notifications in
             let idsToRemove = notifications
                 .filter { notification in
