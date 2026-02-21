@@ -79,8 +79,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   labels        TEXT NOT NULL DEFAULT '[]',
 
   -- Notification tracking
-  last_notified_at TEXT,
-  last_critical_alert_at TEXT,
+  last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
+  last_critical_alert_at TEXT,      -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
   auto_snooze_minutes INTEGER,
 
   -- Per-task stats (survive beyond completions retention)

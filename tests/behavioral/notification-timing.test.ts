@@ -1,9 +1,10 @@
 /**
  * Notification timing behavioral tests
  *
- * Tests the mod-based boundary detection used by overdue-checker and critical-alerts.
- * Uses mocked push senders and frozen time to verify that notifications fire only
- * at the correct interval boundaries relative to each task's due_at.
+ * Tests the mod-based boundary detection and consolidation logic in the
+ * unified overdue checker. Uses mocked push senders and frozen time to
+ * verify that notifications fire only at the correct interval boundaries
+ * relative to each task's due_at, and that consolidation caps are enforced.
  */
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -16,13 +17,13 @@ vi.mock('@/core/notifications/web-push', () => ({
 }))
 vi.mock('@/core/notifications/apns', () => ({
   sendApnsNotification: vi.fn().mockResolvedValue(undefined),
+  sendApnsSummaryNotification: vi.fn().mockResolvedValue(undefined),
   isApnsConfigured: vi.fn().mockReturnValue(true),
 }))
 
 import { checkOverdueTasks, isNotificationBoundary } from '@/core/notifications/overdue-checker'
-import { checkCriticalTasks, isCriticalAlertBoundary } from '@/core/notifications/critical-alerts'
 import { sendPushNotification } from '@/core/notifications/web-push'
-import { sendApnsNotification } from '@/core/notifications/apns'
+import { sendApnsNotification, sendApnsSummaryNotification } from '@/core/notifications/apns'
 
 const TEST_USER_ID = 1
 
@@ -53,7 +54,7 @@ function insertTask(
   ).run(id, title, dueAt, priority, TEST_USER_ID, autoSnoozeMinutes)
 }
 
-// ─── Unit tests for boundary functions ───────────────────────────────────────
+// ─── Unit tests for boundary function ─────────────────────────────────────────
 
 describe('isNotificationBoundary', () => {
   test('task at exact boundary (0 minutes overdue) → true', () => {
@@ -221,45 +222,6 @@ describe('isNotificationBoundary', () => {
   })
 })
 
-describe('isCriticalAlertBoundary', () => {
-  test('P4 task at 60-minute boundary → true', () => {
-    const task = {
-      id: 1,
-      title: 'Test',
-      due_at: '2026-01-15T10:00:00.000Z',
-      priority: 4,
-      user_id: 1,
-    }
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T11:00:00.000Z'))).toBe(true)
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T12:00:00.000Z'))).toBe(true)
-  })
-
-  test('P4 task between 60-minute boundaries → false', () => {
-    const task = {
-      id: 1,
-      title: 'Test',
-      due_at: '2026-01-15T10:00:00.000Z',
-      priority: 4,
-      user_id: 1,
-    }
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(false)
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T10:59:00.000Z'))).toBe(false)
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T11:01:00.000Z'))).toBe(false)
-  })
-
-  test('task not yet overdue → false', () => {
-    const task = {
-      id: 1,
-      title: 'Test',
-      due_at: '2026-01-15T11:00:00.000Z',
-      priority: 4,
-      user_id: 1,
-    }
-    expect(isCriticalAlertBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(false)
-  })
-})
-
 // ─── Integration tests with DB + mocked push ────────────────────────────────
 
 describe('checkOverdueTasks', () => {
@@ -293,17 +255,23 @@ describe('checkOverdueTasks', () => {
     expect(sendPushNotification).not.toHaveBeenCalled()
   })
 
-  test('P4 task uses urgent interval for Web Push', async () => {
+  test('P4 task gets both web push and APNs at user interval', async () => {
     // Task due at 10:00, check at 10:05 → 5 min boundary (P4 urgent)
     vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
     insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
     await checkOverdueTasks()
 
-    // P4 gets web push from overdue checker (individual, since P2+)
+    // P4 gets individual web push AND APNs with time-sensitive
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
-    // P4 APNs is NOT sent by overdue checker — that's critical-alerts' job
-    expect(sendApnsNotification).not.toHaveBeenCalled()
+    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+    expect(sendApnsNotification).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      expect.objectContaining({
+        title: 'URGENT: Urgent task',
+        interruptionLevel: 'time-sensitive',
+      }),
+    )
   })
 
   test('P3 task uses high interval', async () => {
@@ -313,13 +281,13 @@ describe('checkOverdueTasks', () => {
 
     await checkOverdueTasks()
 
-    // Web push (individual, since P2+) + APNs (P3 gets APNs from overdue checker)
+    // Web push + APNs, both individual
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
   })
 
-  test('multiple tasks with different priorities split correctly', async () => {
-    // At 10:30: P0 at 30-min boundary, P3 at 30-min boundary (15 divides 30), P4 at 30-min boundary
+  test('multiple tasks with different priorities — all get individual notifications', async () => {
+    // At 10:30: P0 at 30-min boundary, P3 at 30-min boundary, P4 at 30-min boundary
     vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     insertTask(1, 'Low task', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'High task', '2026-01-15T10:00:00.000Z', 3)
@@ -327,25 +295,23 @@ describe('checkOverdueTasks', () => {
 
     await checkOverdueTasks()
 
-    // Web push: P3 individual + P4 individual + P0 individual (single low-priority task)
+    // Web push: 3 individual (1 per bucket, all under caps)
     expect(sendPushNotification).toHaveBeenCalledTimes(3)
-    // APNs: P3 gets APNs + P0 gets APNs (P4 skipped — handled by critical-alerts)
-    expect(sendApnsNotification).toHaveBeenCalledTimes(2)
+    // APNs: 3 individual (all priorities now get APNs)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(3)
   })
 
-  test('multiple P0-P1 tasks get bulk Web Push', async () => {
+  test('P0-P1 tasks under cap get individual notifications', async () => {
     vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     insertTask(1, 'Task A', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'Task B', '2026-01-15T10:00:00.000Z', 1)
 
     await checkOverdueTasks()
 
-    // Web push: 1 bulk notification (not 2 individual)
-    expect(sendPushNotification).toHaveBeenCalledTimes(1)
-    const call = vi.mocked(sendPushNotification).mock.calls[0]
-    expect(call[1]).toMatchObject({ title: '2 overdue tasks' })
-    // APNs: 2 individual (APNs never bulk)
+    // Under the cap of 4, so both get individual web push + APNs
+    expect(sendPushNotification).toHaveBeenCalledTimes(2)
     expect(sendApnsNotification).toHaveBeenCalledTimes(2)
+    expect(sendApnsSummaryNotification).not.toHaveBeenCalled()
   })
 
   test('does not write last_notified_at to database', async () => {
@@ -362,7 +328,9 @@ describe('checkOverdueTasks', () => {
   })
 })
 
-describe('checkCriticalTasks', () => {
+// ─── Consolidation cap tests ─────────────────────────────────────────────────
+
+describe('consolidation caps', () => {
   beforeEach(() => {
     setupDb()
     vi.clearAllMocks()
@@ -373,60 +341,120 @@ describe('checkCriticalTasks', () => {
     resetDb()
   })
 
-  test('sends APNs for P4 task at 60-minute boundary', async () => {
-    vi.setSystemTime(new Date('2026-01-15T11:00:00.000Z'))
-    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
-
-    await checkCriticalTasks()
-
-    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
-    expect(sendApnsNotification).toHaveBeenCalledWith(
-      TEST_USER_ID,
-      expect.objectContaining({
-        title: 'URGENT: Urgent task',
-        interruptionLevel: 'time-sensitive',
-      }),
-    )
-  })
-
-  test('skips P4 task between 60-minute boundaries', async () => {
+  test('Regular bucket (P0-P2): 4 individual + 1 summary when > 4 tasks', async () => {
     vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
-    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
-
-    await checkCriticalTasks()
-
-    expect(sendApnsNotification).not.toHaveBeenCalled()
-  })
-
-  test('non-P4 task is never included', async () => {
-    vi.setSystemTime(new Date('2026-01-15T11:00:00.000Z'))
-    insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
-
-    await checkCriticalTasks()
-
-    expect(sendApnsNotification).not.toHaveBeenCalled()
-  })
-
-  test('does not write last_critical_alert_at to database', async () => {
-    vi.setSystemTime(new Date('2026-01-15T11:00:00.000Z'))
-    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
-
-    await checkCriticalTasks()
-
-    const db = getDb()
-    const task = db.prepare('SELECT last_critical_alert_at FROM tasks WHERE id = 1').get() as {
-      last_critical_alert_at: string | null
+    // 6 P0 tasks, all at 30-min boundary
+    for (let i = 1; i <= 6; i++) {
+      insertTask(i, `Task ${i}`, '2026-01-15T10:00:00.000Z', 0)
     }
-    expect(task.last_critical_alert_at).toBeNull()
+
+    await checkOverdueTasks()
+
+    // 4 individual web push + 1 summary web push = 5
+    expect(sendPushNotification).toHaveBeenCalledTimes(5)
+    // 4 individual APNs + 1 summary APNs = 5
+    expect(sendApnsNotification).toHaveBeenCalledTimes(4)
+    expect(sendApnsSummaryNotification).toHaveBeenCalledTimes(1)
+
+    // Verify summary mentions the overflow count
+    const summaryCall = vi.mocked(sendApnsSummaryNotification).mock.calls[0]
+    expect(summaryCall[1]).toContain('2 more')
   })
 
-  test('P4 task at 2-hour boundary sends alert', async () => {
-    vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
-    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
+  test('Regular bucket prioritizes P2 over P1 over P0 for individual slots', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
+    // 6 tasks: 2 P0, 2 P1, 2 P2. Only 4 get individual. P2 should get slots first.
+    insertTask(1, 'P0-A', '2026-01-15T10:00:00.000Z', 0)
+    insertTask(2, 'P0-B', '2026-01-15T10:00:00.000Z', 0)
+    insertTask(3, 'P1-A', '2026-01-15T10:00:00.000Z', 1)
+    insertTask(4, 'P1-B', '2026-01-15T10:00:00.000Z', 1)
+    insertTask(5, 'P2-A', '2026-01-15T10:00:00.000Z', 2)
+    insertTask(6, 'P2-B', '2026-01-15T10:00:00.000Z', 2)
 
-    await checkCriticalTasks()
+    await checkOverdueTasks()
 
-    // 120 min / 60 = 2 → 120 % 60 === 0 → boundary
-    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+    // 4 individual + 1 summary = 5 web push
+    expect(sendPushNotification).toHaveBeenCalledTimes(5)
+
+    // First 4 individual calls should be the highest priority tasks
+    const individualCalls = vi.mocked(sendPushNotification).mock.calls.slice(0, 4)
+    const titles = individualCalls.map((c) => c[1].title)
+    // P2 tasks come first (priority DESC), then P1
+    expect(titles[0]).toBe('P2-A')
+    expect(titles[1]).toBe('P2-B')
+    expect(titles[2]).toBe('P1-A')
+    expect(titles[3]).toBe('P1-B')
+  })
+
+  test('High bucket (P3): 5 individual + 1 summary when > 5 tasks', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
+    // 7 P3 tasks, all at 30-min boundary (30 % 15 === 0)
+    for (let i = 1; i <= 7; i++) {
+      insertTask(i, `High ${i}`, '2026-01-15T10:00:00.000Z', 3)
+    }
+
+    await checkOverdueTasks()
+
+    // 5 individual web push + 1 summary = 6
+    expect(sendPushNotification).toHaveBeenCalledTimes(6)
+    // 5 individual APNs + 1 summary
+    expect(sendApnsNotification).toHaveBeenCalledTimes(5)
+    expect(sendApnsSummaryNotification).toHaveBeenCalledTimes(1)
+    const summaryCall = vi.mocked(sendApnsSummaryNotification).mock.calls[0]
+    expect(summaryCall[1]).toContain('2 more')
+  })
+
+  test('Urgent bucket (P4): unlimited, no summary', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
+    // 10 P4 tasks, all at 5-min boundary
+    for (let i = 1; i <= 10; i++) {
+      insertTask(i, `Urgent ${i}`, '2026-01-15T10:00:00.000Z', 4)
+    }
+
+    await checkOverdueTasks()
+
+    // All 10 get individual web push + APNs, no summary
+    expect(sendPushNotification).toHaveBeenCalledTimes(10)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(10)
+    expect(sendApnsSummaryNotification).not.toHaveBeenCalled()
+  })
+
+  test('mixed priorities: each bucket consolidates independently', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
+    // 6 P0 tasks (Regular: 4 individual + 1 summary)
+    for (let i = 1; i <= 6; i++) {
+      insertTask(i, `Low ${i}`, '2026-01-15T10:00:00.000Z', 0)
+    }
+    // 7 P3 tasks (High: 5 individual + 1 summary) — 30 % 15 === 0
+    for (let i = 7; i <= 13; i++) {
+      insertTask(i, `High ${i}`, '2026-01-15T10:00:00.000Z', 3)
+    }
+    // 2 P4 tasks (Urgent: 2 individual, no summary) — 30 % 5 === 0
+    insertTask(14, 'Urgent A', '2026-01-15T10:00:00.000Z', 4)
+    insertTask(15, 'Urgent B', '2026-01-15T10:00:00.000Z', 4)
+
+    await checkOverdueTasks()
+
+    // Web push: (4+1) + (5+1) + 2 = 13
+    expect(sendPushNotification).toHaveBeenCalledTimes(13)
+    // APNs individual: 4 + 5 + 2 = 11
+    expect(sendApnsNotification).toHaveBeenCalledTimes(11)
+    // APNs summary: 1 (regular) + 1 (high) = 2
+    expect(sendApnsSummaryNotification).toHaveBeenCalledTimes(2)
+  })
+
+  test('exactly at cap: no summary sent', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
+    // Exactly 4 P0 tasks — at cap, no overflow
+    for (let i = 1; i <= 4; i++) {
+      insertTask(i, `Task ${i}`, '2026-01-15T10:00:00.000Z', 0)
+    }
+
+    await checkOverdueTasks()
+
+    // 4 individual, no summary
+    expect(sendPushNotification).toHaveBeenCalledTimes(4)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(4)
+    expect(sendApnsSummaryNotification).not.toHaveBeenCalled()
   })
 })

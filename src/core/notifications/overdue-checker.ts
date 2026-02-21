@@ -1,36 +1,44 @@
 /**
- * Overdue task checker - runs every minute
+ * Unified overdue task notification checker — runs every minute
  *
- * Checks for overdue tasks and sends notifications via Web Push and APNs.
+ * Checks for overdue tasks across ALL priorities and sends notifications
+ * via Web Push and APNs.
  *
- * Notification strategy by priority:
- * - P2+ (Medium/High/Urgent): Individual notification per task
- * - P0-P1 (Unset/Low), single task: Individual notification (same as P2+)
- * - P0-P1 (Unset/Low), multiple tasks: Bulk summary linking to dashboard filtered by overdue
+ * Consolidation prevents notification flooding:
+ * - Regular (P0-P2): 4 individual + summary if more
+ * - High (P3): 5 individual + summary if more
+ * - Urgent (P4): unlimited individual, no summary
  *
- * APNs always sends individual notifications (no bulk summary) — each task
- * gets its own snooze grid in the iOS notification content extension.
+ * Within each bucket, highest priority tasks get individual notification slots
+ * first, then most overdue within the same priority (ORDER BY priority DESC,
+ * due_at ASC).
  *
- * Timing uses mod-based boundary detection instead of tracking per-task state.
+ * Timing uses mod-based boundary detection — no mutable state or DB writes.
  * Each task's notification interval is deterministic from its due_at:
  *   floor((now - due_at) / 60000) % interval === 0
- * This means no DB writes are needed — if the cron fires at a boundary minute,
- * the task gets notified. No catch-up bursts after downtime, no mutable columns.
  *
- * Repeat intervals by priority:
+ * Repeat intervals are user settings (per-task override takes precedence):
  * - P4 (Urgent): user.auto_snooze_urgent_minutes (default 5 min)
  * - P3 (High): user.auto_snooze_high_minutes (default 15 min)
  * - P0-P2: user.auto_snooze_minutes (default 30 min)
- * - Per-task auto_snooze_minutes override takes precedence over all tiers
  */
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { MEDIUM_PRIORITY_THRESHOLD, HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
-import { sendApnsNotification, isApnsConfigured } from '@/core/notifications/apns'
+import {
+  sendApnsNotification,
+  sendApnsSummaryNotification,
+  isApnsConfigured,
+} from '@/core/notifications/apns'
 
 const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
+
+/** Consolidation caps per bucket */
+const REGULAR_CAP = 4 // P0-P2
+const HIGH_CAP = 5 // P3
+// P4: unlimited
 
 interface OverdueTask {
   id: number
@@ -42,6 +50,12 @@ interface OverdueTask {
   user_auto_snooze_minutes: number
   user_auto_snooze_urgent_minutes: number
   user_auto_snooze_high_minutes: number
+}
+
+interface NotificationBucket {
+  individual: OverdueTask[]
+  overflow: number
+  label: string
 }
 
 /**
@@ -63,6 +77,37 @@ export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
   return minutesSinceDue >= 0 && minutesSinceDue % interval === 0
 }
 
+/** Split eligible tasks into consolidation buckets. */
+function splitIntoBuckets(tasks: OverdueTask[]): {
+  regular: NotificationBucket
+  high: NotificationBucket
+  urgent: NotificationBucket
+} {
+  // Tasks are already sorted by priority DESC, due_at ASC from the query,
+  // so slicing respects the "highest priority first, most overdue second" order.
+  const regular = tasks.filter((t) => t.priority < HIGH_PRIORITY_THRESHOLD)
+  const high = tasks.filter((t) => t.priority >= HIGH_PRIORITY_THRESHOLD && t.priority < 4)
+  const urgent = tasks.filter((t) => t.priority >= 4)
+
+  return {
+    regular: {
+      individual: regular.slice(0, REGULAR_CAP),
+      overflow: Math.max(0, regular.length - REGULAR_CAP),
+      label: 'tasks overdue',
+    },
+    high: {
+      individual: high.slice(0, HIGH_CAP),
+      overflow: Math.max(0, high.length - HIGH_CAP),
+      label: 'high priority tasks overdue',
+    },
+    urgent: {
+      individual: urgent,
+      overflow: 0,
+      label: '',
+    },
+  }
+}
+
 /** Send an individual Web Push notification for a single task. */
 async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
   const priorityLabel =
@@ -75,20 +120,11 @@ async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
   })
 }
 
-/** Send a bulk summary Web Push notification for multiple low-priority tasks. */
-async function sendBulkWebPush(tasks: OverdueTask[], userId: number): Promise<void> {
-  const maxDisplay = 5
-  let message = ''
-  tasks.slice(0, maxDisplay).forEach((t) => {
-    message += `- ${t.title}\n`
-  })
-  if (tasks.length > maxDisplay) {
-    message += `... and ${tasks.length - maxDisplay} more`
-  }
-
+/** Send a summary Web Push notification for bucket overflow. */
+async function sendSummaryWebPush(userId: number, count: number, label: string): Promise<void> {
   await sendPushNotification(userId, {
-    title: `${tasks.length} overdue tasks`,
-    body: message.trim(),
+    title: `${count} more ${label}`,
+    body: 'Open app to see all overdue tasks',
     data: { url: `${APP_URL}/?filter=overdue` },
   })
 }
@@ -109,6 +145,41 @@ async function sendIndividualApns(task: OverdueTask, overdueCount: number): Prom
   })
 }
 
+/** Send all notifications for a single bucket (individual + optional summary). */
+async function sendBucket(
+  bucket: NotificationBucket,
+  userId: number,
+  overdueCount: number,
+  webPushEnabled: boolean,
+  apnsEnabled: boolean,
+): Promise<void> {
+  const sends: Promise<void>[] = []
+
+  // Individual notifications
+  for (const task of bucket.individual) {
+    if (webPushEnabled) sends.push(sendIndividualWebPush(task))
+    if (apnsEnabled) sends.push(sendIndividualApns(task, overdueCount))
+  }
+
+  // Summary notification for overflow
+  if (bucket.overflow > 0) {
+    if (webPushEnabled) {
+      sends.push(sendSummaryWebPush(userId, bucket.overflow, bucket.label))
+    }
+    if (apnsEnabled) {
+      sends.push(
+        sendApnsSummaryNotification(
+          userId,
+          `${bucket.overflow} more ${bucket.label}`,
+          'Open app to see all overdue tasks',
+        ),
+      )
+    }
+  }
+
+  await Promise.allSettled(sends)
+}
+
 export async function checkOverdueTasks(): Promise<void> {
   const webPushEnabled = isWebPushConfigured()
   const apnsEnabled = isApnsConfigured()
@@ -118,9 +189,8 @@ export async function checkOverdueTasks(): Promise<void> {
     const db = getDb()
     const now = new Date()
 
-    // Fetch all overdue tasks. Boundary filtering is done in JS because the
-    // repeat interval varies by task priority (urgent=5m, high=15m, default=30m).
-    // P4 tasks get Web Push here but APNs exclusively from checkCriticalTasks().
+    // Fetch all overdue tasks across all priorities. Boundary filtering
+    // is done in JS because the repeat interval varies per task/priority.
     const overdueTasks = db
       .prepare(
         `
@@ -138,7 +208,7 @@ export async function checkOverdueTasks(): Promise<void> {
           AND datetime(t.due_at) < datetime('now')
           AND u.notifications_enabled = 1
         ORDER BY t.priority DESC, t.due_at ASC
-        LIMIT 100
+        LIMIT 50
       `,
       )
       .all() as OverdueTask[]
@@ -155,42 +225,16 @@ export async function checkOverdueTasks(): Promise<void> {
       tasksByUser.set(task.user_id, list)
     }
 
-    // Send notifications per user with priority-based splitting
+    // Send notifications per user with consolidation
     for (const [userId, tasks] of tasksByUser) {
-      // Split by priority: P2+ get individual notifications, P0-P1 get bulk
-      const individualTasks = tasks.filter((t) => t.priority >= MEDIUM_PRIORITY_THRESHOLD)
-      const bulkCandidates = tasks.filter((t) => t.priority < MEDIUM_PRIORITY_THRESHOLD)
+      const { regular, high, urgent } = splitIntoBuckets(tasks)
 
-      if (individualTasks.length > 20) {
-        log.warn(
-          'notifications',
-          `Sending ${individualTasks.length} individual notifications for user ${userId}`,
-        )
-      }
+      // overdueCount for the iOS "All" button — count of P0-P1 tasks eligible this tick
+      const overdueCount = tasks.filter((t) => t.priority < 2).length
 
-      // Count overdue P0/P1 tasks for the "All" button badge in iOS notifications
-      const overdueCount = bulkCandidates.length
-
-      // Web Push: P2+ individual, P0-P1 bulk (or individual if only one)
-      if (webPushEnabled) {
-        for (const task of individualTasks) {
-          await sendIndividualWebPush(task)
-        }
-        if (bulkCandidates.length === 1) {
-          await sendIndividualWebPush(bulkCandidates[0])
-        } else if (bulkCandidates.length > 1) {
-          await sendBulkWebPush(bulkCandidates, userId)
-        }
-      }
-
-      // APNs: individual per task, but skip P4 — those get APNs exclusively
-      // from checkCriticalTasks() with time-sensitive interruption level
-      if (apnsEnabled) {
-        const apnsTasks = [...individualTasks, ...bulkCandidates].filter((t) => t.priority < 4)
-        for (const task of apnsTasks) {
-          await sendIndividualApns(task, overdueCount)
-        }
-      }
+      await sendBucket(regular, userId, overdueCount, webPushEnabled, apnsEnabled)
+      await sendBucket(high, userId, overdueCount, webPushEnabled, apnsEnabled)
+      await sendBucket(urgent, userId, overdueCount, webPushEnabled, apnsEnabled)
     }
   } catch (err) {
     log.error('notifications', 'Overdue checker error:', err)

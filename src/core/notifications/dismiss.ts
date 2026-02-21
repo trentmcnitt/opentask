@@ -11,10 +11,11 @@ import { log } from '@/lib/logger'
 
 export function dismissNotificationsForTasks(userId: number, taskIds: number[]): void {
   if (taskIds.length === 0) return
-  dismissTaskNotifications(userId, taskIds).catch((err) =>
-    log.error('notifications', 'Web Push dismiss error:', err),
-  )
-  dismissApnsNotifications(userId, taskIds).catch((err) =>
-    log.error('notifications', 'APNs dismiss error:', err),
-  )
+  log.info('notifications', `Dismiss requested for tasks [${taskIds.join(',')}] user ${userId}`)
+  dismissTaskNotifications(userId, taskIds)
+    .then(() => log.info('notifications', `Web Push dismiss sent for tasks [${taskIds.join(',')}]`))
+    .catch((err) => log.error('notifications', 'Web Push dismiss error:', err))
+  dismissApnsNotifications(userId, taskIds)
+    .then(() => log.info('notifications', `APNs dismiss sent for tasks [${taskIds.join(',')}]`))
+    .catch((err) => log.error('notifications', 'APNs dismiss error:', err))
 }

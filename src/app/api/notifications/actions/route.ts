@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
       return badRequest('task_id required')
     }
 
+    log.info('notifications', `Action received: ${action} on task ${task_id} by user ${user.id}`)
+
     // Dismiss notifications fire-and-forget (before switch so it runs for all actions)
     const dismissAfter = () => dismissNotificationsForTasks(user.id, [task_id])
 
@@ -47,6 +49,7 @@ export async function POST(request: NextRequest) {
           userTimezone: user.timezone,
         })
         dismissAfter()
+        log.info('notifications', `Action complete: done on task ${task_id}`)
         return success({ action: 'done', task_id, result })
       }
 
@@ -59,6 +62,7 @@ export async function POST(request: NextRequest) {
           until: until.toISOString(),
         })
         dismissAfter()
+        log.info('notifications', `Action complete: snooze30 on task ${task_id}`)
         return success({ action: 'snooze30', task_id, until: until.toISOString(), result })
       }
 
@@ -72,6 +76,7 @@ export async function POST(request: NextRequest) {
           until: until.toISOString(),
         })
         dismissAfter()
+        log.info('notifications', `Action complete: snooze on task ${task_id}`)
         return success({ action: 'snooze', task_id, until: until.toISOString(), result })
       }
 
@@ -85,6 +90,7 @@ export async function POST(request: NextRequest) {
           until: until.toISOString(),
         })
         dismissAfter()
+        log.info('notifications', `Action complete: snooze2h on task ${task_id}`)
         return success({ action: 'snooze2h', task_id, until: until.toISOString(), result })
       }
 

@@ -5,7 +5,8 @@
  * for notifications, cleanup tasks, and the AI subsystem.
  *
  * Cron schedule:
- * - Every 1 min: heartbeat (overdue + critical + enrichment safety net)
+ * - Every 1 min: notification check (overdue tasks, all priorities)
+ * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - 3:00 AM daily: undo purge + What's Next generation (AI)
  * - 3:15 AM daily: Insights generation (AI)
  * - 3:30 AM daily: trash purge
@@ -21,7 +22,6 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const cron = (await import('node-cron')).default
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
-    const { checkCriticalTasks } = await import('@/core/notifications/critical-alerts')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
@@ -35,34 +35,58 @@ export async function register() {
       shutdownEnrichmentSlot,
     } = await import('@/core/ai')
 
-    // Run initial notification checks after a short delay (existing pattern)
+    // Run initial notification check after a short delay
     setTimeout(async () => {
       log.info('notifications', 'Running initial overdue check')
       await checkOverdueTasks()
-      await checkCriticalTasks()
     }, 5000)
 
-    // Single 1-minute heartbeat cron replaces separate overdue (1m), critical (15m),
-    // and enrichment (10s) crons. All three checks run sequentially each minute.
-    // Guard prevents overlapping runs if a previous heartbeat hasn't finished.
-    let isHeartbeatRunning = false
+    // --- Notification cron (independent of enrichment) ---
+    // Guard with 30s timeout prevents permanent lockout if a check hangs.
+    // A stuck enrichment process can never block notification delivery.
+    let isNotificationRunning = false
+    let notificationStartedAt = 0
+    const NOTIFICATION_TIMEOUT_MS = 30_000
     cron.schedule('* * * * *', async () => {
-      if (isHeartbeatRunning) return
-      isHeartbeatRunning = true
+      // If a previous run is stuck past the timeout, force-reset the guard
+      if (isNotificationRunning) {
+        const elapsed = Date.now() - notificationStartedAt
+        if (elapsed > NOTIFICATION_TIMEOUT_MS) {
+          log.warn(
+            'notifications',
+            `Previous notification check stuck for ${Math.round(elapsed / 1000)}s — resetting guard`,
+          )
+          isNotificationRunning = false
+        } else {
+          return
+        }
+      }
+      isNotificationRunning = true
+      notificationStartedAt = Date.now()
       try {
         await checkOverdueTasks()
-        await checkCriticalTasks()
-        if (isAIEnabled()) {
-          processEnrichmentQueue().catch((err) =>
-            log.error('cron', 'Enrichment safety-net error:', err),
-          )
-        }
+      } catch (err) {
+        log.error('notifications', 'Notification check error:', err)
       } finally {
-        isHeartbeatRunning = false
+        isNotificationRunning = false
       }
     })
+    log.info('cron', 'Notification cron started (every 1 min)')
 
-    log.info('cron', 'Heartbeat cron started (every 1 min: overdue + critical + enrichment)')
+    // --- Enrichment cron (independent of notifications) ---
+    let isEnrichmentRunning = false
+    cron.schedule('* * * * *', async () => {
+      if (!isAIEnabled() || isEnrichmentRunning) return
+      isEnrichmentRunning = true
+      try {
+        await processEnrichmentQueue()
+      } catch (err) {
+        log.error('cron', 'Enrichment safety-net error:', err)
+      } finally {
+        isEnrichmentRunning = false
+      }
+    })
+    log.info('cron', 'Enrichment cron started (every 1 min)')
 
     // --- Daily purge crons ---
 

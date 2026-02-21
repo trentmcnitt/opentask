@@ -77,6 +77,13 @@ export async function sendPushNotification(userId: number, payload: PushPayload)
     log.warn('web-push', 'VAPID keys not configured, skipping push')
     return
   }
+  const db = getDb()
+  const count = (
+    db.prepare('SELECT COUNT(*) as c FROM push_subscriptions WHERE user_id = ?').get(userId) as {
+      c: number
+    }
+  ).c
+  log.info('web-push', `Sending notification to ${count} subscription(s) for user ${userId}`)
   await sendToAllSubscriptions(userId, JSON.stringify(payload))
 }
 
@@ -88,5 +95,15 @@ export async function sendPushNotification(userId: number, payload: PushPayload)
  */
 export async function dismissTaskNotifications(userId: number, taskIds: number[]): Promise<void> {
   if (!isWebPushConfigured() || taskIds.length === 0) return
+  const db = getDb()
+  const count = (
+    db.prepare('SELECT COUNT(*) as c FROM push_subscriptions WHERE user_id = ?').get(userId) as {
+      c: number
+    }
+  ).c
+  log.info(
+    'web-push',
+    `Dismiss: sending for tasks [${taskIds.join(',')}] to ${count} subscription(s)`,
+  )
   await sendToAllSubscriptions(userId, JSON.stringify({ type: 'dismiss', taskIds }))
 }

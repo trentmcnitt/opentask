@@ -236,7 +236,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ type }),
       })
       if (!res.ok) throw new Error('Failed to send')
-      showToast({ message: `Test ${type} notification sent`, type: 'success' })
+      showToast({
+        message: `Notification coming in 3s — switch away from this tab`,
+        type: 'success',
+      })
     } catch {
       showToast({ message: `Failed to send test notification`, type: 'error' })
     } finally {

@@ -250,7 +250,7 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 
 - Import alias: `@/` maps to `src/`
 - React components: PascalCase (`CreateTaskPanel.tsx`, `TaskRow.tsx`)
-- Other source files: kebab-case (`api-response.ts`, `critical-alerts.ts`)
+- Other source files: kebab-case (`api-response.ts`, `overdue-checker.ts`)
 - Types/interfaces: PascalCase (`Task`, `AuthUser`, `UpdateTaskOptions`)
 - DB columns: snake_case (`due_at`, `created_at`, `anchor_dow`)
 - API fields: snake_case (`project_id`, `original_due_at`)
