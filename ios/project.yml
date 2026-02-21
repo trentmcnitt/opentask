@@ -75,6 +75,7 @@ targets:
     entitlements:
       path: OpenTaskWatch/OpenTaskWatch.entitlements
       properties:
+        aps-environment: development
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
     settings:
@@ -85,3 +86,4 @@ targets:
         SWIFT_VERSION: '5.9'
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: io.mcnitt.opentask
+        INFOPLIST_KEY_UIBackgroundModes: remote-notification

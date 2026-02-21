@@ -12,7 +12,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { markDone } from '@/core/tasks'
-import { dismissAllNotifications } from '@/core/notifications/dismiss'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       taskId,
     })
 
-    dismissAllNotifications(user.id, [taskId])
+    dismissNotificationsForTasks(user.id, [taskId])
 
     return success({
       task: formatTaskResponse(result.task),

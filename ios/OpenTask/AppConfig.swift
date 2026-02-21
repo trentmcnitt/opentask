@@ -37,6 +37,11 @@ final class AppConfig {
                 }
             }
         }
+
+        // Sync credentials to Watch app
+        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+            appDelegate.sendCredentialsToWatch()
+        }
     }
 
     func reset() {

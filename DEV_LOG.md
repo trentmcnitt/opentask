@@ -45,16 +45,25 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 **Problem:** Apple Watch shows APNs notification action buttons (Done, +1hr, All +1hr) when notifications mirror from iPhone, but tapping them has no effect. The Watch forwards actions back to the iPhone app's `AppDelegate`, but this forwarding is unreliable — the iPhone may be locked, suspended, or terminated. Errors are silently swallowed, so there's zero feedback that the action didn't work.
 
-**Solution:** Minimal watchOS 10+ companion app (`OpenTaskWatch`) that handles notification actions directly on the Watch. Registers the same `TASK_REMINDER` category, makes API calls over the Watch's own network connection, and provides haptic feedback on success/failure. No separate APNs registration — notifications still arrive via iPhone mirroring. No server changes — same API endpoints. Credentials shared via App Group keychain, so no Watch-side setup needed.
+**Solution:** Minimal watchOS 10+ companion app (`OpenTaskWatch`) that handles notification actions directly on the Watch. Registers the same `TASK_REMINDER` category, makes API calls over the Watch's own network connection, and provides haptic feedback on success/failure. Credentials transferred from iPhone via WatchConnectivity, then stored in the Watch's local keychain.
 
 **Key decisions:**
 
 - watchOS 10.0 minimum (matches iOS 17.0 min, covers Apple Watch Series 4+)
-- No WatchConnectivity — App Group keychain is sufficient for credential sharing
+- WatchConnectivity for credential sharing — App Group keychain only works between apps on the same device; Watch is a separate device with its own keychain
+- Watch registers its own APNs device token — mirrored notifications always forward actions back to the iPhone, so the Watch's `UNUserNotificationCenterDelegate` is never called for mirrored notifications. Direct APNs means the Watch receives its own notifications and handles actions locally.
+- Server-side per-device APNs topic routing — `bundle_id` column in `apns_devices` table sets the `topic` per notification (`io.mcnitt.opentask` for iPhone, `io.mcnitt.opentask.watchapp` for Watch)
+- Cross-device notification dismissal — Watch handles silent push (`type: "dismiss"`) same as iPhone, so actioning a task on one device clears notifications on all devices
 - Haptic + local error notification on failure solves the silent failure problem that made the old forwarding approach useless
 - Bare-bones scope: notification actions only, no task browsing UI
 
-**Status:** Built and compiles for both watchOS simulator and iOS (no regressions). Not yet tested on physical hardware — Apple Watch dev setup was painful (Developer Mode toggle only appears after Xcode "prepares" the device, Watch connects through the iPhone not directly, unpairing in Xcode made reconnection difficult). Physical device testing still needed to confirm notification actions actually work from the wrist.
+**Lessons learned:**
+
+- Apple Watch dev setup is painful. Developer Mode toggle only appears after Xcode "prepares" the device. Watch connects through the iPhone, not directly. Unpairing in Xcode made reconnection difficult. When Xcode gets stuck in a connect/reconnect loop, `sudo pkill -9 remoted` on the Mac forces a clean reconnection.
+- XcodeBuildMCP doesn't support watchOS builds (`build_device` hardcodes iOS platform). Use `xcodebuild` and `xcrun devicectl` directly for watchOS.
+- Initial assumption that mirrored notifications would invoke the Watch app's delegate was wrong — they always forward to the iPhone. Required adding Watch-side APNs registration and server-side per-device topic routing.
+
+**Status:** Built and compiles. Server-side APNs topic routing done. Physical device testing of notification actions still pending.
 
 ---
 

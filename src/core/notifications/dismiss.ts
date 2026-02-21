@@ -9,7 +9,7 @@ import { dismissTaskNotifications } from '@/core/notifications/web-push'
 import { dismissApnsNotifications } from '@/core/notifications/apns'
 import { log } from '@/lib/logger'
 
-export function dismissAllNotifications(userId: number, taskIds: number[]): void {
+export function dismissNotificationsForTasks(userId: number, taskIds: number[]): void {
   if (taskIds.length === 0) return
   dismissTaskNotifications(userId, taskIds).catch((err) =>
     log.error('notifications', 'Web Push dismiss error:', err),
