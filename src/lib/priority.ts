@@ -25,11 +25,23 @@ export function getPriorityOption(value: number) {
   return PRIORITY_OPTIONS.find((p) => p.value === value) || PRIORITY_OPTIONS[0]
 }
 
+/** Excluded chip styling: strikethrough + muted red tint (uniform across all chip types) */
+export const EXCLUDED_CHIP_CLASSES =
+  'line-through bg-red-100/50 text-red-700/80 border-red-200/60 dark:bg-red-950/30 dark:text-red-400/70 dark:border-red-800/40'
+
 /**
  * Get badge styling classes for priority filter badges.
- * Returns Tailwind classes for selected (filled) vs unselected (outline) states.
+ * Returns Tailwind classes for included (filled), excluded (red strikethrough),
+ * or unselected (outline) states.
  */
-export function getPriorityBadgeClasses(value: number, isSelected: boolean): string {
+export function getPriorityBadgeClasses(
+  value: number,
+  chipState: 'unselected' | 'included' | 'excluded',
+): string {
+  if (chipState === 'excluded') {
+    return `border ${EXCLUDED_CHIP_CLASSES}`
+  }
+
   const colorMap: Record<number, { bg: string; border: string; text: string }> = {
     0: {
       bg: 'bg-muted text-muted-foreground',
@@ -60,8 +72,8 @@ export function getPriorityBadgeClasses(value: number, isSelected: boolean): str
 
   const colors = colorMap[value] || colorMap[0]
 
-  if (isSelected) {
+  if (chipState === 'included') {
     return `${colors.bg} border-transparent`
   }
-  return `bg-transparent border ${colors.border} hover:opacity-80`
+  return `bg-muted/40 border ${colors.border} hover:opacity-80`
 }

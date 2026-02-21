@@ -17,6 +17,7 @@ interface UseDashboardKeyboardOptions {
   }
   keyboardNavEnabled: boolean
   orderedIds: number[]
+  keyboardFocusedId: number | null
   setKeyboardFocusedId: (id: number | null) => void
   selection: {
     isSelectionMode: boolean
@@ -35,6 +36,8 @@ interface UseDashboardKeyboardOptions {
   showAnnotations: boolean
   setShowShortcutsDialog: (show: boolean) => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
+  onDeleteTask: (taskId: number) => void
+  onBulkDelete: () => void
 }
 
 /**
@@ -48,6 +51,7 @@ export function useDashboardKeyboard({
   keyboard,
   keyboardNavEnabled,
   orderedIds,
+  keyboardFocusedId,
   setKeyboardFocusedId,
   selection,
   taskGroups,
@@ -59,6 +63,8 @@ export function useDashboardKeyboard({
   showAnnotations,
   setShowShortcutsDialog,
   searchFocusRef,
+  onDeleteTask,
+  onBulkDelete,
 }: UseDashboardKeyboardOptions) {
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -119,6 +125,42 @@ export function useDashboardKeyboard({
 
       // Don't intercept other shortcuts when dialogs/sheets are open
       if (!keyboardNavEnabled) return
+
+      // Backspace/Delete: Delete focused or selected tasks
+      if ((e.key === 'Backspace' || e.key === 'Delete') && !isInInput) {
+        e.preventDefault()
+        if (selection.isSelectionMode && selection.selectedIds.size > 0) {
+          onBulkDelete()
+        } else if (keyboard.isKeyboardActive && keyboardFocusedId !== null) {
+          // Compute next focus before deletion removes the task from the list.
+          // Same algorithm as Cmd+D in useKeyboardNavigation: forward first, then backward.
+          const currentIndex = orderedIds.indexOf(keyboardFocusedId)
+          let nextFocusId: number | null = null
+          if (currentIndex !== -1) {
+            for (let i = currentIndex + 1; i < orderedIds.length; i++) {
+              if (orderedIds[i] !== keyboardFocusedId) {
+                nextFocusId = orderedIds[i]
+                break
+              }
+            }
+            if (nextFocusId === null) {
+              for (let i = currentIndex - 1; i >= 0; i--) {
+                if (orderedIds[i] !== keyboardFocusedId) {
+                  nextFocusId = orderedIds[i]
+                  break
+                }
+              }
+            }
+          }
+
+          onDeleteTask(keyboardFocusedId)
+          setKeyboardFocusedId(nextFocusId)
+          if (nextFocusId !== null) {
+            document.getElementById(`task-row-${nextFocusId}`)?.focus()
+          }
+        }
+        return
+      }
 
       // Cmd+L: Always focus first task (works even in keyboard mode)
       if (cmdKey && e.key === 'l' && !isInInput) {
@@ -231,6 +273,7 @@ export function useDashboardKeyboard({
     keyboard,
     keyboardNavEnabled,
     orderedIds,
+    keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
     taskGroups,
@@ -242,5 +285,7 @@ export function useDashboardKeyboard({
     projects,
     setShowShortcutsDialog,
     searchFocusRef,
+    onDeleteTask,
+    onBulkDelete,
   ])
 }

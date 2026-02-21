@@ -29,6 +29,7 @@ function getShortcuts(cmdSymbol: string) {
     { keys: [cmdSymbol, '⇧', 'A'], action: 'Select/deselect all in group' },
     { keys: [cmdSymbol, 'C'], action: 'Copy selected tasks' },
     { keys: [cmdSymbol, 'D'], action: 'Complete selected tasks' },
+    { keys: ['⌫'], action: 'Delete focused/selected tasks' },
     { keys: [cmdSymbol, 'Z'], action: 'Undo' },
     { keys: [cmdSymbol, '⇧', 'Z'], action: 'Redo' },
     { keys: ['Home'], action: 'Jump to first task' },

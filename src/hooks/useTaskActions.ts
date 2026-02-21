@@ -245,6 +245,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       // Bump undo count since a new action was logged
       setUndoCount((c) => c + 1)
       setRedoCount(0)
+      cfg.onRefresh()
       showToast({
         message: task.rrule ? 'Task advanced' : 'Task completed',
         type: 'success',

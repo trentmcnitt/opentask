@@ -14,6 +14,7 @@ import { validateProjectCreate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
+import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,10 +75,23 @@ export async function POST(request: NextRequest) {
     const name = input.name.trim()
     const shared = input.shared
     const sortOrder = input.sort_order
-    const color = input.color ?? null
 
     const db = getDb()
     const now = nowUtc()
+
+    // Auto-assign a random color if none provided
+    let color = input.color ?? null
+    if (!color) {
+      const existingColors = db
+        .prepare('SELECT color FROM projects WHERE owner_id = ? AND color IS NOT NULL')
+        .all(user.id) as { color: string }[]
+      const usedColors = new Set(existingColors.map((r) => r.color))
+      const availableColors = LABEL_COLOR_NAMES.filter((c) => !usedColors.has(c))
+      color =
+        availableColors.length > 0
+          ? availableColors[Math.floor(Math.random() * availableColors.length)]
+          : LABEL_COLOR_NAMES[Math.floor(Math.random() * LABEL_COLOR_NAMES.length)]
+    }
 
     const result = db
       .prepare(

@@ -1,9 +1,10 @@
 import { useMemo, useRef, useCallback } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
 import { AttributeFilterBar } from '@/components/AttributeFilterBar'
+import { ProjectFilterBar } from '@/components/ProjectFilterBar'
 import {
   DueDateFilterBar,
   classifyTaskDueDate,
@@ -12,7 +13,7 @@ import {
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { SIGNAL_ICONS } from '@/components/TaskRow'
 import type { AiMode } from '@/hooks/useAiMode'
-import type { Task } from '@/types'
+import type { Task, Project } from '@/types'
 
 /** Solid fill classes for selected signal chips */
 function getSignalSelectedClass(key: string): string {
@@ -31,16 +32,18 @@ function getSignalSelectedClass(key: string): string {
  * Filter bar layout adapts based on AI mode:
  *
  * Off mode:
- *   Row 1: date filter chips — horizontal scroll + X
+ *   Projects: [●Work 42] [●Personal 18] [●Side 6]             ← wrapping (if 2+ projects)
+ *   Row 1: date filter chips — horizontal scroll
  *   Row 2: Priority chips | label chips — wraps
  *
  * On mode:
  *   AI Row:  [What's Next 6] [Stale 4] [Quick Win 1]           ← scrollable
  *            ─────────────────────────────────────────────      ← subtle border
- *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                   ← scrollable + X
+ *   Projects: [●Work 42] [●Personal 18] [●Side 6]             ← wrapping (if 2+ projects)
+ *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                   ← scrollable
  *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...         ← wrapping
  *
- * Clear-all X button stays on the date filter row (it clears everything including AI filters).
+ * Users clear filters by clicking active chips to deselect them.
  */
 export function FilterBar({
   tasks,
@@ -53,7 +56,6 @@ export function FilterBar({
   onExclusiveLabel,
   onToggleDateFilter,
   onExclusiveDateFilter,
-  onClearAll,
   timezone,
   aiMode = 'off',
   aiInsightsCount,
@@ -69,6 +71,23 @@ export function FilterBar({
   attributeFilters,
   onToggleAttribute,
   onExclusiveAttribute,
+  // Project filters
+  projects,
+  selectedProjects = [],
+  onToggleProject,
+  onExclusiveProject,
+  todayCounts,
+  // Exclude filters
+  excludedPriorities = [],
+  excludedLabels = [],
+  excludedDateFilters = [],
+  excludedAttributes,
+  excludedProjects = [],
+  onExcludePriority,
+  onExcludeLabel,
+  onExcludeDateFilter,
+  onExcludeAttribute,
+  onExcludeProject,
   // Signal chips
   signalChips,
   selectedSignals = [],
@@ -85,7 +104,6 @@ export function FilterBar({
   onExclusiveLabel?: (label: string) => void
   onToggleDateFilter?: (filter: DueDateFilter) => void
   onExclusiveDateFilter?: (filter: DueDateFilter) => void
-  onClearAll: () => void
   timezone?: string
   aiMode?: AiMode
   aiInsightsCount?: number
@@ -101,6 +119,23 @@ export function FilterBar({
   attributeFilters?: Set<string>
   onToggleAttribute?: (key: string) => void
   onExclusiveAttribute?: (key: string) => void
+  // Project filters
+  projects?: Project[]
+  selectedProjects?: number[]
+  onToggleProject?: (projectId: number) => void
+  onExclusiveProject?: (projectId: number) => void
+  todayCounts?: Map<number, number>
+  // Exclude filters
+  excludedPriorities?: number[]
+  excludedLabels?: string[]
+  excludedDateFilters?: DueDateFilter[]
+  excludedAttributes?: Set<string>
+  excludedProjects?: number[]
+  onExcludePriority?: (priority: number) => void
+  onExcludeLabel?: (label: string) => void
+  onExcludeDateFilter?: (filter: DueDateFilter) => void
+  onExcludeAttribute?: (key: string) => void
+  onExcludeProject?: (projectId: number) => void
   // Signal chips
   signalChips?: { key: string; label: string; count: number; description: string }[]
   selectedSignals?: string[]
@@ -140,93 +175,73 @@ export function FilterBar({
 
   const hasAttributes = tasks.some((t) => t.rrule != null || t.auto_snooze_minutes != null)
 
-  const hasSelection =
-    selectedPriorities.length > 0 ||
-    selectedLabels.length > 0 ||
-    selectedDateFilters.length > 0 ||
-    (attributeFilters?.size ?? 0) > 0 ||
-    aiFilterActive ||
-    selectedSignals.length > 0
-
   return (
     <div className="relative mb-4">
       <div className="flex flex-col gap-2">
         {/* AI Row: What's Next chip + signal chips — scrollable, visually separated from standard filters */}
         {aiRowVisible && (
           <div className="border-border/40 border-b pb-2">
-            <div className="relative">
-              <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto pr-8">
-                {aiChipVisible && (
-                  <AiChip
-                    active={aiFilterActive}
-                    loading={aiFilterLoading}
-                    count={aiInsightsCount!}
-                    onToggleFilter={onToggleAiFilter!}
-                  />
-                )}
+            <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
+              {aiChipVisible && (
+                <AiChip
+                  active={aiFilterActive}
+                  loading={aiFilterLoading}
+                  count={aiInsightsCount!}
+                  onToggleFilter={onToggleAiFilter!}
+                />
+              )}
 
-                {insightsChipVisible && (
-                  <>
-                    {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-                    <InsightsChip active={insightsActive} onToggle={onToggleInsights!} />
-                  </>
-                )}
+              {insightsChipVisible && (
+                <>
+                  {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+                  <InsightsChip active={insightsActive} onToggle={onToggleInsights!} />
+                </>
+              )}
 
-                {(aiChipVisible || insightsChipVisible) && signalRowVisible && (
-                  <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
-                )}
+              {(aiChipVisible || insightsChipVisible) && signalRowVisible && (
+                <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+              )}
 
-                {signalRowVisible && (
-                  <SignalChipRow
-                    chips={signalChips!}
-                    selectedSignals={selectedSignals}
-                    onClick={onSignalClick!}
-                    onLongPress={onSignalLongPress}
-                  />
-                )}
-              </div>
-
-              {/* Clear-all X on AI row when date filter row is not visible */}
-              {hasSelection && !dateFilterVisible && (
-                <div className="from-background pointer-events-none absolute top-0 right-0 flex h-full items-center bg-gradient-to-l from-50% to-transparent pl-4">
-                  <button
-                    onClick={onClearAll}
-                    className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-                    aria-label="Clear all filters"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
+              {signalRowVisible && (
+                <SignalChipRow
+                  chips={signalChips!}
+                  selectedSignals={selectedSignals}
+                  onClick={onSignalClick!}
+                  onLongPress={onSignalLongPress}
+                />
               )}
             </div>
           </div>
         )}
 
-        {/* Row 1: date filter chips — horizontal scroll + clear-all X */}
-        {dateFilterVisible && (
-          <div className="relative">
-            <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto pr-8">
-              <DueDateFilterBar
-                tasks={tasks}
-                selectedDateFilters={selectedDateFilters}
-                onToggleDateFilter={onToggleDateFilter!}
-                timezone={timezone!}
-                onExclusiveDateFilter={onExclusiveDateFilter}
-              />
-            </div>
+        {/* Project row: colored dot chips — wrapping, positioned right under AI row */}
+        {projects && onToggleProject && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ProjectFilterBar
+              projects={projects}
+              tasks={tasks}
+              selectedProjects={selectedProjects}
+              excludedProjects={excludedProjects}
+              onToggleProject={onToggleProject}
+              onExclusiveProject={onExclusiveProject}
+              onExcludeProject={onExcludeProject}
+              todayCounts={todayCounts}
+            />
+          </div>
+        )}
 
-            {/* Clear-all X anchored to date filter row */}
-            {hasSelection && (
-              <div className="from-background pointer-events-none absolute top-0 right-0 flex h-full items-center bg-gradient-to-l from-50% to-transparent pl-4">
-                <button
-                  onClick={onClearAll}
-                  className="text-muted-foreground hover:text-foreground pointer-events-auto flex-shrink-0 rounded-full p-1 transition-colors"
-                  aria-label="Clear all filters"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            )}
+        {/* Row 1: date filter chips — horizontal scroll */}
+        {dateFilterVisible && (
+          <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
+            <DueDateFilterBar
+              tasks={tasks}
+              selectedDateFilters={selectedDateFilters}
+              excludedDateFilters={excludedDateFilters}
+              onToggleDateFilter={onToggleDateFilter!}
+              timezone={timezone!}
+              onExclusiveDateFilter={onExclusiveDateFilter}
+              onExcludeDateFilter={onExcludeDateFilter}
+            />
           </div>
         )}
 
@@ -235,16 +250,20 @@ export function FilterBar({
           <PriorityFilterBar
             tasks={tasks}
             selectedPriorities={selectedPriorities}
+            excludedPriorities={excludedPriorities}
             onTogglePriority={onTogglePriority}
             onExclusivePriority={onExclusivePriority}
+            onExcludePriority={onExcludePriority}
           />
 
           {hasLabels && (
             <LabelFilterBar
               tasks={tasks}
               selectedLabels={selectedLabels}
+              excludedLabels={excludedLabels}
               onToggleLabel={onToggleLabel}
               onExclusiveLabel={onExclusiveLabel}
+              onExcludeLabel={onExcludeLabel}
             />
           )}
 
@@ -254,8 +273,10 @@ export function FilterBar({
               <AttributeFilterBar
                 tasks={tasks}
                 attributeFilters={attributeFilters ?? new Set()}
+                excludedAttributes={excludedAttributes ?? new Set()}
                 onToggleAttribute={onToggleAttribute}
                 onExclusiveAttribute={onExclusiveAttribute}
+                onExcludeAttribute={onExcludeAttribute}
               />
             </>
           )}
@@ -287,7 +308,7 @@ function AiChip({
         'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         active
           ? 'bg-blue-600 text-white'
-          : 'bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900',
+          : 'bg-muted hover:bg-muted/80 text-blue-700 dark:text-blue-300',
       )}
     >
       {loading && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -306,7 +327,7 @@ function InsightsChip({ active, onToggle }: { active: boolean; onToggle: () => v
         'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         active
           ? 'bg-indigo-600 text-white dark:bg-indigo-500'
-          : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900',
+          : 'bg-muted hover:bg-muted/80 text-indigo-700 dark:text-indigo-300',
       )}
     >
       Insights
@@ -414,7 +435,7 @@ function SignalChipButton({
         'flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
         isSelected
           ? getSignalSelectedClass(chipKey)
-          : cn(sig?.bg, sig?.text, 'opacity-60 hover:opacity-80'),
+          : cn('bg-muted', sig?.text, 'opacity-70 hover:opacity-100'),
       )}
       title={description}
     >
