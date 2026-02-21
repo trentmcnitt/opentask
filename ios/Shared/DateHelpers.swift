@@ -116,6 +116,40 @@ enum DateHelpers {
         return isPast ? "\(text) ago" : "in \(text)"
     }
 
+    // MARK: - Snap to Next Hour
+
+    private static let hourRoundThreshold = 35
+
+    /// Snap a date to the nearest hour: >=35 min rounds up, <35 truncates down.
+    static func snapToHour(_ date: Date) -> Date {
+        let calendar = Calendar.current
+        let minutes = calendar.component(.minute, from: date)
+        // Truncate to start of current hour (bySetting searches forward, so use dateComponents)
+        let components = calendar.dateComponents([.year, .month, .day, .hour], from: date)
+        var result = calendar.date(from: components)!
+        if minutes >= hourRoundThreshold {
+            result = calendar.date(byAdding: .hour, value: 1, to: result)!
+        }
+        return result
+    }
+
+    /// Add 1 hour to now, then snap to the nearest hour boundary.
+    /// Matches the web QuickActionPanel "Next Hour" behavior.
+    /// - 2:20 PM → 3:00 PM (minutes < 35, snaps down)
+    /// - 2:37 PM → 4:00 PM (minutes >= 35, snaps up)
+    static func snapToNextHour(now: Date = Date()) -> Date {
+        let oneHourLater = now.addingTimeInterval(3600)
+        return snapToHour(oneHourLater)
+    }
+
+    /// Format a date as a short time string (e.g., "3:00 PM") in the device timezone.
+    static func formatShortTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        f.timeZone = TimeZone.current
+        return f.string(from: date)
+    }
+
     // MARK: - ISO 8601 Parsing
 
     private static let isoFormatter: ISO8601DateFormatter = {

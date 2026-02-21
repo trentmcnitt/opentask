@@ -50,7 +50,7 @@ export default function LoginPage() {
             alt="OpenTask"
             width={180}
             height={54}
-            className="mx-auto dark:invert"
+            className="mx-auto"
             unoptimized
             priority
           />

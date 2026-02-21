@@ -115,7 +115,7 @@ export function Header({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
+      <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
         <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
           {/* Back button (when navigating into a sub-page like project detail) */}
           {backHref && (
@@ -145,7 +145,7 @@ export function Header({
                   width={120}
                   height={36}
                   className={cn(
-                    'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9 dark:invert',
+                    'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
                     searchExpanded ? 'opacity-0 md:opacity-100' : '',
                   )}
                   unoptimized
@@ -257,7 +257,7 @@ export function Header({
                   className="relative hidden md:inline-flex"
                 >
                   <Clock className="size-5" />
-                  <span className="bg-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold opacity-80">
+                  <span className="bg-badge-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
                     {overdueCount > 999 ? '999+' : overdueCount}
                   </span>
                   <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
@@ -286,7 +286,7 @@ export function Header({
                 >
                   <Undo2 className="size-5" />
                   {undoCount > 0 && (
-                    <span className="absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-zinc-900 px-1 text-[10px] leading-none font-bold text-white opacity-80 dark:bg-zinc-100 dark:text-zinc-900">
+                    <span className="bg-badge-neutral absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold text-white dark:text-zinc-900">
                       {undoCount > 99 ? '99+' : undoCount}
                     </span>
                   )}
