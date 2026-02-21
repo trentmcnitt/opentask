@@ -5,9 +5,11 @@ test.describe('Add task modal (mobile FAB)', () => {
     // Set mobile viewport to show the bottom tabs
     await page.setViewportSize({ width: 375, height: 812 })
 
-    // Reload to ensure mobile layout renders correctly after viewport change
+    // Reload to ensure mobile layout renders correctly after viewport change.
+    // Wait for task rows to confirm React hydrated and data loaded.
+    // Do NOT use networkidle — the SSE sync stream keeps a connection open.
     await page.reload()
-    await page.waitForLoadState('networkidle')
+    await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 })
 
     // The bottom nav Add button should be visible on mobile
     // BottomTabs has md:hidden, so it's hidden on desktop and visible on mobile

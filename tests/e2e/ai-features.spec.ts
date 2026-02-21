@@ -30,8 +30,9 @@ test.describe('AI features (disabled)', () => {
   })
 
   test('AI chip does not render when AI is disabled', async ({ authenticatedPage: page }) => {
-    // Wait for the page to fully load and any fetch calls to settle
-    await page.waitForLoadState('networkidle')
+    // Wait for initial data to load (task rows confirm hydration + data fetch).
+    // Do NOT use networkidle — the SSE sync stream keeps a connection open.
+    await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 })
 
     // When AI returns 503, hasData is false so the AI filter chip in FilterBar
     // doesn't render and no AI-related UI is shown.

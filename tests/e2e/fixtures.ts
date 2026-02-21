@@ -24,13 +24,14 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     // Wait for redirect to dashboard
     await page.waitForURL('/', { timeout: 10_000 })
 
-    // Wait for dashboard content to render (task rows or empty state)
+    // Wait for dashboard content to render (task rows or empty state).
+    // This confirms React has hydrated and the initial data fetch completed.
+    // Note: we do NOT use waitForLoadState('networkidle') because the SSE
+    // sync stream (/api/sync/stream) keeps a persistent connection open,
+    // which prevents networkidle from ever being reached.
     await page.waitForSelector('[id^="task-row-"], .text-4xl', { timeout: 10_000 }).catch(() => {
       // Dashboard might be empty — that's OK
     })
-
-    // Wait for hydration to complete
-    await page.waitForLoadState('networkidle')
 
     await use(page)
   },
