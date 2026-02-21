@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useRef, useCallback } from 'react'
+import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
 
 export type DueDateFilter = 'overdue' | 'soon' | 'today' | 'this_week' | 'later' | 'no_due_date'
@@ -11,10 +13,11 @@ export type DueDateFilter = 'overdue' | 'soon' | 'today' | 'this_week' | 'later'
 interface DueDateFilterBarProps {
   tasks: Task[]
   selectedDateFilters: DueDateFilter[]
+  excludedDateFilters?: DueDateFilter[]
   onToggleDateFilter: (filter: DueDateFilter) => void
   timezone: string
-  /** Cmd/Ctrl+click or mobile long-press: exclusive select (solo toggle) */
   onExclusiveDateFilter?: (filter: DueDateFilter) => void
+  onExcludeDateFilter?: (filter: DueDateFilter) => void
 }
 
 const FILTER_LABELS: Record<DueDateFilter, string> = {
@@ -72,14 +75,17 @@ export function classifyTaskDueDate(
  * Parent component handles layout and clear button.
  * Uses square badges (rounded-sm) to visually distinguish from pill-shaped label badges.
  *
- * Supports Cmd/Ctrl+click for exclusive select and mobile long-press (400ms, 10px jitter).
+ * Supports single-click toggle, double-click exclude, Cmd/Ctrl+click exclusive select,
+ * and mobile long-press (400ms, 10px jitter) for exclusive select.
  */
 export function DueDateFilterBar({
   tasks,
   selectedDateFilters,
+  excludedDateFilters = [],
   onToggleDateFilter,
   timezone,
   onExclusiveDateFilter,
+  onExcludeDateFilter,
 }: DueDateFilterBarProps) {
   const filterCounts = useMemo(() => {
     const now = new Date()
@@ -103,16 +109,21 @@ export function DueDateFilterBar({
   return (
     <>
       {filterCounts.map(([filter, count]) => {
-        const isSelected = selectedDateFilters.includes(filter)
+        const chipState: ChipState = excludedDateFilters.includes(filter)
+          ? 'excluded'
+          : selectedDateFilters.includes(filter)
+            ? 'included'
+            : 'unselected'
         return (
           <DateChipBadge
             key={filter}
             filter={filter}
             label={FILTER_LABELS[filter]}
             count={count}
-            isSelected={isSelected}
+            chipState={chipState}
             onToggle={onToggleDateFilter}
             onExclusive={onExclusiveDateFilter}
+            onExclude={onExcludeDateFilter}
           />
         )
       })}
@@ -124,67 +135,43 @@ function DateChipBadge({
   filter,
   label,
   count,
-  isSelected,
+  chipState,
   onToggle,
   onExclusive,
+  onExclude,
 }: {
   filter: DueDateFilter
   label: string
   count: number
-  isSelected: boolean
+  chipState: ChipState
   onToggle: (filter: DueDateFilter) => void
   onExclusive?: (filter: DueDateFilter) => void
+  onExclude?: (filter: DueDateFilter) => void
 }) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const originRef = useRef<{ x: number; y: number } | null>(null)
-  const firedRef = useRef(false)
-
-  const cancel = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-    originRef.current = null
-  }, [])
+  const handlers = useChipInteraction({
+    chipKey: filter,
+    chipState,
+    onToggle,
+    onExclusive,
+    onExclude,
+  })
 
   return (
     <Badge
       variant="outline"
       className={cn(
         'flex-shrink-0 cursor-pointer rounded-sm transition-colors select-none',
-        isSelected
-          ? 'bg-foreground text-background border-foreground hover:bg-foreground/90'
-          : 'hover:bg-muted',
+        chipState === 'excluded'
+          ? EXCLUDED_CHIP_CLASSES
+          : chipState === 'included'
+            ? 'bg-foreground text-background border-foreground hover:bg-foreground/90'
+            : 'hover:bg-muted',
       )}
-      onClick={(e: React.MouseEvent) => {
-        if (firedRef.current) {
-          firedRef.current = false
-          return
-        }
-        if ((e.metaKey || e.ctrlKey) && onExclusive) {
-          onExclusive(filter)
-        } else {
-          onToggle(filter)
-        }
-      }}
-      onPointerDown={(e: React.PointerEvent) => {
-        if (e.pointerType !== 'touch' || !onExclusive) return
-        firedRef.current = false
-        originRef.current = { x: e.clientX, y: e.clientY }
-        timerRef.current = setTimeout(() => {
-          timerRef.current = null
-          firedRef.current = true
-          onExclusive(filter)
-        }, 400)
-      }}
-      onPointerUp={cancel}
-      onPointerMove={(e: React.PointerEvent) => {
-        if (!timerRef.current || !originRef.current) return
-        const dx = e.clientX - originRef.current.x
-        const dy = e.clientY - originRef.current.y
-        if (Math.sqrt(dx * dx + dy * dy) > 10) cancel()
-      }}
-      onPointerLeave={cancel}
+      onClick={handlers.onClick}
+      onPointerDown={handlers.onPointerDown}
+      onPointerUp={handlers.onPointerUp}
+      onPointerMove={handlers.onPointerMove}
+      onPointerLeave={handlers.onPointerLeave}
     >
       <span className="leading-none">{label}</span>
       <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>

@@ -1,16 +1,20 @@
 'use client'
 
-import { useMemo, useRef, useCallback } from 'react'
+import { useMemo } from 'react'
 import { Repeat, Timer } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
+import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
 
 interface AttributeFilterBarProps {
   tasks: Task[]
   attributeFilters: Set<string>
+  excludedAttributes?: Set<string>
   onToggleAttribute: (key: string) => void
   onExclusiveAttribute?: (key: string) => void
+  onExcludeAttribute?: (key: string) => void
 }
 
 /**
@@ -21,8 +25,10 @@ interface AttributeFilterBarProps {
 export function AttributeFilterBar({
   tasks,
   attributeFilters,
+  excludedAttributes = new Set(),
   onToggleAttribute,
   onExclusiveAttribute,
+  onExcludeAttribute,
 }: AttributeFilterBarProps) {
   const counts = useMemo(() => {
     let recurring = 0
@@ -44,9 +50,16 @@ export function AttributeFilterBar({
           icon={<Repeat className="size-3" />}
           label="Recurring"
           count={counts.recurring}
-          isSelected={attributeFilters.has('recurring')}
+          chipState={
+            excludedAttributes.has('recurring')
+              ? 'excluded'
+              : attributeFilters.has('recurring')
+                ? 'included'
+                : 'unselected'
+          }
           onToggle={onToggleAttribute}
           onExclusive={onExclusiveAttribute}
+          onExclude={onExcludeAttribute}
         />
       )}
       {counts.autoSnooze > 0 && (
@@ -54,9 +67,16 @@ export function AttributeFilterBar({
           chipKey="custom_auto_snooze"
           icon={<Timer className="size-3" />}
           count={counts.autoSnooze}
-          isSelected={attributeFilters.has('custom_auto_snooze')}
+          chipState={
+            excludedAttributes.has('custom_auto_snooze')
+              ? 'excluded'
+              : attributeFilters.has('custom_auto_snooze')
+                ? 'included'
+                : 'unselected'
+          }
           onToggle={onToggleAttribute}
           onExclusive={onExclusiveAttribute}
+          onExclude={onExcludeAttribute}
           title="Custom auto-snooze"
         />
       )}
@@ -69,70 +89,40 @@ function AttributeChipBadge({
   icon,
   label,
   count,
-  isSelected,
+  chipState,
   onToggle,
   onExclusive,
+  onExclude,
   title,
 }: {
   chipKey: string
   icon: React.ReactNode
   label?: string
   count: number
-  isSelected: boolean
+  chipState: ChipState
   onToggle: (key: string) => void
   onExclusive?: (key: string) => void
+  onExclude?: (key: string) => void
   title?: string
 }) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const originRef = useRef<{ x: number; y: number } | null>(null)
-  const firedRef = useRef(false)
-
-  const cancel = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-    originRef.current = null
-  }, [])
+  const handlers = useChipInteraction({ chipKey, chipState, onToggle, onExclusive, onExclude })
 
   return (
     <Badge
       className={cn(
         'flex-shrink-0 cursor-pointer gap-1 rounded-sm transition-colors select-none',
-        isSelected
-          ? 'bg-foreground text-background hover:bg-foreground/90'
-          : 'bg-muted text-muted-foreground hover:bg-muted/80 border-transparent',
+        chipState === 'excluded'
+          ? EXCLUDED_CHIP_CLASSES
+          : chipState === 'included'
+            ? 'bg-foreground text-background hover:bg-foreground/90'
+            : 'bg-muted text-muted-foreground hover:bg-muted/80 border-transparent',
       )}
       title={title}
-      onClick={(e: React.MouseEvent) => {
-        if (firedRef.current) {
-          firedRef.current = false
-          return
-        }
-        if ((e.metaKey || e.ctrlKey) && onExclusive) {
-          onExclusive(chipKey)
-        } else {
-          onToggle(chipKey)
-        }
-      }}
-      onPointerDown={(e: React.PointerEvent) => {
-        if (e.pointerType !== 'touch' || !onExclusive) return
-        firedRef.current = false
-        originRef.current = { x: e.clientX, y: e.clientY }
-        timerRef.current = setTimeout(() => {
-          timerRef.current = null
-          firedRef.current = true
-          onExclusive(chipKey)
-        }, 400)
-      }}
-      onPointerUp={cancel}
-      onPointerMove={(e: React.PointerEvent) => {
-        if (!timerRef.current || !originRef.current) return
-        const dx = e.clientX - originRef.current.x
-        const dy = e.clientY - originRef.current.y
-        if (Math.sqrt(dx * dx + dy * dy) > 10) cancel()
-      }}
-      onPointerLeave={cancel}
+      onClick={handlers.onClick}
+      onPointerDown={handlers.onPointerDown}
+      onPointerUp={handlers.onPointerUp}
+      onPointerMove={handlers.onPointerMove}
+      onPointerLeave={handlers.onPointerLeave}
     >
       {icon}
       {label && <span className="leading-none">{label}</span>}

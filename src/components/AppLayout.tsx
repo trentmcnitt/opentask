@@ -6,7 +6,6 @@ import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
 import { CreateTaskPanel } from './CreateTaskPanel'
 import { OfflineBanner } from './OfflineBanner'
-import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -74,42 +73,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent('create-panel-state', { detail: { open: showAddForm } }))
   }, [showAddForm])
 
-  const handleReorderProjects = useCallback(
-    async (projectIds: number[]) => {
-      // Optimistic update
-      const prevProjects = projects
-      setProjects(
-        projectIds
-          .map((id) => projects.find((p) => p.id === id))
-          .filter(
-            (
-              p,
-            ): p is {
-              id: number
-              name: string
-              active_count: number
-              overdue_count: number
-            } => p !== undefined,
-          ),
-      )
-
-      try {
-        const res = await fetch('/api/projects/reorder', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_ids: projectIds }),
-        })
-        if (!res.ok) throw new Error('Reorder failed')
-        // Notify other components (e.g., dashboard) to re-fetch projects
-        window.dispatchEvent(new CustomEvent('projects-reordered'))
-      } catch {
-        setProjects(prevProjects)
-        showToast({ message: 'Failed to reorder projects', type: 'error' })
-      }
-    },
-    [projects],
-  )
-
   // Don't show nav for unauthenticated users
   if (status !== 'authenticated') {
     return <>{children}</>
@@ -118,11 +81,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen select-none">
       <OfflineBanner />
-      <Sidebar
-        projects={projects}
-        onAddClick={() => setShowAddForm(true)}
-        onReorderProjects={handleReorderProjects}
-      />
+      <Sidebar onAddClick={() => setShowAddForm(true)} />
 
       <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">{children}</div>
 

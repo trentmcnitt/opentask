@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Folder, Plus, Clock, Settings } from 'lucide-react'
+import { LayoutGrid, Archive, Plus, Clock, Settings } from 'lucide-react'
 
 interface BottomTabsProps {
   onAddClick?: () => void
@@ -13,7 +13,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
 
   const tabs = [
     { href: '/', label: 'Dashboard', icon: LayoutGrid },
-    { href: '/projects', label: 'Projects', icon: Folder },
+    { href: '/archive', label: 'Archive', icon: Archive },
     { href: '#add', label: 'Add', icon: Plus, isAction: true },
     { href: '/history', label: 'History', icon: Clock },
     { href: '/settings', label: 'Settings', icon: Settings },

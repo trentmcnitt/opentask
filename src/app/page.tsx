@@ -29,7 +29,8 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
-import type { DueDateFilter } from '@/components/DueDateFilterBar'
+import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
+import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { taskWord } from '@/lib/utils'
 import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
@@ -37,6 +38,7 @@ import { useAiMode, type AiMode } from '@/hooks/useAiMode'
 import { useInsightsData, type UseInsightsDataReturn } from '@/hooks/useInsightsData'
 import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
+import { useSyncStream } from '@/hooks/useSyncStream'
 
 export default function Home() {
   return (
@@ -161,7 +163,7 @@ function useBulkActions(
       const tasksAffected = responseData.data?.tasks_affected ?? count
       selection.clear()
       fetchTasks()
-      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
+      const skippedMsg = tasksSkipped > 0 ? ` (skipped ${tasksSkipped} high/urgent)` : ''
       showToast({
         message: `${tasksAffected} ${taskWord(tasksAffected)} updated${skippedMsg}`,
         type: 'success',
@@ -188,7 +190,7 @@ function useBulkActions(
       const tasksSkipped = responseData.data?.tasks_skipped ?? 0
       selection.clear()
       fetchTasks()
-      const skippedMsg = tasksSkipped > 0 ? ` (${tasksSkipped} high/urgent skipped)` : ''
+      const skippedMsg = tasksSkipped > 0 ? ` (skipped ${tasksSkipped} high/urgent)` : ''
       showToast({
         message: `${tasksAffected} ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
         type: 'success',
@@ -200,6 +202,7 @@ function useBulkActions(
   }
 
   const bulkDelete = async () => {
+    const count = selection.selectedIds.size
     try {
       const res = await fetch('/api/tasks/bulk/delete', {
         method: 'POST',
@@ -210,7 +213,7 @@ function useBulkActions(
       selection.clear()
       fetchTasks()
       showToast({
-        message: 'Tasks deleted',
+        message: `${count} ${taskWord(count)} deleted`,
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
@@ -282,14 +285,19 @@ function HomeContent() {
     setFocusedTask(task)
     setQuickActionOpen(true)
   }, [])
-  const actions = useDashboardActions(fetchTasks, tasks, setTasks, handleViewTask)
+  const refreshAll = useCallback(async () => {
+    await fetchTasks()
+    fetchProjects()
+  }, [fetchTasks, fetchProjects])
+  useSyncStream(refreshAll)
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
 
   const handleQuickActionDelete = useCallback(
     async (taskId: number) => {
       try {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Failed to delete')
-        fetchTasks()
+        refreshAll()
         showToast({
           message: 'Task moved to trash',
           type: 'success',
@@ -299,7 +307,7 @@ function HomeContent() {
         showToast({ message: 'Delete failed', type: 'error' })
       }
     },
-    [fetchTasks, actions.handleUndo],
+    [refreshAll, actions.handleUndo],
   )
 
   const handleReprocess = useCallback(
@@ -398,17 +406,48 @@ function HomeContent() {
     selectedPriorities,
     selectedDateFilters,
     attributeFilters,
+    selectedProjects,
+    setSelectedProjects,
     toggleLabel,
     togglePriority,
     toggleDateFilter,
     toggleAttribute,
+    toggleProject,
+    excludedLabels,
+    excludedPriorities,
+    excludedDateFilters,
+    excludedAttributes,
+    excludedProjects,
+    excludeLabel,
+    excludePriority,
+    excludeDateFilter,
+    excludeAttribute,
+    excludeProject,
     exclusivePriority,
     exclusiveLabel,
     exclusiveDateFilter,
     exclusiveAttribute,
+    exclusiveProject,
     clearAllFilters,
     filteredTasks: displayTasks,
-  } = useFilterState({ tasks: baseTasks, onLabelToggle, timezone, initialDateFilters })
+  } = useFilterState({
+    tasks: baseTasks,
+    onLabelToggle,
+    timezone,
+    initialDateFilters,
+  })
+
+  // Support ?project=<id> from sidebar/project list links — set project filter, then clear URL.
+  // Uses useEffect (not useMemo+ref) because sidebar links navigate within the already-mounted dashboard.
+  useEffect(() => {
+    const projectParam = searchParams.get('project')
+    if (!projectParam) return
+    const projectId = parseInt(projectParam, 10)
+    if (!isNaN(projectId)) {
+      setSelectedProjects([projectId])
+    }
+    router.replace('/', { scroll: false })
+  }, [searchParams, router, setSelectedProjects])
 
   // AI mode: Off / On toggle + feature preferences
   const {
@@ -601,7 +640,7 @@ function HomeContent() {
             body: JSON.stringify({ ids: taskIds }),
           })
           if (!res.ok) throw new Error('Bulk action failed')
-          fetchTasks()
+          refreshAll()
           showToast({
             message: `${count} ${taskWord(count)} completed`,
             type: 'success',
@@ -612,7 +651,7 @@ function HomeContent() {
         }
       }
     },
-    [actions, fetchTasks],
+    [actions, refreshAll],
   )
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
@@ -667,11 +706,33 @@ function HomeContent() {
     [selection.isSelectionMode, selection.selectedIds, keyboardFocusedId, keyboard],
   )
 
+  // Exit keyboard/selection modes on click/touch outside (extracted to hook)
+  useExitModes({ keyboard, selection })
+
+  const handleSnoozeAllOverdue = useSnoozeOverdue({
+    displayTasks,
+    fetchTasks: refreshAll,
+    handleUndo: actions.handleUndo,
+    timezone,
+    defaultSnoozeOption,
+    morningTime,
+  })
+
+  const bulk = useBulkActions(
+    selection,
+    refreshAll,
+    actions.handleUndo,
+    setShowProjectPicker,
+    setSearchQuery,
+    setSearchResults,
+  )
+
   // Global keyboard shortcuts (extracted to hook)
   useDashboardKeyboard({
     keyboard,
     keyboardNavEnabled,
     orderedIds,
+    keyboardFocusedId,
     setKeyboardFocusedId,
     selection,
     taskGroups,
@@ -683,30 +744,26 @@ function HomeContent() {
     showAnnotations,
     setShowShortcutsDialog,
     searchFocusRef,
+    onDeleteTask: handleQuickActionDelete,
+    onBulkDelete: bulk.bulkDelete,
   })
-
-  // Exit keyboard/selection modes on click/touch outside (extracted to hook)
-  useExitModes({ keyboard, selection })
-
-  const handleSnoozeAllOverdue = useSnoozeOverdue({
-    displayTasks,
-    fetchTasks,
-    handleUndo: actions.handleUndo,
-    timezone,
-    defaultSnoozeOption,
-    morningTime,
-  })
-
-  const bulk = useBulkActions(
-    selection,
-    fetchTasks,
-    actions.handleUndo,
-    setShowProjectPicker,
-    setSearchQuery,
-    setSearchResults,
-  )
 
   const { overdueCount, todayCount } = useTaskCounts(tasks, timezone)
+
+  // Compute per-project today task counts for ProjectFilterBar
+  const todayCounts = useMemo(() => {
+    if (!timezone) return new Map<number, number>()
+    const now = new Date()
+    const boundaries = getTimezoneDayBoundaries(timezone)
+    const counts = new Map<number, number>()
+    for (const task of tasks) {
+      const buckets = classifyTaskDueDate(task, now, boundaries)
+      if (buckets.includes('today')) {
+        counts.set(task.project_id, (counts.get(task.project_id) || 0) + 1)
+      }
+    }
+    return counts
+  }, [tasks, timezone])
 
   // Compute selected tasks for bulk operations
   const selectedTasks = useMemo(() => {
@@ -724,16 +781,10 @@ function HomeContent() {
   }, [status, router, fetchTasks, fetchProjects])
 
   useEffect(() => {
-    const handler = () => fetchTasks()
+    const handler = () => refreshAll()
     window.addEventListener('task-created', handler)
     return () => window.removeEventListener('task-created', handler)
-  }, [fetchTasks])
-
-  useEffect(() => {
-    const handler = () => fetchProjects()
-    window.addEventListener('projects-reordered', handler)
-    return () => window.removeEventListener('projects-reordered', handler)
-  }, [fetchProjects])
+  }, [refreshAll])
 
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
@@ -754,7 +805,7 @@ function HomeContent() {
             onClick={() => {
               setError(null)
               setLoading(true)
-              fetchTasks()
+              refreshAll()
             }}
             className="rounded-lg bg-zinc-100 px-4 py-2 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
           >
@@ -792,6 +843,20 @@ function HomeContent() {
       attributeFilters={attributeFilters}
       onToggleAttribute={toggleAttribute}
       onExclusiveAttribute={exclusiveAttribute}
+      selectedProjects={selectedProjects}
+      onToggleProject={toggleProject}
+      onExclusiveProject={exclusiveProject}
+      excludedLabels={excludedLabels}
+      excludedPriorities={excludedPriorities}
+      excludedDateFilters={excludedDateFilters}
+      excludedAttributes={excludedAttributes}
+      excludedProjects={excludedProjects}
+      onExcludeLabel={excludeLabel}
+      onExcludePriority={excludePriority}
+      onExcludeDateFilter={excludeDateFilter}
+      onExcludeAttribute={excludeAttribute}
+      onExcludeProject={excludeProject}
+      todayCounts={todayCounts}
       timezone={timezone}
       onSearch={bulk.handleSearch}
       onSearchClear={() => {
@@ -906,6 +971,20 @@ function DashboardView({
   attributeFilters,
   onToggleAttribute,
   onExclusiveAttribute,
+  selectedProjects,
+  onToggleProject,
+  onExclusiveProject,
+  excludedLabels,
+  excludedPriorities,
+  excludedDateFilters,
+  excludedAttributes,
+  excludedProjects,
+  onExcludeLabel,
+  onExcludePriority,
+  onExcludeDateFilter,
+  onExcludeAttribute,
+  onExcludeProject,
+  todayCounts,
   timezone,
   onSearch,
   onSearchClear,
@@ -999,6 +1078,20 @@ function DashboardView({
   attributeFilters: Set<string>
   onToggleAttribute: (key: string) => void
   onExclusiveAttribute: (key: string) => void
+  selectedProjects: number[]
+  onToggleProject: (projectId: number) => void
+  onExclusiveProject: (projectId: number) => void
+  excludedLabels: string[]
+  excludedPriorities: number[]
+  excludedDateFilters: DueDateFilter[]
+  excludedAttributes: Set<string>
+  excludedProjects: number[]
+  onExcludeLabel: (label: string) => void
+  onExcludePriority: (priority: number) => void
+  onExcludeDateFilter: (filter: DueDateFilter) => void
+  onExcludeAttribute: (key: string) => void
+  onExcludeProject: (projectId: number) => void
+  todayCounts: Map<number, number>
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -1072,6 +1165,12 @@ function DashboardView({
     selectedPriorities.length > 0 ||
     selectedDateFilters.length > 0 ||
     attributeFilters.size > 0 ||
+    selectedProjects.length > 0 ||
+    excludedLabels.length > 0 ||
+    excludedPriorities.length > 0 ||
+    excludedDateFilters.length > 0 ||
+    excludedAttributes.size > 0 ||
+    excludedProjects.length > 0 ||
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
@@ -1148,10 +1247,24 @@ function DashboardView({
           onExclusiveLabel={onExclusiveLabel}
           onToggleDateFilter={onToggleDateFilter}
           onExclusiveDateFilter={onExclusiveDateFilter}
-          onClearAll={onClearFilters}
           attributeFilters={attributeFilters}
           onToggleAttribute={onToggleAttribute}
           onExclusiveAttribute={onExclusiveAttribute}
+          projects={projects}
+          selectedProjects={selectedProjects}
+          onToggleProject={onToggleProject}
+          onExclusiveProject={onExclusiveProject}
+          excludedPriorities={excludedPriorities}
+          excludedLabels={excludedLabels}
+          excludedDateFilters={excludedDateFilters}
+          excludedAttributes={excludedAttributes}
+          excludedProjects={excludedProjects}
+          onExcludePriority={onExcludePriority}
+          onExcludeLabel={onExcludeLabel}
+          onExcludeDateFilter={onExcludeDateFilter}
+          onExcludeAttribute={onExcludeAttribute}
+          onExcludeProject={onExcludeProject}
+          todayCounts={todayCounts}
           timezone={timezone}
           aiMode={aiMode}
           aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
