@@ -35,6 +35,32 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 - `src/core/db/schema.sql` — Marked vestigial columns
 - `tests/behavioral/notification-timing.test.ts` — Rewritten for unified checker + consolidation
 
+### iOS Silent Push Fix — UIBackgroundModes Was Missing
+
+**Problem:** Marking a task done on Watch dismissed the web notification on Mac but NOT the iPhone notification. Server logs showed the dismiss silent push was sent successfully — Apple accepted it, no errors. The problem was iOS-side: the app never received the silent push.
+
+**Root cause:** `UIBackgroundModes` was completely absent from the built app's Info.plist — since the app was first built. The `project.yml` used `INFOPLIST_KEY_UIBackgroundModes: remote-notification` with `GENERATE_INFOPLIST_FILE: true`, but Xcode silently ignores that build setting. No error, no warning — the key just doesn't appear in the generated plist. Without `UIBackgroundModes: [remote-notification]`, iOS discards all `content-available: 1` silent pushes at the device level.
+
+**Fix:** Switched from Xcode's auto-generated Info.plist to xcodegen's `info` block, which generates a real Info.plist file on disk with the correct keys. Applied to both the iOS app and Watch app targets.
+
+**Diagnostic value:** The comprehensive notification logging added earlier in the session (send/dismiss/action logging across all channels) was essential for isolating this to the iOS side. Server logs clearly showed the dismiss was sent and accepted — without that, we'd have been guessing.
+
+### Cross-Device Dismiss-All on App Open
+
+**Problem:** OpenTask is notification-heavy by design. When you open the app and see your task list, all the notification noise on other devices becomes stale. But notifications only cleared on the device you opened — other devices kept buzzing.
+
+**Solution:** New `POST /api/notifications/dismiss-all` endpoint sends a `dismiss-all` signal to all web push subscriptions and APNs devices. Three trigger points:
+
+- **Web app:** `visibilitychange` listener fires when the tab becomes visible (debounced 30s)
+- **iOS app:** `applicationDidBecomeActive` calls the API after clearing local notifications
+- **All devices receive:** Service worker, AppDelegate, and WatchAppDelegate all handle the `dismiss-all` silent push type by calling `removeAllDeliveredNotifications()`
+
+### Test Notification Rewrite
+
+**Problem:** Test notifications sent a generic push with `taskId: 0`, which meant (a) actioning them from Watch failed with a 400 error (`!0 === true` in JS validation), and (b) cross-device dismiss didn't work because there was no real task to dismiss.
+
+**Solution:** Test notifications now create a real temporary task (with "test" label) and send to ALL channels (web push + APNs) after a 3-second delay. The delay gives the user time to switch away from the tab so the service worker doesn't suppress the web notification. Because it's a real task, tapping Done/Snooze triggers the full action + cross-device dismiss flow — a true end-to-end test.
+
 ---
 
 ## 02-04-26
