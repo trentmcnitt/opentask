@@ -6,6 +6,39 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ## 02-21-26
 
+### Load Time Performance Optimizations
+
+**Problem:** Every page in OpenTask was `'use client'` with no server-side data fetching. The load waterfall was: empty HTML shell → download JS bundle → hydrate → `useSession()` → client-side API calls (`/api/tasks`, `/api/projects`) → render content. Users saw a spinner for the entire duration. Additionally, every component was in the initial bundle — no code splitting — and both `AppLayout` and the dashboard independently fetched `/api/projects`, doubling that request.
+
+**Approach:** Seven phases, ordered from zero-risk config changes to architectural refactor.
+
+1. **Font `display: 'swap'`** — shows fallback system font immediately instead of invisible text during font load
+2. **Root `loading.tsx` + `error.tsx`** — Next.js Suspense fallback for route transitions (spinner instead of blank screen) and a catch-all error boundary
+3. **Dynamic imports** (`next/dynamic`) — QuickActionPopover, KeyboardShortcutsDialog, BatchUndoDialog, ProjectPickerSheet, and CreateTaskPanel lazy-loaded behind interaction gates. Prefetch for QuickActionPopover and CreateTaskPanel fires 2 seconds after mount so the first interaction isn't delayed.
+4. **Service worker static asset caching** — cache-first for `/_next/static/` URLs (content-hashed, immutable). Existing `activate` handler already purges old caches on deploy.
+5. **Shared `ProjectsProvider` context** — single `/api/projects` fetch shared between AppLayout and dashboard, eliminating the duplicate request
+6. **Server component dashboard** — `page.tsx` converted to an async server component that calls `auth()` + `getTasks()` + `getProjects()` server-side, passing data as props to the new `DashboardClient.tsx`. Eliminates the client-side fetch waterfall entirely.
+7. **Extracted `useQuickActionShortcut` hook** — moved from QuickActionPopover to its own file so the component can be code-split (hooks can't be dynamically imported)
+
+**Results (measured against dev server with Playwright):**
+
+| Metric                     | Before  | After          | Change |
+| -------------------------- | ------- | -------------- | ------ |
+| DOM Content Loaded         | 1,303ms | 1,101ms        | -15%   |
+| First Contentful Paint     | 1,317ms | 1,112ms        | -16%   |
+| API requests on load       | 15      | 11             | -27%   |
+| JS transfer (first visit)  | 347KB   | 521KB          | +50%   |
+| JS transfer (repeat visit) | 347KB   | ~0 (SW cached) | -100%  |
+
+**The JS size trade-off:** First-visit JS transfer increased 50% due to a known Turbopack limitation — `next/dynamic` boundaries cause Turbopack to duplicate shared dependencies (lucide-react, Radix UI) across per-route chunks instead of extracting a common chunk. Webpack handles this correctly (1,727KB total vs Turbopack's 2,557KB), but webpack's standalone build doesn't bundle `bcrypt` native modules for Linux, causing 500 errors on deploy. No fix is available from Vercel. The trade-off is acceptable: repeat visits (the common case for a PWA) serve everything from the service worker cache, and FCP improved 16% even with the larger first-visit payload.
+
+**Dead ends:**
+
+- `optimizePackageImports` in `next.config.ts` — tested and confirmed it has zero effect on Turbopack builds (identical output hashes with and without). Turbopack auto-optimizes barrel imports natively. Removed.
+- Webpack build — produces much better chunk deduplication but the standalone output doesn't trace `bcrypt` native modules correctly. Server returned 500 on all auth endpoints. Reverted.
+
+**Hydration safety:** The server component fetches tasks, but the client still shows a loading spinner during hydration (while `useSession()` resolves, ~50-100ms). This prevents hydration mismatch — SSR output and client first-render both show the spinner, then data appears once session resolves. The improvement over before: session resolves → render immediately (data already in state) vs. session resolves → fetch API → wait → render.
+
 ### Notification System Overhaul — Unified Checker + Consolidation
 
 **Problem:** The notification cron bundled three unrelated jobs (overdue check, critical alerts, AI enrichment) under a single `isHeartbeatRunning` guard. When AI enrichment hung (SEGV), the guard stayed locked and notifications were silently skipped for 10-12 minutes until the server crashed and restarted. Additionally, two separate checkers (`checkOverdueTasks` for P0-P3 and `checkCriticalTasks` for P4) duplicated boundary logic with inconsistent intervals — P4 used the user's configured 5-min interval for web push but a hardcoded 60-min interval for APNs. No notification consolidation meant a burst of 50 overdue tasks generated 50 individual notifications.

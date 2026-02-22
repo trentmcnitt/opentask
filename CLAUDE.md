@@ -4,7 +4,7 @@ OpenTask is a self-hosted task management PWA. This file is the authoritative re
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, and `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts).
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts), and `DEV_LOG.md` for a reverse-chronological journal of design decisions, problems overcome, and narrative context that can't be inferred from git history alone.
 
 ### Source layout
 
