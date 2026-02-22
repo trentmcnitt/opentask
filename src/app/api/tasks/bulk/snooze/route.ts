@@ -15,8 +15,9 @@ import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -54,4 +55,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/tasks/bulk/snooze error:', err)
     return handleError(err)
   }
-}
+})

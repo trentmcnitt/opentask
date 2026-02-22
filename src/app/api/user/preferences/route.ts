@@ -11,6 +11,7 @@ import { success, unauthorized, badRequest, handleError } from '@/lib/api-respon
 import { getDb } from '@/core/db'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project', 'unified'] as const
@@ -49,7 +50,7 @@ function parsePreferencesRow(row: { label_config: string; priority_display: stri
   return { labelConfig, priorityDisplay }
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/user/preferences error:', err)
     return handleError(err)
   }
-}
+})
 
 function validateLabelConfig(input: unknown): LabelConfig[] | string {
   if (!Array.isArray(input)) return 'label_config must be an array'
@@ -422,7 +423,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
+export const PATCH = withLogging(async function PATCH(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
@@ -443,4 +444,4 @@ export async function PATCH(request: NextRequest) {
     log.error('api', 'PATCH /api/user/preferences error:', err)
     return handleError(err)
   }
-}
+})

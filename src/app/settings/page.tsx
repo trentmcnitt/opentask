@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { X } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
+import { useProjects } from '@/components/ProjectsProvider'
+import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +31,7 @@ import { showToast } from '@/lib/toast'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
-import type { LabelColor, LabelConfig, PriorityDisplayConfig } from '@/types'
+import type { LabelColor, LabelConfig, PriorityDisplayConfig, Project } from '@/types'
 
 export default function SettingsPage() {
   const { data: session, status } = useSession()
@@ -63,6 +65,13 @@ export default function SettingsPage() {
   const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
   const [testingSending, setTestingSending] = useState<string | null>(null)
   const push = usePushSubscription()
+  const { projects, refreshProjects } = useProjects()
+  const [projectOrder, setProjectOrder] = useState<Project[]>([])
+
+  // Sync project order from provider
+  useEffect(() => {
+    setProjectOrder(projects)
+  }, [projects])
 
   // Sync draft from loaded preference (once, when a non-null value first arrives)
   useEffect(() => {
@@ -284,6 +293,24 @@ export default function SettingsPage() {
     } catch {
       setAiWhatsNextModel(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleProjectReorder = async (projectIds: number[]) => {
+    const prev = projectOrder
+    setProjectOrder(projectIds.map((id) => prev.find((p) => p.id === id)!).filter(Boolean))
+    try {
+      const res = await fetch('/api/projects/reorder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_ids: projectIds }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      await refreshProjects()
+      showToast({ message: 'Project order saved', type: 'success' })
+    } catch {
+      setProjectOrder(prev)
+      showToast({ message: 'Failed to reorder projects', type: 'error' })
     }
   }
 
@@ -744,6 +771,48 @@ export default function SettingsPage() {
           </p>
           <LabelEditor labels={labelConfig} onSave={saveLabelConfig} />
         </section>
+
+        {/* Projects */}
+        {projectOrder.length > 0 && (
+          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Projects
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Drag to reorder projects. This order is used in the sidebar and project picker.
+            </p>
+            <SortableProjectList
+              projects={projectOrder}
+              onReorder={handleProjectReorder}
+              renderItem={(project, dragHandleProps) => {
+                const full = projectOrder.find((p) => p.id === project.id)
+                const isShared = full?.shared ?? false
+                return (
+                  <div className="flex items-center gap-2 rounded-md border border-transparent px-1 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                    {isShared ? (
+                      <div className="w-4" />
+                    ) : (
+                      <DragHandle
+                        attributes={dragHandleProps.attributes}
+                        listeners={dragHandleProps.listeners}
+                      />
+                    )}
+                    {full?.color && (
+                      <span
+                        className={`size-2.5 flex-shrink-0 rounded-full ${LABEL_COLORS[full.color].dot}`}
+                      />
+                    )}
+                    <span className="flex-1 truncate text-sm">{project.name}</span>
+                    {isShared && <span className="text-xs text-zinc-400">Shared</span>}
+                    <Badge variant="secondary" className="text-xs tabular-nums">
+                      {project.active_count ?? 0}
+                    </Badge>
+                  </div>
+                )
+              }}
+            />
+          </section>
+        )}
 
         {/* AI Context */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">

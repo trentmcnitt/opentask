@@ -13,8 +13,9 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { dismissAllNotifications } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     dismissAllNotifications(user.id)
@@ -24,4 +25,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/notifications/dismiss-all error:', err)
     return handleError(err)
   }
-}
+})

@@ -28,6 +28,7 @@ import { getReviewSession, resolveSeqNumbers, deleteReviewSession } from '@/core
 import { bulkDone, bulkSnooze } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 import { z, ZodError } from 'zod'
 
 const reviewActionSchema = z.object({
@@ -41,7 +42,7 @@ const reviewExecuteSchema = z.object({
   actions: z.array(reviewActionSchema).min(1),
 })
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -106,4 +107,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/review/execute error:', err)
     return handleError(err)
   }
-}
+})

@@ -16,8 +16,9 @@ import { ZodError } from 'zod'
 import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { getProjects } from '@/core/projects'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -37,9 +38,9 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/projects error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -93,4 +94,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/projects error:', err)
     return handleError(err)
   }
-}
+})

@@ -22,8 +22,9 @@ import {
   handleError,
 } from '@/lib/api-response'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
 
@@ -71,4 +72,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/ai/insights/generate error:', err)
     return handleError(err)
   }
-}
+})

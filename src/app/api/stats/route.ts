@@ -11,8 +11,9 @@ import { success, unauthorized, badRequest, handleError } from '@/lib/api-respon
 import { getStatsSummary, getDailyStats } from '@/core/stats'
 import { DateTime } from 'luxon'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -51,4 +52,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/stats error:', err)
     return handleError(err)
   }
-}
+})

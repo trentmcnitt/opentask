@@ -9,8 +9,9 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getUndoHistory } from '@/core/undo'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -48,4 +49,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/undo/history error:', err)
     return handleError(err)
   }
-}
+})

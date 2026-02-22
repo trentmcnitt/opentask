@@ -10,8 +10,9 @@ import {
   getUserWhatsNextModel,
 } from '@/core/ai'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
 
@@ -56,4 +57,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/ai/whats-next error:', err)
     return handleError(err)
   }
-}
+})

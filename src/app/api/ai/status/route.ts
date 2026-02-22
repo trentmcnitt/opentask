@@ -3,8 +3,9 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, serviceUnavailable } from '@/lib/api-response'
 import { isAIEnabled, getEnrichmentSlotStats, getAIActivity, getQueueStats } from '@/core/ai'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
 
@@ -31,4 +32,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/ai/status error:', err)
     return handleError(err)
   }
-}
+})

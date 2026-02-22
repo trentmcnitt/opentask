@@ -5,6 +5,7 @@
  */
 
 import { getDb } from '@/core/db'
+import { log } from '@/lib/logger'
 import type { AuthUser } from '@/types'
 import { toAuthUser } from './helpers'
 
@@ -16,6 +17,7 @@ import { toAuthUser } from './helpers'
  */
 export function validateBearerToken(token: string): AuthUser | null {
   if (!token || token.length < 32) {
+    log.warn('auth', `Bearer token rejected: too short (${token.length} chars)`)
     return null
   }
 
@@ -35,6 +37,7 @@ export function validateBearerToken(token: string): AuthUser | null {
     | undefined
 
   if (!row) {
+    log.warn('auth', `Bearer token rejected: not found (ends ...${token.slice(-8)})`)
     return null
   }
 

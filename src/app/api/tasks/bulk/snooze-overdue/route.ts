@@ -1,12 +1,16 @@
 /**
  * Bulk Snooze Overdue API route
  *
- * POST /api/tasks/bulk/snooze-overdue - Snooze all overdue P0/P1 tasks for the user
+ * POST /api/tasks/bulk/snooze-overdue - Snooze all overdue tasks for the user
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed from client.
  * Queries overdue tasks, applies two-tier filtering via bulkSnooze().
  *
- * Body: { delta_minutes: number }
+ * Computes an absolute snooze target from now (not relative to each task's due_at):
+ * - { delta_minutes: 30 }  → 30 min from now (exact, < 60 min)
+ * - { delta_minutes: 60 }  → 1 hour from now, snapped to nearest hour
+ * - { until: "ISO8601" }   → explicit absolute target
+ * - {} (empty body)        → user's default_snooze_option preference
  */
 
 import { NextRequest } from 'next/server'
@@ -15,15 +19,33 @@ import { success, unauthorized, handleError, handleZodError } from '@/lib/api-re
 import { bulkSnooze } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
+import { computeSnoozeTime } from '@/lib/snooze'
 import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
 import { ZodError } from 'zod'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const body = await request.json()
     const input = validateBulkSnoozeOverdue(body)
+
+    // Compute absolute snooze target from now
+    let until: string
+    if (input.until) {
+      until = input.until
+    } else {
+      // Use delta_minutes from request, or fall back to user's default_snooze_option
+      const db = getDb()
+      const prefs = db
+        .prepare('SELECT default_snooze_option, morning_time FROM users WHERE id = ?')
+        .get(user.id) as { default_snooze_option: string; morning_time: string }
+
+      const option = input.delta_minutes ? String(input.delta_minutes) : prefs.default_snooze_option
+
+      until = computeSnoozeTime(option, user.timezone, prefs.morning_time)
+    }
 
     // Query all overdue, active tasks for this user
     const db = getDb()
@@ -58,7 +80,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       userTimezone: user.timezone,
       taskIds,
-      deltaMinutes: input.delta_minutes,
+      until,
     })
 
     // Dismiss only the tasks that were actually snoozed, not tasks that were
@@ -98,4 +120,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/tasks/bulk/snooze-overdue error:', err)
     return handleError(err)
   }
-}
+})

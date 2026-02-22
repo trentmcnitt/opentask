@@ -24,6 +24,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 import type { RouteContext } from '@/types/api'
+import { withLogging } from '@/lib/with-logging'
 
 function getProjectById(projectId: number, userId: number): ProjectRow | null {
   const db = getDb()
@@ -51,7 +52,7 @@ function canAccessProject(userId: number, project: ProjectRow): boolean {
   return project.owner_id === userId || project.shared === 1
 }
 
-export async function GET(request: NextRequest, context: RouteContext) {
+export const GET = withLogging(async function GET(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -82,9 +83,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     log.error('api', 'GET /api/projects/:id error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
+export const PATCH = withLogging(async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -152,9 +153,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     log.error('api', 'PATCH /api/projects/:id error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
+export const DELETE = withLogging(async function DELETE(
+  request: NextRequest,
+  context: RouteContext,
+) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -223,4 +227,4 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     log.error('api', 'DELETE /api/projects/:id error:', err)
     return handleError(err)
   }
-}
+})

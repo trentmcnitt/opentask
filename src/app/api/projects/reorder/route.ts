@@ -9,8 +9,9 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb, withTransaction } from '@/core/db'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function PATCH(request: NextRequest) {
+export const PATCH = withLogging(async function PATCH(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
@@ -56,4 +57,4 @@ export async function PATCH(request: NextRequest) {
     log.error('api', 'PATCH /api/projects/reorder error:', err)
     return handleError(err)
   }
-}
+})

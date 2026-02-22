@@ -16,8 +16,9 @@ import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { action, task_id, token } = body
@@ -101,4 +102,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/notifications/actions error:', err)
     return handleError(err)
   }
-}
+})

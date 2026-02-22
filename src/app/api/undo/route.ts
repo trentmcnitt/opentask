@@ -9,8 +9,9 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { executeUndo, canUndo, countUndoable, countRedoable } from '@/core/undo'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -41,4 +42,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/undo error:', err)
     return handleError(err)
   }
-}
+})

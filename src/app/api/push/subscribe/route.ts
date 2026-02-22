@@ -3,8 +3,9 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const body = await request.json()
@@ -32,9 +33,9 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/push/subscribe error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withLogging(async function DELETE(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const body = await request.json()
@@ -56,4 +57,4 @@ export async function DELETE(request: NextRequest) {
     log.error('api', 'DELETE /api/push/subscribe error:', err)
     return handleError(err)
   }
-}
+})

@@ -16,8 +16,9 @@ import { validateSnooze } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest, context: RouteContext) {
+export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -58,4 +59,4 @@ export async function POST(request: NextRequest, context: RouteContext) {
     log.error('api', 'POST /api/tasks/:id/snooze error:', err)
     return handleError(err)
   }
-}
+})

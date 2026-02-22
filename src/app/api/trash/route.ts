@@ -11,8 +11,9 @@ import { success, unauthorized, handleError } from '@/lib/api-response'
 import { formatTasksResponse } from '@/lib/format-task'
 import { getTasks, emptyTrash } from '@/core/tasks'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -43,9 +44,9 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/trash error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withLogging(async function DELETE(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -64,4 +65,4 @@ export async function DELETE(request: NextRequest) {
     log.error('api', 'DELETE /api/trash error:', err)
     return handleError(err)
   }
-}
+})
