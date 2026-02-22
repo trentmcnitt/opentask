@@ -427,6 +427,13 @@ Parse the task above and return the structured result.`
     throw new Error('Failed to parse enrichment result')
   }
 
+  // Normalize due_at to UTC — AI may return timezone-offset strings.
+  // Done post-parse because EnrichmentResultSchema uses .refine() (not .transform())
+  // to stay compatible with z.toJSONSchema() for structured output.
+  if (parsed.due_at) {
+    parsed = { ...parsed, due_at: new Date(parsed.due_at).toISOString() }
+  }
+
   applyEnrichment(row, parsed, user, textToEnrich)
 }
 

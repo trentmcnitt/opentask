@@ -41,6 +41,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       if (isNaN(limit) || limit < 1) {
         return badRequest('Invalid limit parameter')
       }
+      limit = Math.min(limit, 1000)
     }
 
     let offset = 0

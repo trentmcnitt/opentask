@@ -40,7 +40,7 @@ function getProjectById(projectId: number, userId: number): ProjectRow | null {
           (SELECT COUNT(*) FROM tasks t
            WHERE t.project_id = p.id AND t.user_id = ?
              AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
-             AND t.due_at IS NOT NULL AND t.due_at < ?
+             AND t.due_at IS NOT NULL AND datetime(t.due_at) < datetime(?)
           ) AS overdue_count
         FROM projects p WHERE p.id = ?`,
       )

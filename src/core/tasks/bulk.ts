@@ -43,10 +43,14 @@ function validateBulkTasks(
   userId: number,
   options: ValidateBulkTasksOptions = {},
 ): Task[] {
+  // Deduplicate IDs to prevent double-processing (e.g., completing a recurring
+  // task multiple times in one call would advance its due_at multiple occurrences)
+  const uniqueIds = [...new Set(taskIds)]
+
   const tasks: Task[] = []
   const failedIds: number[] = []
 
-  for (const taskId of taskIds) {
+  for (const taskId of uniqueIds) {
     const task = getTaskById(taskId)
     if (!task || !canUserAccessTask(userId, task) || task.deleted_at) {
       failedIds.push(taskId)
@@ -415,6 +419,18 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
   let tasks = validateBulkTasks(taskIds, userId)
 
+  // Reject rrule changes on done tasks — setting rrule on a done+archived task creates
+  // an impossible state (done=1 + rrule set) that the system never produces organically
+  let rruleSkippedCount = 0
+  if (changes.rrule !== undefined && changes.rrule !== null) {
+    const beforeCount = tasks.length
+    tasks = tasks.filter((t) => !t.done)
+    rruleSkippedCount = beforeCount - tasks.length
+    if (tasks.length === 0) {
+      return { tasksAffected: 0, tasksSkipped: rruleSkippedCount }
+    }
+  }
+
   // Two-tier priority filter for snooze edits — same logic as bulkSnooze.
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
@@ -515,7 +531,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
     return {
       tasksAffected: snapshots.length,
-      tasksSkipped: snoozeSkippedCount,
+      tasksSkipped: snoozeSkippedCount + rruleSkippedCount,
     }
   })
 

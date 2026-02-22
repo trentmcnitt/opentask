@@ -24,7 +24,9 @@ export function purgeOldAIActivity(): number {
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
   const cutoffIso = cutoffDate.toISOString()
 
-  const result = db.prepare(`DELETE FROM ai_activity_log WHERE created_at < ?`).run(cutoffIso)
+  const result = db
+    .prepare(`DELETE FROM ai_activity_log WHERE datetime(created_at) < datetime(?)`)
+    .run(cutoffIso)
 
   if (result.changes > 0) {
     log.info(

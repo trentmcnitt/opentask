@@ -25,7 +25,7 @@ describe('Task CRUD integration', () => {
     const fetched = (await getRes.json()).data
 
     expect(fetched.title).toBe('Integration test task')
-    expect(fetched.due_at).toBe('2025-06-15T14:00:00Z')
+    expect(fetched.due_at).toBe('2025-06-15T14:00:00.000Z')
     expect(fetched.priority).toBe(2)
     expect(fetched.project_id).toBe(1)
     expect(fetched.labels).toEqual(['test'])

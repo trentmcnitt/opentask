@@ -72,21 +72,21 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 5. **project_name** — Suggested project name from the available projects list, or null. Match when the user explicitly mentions a project ("add it to Work", "put this in Home") OR when the content has a clear, unambiguous fit (groceries → "Shopping List"). Return null for ambiguous matches — if you have to guess which project, return null. Projects marked as "shared" are available to all users.
 
-6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY, HOURLY, MINUTELY, SECONDLY. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. Parse recurrence patterns:
+6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY. FREQ=HOURLY, FREQ=MINUTELY, and FREQ=SECONDLY are NOT supported — use auto_snooze_minutes for sub-daily repeats. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. FREQ=WEEKLY MUST include BYDAY. FREQ=MONTHLY MUST include BYMONTHDAY or BYDAY. Do NOT include COUNT or UNTIL (only infinite recurrence is supported). Parse recurrence patterns:
    - "every day" → FREQ=DAILY
    - "every Monday" → FREQ=WEEKLY;BYDAY=MO
    - "every weekday" → FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
    - "every month on the 1st" → FREQ=MONTHLY;BYMONTHDAY=1
-   - "every 2 weeks" → FREQ=WEEKLY;INTERVAL=2
+   - "every 2 weeks" → FREQ=WEEKLY;INTERVAL=2;BYDAY=MO (must include BYDAY)
    - "twice a week" → FREQ=WEEKLY;INTERVAL=1;BYDAY=TU,TH (pick two spread-out days when the user doesn't specify)
    - "twice a month" → FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=1,15
-   - "every quarter" / "every 3 months" → FREQ=MONTHLY;INTERVAL=3
-   - "every 4 hours" → FREQ=HOURLY;INTERVAL=4
-   - "every 90 minutes" → FREQ=MINUTELY;INTERVAL=90
+   - "every quarter" / "every 3 months" → FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1 (must include BYMONTHDAY)
+   - "every 4 hours" → use auto_snooze_minutes: 240 (sub-daily repeats are auto-snooze, not rrule)
+   - "every 90 minutes" → use auto_snooze_minutes: 90 (sub-daily repeats are auto-snooze, not rrule)
    If no recurrence is mentioned, return null. Only use standard RFC 5545 syntax. Do not include DTSTART. INTERVAL must always be a positive integer — never use fractional values.
 
 7. **auto_snooze_minutes** — Integer or null. Parse "auto-snooze 30 minutes" (30), "snooze every hour" (60), "auto-snooze off" (0). Return null if not mentioned. Range: 0-1440. IMPORTANT: Auto-snooze is NOT recurrence. "Auto-snooze every hour" means the task gets re-snoozed every hour — it does NOT create an rrule. When "every X" appears alongside "auto-snooze" or "snooze", it sets auto_snooze_minutes, not rrule.
-   WRONG: "snooze every hour" → rrule: "FREQ=HOURLY"
+   WRONG: "snooze every hour" → rrule: "FREQ=DAILY" (sub-daily is NOT rrule)
    RIGHT: "snooze every hour" → auto_snooze_minutes: 60, rrule: null
 
 8. **recurrence_mode** — "from_due" or "from_completion", or null. Parse "repeat from completion", "after I finish", "from when I complete it" → "from_completion". Default null (system uses "from_due"). Only set to "from_completion" if the user explicitly requests it.
@@ -602,5 +602,5 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Return due_at as UTC (convert from user's timezone)
 - When uncertain, leave fields null (0 for priority, empty array for labels)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
-- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY, HOURLY, MINUTELY, SECONDLY (no QUARTERLY, BIWEEKLY, etc.)
+- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
 - Return valid JSON only (no markdown fences, no text outside the JSON object)`

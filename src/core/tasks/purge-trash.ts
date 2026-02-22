@@ -27,7 +27,7 @@ export function purgeOldTrash(): number {
       DELETE FROM ai_insights_results
       WHERE task_id IN (
         SELECT id FROM tasks
-        WHERE deleted_at IS NOT NULL AND deleted_at < ?
+        WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)
       )
     `,
     ).run(cutoffIso)
@@ -37,14 +37,16 @@ export function purgeOldTrash(): number {
       DELETE FROM completions
       WHERE task_id IN (
         SELECT id FROM tasks
-        WHERE deleted_at IS NOT NULL AND deleted_at < ?
+        WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)
       )
     `,
     ).run(cutoffIso)
 
     // Finally, delete the tasks themselves
     const result = tx
-      .prepare(`DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?`)
+      .prepare(
+        `DELETE FROM tasks WHERE deleted_at IS NOT NULL AND datetime(deleted_at) < datetime(?)`,
+      )
       .run(cutoffIso)
 
     return result.changes

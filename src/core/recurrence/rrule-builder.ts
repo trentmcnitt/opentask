@@ -15,6 +15,8 @@ export interface RRuleComponents {
   byday?: number[] // 0=Mon..6=Sun
   bymonthday?: number | number[] // 1-31 or -1 for last day
   bysetpos?: number // For patterns like "last Friday" (-1)
+  /** Set by parseRRule when COUNT or UNTIL is found in the input string */
+  hasUnsupportedTerminator?: boolean
 }
 
 /**
@@ -105,6 +107,12 @@ export function parseRRule(rrule: string): RRuleComponents {
       case 'BYSETPOS':
         result.bysetpos = parseInt(value, 10)
         break
+      case 'COUNT':
+      case 'UNTIL':
+        // OpenTask does not support finite recurrence (COUNT/UNTIL). Flag so
+        // isValidRRule can reject these rather than silently dropping them.
+        result.hasUnsupportedTerminator = true
+        break
     }
   }
 
@@ -112,11 +120,20 @@ export function parseRRule(rrule: string): RRuleComponents {
 }
 
 /**
- * Validate parsed RRULE components against allowed ranges
+ * Validate parsed RRULE components against allowed ranges and semantic rules.
+ *
+ * Beyond range checks, enforces:
+ * - FREQ=WEEKLY requires at least one BYDAY (without it, rrule.js defaults to
+ *   the dtstart day-of-week, which is always Wednesday — a silent data corruption)
+ * - FREQ=MONTHLY requires BYMONTHDAY or BYDAY (same dtstart-default problem)
+ * - BYMONTHDAY=0 is invalid per RFC 5545 (valid range: -31..-1, 1..31)
+ * - INTERVAL capped at 365 to prevent effectively non-recurring tasks
+ * - COUNT/UNTIL rejected (OpenTask only supports infinite recurrence)
  */
 function validateComponents(components: RRuleComponents): boolean {
   if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(components.freq)) return false
-  if (components.interval !== undefined && components.interval < 1) return false
+  if (components.interval !== undefined && (components.interval < 1 || components.interval > 365))
+    return false
   if (components.byhour !== undefined && (components.byhour < 0 || components.byhour > 23))
     return false
   if (components.byminute !== undefined && (components.byminute < 0 || components.byminute > 59))
@@ -126,8 +143,24 @@ function validateComponents(components: RRuleComponents): boolean {
     const days = Array.isArray(components.bymonthday)
       ? components.bymonthday
       : [components.bymonthday]
-    if (days.some((day) => (day < -31 || day > 31) && day !== 0)) return false
+    if (days.some((day) => day === 0 || day < -31 || day > 31)) return false
   }
+
+  // FREQ=WEEKLY requires BYDAY — without it, rrule.js uses dtstart's day (always Wednesday)
+  if (components.freq === 'WEEKLY' && (!components.byday || components.byday.length === 0))
+    return false
+
+  // FREQ=MONTHLY requires BYMONTHDAY or BYDAY — without it, defaults to dtstart's day-of-month
+  if (
+    components.freq === 'MONTHLY' &&
+    components.bymonthday === undefined &&
+    (!components.byday || components.byday.length === 0)
+  )
+    return false
+
+  // Reject COUNT/UNTIL — OpenTask only supports infinite recurrence
+  if (components.hasUnsupportedTerminator) return false
+
   return true
 }
 

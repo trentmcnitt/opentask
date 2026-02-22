@@ -33,8 +33,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return unauthorized('Invalid token')
     }
 
-    if (!task_id || typeof task_id !== 'number') {
-      return badRequest('task_id required')
+    if (!task_id || typeof task_id !== 'number' || !Number.isInteger(task_id) || task_id <= 0) {
+      return badRequest('task_id must be a positive integer')
     }
 
     log.info('notifications', `Action received: ${action} on task ${task_id} by user ${user.id}`)

@@ -469,7 +469,7 @@ describe('Recurrence Changes via Task Update', () => {
    * jumping to the future when only the schedule is changing.
    *
    * Task: due_at=yesterday (OVERDUE), rrule=FREQ=DAILY
-   * Action: Change rrule to FREQ=WEEKLY
+   * Action: Change rrule to FREQ=WEEKLY;BYDAY=MO
    * Result: due_at unchanged (still overdue), original_due_at cleared
    */
   test('RD-011: Overdue task + rrule change keeps due_at unchanged', () => {
@@ -512,7 +512,7 @@ describe('Recurrence Changes via Task Update', () => {
    * due_at is automatically computed to the next occurrence of the new pattern.
    *
    * Task: due_at=tomorrow, rrule=FREQ=DAILY
-   * Action: Change rrule to FREQ=WEEKLY
+   * Action: Change rrule to FREQ=WEEKLY;BYDAY=MO
    * Result: due_at auto-computed to next occurrence
    */
   test('RD-012: Non-overdue task + rrule change auto-computes due_at', () => {

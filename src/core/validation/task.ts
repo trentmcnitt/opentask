@@ -7,14 +7,26 @@ import { isValidRRule } from '@/core/recurrence/rrule-builder'
 
 /**
  * ISO 8601 datetime string validator
+ *
+ * Normalizes all datetime inputs to UTC (e.g., "2026-02-22T09:00:00-06:00"
+ * becomes "2026-02-22T15:00:00.000Z"). This prevents string-comparison bugs
+ * in SQLite queries where a timezone-offset value like "09:00:00-06:00" would
+ * sort before "14:00:00.000Z" even though it represents a later moment.
+ *
+ * Exported for reuse by review execute, AI schemas, and other modules that
+ * write datetime values to the database.
  */
-const dateTimeString = z.string().refine(
-  (val) => {
-    const d = new Date(val)
-    return !isNaN(d.getTime())
-  },
-  { message: 'Invalid ISO 8601 datetime string' },
-)
+export const dateTimeString = z.string().transform((val, ctx) => {
+  const d = new Date(val)
+  if (isNaN(d.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Invalid ISO 8601 datetime string',
+    })
+    return z.NEVER
+  }
+  return d.toISOString()
+})
 
 /**
  * Priority levels: 0=unset, 1=low, 2=medium, 3=high, 4=urgent
@@ -27,9 +39,12 @@ const priority = z.number().int().min(0).max(4)
 const recurrenceMode = z.enum(['from_due', 'from_completion'])
 
 /**
- * Labels array
+ * Labels array — bounded to prevent resource exhaustion.
+ * Max 50 labels, each 1-100 characters.
  */
-const labels = z.array(z.string())
+const labels = z
+  .array(z.string().min(1, 'Label cannot be empty').max(100, 'Label too long'))
+  .max(50, 'Too many labels (max 50)')
 
 /**
  * Auto-snooze minutes: null = use user default, 0 = off, 1-360 = custom minutes
@@ -47,10 +62,18 @@ const rruleString = z
   .refine((val) => !val || isValidRRule(val), { message: 'Invalid RRULE format' })
 
 /**
+ * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
+ */
+const bulkIds = z
+  .array(z.number().int().positive())
+  .min(1, 'At least one task ID required')
+  .max(500, 'Too many task IDs (max 500)')
+
+/**
  * Task creation input schema
  */
 export const taskCreateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(10000, 'Title too long'),
+  title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long'),
   due_at: dateTimeString.nullable().optional(),
   rrule: rruleString,
   recurrence_mode: recurrenceMode.default('from_due').optional(),
@@ -68,7 +91,7 @@ export type TaskCreateInput = z.infer<typeof taskCreateSchema>
  * All fields optional - only included fields are updated
  */
 export const taskUpdateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(10000, 'Title too long').optional(),
+  title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long').optional(),
   due_at: dateTimeString.nullable().optional(),
   rrule: rruleString,
   recurrence_mode: recurrenceMode.optional(),
@@ -95,7 +118,7 @@ export type SnoozeInput = z.infer<typeof snoozeSchema>
  * Bulk done input schema
  */
 export const bulkDoneSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
+  ids: bulkIds,
 })
 
 export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
@@ -109,9 +132,14 @@ export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
  */
 export const bulkSnoozeSchema = z
   .object({
-    ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
+    ids: bulkIds,
     until: dateTimeString.optional(),
-    delta_minutes: z.number().int().optional(),
+    delta_minutes: z
+      .number()
+      .int()
+      .min(-1440, 'Cannot go back more than 24 hours')
+      .max(525600, 'Cannot snooze more than 1 year')
+      .optional(),
   })
   .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
     message: 'Either until or delta_minutes must be provided',
@@ -131,7 +159,7 @@ export type BulkSnoozeInput = z.infer<typeof bulkSnoozeSchema>
  * - labels_remove: Removes labels from each task's existing labels
  */
 export const bulkEditSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
+  ids: bulkIds,
   changes: taskUpdateSchema.extend({
     labels_add: labels.optional(),
     labels_remove: labels.optional(),
@@ -144,7 +172,7 @@ export type BulkEditInput = z.infer<typeof bulkEditSchema>
  * Bulk delete input schema
  */
 export const bulkDeleteSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1, 'At least one task ID required'),
+  ids: bulkIds,
 })
 
 export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>
@@ -195,7 +223,12 @@ export function validateBulkDelete(input: unknown): BulkDeleteInput {
  */
 export const bulkSnoozeOverdueSchema = z
   .object({
-    delta_minutes: z.number().int().positive('delta_minutes must be positive').optional(),
+    delta_minutes: z
+      .number()
+      .int()
+      .min(1, 'delta_minutes must be positive')
+      .max(525600, 'Cannot snooze more than 1 year')
+      .optional(),
     until: dateTimeString.optional(),
   })
   .refine((data) => !(data.delta_minutes !== undefined && data.until !== undefined), {

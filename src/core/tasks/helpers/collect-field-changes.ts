@@ -174,8 +174,14 @@ function collectBasicFields(
     }
   }
 
+  // Only allow recurrence_mode changes when the task has (or is getting) an rrule.
+  // Setting recurrence_mode on a non-recurring task creates orphaned metadata that
+  // would surprise users if the task later becomes recurring.
   if (input.recurrence_mode !== undefined && input.recurrence_mode !== task.recurrence_mode) {
-    trackField(data, 'recurrence_mode', task.recurrence_mode, input.recurrence_mode)
+    const effectiveRrule = input.rrule !== undefined ? input.rrule : task.rrule
+    if (effectiveRrule !== null) {
+      trackField(data, 'recurrence_mode', task.recurrence_mode, input.recurrence_mode)
+    }
   }
 
   if (input.notes !== undefined && input.notes !== task.notes) {
@@ -209,7 +215,7 @@ function collectRruleChanges(
   trackField(data, 'rrule', task.rrule, input.rrule)
 
   if (input.rrule === null) {
-    // Clearing recurrence - null out anchor fields
+    // Clearing recurrence - null out anchor fields and reset recurrence_mode
     data.setClauses.push('anchor_time = NULL, anchor_dow = NULL, anchor_dom = NULL')
     data.fieldsChanged.push('anchor_time', 'anchor_dow', 'anchor_dom')
     data.beforeState.anchor_time = task.anchor_time
@@ -218,6 +224,11 @@ function collectRruleChanges(
     data.afterState.anchor_time = null
     data.afterState.anchor_dow = null
     data.afterState.anchor_dom = null
+
+    // Reset recurrence_mode to default when clearing rrule
+    if (task.recurrence_mode !== 'from_due') {
+      trackField(data, 'recurrence_mode', task.recurrence_mode, 'from_due')
+    }
   } else {
     // Setting/changing recurrence - derive anchor fields
     const dueAtForAnchors = data.afterState.due_at ?? task.due_at
