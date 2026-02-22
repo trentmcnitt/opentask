@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { SessionProvider } from '@/components/SessionProvider'
 import { PreferencesProvider } from '@/components/PreferencesProvider'
+import { ProjectsProvider } from '@/components/ProjectsProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -10,6 +11,7 @@ import './globals.css'
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
@@ -40,8 +42,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <SessionProvider>
             <PreferencesProvider>
-              <AppLayoutWrapper>{children}</AppLayoutWrapper>
-              <Toaster position="bottom-center" />
+              <ProjectsProvider>
+                <AppLayoutWrapper>{children}</AppLayoutWrapper>
+                <Toaster position="bottom-center" />
+              </ProjectsProvider>
             </PreferencesProvider>
           </SessionProvider>
         </ThemeProvider>
