@@ -21,6 +21,7 @@ import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/
 import { sendApnsNotification, isApnsConfigured } from '@/core/notifications/apns'
 import { createTask } from '@/core/tasks'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { withLogging } from '@/lib/with-logging'
 
 const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
 
@@ -45,7 +46,7 @@ const TYPE_TITLE: Record<TestType, string> = {
   critical: 'Test urgent alert',
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const body = await request.json()
@@ -133,4 +134,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/notifications/test error:', err)
     return handleError(err)
   }
-}
+})

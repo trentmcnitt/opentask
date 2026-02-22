@@ -9,8 +9,9 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { getInsightsSessionStatus } from '@/core/ai'
 import { success, unauthorized, badRequest, notFound, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
 
@@ -40,4 +41,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/ai/insights/status error:', err)
     return handleError(err)
   }
-}
+})

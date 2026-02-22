@@ -274,6 +274,8 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 
 ### Route handler pattern
 
+All route handlers are wrapped with `withLogging()` from `@/lib/with-logging`, which logs every request with method, path, status, duration, and auth type. Log level varies by status: 5xx → `error`, 4xx → `warn`, 2xx → `info`. Uses the `http` namespace.
+
 Preferred pattern using `requireAuth` (adapted from `src/app/api/tasks/[id]/route.ts`, which still uses `getAuthUser`):
 
 ```ts
@@ -282,12 +284,13 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 import { updateTask } from '@/core/tasks'
 import { validateTaskUpdate } from '@/core/validation'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
+export const PATCH = withLogging(async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const user = await requireAuth(request)
     const { id } = await context.params // Next.js 16 requires await
@@ -309,7 +312,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     log.error('api', 'PATCH /api/tasks/:id error:', err)
     return handleError(err)
   }
-}
+})
 ```
 
 Both `getAuthUser` and `requireAuth` are valid — see [Authentication](#authentication) for guidance on which to use. All handlers should log errors before calling `handleError()`.
@@ -328,6 +331,7 @@ Follow the pattern above, and verify:
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
+- [ ] Wrap handlers with `withLogging()` from `@/lib/with-logging` (use named function expression for stack traces)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
 
 ## Development and Testing

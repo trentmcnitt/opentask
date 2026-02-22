@@ -15,8 +15,9 @@ import { reprocessTask } from '@/core/tasks'
 import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest, context: RouteContext) {
+export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
@@ -43,4 +44,4 @@ export async function POST(request: NextRequest, context: RouteContext) {
     log.error('api', 'POST /api/tasks/:id/reprocess error:', err)
     return handleError(err)
   }
-}
+})

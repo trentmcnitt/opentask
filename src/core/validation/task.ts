@@ -185,10 +185,22 @@ export function validateBulkDelete(input: unknown): BulkDeleteInput {
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed.
  * Server queries overdue P0/P1 tasks for the user.
+ *
+ * All fields are optional:
+ * - `delta_minutes`: Minutes from now (with rounding: snapToHour for >= 60 min)
+ * - `until`: Absolute ISO 8601 target time
+ * - Neither: Uses the user's default_snooze_option preference
+ *
+ * `delta_minutes` and `until` are mutually exclusive.
  */
-export const bulkSnoozeOverdueSchema = z.object({
-  delta_minutes: z.number().int().positive('delta_minutes must be positive'),
-})
+export const bulkSnoozeOverdueSchema = z
+  .object({
+    delta_minutes: z.number().int().positive('delta_minutes must be positive').optional(),
+    until: dateTimeString.optional(),
+  })
+  .refine((data) => !(data.delta_minutes !== undefined && data.until !== undefined), {
+    message: 'Cannot provide both until and delta_minutes',
+  })
 
 export type BulkSnoozeOverdueInput = z.infer<typeof bulkSnoozeOverdueSchema>
 

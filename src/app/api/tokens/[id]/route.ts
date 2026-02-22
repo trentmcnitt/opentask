@@ -9,9 +9,13 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 import type { RouteContext } from '@/types/api'
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
+export const DELETE = withLogging(async function DELETE(
+  request: NextRequest,
+  context: RouteContext,
+) {
   try {
     const user = await requireAuth(request)
     const { id } = await context.params
@@ -35,4 +39,4 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     log.error('api', 'DELETE /api/tokens/:id error:', err)
     return handleError(err)
   }
-}
+})

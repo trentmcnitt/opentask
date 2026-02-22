@@ -13,8 +13,9 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { markUndone } from '@/core/tasks'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
+import { withLogging } from '@/lib/with-logging'
 
-export async function POST(request: NextRequest, context: RouteContext) {
+export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -42,4 +43,4 @@ export async function POST(request: NextRequest, context: RouteContext) {
     log.error('api', 'POST /api/tasks/:id/undone error:', err)
     return handleError(err)
   }
-}
+})

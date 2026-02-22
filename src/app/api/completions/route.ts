@@ -11,6 +11,7 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { withLogging } from '@/lib/with-logging'
 
 interface CompletionRow {
   id: number
@@ -22,7 +23,7 @@ interface CompletionRow {
   task_title: string
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -87,4 +88,4 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/completions error:', err)
     return handleError(err)
   }
-}
+})

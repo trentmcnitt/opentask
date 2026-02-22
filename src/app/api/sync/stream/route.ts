@@ -13,12 +13,13 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { unauthorized } from '@/lib/api-response'
 import { onSyncEvent, offSyncEvent, type SyncListener } from '@/lib/sync-events'
+import { withLogging } from '@/lib/with-logging'
 
 export const dynamic = 'force-dynamic'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   let user
   try {
     user = await getAuthUser(request)
@@ -78,4 +79,4 @@ export async function GET(request: NextRequest) {
       Connection: 'keep-alive',
     },
   })
-}
+})

@@ -21,12 +21,12 @@ describe('Bulk snooze-overdue integration', () => {
     expect(res.status).toBe(401)
   })
 
-  test('POST requires delta_minutes', async () => {
+  test('POST with empty body uses user defaults', async () => {
     const res = await apiFetch('/api/tasks/bulk/snooze-overdue', {
       method: 'POST',
       body: {},
     })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
   })
 
   test('POST requires positive delta_minutes', async () => {

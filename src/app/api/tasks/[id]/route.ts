@@ -16,8 +16,9 @@ import { validateTaskUpdate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest, context: RouteContext) {
+export const GET = withLogging(async function GET(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -49,9 +50,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     log.error('api', 'GET /api/tasks/:id error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function PATCH(request: NextRequest, context: RouteContext) {
+export const PATCH = withLogging(async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -95,9 +96,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     log.error('api', 'PATCH /api/tasks/:id error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
+export const DELETE = withLogging(async function DELETE(
+  request: NextRequest,
+  context: RouteContext,
+) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -129,4 +133,4 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     log.error('api', 'DELETE /api/tasks/:id error:', err)
     return handleError(err)
   }
-}
+})

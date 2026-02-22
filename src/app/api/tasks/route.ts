@@ -14,8 +14,9 @@ import { validateTaskCreate } from '@/core/validation'
 import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
+import { withLogging } from '@/lib/with-logging'
 
-export async function GET(request: NextRequest) {
+export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -80,9 +81,9 @@ export async function GET(request: NextRequest) {
     log.error('api', 'GET /api/tasks error:', err)
     return handleError(err)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) {
@@ -116,4 +117,4 @@ export async function POST(request: NextRequest) {
     log.error('api', 'POST /api/tasks error:', err)
     return handleError(err)
   }
-}
+})
