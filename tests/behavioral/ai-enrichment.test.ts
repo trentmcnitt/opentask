@@ -231,7 +231,7 @@ describe('enrichment success path', () => {
     const after = getTaskById(task.id)!
     expect(after.title).toBe('Call dentist')
     expect(after.priority).toBe(3)
-    expect(after.due_at).toBe('2026-02-20T14:00:00Z')
+    expect(after.due_at).toBe('2026-02-20T14:00:00.000Z')
     expect(after.labels).not.toContain('errand')
     expect(after.labels).not.toContain('ai-to-process')
   })

@@ -46,8 +46,10 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   if (!prefetchedTask) {
     // Only validate access if caller didn't pre-validate
     if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
-    if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
   }
+  // Always check deleted_at, even for prefetched tasks — prevents future callers
+  // from accidentally bypassing this guard by passing prefetchedTask
+  if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
 
   const data = collectFieldChanges({
     task,

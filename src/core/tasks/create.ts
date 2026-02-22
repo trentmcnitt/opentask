@@ -259,10 +259,12 @@ export function getTasks(options: GetTasksOptions): Task[] {
     conditions.push('tasks.rrule IS NULL')
   }
 
-  // Search by title and notes
+  // Search by title and notes — escape SQL LIKE wildcards so literal % and _ in
+  // the search term don't act as wildcards
   if (options.search) {
-    conditions.push('(tasks.title LIKE ? OR tasks.notes LIKE ?)')
-    params.push(`%${options.search}%`, `%${options.search}%`)
+    const escaped = options.search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+    conditions.push("(tasks.title LIKE ? ESCAPE '\\' OR tasks.notes LIKE ? ESCAPE '\\')")
+    params.push(`%${escaped}%`, `%${escaped}%`)
   }
 
   // Filter by label

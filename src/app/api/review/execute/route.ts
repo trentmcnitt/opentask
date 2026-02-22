@@ -30,11 +30,12 @@ import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { z, ZodError } from 'zod'
+import { dateTimeString } from '@/core/validation/task'
 
 const reviewActionSchema = z.object({
   type: z.enum(['done', 'snooze', 'skip']),
   targets: z.array(z.string()).min(1),
-  until: z.string().optional(),
+  until: dateTimeString.optional(),
 })
 
 const reviewExecuteSchema = z.object({

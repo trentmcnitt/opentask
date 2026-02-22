@@ -394,7 +394,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Take the dog out" or similar. ' +
         'auto_snooze_minutes must be 120 (2 hours converted to minutes). ' +
-        'rrule should reflect "every 4 hours" — likely FREQ=HOURLY;INTERVAL=4 or FREQ=DAILY. ' +
+        'rrule should be null — sub-daily recurrence uses auto_snooze_minutes: 240, not rrule. ' +
         'due_at should be 7am Chicago time in UTC. ' +
         'Labels must be an empty array — no explicit label request in input.',
     },

@@ -23,7 +23,9 @@ export function purgeOldCompletions(): number {
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays)
   const cutoffIso = cutoffDate.toISOString()
 
-  const result = db.prepare(`DELETE FROM completions WHERE completed_at < ?`).run(cutoffIso)
+  const result = db
+    .prepare(`DELETE FROM completions WHERE datetime(completed_at) < datetime(?)`)
+    .run(cutoffIso)
 
   if (result.changes > 0) {
     log.info(

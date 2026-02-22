@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod'
+import { isValidRRule } from '@/core/recurrence/rrule-builder'
 
 /**
  * Structured output schema for task enrichment.
@@ -21,7 +22,7 @@ export const EnrichmentResultSchema = z.object({
     .string()
     .nullable()
     .describe('ISO 8601 UTC datetime, or null if no date mentioned')
-    .refine((val) => val === null || !isNaN(Date.parse(val)), {
+    .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'due_at must be a valid ISO 8601 datetime',
     }),
   priority: z.number().int().min(0).max(4).describe('0=unset, 1=low, 2=medium, 3=high, 4=urgent'),
@@ -31,8 +32,8 @@ export const EnrichmentResultSchema = z.object({
     .string()
     .nullable()
     .describe('RFC 5545 RRULE string, or null if not recurring')
-    .refine((val) => val === null || val.startsWith('FREQ='), {
-      message: 'rrule must be a valid RFC 5545 RRULE string starting with FREQ=',
+    .refine((val) => val === null || isValidRRule(val), {
+      message: 'rrule must be a valid RFC 5545 RRULE string',
     }),
   auto_snooze_minutes: z
     .number()

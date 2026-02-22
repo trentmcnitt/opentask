@@ -742,7 +742,7 @@ describe('Bulk Edit Snooze & Recurrence', () => {
    * a new baseline.
    *
    * Task: multiple snoozed tasks
-   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY' }
+   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY;BYDAY=MO' }
    * Result: original_due_at=NULL for all
    */
   test('BE-003: bulkEdit rrule change clears snooze tracking', () => {
@@ -822,7 +822,7 @@ describe('Bulk Edit Snooze & Recurrence', () => {
    * (not auto-computed) so tasks remain overdue.
    *
    * Task: multiple overdue tasks
-   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY' }
+   * Action: bulkEdit with { rrule: 'FREQ=WEEKLY;BYDAY=MO' }
    * Result: due_at unchanged (all still overdue)
    */
   test('BE-004: bulkEdit rrule change on overdue tasks preserves due_at', () => {

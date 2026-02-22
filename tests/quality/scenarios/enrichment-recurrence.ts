@@ -193,7 +193,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
   {
     id: 'enrich-recurrence-hourly',
     feature: 'enrichment',
-    description: 'Hourly recurrence — must use FREQ=HOURLY, not auto-snooze',
+    description: 'Sub-daily recurrence — must use auto_snooze_minutes, not rrule',
     input: {
       text: 'check the oven every 2 hours starting at noon',
       timezone: 'America/Chicago',
@@ -201,13 +201,13 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
-        auto_snooze_minutes: null,
+        auto_snooze_minutes: 120,
         labels: [],
       },
       quality_notes:
         'Title: "Check the oven" (recurrence phrase removed). ' +
-        'rrule should be FREQ=HOURLY;INTERVAL=2 — this is actual recurrence, not auto-snooze. ' +
-        'auto_snooze_minutes should be null (no "auto-snooze" or "snooze" keyword). ' +
+        'auto_snooze_minutes should be 120 — this is sub-daily recurrence, not rrule. ' +
+        'FREQ=HOURLY is not supported; sub-daily intervals use auto_snooze_minutes instead. ' +
         'due_at should be noon Chicago time in UTC.',
     },
   },
