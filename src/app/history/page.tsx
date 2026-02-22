@@ -15,8 +15,12 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { BatchUndoDialog } from '@/components/BatchUndoDialog'
 import { showToast } from '@/lib/toast'
+import dynamic from 'next/dynamic'
+
+const BatchUndoDialog = dynamic(() =>
+  import('@/components/BatchUndoDialog').then((mod) => ({ default: mod.BatchUndoDialog })),
+)
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
 import type { Task, UndoAction } from '@/types'

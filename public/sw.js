@@ -130,7 +130,26 @@ self.addEventListener('notificationclick', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  // Only handle navigation requests with cache fallback
+  const url = new URL(event.request.url)
+
+  // Cache-first for Next.js static assets (content-hashed, immutable)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone()
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
+          }
+          return response
+        })
+      }),
+    )
+    return
+  }
+
+  // Navigation: network-first with offline fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() =>
