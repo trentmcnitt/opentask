@@ -28,8 +28,9 @@ const DAYS_OF_WEEK = [
 
 // Generate hour options (1-12)
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
-// Generate minute options (00, 15, 30, 45)
-const MINUTE_OPTIONS = [0, 15, 30, 45]
+// Generate minute options (0-59), with common presets bolded
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => i)
+const PRESET_MINUTES = new Set([0, 15, 30, 45])
 
 function useRRuleBuilder(
   frequency: Frequency,
@@ -253,7 +254,9 @@ function TimePicker({
         <SelectContent>
           {MINUTE_OPTIONS.map((m) => (
             <SelectItem key={m} value={m.toString()}>
-              {m.toString().padStart(2, '0')}
+              <span className={PRESET_MINUTES.has(m) ? 'font-semibold' : ''}>
+                {m.toString().padStart(2, '0')}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>
