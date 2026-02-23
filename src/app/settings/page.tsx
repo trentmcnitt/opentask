@@ -5,13 +5,23 @@ import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { X } from 'lucide-react'
+import { X, Trash2 } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
 import { useProjects } from '@/components/ProjectsProvider'
 import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   useLabelConfig,
   usePriorityDisplay,
@@ -64,9 +74,15 @@ export default function SettingsPage() {
   const [customAutoSnoozeHighMinutes, setCustomAutoSnoozeHighMinutes] = useState('')
   const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
   const [testingSending, setTestingSending] = useState<string | null>(null)
+  const [isNativeApp, setIsNativeApp] = useState(false)
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
   const push = usePushSubscription()
   const { projects, refreshProjects } = useProjects()
   const [projectOrder, setProjectOrder] = useState<Project[]>([])
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectColor, setNewProjectColor] = useState<LabelColor>('blue')
+  const [creatingProject, setCreatingProject] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
 
   // Sync project order from provider
   useEffect(() => {
@@ -84,6 +100,13 @@ export default function SettingsPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
+
+  // Detect if running inside the native iOS app wrapper (injected by WKWebView)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && '__OPENTASK_IOS' in window) {
+      setIsNativeApp(true)
+    }
+  }, [])
 
   const saveLabelConfig = async (newConfig: LabelConfig[]) => {
     const prev = labelConfig
@@ -311,6 +334,41 @@ export default function SettingsPage() {
     } catch {
       setProjectOrder(prev)
       showToast({ message: 'Failed to reorder projects', type: 'error' })
+    }
+  }
+
+  const handleCreateProject = async () => {
+    const trimmed = newProjectName.trim()
+    if (!trimmed || creatingProject) return
+    setCreatingProject(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed, color: newProjectColor }),
+      })
+      if (!res.ok) throw new Error('Failed to create')
+      await refreshProjects()
+      setNewProjectName('')
+      showToast({ message: 'Project created', type: 'success' })
+    } catch {
+      showToast({ message: 'Failed to create project', type: 'error' })
+    } finally {
+      setCreatingProject(false)
+    }
+  }
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return
+    try {
+      const res = await fetch(`/api/projects/${projectToDelete.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      await refreshProjects()
+      showToast({ message: 'Project deleted. Tasks moved to Inbox.', type: 'success' })
+    } catch {
+      showToast({ message: 'Failed to delete project', type: 'error' })
+    } finally {
+      setProjectToDelete(null)
     }
   }
 
@@ -773,20 +831,21 @@ export default function SettingsPage() {
         </section>
 
         {/* Projects */}
-        {projectOrder.length > 0 && (
-          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Projects
-            </h2>
-            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Drag to reorder projects. This order is used in the sidebar and project picker.
-            </p>
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Projects
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Drag to reorder projects. This order is used in the sidebar and project picker.
+          </p>
+          {projectOrder.length > 0 && (
             <SortableProjectList
               projects={projectOrder}
               onReorder={handleProjectReorder}
               renderItem={(project, dragHandleProps) => {
                 const full = projectOrder.find((p) => p.id === project.id)
                 const isShared = full?.shared ?? false
+                const canDelete = !isShared && full?.name !== 'Inbox'
                 return (
                   <div className="flex items-center gap-2 rounded-md border border-transparent px-1 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900">
                     {isShared ? (
@@ -807,12 +866,83 @@ export default function SettingsPage() {
                     <Badge variant="secondary" className="text-xs tabular-nums">
                       {project.active_count ?? 0}
                     </Badge>
+                    {canDelete && full && (
+                      <button
+                        onClick={() => setProjectToDelete(full)}
+                        className="text-zinc-300 transition-colors hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400"
+                        aria-label={`Delete ${full.name}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 )
               }}
             />
-          </section>
-        )}
+          )}
+
+          {/* Add new project row */}
+          <div className="flex items-center gap-2 pt-2">
+            <Input
+              type="text"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateProject()
+              }}
+              placeholder="New project"
+              maxLength={200}
+              disabled={creatingProject}
+              className="h-8 w-32 text-sm"
+            />
+            <div className="flex items-center gap-1">
+              {LABEL_COLOR_NAMES.map((c) => (
+                <ColorDot
+                  key={c}
+                  color={c}
+                  selected={newProjectColor === c}
+                  onClick={() => setNewProjectColor(c)}
+                  ariaLabel={`${LABEL_COLORS[c].display} color`}
+                />
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCreateProject}
+              disabled={!newProjectName.trim() || creatingProject}
+              className="h-8"
+            >
+              Add
+            </Button>
+          </div>
+        </section>
+
+        {/* Delete project confirmation */}
+        <AlertDialog
+          open={!!projectToDelete}
+          onOpenChange={(open) => {
+            if (!open) setProjectToDelete(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {projectToDelete?.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {(projectToDelete?.active_count ?? 0) > 0
+                  ? `${projectToDelete?.active_count} active task${projectToDelete?.active_count === 1 ? '' : 's'} will be moved to Inbox.`
+                  : 'This project has no active tasks.'}{' '}
+                This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={handleDeleteProject}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* AI Context */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
@@ -913,6 +1043,56 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Disconnect app (only visible inside native iOS wrapper) */}
+        {isNativeApp && (
+          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Connected App
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              This app is connected to {typeof window !== 'undefined' ? window.location.origin : ''}
+              . Disconnecting will clear your credentials and return to the setup screen.
+            </p>
+            {showDisconnectConfirm ? (
+              <div className="space-y-2">
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  You&apos;ll need to re-enter the server URL and API token to reconnect.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      const w = window as unknown as {
+                        webkit?: {
+                          messageHandlers?: { opentask?: { postMessage: (msg: unknown) => void } }
+                        }
+                      }
+                      w.webkit?.messageHandlers?.opentask?.postMessage({ action: 'disconnect' })
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowDisconnectConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowDisconnectConfirm(true)}
+                className="w-full rounded-lg border border-red-200 p-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                Disconnect App
+              </button>
+            )}
+          </section>
+        )}
 
         {/* Sign out */}
         <button
