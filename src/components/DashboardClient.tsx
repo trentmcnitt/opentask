@@ -462,6 +462,9 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     setInsightsScoreChips,
   } = useAiMode()
 
+  // AI enrichment: true when any task has the ai-to-process label
+  const enrichmentActive = tasks.some((t) => t.labels.includes('ai-to-process'))
+
   // AI What's Next: fetch recommendations and resolve against current task list
   const aiInsights = useAiInsights(baseTasks)
 
@@ -935,6 +938,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onInsightsSignalChipsChange={setInsightsSignalChips}
       insightsScoreChips={insightsScoreChips}
       onInsightsScoreChipsChange={setInsightsScoreChips}
+      enrichmentActive={enrichmentActive}
       onRefreshAnnotations={handleRefreshAnnotations}
       onRefreshInsights={handleRefreshInsights}
       aiInsights={aiInsights}
@@ -1046,6 +1050,7 @@ function DashboardView({
   onInsightsSignalChipsChange,
   insightsScoreChips,
   onInsightsScoreChipsChange,
+  enrichmentActive,
   onRefreshAnnotations,
   onRefreshInsights,
   aiInsights,
@@ -1154,6 +1159,7 @@ function DashboardView({
   onInsightsSignalChipsChange: (show: boolean) => void
   insightsScoreChips: boolean
   onInsightsScoreChipsChange: (show: boolean) => void
+  enrichmentActive: boolean
   onRefreshAnnotations: () => void
   onRefreshInsights: () => void
   aiInsights: UseAiInsightsReturn
@@ -1244,6 +1250,7 @@ function DashboardView({
             insightsGenerationStartedAt={insightsData.generationStartedAt}
             insightsError={insightsData.error}
             onRefreshInsights={onRefreshInsights}
+            enrichmentActive={enrichmentActive}
           />
         </div>
 

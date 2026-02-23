@@ -41,6 +41,8 @@ interface AiControlAreaProps {
   insightsGenerationStartedAt: string | null
   insightsError: string | null
   onRefreshInsights: () => void
+  // Enrichment status
+  enrichmentActive?: boolean
 }
 
 /**
@@ -82,6 +84,7 @@ export function AiControlArea({
   insightsGenerationStartedAt,
   insightsError,
   onRefreshInsights,
+  enrichmentActive,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
 
@@ -104,7 +107,7 @@ export function AiControlArea({
             isActive
               ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-700/50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50'
               : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
-            (insightsGenerating || annotationRefreshLoading) &&
+            (insightsGenerating || annotationRefreshLoading || enrichmentActive) &&
               'animate-[ai-glow_2s_ease-in-out_infinite]',
           )}
           aria-label="AI settings"

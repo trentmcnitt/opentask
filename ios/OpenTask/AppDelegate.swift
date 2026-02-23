@@ -75,6 +75,25 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         WCSession.default.activate()
     }
 
+    /// Clear Watch credentials by sending empty context.
+    /// Called during disconnect to ensure the Watch app resets to "Not Connected".
+    func clearWatchCredentials() {
+        guard WCSession.isSupported(),
+              WCSession.default.activationState == .activated,
+              WCSession.default.isPaired,
+              WCSession.default.isWatchAppInstalled else { return }
+
+        do {
+            try WCSession.default.updateApplicationContext([
+                "serverURL": "",
+                "bearerToken": "",
+            ])
+            print("[OpenTask] Cleared Watch credentials")
+        } catch {
+            print("[OpenTask] Failed to clear Watch credentials: \(error)")
+        }
+    }
+
     /// Clear all delivered notifications when the app comes to foreground,
     /// both locally and across all other devices (web, Watch).
     /// The user can see their task list, so notification noise everywhere should clear.
