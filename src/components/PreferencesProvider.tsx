@@ -36,6 +36,8 @@ interface PreferencesContextValue {
   setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
+  criticalAlertVolume: number
+  setCriticalAlertVolume: (volume: number) => void
   aiContext: string | null
   setAiContext: (context: string | null) => void
   aiMode: AiMode
@@ -85,6 +87,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setDefaultGrouping: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
+  criticalAlertVolume: 1.0,
+  setCriticalAlertVolume: () => {},
   aiContext: null,
   setAiContext: () => {},
   aiMode: 'on',
@@ -127,6 +131,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     'unified',
   )
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
+  const [criticalAlertVolume, setCriticalAlertVolumeState] = useState(1.0)
   const [aiContext, setAiContextState] = useState<string | null>(null)
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
@@ -177,6 +182,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (data?.data?.notifications_enabled !== undefined) {
           setNotificationsEnabledState(data.data.notifications_enabled)
+        }
+        if (data?.data?.critical_alert_volume !== undefined) {
+          setCriticalAlertVolumeState(data.data.critical_alert_volume)
         }
         if (data?.data?.ai_context !== undefined) {
           setAiContextState(data.data.ai_context)
@@ -259,6 +267,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         },
         notificationsEnabled,
         setNotificationsEnabled: setNotificationsEnabledState,
+        criticalAlertVolume,
+        setCriticalAlertVolume: setCriticalAlertVolumeState,
         aiContext,
         setAiContext: setAiContextState,
         aiMode,
@@ -340,8 +350,18 @@ export function useAiContext() {
 }
 
 export function useNotificationConfig() {
-  const { notificationsEnabled, setNotificationsEnabled } = useContext(PreferencesContext)
-  return { notificationsEnabled, setNotificationsEnabled }
+  const {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    criticalAlertVolume,
+    setCriticalAlertVolume,
+  } = useContext(PreferencesContext)
+  return {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    criticalAlertVolume,
+    setCriticalAlertVolume,
+  }
 }
 
 export function useAiPreferences() {

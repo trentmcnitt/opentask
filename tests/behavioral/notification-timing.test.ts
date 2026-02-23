@@ -70,6 +70,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, now)).toBe(true)
   })
@@ -87,6 +88,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, now)).toBe(true)
   })
@@ -104,6 +106,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, now)).toBe(false)
   })
@@ -120,6 +123,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     // 5 min → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:05:00.000Z'))).toBe(true)
@@ -141,6 +145,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:15:00.000Z'))).toBe(true)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:07:00.000Z'))).toBe(false)
@@ -159,6 +164,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     // 10 min → boundary (using override, not the 30 min default)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:10:00.000Z'))).toBe(true)
@@ -180,6 +186,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(false)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(false)
@@ -197,6 +204,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     // 1440 minutes later (24h) — 1440 % 30 === 0 → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
@@ -217,6 +225,7 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
     }
     expect(isNotificationBoundary(task, now)).toBe(false)
   })
@@ -255,21 +264,58 @@ describe('checkOverdueTasks', () => {
     expect(sendPushNotification).not.toHaveBeenCalled()
   })
 
-  test('P4 task gets both web push and APNs at user interval', async () => {
+  test('P4 task gets both web push and APNs critical alert', async () => {
     // Task due at 10:00, check at 10:05 → 5 min boundary (P4 urgent)
     vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
     insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
     await checkOverdueTasks()
 
-    // P4 gets individual web push AND APNs with time-sensitive
+    // P4 gets individual web push AND APNs with critical interruption level
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
       expect.objectContaining({
         title: 'URGENT: Urgent task',
+        interruptionLevel: 'critical',
+        criticalAlertVolume: 1.0,
+      }),
+    )
+  })
+
+  test('P3 task gets time-sensitive APNs (not critical)', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:15:00.000Z'))
+    insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
+
+    await checkOverdueTasks()
+
+    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+    expect(sendApnsNotification).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      expect.objectContaining({
+        title: 'HIGH: High task',
         interruptionLevel: 'time-sensitive',
+      }),
+    )
+    // Should NOT have criticalAlertVolume
+    const payload = vi.mocked(sendApnsNotification).mock.calls[0][1]
+    expect(payload.criticalAlertVolume).toBeUndefined()
+  })
+
+  test('P4 task uses user critical_alert_volume', async () => {
+    vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
+    const db = getDb()
+    db.prepare('UPDATE users SET critical_alert_volume = 0.5 WHERE id = ?').run(TEST_USER_ID)
+    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
+
+    await checkOverdueTasks()
+
+    expect(sendApnsNotification).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      expect.objectContaining({
+        interruptionLevel: 'critical',
+        criticalAlertVolume: 0.5,
       }),
     )
   })

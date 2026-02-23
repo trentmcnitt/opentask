@@ -38,6 +38,7 @@ targets:
       path: OpenTask/OpenTask.entitlements
       properties:
         aps-environment: development
+        com.apple.developer.usernotifications.critical-alerts: true
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
     dependencies:
@@ -64,6 +65,7 @@ targets:
     entitlements:
       path: OpenTaskNotification/OpenTaskNotification.entitlements
       properties:
+        com.apple.developer.usernotifications.critical-alerts: true
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
     settings:
@@ -92,6 +94,7 @@ targets:
       path: OpenTaskWatch/OpenTaskWatch.entitlements
       properties:
         aps-environment: development
+        com.apple.developer.usernotifications.critical-alerts: true
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
     settings:

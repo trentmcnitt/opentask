@@ -85,6 +85,10 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'projects', 'color')) {
     database.exec('ALTER TABLE projects ADD COLUMN color TEXT')
   }
+  // Critical alert volume (2026-02)
+  if (!hasColumn(database, 'users', 'critical_alert_volume')) {
+    database.exec('ALTER TABLE users ADD COLUMN critical_alert_volume REAL NOT NULL DEFAULT 1.0')
+  }
 }
 
 function initSchema(database: Database.Database): void {

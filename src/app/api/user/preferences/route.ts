@@ -174,6 +174,14 @@ function validateGeneralFields(
     params.push(body.notifications_enabled ? 1 : 0)
   }
 
+  if (body.critical_alert_volume !== undefined) {
+    const val = body.critical_alert_volume
+    if (typeof val !== 'number' || val < 0 || val > 1)
+      return 'critical_alert_volume must be a number between 0.0 and 1.0'
+    updates.push('critical_alert_volume = ?')
+    params.push(val)
+  }
+
   if (body.default_snooze_option !== undefined) {
     const val = body.default_snooze_option
     if (typeof val !== 'string') return 'default_snooze_option must be a string'
@@ -339,7 +347,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -353,6 +361,7 @@ interface PreferencesRow {
   wake_time: string
   sleep_time: string
   notifications_enabled: number
+  critical_alert_volume: number
   ai_context: string | null
   ai_mode: string
   ai_show_scores: number
@@ -380,6 +389,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   wake_time: '07:00',
   sleep_time: '22:00',
   notifications_enabled: 1,
+  critical_alert_volume: 1.0,
   ai_context: null,
   ai_mode: 'on',
   ai_show_scores: 1,
@@ -408,6 +418,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     wake_time: row.wake_time,
     sleep_time: row.sleep_time,
     notifications_enabled: row.notifications_enabled !== 0,
+    critical_alert_volume: row.critical_alert_volume,
     ai_context: row.ai_context,
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
