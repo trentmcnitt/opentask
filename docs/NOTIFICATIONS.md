@@ -7,9 +7,9 @@ Reference for OpenTask's notification system: architecture, platform capabilitie
 Two channels:
 
 - **Web Push** — primary channel for all overdue task notifications. Browser-native via the Push API and VAPID keys. No third-party relay, no rate limit. Tap opens the PWA directly to the task page.
-- **APNs** — iOS native app push notifications. Token-based auth with a p8 key file. Supports `time-sensitive` interruption level for P4 tasks (breaks through Focus mode). Supports notification coalescing via `collapseId` and cross-device dismissal via silent push.
+- **APNs** — iOS native app push notifications. Token-based auth with a p8 key file. P4 (Urgent) tasks use Apple Critical Alerts (`interruption-level: critical`) which bypass mute, DND, and all Focus modes with a user-configurable volume. P3 (High) tasks use `time-sensitive` (breaks through Focus mode). Supports notification coalescing via `collapseId` and cross-device dismissal via silent push.
 
-ntfy was previously used but removed due to rate limiting. Pushover was previously used for critical alerts but removed — APNs `time-sensitive` interruption level handles P4 natively.
+ntfy was previously used but removed due to rate limiting. Pushover was previously used for critical alerts but removed — APNs Critical Alerts handle P4 natively.
 
 Notifications run as an in-process cron job via `node-cron` in `src/instrumentation.ts`. A single unified `checkOverdueTasks()` runs every minute and handles all priorities (P0-P4) in one pass, sending via both Web Push and APNs. The notification cron is independent of the AI enrichment cron — a stuck enrichment process can never block notification delivery.
 
@@ -125,7 +125,7 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 
 ### Features
 
-- **Interruption levels**: `active` for P0-P2, `time-sensitive` for P3-P4 (breaks Focus mode)
+- **Interruption levels**: `active` for P0-P2, `time-sensitive` for P3, `critical` for P4 (bypasses mute/DND with configurable volume)
 - **Collapse ID**: `task-{id}` prevents stacking — same task replaces its previous notification
 - **Silent push dismiss**: Server sends `content-available: 1` with dismiss payload to clear notifications
 - **Stale token cleanup**: Automatically removes device tokens on `BadDeviceToken`/`Unregistered` errors
@@ -152,7 +152,7 @@ These apply regardless of which notification service is used.
 | Time Sensitive | Immediate, breaks through Focus and Scheduled Summary | Yes (if user allows) | No           |
 | Critical       | Bypasses mute, DND, all Focus modes                   | Yes (always)         | Yes (always) |
 
-Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve, restricted to health/safety/security apps).
+Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve for App Store apps; works without approval for personal/ad-hoc builds). OpenTask uses Critical for P4 (Urgent) overdue notifications with the user's `critical_alert_volume` preference (0.0-1.0, default 1.0).
 
 ### Notification grouping
 

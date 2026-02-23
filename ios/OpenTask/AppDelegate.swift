@@ -116,7 +116,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     private func requestNotificationPermission(_ application: UIApplication) {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound]
+            options: [.alert, .badge, .sound, .criticalAlert]
         ) { granted, error in
             if let error = error {
                 print("[OpenTask] Notification permission error: \(error)")

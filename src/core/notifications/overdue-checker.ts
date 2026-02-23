@@ -50,6 +50,7 @@ interface OverdueTask {
   user_auto_snooze_minutes: number
   user_auto_snooze_urgent_minutes: number
   user_auto_snooze_high_minutes: number
+  critical_alert_volume: number
 }
 
 interface NotificationBucket {
@@ -134,6 +135,7 @@ async function sendIndividualApns(task: OverdueTask, overdueCount: number): Prom
   const priorityLabel =
     task.priority >= 4 ? 'URGENT: ' : task.priority >= HIGH_PRIORITY_THRESHOLD ? 'HIGH: ' : ''
 
+  const isCritical = task.priority >= 4
   await sendApnsNotification(task.user_id, {
     title: `${priorityLabel}${task.title}`,
     body: 'Overdue task',
@@ -141,7 +143,12 @@ async function sendIndividualApns(task: OverdueTask, overdueCount: number): Prom
     dueAt: task.due_at,
     priority: task.priority,
     overdueCount,
-    interruptionLevel: task.priority >= HIGH_PRIORITY_THRESHOLD ? 'time-sensitive' : 'active',
+    interruptionLevel: isCritical
+      ? 'critical'
+      : task.priority >= HIGH_PRIORITY_THRESHOLD
+        ? 'time-sensitive'
+        : 'active',
+    ...(isCritical ? { criticalAlertVolume: task.critical_alert_volume } : {}),
   })
 }
 
@@ -198,7 +205,8 @@ export async function checkOverdueTasks(): Promise<void> {
                t.auto_snooze_minutes,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
-               u.auto_snooze_high_minutes as user_auto_snooze_high_minutes
+               u.auto_snooze_high_minutes as user_auto_snooze_high_minutes,
+               u.critical_alert_volume
         FROM tasks t
         INNER JOIN users u ON t.user_id = u.id
         WHERE t.done = 0

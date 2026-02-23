@@ -35,7 +35,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
     /// iPhone mirroring (which doesn't route actions to the Watch app).
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound]
+            options: [.alert, .badge, .sound, .criticalAlert]
         ) { granted, error in
             if let error = error {
                 print("[OpenTaskWatch] Notification permission error: \(error)")

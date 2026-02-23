@@ -1879,10 +1879,23 @@ function NotesInlineSection({
   onChange: (value: string | null | undefined) => void
 }) {
   const [draft, setDraft] = useState('')
+  const [readExpanded, setReadExpanded] = useState(false)
+  const textRef = useRef<HTMLParagraphElement>(null)
+  const [isClamped, setIsClamped] = useState(false)
   const displayNotes = pendingNotes !== undefined ? pendingNotes : currentNotes
   const isDirty = pendingNotes !== undefined
 
+  // Detect whether the text overflows the 3-line clamp
+  useEffect(() => {
+    if (readExpanded) return
+    const el = textRef.current
+    if (el) {
+      setIsClamped(el.scrollHeight > el.clientHeight)
+    }
+  }, [displayNotes, readExpanded])
+
   const handleStartEdit = () => {
+    setReadExpanded(false)
     setDraft(displayNotes ?? '')
     onExpand()
   }
@@ -1946,25 +1959,38 @@ function NotesInlineSection({
     )
   }
 
-  // Edit mode: has notes but not expanded — show read-only with edit button
+  // Edit mode: has notes but not expanded — show read-only with optional expand
   if (!expanded) {
     return (
-      <div className="flex items-start gap-2">
-        <p
-          className={cn(
-            'line-clamp-3 min-w-0 flex-1 text-xs whitespace-pre-wrap',
-            isDirty ? 'text-blue-500' : 'text-muted-foreground',
-          )}
-        >
-          {displayNotes}
-        </p>
-        <button
-          type="button"
-          onClick={handleStartEdit}
-          className="text-muted-foreground hover:text-foreground shrink-0"
-        >
-          <Pencil className="size-3" />
-        </button>
+      <div>
+        <div className="flex items-start gap-2">
+          <p
+            ref={textRef}
+            className={cn(
+              'min-w-0 flex-1 text-xs whitespace-pre-wrap',
+              !readExpanded && 'line-clamp-3',
+              isDirty ? 'text-blue-500' : 'text-muted-foreground',
+            )}
+          >
+            {displayNotes}
+          </p>
+          <button
+            type="button"
+            onClick={handleStartEdit}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+          >
+            <Pencil className="size-3" />
+          </button>
+        </div>
+        {isClamped && (
+          <button
+            type="button"
+            onClick={() => setReadExpanded(!readExpanded)}
+            className="text-muted-foreground hover:text-foreground mt-0.5 text-xs"
+          >
+            {readExpanded ? 'less' : 'more'}
+          </button>
+        )}
       </div>
     )
   }

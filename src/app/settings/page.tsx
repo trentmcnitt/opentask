@@ -60,7 +60,12 @@ export default function SettingsPage() {
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
-  const { notificationsEnabled, setNotificationsEnabled } = useNotificationConfig()
+  const {
+    notificationsEnabled,
+    setNotificationsEnabled,
+    criticalAlertVolume,
+    setCriticalAlertVolume,
+  } = useNotificationConfig()
   const { aiContext, setAiContext } = useAiContext()
   const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
@@ -262,7 +267,9 @@ export default function SettingsPage() {
     }
   }
 
-  const sendTestNotification = async (type: 'individual' | 'high' | 'bulk' | 'critical') => {
+  const sendTestNotification = async (
+    type: 'individual' | 'high' | 'bulk' | 'urgent' | 'critical',
+  ) => {
     setTestingSending(type)
     try {
       const res = await fetch('/api/notifications/test', {
@@ -558,6 +565,42 @@ export default function SettingsPage() {
             />
           </div>
 
+          {/* Critical Alert Volume */}
+          <div className="mt-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm">Critical alert volume</div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Sound volume for urgent (P4) alerts that bypass Do Not Disturb
+              </div>
+            </div>
+            <select
+              value={criticalAlertVolume}
+              onChange={async (e) => {
+                const val = parseFloat(e.target.value)
+                const prev = criticalAlertVolume
+                setCriticalAlertVolume(val)
+                try {
+                  const res = await fetch('/api/user/preferences', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ critical_alert_volume: val }),
+                  })
+                  if (!res.ok) throw new Error('Failed to save')
+                  showToast({ message: 'Preference saved', type: 'success' })
+                } catch {
+                  setCriticalAlertVolume(prev)
+                  showToast({ message: 'Failed to save preference', type: 'error' })
+                }
+              }}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value={0.25}>25%</option>
+              <option value={0.5}>50%</option>
+              <option value={0.75}>75%</option>
+              <option value={1}>100%</option>
+            </select>
+          </div>
+
           {/* Browser Push */}
           <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
@@ -660,6 +703,14 @@ export default function SettingsPage() {
                 onClick={() => sendTestNotification('bulk')}
               >
                 {testingSending === 'bulk' ? 'Sending...' : 'Bulk'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingSending !== null}
+                onClick={() => sendTestNotification('urgent')}
+              >
+                {testingSending === 'urgent' ? 'Sending...' : 'Urgent'}
               </Button>
               <Button
                 size="sm"

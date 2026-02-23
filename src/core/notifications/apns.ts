@@ -67,8 +67,10 @@ export interface ApnsPushPayload {
   dueAt: string
   priority: number
   overdueCount: number
-  /** 'time-sensitive' for P3/P4, 'active' for P0-P2 */
-  interruptionLevel: 'time-sensitive' | 'active'
+  /** 'critical' for P4, 'time-sensitive' for P3, 'active' for P0-P2 */
+  interruptionLevel: 'time-sensitive' | 'active' | 'critical'
+  /** Volume for critical alerts (0.0-1.0). Only used when interruptionLevel is 'critical'. */
+  criticalAlertVolume?: number
 }
 
 /**
@@ -97,12 +99,15 @@ export async function sendApnsNotification(
   const results = await Promise.allSettled(
     devices.map(async (device) => {
       const apns = getClient(device.environment)
+      const isCritical = payload.interruptionLevel === 'critical'
       const notification = new Notification(device.device_token, {
         alert: { title: payload.title, body: payload.body },
         topic: device.bundle_id,
         category: 'TASK_REMINDER',
         threadId: 'opentask-overdue',
-        sound: 'default',
+        sound: isCritical
+          ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
+          : 'default',
         collapseId: `task-${payload.taskId}`,
         data: {
           taskId: payload.taskId,
