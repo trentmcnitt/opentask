@@ -38,6 +38,7 @@ import { ENRICHMENT_REMINDERS } from './prompts'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
+import { emitSyncEvent } from '@/lib/sync-events'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
@@ -256,6 +257,9 @@ export async function processEnrichmentQueue(): Promise<void> {
       } finally {
         processingTasks.delete(row.id)
       }
+
+      // Notify connected tabs so the AI glow stops and enriched data appears
+      emitSyncEvent(row.user_id)
     }
 
     log.info(
@@ -310,6 +314,9 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   } finally {
     processingTasks.delete(taskId)
   }
+
+  // Notify all connected tabs so the AI glow stops and enriched data appears
+  emitSyncEvent(userId)
 }
 
 /**
