@@ -12,6 +12,7 @@
 
 import crypto from 'crypto'
 import { getDb, closeDb } from '../src/core/db'
+import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 
 const username = process.argv[2]
 const tokenName = process.argv[3] || 'API'
@@ -33,15 +34,18 @@ if (!user) {
   process.exit(1)
 }
 
-const token = crypto.randomBytes(32).toString('hex')
+const raw = crypto.randomBytes(32).toString('hex')
+const hashed = hashToken(raw)
+const preview = tokenPreview(raw)
 
-db.prepare('INSERT INTO api_tokens (user_id, token, name) VALUES (?, ?, ?)').run(
+db.prepare('INSERT INTO api_tokens (user_id, token, token_preview, name) VALUES (?, ?, ?, ?)').run(
   user.id,
-  token,
+  hashed,
+  preview,
   tokenName,
 )
 
 console.log(`Token created for ${user.name} (name: "${tokenName}"):`)
-console.log(token)
+console.log(raw)
 
 closeDb()

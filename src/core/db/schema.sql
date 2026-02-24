@@ -105,13 +105,14 @@ CREATE TABLE IF NOT EXISTS completions (
   due_at_next TEXT
 );
 
--- API tokens table
+-- API tokens table (token column stores SHA-256 hash; token_preview stores last 8 chars of raw token)
 CREATE TABLE IF NOT EXISTS api_tokens (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id    INTEGER NOT NULL REFERENCES users(id),
-  token      TEXT NOT NULL UNIQUE,
-  name       TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  token         TEXT NOT NULL UNIQUE,
+  token_preview TEXT,
+  name          TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 -- Undo log table

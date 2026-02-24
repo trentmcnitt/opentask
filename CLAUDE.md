@@ -95,6 +95,8 @@ npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
 npm run db:seed-dev      # Seed dev database with ~80 realistic tasks
+npm run db:seed-demo     # Seed demo user with ~55 generic professional tasks
+npm run db:reset-demo    # Delete and re-create all demo user data
 npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]
 npm run db:migrate-due   # Data migration from the "Due" app
 ```
@@ -485,13 +487,13 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 
 ## Environments and Deployment
 
-|         | Production                  | Development                     | Dev2                             | Local          |
-| ------- | --------------------------- | ------------------------------- | -------------------------------- | -------------- |
-| URL     | tasks.tk11.mcnitt.io        | tasks-dev.tk11.mcnitt.io        | tasks-dev2.tk11.mcnitt.io        | localhost:3000 |
-| Port    | 3100                        | 3101                            | 3102                             | 3000           |
-| Service | opentask.service            | opentask-dev.service            | opentask-dev2.service            | —              |
-| DB Path | /opt/opentask/data/tasks.db | /opt/opentask-dev/data/tasks.db | /opt/opentask-dev2/data/tasks.db | data/tasks.db  |
-| Server  | tk11.mcnitt.io              | tk11.mcnitt.io                  | tk11.mcnitt.io                   | —              |
+|         | Production                                                    | Development                     | Dev2                             | Local          |
+| ------- | ------------------------------------------------------------- | ------------------------------- | -------------------------------- | -------------- |
+| URL     | opentask.mcnitt.io (canonical), tasks.tk11.mcnitt.io (legacy) | tasks-dev.tk11.mcnitt.io        | tasks-dev2.tk11.mcnitt.io        | localhost:3000 |
+| Port    | 3100                                                          | 3101                            | 3102                             | 3000           |
+| Service | opentask.service                                              | opentask-dev.service            | opentask-dev2.service            | —              |
+| DB Path | /opt/opentask/data/tasks.db                                   | /opt/opentask-dev/data/tasks.db | /opt/opentask-dev2/data/tasks.db | data/tasks.db  |
+| Server  | tk11.mcnitt.io                                                | tk11.mcnitt.io                  | tk11.mcnitt.io                   | —              |
 
 Remote instances run behind Caddy reverse proxy on Ubuntu 24.04. Server: `ssh admin@tk11.mcnitt.io`.
 
@@ -526,6 +528,35 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 **Database inspection:** `sqlite3 data/tasks.db` (local) or `ssh admin@tk11.mcnitt.io` then `sqlite3 /opt/opentask/data/tasks.db` (prod) / `sqlite3 /opt/opentask-dev/data/tasks.db` (dev).
 
 **First-time server setup:** The deploy script assumes the systemd service already exists. For a new environment, create a systemd unit file on the server (use `opentask-dev.service` as a template) and run `systemctl enable` before the first deploy.
+
+### Demo & Sandbox Users
+
+Production hosts a demo account for clients and a sandbox account for screenshots alongside Trent's real tasks. User isolation is via `user_id` filtering — no shared projects.
+
+|               | Demo                                                        | Sandbox      |
+| ------------- | ----------------------------------------------------------- | ------------ |
+| Username      | `demo`                                                      | `trent_m`    |
+| Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) | Set manually |
+| Notifications | Disabled                                                    | Disabled     |
+| Daily reset   | Yes (cron at 3 AM CT)                                       | No           |
+
+**Scripts:**
+
+- `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
+- `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
+
+**Server cron** (on tk11, 3 AM CT = 8:00 UTC):
+
+```
+0 8 * * * cd /opt/opentask && OPENTASK_DB_PATH=/opt/opentask/data/tasks.db /usr/local/bin/npx tsx scripts/reset-demo-user.ts >> /var/log/opentask-demo-reset.log 2>&1
+```
+
+### Security Hardening
+
+- **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. Raw token is shown once at creation.
+- **Login rate limiting**: In-memory, 5 failures per username in 15 min triggers lockout with exponential backoff (30s, 60s, 120s...).
+- **Security headers**: Set in both `next.config.ts` (local dev) and `deploy/Caddyfile.snippet` (production): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+- **JWT sessions**: `maxAge` set to 7 days (default was 30).
 
 ## iOS App (`ios/`)
 
