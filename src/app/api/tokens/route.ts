@@ -8,6 +8,7 @@
 import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
+import { hashToken, tokenPreview } from '@/core/auth/token-hash'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
@@ -19,7 +20,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const db = getDb()
     const tokens = db
       .prepare(
-        `SELECT id, name, created_at, substr(token, -8) AS token_preview
+        `SELECT id, name, created_at, token_preview
          FROM api_tokens WHERE user_id = ?
          ORDER BY created_at DESC`,
       )
@@ -46,12 +47,15 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     const db = getDb()
-    const token = crypto.randomBytes(32).toString('hex')
+    const raw = crypto.randomBytes(32).toString('hex')
+    const hashed = hashToken(raw)
+    const preview = tokenPreview(raw)
     const result = db
-      .prepare('INSERT INTO api_tokens (user_id, token, name) VALUES (?, ?, ?)')
-      .run(user.id, token, name)
+      .prepare('INSERT INTO api_tokens (user_id, token, token_preview, name) VALUES (?, ?, ?, ?)')
+      .run(user.id, hashed, preview, name)
 
-    return success({ id: Number(result.lastInsertRowid), name, token }, 201)
+    // Return the raw token once — it cannot be retrieved after this
+    return success({ id: Number(result.lastInsertRowid), name, token: raw }, 201)
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
     log.error('api', 'POST /api/tokens error:', err)

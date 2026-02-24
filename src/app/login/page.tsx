@@ -57,6 +57,12 @@ export default function LoginPage() {
           <p className="text-muted-foreground mt-1">Sign in to continue</p>
         </div>
 
+        {process.env.NEXT_PUBLIC_DEMO_MODE === '1' && (
+          <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+            Try it out &mdash; username: <strong>demo</strong>, password: <strong>demo</strong>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <Alert variant="destructive">

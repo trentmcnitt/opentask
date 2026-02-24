@@ -8,9 +8,13 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import type { AuthUser } from '@/types'
 import { toAuthUser } from './helpers'
+import { hashToken } from './token-hash'
 
 /**
  * Validate a Bearer token and return the associated user
+ *
+ * Hashes the incoming token with SHA-256 before looking it up,
+ * since only hashes are stored in the database.
  *
  * @param token The Bearer token (without "Bearer " prefix)
  * @returns The authenticated user or null if invalid
@@ -22,6 +26,7 @@ export function validateBearerToken(token: string): AuthUser | null {
   }
 
   const db = getDb()
+  const hashed = hashToken(token)
 
   const row = db
     .prepare(
@@ -32,7 +37,7 @@ export function validateBearerToken(token: string): AuthUser | null {
     WHERE t.token = ?
   `,
     )
-    .get(token) as
+    .get(hashed) as
     | { id: number; email: string; name: string; timezone: string; default_grouping: string }
     | undefined
 

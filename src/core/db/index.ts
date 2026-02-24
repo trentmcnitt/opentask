@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
@@ -88,6 +89,27 @@ function runMigrations(database: Database.Database): void {
   // Critical alert volume (2026-02)
   if (!hasColumn(database, 'users', 'critical_alert_volume')) {
     database.exec('ALTER TABLE users ADD COLUMN critical_alert_volume REAL NOT NULL DEFAULT 1.0')
+  }
+  // Token hashing: add token_preview column and hash existing plaintext tokens (2026-02)
+  if (!hasColumn(database, 'api_tokens', 'token_preview')) {
+    database.exec('ALTER TABLE api_tokens ADD COLUMN token_preview TEXT')
+    // Migrate existing plaintext tokens to SHA-256 hashes
+    const tokens = database.prepare('SELECT id, token FROM api_tokens').all() as {
+      id: number
+      token: string
+    }[]
+    const update = database.prepare(
+      'UPDATE api_tokens SET token = ?, token_preview = ? WHERE id = ?',
+    )
+    for (const row of tokens) {
+      // Only hash if it looks like a plaintext token (64 hex chars from randomBytes(32))
+      // SHA-256 hashes are also 64 hex chars, so we use a heuristic: if token_preview
+      // is already set, it was already migrated. Since we just added the column, all
+      // rows have NULL token_preview, so all will be migrated.
+      const preview = row.token.slice(-8)
+      const hashed = createHash('sha256').update(row.token).digest('hex')
+      update.run(hashed, preview, row.id)
+    }
   }
 }
 

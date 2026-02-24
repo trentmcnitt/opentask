@@ -9,6 +9,7 @@
 
 import bcrypt from 'bcrypt'
 import { getDb } from '../src/core/db'
+import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { DateTime } from 'luxon'
 
 // Fast bcrypt for tests
@@ -96,20 +97,20 @@ export async function seedTestData(): Promise<void> {
   `,
   ).run(5, 'Family', 1, 1, 4, 'pink')
 
-  // Insert API tokens
+  // Insert API tokens (stored as hashes; tests send the raw token, server hashes on lookup)
   db.prepare(
     `
-    INSERT INTO api_tokens (user_id, token, name)
-    VALUES (?, ?, ?)
+    INSERT INTO api_tokens (user_id, token, token_preview, name)
+    VALUES (?, ?, ?, ?)
   `,
-  ).run(1, TOKEN_A, 'Test Token A')
+  ).run(1, hashToken(TOKEN_A), tokenPreview(TOKEN_A), 'Test Token A')
 
   db.prepare(
     `
-    INSERT INTO api_tokens (user_id, token, name)
-    VALUES (?, ?, ?)
+    INSERT INTO api_tokens (user_id, token, token_preview, name)
+    VALUES (?, ?, ?, ?)
   `,
-  ).run(2, TOKEN_B, 'Test Token B')
+  ).run(2, hashToken(TOKEN_B), tokenPreview(TOKEN_B), 'Test Token B')
 
   // Insert some baseline tasks for User A
   // Use future dates to ensure tests are time-agnostic (pass at any time of day)

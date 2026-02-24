@@ -7,6 +7,7 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { validateCredentials, getUserById } from '@/core/auth/session'
+import { checkRateLimit, recordFailedAttempt, clearAttempts } from '@/core/auth/rate-limit'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -21,14 +22,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null
         }
 
-        const user = await validateCredentials(
-          credentials.username as string,
-          credentials.password as string,
-        )
+        const username = credentials.username as string
+
+        // Check rate limit before attempting validation
+        const waitSeconds = checkRateLimit(username)
+        if (waitSeconds !== null) {
+          throw new Error(`Too many login attempts. Try again in ${waitSeconds} seconds.`)
+        }
+
+        const user = await validateCredentials(username, credentials.password as string)
 
         if (!user) {
+          recordFailedAttempt(username)
           return null
         }
+
+        clearAttempts(username)
 
         // Return user object that will be stored in the JWT
         return {
@@ -77,6 +86,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   session: {
     strategy: 'jwt',
+    maxAge: 7 * 24 * 60 * 60, // 7 days (default is 30 days)
   },
   trustHost: true,
 })
