@@ -200,6 +200,55 @@ export async function sendApnsSummaryNotification(
 }
 
 /**
+ * Send a silent push that only updates the app icon badge number.
+ * Called on every cron cycle when there are overdue tasks, even if no
+ * visible notifications fire (so the badge stays current).
+ * Uses content-available:1 with no alert/sound — iOS delivers silently.
+ */
+export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
+  if (!isApnsConfigured()) return
+
+  const db = getDb()
+  const devices = db
+    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
+    .all(userId) as ApnsDeviceRow[]
+
+  if (devices.length === 0) return
+
+  const results = await Promise.allSettled(
+    devices.map(async (device) => {
+      const apns = getClient(device.environment)
+      const notification = new Notification(device.device_token, {
+        topic: device.bundle_id,
+        badge,
+        collapseId: 'badge-update',
+        aps: { 'content-available': 1 },
+      })
+
+      try {
+        await apns.send(notification)
+      } catch (err: unknown) {
+        if (isStaleTokenError(err)) {
+          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
+          log.info('apns', `Removed stale device token ${device.id}`)
+        } else {
+          throw err
+        }
+      }
+    }),
+  )
+
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+  if (failures.length > 0) {
+    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
+    log.error(
+      'apns',
+      `Failed to send ${failures.length}/${devices.length} badge updates: ${reasons}`,
+    )
+  }
+}
+
+/**
  * Dismiss notifications for specific tasks on all iOS devices for a user.
  * Sends a silent push with a dismiss signal that the app handles by clearing
  * matching delivered notifications.

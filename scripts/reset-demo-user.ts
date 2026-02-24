@@ -11,9 +11,9 @@
  */
 
 import { getDb, closeDb } from '../src/core/db'
-import { seedDemoUser } from './seed-demo'
+import { seedDemoData } from './seed-demo'
 
-async function resetDemoUser(): Promise<void> {
+function resetDemoUser(): void {
   const db = getDb()
 
   // Look up demo user
@@ -53,29 +53,30 @@ async function resetDemoUser(): Promise<void> {
     }
   }
 
-  // Delete the user itself
-  db.prepare('DELETE FROM users WHERE id = ?').run(userId)
-  console.log('  Deleted demo user')
+  // Preserve the user row so the ID stays stable across resets.
+  // This keeps existing JWT sessions valid — no sign-out/sign-in needed.
+  // seedDemoUser() would create a new user with a new auto-increment ID,
+  // so instead we re-seed only projects, tokens, and tasks.
+  console.log(`  User row preserved (ID: ${userId})`)
 
-  // Re-seed
-  console.log('\nRe-seeding demo user...')
-  await seedDemoUser(db)
+  // Re-seed projects, token, and tasks (but not the user row)
+  console.log('\nRe-seeding demo data...')
+  seedDemoData(db, userId)
 
   // Print summary
-  const newUser = db.prepare('SELECT id FROM users WHERE name = ? COLLATE NOCASE').get('demo') as {
-    id: number
-  }
   const taskCount = (
-    db.prepare('SELECT COUNT(*) as c FROM tasks WHERE user_id = ?').get(newUser.id) as {
+    db.prepare('SELECT COUNT(*) as c FROM tasks WHERE user_id = ?').get(userId) as {
       c: number
     }
   ).c
-  console.log(`\nDemo reset complete! User ID: ${newUser.id}, ${taskCount} tasks.`)
+  console.log(`\nDemo reset complete! User ID: ${userId}, ${taskCount} tasks.`)
 
   closeDb()
 }
 
-resetDemoUser().catch((err) => {
+try {
+  resetDemoUser()
+} catch (err) {
   console.error('Demo reset failed:', err)
   process.exit(1)
-})
+}

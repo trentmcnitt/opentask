@@ -15,6 +15,7 @@ import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
+import { notifyDemoEngagement } from '@/lib/demo-notify'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
@@ -107,6 +108,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       })
     }
 
+    notifyDemoEngagement(user.name, 'create')
     return success(formatTaskResponse(task), 201)
   } catch (err) {
     if (err instanceof AuthError) {

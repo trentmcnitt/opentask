@@ -17,6 +17,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
+import { notifyDemoEngagement } from '@/lib/demo-notify'
 
 export const GET = withLogging(async function GET(request: NextRequest, context: RouteContext) {
   try {
@@ -81,6 +82,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       dismissNotificationsForTasks(user.id, [taskId])
     }
 
+    notifyDemoEngagement(user.name, 'update')
     return success({
       ...formatTaskResponse(task),
       fields_changed: fieldsChanged,
@@ -122,6 +124,7 @@ export const DELETE = withLogging(async function DELETE(
 
     dismissNotificationsForTasks(user.id, [taskId])
 
+    notifyDemoEngagement(user.name, 'delete')
     return success({
       ...formatTaskResponse(task),
       message: 'Task moved to trash',

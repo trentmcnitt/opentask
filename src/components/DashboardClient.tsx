@@ -361,6 +361,28 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
   const { defaultGrouping: grouping, setDefaultGrouping } = useDefaultGrouping()
+
+  // Track the non-unified grouping so we can restore it when leaving unified view
+  // (whether triggered by AI sort auto-switch or manual unified toggle).
+  const prevNonUnifiedGrouping = useRef<GroupingMode | null>(null)
+  const prevSortOption = useRef(sortOption)
+
+  useEffect(() => {
+    const wasAiSort = prevSortOption.current === 'ai_insights'
+    const isAiSort = sortOption === 'ai_insights'
+    prevSortOption.current = sortOption
+
+    if (!wasAiSort && isAiSort) {
+      // Entering AI sort: save current grouping and switch to unified
+      prevNonUnifiedGrouping.current = grouping
+      if (grouping !== 'unified') setDefaultGrouping('unified')
+    } else if (wasAiSort && !isAiSort && prevNonUnifiedGrouping.current) {
+      // Leaving AI sort: restore previous grouping
+      setDefaultGrouping(prevNonUnifiedGrouping.current)
+      prevNonUnifiedGrouping.current = null
+    }
+  }, [sortOption, grouping, setDefaultGrouping])
+
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
@@ -591,7 +613,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   }, [selection, clearAllFilters])
 
   // Build task groups for keyboard navigation
-  const effectiveGrouping = sortOption === 'ai_insights' ? 'unified' : grouping
+  const effectiveGrouping = grouping
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, effectiveGrouping, timezone),
     [tasks_, projects, effectiveGrouping, timezone],
@@ -843,7 +865,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       tasks={tasks_}
       allTasks={baseTasks}
       projects={projects}
-      grouping={sortOption === 'ai_insights' ? 'unified' : grouping}
+      grouping={grouping}
       searchQuery={searchQuery}
       searchResultCount={searchResults.length}
       overdueCount={overdueCount}
@@ -962,7 +984,17 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
-      onUnifiedChange={(unified) => setDefaultGrouping(unified ? 'unified' : 'project')}
+      onUnifiedChange={(unified) => {
+        if (unified) {
+          // Save current grouping so toggling unified off restores it
+          if (grouping !== 'unified') prevNonUnifiedGrouping.current = grouping
+          setDefaultGrouping('unified')
+        } else {
+          // Restore the previous non-unified grouping (default to 'time')
+          setDefaultGrouping(prevNonUnifiedGrouping.current || 'time')
+          prevNonUnifiedGrouping.current = null
+        }
+      }}
       searchFocusRef={searchFocusRef}
     />
   )
