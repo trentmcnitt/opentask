@@ -18,6 +18,7 @@ import {
   Lightbulb,
   CalendarDays,
   Pencil,
+  Mic,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +44,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { formatRRuleCompact, formatBulkRecurrence } from '@/lib/format-rrule'
 import {
   PRESET_TIMES,
@@ -247,6 +249,28 @@ export function QuickActionPanel({
 
   // State for create-mode title (always-visible input, not click-to-edit)
   const [createTitle, setCreateTitle] = useState(initialTitle ?? '')
+
+  // Speech recognition for create mode title dictation.
+  // Base title is snapshotted in the mic button click handler (not in the effect).
+  const speech = useSpeechRecognition()
+  const speechPrevListeningRef = useRef(false)
+  const titleBeforeSpeechRef = useRef('')
+
+  useEffect(() => {
+    if (!isCreateMode) return
+
+    if (speech.isListening && speech.transcript) {
+      const base = titleBeforeSpeechRef.current
+      const separator = base && !base.endsWith(' ') ? ' ' : ''
+      setCreateTitle(base + separator + speech.transcript)
+    }
+
+    if (!speech.isListening && speechPrevListeningRef.current) {
+      createTitleRef.current?.focus()
+    }
+
+    speechPrevListeningRef.current = speech.isListening
+  }, [speech.isListening, speech.transcript, isCreateMode])
 
   // State for Mark Done confirmation dialog
   const [showDoneConfirm, setShowDoneConfirm] = useState(false)
@@ -934,21 +958,45 @@ export function QuickActionPanel({
         <div className="min-w-0">
           {/* Title: create mode shows always-visible input; edit mode uses click-to-edit */}
           {isCreateMode ? (
-            <Textarea
-              value={createTitle}
-              onChange={(e) => setCreateTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  if (createTitle.trim()) handleCreate()
-                }
-              }}
-              placeholder="What needs to be done?"
-              aria-label="Task title"
-              className={`-mx-2 max-h-48 min-h-0 resize-none overflow-y-auto px-2 py-1 ${getDetailTitleClasses(createTitle).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
-              rows={1}
-              ref={createTitleRef}
-            />
+            <div className="flex items-start gap-1">
+              <Textarea
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (createTitle.trim()) handleCreate()
+                  }
+                }}
+                placeholder="What needs to be done?"
+                aria-label="Task title"
+                className={`-mx-2 max-h-48 min-h-0 flex-1 resize-none overflow-y-auto px-2 py-1 ${getDetailTitleClasses(createTitle).sizeClass} hover:bg-muted/50 focus:bg-muted/50 rounded-sm border-transparent bg-transparent font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0`}
+                rows={1}
+                ref={createTitleRef}
+              />
+              {speech.isSupported && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (speech.isListening) {
+                      speech.stopListening()
+                    } else {
+                      titleBeforeSpeechRef.current = createTitle
+                      speech.startListening()
+                    }
+                  }}
+                  className={cn(
+                    'mt-1 flex-shrink-0 rounded p-0.5 transition-colors',
+                    speech.isListening
+                      ? 'text-red-500 hover:text-red-600'
+                      : 'text-muted-foreground hover:text-primary hover:bg-accent',
+                  )}
+                  aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+                >
+                  <Mic className={cn('size-4', speech.isListening && 'animate-pulse')} />
+                </button>
+              )}
+            </div>
           ) : (
             title && (
               <>

@@ -8,7 +8,7 @@ import UserNotificationsUI
 ///
 /// Reads task data from the APNs payload and embeds a SwiftUI SnoozeGridView.
 /// When the user taps a grid button, the action button labels are dynamically
-/// updated to reflect the selected snooze time (e.g., "+7hr" instead of "+1hr").
+/// updated to show the resolved absolute time (e.g., "4:00 PM" instead of "+1hr").
 ///
 /// Communication flow:
 /// 1. User long-presses notification → iOS calls didReceive(_:) with payload
@@ -97,6 +97,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         ])
 
         hostingController = hosting
+
+        // Set initial action buttons with absolute time (e.g., "4:00 PM" instead of "+1hr")
+        setDefaultTimeActions()
     }
 
     /// Called when the user taps an action button while the extension is visible.
@@ -106,7 +109,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) {
         Task {
-            var bulkSnoozeTier: Int?
+            var wasBulkSnooze = false
 
             do {
                 switch response.actionIdentifier {
@@ -118,7 +121,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                 case "SNOOZE_ALL_1HR":
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                    bulkSnoozeTier = result.tier
+                    wasBulkSnooze = result.tasksAffected > 0
 
                 case "SNOOZE_CUSTOM":
                     if let dueAt = selectedDueAt {
@@ -128,7 +131,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 case "SNOOZE_ALL_CUSTOM":
                     if let delta = selectedDeltaMinutes {
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: delta)
-                        bulkSnoozeTier = result.tier
+                        wasBulkSnooze = result.tasksAffected > 0
                     }
 
                 default:
@@ -136,15 +139,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 }
             } catch {
                 print("[OpenTask] Content extension action error: \(error)")
+                // Keep notification visible so the user knows it failed
+                completion(.doNotDismiss)
+                return
             }
 
-            // After bulk snooze, dismiss notifications for tasks that were snoozed,
-            // then dismiss this notification. Tier 1 = P0/P1, Tier 2 = P2. P3/P4 never bulk-snoozed.
-            // We dismiss other notifications before calling completion so the callback
-            // finishes before iOS tears down the extension process.
-            if let tier = bulkSnoozeTier, tier > 0 {
-                let maxPriority = tier == 1 ? 1 : 2
-                await dismissNotifications(atOrBelowPriority: maxPriority)
+            // After bulk snooze, dismiss notifications for P0-P3 tasks that were snoozed.
+            // P4 (Urgent) is never bulk-snoozed, so those notifications remain.
+            if wasBulkSnooze {
+                await dismissNotifications(atOrBelowPriority: 3)
             }
 
             // Dismiss only — the extension already handled the action via API call.
@@ -171,9 +174,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     // MARK: - Grid Selection Handler
 
-    /// Called when the user taps a grid button. Updates the action buttons to reflect
-    /// the selected snooze time with delta labels. If the net change is zero (e.g.,
-    /// +1hr then -1hr), restores default action buttons.
+    /// Called when the user taps a grid button. Updates the action buttons to show
+    /// the resolved absolute time. If the net change is zero (e.g., +1hr then -1hr),
+    /// restores default action buttons.
     private func handleGridSelection(_ newDueAt: String) {
         selectedDueAt = newDueAt
 
@@ -194,13 +197,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             return
         }
 
-        let deltaLabel = DateHelpers.formatDelta(minutes: deltaMinutes)
+        let timeLabel = DateHelpers.formatShortTime(targetDate)
 
-        // Dynamically replace the notification's action buttons
+        // Dynamically replace the notification's action buttons with the absolute time
         extensionContext?.notificationActions = [
             UNNotificationAction(identifier: "DONE", title: "Done", options: []),
-            UNNotificationAction(identifier: "SNOOZE_CUSTOM", title: deltaLabel, options: []),
-            UNNotificationAction(identifier: "SNOOZE_ALL_CUSTOM", title: "All \(deltaLabel)", options: []),
+            UNNotificationAction(identifier: "SNOOZE_CUSTOM", title: timeLabel, options: []),
+            UNNotificationAction(identifier: "SNOOZE_ALL_CUSTOM", title: "All \u{2192} \(timeLabel)", options: []),
         ]
     }
 
@@ -227,13 +230,22 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     // MARK: - Default Actions
 
-    /// Restore the category's default action buttons (Done, +1hr, All +1hr).
-    /// Must match the actions registered in AppDelegate.registerNotificationCategories().
-    private func restoreDefaultActions() {
+    /// Set action buttons showing the absolute "next hour" time (e.g., "4:00 PM").
+    /// Called on initial notification expansion and when the grid resets to clean state.
+    private func setDefaultTimeActions() {
+        let nextHour = DateHelpers.snapToNextHour()
+        let timeLabel = DateHelpers.formatShortTime(nextHour)
+
         extensionContext?.notificationActions = [
             UNNotificationAction(identifier: "DONE", title: "Done", options: []),
-            UNNotificationAction(identifier: "SNOOZE_1HR", title: "+1hr", options: []),
-            UNNotificationAction(identifier: "SNOOZE_ALL_1HR", title: "All +1hr", options: []),
+            UNNotificationAction(identifier: "SNOOZE_1HR", title: timeLabel, options: []),
+            UNNotificationAction(identifier: "SNOOZE_ALL_1HR", title: "All \u{2192} \(timeLabel)", options: []),
         ]
+    }
+
+    /// Restore the default action buttons with current absolute times.
+    /// Called when the user resets the grid to the original time.
+    private func restoreDefaultActions() {
+        setDefaultTimeActions()
     }
 }

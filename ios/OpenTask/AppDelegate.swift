@@ -116,7 +116,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     private func requestNotificationPermission(_ application: UIApplication) {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound, .criticalAlert]
+            options: [.alert, .badge, .sound]
         ) { granted, error in
             if let error = error {
                 print("[OpenTask] Notification permission error: \(error)")
@@ -285,7 +285,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
 
                 case "SNOOZE_ALL_1HR":
-                    try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    if result.tasksAffected > 0 {
+                        await dismissSnoozedNotifications()
+                    }
 
                 case "SNOOZE_CUSTOM", "SNOOZE_ALL_CUSTOM":
                     // These actions are handled entirely by the content extension
@@ -307,6 +310,24 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             }
 
             completionHandler()
+        }
+    }
+
+    /// Remove delivered notifications for P0-P3 tasks after bulk snooze.
+    /// P4 (Urgent) is never bulk-snoozed, so those notifications remain.
+    private func dismissSnoozedNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let notifications = await center.deliveredNotifications()
+        let idsToRemove = notifications
+            .filter { notification in
+                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
+                return p <= 3
+            }
+            .map { $0.request.identifier }
+
+        if !idsToRemove.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
+            print("[OpenTask] Dismissed \(idsToRemove.count) notifications after bulk snooze")
         }
     }
 

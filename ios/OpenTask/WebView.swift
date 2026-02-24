@@ -14,6 +14,11 @@ import WebKit
 /// can detect it's running inside the native wrapper. Listens for messages
 /// on `window.webkit.messageHandlers.opentask` to handle native actions
 /// like disconnect.
+///
+/// Dynamic Type: WKWebView doesn't respect iOS Dynamic Type settings for web
+/// content. We read the preferred content size category, map it to a CSS
+/// font-size scale factor, and inject it as a root font-size override.
+/// Tailwind's rem-based sizing scales the entire layout proportionally.
 struct WebView: UIViewRepresentable {
     let url: URL
 
@@ -39,6 +44,17 @@ struct WebView: UIViewRepresentable {
         )
         config.userContentController.addUserScript(script)
 
+        // Inject Dynamic Type font scale as a CSS root font-size override.
+        // Runs at document end so <html> exists. Persists across navigations
+        // since it's added to the configuration's user content controller.
+        let scale = Coordinator.fontScalePercent(for: UIApplication.shared.preferredContentSizeCategory)
+        let dtScript = WKUserScript(
+            source: "document.documentElement.style.fontSize = '\(scale)%';",
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(dtScript)
+
         // Register JS bridge for native actions (disconnect, etc.)
         config.userContentController.add(context.coordinator, name: "opentask")
 
@@ -56,6 +72,10 @@ struct WebView: UIViewRepresentable {
         webView.scrollView.addSubview(refreshControl)
         context.coordinator.refreshControl = refreshControl
 
+        // Store reference for live Dynamic Type updates
+        context.coordinator.webView = webView
+        context.coordinator.startObservingContentSize()
+
         // Load the server URL
         webView.load(URLRequest(url: url))
 
@@ -69,10 +89,60 @@ struct WebView: UIViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var refreshControl: UIRefreshControl?
         var onNavigationError: ((Error) -> Void)?
+        weak var webView: WKWebView?
+        private var contentSizeObserver: NSObjectProtocol?
 
         init(onNavigationError: ((Error) -> Void)?) {
             self.onNavigationError = onNavigationError
         }
+
+        deinit {
+            if let observer = contentSizeObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        // MARK: - Dynamic Type
+
+        /// Map iOS content size categories to CSS font-size percentages.
+        /// Values approximate Apple's standard Dynamic Type scaling ratios.
+        /// Default (Large) = 100%.
+        static func fontScalePercent(for category: UIContentSizeCategory) -> Int {
+            switch category {
+            case .extraSmall:                               return 82
+            case .small:                                    return 88
+            case .medium:                                   return 94
+            case .large:                                    return 100
+            case .extraLarge:                               return 106
+            case .extraExtraLarge:                           return 112
+            case .extraExtraExtraLarge:                      return 119
+            case .accessibilityMedium:                       return 125
+            case .accessibilityLarge:                        return 131
+            case .accessibilityExtraLarge:                   return 138
+            case .accessibilityExtraExtraLarge:              return 144
+            case .accessibilityExtraExtraExtraLarge:         return 150
+            default:                                         return 100
+            }
+        }
+
+        /// Listen for Dynamic Type changes and re-apply the font scale live.
+        func startObservingContentSize() {
+            contentSizeObserver = NotificationCenter.default.addObserver(
+                forName: UIContentSizeCategory.didChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.applyDynamicTypeScale()
+            }
+        }
+
+        private func applyDynamicTypeScale() {
+            let scale = Self.fontScalePercent(for: UIApplication.shared.preferredContentSizeCategory)
+            let js = "document.documentElement.style.fontSize = '\(scale)%';"
+            webView?.evaluateJavaScript(js)
+        }
+
+        // MARK: - Navigation
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
             guard let webView = sender.superview?.superview as? WKWebView else {

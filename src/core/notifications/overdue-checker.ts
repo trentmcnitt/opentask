@@ -25,7 +25,7 @@
 
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { HIGH_PRIORITY_THRESHOLD, MEDIUM_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import {
   sendApnsNotification,
@@ -131,11 +131,14 @@ async function sendSummaryWebPush(userId: number, count: number, label: string):
 }
 
 /** Send an individual APNs notification for a task with full payload for the snooze grid. */
-async function sendIndividualApns(task: OverdueTask, overdueCount: number): Promise<void> {
+async function sendIndividualApns(
+  task: OverdueTask,
+  overdueCount: number,
+  badgeCount: number,
+): Promise<void> {
   const priorityLabel =
     task.priority >= 4 ? 'URGENT: ' : task.priority >= HIGH_PRIORITY_THRESHOLD ? 'HIGH: ' : ''
 
-  const isCritical = task.priority >= 4
   await sendApnsNotification(task.user_id, {
     title: `${priorityLabel}${task.title}`,
     body: 'Overdue task',
@@ -143,12 +146,10 @@ async function sendIndividualApns(task: OverdueTask, overdueCount: number): Prom
     dueAt: task.due_at,
     priority: task.priority,
     overdueCount,
-    interruptionLevel: isCritical
-      ? 'critical'
-      : task.priority >= HIGH_PRIORITY_THRESHOLD
-        ? 'time-sensitive'
-        : 'active',
-    ...(isCritical ? { criticalAlertVolume: task.critical_alert_volume } : {}),
+    badge: badgeCount,
+    // P3+ get time-sensitive (breaks through Focus/scheduled summary).
+    // Critical alerts require Apple entitlement approval — use time-sensitive until approved.
+    interruptionLevel: task.priority >= HIGH_PRIORITY_THRESHOLD ? 'time-sensitive' : 'active',
   })
 }
 
@@ -157,6 +158,7 @@ async function sendBucket(
   bucket: NotificationBucket,
   userId: number,
   overdueCount: number,
+  badgeCount: number,
   webPushEnabled: boolean,
   apnsEnabled: boolean,
 ): Promise<void> {
@@ -165,7 +167,7 @@ async function sendBucket(
   // Individual notifications
   for (const task of bucket.individual) {
     if (webPushEnabled) sends.push(sendIndividualWebPush(task))
-    if (apnsEnabled) sends.push(sendIndividualApns(task, overdueCount))
+    if (apnsEnabled) sends.push(sendIndividualApns(task, overdueCount, badgeCount))
   }
 
   // Summary notification for overflow
@@ -237,12 +239,24 @@ export async function checkOverdueTasks(): Promise<void> {
     for (const [userId, tasks] of tasksByUser) {
       const { regular, high, urgent } = splitIntoBuckets(tasks)
 
-      // overdueCount for the iOS "All" button — count of P0-P1 tasks eligible this tick
-      const overdueCount = tasks.filter((t) => t.priority < MEDIUM_PRIORITY_THRESHOLD).length
+      // overdueCount for the iOS "All" button — count of bulk-snoozable tasks (P0-P3, excludes P4)
+      const overdueCount = tasks.filter((t) => t.priority < URGENT_PRIORITY).length
 
-      await sendBucket(regular, userId, overdueCount, webPushEnabled, apnsEnabled)
-      await sendBucket(high, userId, overdueCount, webPushEnabled, apnsEnabled)
-      await sendBucket(urgent, userId, overdueCount, webPushEnabled, apnsEnabled)
+      // Badge count: total overdue tasks for this user (all priorities).
+      // Uses all overdue tasks, not just those eligible for notification this tick.
+      const badgeCount = (
+        db
+          .prepare(
+            `SELECT COUNT(*) as count FROM tasks
+             WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
+               AND due_at IS NOT NULL AND datetime(due_at) < datetime('now')`,
+          )
+          .get(userId) as { count: number }
+      ).count
+
+      await sendBucket(regular, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
+      await sendBucket(high, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
+      await sendBucket(urgent, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
     }
   } catch (err) {
     log.error('notifications', 'Overdue checker error:', err)

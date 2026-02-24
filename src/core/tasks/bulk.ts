@@ -23,7 +23,7 @@ import {
   collectFieldChanges,
   type FieldChangesInput,
 } from './helpers'
-import { HIGH_PRIORITY_THRESHOLD, MEDIUM_PRIORITY_THRESHOLD } from '@/lib/priority'
+import { URGENT_PRIORITY } from '@/lib/priority'
 
 interface ValidateBulkTasksOptions {
   /** Skip tasks that are done AND non-recurring (used by bulkDone) */
@@ -173,59 +173,21 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   return result
 }
 
-interface SkippedByPriority {
-  medium: number
-  high: number
-  urgent: number
-}
-
-interface TwoTierFilterResult {
+interface BulkSnoozeFilterResult {
   eligible: Task[]
-  /** 0 = nothing eligible, 1 = P0/P1 snoozed (P2+ skipped), 2 = P2 snoozed (P3+ skipped) */
-  tier: 0 | 1 | 2
-  skippedByPriority: SkippedByPriority
+  urgentSkipped: number
 }
 
 /**
- * Two-tier priority filter for bulk snooze operations.
+ * Priority filter for bulk snooze operations.
  *
- * Stateless two-tier logic:
- * - If batch contains any P0/P1 tasks → snooze only those (tier 1), skip P2/P3/P4
- * - If batch has no P0/P1 but has P2 → snooze P2 (tier 2), skip P3/P4
- * - If only P3/P4 → nothing eligible (tier 0)
- *
- * P3/P4 tasks are never eligible — they must be snoozed individually.
+ * P0-P3 (None through High) are eligible for bulk snooze.
+ * P4 (Urgent) is excluded — urgent tasks must be snoozed individually.
  */
-function filterForTwoTierSnooze(tasks: Task[]): TwoTierFilterResult {
-  const p0p1 = tasks.filter((t) => (t.priority ?? 0) < MEDIUM_PRIORITY_THRESHOLD)
-  const p2 = tasks.filter((t) => (t.priority ?? 0) === MEDIUM_PRIORITY_THRESHOLD)
-  const p3 = tasks.filter((t) => (t.priority ?? 0) === HIGH_PRIORITY_THRESHOLD)
-  const p4 = tasks.filter((t) => (t.priority ?? 0) > HIGH_PRIORITY_THRESHOLD)
-
-  if (p0p1.length > 0) {
-    // Tier 1: snooze P0/P1 only
-    return {
-      eligible: p0p1,
-      tier: 1,
-      skippedByPriority: { medium: p2.length, high: p3.length, urgent: p4.length },
-    }
-  }
-
-  if (p2.length > 0) {
-    // Tier 2: snooze P2 only
-    return {
-      eligible: p2,
-      tier: 2,
-      skippedByPriority: { medium: 0, high: p3.length, urgent: p4.length },
-    }
-  }
-
-  // Tier 0: only P3/P4, nothing eligible
-  return {
-    eligible: [],
-    tier: 0,
-    skippedByPriority: { medium: 0, high: p3.length, urgent: p4.length },
-  }
+function filterForBulkSnooze(tasks: Task[]): BulkSnoozeFilterResult {
+  const eligible = tasks.filter((t) => (t.priority ?? 0) < URGENT_PRIORITY)
+  const urgentSkipped = tasks.length - eligible.length
+  return { eligible, urgentSkipped }
 }
 
 export interface BulkSnoozeOptions {
@@ -241,9 +203,7 @@ export interface BulkSnoozeOptions {
 export interface BulkSnoozeResult {
   tasksAffected: number
   tasksSkipped: number
-  /** 0 = nothing eligible, 1 = P0/P1 snoozed, 2 = P2 snoozed */
-  tier: 0 | 1 | 2
-  skippedByPriority: SkippedByPriority
+  urgentSkipped: number
 }
 
 /**
@@ -259,12 +219,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return {
-      tasksAffected: 0,
-      tasksSkipped: 0,
-      tier: 0,
-      skippedByPriority: { medium: 0, high: 0, urgent: 0 },
-    }
+    return { tasksAffected: 0, tasksSkipped: 0, urgentSkipped: 0 }
   }
 
   // Validate that exactly one mode is specified
@@ -289,11 +244,11 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // Two-tier priority filter — see filterForTwoTierSnooze for logic
-  const { eligible, tier, skippedByPriority } = filterForTwoTierSnooze(tasks)
+  // P0-P3 eligible, P4 (Urgent) excluded
+  const { eligible, urgentSkipped } = filterForBulkSnooze(tasks)
   const skippedCount = tasks.length - eligible.length
   if (eligible.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: skippedCount, tier: 0, skippedByPriority }
+    return { tasksAffected: 0, tasksSkipped: skippedCount, urgentSkipped }
   }
 
   const snapshots: UndoSnapshot[] = []
@@ -355,7 +310,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         fields: fieldsChanged,
         before: beforeState,
         after: afterState,
-        metadata: { tier },
+        metadata: {},
       })
     }
 
@@ -381,8 +336,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     return {
       tasksAffected: eligible.length,
       tasksSkipped: skippedCount,
-      tier,
-      skippedByPriority,
+      urgentSkipped,
     }
   })
 
@@ -431,13 +385,13 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     }
   }
 
-  // Two-tier priority filter for snooze edits — same logic as bulkSnooze.
+  // Priority filter for snooze edits — same logic as bulkSnooze (P4 excluded).
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
   let snoozeSkippedCount = 0
   const isSnoozeEdit = changes.due_at !== undefined && changes.rrule === undefined
   if (isSnoozeEdit) {
-    const { eligible } = filterForTwoTierSnooze(tasks)
+    const { eligible } = filterForBulkSnooze(tasks)
     snoozeSkippedCount = tasks.length - eligible.length
     tasks = eligible
     if (tasks.length === 0) {

@@ -122,7 +122,7 @@ const P4_SCORE_CEILING = 25
 /**
  * Enforce hard rules that the AI sometimes ignores:
  * - P4 score ceiling: clamp P4 task scores to 25 (user already sees these)
- * - act_soon requires P3+ (never P0-2)
+ * - act_soon requires P3+ (never P0-2; P3 is allowed despite being bulk-snoozable)
  * - stale requires 21+ days old
  */
 export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, TaskSummary>): void {

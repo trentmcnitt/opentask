@@ -4,7 +4,8 @@
  * POST /api/tasks/bulk/snooze-overdue - Snooze all overdue tasks for the user
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed from client.
- * Queries overdue tasks, applies two-tier filtering via bulkSnooze().
+ * Queries overdue tasks, applies priority filtering via bulkSnooze() (P0-P3 eligible,
+ * P4 Urgent excluded).
  *
  * Computes an absolute snooze target from now (not relative to each task's due_at):
  * - { delta_minutes: 30 }  → 30 min from now (exact, < 60 min)
@@ -68,14 +69,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return success({
         tasks_affected: 0,
         tasks_skipped: 0,
-        tier: 0,
-        skipped_medium: 0,
-        skipped_high: 0,
         skipped_urgent: 0,
       })
     }
 
-    // bulkSnooze handles two-tier filtering internally (P0/P1 first, then P2)
+    // bulkSnooze handles priority filtering internally (P0-P3 eligible, P4 excluded)
     const result = bulkSnooze({
       userId: user.id,
       userTimezone: user.timezone,
@@ -84,7 +82,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     })
 
     // Dismiss only the tasks that were actually snoozed, not tasks that were
-    // skipped by two-tier priority filtering (P2+ may still be overdue).
+    // skipped by priority filtering (P4 Urgent may still be overdue).
     if (result.tasksAffected > 0) {
       const stillOverdue = db
         .prepare(
@@ -105,10 +103,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     return success({
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
-      tier: result.tier,
-      skipped_medium: result.skippedByPriority.medium,
-      skipped_high: result.skippedByPriority.high,
-      skipped_urgent: result.skippedByPriority.urgent,
+      skipped_urgent: result.urgentSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

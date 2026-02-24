@@ -70,9 +70,6 @@ describe('Bulk snooze-overdue integration', () => {
     // Should have the standard bulk snooze response fields
     expect(typeof data.tasks_affected).toBe('number')
     expect(typeof data.tasks_skipped).toBe('number')
-    expect(typeof data.tier).toBe('number')
-    expect(typeof data.skipped_medium).toBe('number')
-    expect(typeof data.skipped_high).toBe('number')
     expect(typeof data.skipped_urgent).toBe('number')
   })
 

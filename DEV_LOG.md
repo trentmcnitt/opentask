@@ -4,6 +4,28 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 02-24-26
+
+### UX Improvements (5 items)
+
+After a couple days of real-world usage, five pain points were addressed in one batch:
+
+1. **Overdue badge** — iOS app icon now shows a badge number with the total overdue task count. Web tab title shows `(N) OpenTask`. Badge count includes all overdue tasks (including P4 Urgent). Clears on app foreground (existing behavior).
+
+2. **Simplified bulk snooze** — Replaced the three-tier system (P0/P1 first, P2 second, P3/P4 never) with a simple binary: P0-P3 eligible, P4 (Urgent) excluded. The tiered system was too frustrating in practice — users just wanted to clear overdue tasks quickly. `MEDIUM_PRIORITY_THRESHOLD` removed, `URGENT_PRIORITY = 4` added. AI prompts, docs, and all test suites updated to match.
+
+3. **Dynamic Type in WKWebView** — WKWebView doesn't relay iOS Dynamic Type settings to web content. Solved by mapping `UIContentSizeCategory` to a CSS root font-size percentage (82% to 150%) and injecting it via `WKUserScript`. Since Tailwind uses `rem` everywhere, scaling the root font-size scales the entire layout proportionally. Observes `UIContentSizeCategory.didChangeNotification` for live updates.
+
+4. **Absolute times on notification buttons** — The three action buttons below the snooze grid (long-press) now show "4:00 PM" instead of "+1hr", and "All → 4:00 PM" instead of "All +1hr". Uses `DateHelpers.snapToNextHour()` and `formatShortTime()`. Updates dynamically when the user taps grid buttons.
+
+5. **Bulk snooze notification bugs** — Three bugs found and fixed: (a) AppDelegate didn't dismiss notifications after bulk snooze from lock screen, (b) Content extension silently dismissed notifications even when the API call failed (changed to `.doNotDismiss` on error), (c) Watch app had the same dismissal gap as AppDelegate.
+
+### Critical Alerts Entitlement
+
+Applied to Apple for the Critical Alerts entitlement (allows bypassing DND/ringer switch for P4 notifications). Pending Apple approval. In the meantime, P4 notifications use `time-sensitive` interruption level (same as P3). The entitlement entries, `.criticalAlert` authorization option, and critical sound payload are removed from the codebase until approved — will re-add when the entitlement comes through.
+
+---
+
 ## 02-21-26
 
 ### Load Time Performance Optimizations

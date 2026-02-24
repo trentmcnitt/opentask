@@ -750,6 +750,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   const { overdueCount, todayCount } = useTaskCounts(tasks_, timezone)
 
+  // Update browser tab title with overdue count
+  useEffect(() => {
+    document.title = overdueCount > 0 ? `(${overdueCount}) OpenTask` : 'OpenTask'
+    return () => {
+      document.title = 'OpenTask'
+    }
+  }, [overdueCount])
+
   // Compute per-project today task counts for ProjectFilterBar
   const todayCounts = useMemo(() => {
     if (!timezone) return new Map<number, number>()

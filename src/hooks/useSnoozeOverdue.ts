@@ -4,8 +4,7 @@
  * Used by both the dashboard and project detail pages. Sends overdue task IDs
  * to the bulk snooze endpoint and shows a toast with results.
  *
- * Two-tier snooze: first click snoozes P0/P1 (tier 1), second click with
- * remaining IDs snoozes P2 (tier 2). P3/P4 are always skipped.
+ * P0-P3 tasks are eligible for bulk snooze. P4 (Urgent) is excluded.
  */
 
 import { useCallback } from 'react'
@@ -24,23 +23,11 @@ interface UseSnoozeOverdueOptions {
 }
 
 /**
- * Build a comma-separated skip breakdown string from per-priority counts.
- * Only includes non-zero entries. Returns empty string if nothing was skipped.
- */
-function buildSkipBreakdown(medium: number, high: number, urgent: number): string {
-  const parts: string[] = []
-  if (medium > 0) parts.push(`${medium} medium`)
-  if (high > 0) parts.push(`${high} high`)
-  if (urgent > 0) parts.push(`${urgent} urgent`)
-  return parts.join(', ')
-}
-
-/**
  * Returns a callback that snoozes all overdue tasks from `displayTasks`.
  *
- * Sends all overdue task IDs to the server — the server handles the two-tier
- * priority filtering. The optional `until` parameter allows SnoozeAllFab
- * long-press menu to override the default duration.
+ * Sends all overdue task IDs to the server — the server handles priority
+ * filtering (P0-P3 eligible, P4 excluded). The optional `until` parameter
+ * allows SnoozeAllFab long-press menu to override the default duration.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   const { displayTasks, fetchTasks, handleUndo, timezone, defaultSnoozeOption, morningTime } =
@@ -70,22 +57,14 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         if (!res.ok) throw new Error('Snooze failed')
         const responseData = await res.json()
         const tasksAffected = responseData.data?.tasks_affected ?? 0
-        const tier = responseData.data?.tier ?? 0
-        const skippedMedium = responseData.data?.skipped_medium ?? 0
-        const skippedHigh = responseData.data?.skipped_high ?? 0
         const skippedUrgent = responseData.data?.skipped_urgent ?? 0
         fetchTasks()
 
-        const skipBreakdown = buildSkipBreakdown(skippedMedium, skippedHigh, skippedUrgent)
-        const skipSuffix = skipBreakdown ? ` (skipped ${skipBreakdown})` : ''
+        const skipSuffix = skippedUrgent > 0 ? ` (${skippedUrgent} urgent skipped)` : ''
 
         let message: string
         if (tasksAffected === 0) {
-          // Nothing eligible (tier 0)
-          const mustSnooze = buildSkipBreakdown(skippedMedium, skippedHigh, skippedUrgent)
-          message = `No snoozable tasks (${mustSnooze} must be snoozed individually)`
-        } else if (tier === 2) {
-          message = `Snoozed ${tasksAffected} medium ${taskWord(tasksAffected)}${skipSuffix}`
+          message = `No snoozable tasks (${skippedUrgent} urgent must be snoozed individually)`
         } else {
           message = `Snoozed ${tasksAffected} ${taskWord(tasksAffected)}${skipSuffix}`
         }

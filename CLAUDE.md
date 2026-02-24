@@ -146,30 +146,26 @@ Don't add buffers, timeouts, or tolerances to work around symptoms. If something
 
 OpenTask is not a traditional task manager. Due dates for most tasks are **reminders, not deadlines**. Understanding that distinction is critical for interpreting task data correctly, especially in AI features. See `docs/DESIGN.md` for the full rationale.
 
-**The two-tier due date system:** Priority determines whether a due date is a deadline or a notification trigger.
+**Priority determines whether a due date is a deadline or a notification trigger:**
 
-- **Priority 0-1 (Unset/Low):** `due_at` means "remind me at this time." These tasks are bulk-snoozed on the first click of the snooze button. Being "overdue" just means `due_at` has passed — it's the normal state, not a problem.
-- **Priority 2 (Medium):** `due_at` is still a reminder, but gets a second-tier snooze. Medium tasks are only bulk-snoozed on the second click, after all P0/P1 tasks have already been snoozed. This gives the user a natural pause to reconsider medium-priority items. `MEDIUM_PRIORITY_THRESHOLD = 2` in `src/lib/priority.ts`.
-- **Priority 3-4 (High/Urgent):** `due_at` is a real deadline. These are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is significant. `HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts`.
+- **Priority 0-3 (Unset/Low/Medium/High):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem. For high-priority tasks, being overdue is more significant but still bulk-snoozable.
+- **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
 
-| Priority          | Due date means | Bulk snooze           | "Overdue" significance |
-| ----------------- | -------------- | --------------------- | ---------------------- |
-| 0-1 (Unset/Low)   | Reminder       | Tier 1 (first click)  | Normal — not a problem |
-| 2 (Medium)        | Reminder       | Tier 2 (second click) | Low                    |
-| 3-4 (High/Urgent) | Real deadline  | Never bulk-snoozed    | Significant            |
+| Priority        | Due date means | Bulk snooze | "Overdue" significance |
+| --------------- | -------------- | ----------- | ---------------------- |
+| 0-1 (Unset/Low) | Reminder       | Eligible    | Normal — not a problem |
+| 2 (Medium)      | Reminder       | Eligible    | Low                    |
+| 3 (High)        | Deadline       | Eligible    | Significant            |
+| 4 (Urgent)      | Hard deadline  | Never       | Critical               |
 
-**Two-tier bulk snooze flow:** The snooze button in the top bar uses a two-tier system. The server determines the current tier from the batch composition on each request (no tier state is stored):
-
-1. **Tier 1** (first click): If P0/P1 tasks are present, only those are snoozed. P2+ skipped.
-2. **Tier 2** (second click): If only P2+ remain, P2 tasks are snoozed. P3/P4 skipped.
-3. **No eligible tasks**: If only P3/P4 remain, nothing is bulk-snoozed.
+**Bulk snooze:** One pass — all overdue P0-P3 tasks are snoozed, P4 (Urgent) is always excluded. No tiers, no multi-click flow.
 
 **Implications for code and AI:**
 
 - `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
 - The gap between `original_due_at` and `due_at` shows total drift but not how many times or why the task was snoozed. Don't infer snooze counts or user intent from dates alone.
 - `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
-- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
+- For P0-3 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
 
 ## Task Model Reference
 
