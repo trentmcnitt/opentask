@@ -16,6 +16,7 @@ import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
+import { notifyDemoEngagement } from '@/lib/demo-notify'
 
 export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -38,6 +39,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     })
 
     dismissNotificationsForTasks(user.id, [taskId])
+    notifyDemoEngagement(user.name, 'done')
 
     return success({
       task: formatTaskResponse(result.task),

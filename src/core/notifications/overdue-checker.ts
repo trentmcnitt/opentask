@@ -30,6 +30,7 @@ import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/
 import {
   sendApnsNotification,
   sendApnsSummaryNotification,
+  sendApnsBadgeUpdate,
   isApnsConfigured,
 } from '@/core/notifications/apns'
 
@@ -223,11 +224,13 @@ export async function checkOverdueTasks(): Promise<void> {
       )
       .all() as OverdueTask[]
 
+    // Collect unique user IDs with overdue tasks for badge updates
+    const usersWithOverdue = new Set(overdueTasks.map((t) => t.user_id))
+
     // Filter to tasks whose due_at aligns with a notification boundary this minute
     const eligibleTasks = overdueTasks.filter((t) => isNotificationBoundary(t, now))
-    if (eligibleTasks.length === 0) return
 
-    // Group tasks by user
+    // Group eligible tasks by user for visible notifications
     const tasksByUser = new Map<number, OverdueTask[]>()
     for (const task of eligibleTasks) {
       const list = tasksByUser.get(task.user_id) || []
@@ -235,7 +238,7 @@ export async function checkOverdueTasks(): Promise<void> {
       tasksByUser.set(task.user_id, list)
     }
 
-    // Send notifications per user with consolidation
+    // Send visible notifications per user with consolidation
     for (const [userId, tasks] of tasksByUser) {
       const { regular, high, urgent } = splitIntoBuckets(tasks)
 
@@ -257,6 +260,24 @@ export async function checkOverdueTasks(): Promise<void> {
       await sendBucket(regular, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
       await sendBucket(high, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
       await sendBucket(urgent, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
+    }
+
+    // Badge-only update for users who have overdue tasks but didn't get
+    // visible notifications this cycle. Keeps the app icon badge current.
+    if (apnsEnabled) {
+      for (const userId of usersWithOverdue) {
+        if (tasksByUser.has(userId)) continue // already got badge via visible notification
+        const badgeCount = (
+          db
+            .prepare(
+              `SELECT COUNT(*) as count FROM tasks
+               WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
+                 AND due_at IS NOT NULL AND datetime(due_at) < datetime('now')`,
+            )
+            .get(userId) as { count: number }
+        ).count
+        await sendApnsBadgeUpdate(userId, badgeCount)
+      }
     }
   } catch (err) {
     log.error('notifications', 'Overdue checker error:', err)

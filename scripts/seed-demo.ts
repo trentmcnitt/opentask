@@ -1,7 +1,11 @@
 /**
  * Demo user seed script for OpenTask
  *
- * Creates a demo user with realistic generic professional tasks.
+ * Creates a demo user with curated portfolio-style tasks:
+ * - "Try It" project: interactive onboarding for visitors
+ * - "Client Work" project: skill-signaling professional tasks
+ * - Inbox: CTA task
+ *
  * Does NOT touch other users. Safe to run on a production database.
  *
  * Usage: npm run db:seed-demo
@@ -22,458 +26,52 @@ import { localToUtc } from '../src/core/recurrence/timezone'
 const TIMEZONE = 'America/Chicago'
 const SALT_ROUNDS = 10
 
-// Day-of-week constants (0=Mon..6=Sun)
+// Day-of-week constants (0=Mon..6=Sun) used by RRulePatterns
 const MON = 0,
-  TUE = 1,
-  WED = 2,
-  THU = 3,
-  FRI = 4,
-  SAT = 5
-
-const WEEKDAYS = [MON, TUE, WED, THU, FRI]
+  THU = 3
 
 // Priority constants
 const UNSET = 0,
   LOW = 1,
   MED = 2,
-  HIGH = 3,
-  URGENT = 4
+  HIGH = 3
+
+type ProjectName = 'Inbox' | 'Client Work' | 'Try It'
+type ProjectMap = Record<ProjectName, number>
 
 interface DemoTaskDef {
   title: string
-  project: 'Inbox' | 'Work' | 'Personal' | 'Home' | 'Side Projects'
+  project: ProjectName
   rrule?: string
-  dueOffset?: number // days from today (negative = overdue)
+  /** Days from today for due date. Ignored when noDue is true. */
+  dueOffset?: number
   hour?: number
   min?: number
   priority?: number
-  labels?: string
-  done?: boolean
-  deleted?: boolean
-  completionCount?: number
-  snoozeCount?: number
   notes?: string
+  done?: boolean
+  /** When true, skip due date computation entirely (task has no due date) */
+  noDue?: boolean
+  /** How many days ago the task was created (for realistic created_at). Default: 3 */
+  createdDaysAgo?: number
 }
 
-// ── Task definitions ──────────────────────────────────
-
-const WORK_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Daily standup',
-    project: 'Work',
-    rrule: RRulePatterns.weekly(WEEKDAYS, 9, 0),
-    dueOffset: 0,
-    priority: HIGH,
-    labels: '["daily"]',
-    completionCount: 45,
-  },
-  {
-    title: 'Weekly team sync',
-    project: 'Work',
-    rrule: RRulePatterns.weekly([TUE], 10, 0),
-    dueOffset: 1,
-    priority: MED,
-    labels: '["weekly"]',
-    completionCount: 12,
-  },
-  {
-    title: 'Review pull requests',
-    project: 'Work',
-    rrule: RRulePatterns.weekly(WEEKDAYS, 14, 0),
-    dueOffset: 0,
-    priority: MED,
-    labels: '["daily"]',
-    completionCount: 30,
-  },
-  {
-    title: 'Submit weekly status report',
-    project: 'Work',
-    rrule: RRulePatterns.weekly([FRI], 16, 0),
-    dueOffset: 3,
-    priority: MED,
-    labels: '["weekly"]',
-    completionCount: 8,
-  },
-  {
-    title: 'Monthly expense report',
-    project: 'Work',
-    rrule: RRulePatterns.monthly(1, 9, 0),
-    dueOffset: 5,
-    labels: '["monthly"]',
-    completionCount: 6,
-  },
-  {
-    title: 'Prepare Q2 presentation slides',
-    project: 'Work',
-    dueOffset: 3,
-    hour: 10,
-    priority: HIGH,
-  },
-  {
-    title: 'Update project documentation',
-    project: 'Work',
-    dueOffset: 5,
-    hour: 14,
-    priority: LOW,
-  },
-  {
-    title: 'Schedule 1:1 with new team member',
-    project: 'Work',
-    dueOffset: 1,
-    hour: 11,
-    priority: MED,
-  },
-  {
-    title: 'Review and approve vendor contract',
-    project: 'Work',
-    dueOffset: 2,
-    hour: 10,
-    priority: URGENT,
-    notes: 'Legal needs this signed by end of week',
-  },
-  {
-    title: 'Finalize hiring criteria for backend role',
-    project: 'Work',
-    dueOffset: 4,
-    hour: 15,
-    priority: MED,
-  },
-  {
-    title: 'Respond to client feedback email',
-    project: 'Work',
-    dueOffset: -1,
-    hour: 9,
-    priority: HIGH,
-    snoozeCount: 1,
-  },
-  {
-    title: 'Fix broken CI pipeline',
-    project: 'Work',
-    dueOffset: 0,
-    hour: 11,
-    priority: URGENT,
-  },
-]
-
-const PERSONAL_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Morning workout',
-    project: 'Personal',
-    rrule: RRulePatterns.weekly([MON, WED, FRI], 7, 0),
-    dueOffset: 0,
-    priority: MED,
-    labels: '["health"]',
-    completionCount: 20,
-  },
-  {
-    title: 'Take daily vitamins',
-    project: 'Personal',
-    rrule: RRulePatterns.daily(8, 0),
-    dueOffset: 0,
-    labels: '["health","daily"]',
-    completionCount: 55,
-  },
-  {
-    title: 'Read for 30 minutes',
-    project: 'Personal',
-    rrule: RRulePatterns.daily(21, 0),
-    dueOffset: -1,
-    priority: LOW,
-    labels: '["evening"]',
-    completionCount: 18,
-    snoozeCount: 3,
-  },
-  {
-    title: 'Schedule dentist appointment',
-    project: 'Personal',
-    dueOffset: 2,
-    hour: 10,
-    priority: MED,
-  },
-  {
-    title: 'Renew gym membership',
-    project: 'Personal',
-    dueOffset: 7,
-    hour: 9,
-    priority: LOW,
-    snoozeCount: 2,
-  },
-  {
-    title: 'Call insurance about claim',
-    project: 'Personal',
-    dueOffset: 1,
-    hour: 14,
-    priority: HIGH,
-  },
-  {
-    title: 'Weekly meal prep',
-    project: 'Personal',
-    rrule: RRulePatterns.weekly([SAT], 10, 0),
-    dueOffset: 2,
-    labels: '["weekly"]',
-    completionCount: 10,
-  },
-  {
-    title: 'Budget review',
-    project: 'Personal',
-    rrule: RRulePatterns.monthly(15, 19, 0),
-    dueOffset: 8,
-    labels: '["monthly"]',
-    completionCount: 4,
-  },
-]
-
-const HOME_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Take out trash and recycling',
-    project: 'Home',
-    rrule: RRulePatterns.weekly([WED], 7, 0),
-    dueOffset: -1,
-    labels: '["weekly"]',
-    completionCount: 22,
-    snoozeCount: 1,
-  },
-  {
-    title: 'Water plants',
-    project: 'Home',
-    rrule: RRulePatterns.weekly([SAT], 9, 0),
-    dueOffset: 2,
-    labels: '["weekly"]',
-    completionCount: 15,
-  },
-  {
-    title: 'Replace HVAC filter',
-    project: 'Home',
-    rrule: RRulePatterns.everyNMonths(3, 1, 10, 0),
-    dueOffset: 20,
-    labels: '["quarterly"]',
-    completionCount: 2,
-  },
-  {
-    title: 'Fix leaky kitchen faucet',
-    project: 'Home',
-    dueOffset: 4,
-    hour: 10,
-    priority: MED,
-    snoozeCount: 3,
-  },
-  {
-    title: 'Clean out garage',
-    project: 'Home',
-    dueOffset: 10,
-    hour: 9,
-    priority: LOW,
-  },
-  {
-    title: 'Schedule lawn service for spring',
-    project: 'Home',
-    dueOffset: 6,
-    hour: 9,
-  },
-  {
-    title: 'Replace smoke detector batteries',
-    project: 'Home',
-    dueOffset: 3,
-    hour: 10,
-    priority: HIGH,
-  },
-  {
-    title: 'Organize kitchen pantry',
-    project: 'Home',
-    dueOffset: 8,
-    hour: 14,
-    priority: LOW,
-    snoozeCount: 2,
-  },
-  {
-    title: 'Check gutters before storm season',
-    project: 'Home',
-    dueOffset: 12,
-    hour: 10,
-    priority: MED,
-  },
-  {
-    title: 'Deep clean bathroom',
-    project: 'Home',
-    rrule: RRulePatterns.everyNWeeks(2, [SAT], 10, 0),
-    dueOffset: 5,
-    labels: '["biweekly"]',
-    completionCount: 6,
-  },
-]
-
-const SIDE_PROJECT_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Set up project repo and CI',
-    project: 'Side Projects',
-    dueOffset: 5,
-    hour: 19,
-    priority: MED,
-    labels: '["coding"]',
-  },
-  {
-    title: 'Design landing page mockup',
-    project: 'Side Projects',
-    dueOffset: 7,
-    hour: 20,
-    priority: LOW,
-    labels: '["design"]',
-  },
-  {
-    title: 'Research hosting options',
-    project: 'Side Projects',
-    dueOffset: 3,
-    hour: 20,
-    labels: '["research"]',
-  },
-  {
-    title: 'Write blog post draft',
-    project: 'Side Projects',
-    dueOffset: 10,
-    hour: 20,
-    priority: LOW,
-    labels: '["writing"]',
-  },
-  {
-    title: 'Review analytics dashboard design',
-    project: 'Side Projects',
-    dueOffset: 6,
-    hour: 20,
-    labels: '["design"]',
-  },
-  {
-    title: 'Set up automated backups',
-    project: 'Side Projects',
-    dueOffset: 8,
-    hour: 19,
-    priority: MED,
-    labels: '["devops"]',
-  },
-]
-
-const INBOX_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Look into that podcast recommendation',
-    project: 'Inbox',
-    dueOffset: 1,
-    hour: 19,
-  },
-  {
-    title: 'Send thank you note to Sarah',
-    project: 'Inbox',
-    dueOffset: 0,
-    hour: 12,
-    priority: MED,
-  },
-  {
-    title: 'Check warranty on dishwasher',
-    project: 'Inbox',
-    dueOffset: 3,
-    hour: 10,
-  },
-  {
-    title: 'Find a good recipe for dinner party',
-    project: 'Inbox',
-    dueOffset: 4,
-    hour: 18,
-  },
-  {
-    title: 'Reply to apartment building survey',
-    project: 'Inbox',
-    dueOffset: 2,
-    hour: 11,
-  },
-]
-
-const COMPLETED_TASKS: DemoTaskDef[] = [
-  {
-    title: 'File taxes',
-    project: 'Personal',
-    done: true,
-    dueOffset: -14,
-    hour: 10,
-    priority: URGENT,
-    completionCount: 1,
-  },
-  {
-    title: 'Order new desk chair',
-    project: 'Home',
-    done: true,
-    dueOffset: -7,
-    hour: 14,
-    completionCount: 1,
-  },
-  {
-    title: 'Update resume',
-    project: 'Work',
-    done: true,
-    dueOffset: -10,
-    hour: 20,
-    completionCount: 1,
-  },
-  {
-    title: 'Return library books',
-    project: 'Personal',
-    done: true,
-    dueOffset: -5,
-    hour: 11,
-    completionCount: 1,
-  },
-  {
-    title: 'Cancel streaming trial',
-    project: 'Personal',
-    done: true,
-    dueOffset: -3,
-    hour: 9,
-    completionCount: 1,
-  },
-  {
-    title: 'Submit conference talk proposal',
-    project: 'Work',
-    done: true,
-    dueOffset: -8,
-    hour: 15,
-    priority: HIGH,
-    completionCount: 1,
-  },
-  {
-    title: 'Set up automatic bill pay',
-    project: 'Personal',
-    done: true,
-    dueOffset: -12,
-    hour: 10,
-    completionCount: 1,
-  },
-]
-
-const TRASHED_TASKS: DemoTaskDef[] = [
-  {
-    title: 'Old project idea - shelved',
-    project: 'Side Projects',
-    deleted: true,
-    dueOffset: -10,
-    hour: 20,
-  },
-  {
-    title: 'Duplicate entry - weekly review',
-    project: 'Work',
-    deleted: true,
-    dueOffset: -5,
-    hour: 16,
-  },
-]
-
-const ALL_DEMO_TASKS: DemoTaskDef[] = [
-  ...WORK_TASKS,
-  ...PERSONAL_TASKS,
-  ...HOME_TASKS,
-  ...SIDE_PROJECT_TASKS,
-  ...INBOX_TASKS,
-  ...COMPLETED_TASKS,
-  ...TRASHED_TASKS,
-]
-
 // ── Helpers ──────────────────────────────────
+
+/**
+ * Returns the number of days from today until the next occurrence of
+ * the given ISO weekday(s) (1=Mon..7=Sun). Always returns at least
+ * `minDays` (default 1) so tasks are never due today — prevents
+ * accidental overdue after the daily 3 AM reset.
+ */
+function daysUntilWeekday(isoWeekdays: number | number[], minDays: number = 1): number {
+  const weekdays = Array.isArray(isoWeekdays) ? isoWeekdays : [isoWeekdays]
+  const today = DateTime.now().setZone(TIMEZONE)
+  for (let d = minDays; d <= 7 + minDays; d++) {
+    if (weekdays.includes(today.plus({ days: d }).weekday)) return d
+  }
+  return minDays
+}
 
 function localToUtcIso(daysOffset: number, hour: number, minute: number): string {
   const local = DateTime.now()
@@ -483,8 +81,156 @@ function localToUtcIso(daysOffset: number, hour: number, minute: number): string
   return localToUtc(local)
 }
 
-type ProjectName = 'Inbox' | 'Work' | 'Personal' | 'Home' | 'Side Projects'
-type ProjectMap = Record<ProjectName, number>
+// ── Task definitions ──────────────────────────────────
+
+function getDemoTasks(): DemoTaskDef[] {
+  const TRY_IT_TASKS: DemoTaskDef[] = [
+    {
+      title:
+        "Try adding a task — type 'Set up weekly standup every Monday at 10am' in the box above",
+      project: 'Try It',
+      noDue: true,
+      createdDaysAgo: 3,
+      notes:
+        'OpenTask uses AI to parse natural language into structured tasks. Try it yourself — type or paste the text above and watch the AI enrich it.',
+    },
+    {
+      title: "Try voice input — say 'Review deployment pipeline Friday afternoon medium priority'",
+      project: 'Try It',
+      noDue: true,
+      createdDaysAgo: 3,
+      notes: 'Works with Siri, dictation, or just typing. The AI handles the rest.',
+    },
+    {
+      title: 'Learn about OpenTask',
+      project: 'Try It',
+      noDue: true,
+      createdDaysAgo: 3,
+      notes: [
+        'Swipe right on a task to snooze, left to complete',
+        'Long-press a task for quick actions (priority, snooze presets)',
+        'Bulk select: tap the circle on any task, then use the action bar',
+        '"What\'s Next" — AI surfaces tasks you might be overlooking',
+        'Recurring tasks with natural language ("every weekday at 9am")',
+        'Works on iOS, Apple Watch, and as a PWA on any device',
+        'Built with Claude Code + Claude Agent SDK',
+      ].join('\n'),
+    },
+    {
+      title: 'Try completing this task — swipe left or tap the circle',
+      project: 'Try It',
+      dueOffset: -1,
+      hour: 15,
+      createdDaysAgo: 2,
+      notes: 'This task is intentionally overdue so you can practice completing it.',
+    },
+  ]
+
+  const CLIENT_WORK_TASKS: DemoTaskDef[] = [
+    {
+      title: 'Prepare implementation plan for client onboarding',
+      project: 'Client Work',
+      dueOffset: 1,
+      hour: 10,
+      priority: HIGH,
+      createdDaysAgo: 4,
+    },
+    {
+      title: 'Build MCP server for client CRM integration',
+      project: 'Client Work',
+      dueOffset: daysUntilWeekday(5), // next Friday
+      hour: 14,
+      priority: MED,
+      createdDaysAgo: 5,
+      notes:
+        'Client wants Salesforce contacts synced to internal dashboard. Claude Code + MCP adapter pattern. Need to evaluate whether to use stdio or SSE transport.',
+    },
+    {
+      title: 'Set up Claude Code workflow for automated testing',
+      project: 'Client Work',
+      dueOffset: daysUntilWeekday(4), // next Thursday
+      hour: 15,
+      priority: MED,
+      createdDaysAgo: 5,
+    },
+    {
+      title: 'Schedule intro call — new AI automation project',
+      project: 'Client Work',
+      dueOffset: daysUntilWeekday(4), // next Thursday
+      hour: 14,
+      priority: MED,
+      createdDaysAgo: 3,
+    },
+    {
+      // The ONE old task — triggers the `stale` signal in AI Insights (requires 21+ days),
+      // giving the feature something meaningful to showcase. Use 22 to avoid edge cases
+      // where Math.floor on the age rounds down to 20 depending on time of day.
+      title: 'Draft project scope for RAG pipeline integration',
+      project: 'Client Work',
+      noDue: true,
+      priority: LOW,
+      createdDaysAgo: 22,
+      notes:
+        'Vector database evaluation needed — Pinecone vs pgvector. Client processing ~50K docs. Start with proof of concept on a smaller subset.',
+    },
+    {
+      title: 'Review pull request — API authentication updates',
+      project: 'Client Work',
+      dueOffset: 1, // tomorrow — never overdue on seed day
+      hour: 17,
+      priority: HIGH,
+      createdDaysAgo: 1,
+    },
+    {
+      title: 'Client status update',
+      project: 'Client Work',
+      rrule: RRulePatterns.weekly([MON, THU], 10, 0),
+      dueOffset: daysUntilWeekday([1, 4]), // next Mon or Thu, always future
+      priority: LOW,
+      createdDaysAgo: 7,
+    },
+    {
+      title: 'Follow up on proposal — workflow automation project',
+      project: 'Client Work',
+      dueOffset: daysUntilWeekday(3), // next Wednesday
+      hour: 9,
+      priority: MED,
+      createdDaysAgo: 4,
+    },
+  ]
+
+  const INBOX_TASKS: DemoTaskDef[] = [
+    {
+      title: 'Want to work together? Reach out to Trent at trent@mcnitt.io',
+      project: 'Inbox',
+      noDue: true,
+      createdDaysAgo: 3,
+      notes:
+        'AI consultant specializing in Claude Code, MCP, and AI workflow automation. View my work at mcnitt.io',
+    },
+  ]
+
+  const COMPLETED_TASKS: DemoTaskDef[] = [
+    {
+      title: 'Deploy staging environment for client demo',
+      project: 'Client Work',
+      done: true,
+      dueOffset: -1,
+      hour: 16,
+      createdDaysAgo: 5,
+    },
+    {
+      title: 'Configure CI/CD pipeline with automated tests',
+      project: 'Client Work',
+      done: true,
+      dueOffset: -2,
+      hour: 16,
+      createdDaysAgo: 6,
+    },
+  ]
+
+  return [...TRY_IT_TASKS, ...CLIENT_WORK_TASKS, ...INBOX_TASKS, ...COMPLETED_TASKS]
+}
 
 // ── Task seeding helper ─────────────────────
 
@@ -506,36 +252,34 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
   `)
 
   const now = DateTime.utc().toISO()!
-  let inserted = 0
+  const tasks = getDemoTasks()
 
-  for (let i = 0; i < ALL_DEMO_TASKS.length; i++) {
-    const task = ALL_DEMO_TASKS[i]
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i]
     const projectId = projectMap[task.project]
     const priority = task.priority ?? UNSET
-    const labels = task.labels ?? '[]'
-    const completionCount = task.completionCount ?? 0
-    const snoozeCount = task.snoozeCount ?? 0
     const notes = task.notes ?? null
 
-    const offset = task.dueOffset ?? 0
-    let h = task.hour ?? 9
-    let m = task.min ?? 0
-    if (task.rrule && task.hour === undefined) {
-      const components = parseRRule(task.rrule)
-      if (components.byhour !== undefined) h = components.byhour
-      if (components.byminute !== undefined) m = components.byminute
+    // Due date computation
+    let dueAt: string | null = null
+    if (!task.noDue) {
+      const offset = task.dueOffset ?? 0
+      let h = task.hour ?? 9
+      let m = task.min ?? 0
+      if (task.rrule && task.hour === undefined) {
+        const components = parseRRule(task.rrule)
+        if (components.byhour !== undefined) h = components.byhour
+        if (components.byminute !== undefined) m = components.byminute
+      }
+      dueAt = localToUtcIso(offset, h, m)
     }
-    const dueAt = localToUtcIso(offset, h, m)
+
     const anchors = deriveAnchorFields(task.rrule ?? null, dueAt, TIMEZONE)
 
     const done = task.done ? 1 : 0
     const doneAt = task.done ? dueAt : null
     const archivedAt = task.done ? dueAt : null
-    const deletedAt = task.deleted ? now : null
-    const originalDueAt = snoozeCount > 0 ? localToUtcIso(offset - 1, h, m) : null
-    const firstCompleted = completionCount > 0 ? localToUtcIso(-30, h, m) : null
-    const lastCompleted = completionCount > 0 ? localToUtcIso(-1, h, m) : null
-    const createdAt = localToUtcIso(-60 + i, 10, 0)
+    const createdAt = localToUtcIso(-(task.createdDaysAgo ?? 3), 10, 0)
 
     insertTask.run(
       userId,
@@ -549,55 +293,49 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
       anchors.anchor_time,
       anchors.anchor_dow,
       anchors.anchor_dom,
-      originalDueAt,
-      deletedAt,
+      dueAt, // original_due_at — matches createTask() behavior
+      null, // deleted_at
       archivedAt,
-      labels,
+      '[]', // labels
       notes,
-      completionCount,
-      snoozeCount,
-      firstCompleted,
-      lastCompleted,
+      0, // completion_count
+      0, // snooze_count
+      null, // first_completed_at
+      null, // last_completed_at
       createdAt,
       now,
     )
-    inserted++
   }
 
-  return inserted
+  return tasks.length
 }
 
-// ── Exported seed function ──────────────────
+// ── Exported seed functions ─────────────────
+
+export interface SeedDemoOptions {
+  username?: string
+  password?: string
+  email?: string
+}
 
 /**
- * Seed demo user data into the database.
- * Creates the demo user, projects, token, and tasks.
- * Does NOT touch any other users' data.
- *
- * @returns The demo user's ID
+ * Seed projects, API token, and tasks for an existing user.
+ * Used by reset-demo-user.ts to re-seed data without recreating the user row
+ * (preserving the user ID so JWT sessions stay valid).
  */
-export async function seedDemoUser(db: Database.Database): Promise<number> {
-  // Create demo user
-  const passwordHash = await bcrypt.hash('demo', SALT_ROUNDS)
-  const userResult = db
-    .prepare(
-      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    .run('demo@opentask.app', 'demo', passwordHash, TIMEZONE, 0)
-  const userId = Number(userResult.lastInsertRowid)
-  console.log(`  Demo user created (ID: ${userId})`)
-
+export function seedDemoData(
+  db: Database.Database,
+  userId: number,
+  username: string = 'demo',
+): void {
   // Create projects
   const insertProject = db.prepare(
     `INSERT INTO projects (name, owner_id, shared, sort_order, color) VALUES (?, ?, 0, ?, ?)`,
   )
   const projects: { name: ProjectName; order: number; color: string }[] = [
     { name: 'Inbox', order: 0, color: 'blue' },
-    { name: 'Work', order: 1, color: 'orange' },
-    { name: 'Personal', order: 2, color: 'green' },
-    { name: 'Home', order: 3, color: 'purple' },
-    { name: 'Side Projects', order: 4, color: 'pink' },
+    { name: 'Client Work', order: 1, color: 'orange' },
+    { name: 'Try It', order: 2, color: 'green' },
   ]
 
   const projectMap = {} as ProjectMap
@@ -607,18 +345,46 @@ export async function seedDemoUser(db: Database.Database): Promise<number> {
     console.log(`  Project: ${p.name} (ID: ${result.lastInsertRowid})`)
   }
 
-  // Create API token (for demo API access)
-  const rawToken = 'demo-token-' + '0'.repeat(53) // 64 chars
+  // Create API token
+  const rawToken = `${username}-token-` + '0'.repeat(64 - username.length - 7)
   const hashed = hashToken(rawToken)
   const preview = tokenPreview(rawToken)
   db.prepare(
     `INSERT INTO api_tokens (user_id, token, token_preview, name) VALUES (?, ?, ?, ?)`,
-  ).run(userId, hashed, preview, 'Demo Token')
+  ).run(userId, hashed, preview, `${username} Token`)
   console.log(`  API token created`)
 
   // Seed tasks
   const inserted = seedDemoTasks(db, userId, projectMap)
   console.log(`  Inserted ${inserted} tasks`)
+}
+
+/**
+ * Seed a complete demo user (user row + data) into the database.
+ * Used for initial creation. For daily resets, use seedDemoData() instead.
+ *
+ * @returns The user's ID
+ */
+export async function seedDemoUser(
+  db: Database.Database,
+  options: SeedDemoOptions = {},
+): Promise<number> {
+  const username = options.username ?? 'demo'
+  const password = options.password ?? username
+  const email = options.email ?? `${username}@opentask.app`
+
+  // Create user
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+  const userResult = db
+    .prepare(
+      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(email, username, passwordHash, TIMEZONE, 0)
+  const userId = Number(userResult.lastInsertRowid)
+  console.log(`  User "${username}" created (ID: ${userId})`)
+
+  seedDemoData(db, userId, username)
 
   return userId
 }
@@ -629,7 +395,6 @@ async function main(): Promise<void> {
   console.log('Seeding demo user...')
   const db = getDb()
 
-  // Check if demo user already exists
   const existing = db.prepare('SELECT id FROM users WHERE name = ? COLLATE NOCASE').get('demo') as
     | { id: number }
     | undefined
@@ -642,7 +407,6 @@ async function main(): Promise<void> {
 
   await seedDemoUser(db)
 
-  // Print summary
   const taskCount = (
     db
       .prepare(

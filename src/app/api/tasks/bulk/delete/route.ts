@@ -15,6 +15,7 @@ import { validateBulkDelete } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
+import { notifyDemoEngagement } from '@/lib/demo-notify'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -32,6 +33,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     })
 
     dismissNotificationsForTasks(user.id, input.ids)
+    notifyDemoEngagement(user.name, 'delete')
 
     return success({
       tasks_affected: result.tasksAffected,

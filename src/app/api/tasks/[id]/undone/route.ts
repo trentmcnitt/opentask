@@ -14,6 +14,7 @@ import { markUndone } from '@/core/tasks'
 import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
+import { notifyDemoEngagement } from '@/lib/demo-notify'
 
 export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -35,6 +36,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       taskId,
     })
 
+    notifyDemoEngagement(user.name, 'update')
     return success(formatTaskResponse(task))
   } catch (err) {
     if (err instanceof AuthError) {
