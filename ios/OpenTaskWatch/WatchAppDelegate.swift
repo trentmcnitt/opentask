@@ -35,7 +35,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
     /// iPhone mirroring (which doesn't route actions to the Watch app).
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound, .criticalAlert]
+            options: [.alert, .badge, .sound]
         ) { granted, error in
             if let error = error {
                 print("[OpenTaskWatch] Notification permission error: \(error)")
@@ -230,8 +230,11 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     playHaptic(.success)
 
                 case "SNOOZE_ALL_1HR":
-                    try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                    print("[OpenTaskWatch] Snoozed all +1hr")
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
+                    if result.tasksAffected > 0 {
+                        await dismissSnoozedNotifications()
+                    }
                     playHaptic(.success)
 
                 case UNNotificationDefaultActionIdentifier:
@@ -258,6 +261,26 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([])
+    }
+
+    // MARK: - Notification Dismissal
+
+    /// Remove delivered notifications for P0-P3 tasks after bulk snooze.
+    /// P4 (Urgent) is never bulk-snoozed, so those notifications remain.
+    private func dismissSnoozedNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let notifications = await center.deliveredNotifications()
+        let idsToRemove = notifications
+            .filter { notification in
+                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
+                return p <= 3
+            }
+            .map { $0.request.identifier }
+
+        if !idsToRemove.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
+            print("[OpenTaskWatch] Dismissed \(idsToRemove.count) notifications after bulk snooze")
+        }
     }
 
     // MARK: - Haptic Feedback

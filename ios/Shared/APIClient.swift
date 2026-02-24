@@ -76,8 +76,7 @@ final class APIClient {
         ] as [String: Any])
     }
 
-    /// Bulk snooze all overdue P0/P1 tasks by delta minutes.
-    /// Returns the tier that was snoozed (1 = P0/P1, 2 = P2).
+    /// Bulk snooze all overdue P0-P3 tasks by delta minutes (excludes P4 Urgent).
     @discardableResult
     func snoozeOverdue(deltaMinutes: Int) async throws -> BulkSnoozeResult {
         let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [
@@ -85,16 +84,14 @@ final class APIClient {
         ])
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
-            return BulkSnoozeResult(tier: 0, tasksAffected: 0)
+            return BulkSnoozeResult(tasksAffected: 0)
         }
         return BulkSnoozeResult(
-            tier: responseData["tier"] as? Int ?? 0,
             tasksAffected: responseData["tasks_affected"] as? Int ?? 0
         )
     }
 
     struct BulkSnoozeResult {
-        let tier: Int
         let tasksAffected: Int
     }
 

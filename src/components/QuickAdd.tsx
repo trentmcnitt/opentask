@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { Plus } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Plus, Mic } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 
 interface QuickAddProps {
   onAdd: (title: string) => void | Promise<void>
@@ -14,6 +15,27 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { isSupported, isListening, startListening, stopListening, transcript } =
+    useSpeechRecognition()
+  const titleBeforeListeningRef = useRef('')
+
+  // While listening, show live preview of base title + transcript.
+  // The base title is snapshotted in the mic button click handler.
+  useEffect(() => {
+    if (!isListening || !transcript) return
+    const base = titleBeforeListeningRef.current
+    const separator = base && !base.endsWith(' ') ? ' ' : ''
+    setTitle(base + separator + transcript)
+  }, [isListening, transcript])
+
+  // When listening stops, focus the input for further editing
+  const prevListeningRef = useRef(false)
+  useEffect(() => {
+    if (!isListening && prevListeningRef.current) {
+      inputRef.current?.focus()
+    }
+    prevListeningRef.current = isListening
+  }, [isListening])
 
   const handleSubmit = async () => {
     const trimmed = title.trim()
@@ -65,6 +87,28 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
           aria-label="Quick add task"
           disabled={submitting}
         />
+        {isSupported && (
+          <button
+            type="button"
+            onClick={() => {
+              if (isListening) {
+                stopListening()
+              } else {
+                titleBeforeListeningRef.current = title
+                startListening()
+              }
+            }}
+            className={cn(
+              'flex-shrink-0 rounded p-0.5 transition-colors',
+              isListening
+                ? 'text-red-500 hover:text-red-600'
+                : 'text-muted-foreground hover:text-primary hover:bg-accent',
+            )}
+            aria-label={isListening ? 'Stop dictation' : 'Start dictation'}
+          >
+            <Mic className={cn('size-5', isListening && 'animate-pulse')} />
+          </button>
+        )}
       </div>
     </div>
   )

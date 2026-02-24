@@ -1,8 +1,8 @@
 /** Priority value at which tasks are considered high/urgent (3=High, 4=Urgent) */
 export const HIGH_PRIORITY_THRESHOLD = 3
 
-/** Priority value at which tasks are considered medium (2=Medium) */
-export const MEDIUM_PRIORITY_THRESHOLD = 2
+/** Priority value for Urgent (4). Only P4 tasks are excluded from bulk snooze. */
+export const URGENT_PRIORITY = 4
 
 /**
  * Priority options for task priority display and selection.

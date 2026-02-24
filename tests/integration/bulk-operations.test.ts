@@ -144,11 +144,17 @@ describe('Bulk snooze integration', () => {
     expect(res.status).toBe(400)
   })
 
-  test('POST bulk/snooze skips high/urgent tasks in mixed-priority selection', async () => {
+  test('POST bulk/snooze skips urgent tasks in mixed-priority selection', async () => {
     // Seed data: task 7 (priority 0), task 8 (priority 1), task 4 (priority 3)
+    // Set task 4 to P4 (Urgent) — only P4 is excluded from bulk snooze
+    await apiFetch('/api/tasks/4', {
+      method: 'PATCH',
+      body: { priority: 4 },
+    })
+
     const targetTime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-    // Get original due dates for high-priority task
+    // Get original due dates for urgent task
     const before4 = (await (await apiFetch('/api/tasks/4')).json()).data
 
     const res = await apiFetch('/api/tasks/bulk/snooze', {
@@ -158,7 +164,7 @@ describe('Bulk snooze integration', () => {
     expect(res.status).toBe(200)
     const data = (await res.json()).data
 
-    // Only tasks 7 and 8 should be snoozed (priority 0 and 1)
+    // Only tasks 7 and 8 should be snoozed (priority 0 and 1); task 4 (P4) skipped
     expect(data.tasks_affected).toBe(2)
     expect(data.tasks_skipped).toBe(1)
 
@@ -168,7 +174,7 @@ describe('Bulk snooze integration', () => {
     expect(after7.due_at).toBe(targetTime)
     expect(after8.due_at).toBe(targetTime)
 
-    // Verify task 4 (high priority) was NOT snoozed
+    // Verify task 4 (urgent) was NOT snoozed
     const after4 = (await (await apiFetch('/api/tasks/4')).json()).data
     expect(after4.due_at).toBe(before4.due_at)
   })

@@ -67,7 +67,9 @@ export interface ApnsPushPayload {
   dueAt: string
   priority: number
   overdueCount: number
-  /** 'critical' for P4, 'time-sensitive' for P3, 'active' for P0-P2 */
+  /** App icon badge number — total overdue tasks for the user */
+  badge?: number
+  /** 'time-sensitive' for P3+, 'active' for P0-P2. 'critical' reserved for when Apple approves the entitlement. */
   interruptionLevel: 'time-sensitive' | 'active' | 'critical'
   /** Volume for critical alerts (0.0-1.0). Only used when interruptionLevel is 'critical'. */
   criticalAlertVolume?: number
@@ -105,6 +107,7 @@ export async function sendApnsNotification(
         topic: device.bundle_id,
         category: 'TASK_REMINDER',
         threadId: 'opentask-overdue',
+        badge: payload.badge,
         sound: isCritical
           ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
           : 'default',

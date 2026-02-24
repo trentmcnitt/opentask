@@ -264,27 +264,30 @@ describe('checkOverdueTasks', () => {
     expect(sendPushNotification).not.toHaveBeenCalled()
   })
 
-  test('P4 task gets both web push and APNs critical alert', async () => {
+  test('P4 task gets both web push and APNs time-sensitive', async () => {
     // Task due at 10:00, check at 10:05 → 5 min boundary (P4 urgent)
+    // Critical alerts require Apple entitlement approval — using time-sensitive until approved
     vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
     insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
     await checkOverdueTasks()
 
-    // P4 gets individual web push AND APNs with critical interruption level
+    // P4 gets individual web push AND APNs with time-sensitive interruption level
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
       expect.objectContaining({
         title: 'URGENT: Urgent task',
-        interruptionLevel: 'critical',
-        criticalAlertVolume: 1.0,
+        interruptionLevel: 'time-sensitive',
       }),
     )
+    // No criticalAlertVolume until Apple approves the entitlement
+    const payload = vi.mocked(sendApnsNotification).mock.calls[0][1]
+    expect(payload.criticalAlertVolume).toBeUndefined()
   })
 
-  test('P3 task gets time-sensitive APNs (not critical)', async () => {
+  test('P3 task gets time-sensitive APNs', async () => {
     vi.setSystemTime(new Date('2026-01-15T10:15:00.000Z'))
     insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
 
@@ -298,26 +301,8 @@ describe('checkOverdueTasks', () => {
         interruptionLevel: 'time-sensitive',
       }),
     )
-    // Should NOT have criticalAlertVolume
     const payload = vi.mocked(sendApnsNotification).mock.calls[0][1]
     expect(payload.criticalAlertVolume).toBeUndefined()
-  })
-
-  test('P4 task uses user critical_alert_volume', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
-    const db = getDb()
-    db.prepare('UPDATE users SET critical_alert_volume = 0.5 WHERE id = ?').run(TEST_USER_ID)
-    insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
-
-    await checkOverdueTasks()
-
-    expect(sendApnsNotification).toHaveBeenCalledWith(
-      TEST_USER_ID,
-      expect.objectContaining({
-        interruptionLevel: 'critical',
-        criticalAlertVolume: 0.5,
-      }),
-    )
   })
 
   test('P3 task uses high interval', async () => {
