@@ -200,10 +200,14 @@ export async function sendApnsSummaryNotification(
 }
 
 /**
- * Send a silent push that only updates the app icon badge number.
- * Called on every cron cycle when there are overdue tasks, even if no
- * visible notifications fire (so the badge stays current).
- * Uses content-available:1 with no alert/sound — iOS delivers silently.
+ * Send a silent push that updates the app icon badge number.
+ * Called after mutations that change the overdue count (via dismiss module)
+ * and by the cron for users who have overdue tasks but didn't get visible
+ * notifications that cycle.
+ *
+ * iOS ignores the aps.badge field in pushes without an alert, so we send the
+ * badge count in the data payload. The AppDelegate's didReceiveRemoteNotification
+ * handler reads the count and calls setBadgeCount() programmatically.
  */
 export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
   if (!isApnsConfigured()) return
@@ -218,11 +222,10 @@ export async function sendApnsBadgeUpdate(userId: number, badge: number): Promis
   const results = await Promise.allSettled(
     devices.map(async (device) => {
       const apns = getClient(device.environment)
-      const notification = new Notification(device.device_token, {
+      const notification = new SilentNotification(device.device_token, {
         topic: device.bundle_id,
-        badge,
         collapseId: 'badge-update',
-        aps: { 'content-available': 1 },
+        data: { type: 'badge-update', badge },
       })
 
       try {
