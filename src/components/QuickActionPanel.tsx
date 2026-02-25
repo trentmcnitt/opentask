@@ -15,7 +15,6 @@ import {
   XCircle,
   RotateCcw,
   Sparkles,
-  Lightbulb,
   CalendarDays,
   Pencil,
   Mic,
@@ -1681,9 +1680,9 @@ export function QuickActionPanel({
       )}
 
       {/* AI Insights commentary */}
-      {insightsCommentary && (
+      {insightsCommentary && !annotation && (
         <p className="mt-2 text-xs text-indigo-600/80 dark:text-indigo-400/80">
-          <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
+          <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
           {insightsCommentary}
         </p>
       )}

@@ -117,7 +117,7 @@ function getDemoTasks(): DemoTaskDef[] {
       ].join('\n'),
     },
     {
-      title: 'Try completing this task — swipe left or tap the circle',
+      title: 'Try completing this task — swipe right or tap the circle',
       project: 'Try It',
       dueOffset: -1,
       hour: 15,

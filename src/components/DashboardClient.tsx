@@ -1291,6 +1291,7 @@ function DashboardView({
             insightsError={insightsData.error}
             onRefreshInsights={onRefreshInsights}
             enrichmentActive={enrichmentActive}
+            timezone={timezone}
           />
         </div>
 
@@ -1332,6 +1333,7 @@ function DashboardView({
           insightsActive={showInsights}
           onToggleInsights={onToggleInsights}
           hasInsightsData={insightsData.hasResults}
+          insightsGenerating={insightsData.generating}
           insightsSignalChipsVisible={insightsSignalChips}
           signalChips={
             aiMode !== 'off' && insightsData.hasResults

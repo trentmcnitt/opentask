@@ -11,7 +11,6 @@ import {
   Eye,
   FolderOpen,
   HelpCircle,
-  Lightbulb,
   RefreshCw,
   Repeat,
   Sparkles,
@@ -320,8 +319,7 @@ export function TaskRow({
     [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, onDoubleClick, pointer],
   )
 
-  const leadingPriorityIndicator = getLeadingPriorityIndicator(task.priority)
-  const trailingPriorityIndicator = getTrailingPriorityIndicator(task.priority)
+  const priorityBadge = getPriorityBadge(task.priority)
   const priorityColors = getPriorityColors(task.priority)
   // Only treat as "snoozed" if it's a recurring task - for one-off tasks,
   // changing the due date is just changing the due date, not snoozing
@@ -332,8 +330,7 @@ export function TaskRow({
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
   const hasIndicators =
-    !!leadingPriorityIndicator ||
-    !!(priorityDisplay.trailingDot && trailingPriorityIndicator) ||
+    !!(priorityDisplay.trailingDot && priorityBadge) ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
@@ -450,21 +447,16 @@ export function TaskRow({
 
         {hasIndicators && (
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            {leadingPriorityIndicator && (
+            {priorityDisplay.trailingDot && priorityBadge && (
               <span
-                className={cn('text-sm font-bold', leadingPriorityIndicator.color)}
-                title={leadingPriorityIndicator.title}
+                className={cn(
+                  'rounded px-1 py-0.5 text-[10px] leading-none font-semibold',
+                  priorityBadge.bg,
+                  priorityBadge.text,
+                )}
+                title={priorityBadge.title}
               >
-                {leadingPriorityIndicator.icon}
-              </span>
-            )}
-
-            {priorityDisplay.trailingDot && trailingPriorityIndicator && (
-              <span
-                className={cn('text-[10px]', trailingPriorityIndicator.color)}
-                title={trailingPriorityIndicator.title}
-              >
-                ●
+                {priorityBadge.label}
               </span>
             )}
 
@@ -529,9 +521,9 @@ export function TaskRow({
           </p>
         )}
 
-        {insightsCommentary && (
+        {insightsCommentary && !annotation && (
           <p className="mt-0.5 text-xs text-indigo-600/80 dark:text-indigo-400/80">
-            <Lightbulb className="mr-1 inline-block size-3 align-text-bottom" />
+            <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {insightsCommentary}
           </p>
         )}
@@ -746,30 +738,35 @@ function getPriorityColors(priority: number): {
 }
 
 /**
- * Leading priority indicator (before title) - only for high/urgent
+ * Priority badge for the indicators line — spelled-out label with colored background.
  */
-function getLeadingPriorityIndicator(
+function getPriorityBadge(
   priority: number,
-): { icon: string; color: string; title: string } | null {
-  switch (priority) {
-    case 3:
-      return { icon: '!', color: 'text-orange-500', title: 'High priority' }
-    case 4:
-      return { icon: '!!', color: 'text-red-500', title: 'Urgent priority' }
-    default:
-      return null
-  }
-}
-
-/**
- * Trailing priority indicator (after title) - only for medium/low
- */
-function getTrailingPriorityIndicator(priority: number): { color: string; title: string } | null {
+): { label: string; bg: string; text: string; title: string } | null {
   switch (priority) {
     case 1:
-      return { color: 'text-zinc-400', title: 'Low priority' }
+      return { label: 'Low', bg: 'bg-zinc-500/15', text: 'text-zinc-500', title: 'Low priority' }
     case 2:
-      return { color: 'text-amber-500', title: 'Medium priority' }
+      return {
+        label: 'Medium',
+        bg: 'bg-amber-500/15',
+        text: 'text-amber-600 dark:text-amber-400',
+        title: 'Medium priority',
+      }
+    case 3:
+      return {
+        label: 'High',
+        bg: 'bg-orange-500/15',
+        text: 'text-orange-600 dark:text-orange-400',
+        title: 'High priority',
+      }
+    case 4:
+      return {
+        label: 'Urgent',
+        bg: 'bg-red-500/15',
+        text: 'text-red-600 dark:text-red-400',
+        title: 'Urgent priority',
+      }
     default:
       return null
   }

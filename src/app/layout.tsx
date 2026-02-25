@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { Inter } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { SessionProvider } from '@/components/SessionProvider'
@@ -49,6 +50,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </PreferencesProvider>
           </SessionProvider>
         </ThemeProvider>
+        {process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID && (
+          <Script
+            src={`${process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL || 'https://analytics.tk11.mcnitt.io'}/script.js`}
+            data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID}
+            strategy="afterInteractive"
+          />
+        )}
       </body>
     </html>
   )
