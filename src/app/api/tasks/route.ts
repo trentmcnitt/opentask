@@ -107,7 +107,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     // Generate quick take before fire-and-forget enrichment (needs original title)
     let quickTake: string | null = null
     if (wantQuickTake && isAIEnabled()) {
-      quickTake = await generateQuickTake(user.id, user.timezone, input.title)
+      quickTake = await generateQuickTake(user.id, user.timezone, input.title, !!input.due_at)
     }
 
     // Fire-and-forget: trigger immediate enrichment if task has the ai-to-process label

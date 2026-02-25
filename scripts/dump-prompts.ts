@@ -30,7 +30,11 @@ import {
   INSIGHTS_REMINDERS,
 } from '../src/core/ai/prompts'
 import { formatTaskLine } from '../src/core/ai/format'
-import { buildQuickTakePrompt, formatCompactTaskList } from '../src/core/ai/quick-take'
+import {
+  buildQuickTakePrompt,
+  formatCompactTaskList,
+  buildTaskStats,
+} from '../src/core/ai/quick-take'
 import type { TaskSummary } from '../src/core/ai/types'
 
 // ---------------------------------------------------------------------------
@@ -205,9 +209,11 @@ function renderQuickTakePrompt(scenario?: ScenarioInput): string {
     project_name: t.project_name ?? null,
     due_at: t.due_at,
     priority: t.priority,
+    labels: t.labels,
   }))
   const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, timezone)
-  const prompt = buildQuickTakePrompt(compactTaskList, count, timezone, newTaskTitle)
+  const stats = buildTaskStats(tasksForPrompt, timezone)
+  const prompt = buildQuickTakePrompt(compactTaskList, count, timezone, newTaskTitle, stats, false)
 
   return `${separator('QUICK TAKE — Full Prompt ' + charCount(prompt))}
 ${prompt}`

@@ -504,7 +504,8 @@ Surface 3-7 tasks and return the JSON result.`
 async function runQuickTake(
   input: QuickTakeInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { buildQuickTakePrompt, formatCompactTaskList } = await import('@/core/ai/quick-take')
+  const { buildQuickTakePrompt, formatCompactTaskList, buildTaskStats } =
+    await import('@/core/ai/quick-take')
   const { aiQuery } = await import('@/core/ai/sdk')
 
   // Build the compact task list from scenario data (same format as production)
@@ -513,11 +514,21 @@ async function runQuickTake(
     project_name: t.project_name ?? null,
     due_at: t.due_at,
     priority: t.priority,
+    labels: t.labels,
   }))
   const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, input.timezone)
+  const stats = buildTaskStats(tasksForPrompt, input.timezone)
 
   // Build the prompt using the same production function
-  const prompt = buildQuickTakePrompt(compactTaskList, count, input.timezone, input.newTaskTitle)
+  // Quick take scenarios always test tasks with no due date (pre-enrichment)
+  const prompt = buildQuickTakePrompt(
+    compactTaskList,
+    count,
+    input.timezone,
+    input.newTaskTitle,
+    stats,
+    false,
+  )
 
   const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
 
