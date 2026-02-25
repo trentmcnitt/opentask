@@ -430,9 +430,9 @@ describe('Bulk Snooze Relative Mode', () => {
   })
 
   /**
-   * BS-003: Tasks with null due_at use current time as base
+   * BS-003: Relative snooze skips tasks with null due_at
    */
-  test('BS-003: Relative snooze uses current time for tasks with null due_at', () => {
+  test('BS-003: Relative snooze skips tasks with null due_at', () => {
     const task = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -444,7 +444,7 @@ describe('Bulk Snooze Relative Mode', () => {
 
     expect(task.due_at).toBeNull()
 
-    // Snooze by +60 minutes
+    // Snooze by +60 minutes — should skip since task has no due_at
     const result = bulkSnooze({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -452,15 +452,54 @@ describe('Bulk Snooze Relative Mode', () => {
       deltaMinutes: 60,
     })
 
-    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksAffected).toBe(0)
+    expect(result.noDueDateSkipped).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
 
+    // Task should be unchanged
     const updatedTask = getTaskById(task.id)!
-    const newDueAt = new Date(updatedTask.due_at!)
-    const expectedDueAt = new Date('2026-01-15T17:00:00Z') // 16:00 UTC + 60 min
+    expect(updatedTask.due_at).toBeNull()
+    expect(updatedTask.original_due_at).toBeNull()
+  })
 
-    expect(newDueAt.getTime()).toBe(expectedDueAt.getTime())
-    // When a task with no due_at gets snoozed, original_due_at is set to the new due_at
-    expect(updatedTask.original_due_at).toBe(updatedTask.due_at)
+  /**
+   * BS-003b: Relative snooze processes tasks with due_at, skips those without
+   */
+  test('BS-003b: Mixed due-date selection — relative snooze only affects tasks with due_at', () => {
+    const taskWithDue = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Has due date',
+        due_at: localTime(8, 0),
+      },
+    })
+    const taskWithout = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'No due date',
+      },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [taskWithDue.id, taskWithout.id],
+      deltaMinutes: 60,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.noDueDateSkipped).toBe(1)
+
+    // Task with due date was snoozed
+    const updatedWithDue = getTaskById(taskWithDue.id)!
+    const expectedDueAt = new Date(new Date(localTime(8, 0)).getTime() + 60 * 60 * 1000)
+    expect(new Date(updatedWithDue.due_at!).getTime()).toBe(expectedDueAt.getTime())
+
+    // Task without due date is unchanged
+    const updatedWithout = getTaskById(taskWithout.id)!
+    expect(updatedWithout.due_at).toBeNull()
   })
 
   /**

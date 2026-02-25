@@ -8,9 +8,11 @@ export interface LabelConfig {
 }
 
 export interface PriorityDisplayConfig {
-  trailingDot: boolean // Show ● after title for Medium/Low
+  trailingDot: boolean // Show priority indicator on the indicators line
+  badgeStyle: 'words' | 'icons' // 'words' = "Low"/"Medium"/"High"/"Urgent", 'icons' = ●/●/!/!!
   colorTitle: boolean // Color task title based on priority
   rightBorder: boolean // Show colored right border
+  colorCheckbox: boolean // Color the done-button circle border based on priority
 }
 
 export interface Project {

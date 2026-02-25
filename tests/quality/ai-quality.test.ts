@@ -34,6 +34,7 @@ import type {
   EnrichmentInput,
   WhatsNextInput,
   InsightsInput,
+  QuickTakeInput,
   ScenarioRequirements,
   ScenarioOutput,
   RunSummary,
@@ -146,7 +147,7 @@ afterAll(() => {
   LAYER 1 COMPLETE — LAYER 2 VALIDATION REQUIRED
 ======================================================================
 
-  Feature:   all (enrichment, whats_next, insights)
+  Feature:   all (enrichment, whats_next, insights, quick_take)
   Model:     ${summary.model}
   Generated: ${generated}/${summary.total} outputs (${errors} errors)
   Duration:  ${durationSeconds}s total
@@ -202,6 +203,20 @@ describe('AI Quality — Layer 1', () => {
     const whatsNextTests = allScenarios.filter((s) => s.feature === 'whats_next')
 
     for (const scenario of whatsNextTests) {
+      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+        await runScenario(scenario)
+      })
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // Quick Take scenarios
+  // -------------------------------------------------------------------------
+
+  describe('Quick Take', () => {
+    const quickTakeTests = allScenarios.filter((s) => s.feature === 'quick_take')
+
+    for (const scenario of quickTakeTests) {
       test.skipIf(!AI_ENABLED)(scenario.id, async () => {
         await runScenario(scenario)
       })
@@ -278,6 +293,9 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
         }
         break
       }
+      case 'quick_take':
+        ;({ output, durationMs } = await runQuickTake(scenario.input as QuickTakeInput))
+        break
     }
 
     // Save output
@@ -481,6 +499,55 @@ Surface 3-7 tasks and return the JSON result.`
   }
 
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
+}
+
+async function runQuickTake(
+  input: QuickTakeInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { buildQuickTakePrompt, formatCompactTaskList } = await import('@/core/ai/quick-take')
+  const { aiQuery } = await import('@/core/ai/sdk')
+
+  // Build the compact task list from scenario data (same format as production)
+  const tasksForPrompt = input.tasks.map((t) => ({
+    title: t.title,
+    project_name: t.project_name ?? null,
+    due_at: t.due_at,
+    priority: t.priority,
+  }))
+  const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, input.timezone)
+
+  // Build the prompt using the same production function
+  const prompt = buildQuickTakePrompt(compactTaskList, count, input.timezone, input.newTaskTitle)
+
+  const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
+
+  const result = await aiQuery({
+    prompt,
+    model,
+    maxTurns: 1,
+    timeoutMs: 30_000,
+    userId: QUALITY_TEST_USER_ID,
+    action: 'quality_test_quick_take',
+    inputText: input.newTaskTitle,
+  })
+
+  if (!result.success || !result.textResult) {
+    throw new Error(`Quick Take query failed: ${result.error || 'No text result'}`)
+  }
+
+  // Strip surrounding quotes (same as production)
+  let text = result.textResult.trim()
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1).trim()
+  }
+
+  return {
+    output: { text } as unknown as Record<string, unknown>,
+    durationMs: result.durationMs,
+  }
 }
 
 async function runInsights(
@@ -722,6 +789,9 @@ function validateStructure(scenario: AITestScenario, output: Record<string, unkn
         scenario.requirements,
       )
       break
+    case 'quick_take':
+      validateQuickTakeSchema(scenario.id, output)
+      break
   }
 }
 
@@ -855,6 +925,18 @@ function validateInsightsSchema(
     throw new Error(
       `[${id}] ${missingIds.length} input tasks missing from output ` +
         `(max ${maxMissing} allowed for ${input.tasks.length} tasks): ${missingIds.slice(0, 5).join(', ')}${missingIds.length > 5 ? '...' : ''}`,
+    )
+  }
+}
+
+function validateQuickTakeSchema(id: string, output: Record<string, unknown>): void {
+  if (typeof output.text !== 'string' || output.text.length === 0) {
+    throw new Error(`[${id}] text must be a non-empty string`)
+  }
+  // Quick take should be a single sentence, max 20 words (~200 chars generous upper bound)
+  if (output.text.length > 300) {
+    throw new Error(
+      `[${id}] text is ${output.text.length} chars — expected a short sentence (max ~200 chars)`,
     )
   }
 }
@@ -1035,6 +1117,8 @@ function getModelForFeature(feature: string): string {
       return process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku'
     case 'insights':
       return process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6'
+    case 'quick_take':
+      return process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
     default:
       return 'haiku'
   }

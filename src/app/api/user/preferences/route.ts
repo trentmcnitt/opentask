@@ -19,8 +19,10 @@ const VALID_AI_MODES = ['off', 'on'] as const
 const VALID_WHATS_NEXT_MODELS = ['haiku', 'claude-opus-4-6'] as const
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
+  badgeStyle: 'words',
   colorTitle: false,
   rightBorder: false,
+  colorCheckbox: true,
 }
 
 /**
@@ -41,7 +43,7 @@ function parsePreferencesRow(row: { label_config: string; priority_display: stri
   let priorityDisplay: PriorityDisplayConfig = DEFAULT_PRIORITY_DISPLAY
   try {
     priorityDisplay = row.priority_display
-      ? JSON.parse(row.priority_display)
+      ? { ...DEFAULT_PRIORITY_DISPLAY, ...JSON.parse(row.priority_display) }
       : DEFAULT_PRIORITY_DISPLAY
   } catch {
     priorityDisplay = DEFAULT_PRIORITY_DISPLAY
@@ -93,6 +95,8 @@ function validateLabelConfig(input: unknown): LabelConfig[] | string {
   return result
 }
 
+const VALID_BADGE_STYLES = ['words', 'icons'] as const
+
 function validatePriorityDisplay(input: unknown): PriorityDisplayConfig | string {
   if (!input || typeof input !== 'object') {
     return 'priority_display must be an object'
@@ -101,16 +105,27 @@ function validatePriorityDisplay(input: unknown): PriorityDisplayConfig | string
   if (typeof obj.trailingDot !== 'boolean') {
     return 'priority_display.trailingDot must be a boolean'
   }
+  if (
+    obj.badgeStyle !== undefined &&
+    !VALID_BADGE_STYLES.includes(obj.badgeStyle as (typeof VALID_BADGE_STYLES)[number])
+  ) {
+    return 'priority_display.badgeStyle must be "words" or "icons"'
+  }
   if (typeof obj.colorTitle !== 'boolean') {
     return 'priority_display.colorTitle must be a boolean'
   }
   if (typeof obj.rightBorder !== 'boolean') {
     return 'priority_display.rightBorder must be a boolean'
   }
+  if (obj.colorCheckbox !== undefined && typeof obj.colorCheckbox !== 'boolean') {
+    return 'priority_display.colorCheckbox must be a boolean'
+  }
   return {
     trailingDot: obj.trailingDot,
+    badgeStyle: (obj.badgeStyle as 'words' | 'icons') || 'words',
     colorTitle: obj.colorTitle,
     rightBorder: obj.rightBorder,
+    colorCheckbox: typeof obj.colorCheckbox === 'boolean' ? obj.colorCheckbox : true,
   }
 }
 

@@ -22,6 +22,7 @@ export interface SnoozeResult {
   task: Task
   previousDueAt: string | null
   originalDueAt: string | null
+  description: string | null
 }
 
 /**
@@ -64,7 +65,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
 
   // Delegate to updateTask - it handles snooze logic internally.
   // Pass pre-fetched task to avoid redundant DB lookup (we already validated access above).
-  const { task: updatedTask } = updateTask({
+  const { task: updatedTask, description } = updateTask({
     userId,
     userTimezone,
     taskId,
@@ -76,5 +77,6 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     task: updatedTask,
     previousDueAt,
     originalDueAt: updatedTask.original_due_at,
+    description,
   }
 }

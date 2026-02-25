@@ -43,6 +43,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_urgent: result.urgentSkipped,
+      skipped_no_due_date: result.noDueDateSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

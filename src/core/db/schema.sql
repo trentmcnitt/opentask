@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
   default_grouping TEXT NOT NULL DEFAULT 'unified',
   label_config  TEXT NOT NULL DEFAULT '[]',
-  priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"colorTitle":false,"rightBorder":false}',
+  priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   auto_snooze_urgent_minutes INTEGER NOT NULL DEFAULT 5,
   auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15,

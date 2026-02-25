@@ -15,6 +15,7 @@ import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { whatsNextScenarios } from './whats-next'
 import { insightsScenarios } from './insights'
 import { insightsLargeScenarios } from './insights-large'
+import { quickTakeScenarios } from './quick-take'
 
 export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentCoreScenarios,
@@ -30,6 +31,7 @@ export const allScenarios: AITestScenario[] = [
   ...whatsNextScenarios,
   ...insightsScenarios,
   ...insightsLargeScenarios,
+  ...quickTakeScenarios,
 ]
 
-export { whatsNextScenarios, insightsScenarios, insightsLargeScenarios }
+export { whatsNextScenarios, insightsScenarios, insightsLargeScenarios, quickTakeScenarios }

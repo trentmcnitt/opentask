@@ -320,17 +320,19 @@ export function TaskRow({
   )
 
   const priorityBadge = getPriorityBadge(task.priority)
+  const priorityIcon = getPriorityIcon(task.priority)
   const priorityColors = getPriorityColors(task.priority)
-  // Only treat as "snoozed" if it's a recurring task - for one-off tasks,
-  // changing the due date is just changing the due date, not snoozing
-  const isSnoozed = !!task.original_due_at && !!task.rrule
+  // A task is snoozed when its due date has drifted from the original.
+  // On creation, original_due_at === due_at; snoozing changes due_at but not original_due_at.
+  const isSnoozed = task.original_due_at !== null && task.original_due_at !== task.due_at
   const isAiProcessing = task.labels.includes('ai-to-process')
   const metaSegments = buildMetaSegments(task, timezone, isOverdue)
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
+  const hasPriorityIndicator = priorityDisplay.trailingDot && (priorityBadge || priorityIcon)
   const hasIndicators =
-    !!(priorityDisplay.trailingDot && priorityBadge) ||
+    !!hasPriorityIndicator ||
     !!task.rrule ||
     task.auto_snooze_minutes !== null ||
     !!(task.notes && task.notes.trim()) ||
@@ -392,11 +394,21 @@ export function TaskRow({
               ? `Advance "${task.title}" to next occurrence`
               : `Mark "${task.title}" as done`
           }
-          className="border-muted-foreground/30 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors hover:border-green-500 hover:bg-green-500/10"
+          className={cn(
+            'group/done flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            priorityDisplay.colorCheckbox && priorityColors
+              ? cn(priorityColors.checkbox, priorityColors.checkboxHover)
+              : 'border-muted-foreground/30 hover:border-green-500 hover:bg-green-500/10',
+          )}
           title={task.rrule ? 'Advance to next occurrence' : 'Mark as done'}
         >
           <Check
-            className="size-4 text-transparent transition-colors group-hover:text-green-500"
+            className={cn(
+              'size-4 text-transparent transition-colors',
+              priorityDisplay.colorCheckbox && priorityColors
+                ? priorityColors.checkIcon
+                : 'group-hover:text-green-500',
+            )}
             strokeWidth={3}
           />
         </button>
@@ -447,18 +459,28 @@ export function TaskRow({
 
         {hasIndicators && (
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            {priorityDisplay.trailingDot && priorityBadge && (
-              <span
-                className={cn(
-                  'rounded px-1 py-0.5 text-[10px] leading-none font-semibold',
-                  priorityBadge.bg,
-                  priorityBadge.text,
-                )}
-                title={priorityBadge.title}
-              >
-                {priorityBadge.label}
-              </span>
-            )}
+            {priorityDisplay.trailingDot &&
+              (priorityDisplay.badgeStyle === 'icons' && priorityIcon ? (
+                <span
+                  className={cn(priorityIcon.className, priorityIcon.color)}
+                  title={priorityIcon.title}
+                >
+                  {priorityIcon.icon}
+                </span>
+              ) : (
+                priorityBadge && (
+                  <span
+                    className={cn(
+                      'rounded px-1 py-0.5 text-[10px] leading-none font-semibold',
+                      priorityBadge.bg,
+                      priorityBadge.text,
+                    )}
+                    title={priorityBadge.title}
+                  >
+                    {priorityBadge.label}
+                  </span>
+                )
+              ))}
 
             {task.rrule && (
               <span className="text-muted-foreground inline-flex items-center" title="Recurring">
@@ -682,8 +704,8 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
     segments.push({ text: formatRRuleCompact(task.rrule, task.anchor_time) })
   }
 
-  // Only show "snoozed from" for recurring tasks - for one-offs, it's just a due date change
-  if (task.original_due_at && task.rrule) {
+  // Show "snoozed from" when the due date has drifted from the original
+  if (task.original_due_at && task.original_due_at !== task.due_at) {
     const text = formatOriginalDueAt(task.original_due_at, timezone)
     if (text) {
       segments.push({ text, className: 'text-blue-400' })
@@ -722,16 +744,46 @@ function getTitleSizeClass(title: string): string {
 function getPriorityColors(priority: number): {
   text: string
   border: string
+  /** Muted border color for the done-button circle */
+  checkbox: string
+  /** Hover styles for the done-button (border + background tint) */
+  checkboxHover: string
+  /** Checkmark color on hover — matches priority instead of green */
+  checkIcon: string
 } | null {
   switch (priority) {
     case 1:
-      return { text: 'text-zinc-400', border: 'border-r-zinc-400' }
+      return {
+        text: 'text-zinc-400',
+        border: 'border-r-zinc-400/50',
+        checkbox: 'border-zinc-400/60',
+        checkboxHover: 'hover:border-zinc-400 hover:bg-zinc-400/10',
+        checkIcon: 'group-hover/done:text-zinc-400',
+      }
     case 2:
-      return { text: 'text-amber-500', border: 'border-r-amber-500' }
+      return {
+        text: 'text-amber-500',
+        border: 'border-r-amber-500/50',
+        checkbox: 'border-amber-400/50',
+        checkboxHover: 'hover:border-amber-500/70 hover:bg-amber-400/10',
+        checkIcon: 'group-hover/done:text-amber-500',
+      }
     case 3:
-      return { text: 'text-orange-500', border: 'border-r-orange-500' }
+      return {
+        text: 'text-orange-500',
+        border: 'border-r-orange-500/50',
+        checkbox: 'border-orange-400/50',
+        checkboxHover: 'hover:border-orange-500/70 hover:bg-orange-400/10',
+        checkIcon: 'group-hover/done:text-orange-500',
+      }
     case 4:
-      return { text: 'text-red-500', border: 'border-r-red-500' }
+      return {
+        text: 'text-red-500',
+        border: 'border-r-red-500/50',
+        checkbox: 'border-red-400/50',
+        checkboxHover: 'hover:border-red-500/70 hover:bg-red-400/10',
+        checkIcon: 'group-hover/done:text-red-500',
+      }
     default:
       return null
   }
@@ -766,6 +818,46 @@ function getPriorityBadge(
         bg: 'bg-red-500/15',
         text: 'text-red-600 dark:text-red-400',
         title: 'Urgent priority',
+      }
+    default:
+      return null
+  }
+}
+
+/**
+ * Priority icon indicator — compact symbols: ● for Low/Medium, ! for High, !! for Urgent.
+ */
+function getPriorityIcon(
+  priority: number,
+): { icon: string; color: string; title: string; className: string } | null {
+  switch (priority) {
+    case 1:
+      return {
+        icon: '●',
+        color: 'text-zinc-400',
+        title: 'Low priority',
+        className: 'text-[10px]',
+      }
+    case 2:
+      return {
+        icon: '●',
+        color: 'text-amber-500',
+        title: 'Medium priority',
+        className: 'text-[10px]',
+      }
+    case 3:
+      return {
+        icon: '!',
+        color: 'text-orange-500',
+        title: 'High priority',
+        className: 'text-sm font-bold',
+      }
+    case 4:
+      return {
+        icon: '!!',
+        color: 'text-red-500',
+        title: 'Urgent priority',
+        className: 'text-sm font-bold',
       }
     default:
       return null

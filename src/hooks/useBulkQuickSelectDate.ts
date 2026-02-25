@@ -240,7 +240,9 @@ export function useBulkQuickSelectDate({
   }, [operationType, presetTime, deltaMinutes])
 
   // Compute display values based on current state
-  const isDirty = operationType !== null
+  const isDirty =
+    (operationType === 'preset' && presetTime !== null) ||
+    (operationType === 'delta' && deltaMinutes !== 0)
 
   // Compute delta display string for staged indicator.
   // For same-date tasks: show delta for both preset and relative operations.

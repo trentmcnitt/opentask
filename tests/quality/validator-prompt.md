@@ -194,6 +194,50 @@ For scenarios with 50+ tasks, evaluate these additional criteria:
 
 ---
 
+## Quick Take Evaluation Criteria
+
+### 1. Contextual Awareness
+
+- Does the response show awareness of the user's existing task list?
+- Does it reference specific details (project names, due dates, task counts, patterns)?
+- Is it clear the AI "saw" the full picture, not just the new task?
+
+### 2. Cross-Referencing
+
+- When relevant, does the response cross-reference related tasks? (same project, same day, same label)
+- Are counts accurate? ("3 other Acme tasks" when there are actually 3)
+- Is the cross-reference natural and useful, not forced?
+
+### 3. Brevity
+
+- Is the response a single sentence, roughly 20 words or fewer?
+- Is it concise and punchy, not padded with filler words?
+- Does it feel like a quick aside, not a paragraph?
+
+### 4. Non-Generic
+
+- Would this response be impossible to write without seeing the task list? (the key test)
+- Does it avoid generic phrases like "task added!", "got it!", "noted!"?
+- Does it avoid generic productivity advice like "don't forget to prioritize"?
+
+### 5. No Prioritization Advice
+
+- Does it avoid suggesting the user reprioritize, reorder, or schedule tasks?
+- Does it stick to observation, not recommendation?
+
+### 6. Tone
+
+- Is the tone like a sharp assistant who just glanced at your list?
+- Direct, not corporate or overly enthusiastic?
+- Not sarcastic or negative about the user's workload?
+
+### 7. Factual Accuracy
+
+- Are any facts stated (task counts, project names, dates) actually correct given the input data?
+- Does it avoid hallucinating tasks, projects, or dates that don't exist?
+
+---
+
 ## Scoring Scale
 
 | Score | Description                                                                                                  |
@@ -253,6 +297,12 @@ For the `layer2-summary.md`, use:
 | ...      | ...   | ...  | ...         |
 
 ### What's Next
+
+| Scenario | Score | Pass | Key Finding |
+| -------- | ----- | ---- | ----------- |
+| ...      | ...   | ...  | ...         |
+
+### Quick Take
 
 | Scenario | Score | Pass | Key Finding |
 | -------- | ----- | ---- | ----------- |

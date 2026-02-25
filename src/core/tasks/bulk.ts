@@ -204,6 +204,7 @@ export interface BulkSnoozeResult {
   tasksAffected: number
   tasksSkipped: number
   urgentSkipped: number
+  noDueDateSkipped: number
 }
 
 /**
@@ -219,7 +220,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0, urgentSkipped: 0 }
+    return { tasksAffected: 0, tasksSkipped: 0, urgentSkipped: 0, noDueDateSkipped: 0 }
   }
 
   // Validate that exactly one mode is specified
@@ -240,15 +241,28 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   // Note: We allow snoozing to past times - tasks will just appear overdue immediately.
 
   const nowStr = nowUtc()
-  const nowDate = new Date()
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
   // P0-P3 eligible, P4 (Urgent) excluded
   const { eligible, urgentSkipped } = filterForBulkSnooze(tasks)
-  const skippedCount = tasks.length - eligible.length
-  if (eligible.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: skippedCount, urgentSkipped }
+
+  // In relative mode, skip tasks without a due_at (can't add delta to nothing)
+  let noDueDateSkipped = 0
+  const snoozeable =
+    deltaMinutes !== undefined
+      ? eligible.filter((t) => {
+          if (!t.due_at) {
+            noDueDateSkipped++
+            return false
+          }
+          return true
+        })
+      : eligible
+
+  const skippedCount = tasks.length - snoozeable.length
+  if (snoozeable.length === 0) {
+    return { tasksAffected: 0, tasksSkipped: skippedCount, urgentSkipped, noDueDateSkipped }
   }
 
   const snapshots: UndoSnapshot[] = []
@@ -256,7 +270,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const batchId = crypto.randomUUID()
 
   const result = withTransaction((tx) => {
-    for (const task of eligible) {
+    for (const task of snoozeable) {
       // Compute the new due_at based on mode
       let newDueAt: string
       if (until !== undefined) {
@@ -264,8 +278,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         newDueAt = until
       } else {
         // Relative mode: add delta to each task's current due_at
-        // Tasks with null due_at use current time as base
-        const baseDueAt = task.due_at ? new Date(task.due_at) : nowDate
+        const baseDueAt = new Date(task.due_at!)
         newDueAt = new Date(baseDueAt.getTime() + deltaMinutes! * 60 * 1000).toISOString()
       }
 
@@ -321,22 +334,23 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
     let bulkSnoozeDesc: string
     if (until !== undefined) {
       const target = formatSnoozeTarget(until, userTimezone)
-      bulkSnoozeDesc = `Snoozed ${eligible.length} tasks to ${target}`
+      bulkSnoozeDesc = `Snoozed ${snoozeable.length} tasks to ${target}`
     } else {
       const delta = formatDurationDelta(0, deltaMinutes! * 60 * 1000)
-      bulkSnoozeDesc = `Snoozed ${eligible.length} tasks (${delta})`
+      bulkSnoozeDesc = `Snoozed ${snoozeable.length} tasks (${delta})`
     }
 
     logAction(userId, 'bulk_snooze', bulkSnoozeDesc, allFieldsChanged, snapshots)
     logActivityBatch(activityEntries)
 
     // Increment daily stats for ALL snoozes (every snooze counts now)
-    incrementDailyStat(userId, 'snoozes', userTimezone, eligible.length)
+    incrementDailyStat(userId, 'snoozes', userTimezone, snoozeable.length)
 
     return {
-      tasksAffected: eligible.length,
+      tasksAffected: snoozeable.length,
       tasksSkipped: skippedCount,
       urgentSkipped,
+      noDueDateSkipped,
     }
   })
 

@@ -30,6 +30,7 @@ import {
   INSIGHTS_REMINDERS,
 } from '../src/core/ai/prompts'
 import { formatTaskLine } from '../src/core/ai/format'
+import { buildQuickTakePrompt, formatCompactTaskList } from '../src/core/ai/quick-take'
 import type { TaskSummary } from '../src/core/ai/types'
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ interface ScenarioInput {
       recurrence_mode: string
     }>
     text?: string
+    newTaskTitle?: string
     userContext?: string
   }
 }
@@ -190,11 +192,32 @@ Score every task above. Return a JSON array with one entry per task.`
 ${prompt}`
 }
 
+function renderQuickTakePrompt(scenario?: ScenarioInput): string {
+  const timezone = scenario?.input.timezone || 'America/Chicago'
+  const tasks = scenario?.input.tasks || []
+  const newTaskTitle =
+    scenario?.feature === 'quick_take' && scenario.input.newTaskTitle
+      ? scenario.input.newTaskTitle
+      : '<new task title>'
+
+  const tasksForPrompt = tasks.map((t) => ({
+    title: t.title,
+    project_name: t.project_name ?? null,
+    due_at: t.due_at,
+    priority: t.priority,
+  }))
+  const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, timezone)
+  const prompt = buildQuickTakePrompt(compactTaskList, count, timezone, newTaskTitle)
+
+  return `${separator('QUICK TAKE — Full Prompt ' + charCount(prompt))}
+${prompt}`
+}
+
 // ---------------------------------------------------------------------------
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-const VALID_FEATURES = ['enrichment', 'insights', 'whats_next']
+const VALID_FEATURES = ['enrichment', 'insights', 'whats_next', 'quick_take']
 
 async function listScenarios(): Promise<void> {
   const scenarios = await loadScenarios()
@@ -256,6 +279,9 @@ function renderPrompts(
   }
   if (featuresToRender.includes('insights')) {
     output += renderInsightsPrompt(scenario?.feature === 'insights' ? scenario : undefined)
+  }
+  if (featuresToRender.includes('quick_take')) {
+    output += renderQuickTakePrompt(scenario?.feature === 'quick_take' ? scenario : undefined)
   }
 
   return output

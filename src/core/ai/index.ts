@@ -15,6 +15,7 @@ export {
   getLastInsightsDurationMs,
 } from './insights'
 export { buildTaskSummaries } from './task-summaries'
+export { generateQuickTake, buildQuickTakePrompt, formatCompactTaskList } from './quick-take'
 export { getUserAiContext, getUserWhatsNextModel } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {

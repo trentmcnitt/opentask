@@ -12,11 +12,11 @@ export interface AITestScenario {
   /** Unique scenario ID, e.g., "enrich-garbled-dictation" */
   id: string
   /** Which AI feature this scenario tests */
-  feature: 'enrichment' | 'whats_next' | 'insights'
+  feature: 'enrichment' | 'whats_next' | 'insights' | 'quick_take'
   /** Human-readable description of what this scenario tests */
   description: string
   /** Input data specific to the feature being tested */
-  input: EnrichmentInput | WhatsNextInput | InsightsInput
+  input: EnrichmentInput | WhatsNextInput | InsightsInput | QuickTakeInput
   /** Requirements for Layer 1 structural checks and Layer 2 quality evaluation */
   requirements: ScenarioRequirements
 }
@@ -62,6 +62,15 @@ export interface InsightsInput {
   userContext?: string
   /** If true, use production processInsightsChunks code path instead of direct AI call */
   useProductionCodePath?: boolean
+}
+
+export interface QuickTakeInput {
+  /** The title of the newly-created task */
+  newTaskTitle: string
+  /** User's timezone */
+  timezone: string
+  /** Existing active tasks for context */
+  tasks: TaskSummary[]
 }
 
 export interface ScenarioRequirements {

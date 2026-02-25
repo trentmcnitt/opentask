@@ -375,7 +375,7 @@ export function SelectionActionSheet({
                 Adjust date, priority, and other settings for selected tasks
               </DialogDescription>
             </DialogHeader>
-            {panelContent}
+            <div className="min-w-0">{panelContent}</div>
           </DialogContent>
         </Dialog>
       )}
