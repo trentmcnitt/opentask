@@ -1,5 +1,5 @@
 export { isAIEnabled, initAI, aiQuery } from './sdk'
-export { processEnrichmentQueue, enrichSingleTask } from './enrichment'
+export { processEnrichmentQueue, enrichSingleTask, getEnrichmentPipelineStatus } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
 export { generateWhatsNext, getCachedWhatsNext } from './whats-next'

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,11 @@ interface SlotStats {
   totalRecycles: number
   lastRequestAt: string | null
   model: string
+  currentOperation: {
+    taskId: number | null
+    inputText: string | null
+    startedAt: string | null
+  } | null
 }
 
 interface QueueStats {
@@ -23,9 +28,32 @@ interface QueueStats {
   maxConcurrent: number
 }
 
+interface InProgressEnrichment {
+  slot: {
+    taskId: number | null
+    inputText: string | null
+    startedAt: string | null
+  } | null
+  pipeline_task_ids: number[]
+  circuit_breaker_open: boolean
+  pending_count: number
+}
+
+interface InProgressInsights {
+  session_id: string
+  status: string
+  total_tasks: number
+  completed: number
+  started_at: string
+}
+
 export interface AIStatusData {
   enrichment_slot: SlotStats
   queue: QueueStats
+  in_progress: {
+    enrichment: InProgressEnrichment
+    insights: InProgressInsights | null
+  }
   recent_activity: AIActivityEntry[]
 }
 
@@ -138,6 +166,9 @@ export function AIStatusContent({
         </div>
       </div>
 
+      {/* In-progress operations */}
+      <InProgressSection data={data} />
+
       {/* Action filter chips */}
       {showFilters && onActionFilterChange && (
         <div className="flex flex-wrap gap-1.5">
@@ -190,10 +221,125 @@ export function AIStatusContent({
   )
 }
 
+/** Pulsing dot animation used for in-progress indicators. */
+function PulsingDot({ color = 'bg-indigo-400' }: { color?: string }) {
+  return (
+    <span className="relative flex h-2 w-2 flex-shrink-0">
+      <span
+        className={cn(
+          'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+          color,
+        )}
+      />
+      <span className={cn('relative inline-flex h-2 w-2 rounded-full', color)} />
+    </span>
+  )
+}
+
+/** Live elapsed time counter since a given ISO timestamp (e.g., "12s", "2m 15s"). */
+function ElapsedTime({ startedAt }: { startedAt: string }) {
+  const [text, setText] = useState(() => formatElapsed(startedAt))
+
+  useEffect(() => {
+    const id = setInterval(() => setText(formatElapsed(startedAt)), 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+
+  return <span className="text-muted-foreground text-xs tabular-nums">{text}</span>
+}
+
+function formatElapsed(startedAt: string): string {
+  const totalSec = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000))
+  const mins = Math.floor(totalSec / 60)
+  const secs = totalSec % 60
+  return mins > 0 ? `${mins}m ${secs.toString().padStart(2, '0')}s` : `${secs}s`
+}
+
+/**
+ * In-progress section — shows active enrichment and insights operations.
+ * Only renders when there's something in progress.
+ */
+function InProgressSection({ data }: { data: AIStatusData }) {
+  const { enrichment, insights } = data.in_progress
+  const hasEnrichmentActivity =
+    enrichment.slot || enrichment.pending_count > 0 || enrichment.circuit_breaker_open
+  const hasActivity = hasEnrichmentActivity || insights
+
+  if (!hasActivity) return null
+
+  return (
+    <div className="border-border rounded-lg border p-4">
+      <h3 className="mb-3 text-sm font-semibold">In Progress</h3>
+      <div className="space-y-3 text-sm">
+        {/* Enrichment slot currently processing */}
+        {enrichment.slot && (
+          <div className="flex items-center gap-2">
+            <PulsingDot />
+            <div className="min-w-0 flex-1">
+              <span>
+                Enriching
+                {enrichment.slot.taskId && <> task #{enrichment.slot.taskId}</>}
+              </span>
+              {enrichment.slot.inputText && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  &mdash; &ldquo;
+                  {enrichment.slot.inputText.length > 40
+                    ? enrichment.slot.inputText.slice(0, 40) + '...'
+                    : enrichment.slot.inputText}
+                  &rdquo;
+                </span>
+              )}
+            </div>
+            {enrichment.slot.startedAt && <ElapsedTime startedAt={enrichment.slot.startedAt} />}
+          </div>
+        )}
+
+        {/* Enrichment queue pending */}
+        {enrichment.pending_count > 0 && (
+          <div className="text-muted-foreground text-xs">
+            {enrichment.slot
+              ? `+${Math.max(0, enrichment.pending_count - 1)} more queued`
+              : `${enrichment.pending_count} task${enrichment.pending_count !== 1 ? 's' : ''} queued for enrichment`}
+          </div>
+        )}
+
+        {/* Circuit breaker warning */}
+        {enrichment.circuit_breaker_open && (
+          <div className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            Enrichment paused (circuit breaker tripped)
+          </div>
+        )}
+
+        {/* Active insights session */}
+        {insights && (
+          <div>
+            <div className="flex items-center gap-2">
+              <PulsingDot />
+              <span className="flex-1">Deeply analyzing {insights.total_tasks} tasks</span>
+              <ElapsedTime startedAt={insights.started_at} />
+            </div>
+            <div className="mt-2 ml-4">
+              <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                <div
+                  className="h-full rounded-full bg-indigo-400 transition-all duration-500"
+                  style={{
+                    width: `${insights.total_tasks > 0 ? Math.round((insights.completed / insights.total_tasks) * 100) : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SlotStateBadge({ state }: { state: string }) {
   const styles: Record<string, string> = {
     available: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    busy: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    busy: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
     initializing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     dead: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     uninitialized: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -385,19 +531,36 @@ function AIOutputDisplay({ output }: { output: string }) {
 
 /**
  * Small colored dot for AI status display in menus/headers.
- * Green = available/busy, Yellow = initializing, Red = dead/uninitialized, Gray = unknown fallback.
+ * Green = available, pulsing purple = busy, Yellow = initializing,
+ * Red = dead/uninitialized, Gray = unknown fallback.
  */
-export function AIStatusDot({ state }: { state: string | null }) {
+export function AIStatusDot({ state, className }: { state: string | null; className?: string }) {
   if (state === null) return null
 
   const color =
-    state === 'available' || state === 'busy'
+    state === 'available'
       ? 'bg-green-500'
-      : state === 'initializing'
-        ? 'bg-yellow-500'
-        : state === 'dead' || state === 'uninitialized'
-          ? 'bg-red-500'
-          : 'bg-muted-foreground'
+      : state === 'busy'
+        ? 'bg-indigo-500'
+        : state === 'initializing'
+          ? 'bg-yellow-500'
+          : state === 'dead' || state === 'uninitialized'
+            ? 'bg-red-500'
+            : 'bg-muted-foreground'
 
-  return <span className={cn('ml-auto inline-block size-2 rounded-full', color)} />
+  if (state === 'busy') {
+    return (
+      <span className={cn('relative inline-flex size-2', className)}>
+        <span
+          className={cn(
+            'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+            color,
+          )}
+        />
+        <span className={cn('relative inline-flex size-2 rounded-full', color)} />
+      </span>
+    )
+  }
+
+  return <span className={cn('inline-block size-2 rounded-full', color, className)} />
 }
