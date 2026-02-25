@@ -18,6 +18,41 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeClock</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Snooze All +1hr</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.mcnitt.opentask.snooze-1hr</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTime</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Snooze All +2hr</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.mcnitt.opentask.snooze-2hr</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAlarm</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Snooze All to Tomorrow</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.mcnitt.opentask.snooze-tomorrow</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAdd</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Add Task</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.mcnitt.opentask.add-task</string>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

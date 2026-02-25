@@ -6,6 +6,10 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ## 02-24-26
 
+### QuickActionPanel overflow in SelectionActionSheet dialog
+
+Intermittent bug where the snooze grid (and entire panel content) overflowed the right edge of the desktop dialog when opening a single task via selection mode. The root cause: `DialogContent` uses CSS `grid` layout, and grid items default to `min-width: auto` — they refuse to shrink below their content's minimum intrinsic width. `QuickActionPopover` already wrapped its panel in `<div className="min-w-0">` to override this, but `SelectionActionSheet` was missing it. The bug was intermittent because the content's intrinsic minimum width is task-dependent — most tasks fit, but certain combinations of metadata, annotations, and action buttons pushed over the ~390px threshold, causing `overflow-x-hidden` to clip the right side.
+
 ### UX Improvements (5 items)
 
 After a couple days of real-world usage, five pain points were addressed in one batch:

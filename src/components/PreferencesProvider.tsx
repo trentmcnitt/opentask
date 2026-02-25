@@ -7,8 +7,10 @@ import type { AiMode } from '@/hooks/useAiMode'
 
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
+  badgeStyle: 'words',
   colorTitle: false,
   rightBorder: false,
+  colorCheckbox: true,
 }
 
 export type WhatsNextModel = 'haiku' | 'claude-opus-4-6'
@@ -154,7 +156,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setLabelConfigState(data.data.label_config)
         }
         if (data?.data?.priority_display) {
-          setPriorityDisplayState(data.data.priority_display)
+          setPriorityDisplayState({ ...DEFAULT_PRIORITY_DISPLAY, ...data.data.priority_display })
         }
         if (data?.data?.auto_snooze_minutes) {
           setAutoSnoozeDefaultState(data.data.auto_snooze_minutes)

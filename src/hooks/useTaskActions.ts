@@ -288,11 +288,12 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         body: JSON.stringify({ until }),
       })
       if (!res.ok) throw new Error('Failed to snooze')
+      const data = await res.json()
       cfg.onRefresh()
       setUndoCount((c) => c + 1)
       setRedoCount(0)
       showToast({
-        message: 'Task snoozed',
+        message: data.data?.description || 'Task snoozed',
         type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })

@@ -72,12 +72,17 @@ struct WebView: UIViewRepresentable {
         webView.scrollView.addSubview(refreshControl)
         context.coordinator.refreshControl = refreshControl
 
-        // Store reference for live Dynamic Type updates
+        // Store references for live Dynamic Type updates and deep linking
         context.coordinator.webView = webView
+        WebViewManager.shared.webView = webView
         context.coordinator.startObservingContentSize()
 
-        // Load the server URL
-        webView.load(URLRequest(url: url))
+        // Check for pending deep link (cold launch from notification tap or quick action)
+        var loadURL = url
+        if let path = WebViewManager.shared.consumePendingPath() {
+            loadURL = URL(string: AppConfig.shared.serverURL + path) ?? url
+        }
+        webView.load(URLRequest(url: loadURL))
 
         return webView
     }

@@ -119,9 +119,11 @@ export function SwipeableRow({
         </div>
       )}
 
-      {/* Foreground content */}
+      {/* Foreground content — bg-card ensures an opaque base so swipe
+         action labels never bleed through semi-transparent child backgrounds */}
       <div
         {...(disabled ? {} : bind())}
+        className="bg-card rounded-lg"
         style={{
           transform: `translateX(${offset}px)`,
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',

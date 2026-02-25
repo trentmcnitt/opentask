@@ -50,6 +50,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       task: formatTaskResponse(result.task),
       previous_due_at: result.previousDueAt,
       original_due_at: result.originalDueAt,
+      description: result.description,
     })
   } catch (err) {
     if (err instanceof AuthError) {

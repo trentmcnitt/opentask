@@ -11,6 +11,7 @@ import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
+import { QuickTakeBanner } from '@/components/QuickTakeBanner'
 import { FilterBar } from '@/components/FilterBar'
 import { AiControlArea } from '@/components/AiControlArea'
 import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
@@ -113,6 +114,7 @@ function useDashboardActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
+  onQuickTake: (text: string | null) => void,
 ): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<void> } {
   const actions = useTaskActions({
     mode: 'list',
@@ -124,7 +126,7 @@ function useDashboardActions(
   const handleQuickAdd = useCallback(
     async (title: string) => {
       try {
-        const res = await fetch('/api/tasks', {
+        const res = await fetch('/api/tasks?quick_take=true', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title }),
@@ -132,16 +134,20 @@ function useDashboardActions(
         if (!res.ok) throw new Error('Failed to create task')
         const { data: task } = await res.json()
         fetchTasks()
-        showToast({
-          message: 'Task added',
-          type: 'success',
-          action: { label: 'View', onClick: () => onViewTask(task) },
-        })
+        if (task.quick_take) {
+          onQuickTake(task.quick_take)
+        } else {
+          showToast({
+            message: 'Task added',
+            type: 'success',
+            action: { label: 'View', onClick: () => onViewTask(task) },
+          })
+        }
       } catch {
         showToast({ message: 'Failed to add task', type: 'error' })
       }
     },
-    [fetchTasks, onViewTask],
+    [fetchTasks, onViewTask, onQuickTake],
   )
 
   return { ...actions, handleQuickAdd }
@@ -193,10 +199,14 @@ function useBulkActions(
       if (!res.ok) throw new Error('Bulk snooze failed')
       const responseData = await res.json()
       const tasksAffected = responseData.data?.tasks_affected ?? 0
-      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
+      const urgentSkipped = responseData.data?.skipped_urgent ?? 0
+      const noDueDateSkipped = responseData.data?.skipped_no_due_date ?? 0
       selection.clear()
       fetchTasks()
-      const skippedMsg = tasksSkipped > 0 ? ` (skipped ${tasksSkipped} high/urgent)` : ''
+      const skipParts: string[] = []
+      if (urgentSkipped > 0) skipParts.push(`${urgentSkipped} urgent`)
+      if (noDueDateSkipped > 0) skipParts.push(`${noDueDateSkipped} no due date`)
+      const skippedMsg = skipParts.length > 0 ? ` (skipped ${skipParts.join(', ')})` : ''
       showToast({
         message: `${tasksAffected} ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
         type: 'success',
@@ -287,7 +297,9 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     refreshProjects()
   }, [fetchTasks, refreshProjects])
   useSyncStream(refreshAll)
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
+  const [quickTake, setQuickTake] = useState<string | null>(null)
+  const handleQuickTake = useCallback((text: string | null) => setQuickTake(text), [])
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, handleQuickTake)
 
   const handleQuickActionDelete = useCallback(
     async (taskId: number) => {
@@ -984,6 +996,8 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
+      quickTake={quickTake}
+      onQuickTakeDismiss={() => setQuickTake(null)}
       onUnifiedChange={(unified) => {
         if (unified) {
           // Save current grouping so toggling unified off restores it
@@ -1107,6 +1121,8 @@ function DashboardView({
   onQuickActionDelete,
   onReprocess,
   onUnifiedChange,
+  quickTake,
+  onQuickTakeDismiss,
   searchFocusRef,
 }: {
   tasks: Task[]
@@ -1215,6 +1231,8 @@ function DashboardView({
   onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
   onUnifiedChange: (unified: boolean) => void
+  quickTake: string | null
+  onQuickTakeDismiss: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
   const anyFilterActive =
@@ -1294,6 +1312,8 @@ function DashboardView({
             timezone={timezone}
           />
         </div>
+
+        {quickTake && <QuickTakeBanner text={quickTake} onDismiss={onQuickTakeDismiss} />}
 
         <FilterBar
           tasks={allTasks}

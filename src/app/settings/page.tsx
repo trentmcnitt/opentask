@@ -41,6 +41,7 @@ import { showToast } from '@/lib/toast'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
+import { cn } from '@/lib/utils'
 import type { LabelColor, LabelConfig, PriorityDisplayConfig, Project } from '@/types'
 
 export default function SettingsPage() {
@@ -130,7 +131,10 @@ export default function SettingsPage() {
     }
   }
 
-  const handlePriorityDisplayChange = async (key: keyof PriorityDisplayConfig, value: boolean) => {
+  const handlePriorityDisplayChange = async (
+    key: keyof PriorityDisplayConfig,
+    value: boolean | string,
+  ) => {
     const prev = priorityDisplay
     const newConfig = { ...priorityDisplay, [key]: value }
     setPriorityDisplay(newConfig)
@@ -448,17 +452,51 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm">Show dot indicator</div>
+                <div className="text-sm">Show priority indicator</div>
                 <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Display a colored dot after Medium/Low priority task titles
+                  Display a priority indicator on the task row
                 </div>
               </div>
               <Switch
                 checked={priorityDisplay.trailingDot}
                 onCheckedChange={(checked) => handlePriorityDisplayChange('trailingDot', checked)}
-                aria-label="Show dot indicator"
+                aria-label="Show priority indicator"
               />
             </div>
+            {priorityDisplay.trailingDot && (
+              <div className="flex items-center justify-between pl-4">
+                <div>
+                  <div className="text-sm">Indicator style</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Words (Low, Medium, High) or icons (●, !, !!)
+                  </div>
+                </div>
+                <div className="flex gap-1 rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-700">
+                  <button
+                    onClick={() => handlePriorityDisplayChange('badgeStyle', 'words')}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                      priorityDisplay.badgeStyle === 'words'
+                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
+                    )}
+                  >
+                    Words
+                  </button>
+                  <button
+                    onClick={() => handlePriorityDisplayChange('badgeStyle', 'icons')}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                      priorityDisplay.badgeStyle === 'icons'
+                        ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
+                    )}
+                  >
+                    Icons
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm">Color task titles</div>
@@ -483,6 +521,19 @@ export default function SettingsPage() {
                 checked={priorityDisplay.rightBorder}
                 onCheckedChange={(checked) => handlePriorityDisplayChange('rightBorder', checked)}
                 aria-label="Show right border"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Color checkbox</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Color the done button circle based on priority
+                </div>
+              </div>
+              <Switch
+                checked={priorityDisplay.colorCheckbox}
+                onCheckedChange={(checked) => handlePriorityDisplayChange('colorCheckbox', checked)}
+                aria-label="Color checkbox"
               />
             </div>
           </div>

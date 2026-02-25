@@ -596,6 +596,11 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 - `xcrun simctl push` delivers banners but does not invoke service or content extensions.
 - iOS 18.2 simulator: apps don't appear in Settings (known bug, fixed in 18.4+).
 
+### Physical device caution
+
+- **Avoid `devicectl device process launch` on the user's phone** unless specifically needed. It kills the running app process, which can reset app state and force the user to re-enter credentials. Prefer letting the user launch the app themselves after install.
+- **`install_app_device` (XcodeBuildMCP) / `devicectl device install app` is safe** — it replaces the binary without losing Keychain data or app state.
+
 ### XcodeBuildMCP tips
 
 XcodeBuildMCP is an MCP tool server for building and interacting with iOS simulators and devices from Claude Code.

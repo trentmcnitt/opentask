@@ -20,6 +20,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [addFormTitle, setAddFormTitle] = useState('')
 
   useEffect(() => {
+    // Handle ?action=create from iOS quick action (check URL directly to avoid
+    // cross-component timing issues — child useEffects fire before parent)
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('action') === 'create') {
+      setAddFormTitle('')
+      setShowAddForm(true)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       setAddFormTitle(detail?.title || '')

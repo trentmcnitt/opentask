@@ -94,6 +94,64 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    // MARK: - Home Screen Quick Actions
+
+    func application(
+        _ application: UIApplication,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        print("[OpenTask] Quick action: \(shortcutItem.type)")
+
+        switch shortcutItem.type {
+        case "io.mcnitt.opentask.snooze-1hr":
+            Task {
+                do {
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks +1hr")
+                } catch {
+                    print("[OpenTask] Quick action snooze +1hr error: \(error)")
+                }
+                completionHandler(true)
+            }
+
+        case "io.mcnitt.opentask.snooze-2hr":
+            Task {
+                do {
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 120)
+                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks +2hr")
+                } catch {
+                    print("[OpenTask] Quick action snooze +2hr error: \(error)")
+                }
+                completionHandler(true)
+            }
+
+        case "io.mcnitt.opentask.snooze-tomorrow":
+            Task {
+                do {
+                    // Calculate minutes from now to 9 AM tomorrow in device local time
+                    let calendar = Calendar.current
+                    let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date())!
+                    let tomorrow9am = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)!
+                    let deltaMinutes = max(1, Int(tomorrow9am.timeIntervalSinceNow / 60))
+
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: deltaMinutes)
+                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks to tomorrow 9am")
+                } catch {
+                    print("[OpenTask] Quick action snooze tomorrow error: \(error)")
+                }
+                completionHandler(true)
+            }
+
+        case "io.mcnitt.opentask.add-task":
+            WebViewManager.shared.navigate(path: "/?action=create")
+            completionHandler(true)
+
+        default:
+            completionHandler(false)
+        }
+    }
+
     /// Clear all delivered notifications when the app comes to foreground,
     /// both locally and across all other devices (web, Watch).
     /// The user can see their task list, so notification noise everywhere should clear.
@@ -305,10 +363,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     break
 
                 case UNNotificationDefaultActionIdentifier:
-                    // User tapped the notification body — open the app.
-                    // Clear all other delivered notifications since the user is now in the app.
+                    // User tapped the notification body — open the app and show the task modal.
+                    // Navigate the WebView to /?task=<id> so DashboardClient opens QuickActionPanel.
                     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-                    break
+                    WebViewManager.shared.navigateToTask(taskId)
 
                 default:
                     break
