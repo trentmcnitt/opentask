@@ -276,6 +276,7 @@ export async function checkOverdueTasks(): Promise<void> {
             )
             .get(userId) as { count: number }
         ).count
+        log.info('notifications', `Badge-only update for user ${userId}: ${badgeCount} overdue`)
         await sendApnsBadgeUpdate(userId, badgeCount)
       }
     }

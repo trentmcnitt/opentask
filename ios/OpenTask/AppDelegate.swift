@@ -212,6 +212,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         let center = UNUserNotificationCenter.current()
 
+        // Badge update: server sends current overdue count after mutations
+        if type == "badge-update", let badge = userInfo["badge"] as? Int {
+            UNUserNotificationCenter.current().setBadgeCount(badge)
+            print("[OpenTask] Badge updated to \(badge)")
+            completionHandler(.newData)
+            return
+        }
+
         // Dismiss-all: user opened the app on another device, clear everything
         if type == "dismiss-all" {
             center.removeAllDeliveredNotifications()
