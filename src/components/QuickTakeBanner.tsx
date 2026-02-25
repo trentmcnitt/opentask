@@ -9,9 +9,9 @@ interface QuickTakeBannerProps {
 }
 
 export function QuickTakeBanner({ text, onDismiss }: QuickTakeBannerProps) {
-  // Auto-dismiss after 8 seconds
+  // Auto-dismiss after 12 seconds
   useEffect(() => {
-    const timer = setTimeout(onDismiss, 8000)
+    const timer = setTimeout(onDismiss, 12000)
     return () => clearTimeout(timer)
   }, [onDismiss])
 

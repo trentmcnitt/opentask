@@ -5,8 +5,12 @@
  * of the user's existing tasks. Cross-references when relevant ("you've got
  * 2 other Acme tasks this week") or gives a brief useful observation.
  *
- * Designed to be fast (30s timeout, Haiku by default) and non-blocking —
- * task creation is never delayed by quick take failure.
+ * Uses a warm subprocess slot (quick-take-slot.ts) for low latency, falling
+ * back to the cold aiQuery() path if the slot is unavailable.
+ *
+ * The prompt is split into a static system prompt (loaded once at slot init)
+ * and a dynamic user prompt (pushed per request). buildQuickTakePrompt()
+ * combines both for testing and dump-prompts.
  *
  * The prompt is structured to eliminate counting errors: code precomputes all
  * statistics (due today, due this week, by project, by label) and injects
@@ -18,6 +22,7 @@ import { DateTime } from 'luxon'
 import { getTasks } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { isAIEnabled, aiQuery } from './sdk'
+import { quickTakeSlotQuery } from './quick-take-slot'
 import { log } from '@/lib/logger'
 
 const PRIORITY_LABELS: Record<number, string> = {
@@ -30,6 +35,28 @@ const PRIORITY_LABELS: Record<number, string> = {
 
 /** Max tasks to include in the prompt context */
 const MAX_TASKS = 150
+
+// ---------------------------------------------------------------------------
+// System prompt (static, loaded once at slot init)
+// ---------------------------------------------------------------------------
+
+/**
+ * Static system prompt for the quick take warm slot.
+ * Contains role, examples, and constraints — everything that doesn't change
+ * between requests. The dynamic data (stats, task list, new task) goes in
+ * the user prompt built by buildQuickTakeUserPrompt().
+ */
+export const QUICK_TAKE_SYSTEM_PROMPT = `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence noting how it fits their existing list — a pattern, a cluster, or something that stands out.
+
+Examples:
+- "3 Acme tasks on the board this week, and now a 4th."
+- "your Tuesday is stacking up — 5 due today."
+- "15 tasks due this week — adding one more to the pile."
+- "joining 2 other undated tasks in your inbox."
+- "the bug backlog grows — 7 undated fixes in Website Redesign now."
+- "first task on the list — starting fresh."
+
+The Summary stats are precomputed and exact — use them, don't count the task list. Max 20 words. No quotes. Observe, never advise.`
 
 // ---------------------------------------------------------------------------
 // Types
@@ -296,10 +323,43 @@ function computeNotablePattern(count: number, stats: TaskStats): string | null {
 }
 
 /**
- * Build the quick take prompt string.
+ * Build just the user/dynamic portion of the quick take prompt.
  *
- * Exported so the quality test runner can use the exact same prompt
- * as production without duplicating the template.
+ * This is what gets pushed to the warm slot per request. The system prompt
+ * (role, examples, constraints) is already loaded in the subprocess.
+ */
+export function buildQuickTakeUserPrompt(
+  compactTaskList: string,
+  count: number,
+  timezone: string,
+  newTaskTitle: string,
+  stats?: TaskStats,
+  newTaskHasDueDate?: boolean,
+): string {
+  const currentTime = DateTime.now().setZone(timezone).toFormat('ccc, LLL d, h:mm a')
+
+  const summaryBlock = stats
+    ? `\n${formatSummaryBlock(count, stats)}\n`
+    : `\nSummary:\n- ${count} active tasks\n`
+
+  const newTaskLine = formatNewTaskLine(newTaskTitle, newTaskHasDueDate ?? false)
+  const notablePattern = stats ? computeNotablePattern(count, stats) : null
+  const notableLine = notablePattern ? `\nNotable: ${notablePattern}\n` : ''
+
+  return `Current time: ${currentTime} (${timezone})
+${notableLine}${summaryBlock}${newTaskLine}
+
+Existing tasks:
+${compactTaskList}
+
+ONE sentence, max 20 words. Reference the Summary numbers.`
+}
+
+/**
+ * Build the full quick take prompt string (system + user combined).
+ *
+ * Exported so the quality test runner and dump-prompts can use the exact
+ * same prompt as production without duplicating the template.
  */
 export function buildQuickTakePrompt(
   compactTaskList: string,
@@ -330,20 +390,17 @@ export function buildQuickTakePrompt(
   //   6. Closing block (reinforcement at recency peak)
   // -------------------------------------------------------------------
 
-  return `The user just added a task to OpenTask. You will see their full task list with precomputed summary stats. Write one sentence noting how the new task fits the picture — a pattern, a cluster, or something that stands out.
-
-OpenTask context: Tasks are organized by project. Tasks without a due date sit in the user's inbox until scheduled. The new task was just created via quick-add, so it typically has only a title — no due date, priority, or project yet (unless explicitly set, which is noted below).
+  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence noting how it fits their existing list — a pattern, a cluster, or something that stands out.
 
 Examples:
-- "3 Acme tasks already on the board this week, and now a 4th."
+- "3 Acme tasks on the board this week, and now a 4th."
 - "your Tuesday is stacking up — 5 due today."
 - "15 tasks due this week — adding one more to the pile."
 - "joining 2 other undated tasks in your inbox."
-- "that's your only non-work task on the list right now."
 - "the bug backlog grows — 7 undated fixes in Website Redesign now."
 - "first task on the list — starting fresh."
 
-The Summary numbers are exact — use them, do not count the task list. Only state facts in the data. Max 20 words. No quotes.
+The Summary stats below are precomputed and exact — use them, don't count the task list. Max 20 words. No quotes. Observe, never advise.
 
 Current time: ${currentTime} (${timezone})
 ${notableLine}${summaryBlock}${newTaskLine}
@@ -351,7 +408,7 @@ ${notableLine}${summaryBlock}${newTaskLine}
 Existing tasks:
 ${compactTaskList}
 
-ONE sentence. Use the Summary numbers above — observe, never advise.`
+ONE sentence, max 20 words. Reference the Summary numbers.`
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +416,26 @@ ONE sentence. Use the Summary numbers above — observe, never advise.`
 // ---------------------------------------------------------------------------
 
 /**
+ * Strip surrounding quotes from model output.
+ * Despite "No quotes" in the prompt, models occasionally wrap output in quotes.
+ */
+function stripQuotes(text: string): string {
+  let stripped = text.trim()
+  if (
+    (stripped.startsWith('"') && stripped.endsWith('"')) ||
+    (stripped.startsWith("'") && stripped.endsWith("'"))
+  ) {
+    stripped = stripped.slice(1, -1).trim()
+  }
+  return stripped
+}
+
+/**
  * Generate a quick take — a one-liner showing awareness of the user's task list.
+ *
+ * Tries the warm slot first for low latency (~2-3s). Falls back to the cold
+ * aiQuery() path if the slot is unavailable (dead, uninitialized, initializing).
+ *
  * Returns null if AI is disabled, the call fails, or times out.
  */
 export async function generateQuickTake(
@@ -372,6 +448,31 @@ export async function generateQuickTake(
 
   try {
     const { text: compactTaskList, count, stats } = buildFromDb(userId, timezone)
+
+    // Try warm slot first
+    const userPrompt = buildQuickTakeUserPrompt(
+      compactTaskList,
+      count,
+      timezone,
+      newTaskTitle,
+      stats,
+      newTaskHasDueDate,
+    )
+
+    const slotResult = await quickTakeSlotQuery(userPrompt, {
+      userId,
+      inputText: newTaskTitle,
+    })
+
+    if (slotResult !== null) {
+      // Warm slot handled the request (even if text is null from superseding)
+      if (!slotResult.text) return null
+      return stripQuotes(slotResult.text) || null
+    }
+
+    // Warm slot unavailable — fall back to cold path
+    log.debug('ai', 'Quick Take: warm slot unavailable, using cold path')
+
     const prompt = buildQuickTakePrompt(
       compactTaskList,
       count,
@@ -381,7 +482,7 @@ export async function generateQuickTake(
       newTaskHasDueDate,
     )
 
-    const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
+    const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'sonnet'
 
     const result = await aiQuery({
       prompt,
@@ -398,16 +499,7 @@ export async function generateQuickTake(
       return null
     }
 
-    // Strip surrounding quotes if present
-    let text = result.textResult.trim()
-    if (
-      (text.startsWith('"') && text.endsWith('"')) ||
-      (text.startsWith("'") && text.endsWith("'"))
-    ) {
-      text = text.slice(1, -1).trim()
-    }
-
-    return text || null
+    return stripQuotes(result.textResult) || null
   } catch (err) {
     log.warn('ai', 'quick_take generation failed:', err)
     return null

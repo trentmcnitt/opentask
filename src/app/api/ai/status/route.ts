@@ -4,6 +4,7 @@ import { success, unauthorized, handleError, serviceUnavailable } from '@/lib/ap
 import {
   isAIEnabled,
   getEnrichmentSlotStats,
+  getQuickTakeSlotStats,
   getAIActivity,
   getQueueStats,
   getActiveInsightsSession,
@@ -27,6 +28,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const action = url.searchParams.get('action') || undefined
 
     const enrichmentSlot = getEnrichmentSlotStats()
+    const quickTakeSlot = getQuickTakeSlotStats()
     const queue = getQueueStats()
     const recentActivity = getAIActivity(user.id, { limit, offset, action })
     const enrichmentPipeline = getEnrichmentPipelineStatus()
@@ -44,6 +46,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
 
     return success({
       enrichment_slot: enrichmentSlot,
+      quick_take_slot: quickTakeSlot,
       queue,
       in_progress: {
         enrichment: {

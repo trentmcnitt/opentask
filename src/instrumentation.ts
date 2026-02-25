@@ -33,6 +33,8 @@ export async function register() {
       purgeOldAIActivity,
       initEnrichmentSlot,
       shutdownEnrichmentSlot,
+      initQuickTakeSlot,
+      shutdownQuickTakeSlot,
     } = await import('@/core/ai')
 
     // Run initial notification check after a short delay
@@ -154,6 +156,11 @@ export async function register() {
         log.error('ai', 'Enrichment slot startup failed:', err)
       })
 
+      // Warm up the quick take slot (dedicated subprocess for quick take queries)
+      initQuickTakeSlot().catch((err) => {
+        log.error('ai', 'Quick Take slot startup failed:', err)
+      })
+
       // What's Next cron: generate recommendations for all active users at 3 AM
       // Uses Opus for the scheduled batch (no time pressure, maximum quality)
       cron.schedule('0 3 * * *', async () => {
@@ -220,13 +227,14 @@ export async function register() {
 
       log.info(
         'ai',
-        "AI enrichment slot initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
+        "AI warm slots initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
       )
 
-      // Graceful shutdown: close enrichment slot on SIGTERM
+      // Graceful shutdown: close warm slots on SIGTERM
       process.on('SIGTERM', () => {
-        log.info('ai', 'SIGTERM received — shutting down enrichment slot')
+        log.info('ai', 'SIGTERM received — shutting down warm slots')
         shutdownEnrichmentSlot()
+        shutdownQuickTakeSlot()
       })
     }
   }

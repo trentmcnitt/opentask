@@ -18,10 +18,17 @@ export { buildTaskSummaries } from './task-summaries'
 export {
   generateQuickTake,
   buildQuickTakePrompt,
+  buildQuickTakeUserPrompt,
   formatCompactTaskList,
   buildTaskStats,
 } from './quick-take'
 export type { QuickTakeTask, TaskStats } from './quick-take'
+export {
+  initQuickTakeSlot,
+  quickTakeSlotQuery,
+  getQuickTakeSlotStats,
+  shutdownQuickTakeSlot,
+} from './quick-take-slot'
 export { getUserAiContext, getUserWhatsNextModel } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {
