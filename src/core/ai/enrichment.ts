@@ -115,6 +115,17 @@ export function _resetProcessingState(): void {
   retryCount.clear()
 }
 
+/** Get enrichment pipeline status for observability. */
+export function getEnrichmentPipelineStatus(): {
+  processingTaskIds: number[]
+  circuitBreakerOpen: boolean
+} {
+  return {
+    processingTaskIds: [...processingTasks],
+    circuitBreakerOpen: isCircuitBreakerOpen(),
+  }
+}
+
 /**
  * Replace a label on a task. Removes `oldLabel` and adds `newLabel` atomically.
  * If `newLabel` is null, just removes `oldLabel`.

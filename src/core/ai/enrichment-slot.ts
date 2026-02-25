@@ -70,6 +70,11 @@ interface SlotStats {
   totalRecycles: number
   lastRequestAt: string | null
   model: string
+  currentOperation: {
+    taskId: number | null
+    inputText: string | null
+    startedAt: string | null
+  } | null
 }
 
 interface WaitEntry {
@@ -85,6 +90,10 @@ interface EnrichmentSlotGlobals {
   lastRequestAt: Date | null
   waitQueue: WaitEntry[]
   warmupResolver: ((ok: boolean) => void) | null
+  // Current operation tracking (for in-progress visibility)
+  currentTaskId: number | null
+  currentInputText: string | null
+  currentStartedAt: Date | null
 }
 
 const globalForSlot = globalThis as typeof globalThis & {
@@ -109,6 +118,9 @@ if (!globalForSlot.__enrichmentSlotState) {
     lastRequestAt: null,
     waitQueue: [],
     warmupResolver: null,
+    currentTaskId: null,
+    currentInputText: null,
+    currentStartedAt: null,
   }
 }
 
@@ -221,6 +233,11 @@ export async function enrichmentQuery(
   // Acquire the slot (wait in FIFO if busy)
   await acquireSlot()
 
+  // Track current operation for in-progress visibility
+  g.currentTaskId = options?.taskId ?? null
+  g.currentInputText = options?.inputText ?? null
+  g.currentStartedAt = new Date()
+
   try {
     // Push the prompt to the warm subprocess
     g.slot.channel!.push(prompt)
@@ -284,6 +301,10 @@ export async function enrichmentQuery(
 
     log.error('ai', `Enrichment slot query failed after ${durationMs}ms:`, err)
     throw err
+  } finally {
+    g.currentTaskId = null
+    g.currentInputText = null
+    g.currentStartedAt = null
   }
 }
 
@@ -296,6 +317,14 @@ export function getEnrichmentSlotStats(): SlotStats {
     totalRecycles: g.totalRecycles,
     lastRequestAt: g.lastRequestAt?.toISOString() ?? null,
     model: getModel(),
+    currentOperation:
+      g.slot.state === 'busy' && g.currentStartedAt
+        ? {
+            taskId: g.currentTaskId,
+            inputText: g.currentInputText,
+            startedAt: g.currentStartedAt.toISOString(),
+          }
+        : null,
   }
 }
 
