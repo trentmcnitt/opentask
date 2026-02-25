@@ -1,5 +1,5 @@
 import { useMemo, useRef, useCallback } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
@@ -66,6 +66,7 @@ export function FilterBar({
   insightsActive = false,
   onToggleInsights,
   hasInsightsData = false,
+  insightsGenerating = false,
   insightsSignalChipsVisible = true,
   // Attribute filters (recurring, custom auto-snooze)
   attributeFilters,
@@ -114,6 +115,7 @@ export function FilterBar({
   insightsActive?: boolean
   onToggleInsights?: () => void
   hasInsightsData?: boolean
+  insightsGenerating?: boolean
   insightsSignalChipsVisible?: boolean
   // Attribute filters (recurring, custom auto-snooze)
   attributeFilters?: Set<string>
@@ -163,7 +165,8 @@ export function FilterBar({
 
   const aiChipVisible =
     aiMode !== 'off' && onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0
-  const insightsChipVisible = aiMode !== 'off' && hasInsightsData && onToggleInsights
+  const insightsChipVisible =
+    aiMode !== 'off' && (hasInsightsData || insightsGenerating) && onToggleInsights
   // Signal chips visible when Insights chip is ON, or when OFF + user preference allows it
   const signalRowVisible =
     aiMode !== 'off' &&
@@ -194,7 +197,11 @@ export function FilterBar({
               {insightsChipVisible && (
                 <>
                   {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-                  <InsightsChip active={insightsActive} onToggle={onToggleInsights!} />
+                  <InsightsChip
+                    active={insightsActive}
+                    loading={insightsGenerating}
+                    onToggle={onToggleInsights!}
+                  />
                 </>
               )}
 
@@ -311,7 +318,7 @@ function AiChip({
           : 'bg-muted hover:bg-muted/80 text-blue-700 dark:text-blue-300',
       )}
     >
-      {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
       What&apos;s Next
       <span className="opacity-60">{count}</span>
     </button>
@@ -319,7 +326,15 @@ function AiChip({
 }
 
 /** Insights visibility toggle chip (indigo accent). */
-function InsightsChip({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+function InsightsChip({
+  active,
+  loading,
+  onToggle,
+}: {
+  active: boolean
+  loading: boolean
+  onToggle: () => void
+}) {
   return (
     <button
       onClick={onToggle}
@@ -330,6 +345,7 @@ function InsightsChip({ active, onToggle }: { active: boolean; onToggle: () => v
           : 'bg-muted hover:bg-muted/80 text-indigo-700 dark:text-indigo-300',
       )}
     >
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
       Insights
     </button>
   )

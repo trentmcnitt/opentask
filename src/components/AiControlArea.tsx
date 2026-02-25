@@ -6,8 +6,20 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/quick-select-dates'
+import { AIStatusDot } from '@/components/AIStatusContent'
+import { AIStatusModal } from '@/components/AIStatusModal'
 import type { AiMode } from '@/hooks/useAiMode'
 
 interface AiControlAreaProps {
@@ -43,6 +55,8 @@ interface AiControlAreaProps {
   onRefreshInsights: () => void
   // Enrichment status
   enrichmentActive?: boolean
+  // Timezone for AI Status modal
+  timezone?: string
 }
 
 /**
@@ -85,8 +99,33 @@ export function AiControlArea({
   insightsError,
   onRefreshInsights,
   enrichmentActive,
+  timezone,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
+
+  // Fetch AI slot state on mount for the status dot in the popover
+  const [aiSlotState, setAiSlotState] = useState<string | null>(null)
+  const [aiStatusOpen, setAiStatusOpen] = useState(false)
+  useEffect(() => {
+    fetch('/api/ai/status')
+      .then((res) => {
+        if (res.status === 503) {
+          setAiSlotState('disabled')
+          return null
+        }
+        if (!res.ok) {
+          setAiSlotState('unknown')
+          return null
+        }
+        return res.json()
+      })
+      .then((json) => {
+        if (json?.data?.enrichment_slot?.state) {
+          setAiSlotState(json.data.enrichment_slot.state)
+        }
+      })
+      .catch(() => setAiSlotState('unknown'))
+  }, [])
 
   const insightsFreshnessText = insightsGeneratedAt ? formatRelativeTime(insightsGeneratedAt) : null
 
@@ -94,175 +133,204 @@ export function AiControlArea({
     if (!annotationRefreshLoading) onRefreshAnnotations()
   }, [annotationRefreshLoading, onRefreshAnnotations])
 
+  const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false)
+
   const handleRefreshInsights = useCallback(() => {
-    if (!insightsGenerating) onRefreshInsights()
-  }, [insightsGenerating, onRefreshInsights])
+    if (!insightsGenerating) setConfirmRefreshOpen(true)
+  }, [insightsGenerating])
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className={cn(
-            'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-[14px] text-sm transition-colors',
-            isActive
-              ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-700/50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50'
-              : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
-            (insightsGenerating || annotationRefreshLoading || enrichmentActive) &&
-              'animate-[ai-glow_2s_ease-in-out_infinite]',
-          )}
-          aria-label="AI settings"
-        >
-          {isActive && (
-            <>
-              <svg className="absolute size-0" aria-hidden="true">
-                <defs>
-                  <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#818cf8" />
-                    <stop offset="100%" stopColor="#a78bfa" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <Sparkles className="size-5" style={{ stroke: 'url(#ai-gradient)' }} />
-            </>
-          )}
-          <span>{isActive ? 'AI' : 'AI Off'}</span>
-          <ChevronDown className="size-3.5 opacity-50" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-4" align="start">
-        {/* Master on/off switch */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">AI</span>
-          <Switch
-            checked={mode === 'on'}
-            onCheckedChange={(checked) => onModeChange(checked ? 'on' : 'off')}
-          />
-        </div>
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-[14px] text-sm transition-colors',
+              isActive
+                ? 'border-indigo-200/70 bg-indigo-50/70 text-indigo-500 hover:bg-indigo-100/80 hover:text-indigo-600 dark:border-indigo-700/50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50'
+                : 'bg-muted/60 text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground',
+              (insightsGenerating || annotationRefreshLoading || enrichmentActive) &&
+                'animate-[ai-glow_2s_ease-in-out_infinite]',
+            )}
+            aria-label="AI settings"
+          >
+            {isActive && (
+              <>
+                <svg className="absolute size-0" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#818cf8" />
+                      <stop offset="100%" stopColor="#a78bfa" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <Sparkles className="size-5" style={{ stroke: 'url(#ai-gradient)' }} />
+              </>
+            )}
+            <span>{isActive ? 'AI' : 'AI Off'}</span>
+            <ChevronDown className="size-3.5 opacity-50" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-4" align="start">
+          {/* Master on/off switch */}
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm font-medium"
+              onClick={() => setAiStatusOpen(true)}
+            >
+              AI
+              {aiSlotState && aiSlotState !== 'disabled' && <AIStatusDot state={aiSlotState} />}
+            </button>
+            <Switch
+              checked={mode === 'on'}
+              onCheckedChange={(checked) => onModeChange(checked ? 'on' : 'off')}
+            />
+          </div>
 
-        {/* What's Next section (blue accent) */}
-        <div className="mt-4">
-          <SectionHeader
-            label="What's Next"
-            freshnessText={annotationFreshnessText}
-            generatedAt={annotationGeneratedAt}
-            durationMs={annotationDurationMs}
-            refreshing={annotationRefreshLoading}
-            onRefresh={handleRefreshAnnotations}
-            active={isActive}
-            color="blue"
-          />
-          {isActive && (
-            <div className="mt-1.5 space-y-2.5">
-              <FeatureCheckbox
-                label="Show commentary when not filtering"
-                description="Display annotations on all What's Next tasks"
-                checked={wnCommentaryUnfiltered}
-                onChange={onWnCommentaryUnfilteredChange}
-                disabled={false}
-                color="blue"
-              />
-              <FeatureCheckbox
-                label="Show background highlight"
-                description="Subtle color on What's Next tasks"
-                checked={wnHighlight}
-                onChange={onWnHighlightChange}
-                disabled={false}
-                color="blue"
-              />
-            </div>
-          )}
-          {isActive && annotationRefreshLoading && (
-            <div className="mt-2">
-              <div className="bg-muted h-1.5 overflow-hidden rounded-full">
-                <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-blue-400" />
-              </div>
-              <p className="text-muted-foreground mt-1 text-[11px]">
-                Refreshing… <ElapsedTimer />
-              </p>
-              <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
-                Should take less than a minute.
-              </p>
-            </div>
-          )}
-          {isActive && annotationError && (
-            <p className="mt-1.5 text-[11px] text-red-500">{annotationError}</p>
-          )}
-        </div>
-
-        {/* Divider */}
-        <div className="my-3 border-t" />
-
-        {/* Insights section (indigo accent) — settings + refresh only */}
-        <div>
-          <SectionHeader
-            label="Insights"
-            freshnessText={insightsFreshnessText}
-            generatedAt={insightsGeneratedAt}
-            durationMs={insightsDurationMs}
-            refreshing={insightsGenerating}
-            onRefresh={handleRefreshInsights}
-            active={isActive}
-            color="indigo"
-          />
-
-          {/* Preferences for what shows in the FilterBar when Insights chip is off */}
-          {isActive && (
-            <div className="mt-2">
-              <p className="text-muted-foreground mb-1.5 text-[11px]">
-                When Insights is off, show:
-              </p>
-              <div className="space-y-2.5">
+          {/* What's Next section (blue accent) */}
+          <div className="mt-4">
+            <SectionHeader
+              label="What's Next"
+              freshnessText={annotationFreshnessText}
+              generatedAt={annotationGeneratedAt}
+              durationMs={annotationDurationMs}
+              refreshing={annotationRefreshLoading}
+              onRefresh={handleRefreshAnnotations}
+              active={isActive}
+              color="blue"
+            />
+            {isActive && (
+              <div className="mt-1.5 space-y-2.5">
                 <FeatureCheckbox
-                  label="Signal counts"
-                  description="Stale, Quick Win, Review chips"
-                  checked={insightsSignalChips}
-                  onChange={onInsightsSignalChipsChange}
+                  label="Show commentary when not filtering"
+                  description="Display annotations on all What's Next tasks"
+                  checked={wnCommentaryUnfiltered}
+                  onChange={onWnCommentaryUnfilteredChange}
                   disabled={false}
-                  color="indigo"
+                  color="blue"
                 />
                 <FeatureCheckbox
-                  label="Score ranges"
-                  description="Attention score filter chips"
-                  checked={insightsScoreChips}
-                  onChange={onInsightsScoreChipsChange}
+                  label="Show background highlight"
+                  description="Subtle color on What's Next tasks"
+                  checked={wnHighlight}
+                  onChange={onWnHighlightChange}
                   disabled={false}
-                  color="indigo"
+                  color="blue"
                 />
               </div>
-            </div>
-          )}
-
-          {isActive && insightsError && !insightsGenerating && (
-            <p className="mt-1.5 text-[11px] text-red-500">{insightsError}</p>
-          )}
-
-          {/* Progress bar — visible during generation */}
-          {isActive && insightsGenerating && (
-            <div className="mt-3">
-              {insightsSingleCall ? (
+            )}
+            {isActive && annotationRefreshLoading && (
+              <div className="mt-2">
                 <div className="bg-muted h-1.5 overflow-hidden rounded-full">
-                  <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-400" />
+                  <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-blue-400" />
                 </div>
-              ) : (
-                <div className="bg-muted h-1.5 overflow-hidden rounded-full">
-                  <div
-                    className="h-full rounded-full bg-indigo-400 transition-all duration-500"
-                    style={{ width: `${insightsProgress}%` }}
+                <p className="text-muted-foreground mt-1 text-[11px]">
+                  Refreshing… <ElapsedTimer />
+                </p>
+                <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
+                  Should take less than a minute.
+                </p>
+              </div>
+            )}
+            {isActive && annotationError && (
+              <p className="mt-1.5 text-[11px] text-red-500">{annotationError}</p>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="my-3 border-t" />
+
+          {/* Insights section (indigo accent) — settings + refresh only */}
+          <div>
+            <SectionHeader
+              label="Insights"
+              freshnessText={insightsFreshnessText}
+              generatedAt={insightsGeneratedAt}
+              durationMs={insightsDurationMs}
+              refreshing={insightsGenerating}
+              onRefresh={handleRefreshInsights}
+              active={isActive}
+              color="indigo"
+            />
+
+            {/* Preferences for what shows in the FilterBar when Insights chip is off */}
+            {isActive && (
+              <div className="mt-2">
+                <p className="text-muted-foreground mb-1.5 text-[11px]">
+                  When Insights is off, show:
+                </p>
+                <div className="space-y-2.5">
+                  <FeatureCheckbox
+                    label="Signal counts"
+                    description="Stale, Quick Win, Review chips"
+                    checked={insightsSignalChips}
+                    onChange={onInsightsSignalChipsChange}
+                    disabled={false}
+                    color="indigo"
+                  />
+                  <FeatureCheckbox
+                    label="Score ranges"
+                    description="Attention score filter chips"
+                    checked={insightsScoreChips}
+                    onChange={onInsightsScoreChipsChange}
+                    disabled={false}
+                    color="indigo"
                   />
                 </div>
-              )}
-              <p className="text-muted-foreground mt-1 text-[11px]">
-                Analyzing {insightsCompletedTasks}/{insightsTotalTasks} tasks…{' '}
-                <ElapsedTimer startedAt={insightsGenerationStartedAt} />
-              </p>
-              <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
-                Doing deep analysis — this may take some time.
-              </p>
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+              </div>
+            )}
+
+            {isActive && insightsError && !insightsGenerating && (
+              <p className="mt-1.5 text-[11px] text-red-500">{insightsError}</p>
+            )}
+
+            {/* Progress bar — visible during generation */}
+            {isActive && insightsGenerating && (
+              <div className="mt-3">
+                {insightsSingleCall ? (
+                  <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                    <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-indigo-400" />
+                  </div>
+                ) : (
+                  <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                    <div
+                      className="h-full rounded-full bg-indigo-400 transition-all duration-500"
+                      style={{ width: `${insightsProgress}%` }}
+                    />
+                  </div>
+                )}
+                <p className="text-muted-foreground mt-1 text-[11px]">
+                  Deeply analyzing {insightsTotalTasks} tasks…{' '}
+                  <ElapsedTimer startedAt={insightsGenerationStartedAt} />
+                </p>
+                <p className="text-muted-foreground/60 mt-0.5 text-[11px]">
+                  Deep analysis can take some time.
+                </p>
+              </div>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+      {timezone && (
+        <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
+      )}
+      <AlertDialog open={confirmRefreshOpen} onOpenChange={setConfirmRefreshOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate insights?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deeply re-analyze all your tasks. Depending on how many you have, it may
+              take several minutes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onRefreshInsights}>Regenerate</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
 

@@ -1,10 +1,24 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
+import { useTheme } from 'next-themes'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, Clock, Undo2, Redo2, Menu, Keyboard, Settings, Bot } from 'lucide-react'
+import {
+  ChevronLeft,
+  Clock,
+  Undo2,
+  Redo2,
+  Menu,
+  Keyboard,
+  Settings,
+  Bot,
+  Sun,
+  Moon,
+  Monitor,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
@@ -12,7 +26,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -68,6 +88,8 @@ export function Header({
   timezone,
   searchFocusRef,
 }: HeaderProps) {
+  const { data: session } = useSession()
+  const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
@@ -302,7 +324,15 @@ export function Header({
                   <Menu className="size-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="max-w-48">
+                {session?.user?.name && (
+                  <>
+                    <DropdownMenuLabel className="text-muted-foreground line-clamp-2 text-xs font-normal break-all">
+                      Signed in as {session.user.name}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={onRedo}>
                   <Redo2 className="size-4" />
                   Redo
@@ -324,8 +354,36 @@ export function Header({
                 <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                   <Bot className="size-4" />
                   AI Status
-                  {aiSlotState && aiSlotState !== 'disabled' && <AIStatusDot state={aiSlotState} />}
+                  {aiSlotState && aiSlotState !== 'disabled' && (
+                    <AIStatusDot state={aiSlotState} className="ml-auto" />
+                  )}
                 </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    {resolvedTheme === 'dark' ? (
+                      <Moon className="size-4" />
+                    ) : (
+                      <Sun className="size-4" />
+                    )}
+                    Theme
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+                      <DropdownMenuRadioItem value="light">
+                        <Sun className="size-4" />
+                        Light
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="dark">
+                        <Moon className="size-4" />
+                        Dark
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="system">
+                        <Monitor className="size-4" />
+                        System
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuItem asChild>
                   <Link href="/settings">
                     <Settings className="size-4" />
