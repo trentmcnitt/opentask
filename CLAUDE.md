@@ -363,13 +363,14 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 **`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details. Layer 1 validates structural correctness (valid JSON, required fields, type checks). Layer 2 evaluates semantic quality (is the AI output actually good?) using an LLM-as-judge rubric.
 
-**Before modifying AI prompts**, dump and review the fully rendered prompts. The prompt source in `src/core/ai/prompts.ts` uses shared sections and template literals that are hard to read in isolation — `dump-prompts` assembles them into the final text the AI actually sees, which is the only reliable way to review them.
+**`dump-prompts` is the only reliable way to see what the AI actually receives.** Prompt source code is spread across `src/core/ai/prompts.ts`, `src/core/ai/quick-take.ts`, shared sections, and template literals — reading the source alone is not sufficient. Always dump and review the fully rendered prompt before and after any AI prompt change. This is non-negotiable: if you're touching AI prompts, you must run `dump-prompts` to verify the final output.
 
 ```bash
-npm run dump-prompts                              # All 3 prompts (templates only) → .tmp/prompts.txt
+npm run dump-prompts                              # All prompts (templates only) → .tmp/prompts.txt
 npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
 npm run dump-prompts -- --feature insights         # Just the insights prompt
 npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
+npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows cold path + warm slot split)
 npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
 npm run dump-prompts -- --list                     # List available scenarios
 ```
@@ -384,11 +385,13 @@ npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  #
 
 **When modifying AI prompts or enrichment logic:**
 
-- Dump and review the rendered prompt first — check for contradictions, stale rules, and redundancy
-- Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones)
-- If any scenario regresses, fix the prompt before proceeding
-- When adding new behavior, add scenarios that test it — untested behavior is unverified behavior
-- Scenarios live in `tests/quality/scenarios/` organized by category
+1. **Dump the rendered prompt first** (`npm run dump-prompts -- --feature <feature>`) — read the full output in `.tmp/` and check for contradictions, stale rules, and redundancy. Do this before writing any code.
+2. Make your changes
+3. **Dump again after changes** — verify the rendered output matches your intent. The source code alone won't show you the complete picture.
+4. Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones)
+5. If any scenario regresses, fix the prompt before proceeding
+6. When adding new behavior, add scenarios that test it — untested behavior is unverified behavior
+7. Scenarios live in `tests/quality/scenarios/` organized by category
 
 ### Pre-existing test failures
 

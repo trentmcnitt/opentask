@@ -32,8 +32,10 @@ import {
 import { formatTaskLine } from '../src/core/ai/format'
 import {
   buildQuickTakePrompt,
+  buildQuickTakeUserPrompt,
   formatCompactTaskList,
   buildTaskStats,
+  QUICK_TAKE_SYSTEM_PROMPT,
 } from '../src/core/ai/quick-take'
 import type { TaskSummary } from '../src/core/ai/types'
 
@@ -213,10 +215,31 @@ function renderQuickTakePrompt(scenario?: ScenarioInput): string {
   }))
   const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, timezone)
   const stats = buildTaskStats(tasksForPrompt, timezone)
-  const prompt = buildQuickTakePrompt(compactTaskList, count, timezone, newTaskTitle, stats, false)
+  const fullPrompt = buildQuickTakePrompt(
+    compactTaskList,
+    count,
+    timezone,
+    newTaskTitle,
+    stats,
+    false,
+  )
+  const userPrompt = buildQuickTakeUserPrompt(
+    compactTaskList,
+    count,
+    timezone,
+    newTaskTitle,
+    stats,
+    false,
+  )
 
-  return `${separator('QUICK TAKE — Full Prompt ' + charCount(prompt))}
-${prompt}`
+  return `${separator('QUICK TAKE — Full Prompt (cold path) ' + charCount(fullPrompt))}
+${fullPrompt}
+
+${separator('QUICK TAKE — System Prompt (warm slot) ' + charCount(QUICK_TAKE_SYSTEM_PROMPT))}
+${QUICK_TAKE_SYSTEM_PROMPT}
+
+${separator('QUICK TAKE — User Prompt (warm slot) ' + charCount(userPrompt))}
+${userPrompt}`
 }
 
 // ---------------------------------------------------------------------------
