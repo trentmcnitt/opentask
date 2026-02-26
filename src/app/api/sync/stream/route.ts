@@ -59,7 +59,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
             type: 'enrichment_complete',
             taskId: payload.taskId,
             title: payload.title,
-            fieldsChanged: payload.fieldsChanged,
+            description: payload.description,
+            due_at: payload.due_at,
+            priority: payload.priority,
           })
           controller.enqueue(encoder.encode(`data: ${data}\n\n`))
         } catch {

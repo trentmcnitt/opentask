@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
+import { isAIEnabled } from '@/core/ai/sdk'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -422,6 +423,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
 function formatPreferencesResponse(row: PreferencesRow) {
   const { labelConfig, priorityDisplay } = parsePreferencesRow(row)
   return {
+    ai_available: isAIEnabled(),
     default_grouping: row.default_grouping,
     label_config: labelConfig,
     priority_display: priorityDisplay,

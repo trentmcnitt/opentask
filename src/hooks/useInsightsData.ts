@@ -58,7 +58,7 @@ export interface UseInsightsDataReturn {
  *
  * Extracted to enable reuse in the dashboard.
  */
-export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
+export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataReturn {
   const [results, setResults] = useState<InsightsResultItem[]>([])
   const [signals, setSignals] = useState<SignalDef[]>([])
   const [signalCounts, setSignalCounts] = useState<Record<string, number>>({})
@@ -233,6 +233,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
   // (handles page refresh mid-generation).
   const hasFetched = useRef(false)
   useEffect(() => {
+    if (!enabled) return
     if (hasFetched.current || tasks.length === 0) return
     hasFetched.current = true
     let cancelled = false
@@ -261,7 +262,7 @@ export function useInsightsData(tasks: Task[]): UseInsightsDataReturn {
     return () => {
       cancelled = true
     }
-  }, [tasks.length, resumeSession])
+  }, [tasks.length, resumeSession, enabled])
 
   return {
     results,

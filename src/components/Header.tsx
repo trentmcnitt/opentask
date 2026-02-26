@@ -40,7 +40,7 @@ import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useSnoozePreferences, useAiAvailable } from '@/components/PreferencesProvider'
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
@@ -96,15 +96,16 @@ export function Header({
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
   const [aiSlotState, setAiSlotState] = useState<string | null>(null)
   const { defaultSnoozeOption } = useSnoozePreferences()
+  const aiAvailable = useAiAvailable()
 
   /** Fetch AI slot state lazily when the hamburger menu opens */
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
+      if (!aiAvailable) return
       if (open && aiSlotState === null) {
         fetch('/api/ai/status')
           .then((res) => {
             if (res.status === 503) {
-              // AI not enabled — no dot
               setAiSlotState('disabled')
               return null
             }
@@ -122,7 +123,7 @@ export function Header({
           .catch(() => setAiSlotState('unknown'))
       }
     },
-    [aiSlotState],
+    [aiSlotState, aiAvailable],
   )
 
   const snoozePress = useSimpleLongPress({
@@ -351,13 +352,15 @@ export function Header({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
-                  <Bot className="size-4" />
-                  AI Status
-                  {aiSlotState && aiSlotState !== 'disabled' && (
-                    <AIStatusDot state={aiSlotState} className="ml-auto" />
-                  )}
-                </DropdownMenuItem>
+                {aiAvailable && (
+                  <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
+                    <Bot className="size-4" />
+                    AI Status
+                    {aiSlotState && aiSlotState !== 'disabled' && (
+                      <AIStatusDot state={aiSlotState} className="ml-auto" />
+                    )}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     {resolvedTheme === 'dark' ? (

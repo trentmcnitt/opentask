@@ -31,6 +31,7 @@ import {
   useNotificationConfig,
   useAiContext,
   useAiPreferences,
+  useAiAvailable,
 } from '@/components/PreferencesProvider'
 import type { WhatsNextModel } from '@/components/PreferencesProvider'
 import { Textarea } from '@/components/ui/textarea'
@@ -67,6 +68,7 @@ export default function SettingsPage() {
     criticalAlertVolume,
     setCriticalAlertVolume,
   } = useNotificationConfig()
+  const aiAvailable = useAiAvailable()
   const { aiContext, setAiContext } = useAiContext()
   const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
@@ -1046,54 +1048,56 @@ export default function SettingsPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* AI Context */}
-        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-            AI Context
-          </h2>
-          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Help the AI understand your situation. This context is included in all AI features
-            (enrichment, what&apos;s next, insights) to improve relevance.
-          </p>
-          <Textarea
-            value={aiContextDraft}
-            onChange={(e) => setAiContextDraft(e.target.value)}
-            placeholder={
-              'e.g., "I work from home as a software engineer. My wife handles groceries. I have two young kids in daycare."'
-            }
-            maxLength={1000}
-            rows={3}
-            className="mb-2 text-sm"
-          />
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400">{aiContextDraft.length}/1000</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleAiContextSave}
-              disabled={!aiContextDirty}
-              className="h-8"
-            >
-              Save
-            </Button>
-          </div>
-          <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
-            <div>
-              <div className="text-sm">What&apos;s Next model</div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                Model for on-demand What&apos;s Next refresh. Opus is slower but more insightful.
-              </div>
+        {/* AI Context — only shown when AI is enabled server-side */}
+        {aiAvailable && (
+          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              AI Context
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Help the AI understand your situation. This context is included in all AI features
+              (enrichment, what&apos;s next, insights) to improve relevance.
+            </p>
+            <Textarea
+              value={aiContextDraft}
+              onChange={(e) => setAiContextDraft(e.target.value)}
+              placeholder={
+                'e.g., "I work from home as a software engineer. My wife handles groceries. I have two young kids in daycare."'
+              }
+              maxLength={1000}
+              rows={3}
+              className="mb-2 text-sm"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-400">{aiContextDraft.length}/1000</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAiContextSave}
+                disabled={!aiContextDirty}
+                className="h-8"
+              >
+                Save
+              </Button>
             </div>
-            <select
-              value={aiWhatsNextModel}
-              onChange={(e) => handleWhatsNextModelChange(e.target.value as WhatsNextModel)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            >
-              <option value="haiku">Haiku (fast)</option>
-              <option value="claude-opus-4-6">Opus (powerful)</option>
-            </select>
-          </div>
-        </section>
+            <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
+              <div>
+                <div className="text-sm">What&apos;s Next model</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Model for on-demand What&apos;s Next refresh. Opus is slower but more insightful.
+                </div>
+              </div>
+              <select
+                value={aiWhatsNextModel}
+                onChange={(e) => handleWhatsNextModelChange(e.target.value as WhatsNextModel)}
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="haiku">Haiku (fast)</option>
+                <option value="claude-opus-4-6">Opus (powerful)</option>
+              </select>
+            </div>
+          </section>
+        )}
 
         {/* API Tokens */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">

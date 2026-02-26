@@ -57,6 +57,7 @@ export function FilterBar({
   onToggleDateFilter,
   onExclusiveDateFilter,
   timezone,
+  aiAvailable = false,
   aiMode = 'off',
   aiInsightsCount,
   aiFilterActive = false,
@@ -106,6 +107,7 @@ export function FilterBar({
   onToggleDateFilter?: (filter: DueDateFilter) => void
   onExclusiveDateFilter?: (filter: DueDateFilter) => void
   timezone?: string
+  aiAvailable?: boolean
   aiMode?: AiMode
   aiInsightsCount?: number
   aiFilterActive?: boolean
@@ -168,11 +170,16 @@ export function FilterBar({
   if (tasks.length === 0) return null
 
   const aiChipVisible =
-    aiMode !== 'off' && onToggleAiFilter && aiInsightsCount != null && aiInsightsCount > 0
+    aiAvailable &&
+    aiMode !== 'off' &&
+    onToggleAiFilter &&
+    aiInsightsCount != null &&
+    aiInsightsCount > 0
   const insightsChipVisible =
-    aiMode !== 'off' && (hasInsightsData || insightsGenerating) && onToggleInsights
+    aiAvailable && aiMode !== 'off' && (hasInsightsData || insightsGenerating) && onToggleInsights
   // Signal chips visible when Insights chip is ON, or when OFF + user preference allows it
   const signalRowVisible =
+    aiAvailable &&
     aiMode !== 'off' &&
     signalChips &&
     signalChips.length > 0 &&

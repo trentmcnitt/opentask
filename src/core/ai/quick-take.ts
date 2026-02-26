@@ -46,17 +46,21 @@ const MAX_TASKS = 150
  * between requests. The dynamic data (stats, task list, new task) goes in
  * the user prompt built by buildQuickTakeUserPrompt().
  */
-export const QUICK_TAKE_SYSTEM_PROMPT = `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence noting how it fits their existing list — a pattern, a cluster, or something that stands out.
+export const QUICK_TAKE_SYSTEM_PROMPT = `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what makes this task interesting in context. Find the angle: a pattern, a contrast, a crowded day, an outlier, a growing backlog — whatever is most notable. Vary your approach.
 
 Examples:
-- "3 Acme tasks on the board this week, and now a 4th."
-- "your Tuesday is stacking up — 5 due today."
-- "15 tasks due this week — adding one more to the pile."
-- "joining 2 other undated tasks in your inbox."
-- "the bug backlog grows — 7 undated fixes in Website Redesign now."
-- "first task on the list — starting fresh."
+- "3 Acme tasks this week — this makes it a theme."
+- "your only personal errand in a sea of Platform Team work."
+- "Tuesday's getting crowded — 5 things and counting."
+- "no due date yet — joins 2 others floating in your inbox."
+- "first task on an empty board."
+- "another fix for Website Redesign — the bug backlog grows."
+- "this one's a one-off among your daily routines."
+- "Friday is already stacked: a deploy, happy hour, and now slides."
 
-The Summary stats are precomputed and exact — use them, don't count the task list. Max 20 words. No quotes. Observe, never advise.`
+Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare.
+
+The Summary stats are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.`
 
 // ---------------------------------------------------------------------------
 // Types
@@ -509,7 +513,7 @@ ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 Existing tasks:
 ${compactTaskList}
 
-ONE sentence, max 20 words. Reference the Summary numbers.`
+ONE sentence, max 25 words. Reference the Summary numbers.`
 }
 
 /**
@@ -551,17 +555,21 @@ export function buildQuickTakePrompt(
   //   6. Closing block (reinforcement at recency peak)
   // -------------------------------------------------------------------
 
-  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence noting how it fits their existing list — a pattern, a cluster, or something that stands out.
+  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what makes this task interesting in context. Find the angle: a pattern, a contrast, a crowded day, an outlier, a growing backlog — whatever is most notable. Vary your approach.
 
 Examples:
-- "3 Acme tasks on the board this week, and now a 4th."
-- "your Tuesday is stacking up — 5 due today."
-- "15 tasks due this week — adding one more to the pile."
-- "joining 2 other undated tasks in your inbox."
-- "the bug backlog grows — 7 undated fixes in Website Redesign now."
-- "first task on the list — starting fresh."
+- "3 Acme tasks this week — this makes it a theme."
+- "your only personal errand in a sea of Platform Team work."
+- "Tuesday's getting crowded — 5 things and counting."
+- "no due date yet — joins 2 others floating in your inbox."
+- "first task on an empty board."
+- "another fix for Website Redesign — the bug backlog grows."
+- "this one's a one-off among your daily routines."
+- "Friday is already stacked: a deploy, happy hour, and now slides."
 
-The Summary stats below are precomputed and exact — use them, don't count the task list. Max 20 words. No quotes. Observe, never advise.
+Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare.
+
+The Summary stats below are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.
 
 Current time: ${currentTime} (${timezone})
 ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
@@ -569,7 +577,7 @@ ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 Existing tasks:
 ${compactTaskList}
 
-ONE sentence, max 20 words. Reference the Summary numbers.`
+ONE sentence, max 25 words. Reference the Summary numbers.`
 }
 
 // ---------------------------------------------------------------------------

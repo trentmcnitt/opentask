@@ -126,10 +126,10 @@ export const quickTakeScenarios: AITestScenario[] = [
     },
     requirements: {
       quality_notes:
-        'Should cross-reference the 3 existing Acme Corp tasks. A good response would be ' +
-        'something like "you\'ve got 3 other Acme tasks this week" or "Acme week — that makes 4 ' +
-        'on the board." Must not be generic ("task added!"). Must reference the Acme project or ' +
-        'similar tasks by name/count.',
+        'Should cross-reference the 3 existing Acme Corp tasks. A good response shows awareness ' +
+        'of the Acme cluster: "Acme week — this makes it a theme" or "4th Acme task on the board." ' +
+        'Could also contrast with the non-work tasks. Must not be generic ("task added!"). ' +
+        'Must reference the Acme project or similar tasks. Max 25 words.',
     },
   },
 
@@ -233,9 +233,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'Should note today (Feb 25) is getting busy — 4 existing tasks due today and now a 5th. ' +
-        'A good response: "your Wednesday is filling up — that makes 5 today" or ' +
-        '"busy day ahead, you already had 4 things due today." Must reference the count or ' +
-        'the busy nature of the day specifically.',
+        'A good response observes the crowded day: "Wednesday is getting crowded" or ' +
+        '"busy day — you already had 4 things due." Could name specific tasks for flavor. ' +
+        'Must reference the busy nature of the day. Max 25 words.',
     },
   },
 
@@ -339,10 +339,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'The new task "Research standing desks" has no due date. A good response ' +
-        'observes that it will sit in the inbox without a date: "no due date — it\'ll ' +
-        'hang out in your inbox until you schedule it" or "joining 2 other undated tasks ' +
-        'in your inbox." Could also note the other undated tasks (IDs 43, 44). ' +
-        'Must not be generic. Must reference the lack of a due date or inbox placement.',
+        'observes the undated status: "no due date — joins 2 others floating in your inbox" ' +
+        'or contrasts it with the scheduled tasks. Could reference the other undated tasks ' +
+        '(IDs 43, 44). Must reference the lack of a due date or inbox. Max 25 words.',
     },
   },
 
@@ -446,10 +445,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'The list is almost entirely work/Platform Team tasks. "Drop off library books" is a ' +
-        'personal errand that stands out as the only non-work task. A good response: ' +
-        '"that\'s your only non-work task on the board" or "a break from the code — everything ' +
-        'else is Platform Team." Must observe the contrast between this personal errand and the ' +
-        'work-heavy list.',
+        'personal errand that stands out as the only non-work task. A good response shows ' +
+        'contrast: "your only personal errand in a sea of Platform Team work" or ' +
+        '"a break from the code." Must observe the contrast with the work-heavy list. Max 25 words.',
     },
   },
 
@@ -567,9 +565,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'The new task joins 6 existing "Fix ..." bug tasks in Website Redesign, all undated. ' +
-        'A good response: "that\'s bug #7 in the Website Redesign backlog — none have dates yet" ' +
-        'or "the fix pile grows — 7 undated bugs now." Must acknowledge the accumulating pattern ' +
-        'of similar undated bug tasks. Should not suggest prioritization.',
+        'A good response: "another fix for Website Redesign — the bug backlog grows" or ' +
+        '"7 undated bugs and counting." Must acknowledge the accumulating pattern ' +
+        'of similar undated bug tasks. Should not suggest prioritization. Max 25 words.',
     },
   },
 
@@ -588,9 +586,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'The user has zero existing tasks. A good response acknowledges the clean slate: ' +
-        '"starting fresh — your first task" or "empty list no more." Must not reference ' +
+        '"first task on an empty board" or "starting fresh." Must not reference ' +
         'non-existent tasks or projects. Must not give generic advice. Should be brief ' +
-        'and acknowledge the empty starting point.',
+        'and acknowledge the empty starting point. Max 25 words.',
     },
   },
 
@@ -826,9 +824,9 @@ export const quickTakeScenarios: AITestScenario[] = [
     requirements: {
       quality_notes:
         'The user has 15 tasks spanning Mon-Sat this week, and the new "Prep Friday presentation ' +
-        'slides" adds to an already packed schedule. A good response: "packed week — that makes ' +
-        '16 tasks before Sunday" or "Friday already has a deploy and happy hour, now slides too." ' +
-        'Must reference the volume of tasks this week or how full the schedule is.',
+        'slides" adds to an already packed schedule. A good response could reference the specific ' +
+        'Friday context: "Friday already has a deploy and happy hour, now slides too" or note ' +
+        'the packed week overall. Must reference volume or specific day context. Max 25 words.',
     },
   },
 
@@ -948,10 +946,304 @@ export const quickTakeScenarios: AITestScenario[] = [
       quality_notes:
         'The list is mostly daily routines (meditation, dog walk, vitamins, email, journal). ' +
         'The new task "Book vet appointment for Luna" is a one-off pet task. A good response ' +
-        'could relate it to the existing dog walk routine or note that the user has another pet ' +
-        'task (refill dog food): "Luna\'s got a busy week — dog food refill is due Saturday too" ' +
-        'or "that\'s 2 pet tasks now alongside your daily routines." Must show awareness of ' +
-        'the routine-heavy list and/or the pet context.',
+        'could note it as a one-off among routines, or relate to the pet context (dog walk, ' +
+        'dog food refill). Must show awareness of the routine-heavy list and/or pet context. ' +
+        'Max 25 words.',
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 9. Contrast scenario — personal task in work-dominated list
+  // -------------------------------------------------------------------------
+  {
+    id: 'quick-take-contrast-personal',
+    feature: 'quick_take',
+    description:
+      'Personal task added to a work-dominated list — should produce contrast, not count',
+    input: {
+      newTaskTitle: 'Buy birthday present for mom',
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 200,
+          title: 'Finalize Q1 roadmap',
+          priority: 3,
+          due_at: '2026-02-26T15:00:00Z',
+          original_due_at: '2026-02-26T15:00:00Z',
+          created_at: '2026-02-20T09:00:00Z',
+          labels: ['work'],
+          project_name: 'Product',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 201,
+          title: 'Review design mockups',
+          priority: 2,
+          due_at: '2026-02-26T18:00:00Z',
+          original_due_at: '2026-02-26T18:00:00Z',
+          created_at: '2026-02-22T10:00:00Z',
+          labels: ['work'],
+          project_name: 'Product',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 202,
+          title: 'Write engineering RFC',
+          priority: 2,
+          due_at: '2026-02-27T15:00:00Z',
+          original_due_at: '2026-02-27T15:00:00Z',
+          created_at: '2026-02-23T14:00:00Z',
+          labels: ['work'],
+          project_name: 'Product',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 203,
+          title: 'Sprint retro prep',
+          priority: 1,
+          due_at: '2026-02-27T20:00:00Z',
+          original_due_at: '2026-02-27T20:00:00Z',
+          created_at: '2026-02-24T08:00:00Z',
+          labels: ['work'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 204,
+          title: 'Update team wiki',
+          priority: 0,
+          due_at: '2026-02-28T15:00:00Z',
+          original_due_at: '2026-02-28T15:00:00Z',
+          created_at: '2026-02-25T11:00:00Z',
+          labels: ['work'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 205,
+          title: 'Daily standup',
+          priority: 0,
+          due_at: '2026-02-26T15:30:00Z',
+          original_due_at: '2026-02-26T15:30:00Z',
+          created_at: '2026-01-01T12:00:00Z',
+          labels: ['work'],
+          project_name: null,
+          is_recurring: true,
+          rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      quality_notes:
+        'All 6 existing tasks are work-related (5 with "work" label, 3 in "Product" project). ' +
+        '"Buy birthday present for mom" is a personal task that contrasts sharply. A good response ' +
+        'observes the contrast: "your only non-work item on the list" or "a personal touch among ' +
+        'all those Product tasks." Must NOT just count tasks. Must observe the contrast between ' +
+        'personal and work. Max 25 words.',
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 10. Day-detail scenario — task added to a day with specific named tasks
+  // -------------------------------------------------------------------------
+  {
+    id: 'quick-take-day-detail',
+    feature: 'quick_take',
+    description:
+      'Task added to a day with specific named tasks — should mention context, not just count',
+    input: {
+      newTaskTitle: 'Prep slides for all-hands',
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 210,
+          title: 'Deploy v4.0 to production',
+          priority: 3,
+          due_at: '2026-02-26T16:00:00Z',
+          original_due_at: '2026-02-26T16:00:00Z',
+          created_at: '2026-02-20T09:00:00Z',
+          labels: ['work'],
+          project_name: 'Platform Team',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 211,
+          title: 'Lunch with Sarah',
+          priority: 1,
+          due_at: '2026-02-26T18:00:00Z',
+          original_due_at: '2026-02-26T18:00:00Z',
+          created_at: '2026-02-24T10:00:00Z',
+          labels: [],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 212,
+          title: 'Team happy hour',
+          priority: 0,
+          due_at: '2026-02-26T23:00:00Z',
+          original_due_at: '2026-02-26T23:00:00Z',
+          created_at: '2026-02-25T14:00:00Z',
+          labels: ['social'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 213,
+          title: 'Weekly grocery run',
+          priority: 0,
+          due_at: '2026-02-28T15:00:00Z',
+          original_due_at: '2026-02-28T15:00:00Z',
+          created_at: '2026-02-20T12:00:00Z',
+          labels: ['errand'],
+          project_name: null,
+          is_recurring: true,
+          rrule: 'FREQ=WEEKLY;BYDAY=SA',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      quality_notes:
+        'Today (Feb 26) already has a deploy, lunch with Sarah, and happy hour. Adding slides ' +
+        'makes it a packed day with diverse tasks. A good response references the specific things ' +
+        'on the day: "today already has a deploy, lunch, and happy hour — now slides too" or ' +
+        '"busy Thursday — a deploy and happy hour, and now presentation prep." Must mention at ' +
+        'least one specific existing task by name or type, not just a count. Max 25 words.',
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 11. Backlog growth — adding to a growing undated backlog
+  // -------------------------------------------------------------------------
+  {
+    id: 'quick-take-backlog-growth',
+    feature: 'quick_take',
+    description: 'Adding another undated task to a growing backlog — should comment on the pattern',
+    input: {
+      newTaskTitle: 'Reorganize garage shelves',
+      timezone: 'America/Chicago',
+      tasks: [
+        {
+          id: 220,
+          title: 'Clean out hall closet',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-02-01T10:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 221,
+          title: 'Fix leaky faucet',
+          priority: 1,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-02-05T14:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 222,
+          title: 'Paint guest bedroom',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-02-08T09:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 223,
+          title: 'Replace smoke detector batteries',
+          priority: 2,
+          due_at: null,
+          original_due_at: null,
+          created_at: '2026-02-12T11:00:00Z',
+          labels: ['home'],
+          project_name: null,
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 224,
+          title: 'Morning run',
+          priority: 0,
+          due_at: '2026-02-26T13:00:00Z',
+          original_due_at: '2026-02-26T13:00:00Z',
+          created_at: '2026-01-01T12:00:00Z',
+          labels: ['health'],
+          project_name: null,
+          is_recurring: true,
+          rrule: 'FREQ=DAILY',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 225,
+          title: 'Team standup',
+          priority: 0,
+          due_at: '2026-02-26T15:00:00Z',
+          original_due_at: '2026-02-26T15:00:00Z',
+          created_at: '2026-01-01T12:00:00Z',
+          labels: ['work'],
+          project_name: null,
+          is_recurring: true,
+          rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      quality_notes:
+        '4 existing undated home tasks form a clear pattern — all home improvement projects ' +
+        'without deadlines. "Reorganize garage shelves" is another one. A good response: ' +
+        '"the home project list keeps growing — 5 with no dates now" or "another home task ' +
+        'without a deadline, joining 4 others." Must acknowledge the growing undated home backlog. ' +
+        'Max 25 words.',
     },
   },
 ]
