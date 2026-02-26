@@ -20,6 +20,10 @@ import WatchConnectivity
 class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate, WCSessionDelegate {
 
     func applicationDidFinishLaunching() {
+        // Migrate keychain items to kSecAttrAccessibleAfterFirstUnlock so they're
+        // readable from notification actions when the Watch is locked.
+        KeychainHelper.migrateAccessibility(keys: ["serverURL", "bearerToken"])
+
         UNUserNotificationCenter.current().delegate = self
         registerNotificationCategories()
         activateWatchSession()

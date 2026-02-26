@@ -7,20 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { AIActivityEntry } from '@/core/ai/types'
-
-interface SlotStats {
-  state: string
-  activatedAt: string | null
-  totalRequests: number
-  totalRecycles: number
-  lastRequestAt: string | null
-  model: string
-  currentOperation: {
-    taskId: number | null
-    inputText: string | null
-    startedAt: string | null
-  } | null
-}
+import type { EnrichmentSlotStats, QuickTakeSlotStats } from '@/core/ai'
 
 interface QueueStats {
   active: number
@@ -48,7 +35,8 @@ interface InProgressInsights {
 }
 
 export interface AIStatusData {
-  enrichment_slot: SlotStats
+  enrichment_slot: EnrichmentSlotStats
+  quick_take_slot: QuickTakeSlotStats
   queue: QueueStats
   in_progress: {
     enrichment: InProgressEnrichment
@@ -59,6 +47,7 @@ export interface AIStatusData {
 
 const ACTION_LABELS: Record<string, string> = {
   enrich: 'Enrichment',
+  quick_take: 'Quick Take',
   whats_next: "What's Next",
   insights: 'Insights',
 }
@@ -66,6 +55,7 @@ const ACTION_LABELS: Record<string, string> = {
 const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
   { value: 'enrich', label: 'Enrichment' },
+  { value: 'quick_take', label: 'Quick Take' },
   { value: 'whats_next', label: "What's Next" },
   { value: 'insights', label: 'Insights' },
 ]
@@ -134,6 +124,50 @@ export function AIStatusContent({
               <span className="text-muted-foreground">Up since</span>
               <p className="mt-0.5 text-xs">
                 {new Date(data.enrichment_slot.activatedAt).toLocaleString('en-US', {
+                  timeZone: timezone,
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Take slot status */}
+      <div className="border-border rounded-lg border p-4">
+        <h3 className="mb-3 text-sm font-semibold">Quick Take Slot</h3>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span className="text-muted-foreground">State</span>
+            <div className="mt-0.5">
+              <SlotStateBadge state={data.quick_take_slot.state} />
+            </div>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Model</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.model}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Requests</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRequests}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Recycles</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRecycles}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Superseded</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalSuperseded}</p>
+          </div>
+          {data.quick_take_slot.activatedAt && (
+            <div>
+              <span className="text-muted-foreground">Up since</span>
+              <p className="mt-0.5 text-xs">
+                {new Date(data.quick_take_slot.activatedAt).toLocaleString('en-US', {
                   timeZone: timezone,
                   month: 'short',
                   day: 'numeric',
@@ -256,14 +290,15 @@ function formatElapsed(startedAt: string): string {
 }
 
 /**
- * In-progress section — shows active enrichment and insights operations.
+ * In-progress section — shows active enrichment, quick take, and insights operations.
  * Only renders when there's something in progress.
  */
 function InProgressSection({ data }: { data: AIStatusData }) {
   const { enrichment, insights } = data.in_progress
+  const quickTakeOp = data.quick_take_slot.currentOperation
   const hasEnrichmentActivity =
     enrichment.slot || enrichment.pending_count > 0 || enrichment.circuit_breaker_open
-  const hasActivity = hasEnrichmentActivity || insights
+  const hasActivity = hasEnrichmentActivity || insights || quickTakeOp
 
   if (!hasActivity) return null
 
@@ -308,6 +343,27 @@ function InProgressSection({ data }: { data: AIStatusData }) {
         {enrichment.circuit_breaker_open && (
           <div className="text-xs font-medium text-amber-600 dark:text-amber-400">
             Enrichment paused (circuit breaker tripped)
+          </div>
+        )}
+
+        {/* Quick take in progress */}
+        {quickTakeOp && (
+          <div className="flex items-center gap-2">
+            <PulsingDot />
+            <div className="min-w-0 flex-1">
+              <span>Generating quick take</span>
+              {quickTakeOp.inputText && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  &mdash; &ldquo;
+                  {quickTakeOp.inputText.length > 40
+                    ? quickTakeOp.inputText.slice(0, 40) + '...'
+                    : quickTakeOp.inputText}
+                  &rdquo;
+                </span>
+              )}
+            </div>
+            {quickTakeOp.startedAt && <ElapsedTime startedAt={quickTakeOp.startedAt} />}
           </div>
         )}
 

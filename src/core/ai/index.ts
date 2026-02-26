@@ -29,6 +29,7 @@ export {
   getQuickTakeSlotStats,
   shutdownQuickTakeSlot,
 } from './quick-take-slot'
+export type { QuickTakeSlotStats } from './quick-take-slot'
 export { getUserAiContext, getUserWhatsNextModel } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {
@@ -37,6 +38,7 @@ export {
   getEnrichmentSlotStats,
   shutdownEnrichmentSlot,
 } from './enrichment-slot'
+export type { EnrichmentSlotStats } from './enrichment-slot'
 export type {
   EnrichmentResult,
   AIActivityEntry,
@@ -46,3 +48,4 @@ export type {
   InsightsSignalKey,
 } from './types'
 export type { InsightsSignal, InsightsSession, InsightsResult } from './insights'
+export type { SlotState, BaseSlotStats } from './slot-shared'

@@ -69,6 +69,7 @@ export interface QuickTakeTask {
   due_at?: string | null
   priority: number
   labels?: string[]
+  rrule?: string | null
 }
 
 /** Precomputed statistics injected into the prompt so the model never counts */
@@ -76,8 +77,12 @@ export interface TaskStats {
   dueToday: number
   dueThisWeek: number
   undated: number
+  recurring: number
+  noProject: number
   byProject: Array<{ name: string; count: number }>
   byLabel: Array<{ name: string; count: number }>
+  /** Busiest day this week — which day has the most tasks. Null when no tasks due this week. */
+  busiestDay: { dayName: string; count: number } | null
 }
 
 // ---------------------------------------------------------------------------
@@ -134,8 +139,12 @@ export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskSt
   let dueToday = 0
   let dueThisWeek = 0
   let undated = 0
+  let recurring = 0
+  let noProject = 0
   const projectCounts = new Map<string, number>()
   const labelCounts = new Map<string, number>()
+  // Track per-day counts for busiest day computation
+  const dayCounts = new Map<string, number>()
 
   for (const t of tasks) {
     if (!t.due_at) {
@@ -143,8 +152,16 @@ export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskSt
     } else {
       const due = DateTime.fromISO(t.due_at, { zone: 'utc' }).setZone(timezone)
       if (due >= todayStart && due <= todayEnd) dueToday++
-      if (due >= weekStart && due <= weekEnd) dueThisWeek++
+      if (due >= weekStart && due <= weekEnd) {
+        dueThisWeek++
+        // Track day-level counts for busiest day
+        const dayKey = due.toFormat('ccc') // "Mon", "Tue", etc.
+        dayCounts.set(dayKey, (dayCounts.get(dayKey) ?? 0) + 1)
+      }
     }
+
+    if (t.rrule) recurring++
+    if (!t.project_name) noProject++
 
     if (t.project_name) {
       projectCounts.set(t.project_name, (projectCounts.get(t.project_name) ?? 0) + 1)
@@ -168,7 +185,30 @@ export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskSt
     .slice(0, 5)
     .map(([name, count]) => ({ name, count }))
 
-  return { dueToday, dueThisWeek, undated, byProject, byLabel }
+  // Find busiest day this week (only meaningful when there are tasks due this week)
+  let busiestDay: { dayName: string; count: number } | null = null
+  if (dayCounts.size > 0) {
+    let maxDay = ''
+    let maxCount = 0
+    for (const [day, count] of dayCounts) {
+      if (count > maxCount) {
+        maxDay = day
+        maxCount = count
+      }
+    }
+    if (maxCount >= 2) busiestDay = { dayName: maxDay, count: maxCount }
+  }
+
+  return {
+    dueToday,
+    dueThisWeek,
+    undated,
+    recurring,
+    noProject,
+    byProject,
+    byLabel,
+    busiestDay,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +222,23 @@ export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskSt
 function buildFromDb(
   userId: number,
   timezone: string,
-): { text: string; count: number; stats: TaskStats } {
+): { text: string; count: number; stats: TaskStats; tasks: QuickTakeTask[] } {
   const tasks = getTasks({ userId, done: false })
   if (tasks.length === 0) {
     return {
       text: '(none)',
       count: 0,
-      stats: { dueToday: 0, dueThisWeek: 0, undated: 0, byProject: [], byLabel: [] },
+      stats: {
+        dueToday: 0,
+        dueThisWeek: 0,
+        undated: 0,
+        recurring: 0,
+        noProject: 0,
+        byProject: [],
+        byLabel: [],
+        busiestDay: null,
+      },
+      tasks: [],
     }
   }
 
@@ -223,13 +273,14 @@ function buildFromDb(
       due_at: t.due_at,
       priority: t.priority,
       labels,
+      rrule: t.rrule ?? null,
     }
   })
 
   const { text, count } = formatCompactTaskList(withNames, timezone)
   const stats = buildTaskStats(withNames, timezone)
 
-  return { text, count, stats }
+  return { text, count, stats, tasks: withNames }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,14 +320,29 @@ function formatCompactDate(dt: DateTime, now: DateTime): string {
 function formatSummaryBlock(count: number, stats: TaskStats): string {
   const lines = [
     'Summary:',
-    `- ${count} active tasks`,
+    `- ${count} active tasks (${stats.recurring} recurring, ${count - stats.recurring} one-off)`,
     `- ${stats.dueToday} due today`,
     `- ${stats.dueThisWeek} due this week`,
-    `- ${stats.undated} undated`,
   ]
+
+  // Busiest day — helps the model see day-level density in packed weeks
+  if (stats.busiestDay) {
+    lines.push(`- Busiest day: ${stats.busiestDay.dayName} (${stats.busiestDay.count} tasks)`)
+  }
+
+  // Clarify undated count — explicitly say "all have due dates" when 0 to prevent
+  // the model from confusing the new task's "no due date" with existing tasks
+  if (stats.undated === 0 && count > 0) {
+    lines.push('- 0 undated (all existing tasks have due dates)')
+  } else {
+    lines.push(`- ${stats.undated} undated`)
+  }
 
   if (stats.byProject.length > 0) {
     lines.push('- Projects: ' + stats.byProject.map((p) => `${p.name} (${p.count})`).join(', '))
+  }
+  if (stats.noProject > 0 && stats.byProject.length > 0) {
+    lines.push(`- ${stats.noProject} with no project`)
   }
 
   if (stats.byLabel.length > 0) {
@@ -313,12 +379,99 @@ function formatNewTaskLine(newTaskTitle: string, newTaskHasDueDate: boolean): st
 function computeNotablePattern(count: number, stats: TaskStats): string | null {
   if (count === 0) return 'The task list is empty — this is the first task.'
   if (stats.dueToday >= 4) return `Packed day: ${stats.dueToday} tasks already due today.`
-  if (stats.dueThisWeek >= 10) return `Full week: ${stats.dueThisWeek} tasks due this week.`
+  if (stats.dueThisWeek >= 10) {
+    const dayNote = stats.busiestDay
+      ? ` Busiest: ${stats.busiestDay.dayName} (${stats.busiestDay.count}).`
+      : ''
+    return `Full week: ${stats.dueThisWeek} tasks due this week.${dayNote}`
+  }
   if (stats.byProject.length > 0 && stats.byProject[0].count >= 3) {
     const top = stats.byProject[0]
     return `Active project: ${top.name} has ${top.count} tasks.`
   }
   if (stats.undated >= 3) return `${stats.undated} tasks sitting in the inbox without dates.`
+  return null
+}
+
+/**
+ * Detect relationships between the new task and existing tasks algorithmically.
+ *
+ * Returns a short context line the model can reference instead of scanning the
+ * task list itself. Examples:
+ *   - "New task title matches project 'Acme Corp' (3 tasks)"
+ *   - "New task shares 'Fix...' pattern with 6 existing tasks"
+ *   - "All 6 existing tasks are work-related — new task is different"
+ *   - null (no obvious relationship detected)
+ */
+function computeNewTaskContext(
+  newTaskTitle: string,
+  tasks: QuickTakeTask[],
+  stats: TaskStats,
+): string | null {
+  if (tasks.length === 0) return null
+
+  const titleLower = newTaskTitle.toLowerCase()
+
+  // 1. Does the new task title contain a project name (or a significant word from it)?
+  for (const p of stats.byProject) {
+    const projectLower = p.name.toLowerCase()
+    // Check full name first, then individual significant words (length > 2)
+    if (titleLower.includes(projectLower)) {
+      return `New task title matches project "${p.name}" (${p.count} existing tasks).`
+    }
+    const projectWords = projectLower.split(/\s+/).filter((w) => w.length > 2)
+    for (const word of projectWords) {
+      if (titleLower.includes(word)) {
+        return `New task title matches project "${p.name}" (${p.count} existing tasks).`
+      }
+    }
+  }
+
+  // 2. Does the new task share a common title prefix with multiple tasks?
+  // Get the first significant word of the new task (skip common articles)
+  const skipWords = new Set(['a', 'an', 'the', 'my', 'our', 'this', 'that'])
+  const newWords = titleLower.split(/\s+/).filter((w) => !skipWords.has(w))
+  if (newWords.length > 0) {
+    const firstWord = newWords[0]
+    // Count how many existing tasks start with the same word
+    const matching = tasks.filter((t) => {
+      const tWords = t.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => !skipWords.has(w))
+      return tWords.length > 0 && tWords[0] === firstWord
+    })
+    if (matching.length >= 3) {
+      const capitalFirst = firstWord.charAt(0).toUpperCase() + firstWord.slice(1)
+      return `New task shares "${capitalFirst}..." pattern with ${matching.length} existing tasks.`
+    }
+  }
+
+  // 3. Does one project/label dominate and the new task is different?
+  //    Combine both signals when they co-occur so the model gets the full picture.
+  const dominantProject =
+    stats.byProject.length >= 1 &&
+    stats.byProject[0].count >= tasks.length * 0.7 &&
+    !titleLower.includes(stats.byProject[0].name.toLowerCase())
+      ? stats.byProject[0]
+      : null
+  const dominantLabel =
+    stats.byLabel.length > 0 &&
+    stats.byLabel[0].count >= tasks.length * 0.7 &&
+    !titleLower.includes(stats.byLabel[0].name.toLowerCase())
+      ? stats.byLabel[0]
+      : null
+
+  if (dominantProject && dominantLabel) {
+    return `${dominantProject.count} of ${tasks.length} tasks are "${dominantProject.name}" / #${dominantLabel.name} — new task is the only one outside that pattern.`
+  }
+  if (dominantProject) {
+    return `${dominantProject.count} of ${tasks.length} tasks are in "${dominantProject.name}" — new task is the only one outside that project.`
+  }
+  if (dominantLabel) {
+    return `${dominantLabel.count} of ${tasks.length} tasks are #${dominantLabel.name} — new task is the only non-${dominantLabel.name} task.`
+  }
+
   return null
 }
 
@@ -335,6 +488,7 @@ export function buildQuickTakeUserPrompt(
   newTaskTitle: string,
   stats?: TaskStats,
   newTaskHasDueDate?: boolean,
+  tasks?: QuickTakeTask[],
 ): string {
   const currentTime = DateTime.now().setZone(timezone).toFormat('ccc, LLL d, h:mm a')
 
@@ -346,8 +500,11 @@ export function buildQuickTakeUserPrompt(
   const notablePattern = stats ? computeNotablePattern(count, stats) : null
   const notableLine = notablePattern ? `\nNotable: ${notablePattern}\n` : ''
 
+  const contextLine = stats && tasks ? computeNewTaskContext(newTaskTitle, tasks, stats) : null
+  const contextBlock = contextLine ? `Context: ${contextLine}\n` : ''
+
   return `Current time: ${currentTime} (${timezone})
-${notableLine}${summaryBlock}${newTaskLine}
+${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 
 Existing tasks:
 ${compactTaskList}
@@ -368,6 +525,7 @@ export function buildQuickTakePrompt(
   newTaskTitle: string,
   stats?: TaskStats,
   newTaskHasDueDate?: boolean,
+  tasks?: QuickTakeTask[],
 ): string {
   const currentTime = DateTime.now().setZone(timezone).toFormat('ccc, LLL d, h:mm a')
 
@@ -380,13 +538,16 @@ export function buildQuickTakePrompt(
   const notablePattern = stats ? computeNotablePattern(count, stats) : null
   const notableLine = notablePattern ? `\nNotable: ${notablePattern}\n` : ''
 
+  const contextLine = stats && tasks ? computeNewTaskContext(newTaskTitle, tasks, stats) : null
+  const contextBlock = contextLine ? `Context: ${contextLine}\n` : ''
+
   // -------------------------------------------------------------------
   // Prompt structure:
   //   1. Role + scene (what the model is reading, what it produces)
   //   2. OpenTask context (just enough to make the data legible)
   //   3. Examples (carry the teaching load)
   //   4. Conventions (word limit, output format, stats usage)
-  //   5. Data block (notable pattern, summary stats, new task, task list)
+  //   5. Data block (notable pattern, summary stats, context, new task, task list)
   //   6. Closing block (reinforcement at recency peak)
   // -------------------------------------------------------------------
 
@@ -403,7 +564,7 @@ Examples:
 The Summary stats below are precomputed and exact — use them, don't count the task list. Max 20 words. No quotes. Observe, never advise.
 
 Current time: ${currentTime} (${timezone})
-${notableLine}${summaryBlock}${newTaskLine}
+${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 
 Existing tasks:
 ${compactTaskList}
@@ -447,7 +608,7 @@ export async function generateQuickTake(
   if (!isAIEnabled()) return null
 
   try {
-    const { text: compactTaskList, count, stats } = buildFromDb(userId, timezone)
+    const { text: compactTaskList, count, stats, tasks } = buildFromDb(userId, timezone)
 
     // Try warm slot first
     const userPrompt = buildQuickTakeUserPrompt(
@@ -457,6 +618,7 @@ export async function generateQuickTake(
       newTaskTitle,
       stats,
       newTaskHasDueDate,
+      tasks,
     )
 
     const slotResult = await quickTakeSlotQuery(userPrompt, {
@@ -480,6 +642,7 @@ export async function generateQuickTake(
       newTaskTitle,
       stats,
       newTaskHasDueDate,
+      tasks,
     )
 
     const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'sonnet'

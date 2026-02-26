@@ -15,17 +15,24 @@ import { log } from '@/lib/logger'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { QUICK_TAKE_SYSTEM_PROMPT } from './quick-take'
+import {
+  type SlotState,
+  type BaseSlotStats,
+  WARMUP_MESSAGE,
+  WARMUP_TIMEOUT_MS,
+  validateWarmup,
+  parseEnvInt,
+  checkCircuitBreaker,
+} from './slot-shared'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 // --- Configuration ---
 
 const DEFAULT_MAX_REUSES = 4
-const RAPID_RECYCLE_WINDOW_MS = 5_000
-const RAPID_RECYCLE_LIMIT = 5
 const DEFAULT_QUERY_TIMEOUT_MS = 30_000
 
 function getMaxReuses(): number {
-  return parseInt(process.env.OPENTASK_AI_QUICKTAKE_MAX_REUSES || String(DEFAULT_MAX_REUSES), 10)
+  return parseEnvInt(process.env.OPENTASK_AI_QUICKTAKE_MAX_REUSES, DEFAULT_MAX_REUSES)
 }
 
 function getModel(): string {
@@ -33,18 +40,13 @@ function getModel(): string {
 }
 
 function getQueryTimeout(): number {
-  return parseInt(
-    process.env.OPENTASK_AI_QUICKTAKE_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS),
-    10,
-  )
+  return parseEnvInt(process.env.OPENTASK_AI_QUICKTAKE_TIMEOUT_MS, DEFAULT_QUERY_TIMEOUT_MS)
 }
 
 // --- Slot state ---
 //
 // All mutable state on globalThis to survive module duplication (same reason
 // as enrichment-slot.ts — Turbopack may create separate module scopes).
-
-type SlotState = 'uninitialized' | 'initializing' | 'available' | 'busy' | 'dead'
 
 interface SlotInternals {
   state: SlotState
@@ -60,14 +62,12 @@ interface SlotInternals {
   rapidRecycleCount: number
 }
 
-interface SlotStats {
-  state: SlotState
-  activatedAt: string | null
-  totalRequests: number
-  totalRecycles: number
+export interface QuickTakeSlotStats extends BaseSlotStats {
   totalSuperseded: number
-  lastRequestAt: string | null
-  model: string
+  currentOperation: {
+    inputText: string | null
+    startedAt: string | null
+  } | null
 }
 
 interface QuickTakeSlotGlobals {
@@ -78,6 +78,9 @@ interface QuickTakeSlotGlobals {
   totalSuperseded: number
   lastRequestAt: Date | null
   warmupResolver: ((ok: boolean) => void) | null
+  // Current operation tracking (for in-progress visibility)
+  currentInputText: string | null
+  currentStartedAt: Date | null
 }
 
 const globalForSlot = globalThis as typeof globalThis & {
@@ -103,17 +106,12 @@ if (!globalForSlot.__quickTakeSlotState) {
     totalSuperseded: 0,
     lastRequestAt: null,
     warmupResolver: null,
+    currentInputText: null,
+    currentStartedAt: null,
   }
 }
 
 const g = globalForSlot.__quickTakeSlotState!
-
-const WARMUP_MESSAGE = 'Respond with exactly: READY'
-
-function validateWarmup(text: string | null): boolean {
-  if (!text) return false
-  return text.includes('READY')
-}
 
 // --- Core functions ---
 
@@ -121,8 +119,10 @@ function validateWarmup(text: string | null): boolean {
  * Initialize the quick take slot. Called from instrumentation.ts on startup.
  */
 export async function initQuickTakeSlot(): Promise<void> {
-  if (g.slot.state === 'available' || g.slot.state === 'busy') {
-    log.warn('ai', 'Quick Take slot already initialized')
+  if (g.slot.state === 'available' || g.slot.state === 'busy' || g.slot.state === 'dead') {
+    if (g.slot.state !== 'dead') {
+      log.warn('ai', 'Quick Take slot already initialized')
+    }
     return
   }
 
@@ -156,9 +156,19 @@ export async function initQuickTakeSlot(): Promise<void> {
     const stream = query({ prompt: channel.iterable, options: queryOptions })
     consumeStream(stream)
 
-    const warmupOk = await new Promise<boolean>((resolve) => {
-      g.warmupResolver = resolve
-    })
+    let warmupTimer: ReturnType<typeof setTimeout> | undefined
+    const warmupOk = await Promise.race([
+      new Promise<boolean>((resolve) => {
+        g.warmupResolver = resolve
+      }),
+      new Promise<boolean>((resolve) => {
+        warmupTimer = setTimeout(() => {
+          log.error('ai', `Quick Take slot warmup timed out after ${WARMUP_TIMEOUT_MS}ms`)
+          resolve(false)
+        }, WARMUP_TIMEOUT_MS)
+      }),
+    ])
+    clearTimeout(warmupTimer)
 
     if (!warmupOk) {
       log.error('ai', 'Quick Take slot: warmup validation failed')
@@ -221,15 +231,27 @@ export async function quickTakeSlotQuery(
     resetResultPromise()
   }
 
-  // Push the prompt
-  g.slot.channel!.push(prompt)
+  // Track current operation for in-progress visibility
+  g.currentInputText = options?.inputText ?? null
+  g.currentStartedAt = new Date()
 
+  // Push the prompt
+  if (!g.slot.channel) {
+    log.warn('ai', 'Quick Take slot channel null when attempting to push prompt')
+    g.slot.state = 'available'
+    g.currentInputText = null
+    g.currentStartedAt = null
+    return { text: null, durationMs: Date.now() - startTime }
+  }
+  g.slot.channel.push(prompt)
+
+  let queryTimer: ReturnType<typeof setTimeout> | undefined
   try {
     // Wait for result with timeout
     const text = await Promise.race([
       g.slot.resultPromise,
       new Promise<null>((_, reject) => {
-        setTimeout(
+        queryTimer = setTimeout(
           () => reject(new Error(`Quick Take query timed out after ${timeoutMs}ms`)),
           timeoutMs,
         )
@@ -278,11 +300,15 @@ export async function quickTakeSlotQuery(
 
     log.error('ai', `Quick Take slot query failed after ${durationMs}ms:`, err)
     return { text: null, durationMs }
+  } finally {
+    clearTimeout(queryTimer)
+    g.currentInputText = null
+    g.currentStartedAt = null
   }
 }
 
 /** Get quick take slot statistics for observability. */
-export function getQuickTakeSlotStats(): SlotStats {
+export function getQuickTakeSlotStats(): QuickTakeSlotStats {
   return {
     state: g.slot.state,
     activatedAt: g.activatedAt?.toISOString() ?? null,
@@ -291,6 +317,13 @@ export function getQuickTakeSlotStats(): SlotStats {
     totalSuperseded: g.totalSuperseded,
     lastRequestAt: g.lastRequestAt?.toISOString() ?? null,
     model: getModel(),
+    currentOperation:
+      g.slot.state === 'busy' && g.currentStartedAt
+        ? {
+            inputText: g.currentInputText,
+            startedAt: g.currentStartedAt.toISOString(),
+          }
+        : null,
   }
 }
 
@@ -299,11 +332,13 @@ export function shutdownQuickTakeSlot(): void {
   log.info('ai', 'Quick Take slot: shutting down')
   g.slot.generation++
   g.slot.deliverResult?.(null)
+  g.warmupResolver?.(false)
+  g.warmupResolver = null
   g.slot.state = 'dead'
   try {
     g.slot.channel?.close()
-  } catch {
-    // Ignore close errors during shutdown
+  } catch (err) {
+    log.debug('ai', 'Quick Take channel close failed (subprocess may already be dead):', err)
   }
   g.slot.channel = null
   g.slot.resultPromise = null
@@ -416,25 +451,22 @@ function recycleSlot(): void {
   g.totalRecycles++
 
   // Circuit breaker: detect rapid consecutive recycles
-  const now = Date.now()
-  if (now - g.slot.lastRecycleTime < RAPID_RECYCLE_WINDOW_MS) {
-    g.slot.rapidRecycleCount++
-  } else {
-    g.slot.rapidRecycleCount = 1
-  }
-  g.slot.lastRecycleTime = now
+  const cb = checkCircuitBreaker(g.slot.lastRecycleTime, g.slot.rapidRecycleCount)
+  g.slot.rapidRecycleCount = cb.newCount
+  g.slot.lastRecycleTime = cb.newTime
 
-  if (g.slot.rapidRecycleCount >= RAPID_RECYCLE_LIMIT) {
+  if (cb.tripped) {
     log.error(
       'ai',
-      `Quick Take slot recycled ${g.slot.rapidRecycleCount} times in <${RAPID_RECYCLE_WINDOW_MS}ms — marking dead (circuit breaker)`,
+      `Quick Take slot recycled ${cb.newCount} times rapidly — marking dead (circuit breaker)`,
     )
     g.slot.generation++
+    g.slot.deliverResult?.(null)
     g.slot.state = 'dead'
     try {
       g.slot.channel?.close()
-    } catch {
-      // Ignore
+    } catch (err) {
+      log.debug('ai', 'Quick Take channel close failed (subprocess may already be dead):', err)
     }
     g.slot.channel = null
     g.slot.resultPromise = null
@@ -444,10 +476,11 @@ function recycleSlot(): void {
 
   // Normal recycle: close old, reinit
   g.slot.generation++
+  g.slot.deliverResult?.(null)
   try {
     g.slot.channel?.close()
-  } catch {
-    // Ignore
+  } catch (err) {
+    log.debug('ai', 'Quick Take channel close failed (subprocess may already be dead):', err)
   }
   g.slot.channel = null
   g.slot.resultPromise = null
@@ -462,4 +495,32 @@ function recycleSlot(): void {
       log.error('ai', 'Quick Take slot recycle init failed:', err)
     })
   }, 0)
+}
+
+// --- Test helpers ---
+
+/** Reset all slot state for test isolation. Follows the _reset pattern from enrichment.ts. */
+export function _resetSlotForTesting(): void {
+  try {
+    g.slot.channel?.close()
+  } catch {
+    // Ignore
+  }
+  g.slot.state = 'uninitialized'
+  g.slot.channel = null
+  g.slot.generation = 0
+  g.slot.resultCount = 0
+  g.slot.resultPromise = null
+  g.slot.deliverResult = null
+  g.slot.skipCount = 0
+  g.slot.lastRecycleTime = 0
+  g.slot.rapidRecycleCount = 0
+  g.activatedAt = null
+  g.totalRequests = 0
+  g.totalRecycles = 0
+  g.totalSuperseded = 0
+  g.lastRequestAt = null
+  g.warmupResolver = null
+  g.currentInputText = null
+  g.currentStartedAt = null
 }
