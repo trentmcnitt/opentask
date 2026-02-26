@@ -13,6 +13,15 @@ import { log } from '@/lib/logger'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
+import {
+  type SlotState,
+  type BaseSlotStats,
+  WARMUP_MESSAGE,
+  WARMUP_TIMEOUT_MS,
+  validateWarmup,
+  parseEnvInt,
+  checkCircuitBreaker,
+} from './slot-shared'
 import { EnrichmentResultSchema } from './types'
 import { z } from 'zod'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
@@ -20,12 +29,10 @@ import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 // --- Configuration ---
 
 const DEFAULT_MAX_REUSES = 8
-const RAPID_RECYCLE_WINDOW_MS = 5_000
-const RAPID_RECYCLE_LIMIT = 5
 const DEFAULT_QUERY_TIMEOUT_MS = 60_000
 
 function getMaxReuses(): number {
-  return parseInt(process.env.OPENTASK_AI_MAX_REUSES || String(DEFAULT_MAX_REUSES), 10)
+  return parseEnvInt(process.env.OPENTASK_AI_MAX_REUSES, DEFAULT_MAX_REUSES)
 }
 
 function getModel(): string {
@@ -33,7 +40,7 @@ function getModel(): string {
 }
 
 function getQueryTimeout(): number {
-  return parseInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS), 10)
+  return parseEnvInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS, DEFAULT_QUERY_TIMEOUT_MS)
 }
 
 // --- Slot state ---
@@ -43,8 +50,6 @@ function getQueryTimeout(): number {
 // instrumentation.ts and API routes, creating independent module scopes.
 // Without globalThis, the API route reads fresh defaults ("uninitialized")
 // while the real slot lives in the instrumentation chunk.
-
-type SlotState = 'uninitialized' | 'initializing' | 'available' | 'busy' | 'dead'
 
 interface SlotInternals {
   state: SlotState
@@ -63,13 +68,7 @@ interface SlotResult {
   text: string | null
 }
 
-interface SlotStats {
-  state: SlotState
-  activatedAt: string | null
-  totalRequests: number
-  totalRecycles: number
-  lastRequestAt: string | null
-  model: string
+export interface EnrichmentSlotStats extends BaseSlotStats {
   currentOperation: {
     taskId: number | null
     inputText: string | null
@@ -126,13 +125,6 @@ if (!globalForSlot.__enrichmentSlotState) {
 
 const g = globalForSlot.__enrichmentSlotState!
 
-const WARMUP_MESSAGE = 'Respond with exactly: READY'
-
-function validateWarmup(text: string | null): boolean {
-  if (!text) return false
-  return text.includes('READY')
-}
-
 // --- Core functions ---
 
 /**
@@ -141,8 +133,10 @@ function validateWarmup(text: string | null): boolean {
  * waits for warmup validation.
  */
 export async function initEnrichmentSlot(): Promise<void> {
-  if (g.slot.state === 'available' || g.slot.state === 'busy') {
-    log.warn('ai', 'Enrichment slot already initialized')
+  if (g.slot.state === 'available' || g.slot.state === 'busy' || g.slot.state === 'dead') {
+    if (g.slot.state !== 'dead') {
+      log.warn('ai', 'Enrichment slot already initialized')
+    }
     return
   }
 
@@ -185,9 +179,19 @@ export async function initEnrichmentSlot(): Promise<void> {
     consumeStream(stream)
 
     // Wait for warmup validation
-    const warmupOk = await new Promise<boolean>((resolve) => {
-      g.warmupResolver = resolve
-    })
+    let warmupTimer: ReturnType<typeof setTimeout> | undefined
+    const warmupOk = await Promise.race([
+      new Promise<boolean>((resolve) => {
+        g.warmupResolver = resolve
+      }),
+      new Promise<boolean>((resolve) => {
+        warmupTimer = setTimeout(() => {
+          log.error('ai', `Enrichment slot warmup timed out after ${WARMUP_TIMEOUT_MS}ms`)
+          resolve(false)
+        }, WARMUP_TIMEOUT_MS)
+      }),
+    ])
+    clearTimeout(warmupTimer)
 
     if (!warmupOk) {
       log.error('ai', 'Enrichment slot: warmup validation failed')
@@ -201,9 +205,21 @@ export async function initEnrichmentSlot(): Promise<void> {
     g.slot.state = 'available'
     g.activatedAt = new Date()
     log.info('ai', `Enrichment slot warm (model: ${getModel()}, max reuses: ${getMaxReuses()})`)
+
+    // Wake any waiters queued during a previous recycle cycle
+    if (g.waitQueue.length > 0) {
+      releaseSlot()
+    }
   } catch (err) {
     g.slot.state = 'dead'
     log.error('ai', 'Enrichment slot init failed:', err)
+
+    // Reject any waiters queued during initializing state
+    const waitersToReject = [...g.waitQueue]
+    g.waitQueue.length = 0
+    for (const entry of waitersToReject) {
+      entry.reject(new Error('Enrichment slot init failed'))
+    }
   }
 }
 
@@ -225,7 +241,7 @@ export async function enrichmentQuery(
   const startTime = Date.now()
   const timeoutMs = options?.timeoutMs ?? getQueryTimeout()
 
-  // If slot is dead, fall back to per-query subprocess
+  // If slot is dead or uninitialized, throw so the caller can decide what to do
   if (g.slot.state === 'dead' || g.slot.state === 'uninitialized') {
     throw new Error(`Enrichment slot is ${g.slot.state} — cannot process query`)
   }
@@ -238,15 +254,20 @@ export async function enrichmentQuery(
   g.currentInputText = options?.inputText ?? null
   g.currentStartedAt = new Date()
 
+  let queryTimer: ReturnType<typeof setTimeout> | undefined
   try {
     // Push the prompt to the warm subprocess
-    g.slot.channel!.push(prompt)
+    if (!g.slot.channel) {
+      log.warn('ai', 'Enrichment slot channel null when attempting to push prompt')
+      throw new Error('Enrichment slot channel is null')
+    }
+    g.slot.channel.push(prompt)
 
     // Wait for result with timeout
     const result = await Promise.race([
       g.slot.resultPromise,
       new Promise<null>((_, reject) => {
-        setTimeout(
+        queryTimer = setTimeout(
           () => reject(new Error(`Enrichment query timed out after ${timeoutMs}ms`)),
           timeoutMs,
         )
@@ -302,6 +323,7 @@ export async function enrichmentQuery(
     log.error('ai', `Enrichment slot query failed after ${durationMs}ms:`, err)
     throw err
   } finally {
+    clearTimeout(queryTimer)
     g.currentTaskId = null
     g.currentInputText = null
     g.currentStartedAt = null
@@ -309,7 +331,7 @@ export async function enrichmentQuery(
 }
 
 /** Get enrichment slot statistics for observability. */
-export function getEnrichmentSlotStats(): SlotStats {
+export function getEnrichmentSlotStats(): EnrichmentSlotStats {
   return {
     state: g.slot.state,
     activatedAt: g.activatedAt?.toISOString() ?? null,
@@ -333,21 +355,24 @@ export function shutdownEnrichmentSlot(): void {
   log.info('ai', 'Enrichment slot: shutting down')
   g.slot.generation++
   g.slot.deliverResult?.(null)
+  g.warmupResolver?.(false)
+  g.warmupResolver = null
   g.slot.state = 'dead'
   try {
     g.slot.channel?.close()
-  } catch {
-    // Ignore close errors during shutdown
+  } catch (err) {
+    log.debug('ai', 'Enrichment channel close failed (subprocess may already be dead):', err)
   }
   g.slot.channel = null
   g.slot.resultPromise = null
   g.slot.deliverResult = null
 
-  // Reject all waiters
-  for (const entry of g.waitQueue) {
+  // Reject all waiters (copy first — timeout callbacks may splice the array)
+  const waitersToReject = [...g.waitQueue]
+  g.waitQueue.length = 0
+  for (const entry of waitersToReject) {
     entry.reject(new Error('Enrichment slot shutting down'))
   }
-  g.waitQueue.length = 0
 }
 
 // --- Internal helpers ---
@@ -472,44 +497,43 @@ function recycleSlot(): void {
   g.totalRecycles++
 
   // Circuit breaker: detect rapid consecutive recycles
-  const now = Date.now()
-  if (now - g.slot.lastRecycleTime < RAPID_RECYCLE_WINDOW_MS) {
-    g.slot.rapidRecycleCount++
-  } else {
-    g.slot.rapidRecycleCount = 1
-  }
-  g.slot.lastRecycleTime = now
+  const cb = checkCircuitBreaker(g.slot.lastRecycleTime, g.slot.rapidRecycleCount)
+  g.slot.rapidRecycleCount = cb.newCount
+  g.slot.lastRecycleTime = cb.newTime
 
-  if (g.slot.rapidRecycleCount >= RAPID_RECYCLE_LIMIT) {
+  if (cb.tripped) {
     log.error(
       'ai',
-      `Enrichment slot recycled ${g.slot.rapidRecycleCount} times in <${RAPID_RECYCLE_WINDOW_MS}ms — marking dead (circuit breaker)`,
+      `Enrichment slot recycled ${cb.newCount} times rapidly — marking dead (circuit breaker)`,
     )
     g.slot.generation++
+    g.slot.deliverResult?.(null)
     g.slot.state = 'dead'
     try {
       g.slot.channel?.close()
-    } catch {
-      // Ignore
+    } catch (err) {
+      log.debug('ai', 'Enrichment channel close failed (subprocess may already be dead):', err)
     }
     g.slot.channel = null
     g.slot.resultPromise = null
     g.slot.deliverResult = null
 
-    // Reject all waiters
-    for (const entry of g.waitQueue) {
+    // Reject all waiters (copy first — timeout callbacks may splice the array)
+    const waitersToReject = [...g.waitQueue]
+    g.waitQueue.length = 0
+    for (const entry of waitersToReject) {
       entry.reject(new Error('Enrichment slot died (circuit breaker)'))
     }
-    g.waitQueue.length = 0
     return
   }
 
   // Normal recycle: close old, reinit
   g.slot.generation++
+  g.slot.deliverResult?.(null)
   try {
     g.slot.channel?.close()
-  } catch {
-    // Ignore
+  } catch (err) {
+    log.debug('ai', 'Enrichment channel close failed (subprocess may already be dead):', err)
   }
   g.slot.channel = null
   g.slot.resultPromise = null
@@ -517,11 +541,39 @@ function recycleSlot(): void {
   g.slot.resultCount = 0
   g.slot.state = 'initializing'
 
-  // Release any waiters — they'll get served after reinit
+  // Waiters remain in queue — they'll be woken after reinit completes
   log.info('ai', 'Enrichment slot recycling...')
   setTimeout(() => {
     initEnrichmentSlot().catch((err) => {
       log.error('ai', 'Enrichment slot recycle init failed:', err)
     })
   }, 0)
+}
+
+// --- Test helpers ---
+
+/** Reset all slot state for test isolation. Follows the _reset pattern from enrichment.ts. */
+export function _resetSlotForTesting(): void {
+  try {
+    g.slot.channel?.close()
+  } catch {
+    // Ignore
+  }
+  g.slot.state = 'uninitialized'
+  g.slot.channel = null
+  g.slot.generation = 0
+  g.slot.resultCount = 0
+  g.slot.resultPromise = null
+  g.slot.deliverResult = null
+  g.slot.lastRecycleTime = 0
+  g.slot.rapidRecycleCount = 0
+  g.activatedAt = null
+  g.totalRequests = 0
+  g.totalRecycles = 0
+  g.lastRequestAt = null
+  g.waitQueue = []
+  g.warmupResolver = null
+  g.currentTaskId = null
+  g.currentInputText = null
+  g.currentStartedAt = null
 }

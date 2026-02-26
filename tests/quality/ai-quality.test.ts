@@ -515,6 +515,7 @@ async function runQuickTake(
     due_at: t.due_at,
     priority: t.priority,
     labels: t.labels,
+    rrule: t.rrule ?? null,
   }))
   const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, input.timezone)
   const stats = buildTaskStats(tasksForPrompt, input.timezone)
@@ -528,6 +529,7 @@ async function runQuickTake(
     input.newTaskTitle,
     stats,
     false,
+    tasksForPrompt,
   )
 
   const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'

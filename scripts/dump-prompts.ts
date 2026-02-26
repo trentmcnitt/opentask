@@ -212,6 +212,7 @@ function renderQuickTakePrompt(scenario?: ScenarioInput): string {
     due_at: t.due_at,
     priority: t.priority,
     labels: t.labels,
+    rrule: t.rrule ?? null,
   }))
   const { text: compactTaskList, count } = formatCompactTaskList(tasksForPrompt, timezone)
   const stats = buildTaskStats(tasksForPrompt, timezone)
@@ -222,6 +223,7 @@ function renderQuickTakePrompt(scenario?: ScenarioInput): string {
     newTaskTitle,
     stats,
     false,
+    tasksForPrompt,
   )
   const userPrompt = buildQuickTakeUserPrompt(
     compactTaskList,
@@ -230,6 +232,7 @@ function renderQuickTakePrompt(scenario?: ScenarioInput): string {
     newTaskTitle,
     stats,
     false,
+    tasksForPrompt,
   )
 
   return `${separator('QUICK TAKE — Full Prompt (cold path) ' + charCount(fullPrompt))}

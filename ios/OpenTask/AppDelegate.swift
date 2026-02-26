@@ -16,6 +16,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Migrate keychain items to kSecAttrAccessibleAfterFirstUnlock so they're
+        // readable from lock screen notification actions and background contexts.
+        KeychainHelper.migrateAccessibility(keys: ["serverURL", "bearerToken"])
+
         UNUserNotificationCenter.current().delegate = self
         registerNotificationCategories()
         requestNotificationPermission(application)

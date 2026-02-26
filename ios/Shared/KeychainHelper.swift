@@ -5,6 +5,11 @@ import Security
 ///
 /// All items use `kSecAttrAccessGroup` with the App Group ID so the content extension
 /// can read the Bearer token without the main app being active.
+///
+/// Uses `kSecAttrAccessibleAfterFirstUnlock` so credentials are readable from background
+/// contexts (lock screen notification actions, Watch actions, content extension) even when
+/// the device is locked. The default (`kSecAttrAccessibleWhenUnlocked`) blocks keychain
+/// reads when the device is locked, which silently breaks notification action handlers.
 enum KeychainHelper {
     private static let accessGroup = "group.io.mcnitt.opentask"
     private static let service = "io.mcnitt.opentask"
@@ -27,6 +32,7 @@ enum KeychainHelper {
 
         var addQuery = query
         addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess {
@@ -51,6 +57,21 @@ enum KeychainHelper {
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    /// Re-save existing keychain items with `kSecAttrAccessibleAfterFirstUnlock`.
+    ///
+    /// Items previously saved without an explicit accessibility attribute defaulted to
+    /// `kSecAttrAccessibleWhenUnlocked`, which blocks reads when the device is locked
+    /// (breaking lock screen notification actions and Watch actions). Call once on app
+    /// launch while the device is unlocked — the read succeeds, then save re-writes
+    /// with the correct accessibility.
+    static func migrateAccessibility(keys: [String]) {
+        for key in keys {
+            if let value = read(key: key) {
+                save(key: key, value: value)
+            }
+        }
     }
 
     static func delete(key: String) {
