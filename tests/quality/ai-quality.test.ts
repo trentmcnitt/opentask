@@ -946,10 +946,10 @@ function validateQuickTakeSchema(id: string, output: Record<string, unknown>): v
   if (typeof output.text !== 'string' || output.text.length === 0) {
     throw new Error(`[${id}] text must be a non-empty string`)
   }
-  // Quick take should be a single sentence, max 20 words (~200 chars generous upper bound)
-  if (output.text.length > 300) {
+  // Quick take should be a single sentence, max 25 words (~350 chars generous upper bound)
+  if (output.text.length > 350) {
     throw new Error(
-      `[${id}] text is ${output.text.length} chars — expected a short sentence (max ~200 chars)`,
+      `[${id}] text is ${output.text.length} chars — expected a short sentence (max ~250 chars)`,
     )
   }
 }

@@ -16,6 +16,7 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
 export type WhatsNextModel = 'haiku' | 'claude-opus-4-6'
 
 interface PreferencesContextValue {
+  aiAvailable: boolean
   labelConfig: LabelConfig[]
   setLabelConfig: (config: LabelConfig[]) => void
   priorityDisplay: PriorityDisplayConfig
@@ -67,6 +68,7 @@ interface PreferencesContextValue {
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
+  aiAvailable: false,
   labelConfig: [],
   setLabelConfig: () => {},
   priorityDisplay: DEFAULT_PRIORITY_DISPLAY,
@@ -119,6 +121,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
+  const [aiAvailable, setAiAvailableState] = useState(false)
   const [labelConfig, setLabelConfigState] = useState<LabelConfig[]>([])
   const [priorityDisplay, setPriorityDisplayState] =
     useState<PriorityDisplayConfig>(DEFAULT_PRIORITY_DISPLAY)
@@ -152,6 +155,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     fetch('/api/user/preferences')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (data?.data?.ai_available !== undefined) {
+          setAiAvailableState(data.data.ai_available)
+        }
         if (data?.data?.label_config) {
           setLabelConfigState(data.data.label_config)
         }
@@ -240,6 +246,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   return (
     <PreferencesContext.Provider
       value={{
+        aiAvailable,
         labelConfig,
         setLabelConfig: setLabelConfigState,
         priorityDisplay,
@@ -415,4 +422,8 @@ export function useAiPreferences() {
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
   }
+}
+
+export function useAiAvailable() {
+  return useContext(PreferencesContext).aiAvailable
 }

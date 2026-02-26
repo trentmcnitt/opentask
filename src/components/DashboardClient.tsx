@@ -19,7 +19,6 @@ import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import { showToast, showAiSuccessToastWithAction } from '@/lib/toast'
-import { formatFieldsChangedDescription } from '@/lib/format-task'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -37,7 +36,11 @@ const ProjectPickerSheet = dynamic(() =>
   import('@/components/ProjectPickerSheet').then((mod) => ({ default: mod.ProjectPickerSheet })),
 )
 
-import { useSnoozePreferences, useDefaultGrouping } from '@/components/PreferencesProvider'
+import {
+  useSnoozePreferences,
+  useDefaultGrouping,
+  useAiAvailable,
+} from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -115,7 +118,7 @@ function useDashboardActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
-): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<void> } {
+): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<number | null> } {
   const actions = useTaskActions({
     mode: 'list',
     onRefresh: fetchTasks,
@@ -124,7 +127,7 @@ function useDashboardActions(
   }) as ListTaskActionsReturn
 
   const handleQuickAdd = useCallback(
-    async (title: string) => {
+    async (title: string): Promise<number | null> => {
       try {
         const res = await fetch('/api/tasks', {
           method: 'POST',
@@ -139,8 +142,10 @@ function useDashboardActions(
           type: 'success',
           action: { label: 'View', onClick: () => onViewTask(task) },
         })
+        return task.id as number
       } catch {
         showToast({ message: 'Failed to add task', type: 'error' })
+        return null
       }
     },
     [fetchTasks, onViewTask],
@@ -292,42 +297,68 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     await fetchTasks()
     refreshProjects()
   }, [fetchTasks, refreshProjects])
+  // Banner state: combines quick take text, loading, title, and enrichment data
+  interface QuickTakeBannerState {
+    taskId: number | null
+    title: string
+    quickTakeText: string | null
+    loading: boolean
+    enrichment: { title?: string; due_at?: string | null; priority?: number } | null
+  }
+  const [bannerState, setBannerState] = useState<QuickTakeBannerState | null>(null)
+  const bannerTaskIdRef = useRef<number | null>(null)
+  const quickTakeAbortRef = useRef<AbortController | null>(null)
+
   useSyncStream({
     onSync: refreshAll,
     onEnrichmentComplete: (data) => {
-      const description = data.fieldsChanged
-        ? formatFieldsChangedDescription(data.fieldsChanged)
-        : undefined
-      showAiSuccessToastWithAction(
-        data.title,
-        {
-          label: 'View',
-          onClick: () => router.push(`/tasks/${data.taskId}`),
-        },
-        description,
-      )
+      // If the banner is showing for this task, update it with enrichment data
+      if (bannerTaskIdRef.current === data.taskId) {
+        setBannerState((prev) =>
+          prev
+            ? {
+                ...prev,
+                enrichment: {
+                  title: data.title,
+                  due_at: data.due_at,
+                  priority: data.priority,
+                },
+              }
+            : prev,
+        )
+      } else {
+        // Different task — show the normal enrichment toast
+        showAiSuccessToastWithAction(
+          data.title,
+          {
+            label: 'View',
+            onClick: () => router.push(`/tasks/${data.taskId}`),
+          },
+          data.description,
+        )
+      }
     },
   })
-  const [quickTakeText, setQuickTakeText] = useState<string | null>(null)
-  const [quickTakeLoading, setQuickTakeLoading] = useState(false)
-  const quickTakeAbortRef = useRef<AbortController | null>(null)
   const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {
       // 1. Create the task (fast — returns immediately)
-      await actions.handleQuickAdd(title)
+      const taskId = await actions.handleQuickAdd(title)
 
       // 2. Abort any previous in-flight quick take request
       quickTakeAbortRef.current?.abort()
       const controller = new AbortController()
       quickTakeAbortRef.current = controller
 
-      // 3. Client-side timeout (15s)
+      // 3. Track task ID for enrichment SSE matching
+      bannerTaskIdRef.current = taskId
+
+      // 4. Client-side timeout (15s)
       const timeoutId = setTimeout(() => controller.abort(), 15_000)
 
       try {
-        // 4. Dispatch the request — if fetch() throws, dots never appear
+        // 5. Dispatch the request — if fetch() throws, dots never appear
         const resPromise = fetch('/api/ai/quick-take', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -335,9 +366,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
           signal: controller.signal,
         })
 
-        // 5. Request is in flight — now show typing indicator
-        setQuickTakeText(null)
-        setQuickTakeLoading(true)
+        // 6. Request is in flight — show banner with title + typing indicator
+        setBannerState({
+          taskId,
+          title,
+          quickTakeText: null,
+          loading: true,
+          enrichment: null,
+        })
 
         const res = await resPromise
         clearTimeout(timeoutId)
@@ -346,7 +382,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
         const { data } = await res.json()
         if (data?.text) {
-          setQuickTakeText(data.text)
+          setBannerState((prev) => (prev ? { ...prev, quickTakeText: data.text } : prev))
         }
       } catch {
         // Swallow — abort, timeout, or server error
@@ -354,7 +390,12 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
         clearTimeout(timeoutId)
         // Only update loading state if this is still the active request
         if (quickTakeAbortRef.current === controller) {
-          setQuickTakeLoading(false)
+          setBannerState((prev) => {
+            if (!prev) return prev
+            // If both quick take and enrichment failed, dismiss immediately
+            if (!prev.quickTakeText && !prev.enrichment) return null
+            return { ...prev, loading: false }
+          })
         }
       }
     },
@@ -559,11 +600,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   // AI enrichment: true when any task has the ai-to-process label
   const enrichmentActive = tasks.some((t) => t.labels.includes('ai-to-process'))
 
+  // Server-side AI availability flag — gates all AI UI and prevents wasted requests
+  const aiAvailable = useAiAvailable()
+
   // AI What's Next: fetch recommendations and resolve against current task list
-  const aiInsights = useAiInsights(baseTasks)
+  const aiInsights = useAiInsights(baseTasks, aiAvailable)
 
   // AI Insights: fetch/generate insights results
-  const insightsData = useInsightsData(baseTasks)
+  const insightsData = useInsightsData(baseTasks, aiAvailable)
 
   // Refresh handlers for each AI system (guards are in AiControlArea)
   const handleRefreshAnnotations = aiInsights.refresh
@@ -1028,6 +1072,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
           actions.handleBatchRedo()
         }
       }}
+      aiAvailable={aiAvailable}
       aiMode={aiMode}
       onAiModeChange={handleModeChange}
       showInsights={showInsights}
@@ -1056,13 +1101,12 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
-      onQuickAdd={handleQuickAddWithQuickTake}
-      quickTakeText={quickTakeText}
-      quickTakeLoading={quickTakeLoading}
+      onQuickAdd={aiAvailable ? handleQuickAddWithQuickTake : actions.handleQuickAdd}
+      bannerState={bannerState}
       onQuickTakeDismiss={() => {
         quickTakeAbortRef.current?.abort()
-        setQuickTakeLoading(false)
-        setQuickTakeText(null)
+        bannerTaskIdRef.current = null
+        setBannerState(null)
       }}
       onUnifiedChange={(unified) => {
         if (unified) {
@@ -1158,6 +1202,7 @@ function DashboardView({
   onOpenBatchUndo,
   onOpenBatchRedo,
   onBatchConfirm,
+  aiAvailable,
   aiMode,
   onAiModeChange,
   showInsights,
@@ -1188,8 +1233,7 @@ function DashboardView({
   onReprocess,
   onUnifiedChange,
   onQuickAdd,
-  quickTakeText,
-  quickTakeLoading,
+  bannerState,
   onQuickTakeDismiss,
   searchFocusRef,
 }: {
@@ -1271,6 +1315,7 @@ function DashboardView({
   onOpenBatchUndo: () => void
   onOpenBatchRedo: () => void
   onBatchConfirm: () => void
+  aiAvailable: boolean
   aiMode: AiMode
   onAiModeChange: (mode: AiMode) => void
   showInsights: boolean
@@ -1299,9 +1344,14 @@ function DashboardView({
   onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
   onUnifiedChange: (unified: boolean) => void
-  onQuickAdd: (title: string) => Promise<void>
-  quickTakeText: string | null
-  quickTakeLoading: boolean
+  onQuickAdd: (title: string) => Promise<void | number | null>
+  bannerState: {
+    taskId: number | null
+    title: string
+    quickTakeText: string | null
+    loading: boolean
+    enrichment: { title?: string; due_at?: string | null; priority?: number } | null
+  } | null
   onQuickTakeDismiss: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
@@ -1345,48 +1395,55 @@ function DashboardView({
         <div className="mb-4 flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <QuickAdd
-              onAdd={onQuickAdd}
+              onAdd={async (title) => {
+                await onQuickAdd(title)
+              }}
               onOpenAddForm={(title) => {
                 window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
               }}
             />
           </div>
-          <AiControlArea
-            mode={aiMode}
-            onModeChange={onAiModeChange}
-            wnCommentaryUnfiltered={wnCommentaryUnfiltered}
-            onWnCommentaryUnfilteredChange={onWnCommentaryUnfilteredChange}
-            wnHighlight={wnHighlight}
-            onWnHighlightChange={onWnHighlightChange}
-            insightsSignalChips={insightsSignalChips}
-            onInsightsSignalChipsChange={onInsightsSignalChipsChange}
-            insightsScoreChips={insightsScoreChips}
-            onInsightsScoreChipsChange={onInsightsScoreChipsChange}
-            annotationGeneratedAt={aiInsights.generatedAt}
-            annotationDurationMs={aiInsights.durationMs}
-            annotationFreshnessText={aiInsights.freshnessText}
-            annotationRefreshLoading={aiInsights.loading}
-            annotationError={aiInsights.error}
-            onRefreshAnnotations={onRefreshAnnotations}
-            insightsGeneratedAt={insightsData.generatedAt}
-            insightsDurationMs={insightsData.durationMs}
-            insightsGenerating={insightsData.generating}
-            insightsProgress={insightsData.progress}
-            insightsCompletedTasks={insightsData.completedTasks}
-            insightsTotalTasks={insightsData.totalTasks}
-            insightsSingleCall={insightsData.singleCall}
-            insightsGenerationStartedAt={insightsData.generationStartedAt}
-            insightsError={insightsData.error}
-            onRefreshInsights={onRefreshInsights}
-            enrichmentActive={enrichmentActive}
-            timezone={timezone}
-          />
+          {aiAvailable && (
+            <AiControlArea
+              mode={aiMode}
+              onModeChange={onAiModeChange}
+              wnCommentaryUnfiltered={wnCommentaryUnfiltered}
+              onWnCommentaryUnfilteredChange={onWnCommentaryUnfilteredChange}
+              wnHighlight={wnHighlight}
+              onWnHighlightChange={onWnHighlightChange}
+              insightsSignalChips={insightsSignalChips}
+              onInsightsSignalChipsChange={onInsightsSignalChipsChange}
+              insightsScoreChips={insightsScoreChips}
+              onInsightsScoreChipsChange={onInsightsScoreChipsChange}
+              annotationGeneratedAt={aiInsights.generatedAt}
+              annotationDurationMs={aiInsights.durationMs}
+              annotationFreshnessText={aiInsights.freshnessText}
+              annotationRefreshLoading={aiInsights.loading}
+              annotationError={aiInsights.error}
+              onRefreshAnnotations={onRefreshAnnotations}
+              insightsGeneratedAt={insightsData.generatedAt}
+              insightsDurationMs={insightsData.durationMs}
+              insightsGenerating={insightsData.generating}
+              insightsProgress={insightsData.progress}
+              insightsCompletedTasks={insightsData.completedTasks}
+              insightsTotalTasks={insightsData.totalTasks}
+              insightsSingleCall={insightsData.singleCall}
+              insightsGenerationStartedAt={insightsData.generationStartedAt}
+              insightsError={insightsData.error}
+              onRefreshInsights={onRefreshInsights}
+              enrichmentActive={enrichmentActive}
+              timezone={timezone}
+            />
+          )}
         </div>
 
-        {(quickTakeLoading || quickTakeText) && (
+        {aiAvailable && bannerState && (
           <QuickTakeBanner
-            text={quickTakeText}
-            loading={quickTakeLoading}
+            title={bannerState.title}
+            quickTakeText={bannerState.quickTakeText}
+            loading={bannerState.loading}
+            enrichment={bannerState.enrichment}
+            timezone={timezone}
             onDismiss={onQuickTakeDismiss}
           />
         )}
@@ -1421,6 +1478,7 @@ function DashboardView({
           onExcludeProject={onExcludeProject}
           todayCounts={todayCounts}
           timezone={timezone}
+          aiAvailable={aiAvailable}
           aiMode={aiMode}
           aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
           aiFilterActive={aiFilterActive}

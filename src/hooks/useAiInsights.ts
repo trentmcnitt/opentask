@@ -35,7 +35,7 @@ export interface UseAiInsightsReturn {
  * - refresh() calls /api/ai/whats-next?refresh=true
  * - Silent failure on 503 (AI disabled) — returns empty maps
  */
-export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
+export function useAiInsights(tasks: Task[], enabled = true): UseAiInsightsReturn {
   const [data, setData] = useState<WhatsNextResult | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -80,12 +80,13 @@ export function useAiInsights(tasks: Task[]): UseAiInsightsReturn {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     if (hasFetched.current) return
     if (tasks.length > 0) {
       hasFetched.current = true
       fetchRecommendations()
     }
-  }, [tasks.length, fetchRecommendations])
+  }, [tasks.length, fetchRecommendations, enabled])
 
   // Resolve What's Next task IDs against the current task list
   const taskIdSet = useMemo(() => new Set(tasks.map((t) => t.id)), [tasks])

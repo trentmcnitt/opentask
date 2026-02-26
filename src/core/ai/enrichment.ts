@@ -39,6 +39,9 @@ import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
+import { formatDueTimeParts } from '@/lib/format-date'
+import { formatRRule } from '@/lib/format-rrule'
+import { getPriorityOption } from '@/lib/priority'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
@@ -284,6 +287,44 @@ export async function processEnrichmentQueue(): Promise<void> {
 }
 
 /**
+ * Build a concise toast description from enrichment results.
+ * Shows actual values (not field names): "Tomorrow 9:00 AM · Medium · Shopping"
+ */
+function buildEnrichmentDescription(
+  task: Task,
+  fieldsChanged: string[],
+  userTimezone: string,
+  projectName?: string,
+): string | undefined {
+  const parts: string[] = []
+
+  if (fieldsChanged.includes('due_at') && task.due_at) {
+    parts.push(formatDueTimeParts(task.due_at, userTimezone).relative)
+  }
+
+  if (fieldsChanged.includes('rrule') && task.rrule) {
+    parts.push(formatRRule(task.rrule, task.anchor_time))
+  }
+
+  if (fieldsChanged.includes('priority') && task.priority > 0) {
+    parts.push(getPriorityOption(task.priority).label)
+  }
+
+  if (fieldsChanged.includes('project_id') && projectName) {
+    parts.push(projectName)
+  }
+
+  if (fieldsChanged.includes('labels')) {
+    const displayLabels = task.labels.filter((l) => !l.startsWith('ai-'))
+    if (displayLabels.length > 0) {
+      parts.push(displayLabels.join(', '))
+    }
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : undefined
+}
+
+/**
  * Enrich a single task by ID. Public entry point for on-demand enrichment.
  *
  * Called fire-and-forget from the task creation API route. Checks that the
@@ -336,10 +377,27 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   if (enrichmentSucceeded) {
     const enrichedTask = getTaskById(taskId)
     if (enrichedTask) {
+      const userRow = db.prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
+        | { timezone: string }
+        | undefined
+      const projectName = enrichedTask.project_id
+        ? (
+            db.prepare('SELECT name FROM projects WHERE id = ?').get(enrichedTask.project_id) as
+              | { name: string }
+              | undefined
+          )?.name
+        : undefined
       emitEnrichmentCompleteEvent(userId, {
         taskId,
         title: enrichedTask.title,
-        fieldsChanged: enrichedFields,
+        description: buildEnrichmentDescription(
+          enrichedTask,
+          enrichedFields,
+          userRow?.timezone ?? 'America/Chicago',
+          projectName,
+        ),
+        due_at: enrichedTask.due_at,
+        priority: enrichedTask.priority,
       })
     }
   }
