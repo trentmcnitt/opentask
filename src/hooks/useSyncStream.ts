@@ -2,6 +2,16 @@
 
 import { useEffect, useRef } from 'react'
 
+export interface EnrichmentCompleteData {
+  taskId: number
+  title: string
+}
+
+interface SyncStreamCallbacks {
+  onSync: () => void
+  onEnrichmentComplete?: (data: EnrichmentCompleteData) => void
+}
+
 /**
  * SSE-based real-time sync hook
  *
@@ -13,11 +23,14 @@ import { useEffect, useRef } from 'react'
  * - Disconnects when the tab is hidden (saves resources on mobile)
  * - Immediately syncs + reconnects when the tab becomes visible again
  * - EventSource handles reconnection automatically on network errors
+ *
+ * Optional onEnrichmentComplete callback fires immediately (no debounce) when
+ * AI enrichment finishes for a task created via the on-demand path.
  */
-export function useSyncStream(onSync: () => void) {
-  const onSyncRef = useRef(onSync)
+export function useSyncStream(callbacks: SyncStreamCallbacks) {
+  const callbacksRef = useRef(callbacks)
   useEffect(() => {
-    onSyncRef.current = onSync
+    callbacksRef.current = callbacks
   })
 
   useEffect(() => {
@@ -26,7 +39,7 @@ export function useSyncStream(onSync: () => void) {
 
     function debouncedSync() {
       if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => onSyncRef.current(), 300)
+      debounceTimer = setTimeout(() => callbacksRef.current.onSync(), 300)
     }
 
     function connect() {
@@ -35,7 +48,13 @@ export function useSyncStream(onSync: () => void) {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          if (data.type === 'sync' || data.type === 'connected') debouncedSync()
+          if (data.type === 'sync' || data.type === 'connected') {
+            debouncedSync()
+          } else if (data.type === 'enrichment_complete') {
+            // Fire immediately — enrichment events are rare and the user is waiting
+            callbacksRef.current.onEnrichmentComplete?.(data)
+            debouncedSync()
+          }
         } catch {
           // Ignore malformed messages
         }
@@ -66,7 +85,7 @@ export function useSyncStream(onSync: () => void) {
 
     function handleVisibility() {
       if (document.visibilityState === 'visible') {
-        onSyncRef.current()
+        callbacksRef.current.onSync()
         connect()
       } else {
         disconnect()

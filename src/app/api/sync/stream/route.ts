@@ -12,7 +12,14 @@
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { unauthorized } from '@/lib/api-response'
-import { onSyncEvent, offSyncEvent, type SyncListener } from '@/lib/sync-events'
+import {
+  onSyncEvent,
+  offSyncEvent,
+  onEnrichmentCompleteEvent,
+  offEnrichmentCompleteEvent,
+  type SyncListener,
+  type EnrichmentListener,
+} from '@/lib/sync-events'
 import { withLogging } from '@/lib/with-logging'
 
 export const dynamic = 'force-dynamic'
@@ -45,7 +52,22 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         }
       }
 
+      const enrichmentListener: EnrichmentListener = (changedUserId, payload) => {
+        if (changedUserId !== userId) return
+        try {
+          const data = JSON.stringify({
+            type: 'enrichment_complete',
+            taskId: payload.taskId,
+            title: payload.title,
+          })
+          controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+        } catch {
+          // Stream closed, cleanup will happen via abort signal
+        }
+      }
+
       onSyncEvent(listener)
+      onEnrichmentCompleteEvent(enrichmentListener)
 
       // Heartbeat to keep connection alive through proxies
       const heartbeat = setInterval(() => {
@@ -59,6 +81,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       // Cleanup on client disconnect
       request.signal.addEventListener('abort', () => {
         offSyncEvent(listener)
+        offEnrichmentCompleteEvent(enrichmentListener)
         clearInterval(heartbeat)
         try {
           controller.close()
