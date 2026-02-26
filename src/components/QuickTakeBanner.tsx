@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { Sparkles, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface QuickTakeBannerProps {
   text: string | null
@@ -20,8 +21,18 @@ export function QuickTakeBanner({ text, loading, onDismiss }: QuickTakeBannerPro
   if (!loading && !text) return null
 
   return (
-    <div className="animate-in fade-in slide-in-from-top-2 mb-3 flex items-start gap-2 rounded-lg border border-indigo-200/50 bg-indigo-50/50 px-3 py-2 duration-300 dark:border-indigo-800/50 dark:bg-indigo-950/30">
-      <Sparkles className="mt-0.5 size-3.5 flex-shrink-0 text-indigo-500 dark:text-indigo-400" />
+    <div
+      className={cn(
+        'animate-in fade-in slide-in-from-top-2 mb-3 flex w-fit max-w-full gap-2 rounded-lg border border-indigo-200/50 bg-indigo-50/50 px-3 py-2 duration-300 dark:border-indigo-800/50 dark:bg-indigo-950/30',
+        loading ? 'items-center' : 'items-start',
+      )}
+    >
+      <Sparkles
+        className={cn(
+          'size-3.5 flex-shrink-0 text-indigo-500 dark:text-indigo-400',
+          !loading && 'mt-0.5',
+        )}
+      />
       {loading ? (
         <div
           className="flex items-center gap-1 py-0.5 text-indigo-500 dark:text-indigo-400"

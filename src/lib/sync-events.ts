@@ -16,6 +16,7 @@ export type SyncListener = (userId: number) => void
 export interface EnrichmentCompletePayload {
   taskId: number
   title: string
+  fieldsChanged: string[]
 }
 
 export type EnrichmentListener = (userId: number, payload: EnrichmentCompletePayload) => void

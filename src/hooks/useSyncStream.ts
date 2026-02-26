@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 export interface EnrichmentCompleteData {
   taskId: number
   title: string
+  fieldsChanged?: string[]
 }
 
 interface SyncStreamCallbacks {

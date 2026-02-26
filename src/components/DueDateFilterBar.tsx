@@ -99,12 +99,14 @@ export function DueDateFilterBar({
       }
     }
 
-    return FILTER_ORDER.filter((f) => counts.has(f)).map(
-      (f) => [f, counts.get(f)!] as [DueDateFilter, number],
-    )
-  }, [tasks, timezone])
+    // Include any filter that has tasks OR is actively selected/excluded
+    return FILTER_ORDER.filter(
+      (f) => counts.has(f) || selectedDateFilters.includes(f) || excludedDateFilters.includes(f),
+    ).map((f) => [f, counts.get(f) ?? 0] as [DueDateFilter, number])
+  }, [tasks, timezone, selectedDateFilters, excludedDateFilters])
 
-  if (filterCounts.length <= 1) return null
+  const hasActiveFilter = selectedDateFilters.length > 0 || excludedDateFilters.length > 0
+  if (filterCounts.length <= 1 && !hasActiveFilter) return null
 
   return (
     <>

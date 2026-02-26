@@ -43,11 +43,18 @@ export function LabelFilterBar({
         counts.set(label, (counts.get(label) || 0) + 1)
       }
     }
+    // Ensure active filters appear even at count 0
+    for (const l of selectedLabels) {
+      if (!counts.has(l)) counts.set(l, 0)
+    }
+    for (const l of excludedLabels) {
+      if (!counts.has(l)) counts.set(l, 0)
+    }
     return [...counts.entries()].sort((a, b) => {
       if (b[1] !== a[1]) return b[1] - a[1]
       return a[0].localeCompare(b[0])
     })
-  }, [tasks])
+  }, [tasks, selectedLabels, excludedLabels])
 
   if (labelCounts.length === 0) return null
 

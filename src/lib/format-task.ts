@@ -104,6 +104,36 @@ function formatNotesLine(notes: string | null): string | null {
  * - Multiple groups: separated by blank lines
  * - Metadata (due, recurrence, priority, labels) in parentheses after title
  */
+/** Internal fields that should not be shown to users in enrichment descriptions */
+const INTERNAL_FIELDS = new Set(['anchor_time', 'anchor_dow', 'anchor_dom'])
+
+/** Map DB field names to human-readable display names */
+const FIELD_DISPLAY_NAMES: Record<string, string> = {
+  title: 'title',
+  due_at: 'due date',
+  priority: 'priority',
+  labels: 'labels',
+  rrule: 'recurrence',
+  notes: 'notes',
+  project_id: 'project',
+  auto_snooze_minutes: 'auto-snooze',
+  recurrence_mode: 'recurrence mode',
+}
+
+/**
+ * Build a human-readable description of enrichment changes.
+ * Filters out internal fields and maps to display names.
+ * Returns undefined if no user-facing fields changed.
+ */
+export function formatFieldsChangedDescription(fieldsChanged: string[]): string | undefined {
+  const displayNames = fieldsChanged
+    .filter((f) => !INTERNAL_FIELDS.has(f))
+    .map((f) => FIELD_DISPLAY_NAMES[f] || f)
+
+  if (displayNames.length === 0) return undefined
+  return `Set ${displayNames.join(', ')}`
+}
+
 export function formatTasksForClipboard(
   groups: ClipboardGroup[],
   timezone: string,
