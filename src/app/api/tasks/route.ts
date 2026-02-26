@@ -11,7 +11,7 @@ import { success, unauthorized, badRequest, handleError, handleZodError } from '
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
 import { getTasks, createTask } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
-import { isAIEnabled, enrichSingleTask, generateQuickTake } from '@/core/ai'
+import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
@@ -92,9 +92,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return unauthorized()
     }
 
-    const { searchParams } = new URL(request.url)
-    const wantQuickTake = searchParams.get('quick_take') === 'true'
-
     const body = await request.json()
     const input = validateTaskCreate(body)
 
@@ -104,12 +101,6 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       input,
     })
 
-    // Generate quick take before fire-and-forget enrichment (needs original title)
-    let quickTake: string | null = null
-    if (wantQuickTake && isAIEnabled()) {
-      quickTake = await generateQuickTake(user.id, user.timezone, input.title, !!input.due_at)
-    }
-
     // Fire-and-forget: trigger immediate enrichment if task has the ai-to-process label
     if (isAIEnabled() && task.labels.includes('ai-to-process')) {
       enrichSingleTask(task.id, user.id).catch((err) => {
@@ -118,8 +109,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     notifyDemoEngagement(user.name, 'create')
-    const response = formatTaskResponse(task)
-    return success(quickTake ? { ...response, quick_take: quickTake } : response, 201)
+    return success(formatTaskResponse(task), 201)
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)

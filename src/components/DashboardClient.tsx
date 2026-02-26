@@ -114,7 +114,6 @@ function useDashboardActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
-  onQuickTake: (text: string | null) => void,
 ): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<void> } {
   const actions = useTaskActions({
     mode: 'list',
@@ -126,7 +125,7 @@ function useDashboardActions(
   const handleQuickAdd = useCallback(
     async (title: string) => {
       try {
-        const res = await fetch('/api/tasks?quick_take=true', {
+        const res = await fetch('/api/tasks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title }),
@@ -134,20 +133,16 @@ function useDashboardActions(
         if (!res.ok) throw new Error('Failed to create task')
         const { data: task } = await res.json()
         fetchTasks()
-        if (task.quick_take) {
-          onQuickTake(task.quick_take)
-        } else {
-          showToast({
-            message: 'Task added',
-            type: 'success',
-            action: { label: 'View', onClick: () => onViewTask(task) },
-          })
-        }
+        showToast({
+          message: 'Task added',
+          type: 'success',
+          action: { label: 'View', onClick: () => onViewTask(task) },
+        })
       } catch {
         showToast({ message: 'Failed to add task', type: 'error' })
       }
     },
-    [fetchTasks, onViewTask, onQuickTake],
+    [fetchTasks, onViewTask],
   )
 
   return { ...actions, handleQuickAdd }
@@ -297,9 +292,55 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     refreshProjects()
   }, [fetchTasks, refreshProjects])
   useSyncStream(refreshAll)
-  const [quickTake, setQuickTake] = useState<string | null>(null)
-  const handleQuickTake = useCallback((text: string | null) => setQuickTake(text), [])
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, handleQuickTake)
+  const [quickTakeText, setQuickTakeText] = useState<string | null>(null)
+  const [quickTakeLoading, setQuickTakeLoading] = useState(false)
+  const quickTakeAbortRef = useRef<AbortController | null>(null)
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
+
+  const handleQuickAddWithQuickTake = useCallback(
+    async (title: string) => {
+      // 1. Create the task (fast — returns immediately)
+      await actions.handleQuickAdd(title)
+
+      // 2. Abort any previous in-flight quick take request
+      quickTakeAbortRef.current?.abort()
+      const controller = new AbortController()
+      quickTakeAbortRef.current = controller
+
+      // 3. Show typing indicator
+      setQuickTakeText(null)
+      setQuickTakeLoading(true)
+
+      // 4. Client-side timeout (15s)
+      const timeoutId = setTimeout(() => controller.abort(), 15_000)
+
+      try {
+        const res = await fetch('/api/ai/quick-take', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+
+        if (!res.ok) throw new Error('Quick take request failed')
+
+        const { data } = await res.json()
+        if (data?.text) {
+          setQuickTakeText(data.text)
+        }
+      } catch {
+        // Swallow — abort, timeout, or server error
+      } finally {
+        clearTimeout(timeoutId)
+        // Only update loading state if this is still the active request
+        if (quickTakeAbortRef.current === controller) {
+          setQuickTakeLoading(false)
+        }
+      }
+    },
+    [actions],
+  )
 
   const handleQuickActionDelete = useCallback(
     async (taskId: number) => {
@@ -996,8 +1037,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
-      quickTake={quickTake}
-      onQuickTakeDismiss={() => setQuickTake(null)}
+      onQuickAdd={handleQuickAddWithQuickTake}
+      quickTakeText={quickTakeText}
+      quickTakeLoading={quickTakeLoading}
+      onQuickTakeDismiss={() => {
+        quickTakeAbortRef.current?.abort()
+        setQuickTakeLoading(false)
+        setQuickTakeText(null)
+      }}
       onUnifiedChange={(unified) => {
         if (unified) {
           // Save current grouping so toggling unified off restores it
@@ -1121,7 +1168,9 @@ function DashboardView({
   onQuickActionDelete,
   onReprocess,
   onUnifiedChange,
-  quickTake,
+  onQuickAdd,
+  quickTakeText,
+  quickTakeLoading,
   onQuickTakeDismiss,
   searchFocusRef,
 }: {
@@ -1231,7 +1280,9 @@ function DashboardView({
   onSignalLongPress: (key: string) => void
   onReprocess: (taskId: number) => Promise<void>
   onUnifiedChange: (unified: boolean) => void
-  quickTake: string | null
+  onQuickAdd: (title: string) => Promise<void>
+  quickTakeText: string | null
+  quickTakeLoading: boolean
   onQuickTakeDismiss: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
@@ -1275,7 +1326,7 @@ function DashboardView({
         <div className="mb-4 flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <QuickAdd
-              onAdd={actions.handleQuickAdd}
+              onAdd={onQuickAdd}
               onOpenAddForm={(title) => {
                 window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
               }}
@@ -1313,7 +1364,13 @@ function DashboardView({
           />
         </div>
 
-        {quickTake && <QuickTakeBanner text={quickTake} onDismiss={onQuickTakeDismiss} />}
+        {(quickTakeLoading || quickTakeText) && (
+          <QuickTakeBanner
+            text={quickTakeText}
+            loading={quickTakeLoading}
+            onDismiss={onQuickTakeDismiss}
+          />
+        )}
 
         <FilterBar
           tasks={allTasks}
