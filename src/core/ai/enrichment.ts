@@ -38,7 +38,7 @@ import { ENRICHMENT_REMINDERS } from './prompts'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
-import { emitSyncEvent } from '@/lib/sync-events'
+import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
@@ -316,9 +316,11 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   }
 
   processingTasks.add(taskId)
+  let enrichmentSucceeded = false
   try {
     await enrichTask(row)
     retryCount.delete(taskId)
+    enrichmentSucceeded = true
   } catch (err) {
     log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
     handleFailure(taskId)
@@ -328,6 +330,17 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 
   // Notify all connected tabs so the AI glow stops and enriched data appears
   emitSyncEvent(userId)
+
+  // Send enrichment-specific event for toast notification (on-demand only, not cron)
+  if (enrichmentSucceeded) {
+    const enrichedTask = getTaskById(taskId)
+    if (enrichedTask) {
+      emitEnrichmentCompleteEvent(userId, {
+        taskId,
+        title: enrichedTask.title,
+      })
+    }
+  }
 }
 
 /**

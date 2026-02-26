@@ -13,6 +13,13 @@ import { EventEmitter } from 'events'
 
 export type SyncListener = (userId: number) => void
 
+export interface EnrichmentCompletePayload {
+  taskId: number
+  title: string
+}
+
+export type EnrichmentListener = (userId: number, payload: EnrichmentCompletePayload) => void
+
 const globalForSync = globalThis as typeof globalThis & {
   __syncEmitter?: EventEmitter
 }
@@ -25,6 +32,7 @@ if (!globalForSync.__syncEmitter) {
 const emitter = globalForSync.__syncEmitter!
 
 const SYNC_EVENT = 'sync'
+const ENRICHMENT_COMPLETE_EVENT = 'enrichment_complete'
 
 /** Emit a sync event for a user. Call after any data mutation. */
 export function emitSyncEvent(userId: number): void {
@@ -39,4 +47,22 @@ export function onSyncEvent(listener: SyncListener): void {
 /** Unsubscribe from sync events. */
 export function offSyncEvent(listener: SyncListener): void {
   emitter.off(SYNC_EVENT, listener)
+}
+
+/** Emit an enrichment complete event. Only used by on-demand enrichment (not cron queue). */
+export function emitEnrichmentCompleteEvent(
+  userId: number,
+  payload: EnrichmentCompletePayload,
+): void {
+  emitter.emit(ENRICHMENT_COMPLETE_EVENT, userId, payload)
+}
+
+/** Subscribe to enrichment complete events. */
+export function onEnrichmentCompleteEvent(listener: EnrichmentListener): void {
+  emitter.on(ENRICHMENT_COMPLETE_EVENT, listener)
+}
+
+/** Unsubscribe from enrichment complete events. */
+export function offEnrichmentCompleteEvent(listener: EnrichmentListener): void {
+  emitter.off(ENRICHMENT_COMPLETE_EVENT, listener)
 }

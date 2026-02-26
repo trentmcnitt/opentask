@@ -18,7 +18,7 @@ import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
-import { showToast } from '@/lib/toast'
+import { showToast, showAiSuccessToastWithAction } from '@/lib/toast'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -291,7 +291,15 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     await fetchTasks()
     refreshProjects()
   }, [fetchTasks, refreshProjects])
-  useSyncStream(refreshAll)
+  useSyncStream({
+    onSync: refreshAll,
+    onEnrichmentComplete: (data) => {
+      showAiSuccessToastWithAction(data.title, {
+        label: 'View',
+        onClick: () => router.push(`/tasks/${data.taskId}`),
+      })
+    },
+  })
   const [quickTakeText, setQuickTakeText] = useState<string | null>(null)
   const [quickTakeLoading, setQuickTakeLoading] = useState(false)
   const quickTakeAbortRef = useRef<AbortController | null>(null)
