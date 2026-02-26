@@ -40,11 +40,22 @@ export function AttributeFilterBar({
     return { recurring, autoSnooze }
   }, [tasks])
 
-  if (counts.recurring === 0 && counts.autoSnooze === 0) return null
+  const hasActiveRecurring =
+    attributeFilters.has('recurring') || excludedAttributes.has('recurring')
+  const hasActiveAutoSnooze =
+    attributeFilters.has('custom_auto_snooze') || excludedAttributes.has('custom_auto_snooze')
+
+  if (
+    counts.recurring === 0 &&
+    counts.autoSnooze === 0 &&
+    !hasActiveRecurring &&
+    !hasActiveAutoSnooze
+  )
+    return null
 
   return (
     <>
-      {counts.recurring > 0 && (
+      {(counts.recurring > 0 || hasActiveRecurring) && (
         <AttributeChipBadge
           chipKey="recurring"
           icon={<Repeat className="size-3" />}
@@ -62,7 +73,7 @@ export function AttributeFilterBar({
           onExclude={onExcludeAttribute}
         />
       )}
-      {counts.autoSnooze > 0 && (
+      {(counts.autoSnooze > 0 || hasActiveAutoSnooze) && (
         <AttributeChipBadge
           chipKey="custom_auto_snooze"
           icon={<Timer className="size-3" />}

@@ -19,6 +19,7 @@ import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
 import { showToast, showAiSuccessToastWithAction } from '@/lib/toast'
+import { formatFieldsChangedDescription } from '@/lib/format-task'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -294,10 +295,17 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   useSyncStream({
     onSync: refreshAll,
     onEnrichmentComplete: (data) => {
-      showAiSuccessToastWithAction(data.title, {
-        label: 'View',
-        onClick: () => router.push(`/tasks/${data.taskId}`),
-      })
+      const description = data.fieldsChanged
+        ? formatFieldsChangedDescription(data.fieldsChanged)
+        : undefined
+      showAiSuccessToastWithAction(
+        data.title,
+        {
+          label: 'View',
+          onClick: () => router.push(`/tasks/${data.taskId}`),
+        },
+        description,
+      )
     },
   })
   const [quickTakeText, setQuickTakeText] = useState<string | null>(null)
@@ -315,20 +323,23 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       const controller = new AbortController()
       quickTakeAbortRef.current = controller
 
-      // 3. Show typing indicator
-      setQuickTakeText(null)
-      setQuickTakeLoading(true)
-
-      // 4. Client-side timeout (15s)
+      // 3. Client-side timeout (15s)
       const timeoutId = setTimeout(() => controller.abort(), 15_000)
 
       try {
-        const res = await fetch('/api/ai/quick-take', {
+        // 4. Dispatch the request — if fetch() throws, dots never appear
+        const resPromise = fetch('/api/ai/quick-take', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title }),
           signal: controller.signal,
         })
+
+        // 5. Request is in flight — now show typing indicator
+        setQuickTakeText(null)
+        setQuickTakeLoading(true)
+
+        const res = await resPromise
         clearTimeout(timeoutId)
 
         if (!res.ok) throw new Error('Quick take request failed')

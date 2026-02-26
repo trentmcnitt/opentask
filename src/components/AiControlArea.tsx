@@ -176,7 +176,7 @@ export function AiControlArea({
           <div className="flex items-center justify-between">
             <button
               type="button"
-              className="flex items-center gap-1.5 text-sm font-medium"
+              className="hover:text-foreground/70 flex cursor-pointer items-center gap-1.5 text-sm font-medium"
               onClick={() => setAiStatusOpen(true)}
             >
               AI

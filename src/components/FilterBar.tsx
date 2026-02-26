@@ -144,11 +144,15 @@ export function FilterBar({
   onSignalClick?: (key: string, e: React.MouseEvent) => void
   onSignalLongPress?: (key: string) => void
 }) {
-  const hasLabels = tasks.some((t) => t.labels.length > 0)
+  const hasLabels =
+    tasks.some((t) => t.labels.length > 0) || selectedLabels.length > 0 || excludedLabels.length > 0
 
-  // Check if the date filter section will actually render badges (needs 2+ buckets).
+  // Check if the date filter section will actually render badges (needs 2+ buckets or active filters).
   const dateFilterVisible = useMemo(() => {
-    if (!timezone || !onToggleDateFilter || tasks.length === 0) return false
+    if (!timezone || !onToggleDateFilter) return false
+    // Always show if date filters are actively selected or excluded
+    if (selectedDateFilters.length > 0 || excludedDateFilters.length > 0) return true
+    if (tasks.length === 0) return false
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
     const allBuckets = new Set<string>()
@@ -159,7 +163,7 @@ export function FilterBar({
       if (allBuckets.size > 1) return true
     }
     return false
-  }, [timezone, onToggleDateFilter, tasks])
+  }, [timezone, onToggleDateFilter, tasks, selectedDateFilters, excludedDateFilters])
 
   if (tasks.length === 0) return null
 
@@ -176,7 +180,10 @@ export function FilterBar({
     (insightsActive || insightsSignalChipsVisible)
   const aiRowVisible = aiChipVisible || insightsChipVisible || signalRowVisible
 
-  const hasAttributes = tasks.some((t) => t.rrule != null || t.auto_snooze_minutes != null)
+  const hasActiveAttributes =
+    (attributeFilters?.size ?? 0) > 0 || (excludedAttributes?.size ?? 0) > 0
+  const hasAttributes =
+    tasks.some((t) => t.rrule != null || t.auto_snooze_minutes != null) || hasActiveAttributes
 
   return (
     <div className="relative mb-4">

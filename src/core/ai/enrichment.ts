@@ -317,8 +317,9 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
 
   processingTasks.add(taskId)
   let enrichmentSucceeded = false
+  let enrichedFields: string[] = []
   try {
-    await enrichTask(row)
+    enrichedFields = await enrichTask(row)
     retryCount.delete(taskId)
     enrichmentSucceeded = true
   } catch (err) {
@@ -338,6 +339,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
       emitEnrichmentCompleteEvent(userId, {
         taskId,
         title: enrichedTask.title,
+        fieldsChanged: enrichedFields,
       })
     }
   }
@@ -349,7 +351,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
  * Sends the raw title text with the user's timezone to the model,
  * gets back structured output, validates it, and applies changes.
  */
-async function enrichTask(row: PendingTaskRow): Promise<void> {
+async function enrichTask(row: PendingTaskRow): Promise<string[]> {
   const db = getDb()
 
   // Get user's timezone, AI context, and schedule preferences
@@ -465,7 +467,7 @@ Parse the task above and return the structured result.`
     parsed = { ...parsed, due_at: new Date(parsed.due_at).toISOString() }
   }
 
-  applyEnrichment(row, parsed, user, textToEnrich)
+  return applyEnrichment(row, parsed, user, textToEnrich)
 }
 
 /**
@@ -632,9 +634,9 @@ function applyEnrichment(
   enrichment: EnrichmentResult,
   user: { id: number; timezone: string },
   inputText: string,
-): void {
+): string[] {
   const task = getTaskById(row.id)
-  if (!task) return
+  if (!task) return []
 
   const changes = collectEnrichmentChanges(task, enrichment, user, inputText)
 
@@ -642,7 +644,7 @@ function applyEnrichment(
     // No field changes, but still need to remove ai-to-process label
     removeLabel(row.id, 'ai-to-process')
     log.info('ai', `Task ${row.id} enriched — no changes needed`)
-    return
+    return []
   }
 
   // Add updated_at to the SET clauses
@@ -667,6 +669,11 @@ function applyEnrichment(
   })
 
   log.info('ai', `Task ${row.id} enriched: ${changes.fieldsChanged.join(', ')}`)
+
+  // Return user-facing fields (filter out anchor internals) for toast description
+  return changes.fieldsChanged.filter(
+    (f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f),
+  )
 }
 
 interface PendingTaskRow {

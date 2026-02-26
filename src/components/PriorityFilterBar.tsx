@@ -38,8 +38,15 @@ export function PriorityFilterBar({
       const p = task.priority ?? 0
       counts.set(p, (counts.get(p) || 0) + 1)
     }
+    // Ensure active filters appear even at count 0
+    for (const p of selectedPriorities) {
+      if (!counts.has(p)) counts.set(p, 0)
+    }
+    for (const p of excludedPriorities) {
+      if (!counts.has(p)) counts.set(p, 0)
+    }
     return [...counts.entries()].sort((a, b) => a[0] - b[0])
-  }, [tasks])
+  }, [tasks, selectedPriorities, excludedPriorities])
 
   if (priorityCounts.length === 0) return null
 

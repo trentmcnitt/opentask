@@ -46,15 +46,19 @@ export function ProjectFilterBar({
       counts.set(task.project_id, (counts.get(task.project_id) || 0) + 1)
     }
     return projects
-      .filter((p) => counts.has(p.id))
-      .map((p) => ({ project: p, count: counts.get(p.id)! }))
+      .filter(
+        (p) =>
+          counts.has(p.id) || selectedProjects.includes(p.id) || excludedProjects.includes(p.id),
+      )
+      .map((p) => ({ project: p, count: counts.get(p.id) ?? 0 }))
       .sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count
         return a.project.sort_order - b.project.sort_order
       })
-  }, [projects, tasks])
+  }, [projects, tasks, selectedProjects, excludedProjects])
 
-  if (projectCounts.length < 2) return null
+  const hasActiveProjectFilter = selectedProjects.length > 0 || excludedProjects.length > 0
+  if (projectCounts.length < 2 && !hasActiveProjectFilter) return null
 
   return (
     <div className="flex flex-wrap gap-2">
