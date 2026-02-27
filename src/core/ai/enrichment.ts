@@ -32,6 +32,7 @@ import { getTaskById } from '@/core/tasks'
 import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
+import { notifyError } from '@/lib/error-notify'
 import { formatMorningTime } from '@/lib/snooze'
 import { isAIEnabled } from './sdk'
 import { ENRICHMENT_REMINDERS } from './prompts'
@@ -91,6 +92,11 @@ function recordFailure(): void {
       'ai',
       `Circuit breaker tripped: ${CIRCUIT_BREAKER_THRESHOLD} failures in ${CIRCUIT_BREAKER_WINDOW_MS / 1000}s. ` +
         `Queue paused for ${CIRCUIT_BREAKER_PAUSE_MS / 1000}s.`,
+    )
+    notifyError(
+      'circuit-breaker',
+      'AI circuit breaker tripped',
+      `${CIRCUIT_BREAKER_THRESHOLD} failures in ${CIRCUIT_BREAKER_WINDOW_MS / 1000}s. Queue paused for ${CIRCUIT_BREAKER_PAUSE_MS / 1000}s.`,
     )
   }
 }

@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 export default function Error({
   error,
   reset,
@@ -7,6 +9,19 @@ export default function Error({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    fetch('/api/errors/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'react_error',
+        message: error.message,
+        stack: error.stack,
+        url: window.location.href,
+      }),
+    }).catch(() => {})
+  }, [error])
+
   return (
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">

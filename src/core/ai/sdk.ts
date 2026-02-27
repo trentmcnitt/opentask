@@ -8,6 +8,7 @@
  */
 
 import { log } from '@/lib/logger'
+import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
 import { withSlot } from './queue'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
@@ -261,6 +262,8 @@ function handleQueryError(
     duration_ms: durationMs,
     error: errorMessage,
   })
+
+  notifyError('ai-failure', `AI ${ctx.action} failed`, errorMessage)
 
   if (timedOut) {
     log.warn('ai', `${ctx.action} timed out after ${durationMs}ms`)
