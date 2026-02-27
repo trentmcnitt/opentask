@@ -81,7 +81,7 @@ function SheetContent({
   draggable?: boolean
 }) {
   const { onOpenChange } = React.useContext(SheetContext)
-  const isBottomDraggable = side === 'bottom' && draggable
+  const isBottom = side === 'bottom'
 
   // --- Drag-to-dismiss (refs only — no re-renders during drag) ---
   const dragWrapperRef = React.useRef<HTMLDivElement>(null)
@@ -138,7 +138,7 @@ function SheetContent({
     {
       axis: 'y',
       filterTaps: true,
-      enabled: isBottomDraggable,
+      enabled: isBottom && draggable,
     },
   )
 
@@ -161,15 +161,21 @@ function SheetContent({
         )}
         {...props}
       >
-        {isBottomDraggable ? (
-          <div
-            ref={dragWrapperRef}
-            {...bind()}
-            style={{ touchAction: 'none' }}
-            className="flex flex-col"
-          >
-            {/* Visual drag handle pill */}
-            <div className="flex cursor-grab items-center justify-center py-3 active:cursor-grabbing">
+        {isBottom ? (
+          <div ref={dragWrapperRef} className="flex flex-col">
+            {/* Drag handle — always rendered to keep DOM structure stable.
+                The useDrag gesture is enabled/disabled via the `enabled` flag,
+                NOT by mounting/unmounting the wrapper. Swapping between wrapper
+                and bare children caused React to unmount/remount the entire
+                sheet content on every dirty-state toggle, which flickered. */}
+            <div
+              {...bind()}
+              style={{ touchAction: draggable ? 'none' : undefined }}
+              className={cn(
+                'flex items-center justify-center py-3',
+                draggable && 'cursor-grab active:cursor-grabbing',
+              )}
+            >
               <div className="bg-muted-foreground/30 h-1.5 w-12 rounded-full" />
             </div>
             {children}
