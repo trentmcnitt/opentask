@@ -63,6 +63,10 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'ai_insights_score_chips')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_insights_score_chips INTEGER NOT NULL DEFAULT 1')
   }
+  // Quick Take user toggle (2026-02) — default OFF for alpha
+  if (!hasColumn(database, 'users', 'ai_quick_take')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_quick_take INTEGER NOT NULL DEFAULT 0')
+  }
   // Priority-based notification intervals (2026-02)
   if (!hasColumn(database, 'users', 'auto_snooze_urgent_minutes')) {
     database.exec(

@@ -65,6 +65,8 @@ interface PreferencesContextValue {
   setAiInsightsSignalChips: (show: boolean) => void
   aiInsightsScoreChips: boolean
   setAiInsightsScoreChips: (show: boolean) => void
+  aiQuickTake: boolean
+  setAiQuickTake: (enabled: boolean) => void
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -117,6 +119,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiInsightsSignalChips: () => {},
   aiInsightsScoreChips: true,
   setAiInsightsScoreChips: () => {},
+  aiQuickTake: false,
+  setAiQuickTake: () => {},
 })
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
@@ -149,6 +153,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiWnHighlight, setAiWnHighlightState] = useState(true)
   const [aiInsightsSignalChips, setAiInsightsSignalChipsState] = useState(true)
   const [aiInsightsScoreChips, setAiInsightsScoreChipsState] = useState(true)
+  const [aiQuickTake, setAiQuickTakeState] = useState(false)
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -239,6 +244,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_insights_score_chips !== undefined) {
           setAiInsightsScoreChipsState(data.data.ai_insights_score_chips)
         }
+        if (data?.data?.ai_quick_take !== undefined) {
+          setAiQuickTakeState(data.data.ai_quick_take)
+        }
       })
       .catch(() => {})
   }, [status])
@@ -302,6 +310,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiInsightsSignalChips: setAiInsightsSignalChipsState,
         aiInsightsScoreChips,
         setAiInsightsScoreChips: setAiInsightsScoreChipsState,
+        aiQuickTake,
+        setAiQuickTake: setAiQuickTakeState,
       }}
     >
       {children}
@@ -397,6 +407,8 @@ export function useAiPreferences() {
     setAiInsightsSignalChips,
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
+    aiQuickTake,
+    setAiQuickTake,
   } = useContext(PreferencesContext)
   return {
     aiMode,
@@ -421,6 +433,8 @@ export function useAiPreferences() {
     setAiInsightsSignalChips,
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
+    aiQuickTake,
+    setAiQuickTake,
   }
 }
 

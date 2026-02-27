@@ -70,7 +70,7 @@ export default function SettingsPage() {
   } = useNotificationConfig()
   const aiAvailable = useAiAvailable()
   const { aiContext, setAiContext } = useAiContext()
-  const { aiWhatsNextModel, setAiWhatsNextModel } = useAiPreferences()
+  const { aiWhatsNextModel, setAiWhatsNextModel, aiQuickTake, setAiQuickTake } = useAiPreferences()
   const [aiContextDraft, setAiContextDraft] = useState('')
   const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
@@ -328,6 +328,26 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setAiWhatsNextModel(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleQuickTakeChange = async (enabled: boolean) => {
+    const prev = aiQuickTake
+    setAiQuickTake(enabled)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai_quick_take: enabled }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({
+        message: enabled ? 'Quick Take enabled' : 'Quick Take disabled',
+        type: 'success',
+      })
+    } catch {
+      setAiQuickTake(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -1095,6 +1115,27 @@ export default function SettingsPage() {
                 <option value="haiku">Haiku (fast)</option>
                 <option value="claude-opus-4-6">Opus (powerful)</option>
               </select>
+            </div>
+          </section>
+        )}
+
+        {/* Experimental — only shown when AI is enabled server-side */}
+        {aiAvailable && (
+          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              Experimental
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Features under active development. They may produce unexpected results.
+            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Quick Take</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Show a one-line AI observation when you add a task
+                </div>
+              </div>
+              <Switch checked={aiQuickTake} onCheckedChange={handleQuickTakeChange} />
             </div>
           </section>
         )}

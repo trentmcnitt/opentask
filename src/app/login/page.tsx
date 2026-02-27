@@ -83,6 +83,8 @@ export default function LoginPage() {
               placeholder="Enter your username"
               required
               autoFocus
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
 

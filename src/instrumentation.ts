@@ -156,10 +156,11 @@ export async function register() {
         log.error('ai', 'Enrichment slot startup failed:', err)
       })
 
-      // Warm up the quick take slot (dedicated subprocess for quick take queries)
-      initQuickTakeSlot().catch((err) => {
-        log.error('ai', 'Quick Take slot startup failed:', err)
-      })
+      // Quick Take slot: disabled by default for alpha — cold path handles requests.
+      // Uncomment when Quick Take is promoted from experimental.
+      // initQuickTakeSlot().catch((err) => {
+      //   log.error('ai', 'Quick Take slot startup failed:', err)
+      // })
 
       // What's Next cron: generate recommendations for all active users at 3 AM
       // Uses Opus for the scheduled batch (no time pressure, maximum quality)
@@ -227,7 +228,7 @@ export async function register() {
 
       log.info(
         'ai',
-        "AI warm slots initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
+        "AI warm slot initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
       )
 
       // Graceful shutdown: close warm slots on SIGTERM

@@ -397,13 +397,18 @@ export function QuickActionPanel({
       : isBulkMode
         ? bulkHook.isDirty
         : singleHook.isDirty
+  // Title is dirty if staged (pendingTitle) OR if the user is mid-edit with changes.
+  // Without the mid-edit check, clicking outside the dialog while typing in the title
+  // field bypasses the unsaved-changes confirmation because pendingTitle is only set on blur.
+  const hasTitleChanges =
+    pendingTitle !== null || (editingTitle && titleDraft.trim() !== (effectiveTask?.title ?? ''))
   const hasPendingChanges =
     pendingPriority !== null ||
     pendingLabels !== null ||
     pendingRrule !== undefined ||
     pendingRecurrenceMode !== null ||
     pendingProject !== null ||
-    pendingTitle !== null ||
+    hasTitleChanges ||
     pendingDueAtCleared ||
     pendingAutoSnooze !== undefined ||
     pendingResetOrigin ||
@@ -471,7 +476,7 @@ export function QuickActionPanel({
       : singleHook.isDirty
 
   // Per-field dirty booleans — used for blue "modified" indicators on each field
-  const isTitleDirty = pendingTitle !== null
+  const isTitleDirty = hasTitleChanges
   const isPriorityDirty = pendingPriority !== null
   const isLabelsDirty = pendingLabels !== null
   // Track which labels are newly added (not in original set) for per-label dirty indicators
@@ -601,7 +606,12 @@ export function QuickActionPanel({
   // Used by both handleSave and handleSaveAndDone to avoid duplicating the collection logic.
   const collectPendingChanges = useCallback((): QuickActionPanelChanges => {
     const changes: QuickActionPanelChanges = {}
-    if (pendingTitle !== null) changes.title = pendingTitle
+    // Include staged title OR in-progress title edit (user is still typing)
+    if (pendingTitle !== null) {
+      changes.title = pendingTitle
+    } else if (editingTitle && titleDraft.trim() && titleDraft.trim() !== effectiveTask?.title) {
+      changes.title = titleDraft.trim()
+    }
     if (pendingPriority !== null) changes.priority = pendingPriority
     if (pendingLabels !== null) changes.labels = pendingLabels
     if (pendingDueAtCleared) {
@@ -623,6 +633,9 @@ export function QuickActionPanel({
     return changes
   }, [
     pendingTitle,
+    editingTitle,
+    titleDraft,
+    effectiveTask?.title,
     pendingPriority,
     pendingLabels,
     pendingDueAtCleared,
@@ -2043,11 +2056,22 @@ function NotesInlineSection({
   }
 
   // Edit mode: expanded — show textarea with Done button
+  // Stage pendingNotes on every keystroke so dirty state is accurate and
+  // dismissing the parent dialog mid-edit doesn't silently lose changes.
   return (
     <div className="space-y-1">
       <Textarea
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          const trimmed = e.target.value.trim()
+          const newValue = trimmed || null
+          if (newValue !== currentNotes) {
+            onChange(newValue)
+          } else {
+            onChange(undefined)
+          }
+        }}
         placeholder="Add notes..."
         className="min-h-[60px] text-sm"
         autoFocus

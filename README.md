@@ -1,28 +1,32 @@
 # OpenTask
 
-A self-hosted task manager built for personal use. Next.js + SQLite — one container, no external database.
+A self-hosted task manager where due dates are reminders, not deadlines. Snooze-first workflow, one-container deploy.
 
 <!-- TODO: Add hero screenshot showing desktop dashboard with demo data -->
 <!-- ![OpenTask dashboard](docs/screenshots/desktop-dashboard.png) -->
 
-[Live Demo](https://opentask.mcnitt.io) · [Documentation](docs/SPEC.md) · [API Guide](docs/AUTOMATION.md)
+**[Try the live demo](https://opentask.mcnitt.io)** (username: `demo`, password: `demo`) · [Documentation](docs/SPEC.md) · [API Guide](docs/AUTOMATION.md)
 
 ## Why OpenTask?
 
-I built OpenTask because I wanted a task manager that works the way I think about tasks — most due dates are reminders, not deadlines. Snoozing a low-priority task five times isn't procrastination, it's triage.
+Most task managers treat due dates as deadlines. OpenTask treats them as reminders.
+
+Wake up with 15 overdue tasks from yesterday? Tap the bulk snooze button — they all move forward an hour. Work through a few, snooze the rest again later. A task snoozed five times in one day and completed that evening is a success, not a failure.
+
+Only tasks you mark as urgent are true deadlines — they're excluded from bulk snooze and must be handled individually. Everything else is fair game for triage.
 
 If you've used Todoist or Things and wished you could self-host it with push notifications that actually work, this might be for you.
 
-**What makes it different from Vikunja, Planka, etc.:**
+**What makes it different:**
 
-- **Single container, zero dependencies.** SQLite with WAL mode. No Postgres, no Redis, no external database to manage. Back up your data by copying one file.
+- **Snooze-centric workflow.** Bulk snooze all overdue tasks in one tap. The snooze button lives in the top bar — it's the most prominent action in the app, because you'll use it dozens of times a day.
+- **Personal task management, not project management.** This isn't trying to be Jira or Trello. It's a fast, focused tool for managing your own tasks.
+- **Single container, no external services.** SQLite with WAL mode. No Postgres, no Redis, no separate database to manage. Back up your data by copying one file.
 - **Mobile-first PWA.** Installable on iOS and Android. Not a desktop app with a responsive afterthought.
 - **Native iOS companion app.** Real push notifications with interactive snooze actions, including Apple Watch support. No CalDAV workarounds.
-- **Personal task management, not project management.** This isn't trying to be Jira or Trello. It's a fast, focused tool for managing your own tasks.
-- **Snooze-centric workflow.** Bulk snooze overdue tasks in one tap. Due dates on most tasks are reminders — the system is built around that.
 - **Full undo/redo.** Every action is logged and reversible. Soft-delete everything.
 - **REST API with Bearer token auth.** Script it, automate it, pipe it into Apple Shortcuts.
-- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. AI features require Claude Code on the server but are fully optional — the app works great without them.
+- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. Powered by Claude — fully optional, the app works great without it.
 
 ## Quick Start (Docker)
 
@@ -43,7 +47,7 @@ EOF
 docker compose up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and login with the username and password you set above. The initial user and database are created automatically on first start.
+Open [http://localhost:3000](http://localhost:3000) and log in with the username and password you set above. The initial user and database are created automatically on first start.
 
 ### Updating
 
@@ -125,6 +129,7 @@ See `.env.example` for all options. The essentials:
 | Variable              | Required | Description                                         |
 | --------------------- | -------- | --------------------------------------------------- |
 | `AUTH_SECRET`         | Yes      | Secret key for sessions (`openssl rand -base64 32`) |
+| `AUTH_URL`            | No       | Public URL when behind a reverse proxy              |
 | `OPENTASK_DB_PATH`    | No       | SQLite database path (default: `./data/tasks.db`)   |
 | `OPENTASK_AI_ENABLED` | No       | Enable AI features (default: `false`)               |
 
@@ -181,18 +186,6 @@ When enabled, AI provides:
 
 AI currently requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated on the server. Direct API key support is planned.
 
-## Screenshots
-
-<!-- TODO: Replace with actual screenshots from demo account -->
-<!-- Desktop and mobile views side by side -->
-<!--
-![Desktop dashboard](docs/screenshots/desktop-dashboard.png)
-![Mobile view](docs/screenshots/mobile-dashboard.png)
-![Task detail](docs/screenshots/task-detail.png)
--->
-
-_Screenshots coming soon. In the meantime, try the [live demo](https://opentask.mcnitt.io)._
-
 ## API
 
 Two auth methods, checked in order:
@@ -200,21 +193,24 @@ Two auth methods, checked in order:
 1. **Bearer token** — For scripts and automation. Create with: `npm run db:create-token -- <username> [name]`
 2. **Session cookie** — For the web UI (managed automatically)
 
-| Endpoint                 | Method   | Description                    |
-| ------------------------ | -------- | ------------------------------ |
-| `/api/tasks`             | GET      | List tasks with filters        |
-| `/api/tasks`             | POST     | Create a task                  |
-| `/api/tasks/:id`         | PATCH    | Update task fields             |
-| `/api/tasks/:id`         | DELETE   | Soft delete to trash           |
-| `/api/tasks/:id/done`    | POST     | Mark done (advances recurring) |
-| `/api/tasks/:id/snooze`  | POST     | Snooze to future time          |
-| `/api/tasks/bulk/done`   | POST     | Bulk mark done                 |
-| `/api/tasks/bulk/snooze` | POST     | Bulk snooze                    |
-| `/api/undo`              | POST     | Undo last action               |
-| `/api/redo`              | POST     | Redo last undone action        |
-| `/api/projects`          | GET/POST | List/create projects           |
+Key endpoints:
 
-See [docs/AUTOMATION.md](docs/AUTOMATION.md) for curl examples and Apple Shortcuts integration.
+| Endpoint                         | Method   | Description                      |
+| -------------------------------- | -------- | -------------------------------- |
+| `/api/tasks`                     | GET      | List tasks with filters          |
+| `/api/tasks`                     | POST     | Create a task                    |
+| `/api/tasks/:id`                 | PATCH    | Update task fields               |
+| `/api/tasks/:id`                 | DELETE   | Soft delete to trash             |
+| `/api/tasks/:id/done`            | POST     | Mark done (advances recurring)   |
+| `/api/tasks/:id/snooze`          | POST     | Snooze to future time            |
+| `/api/tasks/bulk/snooze-overdue` | POST     | One-tap snooze all overdue tasks |
+| `/api/tasks/bulk/done`           | POST     | Bulk mark done                   |
+| `/api/tasks/bulk/snooze`         | POST     | Bulk snooze by task IDs          |
+| `/api/undo`                      | POST     | Undo last action                 |
+| `/api/redo`                      | POST     | Redo last undone action          |
+| `/api/projects`                  | GET/POST | List/create projects             |
+
+See [docs/AUTOMATION.md](docs/AUTOMATION.md) for the full API reference, curl examples, and Apple Shortcuts integration.
 
 ## Tech Stack
 
@@ -241,8 +237,6 @@ docs/                 # Product spec, design rationale, API guide, roadmap
 
 ## Contributing
 
-See `CLAUDE.md` for development conventions, coding standards, and the full test matrix.
-
 ```bash
 # Quick check (run after every change)
 npm run type-check && npm run lint && npm test
@@ -251,6 +245,8 @@ npm run type-check && npm run lint && npm test
 npm run test:integration  # HTTP API tests
 npm run test:e2e          # Playwright browser tests
 ```
+
+`CLAUDE.md` has detailed development conventions, coding standards, and the full test matrix.
 
 ## License
 
