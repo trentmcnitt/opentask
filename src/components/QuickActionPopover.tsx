@@ -1,7 +1,17 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -68,18 +78,40 @@ export function QuickActionPopover({
     [focusedTask, onSaveAll, onClose],
   )
 
-  // Handle dialog/sheet close
+  // Track dirty state from QuickActionPanel for visual indicator
+  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  const saveRef = useRef<(() => Promise<void> | void) | null>(null)
+
+  // Handle dialog/sheet close — intercept when dirty to show confirmation
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (!newOpen) {
-        onClose()
+        if (isPanelDirty) {
+          setShowCloseConfirm(true)
+        } else {
+          onClose()
+        }
       }
     },
-    [onClose],
+    [onClose, isPanelDirty],
   )
 
-  // Track dirty state from QuickActionPanel for visual indicator
-  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  const handleDiscardAndClose = useCallback(() => {
+    setShowCloseConfirm(false)
+    onClose()
+  }, [onClose])
+
+  const handleSaveAndClose = useCallback(async () => {
+    try {
+      await saveRef.current?.()
+      // saveRef triggers QuickActionPanel's handleSave, which calls onSave (= onClose)
+    } catch {
+      setShowCloseConfirm(false)
+      return
+    }
+    setShowCloseConfirm(false)
+  }, [])
 
   if (!focusedTask) return null
 
@@ -102,6 +134,7 @@ export function QuickActionPopover({
         onSave={onClose}
         onCancel={onClose}
         onDirtyChange={setIsPanelDirty}
+        saveRef={saveRef}
         projects={projects}
         annotation={annotation}
         insightsCommentary={insightsCommentary}
@@ -109,30 +142,61 @@ export function QuickActionPopover({
     </div>
   )
 
+  const confirmDialog = (
+    <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved changes. What would you like to do?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="outline" onClick={handleDiscardAndClose}>
+            Don&apos;t Save
+          </AlertDialogAction>
+          <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
-          {/* Accessibility: Radix Dialog requires a title — hide it visually */}
-          <VisuallyHidden>
-            <SheetTitle>Quick Actions</SheetTitle>
-            <SheetDescription>Adjust date, priority, and other task settings</SheetDescription>
-          </VisuallyHidden>
-          <div className="px-4 pb-2">{panel}</div>
-        </SheetContent>
-      </Sheet>
+      <>
+        <Sheet open={open} onOpenChange={handleOpenChange}>
+          <SheetContent
+            side="bottom"
+            className="rounded-t-2xl"
+            showCloseButton={false}
+            draggable={!isPanelDirty}
+          >
+            {/* Accessibility: Radix Dialog requires a title — hide it visually */}
+            <VisuallyHidden>
+              <SheetTitle>Quick Actions</SheetTitle>
+              <SheetDescription>Adjust date, priority, and other task settings</SheetDescription>
+            </VisuallyHidden>
+            <div className="px-4 pb-2">{panel}</div>
+          </SheetContent>
+        </Sheet>
+        {confirmDialog}
+      </>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
-        <VisuallyHidden>
-          <DialogTitle>Quick Actions</DialogTitle>
-          <DialogDescription>Adjust date, priority, and other task settings</DialogDescription>
-        </VisuallyHidden>
-        <div className="min-w-0">{panel}</div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
+          <VisuallyHidden>
+            <DialogTitle>Quick Actions</DialogTitle>
+            <DialogDescription>Adjust date, priority, and other task settings</DialogDescription>
+          </VisuallyHidden>
+          <div className="min-w-0">{panel}</div>
+        </DialogContent>
+      </Dialog>
+      {confirmDialog}
+    </>
   )
 }

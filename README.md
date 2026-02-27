@@ -1,137 +1,204 @@
 # OpenTask
 
-A self-hosted, AI-powered task management app. Built with Next.js and SQLite, designed as a mobile-first PWA with a native iOS companion app.
+A self-hosted task manager built for personal use. Next.js + SQLite — one container, no external database.
 
-Type "call dentist next tuesday high priority" and AI parses it into a structured task with the right title, due date, priority, and project. Daily insights surface forgotten tasks. What's Next tells you what to focus on. AI features are built in and require no external service beyond a Claude subscription — but they're also fully optional if you just want a clean, fast task manager.
+<!-- TODO: Add hero screenshot showing desktop dashboard with demo data -->
+<!-- ![OpenTask dashboard](docs/screenshots/desktop-dashboard.png) -->
 
-OpenTask is opinionated: it treats most due dates as reminders rather than deadlines, supports full undo/redo for every action, and soft-deletes everything. See [Due Date Philosophy](docs/DESIGN.md) for the rationale.
+[Live Demo](https://opentask.mcnitt.io) · [Documentation](docs/SPEC.md) · [API Guide](docs/AUTOMATION.md)
 
-## Features
+## Why OpenTask?
 
-- **Recurring tasks** — RFC 5545 RRULE support with anti-drift timezone-aware scheduling
-- **Snooze** — Bulk or individual, with original due date preservation
-- **Undo/redo** — Multi-step, surgical field restoration for every action
-- **Projects** — Personal and shared, with multi-user support
-- **Soft delete** — Trash and archive with retention policies
-- **PWA** — Installable on iOS and Android with offline shell caching
-- **iOS app** — Native companion app with push notifications and interactive snooze actions (see `ios/`)
-- **API-first** — Full REST API with Bearer token auth for scripting and automation (see [docs/AUTOMATION.md](docs/AUTOMATION.md))
-- **AI-powered task entry** — Natural language parsing, daily insights, and "What's Next" recommendations (optional — works great without AI too)
+I built OpenTask because I wanted a task manager that works the way I think about tasks — most due dates are reminders, not deadlines. Snoozing a low-priority task five times isn't procrastination, it's triage.
 
-## Tech Stack
+If you've used Todoist or Things and wished you could self-host it with push notifications that actually work, this might be for you.
 
-- **Framework:** Next.js 16 (App Router) + React 19 + TypeScript
-- **Database:** SQLite with WAL mode (better-sqlite3)
-- **Auth:** NextAuth/Auth.js (credentials provider, JWT sessions)
-- **Styling:** Tailwind CSS 4 + Shadcn UI
-- **Testing:** Vitest (behavioral/integration) + Playwright (E2E)
+**What makes it different from Vikunja, Planka, etc.:**
 
-## Quick Start
+- **Single container, zero dependencies.** SQLite with WAL mode. No Postgres, no Redis, no external database to manage. Back up your data by copying one file.
+- **Mobile-first PWA.** Installable on iOS and Android. Not a desktop app with a responsive afterthought.
+- **Native iOS companion app.** Real push notifications with interactive snooze actions, including Apple Watch support. No CalDAV workarounds.
+- **Personal task management, not project management.** This isn't trying to be Jira or Trello. It's a fast, focused tool for managing your own tasks.
+- **Snooze-centric workflow.** Bulk snooze overdue tasks in one tap. Due dates on most tasks are reminders — the system is built around that.
+- **Full undo/redo.** Every action is logged and reversible. Soft-delete everything.
+- **REST API with Bearer token auth.** Script it, automate it, pipe it into Apple Shortcuts.
+- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. AI features require Claude Code on the server but are fully optional — the app works great without them.
 
-### Prerequisites
-
-- Node.js 20+
-- npm
-
-### Installation
+## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/yourusername/opentask.git
-cd opentask
+# Create a directory for OpenTask
+mkdir opentask && cd opentask
 
-# Install dependencies
-npm install
+# Download the compose file
+curl -O https://raw.githubusercontent.com/trentmcnitt/opentask/main/docker-compose.yml
 
-# Copy environment template and configure
-cp .env.example .env.local
-# Edit .env.local — at minimum, set AUTH_SECRET
+# Generate a secret key and start the app
+cat > .env <<EOF
+AUTH_SECRET=$(openssl rand -base64 32)
+OPENTASK_INIT_USERNAME=admin
+OPENTASK_INIT_PASSWORD=changeme
+EOF
 
-# Seed the database with initial users and projects
-npm run db:seed
-
-# Start development server
-npm run dev
+docker compose up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) and login with the username and password you set above. The initial user and database are created automatically on first start.
 
-### Environment Variables
+### Updating
 
-See `.env.example` for the full list. The essentials:
+```bash
+docker compose pull
+docker compose up -d
+```
 
-| Variable              | Required | Description                                     |
-| --------------------- | -------- | ----------------------------------------------- |
-| `AUTH_SECRET`         | Yes      | NextAuth secret key (`openssl rand -base64 32`) |
-| `OPENTASK_DB_PATH`    | No       | SQLite path (default: `./data/tasks.db`)        |
-| `OPENTASK_AI_ENABLED` | No       | Enable AI features (default: `false`)           |
+Your data is stored in `./data/` and persists across updates.
 
-### Login
+### Backup
 
-Login is **username-based**, not email-based. After running `npm run db:seed`, check the seed output for the default credentials, or look at `.secrets` if present.
+SQLite makes backups simple. Use the built-in `.backup` command for a safe, consistent copy (it handles WAL mode correctly):
 
-## AI Features
+```bash
+# From the host (recommended)
+docker compose exec opentask sqlite3 /app/data/tasks.db '.backup /app/data/backup.db'
+cp data/backup.db /path/to/your/backups/tasks-$(date +%F).db
 
-AI is a first-class part of OpenTask, but entirely optional. When `OPENTASK_AI_ENABLED=false` (the default), all AI UI elements are hidden and no AI-related code runs. The app stands on its own as a fast, keyboard-driven task manager.
+# Or stop the container first, then copy directly
+docker compose stop
+cp data/tasks.db /path/to/your/backups/
+docker compose start
+```
+
+> **Note:** SQLite uses WAL (write-ahead logging), so `tasks.db-wal` and `tasks.db-shm` files may exist alongside the main database. A plain `cp tasks.db` while the app is running could produce an inconsistent backup. The `sqlite3 .backup` command avoids this.
+
+### Additional Users
+
+Create more users from the command line:
+
+```bash
+# Docker
+docker compose exec opentask tsx scripts/create-user.ts <username> <password>
+
+# Bare metal
+npx tsx scripts/create-user.ts <username> <password> [email] [timezone]
+```
+
+### API Tokens
+
+Create a Bearer token for API access and automation:
+
+```bash
+# Docker
+docker compose exec opentask tsx scripts/create-token.ts <username> [token-name]
+
+# Bare metal
+npm run db:create-token -- <username> [token-name]
+```
+
+## Manual Installation (without Docker)
+
+Requires Node.js 20+ and npm.
+
+```bash
+git clone https://github.com/trentmcnitt/opentask.git
+cd opentask
+npm install
+
+# Configure
+cp .env.example .env.local
+# Edit .env.local — at minimum, set AUTH_SECRET (openssl rand -base64 32)
+
+# Create your user
+npx tsx scripts/create-user.ts admin changeme
+
+# Build and start
+npm run build
+npm run start
+```
+
+For development: `npm run dev` starts a hot-reloading server on port 3000.
+
+## Configuration
+
+See `.env.example` for all options. The essentials:
+
+| Variable              | Required | Description                                         |
+| --------------------- | -------- | --------------------------------------------------- |
+| `AUTH_SECRET`         | Yes      | Secret key for sessions (`openssl rand -base64 32`) |
+| `OPENTASK_DB_PATH`    | No       | SQLite database path (default: `./data/tasks.db`)   |
+| `OPENTASK_AI_ENABLED` | No       | Enable AI features (default: `false`)               |
+
+Login is **username-based**, not email-based.
+
+### Reverse Proxy
+
+OpenTask runs on port 3000 by default. Set `AUTH_URL` to your public URL in the compose environment when using a reverse proxy.
+
+**Caddy:**
+
+```
+tasks.example.com {
+    reverse_proxy localhost:3000
+}
+```
+
+**Nginx:**
+
+```nginx
+server {
+    server_name tasks.example.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Required for Server-Sent Events (SSE)
+        proxy_buffering off;
+        proxy_cache off;
+    }
+}
+```
+
+> **Note:** OpenTask uses Server-Sent Events for real-time updates. Make sure your reverse proxy does not buffer responses — Caddy handles this automatically, but Nginx needs `proxy_buffering off`.
+
+### Push Notifications (Optional)
+
+- **Web Push:** Generate VAPID keys with `npx web-push generate-vapid-keys` and set them in your environment. Works on all platforms including iOS Safari.
+- **iOS Native Push (APNs):** Requires the iOS companion app and an Apple Developer Program membership. See `.env.example` for the configuration variables.
+
+### AI Features (Optional)
+
+AI is entirely optional. When disabled (the default), all AI UI elements are hidden and no AI code runs. The app stands on its own as a fast task manager.
 
 When enabled, AI provides:
 
-- **Task enrichment** — Type "call dentist next tuesday high priority" and AI parses it into a structured task with title, due date, priority, labels, and project
-- **What's Next** — Daily recommendations surfacing overlooked or forgotten tasks
+- **Task enrichment** — Natural language parsing into structured tasks with title, due date, priority, labels, and project
+- **What's Next** — Recommendations surfacing overlooked or forgotten tasks
 - **Insights** — Scoring and signals (stale, quick win, etc.) to help prioritize
 
-### Requirements
+AI currently requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated on the server. Direct API key support is planned.
 
-AI features currently require **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** installed and authenticated on the server. This means the machine running OpenTask needs:
+## Screenshots
 
-1. Claude Code installed globally (`npm install -g @anthropic-ai/claude-code`)
-2. An active Claude subscription (Pro or Max) authenticated via `claude` CLI
+<!-- TODO: Replace with actual screenshots from demo account -->
+<!-- Desktop and mobile views side by side -->
+<!--
+![Desktop dashboard](docs/screenshots/desktop-dashboard.png)
+![Mobile view](docs/screenshots/mobile-dashboard.png)
+![Task detail](docs/screenshots/task-detail.png)
+-->
 
-There is no API key to configure — the app uses the Claude Agent SDK, which leverages your existing Claude Code authentication.
+_Screenshots coming soon. In the meantime, try the [live demo](https://opentask.mcnitt.io)._
 
-> **Note:** Direct Anthropic API support (bring your own API key) is not yet implemented but is planned. This would remove the Claude Code dependency for AI features.
+## API
 
-### AI Configuration
+Two auth methods, checked in order:
 
-```bash
-# Enable AI
-OPENTASK_AI_ENABLED=true
-
-# Per-feature model selection (defaults shown)
-OPENTASK_AI_ENRICHMENT_MODEL=haiku
-OPENTASK_AI_INSIGHTS_MODEL=claude-opus-4-6
-OPENTASK_AI_WHATS_NEXT_MODEL=claude-opus-4-6
-```
-
-See `.env.example` for all AI-related options (concurrency, timeouts, model selection, retention).
-
-## Available Scripts
-
-| Script                     | Description                                   |
-| -------------------------- | --------------------------------------------- |
-| `npm run dev`              | Start development server with hot reload      |
-| `npm run build`            | Build for production (standalone output)      |
-| `npm run start`            | Start production server                       |
-| `npm run lint`             | Run ESLint                                    |
-| `npm run type-check`       | TypeScript type checking                      |
-| `npm run format`           | Prettier format all files                     |
-| `npm test`                 | Run behavioral tests (Vitest)                 |
-| `npm run test:integration` | Integration tests (HTTP against built server) |
-| `npm run test:e2e`         | Playwright E2E tests                          |
-| `npm run db:seed`          | Seed database with initial users and projects |
-| `npm run db:seed-dev`      | Seed dev database with ~80 realistic tasks    |
-
-## API Overview
-
-### Authentication
-
-Two methods, checked in order:
-
-1. **Bearer token** — For API/CLI/automation access. Create tokens with `npm run db:create-token -- <username> [name]`
-2. **Session cookie** — For web UI (managed by NextAuth)
-
-If a Bearer token is present but invalid, the request is rejected immediately (never falls through to session auth).
-
-### Key Endpoints
+1. **Bearer token** — For scripts and automation. Create with: `npm run db:create-token -- <username> [name]`
+2. **Session cookie** — For the web UI (managed automatically)
 
 | Endpoint                 | Method   | Description                    |
 | ------------------------ | -------- | ------------------------------ |
@@ -147,88 +214,44 @@ If a Bearer token is present but invalid, the request is rejected immediately (n
 | `/api/redo`              | POST     | Redo last undone action        |
 | `/api/projects`          | GET/POST | List/create projects           |
 
-See [docs/AUTOMATION.md](docs/AUTOMATION.md) for usage examples with curl and Apple Shortcuts.
+See [docs/AUTOMATION.md](docs/AUTOMATION.md) for curl examples and Apple Shortcuts integration.
+
+## Tech Stack
+
+- **Runtime:** Next.js 16 (App Router) + React 19 + TypeScript
+- **Database:** SQLite with WAL mode (better-sqlite3) — no external database
+- **Auth:** NextAuth/Auth.js (credentials provider, JWT sessions)
+- **Styling:** Tailwind CSS 4 + Shadcn UI
+- **Testing:** Vitest (behavioral + integration) + Playwright (E2E)
 
 ## Project Structure
 
 ```
 src/
-├── app/                 # Next.js App Router pages and API routes
-├── components/          # React components
-├── core/                # Business logic (no UI)
-│   ├── ai/             # AI integration (enrichment, insights, what's next)
-│   ├── auth/           # Authentication
-│   ├── db/             # Database access and schema
-│   ├── recurrence/     # RRULE computation
-│   ├── tasks/          # Task CRUD operations
-│   ├── undo/           # Undo/redo engine
-│   └── validation/     # Zod schemas
-├── hooks/              # Custom React hooks
-├── lib/                # Utilities
-└── types/              # TypeScript types
-ios/                     # Native iOS companion app (SwiftUI + WKWebView)
-tests/
-├── behavioral/          # Core logic tests
-├── integration/         # HTTP API tests
-├── e2e/                 # Playwright browser tests
-└── quality/             # AI prompt quality tests
-docs/
-├── SPEC.md              # Full product specification
-├── AI.md                # AI integration design document
-├── AUTOMATION.md        # External API integration guide
-├── DESIGN.md            # Design rationale (due dates, priorities)
-└── ROADMAP.md           # Feature ideas under consideration
+├── app/              # Next.js pages and API routes
+├── components/       # React components
+├── core/             # Business logic (auth, db, tasks, recurrence, undo, ai)
+├── hooks/            # Custom React hooks
+├── lib/              # Utilities
+└── types/            # TypeScript types
+ios/                  # Native iOS companion app (SwiftUI + WKWebView)
+tests/                # Behavioral, integration, E2E, and AI quality tests
+docs/                 # Product spec, design rationale, API guide, roadmap
 ```
 
-## Database
+## Contributing
 
-SQLite with WAL mode, stored at `data/tasks.db` by default. Schema is applied idempotently on startup — no manual migration step needed.
-
-To reset the database:
-
-```bash
-rm -rf data/tasks.db*
-npm run db:seed
-```
-
-## Deployment
-
-OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. A deploy script handles building locally and rsyncing to the server.
-
-```bash
-# Build and deploy
-./scripts/deploy.sh <target>
-```
-
-The target server needs Node.js 20+ and a systemd service (or equivalent) to run the app. See the deploy script for details.
-
-### Push Notifications (Optional)
-
-- **Web Push:** Requires VAPID keys (`npx web-push generate-vapid-keys`). Works on all platforms including iOS Safari.
-- **iOS Native Push (APNs):** Requires the iOS companion app, an Apple Developer Program membership ($99/year), and a p8 key. See `.env.example` for configuration.
-
-## Development
-
-### Running Tests
+See `CLAUDE.md` for development conventions, coding standards, and the full test matrix.
 
 ```bash
 # Quick check (run after every change)
 npm run type-check && npm run lint && npm test
 
-# Integration tests (tests HTTP API against built server)
-npm run test:integration
-
-# E2E tests (Playwright, headless Chromium)
-npm run test:e2e
-
-# AI quality tests (requires OPENTASK_AI_ENABLED=true)
-npm run test:quality
+# Full test suite
+npm run test:integration  # HTTP API tests
+npm run test:e2e          # Playwright browser tests
 ```
-
-### Contributing
-
-See `CLAUDE.md` for detailed development conventions, coding standards, and the full test matrix.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+[AGPL-3.0](LICENSE)
