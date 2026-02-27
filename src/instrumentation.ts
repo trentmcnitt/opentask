@@ -22,6 +22,7 @@ export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const cron = (await import('node-cron')).default
+    const { notifyError } = await import('@/lib/error-notify')
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
@@ -70,6 +71,11 @@ export async function register() {
         await checkOverdueTasks()
       } catch (err) {
         log.error('notifications', 'Notification check error:', err)
+        notifyError(
+          'cron-failure',
+          'Notification check failed',
+          err instanceof Error ? err.message : String(err),
+        )
       } finally {
         isNotificationRunning = false
       }
@@ -85,6 +91,11 @@ export async function register() {
         await processEnrichmentQueue()
       } catch (err) {
         log.error('cron', 'Enrichment safety-net error:', err)
+        notifyError(
+          'cron-failure',
+          'Enrichment safety-net failed',
+          err instanceof Error ? err.message : String(err),
+        )
       } finally {
         isEnrichmentRunning = false
       }
@@ -93,66 +104,29 @@ export async function register() {
 
     // --- Daily purge crons ---
 
-    // Purge old undo logs daily at 3:00 AM
-    cron.schedule('0 3 * * *', () => {
-      log.info('cron', 'Running undo log purge')
+    /** Run a synchronous cron job with error logging and ntfy alerting. */
+    function safeCronRun(label: string, fn: () => void): void {
+      log.info('cron', `Running ${label}`)
       try {
-        purgeOldUndoLogs()
+        fn()
       } catch (err) {
-        log.error('cron', 'Undo log purge error:', err)
+        log.error('cron', `${label} error:`, err)
+        notifyError(
+          'cron-failure',
+          `${label} failed`,
+          err instanceof Error ? err.message : String(err),
+        )
       }
-    })
+    }
 
-    // Purge old trash daily at 3:30 AM
-    cron.schedule('30 3 * * *', () => {
-      log.info('cron', 'Running trash purge')
-      try {
-        purgeOldTrash()
-      } catch (err) {
-        log.error('cron', 'Trash purge error:', err)
-      }
-    })
+    cron.schedule('0 3 * * *', () => safeCronRun('undo log purge', purgeOldUndoLogs))
+    cron.schedule('30 3 * * *', () => safeCronRun('trash purge', purgeOldTrash))
+    cron.schedule('0 4 * * *', () => safeCronRun('completions purge', purgeOldCompletions))
+    cron.schedule('30 4 * * 0', () => safeCronRun('daily stats purge', purgeOldStats))
+    cron.schedule('0 5 * * *', () => safeCronRun('AI activity log purge', purgeOldAIActivity))
 
-    // Purge old completions daily at 4:00 AM
-    cron.schedule('0 4 * * *', () => {
-      log.info('cron', 'Running completions purge')
-      try {
-        purgeOldCompletions()
-      } catch (err) {
-        log.error('cron', 'Completions purge error:', err)
-      }
-    })
-
-    // Purge old daily stats weekly on Sunday at 4:30 AM
-    cron.schedule('30 4 * * 0', () => {
-      log.info('cron', 'Running daily stats purge')
-      try {
-        purgeOldStats()
-      } catch (err) {
-        log.error('cron', 'Daily stats purge error:', err)
-      }
-    })
-
-    // Purge old AI activity logs daily at 5:00 AM
-    cron.schedule('0 5 * * *', () => {
-      log.info('cron', 'Running AI activity log purge')
-      try {
-        purgeOldAIActivity()
-      } catch (err) {
-        log.error('cron', 'AI activity log purge error:', err)
-      }
-    })
-
-    // Purge old webhook deliveries daily at 5:30 AM
     const { purgeOldDeliveries } = await import('@/core/webhooks/purge')
-    cron.schedule('30 5 * * *', () => {
-      log.info('cron', 'Running webhook delivery purge')
-      try {
-        purgeOldDeliveries()
-      } catch (err) {
-        log.error('cron', 'Webhook delivery purge error:', err)
-      }
-    })
+    cron.schedule('30 5 * * *', () => safeCronRun('webhook delivery purge', purgeOldDeliveries))
 
     log.info(
       'cron',
@@ -206,6 +180,11 @@ export async function register() {
           log.info('cron', `What's Next cron: generated for ${users.length} users`)
         } catch (err) {
           log.error('cron', "What's Next cron error:", err)
+          notifyError(
+            'cron-failure',
+            "What's Next cron failed",
+            err instanceof Error ? err.message : String(err),
+          )
         }
       })
 
@@ -235,6 +214,11 @@ export async function register() {
           log.info('cron', `Insights cron: generated for ${users.length} users`)
         } catch (err) {
           log.error('cron', 'Insights cron error:', err)
+          notifyError(
+            'cron-failure',
+            'Insights cron failed',
+            err instanceof Error ? err.message : String(err),
+          )
         }
       })
 

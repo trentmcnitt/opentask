@@ -10,6 +10,7 @@
  */
 
 import { log } from '@/lib/logger'
+import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
@@ -213,6 +214,11 @@ export async function initEnrichmentSlot(): Promise<void> {
   } catch (err) {
     g.slot.state = 'dead'
     log.error('ai', 'Enrichment slot init failed:', err)
+    notifyError(
+      'slot-failure',
+      'Enrichment slot init failed',
+      err instanceof Error ? err.message : String(err),
+    )
 
     // Reject any waiters queued during initializing state
     const waitersToReject = [...g.waitQueue]
@@ -505,6 +511,11 @@ function recycleSlot(): void {
     log.error(
       'ai',
       `Enrichment slot recycled ${cb.newCount} times rapidly — marking dead (circuit breaker)`,
+    )
+    notifyError(
+      'slot-failure',
+      'Enrichment slot died (circuit breaker)',
+      `Recycled ${cb.newCount} times rapidly`,
     )
     g.slot.generation++
     g.slot.deliverResult?.(null)

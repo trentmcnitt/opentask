@@ -6,6 +6,26 @@ const buildId = new URL(self.location.href).searchParams.get('v') || 'v1'
 const CACHE_NAME = `opentask-${buildId}`
 const SHELL_URLS = ['/', '/manifest.json']
 
+// Forward errors to the main thread for reporting via /api/errors/report
+function forwardErrorToClients(message, stack) {
+  self.clients.matchAll().then((windowClients) => {
+    for (const client of windowClients) {
+      client.postMessage({ type: 'sw_error', message, stack })
+    }
+  })
+}
+
+self.addEventListener('error', (event) => {
+  forwardErrorToClients(event.message || 'Service worker error', event.error?.stack)
+})
+
+self.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason
+  const message = reason instanceof Error ? reason.message : String(reason)
+  const stack = reason instanceof Error ? reason.stack : undefined
+  forwardErrorToClients(message, stack)
+})
+
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)))
   self.skipWaiting()

@@ -16,6 +16,7 @@
 
 import { NextRequest } from 'next/server'
 import { log } from '@/lib/logger'
+import { notifyError } from '@/lib/error-notify'
 
 export function withLogging<C>(
   handler: (request: NextRequest, context: C) => Promise<Response>,
@@ -34,6 +35,11 @@ export function withLogging<C>(
     } catch (err) {
       const duration = Math.round(performance.now() - start)
       log.error('http', `${method} ${path} threw ${duration}ms [${authType}]`, err)
+      notifyError(
+        'server-error',
+        `${method} ${path} threw`,
+        err instanceof Error ? err.message : String(err),
+      )
       throw err
     }
 
@@ -43,6 +49,7 @@ export function withLogging<C>(
 
     if (status >= 500) {
       log.error('http', line)
+      notifyError('server-error', `${method} ${path} ${status}`, `${duration}ms [${authType}]`)
     } else if (status >= 400) {
       log.warn('http', line)
     } else {
