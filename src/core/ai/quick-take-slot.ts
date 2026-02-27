@@ -29,7 +29,7 @@ import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 // --- Configuration ---
 
 const DEFAULT_MAX_REUSES = 4
-const DEFAULT_QUERY_TIMEOUT_MS = 30_000
+const DEFAULT_QUERY_TIMEOUT_MS = 40_000
 
 function getMaxReuses(): number {
   return parseEnvInt(process.env.OPENTASK_AI_QUICKTAKE_MAX_REUSES, DEFAULT_MAX_REUSES)

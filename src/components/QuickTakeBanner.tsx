@@ -1,10 +1,27 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { URGENT_PRIORITY } from '@/lib/priority'
+
+/**
+ * Auto-dismiss countdown with hover-pause and a draining SVG ring around the X button.
+ *
+ * Two effects work together:
+ * 1. Content-reset effect: resets elapsed time when content changes (quick take text
+ *    or enrichment). Defined first so React runs it before the timer effect.
+ * 2. Timer effect: manages the auto-dismiss setTimeout with hover-pause support.
+ *    Its cleanup saves elapsed time so hover→unhover resumes correctly.
+ *
+ * The SVG ring animation uses `contentKey` as its React key to remount and restart
+ * the CSS animation when content changes, and `animation-play-state` for hover pause.
+ */
+
+const DISMISS_MS = 12_000
+const RING_RADIUS = 10
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
 interface QuickTakeBannerProps {
   title: string
@@ -40,14 +57,50 @@ export function QuickTakeBanner({
   timezone,
   onDismiss,
 }: QuickTakeBannerProps) {
-  // Auto-dismiss after 12s — reset when enrichment arrives or quick take text changes
+  const [hovered, setHovered] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const elapsedRef = useRef(0)
+  const timerStartRef = useRef(0)
+
+  // Countdown starts once loading finishes and we have displayable content
+  const shouldCountdown = !loading && (!!quickTakeText || !!enrichment)
+
+  // Stable key derived from content — changes when quick take or enrichment updates.
+  // Used as the SVG circle key (remounts → restarts CSS animation) and as an effect
+  // dependency (restarts the JS timer).
+  const contentKey = `${quickTakeText ?? ''}|${enrichment?.title ?? ''}|${enrichment?.due_at ?? ''}`
+
+  // Reset countdown elapsed time when new content arrives.
+  // Defined before the timer effect so React runs it first (resets elapsed before
+  // the timer effect reads it on the same render cycle).
   useEffect(() => {
-    if (loading) return
-    // Need at least one piece of content to stay visible
-    if (!quickTakeText && !enrichment) return
-    const timer = setTimeout(onDismiss, 12000)
-    return () => clearTimeout(timer)
-  }, [quickTakeText, loading, enrichment, onDismiss])
+    elapsedRef.current = 0
+  }, [contentKey])
+
+  // Auto-dismiss timer: pauses on hover, resumes with remaining time on mouse-leave.
+  // The countdown-drain CSS animation on the SVG ring stays in sync via animation-play-state.
+  useEffect(() => {
+    if (!shouldCountdown || hovered) return
+
+    const remaining = DISMISS_MS - elapsedRef.current
+    if (remaining <= 0) {
+      onDismiss()
+      return
+    }
+
+    timerStartRef.current = Date.now()
+    timerRef.current = setTimeout(onDismiss, remaining)
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      if (timerStartRef.current) {
+        elapsedRef.current += Date.now() - timerStartRef.current
+        timerStartRef.current = 0
+      }
+    }
+  }, [shouldCountdown, hovered, onDismiss, contentKey])
 
   const displayTitle = enrichment?.title ?? title
   const dueAt = enrichment?.due_at
@@ -65,8 +118,17 @@ export function QuickTakeBanner({
     }
   }
 
+  // Conditional bottom padding: dots need room to breathe, title-only should be compact
+  const showDots = loading && !quickTakeText
+  const bottomPadding = showDots ? 'pb-3' : quickTakeText ? 'pb-2' : 'pb-1.5'
+
   return (
-    <div className="animate-in fade-in slide-in-from-top-2 mb-3 flex w-fit max-w-full gap-2 rounded-lg border border-indigo-200/50 bg-indigo-50/50 px-3 py-2 transition-all duration-300 dark:border-indigo-800/50 dark:bg-indigo-950/30">
+    <div
+      className={cn(
+        'animate-in fade-in slide-in-from-top-2 mb-3 flex w-fit max-w-full gap-2 rounded-lg border border-indigo-200/50 bg-indigo-50/50 px-3 pt-2 transition-all duration-300 dark:border-indigo-800/50 dark:bg-indigo-950/30',
+        bottomPadding,
+      )}
+    >
       <Sparkles className="mt-0.5 size-3.5 flex-shrink-0 text-indigo-500 dark:text-indigo-400" />
 
       <div className="min-w-0 flex-1">
@@ -94,7 +156,7 @@ export function QuickTakeBanner({
         {/* Row 2: Quick take text or typing dots */}
         {loading && !quickTakeText ? (
           <div
-            className="mt-1 flex items-center gap-1 text-indigo-500 dark:text-indigo-400"
+            className="mt-2 flex items-center gap-1 text-indigo-500 dark:text-indigo-400"
             aria-label="Generating insight"
           >
             <span className="typing-dot" style={{ animationDelay: '0s' }} />
@@ -102,17 +164,52 @@ export function QuickTakeBanner({
             <span className="typing-dot" style={{ animationDelay: '0.4s' }} />
           </div>
         ) : quickTakeText ? (
-          <p className="mt-0.5 text-sm text-indigo-600 dark:text-indigo-300">{quickTakeText}</p>
+          <p className="mt-1 text-sm text-indigo-600 dark:text-indigo-300">{quickTakeText}</p>
         ) : null}
       </div>
 
+      {/* Dismiss button with countdown ring */}
       <button
         type="button"
         onClick={onDismiss}
-        className="mt-0.5 flex-shrink-0 rounded p-0.5 text-indigo-400 transition-colors hover:text-indigo-600 dark:text-indigo-500 dark:hover:text-indigo-300"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="relative mt-0.5 flex size-6 flex-shrink-0 items-center justify-center rounded text-indigo-400 transition-colors hover:text-indigo-600 dark:text-indigo-500 dark:hover:text-indigo-300"
         aria-label="Dismiss"
       >
-        <X className="size-3.5" />
+        {shouldCountdown && (
+          <svg className="pointer-events-none absolute inset-0 -rotate-90" viewBox="0 0 24 24">
+            {/* Faint track — shows the full ring path */}
+            <circle
+              cx="12"
+              cy="12"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="opacity-15"
+            />
+            {/* Animated drain — shrinks from full to empty over DISMISS_MS */}
+            <circle
+              key={contentKey}
+              cx="12"
+              cy="12"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              className="opacity-40"
+              style={{
+                strokeDasharray: RING_CIRCUMFERENCE,
+                strokeDashoffset: 0,
+                animation: `countdown-drain ${DISMISS_MS}ms linear forwards`,
+                animationPlayState: hovered ? 'paused' : 'running',
+              }}
+            />
+          </svg>
+        )}
+        <X className="relative size-3.5" />
       </button>
     </div>
   )

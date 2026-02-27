@@ -5,7 +5,7 @@ import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 
-const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
+const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {

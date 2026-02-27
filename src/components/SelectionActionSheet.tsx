@@ -17,6 +17,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -100,6 +110,10 @@ export function SelectionActionSheet({
     return formatBulkRecurrence(selectedTasks)
   }, [selectedTasks])
 
+  // Track dirty state from QuickActionPanel for visual indicator and dismiss protection
+  const [isPanelDirty, setIsPanelDirty] = useState(false)
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+
   const clearPendingState = useCallback(() => {
     pendingDateRef.current = null
     pendingPriorityRef.current = null
@@ -110,6 +124,7 @@ export function SelectionActionSheet({
 
   const openSheet = useCallback(() => {
     clearPendingState()
+    setShowCloseConfirm(false)
     setSheetOpen(true)
   }, [clearPendingState])
 
@@ -188,14 +203,30 @@ export function SelectionActionSheet({
     onClear() // Exit selection mode
   }, [onMoveToProject, onClear])
 
-  // On dismiss without explicit save/cancel: keep selection, don't apply changes
+  // On dismiss without explicit save/cancel: intercept when dirty to show confirmation
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) clearPendingState()
-      setSheetOpen(open)
+      if (!open && isPanelDirty) {
+        setShowCloseConfirm(true)
+      } else {
+        if (!open) clearPendingState()
+        setSheetOpen(open)
+      }
     },
-    [clearPendingState],
+    [clearPendingState, isPanelDirty],
   )
+
+  const handleDiscardAndClose = useCallback(() => {
+    setShowCloseConfirm(false)
+    clearPendingState()
+    setSheetOpen(false)
+    // Keep selection mode active (matches Cancel behavior)
+  }, [clearPendingState])
+
+  const handleSaveAndClose = useCallback(() => {
+    setShowCloseConfirm(false)
+    handleSave()
+  }, [handleSave])
 
   // Handle priority change from QuickActionPanel (stages change until Save)
   const handlePriorityChange = useCallback((priority: number) => {
@@ -249,9 +280,6 @@ export function SelectionActionSheet({
   const handleProjectChange = useCallback((projectId: number) => {
     pendingProjectRef.current = projectId
   }, [])
-
-  // Track dirty state from QuickActionPanel for visual indicator
-  const [isPanelDirty, setIsPanelDirty] = useState(false)
 
   // Navigate to task detail (single task only)
   const handleNavigateToDetail = useCallback(() => {
@@ -354,7 +382,12 @@ export function SelectionActionSheet({
       {/* Mobile: bottom sheet */}
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={handleOpenChange}>
-          <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton>
+          <SheetContent
+            side="bottom"
+            className="rounded-t-2xl"
+            showCloseButton
+            draggable={!isPanelDirty}
+          >
             <SheetHeader>
               <SheetTitle className="truncate">{modalTitle}</SheetTitle>
               <SheetDescription className="sr-only">
@@ -379,6 +412,24 @@ export function SelectionActionSheet({
           </DialogContent>
         </Dialog>
       )}
+
+      <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. What would you like to do?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="outline" onClick={handleDiscardAndClose}>
+              Don&apos;t Save
+            </AlertDialogAction>
+            <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

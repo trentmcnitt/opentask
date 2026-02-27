@@ -34,7 +34,7 @@ import {
   isApnsConfigured,
 } from '@/core/notifications/apns'
 
-const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
+const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
 
 /** Consolidation caps per bucket */
 const REGULAR_CAP = 4 // P0-P2

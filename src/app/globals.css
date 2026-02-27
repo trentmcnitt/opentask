@@ -196,6 +196,14 @@
   animation: typing-dot-bounce 1.4s ease-in-out infinite;
 }
 
+/* Countdown ring drain for QuickTakeBanner auto-dismiss timer.
+   Radius 10 → circumference = 2π·10 ≈ 62.832. Must match RING_RADIUS in QuickTakeBanner.tsx. */
+@keyframes countdown-drain {
+  to {
+    stroke-dashoffset: 62.832;
+  }
+}
+
 /* Glow effect on AI button during insights generation */
 @keyframes ai-glow {
   0%,

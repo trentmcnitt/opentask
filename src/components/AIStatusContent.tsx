@@ -514,7 +514,7 @@ function ExpandableAIActivityRow({
           {entry.input && (
             <div>
               <span className="text-muted-foreground font-medium">Input</span>
-              <pre className="bg-muted text-foreground mt-0.5 max-h-40 overflow-auto rounded p-2 whitespace-pre-wrap">
+              <pre className="bg-muted text-foreground mt-0.5 max-h-40 cursor-text overflow-auto rounded p-2 whitespace-pre-wrap select-text">
                 {entry.input}
               </pre>
             </div>
@@ -530,7 +530,7 @@ function ExpandableAIActivityRow({
           {entry.error && (
             <div>
               <span className="font-medium text-red-500">Error</span>
-              <pre className="mt-0.5 max-h-40 overflow-auto rounded bg-red-50 p-2 whitespace-pre-wrap text-red-700 dark:bg-red-900/20 dark:text-red-400">
+              <pre className="mt-0.5 max-h-40 cursor-text overflow-auto rounded bg-red-50 p-2 whitespace-pre-wrap text-red-700 select-text dark:bg-red-900/20 dark:text-red-400">
                 {entry.error}
               </pre>
             </div>
@@ -565,7 +565,7 @@ function AIOutputDisplay({ output }: { output: string }) {
 
   if (entries) {
     return (
-      <div className="bg-muted mt-0.5 space-y-1 rounded p-2">
+      <div className="bg-muted mt-0.5 cursor-text space-y-1 rounded p-2 select-text">
         {entries.map(([key, value]) => (
           <div key={key} className="flex gap-2">
             <span className="text-muted-foreground flex-shrink-0 font-medium">{key}:</span>
@@ -579,7 +579,7 @@ function AIOutputDisplay({ output }: { output: string }) {
   }
 
   return (
-    <pre className="bg-muted text-foreground mt-0.5 max-h-40 overflow-auto rounded p-2 whitespace-pre-wrap">
+    <pre className="bg-muted text-foreground mt-0.5 max-h-40 cursor-text overflow-auto rounded p-2 whitespace-pre-wrap select-text">
       {output}
     </pre>
   )

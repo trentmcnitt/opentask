@@ -343,64 +343,76 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {
-      // 1. Create the task (fast — returns immediately)
+      // 1. Create the task (fast — returns immediately, unblocks input)
       const taskId = await actions.handleQuickAdd(title)
 
-      // 2. Abort any previous in-flight quick take request
-      quickTakeAbortRef.current?.abort()
-      const controller = new AbortController()
-      quickTakeAbortRef.current = controller
+      // 2. Fire-and-forget the quick take fetch so the input re-enables immediately.
+      //    The banner shows progress; the input doesn't need to wait.
+      void (async () => {
+        // Abort any previous in-flight quick take request
+        quickTakeAbortRef.current?.abort()
+        const controller = new AbortController()
+        quickTakeAbortRef.current = controller
 
-      // 3. Track task ID for enrichment SSE matching
-      bannerTaskIdRef.current = taskId
+        // Track task ID for enrichment SSE matching
+        bannerTaskIdRef.current = taskId
 
-      // 4. Client-side timeout (15s)
-      const timeoutId = setTimeout(() => controller.abort(), 15_000)
+        // Client-side timeout — must exceed the server's 40s AI timeout so the
+        // server responds first (with success or timeout error) and we don't
+        // abort a request that was about to succeed.
+        const timeoutId = setTimeout(() => controller.abort(), 45_000)
 
-      try {
-        // 5. Dispatch the request — if fetch() throws, dots never appear
-        const resPromise = fetch('/api/ai/quick-take', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
-          signal: controller.signal,
-        })
-
-        // 6. Request is in flight — show banner with title + typing indicator
-        setBannerState({
-          taskId,
-          title,
-          quickTakeText: null,
-          loading: true,
-          enrichment: null,
-        })
-
-        const res = await resPromise
-        clearTimeout(timeoutId)
-
-        if (!res.ok) throw new Error('Quick take request failed')
-
-        const { data } = await res.json()
-        if (data?.text) {
-          setBannerState((prev) => (prev ? { ...prev, quickTakeText: data.text } : prev))
-        }
-      } catch {
-        // Swallow — abort, timeout, or server error
-      } finally {
-        clearTimeout(timeoutId)
-        // Only update loading state if this is still the active request
-        if (quickTakeAbortRef.current === controller) {
-          setBannerState((prev) => {
-            if (!prev) return prev
-            // If both quick take and enrichment failed, dismiss immediately
-            if (!prev.quickTakeText && !prev.enrichment) return null
-            return { ...prev, loading: false }
+        try {
+          // Dispatch the request — if fetch() throws, dots never appear
+          const resPromise = fetch('/api/ai/quick-take', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title }),
+            signal: controller.signal,
           })
+
+          // Request is in flight — show banner with title + typing indicator
+          setBannerState({
+            taskId,
+            title,
+            quickTakeText: null,
+            loading: true,
+            enrichment: null,
+          })
+
+          const res = await resPromise
+          clearTimeout(timeoutId)
+
+          if (!res.ok) throw new Error('Quick take request failed')
+
+          const { data } = await res.json()
+          if (data?.text) {
+            setBannerState((prev) => (prev ? { ...prev, quickTakeText: data.text } : prev))
+          }
+        } catch {
+          // Swallow — abort, timeout, or server error
+        } finally {
+          clearTimeout(timeoutId)
+          // Only update loading state if this is still the active request
+          if (quickTakeAbortRef.current === controller) {
+            setBannerState((prev) => {
+              if (!prev) return prev
+              // If both quick take and enrichment failed, dismiss immediately
+              if (!prev.quickTakeText && !prev.enrichment) return null
+              return { ...prev, loading: false }
+            })
+          }
         }
-      }
+      })()
     },
     [actions],
   )
+
+  const handleQuickTakeDismiss = useCallback(() => {
+    quickTakeAbortRef.current?.abort()
+    bannerTaskIdRef.current = null
+    setBannerState(null)
+  }, [])
 
   const handleQuickActionDelete = useCallback(
     async (taskId: number) => {
@@ -1103,11 +1115,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onReprocess={handleReprocess}
       onQuickAdd={aiAvailable ? handleQuickAddWithQuickTake : actions.handleQuickAdd}
       bannerState={bannerState}
-      onQuickTakeDismiss={() => {
-        quickTakeAbortRef.current?.abort()
-        bannerTaskIdRef.current = null
-        setBannerState(null)
-      }}
+      onQuickTakeDismiss={handleQuickTakeDismiss}
       onUnifiedChange={(unified) => {
         if (unified) {
           // Save current grouping so toggling unified off restores it

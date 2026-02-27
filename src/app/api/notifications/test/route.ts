@@ -28,7 +28,7 @@ import { getDb } from '@/core/db'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 import { withLogging } from '@/lib/with-logging'
 
-const APP_URL = process.env.AUTH_URL || 'https://tasks.tk11.mcnitt.io'
+const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
 
 const VALID_TYPES = ['individual', 'high', 'bulk', 'urgent', 'critical'] as const
 type TestType = (typeof VALID_TYPES)[number]

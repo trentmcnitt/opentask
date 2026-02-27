@@ -10,7 +10,32 @@
  * create a specific context the AI should pick up on.
  */
 
+import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
+
+/**
+ * Compute an ISO UTC string for "today at {hour}:{min} local" in the given timezone.
+ * Used to make day-dependent scenarios time-agnostic — tasks due "today" always
+ * land on today regardless of when the test suite runs.
+ */
+function todayAt(hour: number, min: number, tz: string): string {
+  return DateTime.now().setZone(tz).set({ hour, minute: min, second: 0 }).toUTC().toISO()!
+}
+
+/** Tomorrow at the given local time. */
+function tomorrowAt(hour: number, min: number, tz: string): string {
+  return DateTime.now()
+    .setZone(tz)
+    .plus({ days: 1 })
+    .set({ hour, minute: min, second: 0 })
+    .toUTC()
+    .toISO()!
+}
+
+/** N days ago, for created_at timestamps. */
+function daysAgo(n: number): string {
+  return DateTime.now().minus({ days: n }).toUTC().toISO()!
+}
 
 export const quickTakeScenarios: AITestScenario[] = [
   // -------------------------------------------------------------------------
@@ -148,9 +173,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 20,
           title: 'Dentist appointment',
           priority: 2,
-          due_at: '2026-02-25T15:00:00Z',
-          original_due_at: '2026-02-25T15:00:00Z',
-          created_at: '2026-02-15T10:00:00Z',
+          due_at: todayAt(9, 0, 'America/Chicago'),
+          original_due_at: todayAt(9, 0, 'America/Chicago'),
+          created_at: daysAgo(12),
           labels: ['health'],
           project_name: null,
           is_recurring: false,
@@ -162,9 +187,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 21,
           title: 'Submit expense report',
           priority: 1,
-          due_at: '2026-02-25T17:00:00Z',
-          original_due_at: '2026-02-25T17:00:00Z',
-          created_at: '2026-02-20T09:00:00Z',
+          due_at: todayAt(11, 0, 'America/Chicago'),
+          original_due_at: todayAt(11, 0, 'America/Chicago'),
+          created_at: daysAgo(7),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -176,9 +201,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 22,
           title: 'Pick up dry cleaning',
           priority: 0,
-          due_at: '2026-02-25T20:00:00Z',
-          original_due_at: '2026-02-25T20:00:00Z',
-          created_at: '2026-02-22T14:00:00Z',
+          due_at: todayAt(14, 0, 'America/Chicago'),
+          original_due_at: todayAt(14, 0, 'America/Chicago'),
+          created_at: daysAgo(5),
           labels: ['errand'],
           project_name: null,
           is_recurring: false,
@@ -190,9 +215,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 23,
           title: 'Review pull request',
           priority: 1,
-          due_at: '2026-02-25T21:00:00Z',
-          original_due_at: '2026-02-25T21:00:00Z',
-          created_at: '2026-02-24T11:00:00Z',
+          due_at: todayAt(15, 0, 'America/Chicago'),
+          original_due_at: todayAt(15, 0, 'America/Chicago'),
+          created_at: daysAgo(3),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -204,13 +229,13 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 30,
           title: 'Weekly grocery run',
           priority: 0,
-          due_at: '2026-02-27T15:00:00Z',
-          original_due_at: '2026-02-27T15:00:00Z',
-          created_at: '2026-02-20T12:00:00Z',
+          due_at: tomorrowAt(9, 0, 'America/Chicago'),
+          original_due_at: tomorrowAt(9, 0, 'America/Chicago'),
+          created_at: daysAgo(7),
           labels: ['errand'],
           project_name: null,
           is_recurring: true,
-          rrule: 'FREQ=WEEKLY;BYDAY=FR',
+          rrule: 'FREQ=WEEKLY',
           notes: null,
           recurrence_mode: 'from_due' as const,
         },
@@ -218,9 +243,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 31,
           title: 'Read chapter 5',
           priority: 0,
-          due_at: '2026-02-28T22:00:00Z',
-          original_due_at: '2026-02-28T22:00:00Z',
-          created_at: '2026-02-22T10:00:00Z',
+          due_at: tomorrowAt(16, 0, 'America/Chicago'),
+          original_due_at: tomorrowAt(16, 0, 'America/Chicago'),
+          created_at: daysAgo(5),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -232,8 +257,8 @@ export const quickTakeScenarios: AITestScenario[] = [
     },
     requirements: {
       quality_notes:
-        'Should note today (Feb 25) is getting busy — 4 existing tasks due today and now a 5th. ' +
-        'A good response observes the crowded day: "Wednesday is getting crowded" or ' +
+        'Today is getting busy — 4 existing tasks due today and now a 5th. ' +
+        'A good response observes the crowded day: "today is getting crowded" or ' +
         '"busy day — you already had 4 things due." Could name specific tasks for flavor. ' +
         'Must reference the busy nature of the day. Max 25 words.',
     },
@@ -1076,9 +1101,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 210,
           title: 'Deploy v4.0 to production',
           priority: 3,
-          due_at: '2026-02-26T16:00:00Z',
-          original_due_at: '2026-02-26T16:00:00Z',
-          created_at: '2026-02-20T09:00:00Z',
+          due_at: todayAt(10, 0, 'America/Chicago'),
+          original_due_at: todayAt(10, 0, 'America/Chicago'),
+          created_at: daysAgo(7),
           labels: ['work'],
           project_name: 'Platform Team',
           is_recurring: false,
@@ -1090,9 +1115,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 211,
           title: 'Lunch with Sarah',
           priority: 1,
-          due_at: '2026-02-26T18:00:00Z',
-          original_due_at: '2026-02-26T18:00:00Z',
-          created_at: '2026-02-24T10:00:00Z',
+          due_at: todayAt(12, 0, 'America/Chicago'),
+          original_due_at: todayAt(12, 0, 'America/Chicago'),
+          created_at: daysAgo(3),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -1104,9 +1129,9 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 212,
           title: 'Team happy hour',
           priority: 0,
-          due_at: '2026-02-26T23:00:00Z',
-          original_due_at: '2026-02-26T23:00:00Z',
-          created_at: '2026-02-25T14:00:00Z',
+          due_at: todayAt(17, 0, 'America/Chicago'),
+          original_due_at: todayAt(17, 0, 'America/Chicago'),
+          created_at: daysAgo(2),
           labels: ['social'],
           project_name: null,
           is_recurring: false,
@@ -1118,13 +1143,13 @@ export const quickTakeScenarios: AITestScenario[] = [
           id: 213,
           title: 'Weekly grocery run',
           priority: 0,
-          due_at: '2026-02-28T15:00:00Z',
-          original_due_at: '2026-02-28T15:00:00Z',
-          created_at: '2026-02-20T12:00:00Z',
+          due_at: tomorrowAt(9, 0, 'America/Chicago'),
+          original_due_at: tomorrowAt(9, 0, 'America/Chicago'),
+          created_at: daysAgo(7),
           labels: ['errand'],
           project_name: null,
           is_recurring: true,
-          rrule: 'FREQ=WEEKLY;BYDAY=SA',
+          rrule: 'FREQ=WEEKLY',
           notes: null,
           recurrence_mode: 'from_due' as const,
         },
@@ -1132,10 +1157,10 @@ export const quickTakeScenarios: AITestScenario[] = [
     },
     requirements: {
       quality_notes:
-        'Today (Feb 26) already has a deploy, lunch with Sarah, and happy hour. Adding slides ' +
+        'Today already has a deploy, lunch with Sarah, and happy hour. Adding slides ' +
         'makes it a packed day with diverse tasks. A good response references the specific things ' +
         'on the day: "today already has a deploy, lunch, and happy hour — now slides too" or ' +
-        '"busy Thursday — a deploy and happy hour, and now presentation prep." Must mention at ' +
+        '"busy day — a deploy and happy hour, and now presentation prep." Must mention at ' +
         'least one specific existing task by name or type, not just a count. Max 25 words.',
     },
   },

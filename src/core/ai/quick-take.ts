@@ -33,8 +33,12 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: 'P4',
 }
 
-/** Max tasks to include in the prompt context */
-const MAX_TASKS = 150
+/**
+ * Max tasks to include in the prompt's "Existing tasks:" list. Stats are computed
+ * from ALL tasks before capping, so the model has accurate counts regardless.
+ * Tasks are sorted by relevance (dated first, then recent undated) before capping.
+ */
+const MAX_TASKS = 60
 
 // ---------------------------------------------------------------------------
 // System prompt (static, loaded once at slot init)
@@ -58,7 +62,7 @@ Examples:
 - "this one's a one-off among your daily routines."
 - "Friday is already stacked: a deploy, happy hour, and now slides."
 
-Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare.
+Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare. Most new tasks have no due date — that's the default, not noteworthy. Look at the surrounding context instead: a crowded day, a project cluster, a contrast.
 
 The Summary stats are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.`
 
@@ -281,8 +285,15 @@ function buildFromDb(
     }
   })
 
-  const { text, count } = formatCompactTaskList(withNames, timezone)
+  // No sorting before capping — DB returns tasks in creation order (newest last).
+  // The previous due-date-first sort biased the capped sample toward projects
+  // with more dated tasks, giving the model a skewed view of list composition.
+  // The summary stats (computed from ALL tasks) provide accurate aggregate counts;
+  // the task list just needs to be a representative sample.
+
+  // Stats are computed from ALL tasks (before capping) — model gets accurate counts.
   const stats = buildTaskStats(withNames, timezone)
+  const { text, count } = formatCompactTaskList(withNames, timezone)
 
   return { text, count, stats, tasks: withNames }
 }
@@ -567,7 +578,7 @@ Examples:
 - "this one's a one-off among your daily routines."
 - "Friday is already stacked: a deploy, happy hour, and now slides."
 
-Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare.
+Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare. Most new tasks have no due date — that's the default, not noteworthy. Look at the surrounding context instead: a crowded day, a project cluster, a contrast.
 
 The Summary stats below are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.
 
@@ -659,7 +670,7 @@ export async function generateQuickTake(
       prompt,
       model,
       maxTurns: 1,
-      timeoutMs: 30000,
+      timeoutMs: 40000,
       userId,
       action: 'quick_take',
       inputText: newTaskTitle,

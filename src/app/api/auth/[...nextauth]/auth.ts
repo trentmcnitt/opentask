@@ -24,20 +24,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const username = credentials.username as string
 
+        // Demo account is public (password shown on login page) — rate limiting
+        // provides no security value and would block legitimate visitors
+        const isDemoUser =
+          process.env.NEXT_PUBLIC_DEMO_MODE === '1' && username.toLowerCase() === 'demo'
+
         // Check rate limit before attempting validation
-        const waitSeconds = checkRateLimit(username)
-        if (waitSeconds !== null) {
-          throw new Error(`Too many login attempts. Try again in ${waitSeconds} seconds.`)
+        if (!isDemoUser) {
+          const waitSeconds = checkRateLimit(username)
+          if (waitSeconds !== null) {
+            throw new Error(`Too many login attempts. Try again in ${waitSeconds} seconds.`)
+          }
         }
 
         const user = await validateCredentials(username, credentials.password as string)
 
         if (!user) {
-          recordFailedAttempt(username)
+          if (!isDemoUser) recordFailedAttempt(username)
           return null
         }
 
-        clearAttempts(username)
+        if (!isDemoUser) clearAttempts(username)
 
         // Return user object that will be stored in the JWT
         return {

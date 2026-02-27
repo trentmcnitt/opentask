@@ -1,0 +1,29 @@
+services:
+  opentask:
+    image: ghcr.io/trentmcnitt/opentask:latest
+    # To build from source instead:
+    # build: .
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test:
+        ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      - AUTH_SECRET=${AUTH_SECRET:?Generate with: openssl rand -base64 32}
+      - OPENTASK_DB_PATH=/app/data/tasks.db
+      # Initial user (created on first start, ignored if user already exists)
+      - OPENTASK_INIT_USERNAME=${OPENTASK_INIT_USERNAME:-admin}
+      - OPENTASK_INIT_PASSWORD=${OPENTASK_INIT_PASSWORD:-changeme}
+      # - OPENTASK_INIT_EMAIL=admin@example.com
+      # - OPENTASK_INIT_TIMEZONE=America/Chicago
+      # Set AUTH_URL to your public URL when using a reverse proxy
+      # - AUTH_URL=https://tasks.example.com
+      # Optional: enable AI features (requires Claude Code on the host)
+      # - OPENTASK_AI_ENABLED=true
+    restart: unless-stopped
