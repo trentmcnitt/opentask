@@ -15,7 +15,7 @@ services:
       retries: 3
       start_period: 10s
     environment:
-      - AUTH_SECRET=${AUTH_SECRET:?Generate with: openssl rand -base64 32}
+      - AUTH_SECRET=${AUTH_SECRET:?Set AUTH_SECRET in .env -- generate with openssl rand -base64 32}
       - OPENTASK_DB_PATH=/app/data/tasks.db
       # Initial user (created on first start, ignored if user already exists)
       - OPENTASK_INIT_USERNAME=${OPENTASK_INIT_USERNAME:-admin}

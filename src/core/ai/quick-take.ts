@@ -50,21 +50,20 @@ const MAX_TASKS = 60
  * between requests. The dynamic data (stats, task list, new task) goes in
  * the user prompt built by buildQuickTakeUserPrompt().
  */
-export const QUICK_TAKE_SYSTEM_PROMPT = `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what makes this task interesting in context. Find the angle: a pattern, a contrast, a crowded day, an outlier, a growing backlog — whatever is most notable. Vary your approach.
+export const QUICK_TAKE_SYSTEM_PROMPT = `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what's notable in context — a pattern, a contrast, a crowded day, an outlier. Report what the data shows. A boring truth always beats a clever falsehood.
 
 Examples:
 - "3 Acme tasks this week — this makes it a theme."
-- "your only personal errand in a sea of Platform Team work."
+- "4 personal errands now among 20 Platform Team tasks — a different gear."
 - "Tuesday's getting crowded — 5 things and counting."
-- "no due date yet — joins 2 others floating in your inbox."
 - "first task on an empty board."
 - "another fix for Website Redesign — the bug backlog grows."
 - "this one's a one-off among your daily routines."
 - "Friday is already stacked: a deploy, happy hour, and now slides."
 
-Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare. Most new tasks have no due date — that's the default, not noteworthy. Look at the surrounding context instead: a crowded day, a project cluster, a contrast.
+The Summary stats are precomputed and exact — use them instead of counting the task list. Never claim "only" or "first" unless the stats confirm it. Most new tasks have no due date — that's the default, not noteworthy.
 
-The Summary stats are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.`
+Max 25 words. No quotes. Observe, never advise. Vary your angle.`
 
 // ---------------------------------------------------------------------------
 // Types
@@ -524,7 +523,7 @@ ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 Existing tasks:
 ${compactTaskList}
 
-ONE sentence, max 25 words. Reference the Summary numbers.`
+ONE sentence, max 25 words. Only state what the Summary confirms.`
 }
 
 /**
@@ -566,21 +565,20 @@ export function buildQuickTakePrompt(
   //   6. Closing block (reinforcement at recency peak)
   // -------------------------------------------------------------------
 
-  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what makes this task interesting in context. Find the angle: a pattern, a contrast, a crowded day, an outlier, a growing backlog — whatever is most notable. Vary your approach.
+  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what's notable in context — a pattern, a contrast, a crowded day, an outlier. Report what the data shows. A boring truth always beats a clever falsehood.
 
 Examples:
 - "3 Acme tasks this week — this makes it a theme."
-- "your only personal errand in a sea of Platform Team work."
+- "4 personal errands now among 20 Platform Team tasks — a different gear."
 - "Tuesday's getting crowded — 5 things and counting."
-- "no due date yet — joins 2 others floating in your inbox."
 - "first task on an empty board."
 - "another fix for Website Redesign — the bug backlog grows."
 - "this one's a one-off among your daily routines."
 - "Friday is already stacked: a deploy, happy hour, and now slides."
 
-Avoid: starting with a number unless it's the most interesting fact. Vary sentence structure. Don't always count — observe, contrast, compare. Most new tasks have no due date — that's the default, not noteworthy. Look at the surrounding context instead: a crowded day, a project cluster, a contrast.
+The Summary stats are precomputed and exact — use them instead of counting the task list. Never claim "only" or "first" unless the stats confirm it. Most new tasks have no due date — that's the default, not noteworthy.
 
-The Summary stats below are precomputed and exact — use them, don't count the task list. Max 25 words. No quotes. Observe, never advise.
+Max 25 words. No quotes. Observe, never advise. Vary your angle.
 
 Current time: ${currentTime} (${timezone})
 ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
@@ -588,7 +586,7 @@ ${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
 Existing tasks:
 ${compactTaskList}
 
-ONE sentence, max 25 words. Reference the Summary numbers.`
+ONE sentence, max 25 words. Only state what the Summary confirms.`
 }
 
 // ---------------------------------------------------------------------------

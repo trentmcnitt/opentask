@@ -37,6 +37,16 @@ function daysAgo(n: number): string {
   return DateTime.now().minus({ days: n }).toUTC().toISO()!
 }
 
+/** N days from now at the given local time. */
+function daysFromNowAt(days: number, hour: number, min: number, tz: string): string {
+  return DateTime.now()
+    .setZone(tz)
+    .plus({ days })
+    .set({ hour, minute: min, second: 0 })
+    .toUTC()
+    .toISO()!
+}
+
 export const quickTakeScenarios: AITestScenario[] = [
   // -------------------------------------------------------------------------
   // 1. Cross-reference by project
@@ -1269,6 +1279,224 @@ export const quickTakeScenarios: AITestScenario[] = [
         '"the home project list keeps growing — 5 with no dates now" or "another home task ' +
         'without a deadline, joining 4 others." Must acknowledge the growing undated home backlog. ' +
         'Max 25 words.',
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 12. Regression: demo user data — personal errand in work-heavy list
+  // -------------------------------------------------------------------------
+  // Mirrors the exact demo user task data from scripts/seed-demo.ts.
+  // The original failure: the model said "your only personal errand among 8
+  // Client Work tasks" when 4 of 13 active tasks had no project association
+  // (i.e., were not Client Work). This scenario prevents that regression.
+  {
+    id: 'quick-take-regression-demo',
+    feature: 'quick_take',
+    description:
+      'Regression: personal errand added to work-heavy demo list — must not fabricate composition claims',
+    input: {
+      newTaskTitle: 'pick up washer fluid',
+      timezone: 'America/Chicago',
+      tasks: [
+        // ── Try It project (4 tasks, 3 undated + 1 overdue) ──
+        {
+          id: 1,
+          title:
+            "Try adding a task — type 'Set up weekly standup every Monday at 10am' in the box above",
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: 'Try It',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 2,
+          title:
+            "Try voice input — say 'Review deployment pipeline Friday afternoon medium priority'",
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: 'Try It',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 3,
+          title: 'Learn about OpenTask',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: 'Try It',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 4,
+          title: 'Try completing this task — swipe right or tap the circle',
+          priority: 0,
+          due_at: daysFromNowAt(-1, 15, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(-1, 15, 0, 'America/Chicago'),
+          created_at: daysAgo(2),
+          labels: [],
+          project_name: 'Try It',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        // ── Client Work project (8 tasks, 7 dated + 1 undated) ──
+        {
+          id: 5,
+          title: 'Prepare implementation plan for client onboarding',
+          priority: 3,
+          due_at: tomorrowAt(10, 0, 'America/Chicago'),
+          original_due_at: tomorrowAt(10, 0, 'America/Chicago'),
+          created_at: daysAgo(4),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 6,
+          title: 'Build MCP server for client CRM integration',
+          priority: 2,
+          due_at: daysFromNowAt(4, 14, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(4, 14, 0, 'America/Chicago'),
+          created_at: daysAgo(5),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 7,
+          title: 'Set up Claude Code workflow for automated testing',
+          priority: 2,
+          due_at: daysFromNowAt(3, 15, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(3, 15, 0, 'America/Chicago'),
+          created_at: daysAgo(5),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 8,
+          title: 'Schedule intro call — new AI automation project',
+          priority: 2,
+          due_at: daysFromNowAt(3, 14, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(3, 14, 0, 'America/Chicago'),
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 9,
+          title: 'Draft project scope for RAG pipeline integration',
+          priority: 1,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(22),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 10,
+          title: 'Review pull request — API authentication updates',
+          priority: 3,
+          due_at: tomorrowAt(17, 0, 'America/Chicago'),
+          original_due_at: tomorrowAt(17, 0, 'America/Chicago'),
+          created_at: daysAgo(1),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 11,
+          title: 'Client status update',
+          priority: 1,
+          due_at: daysFromNowAt(2, 10, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(2, 10, 0, 'America/Chicago'),
+          created_at: daysAgo(7),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: true,
+          rrule: 'FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=10;BYMINUTE=0',
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        {
+          id: 12,
+          title: 'Follow up on proposal — workflow automation project',
+          priority: 2,
+          due_at: daysFromNowAt(3, 9, 0, 'America/Chicago'),
+          original_due_at: daysFromNowAt(3, 9, 0, 'America/Chicago'),
+          created_at: daysAgo(4),
+          labels: [],
+          project_name: 'Client Work',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+        // ── Inbox (1 task, undated) ──
+        {
+          id: 13,
+          title: 'Want to work together? Reach out to Trent at trent@mcnitt.io',
+          priority: 0,
+          due_at: null,
+          original_due_at: null,
+          created_at: daysAgo(3),
+          labels: [],
+          project_name: 'Inbox',
+          is_recurring: false,
+          rrule: null,
+          notes: null,
+          recurrence_mode: 'from_due' as const,
+        },
+      ],
+    },
+    requirements: {
+      quality_notes:
+        'REGRESSION TEST — the original failure was: "your only personal errand among 8 Client ' +
+        'Work tasks." This was factually wrong: 4 of 13 active tasks were not Client Work (3 Try It ' +
+        '+ 1 Inbox), and none had a "personal errand" label. The new task "pick up washer fluid" is ' +
+        'a personal errand being added to a work-heavy list. A good response notices the contrast ' +
+        '(personal task among professional ones) but states it accurately — e.g., "a personal errand ' +
+        'joining a list dominated by Client Work." Must NOT claim "only personal errand," "only ' +
+        'errand," or "first personal task." Must not fabricate numbers or categories not present in ' +
+        'the data. Max 25 words.',
     },
   },
 ]

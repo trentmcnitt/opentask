@@ -40,6 +40,7 @@ import {
   useSnoozePreferences,
   useDefaultGrouping,
   useAiAvailable,
+  useAiPreferences,
 } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
@@ -614,6 +615,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   // Server-side AI availability flag — gates all AI UI and prevents wasted requests
   const aiAvailable = useAiAvailable()
+  const { aiQuickTake } = useAiPreferences()
 
   // AI What's Next: fetch recommendations and resolve against current task list
   const aiInsights = useAiInsights(baseTasks, aiAvailable)
@@ -1113,7 +1115,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
-      onQuickAdd={aiAvailable ? handleQuickAddWithQuickTake : actions.handleQuickAdd}
+      onQuickAdd={aiAvailable && aiQuickTake ? handleQuickAddWithQuickTake : actions.handleQuickAdd}
       bannerState={bannerState}
       onQuickTakeDismiss={handleQuickTakeDismiss}
       onUnifiedChange={(unified) => {

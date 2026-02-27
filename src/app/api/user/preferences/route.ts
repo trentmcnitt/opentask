@@ -340,6 +340,12 @@ function validateAiFields(
     params.push(body.ai_insights_score_chips ? 1 : 0)
   }
 
+  if (body.ai_quick_take !== undefined) {
+    if (typeof body.ai_quick_take !== 'boolean') return 'ai_quick_take must be a boolean'
+    updates.push('ai_quick_take = ?')
+    params.push(body.ai_quick_take ? 1 : 0)
+  }
+
   return null
 }
 
@@ -363,7 +369,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_quick_take FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -390,6 +396,7 @@ interface PreferencesRow {
   ai_wn_highlight: number
   ai_insights_signal_chips: number
   ai_insights_score_chips: number
+  ai_quick_take: number
 }
 
 /** Fallback row when user record is missing (should not happen in practice). */
@@ -418,6 +425,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   ai_wn_highlight: 1,
   ai_insights_signal_chips: 1,
   ai_insights_score_chips: 1,
+  ai_quick_take: 0,
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -448,6 +456,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_wn_highlight: row.ai_wn_highlight !== 0,
     ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
     ai_insights_score_chips: row.ai_insights_score_chips !== 0,
+    ai_quick_take: row.ai_quick_take !== 0,
   }
 }
 
