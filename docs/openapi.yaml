@@ -1,0 +1,1592 @@
+openapi: 3.1.0
+info:
+  title: OpenTask API
+  version: 1.0.0
+  description: |
+    REST API for OpenTask, a self-hosted task management application.
+
+    ## Authentication
+
+    All endpoints (except `/api/health` and `/api/openapi`) require authentication
+    via one of:
+
+    - **Bearer token** — `Authorization: Bearer <token>` header
+    - **Reverse proxy header** — configured via `OPENTASK_PROXY_AUTH_HEADER` env var
+    - **Session cookie** — set by the web UI login flow
+
+    Bearer tokens are created via `POST /api/tokens` or the `db:create-token` CLI command.
+
+    ## Response format
+
+    **Success:** `{ "data": { ... } }`
+
+    **Error:** `{ "error": "message", "code": "ERROR_CODE", "details": { ... } }`
+
+  license:
+    name: AGPL-3.0
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+
+servers:
+  - url: /
+    description: Relative to deployment host
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: running
+
+  /api/openapi:
+    get:
+      summary: OpenAPI specification
+      operationId: getOpenApi
+      tags: [System]
+      security: []
+      responses:
+        '200':
+          description: OpenAPI 3.1 YAML specification
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  # --- Tasks ---
+
+  /api/tasks:
+    get:
+      summary: List tasks
+      operationId: listTasks
+      tags: [Tasks]
+      parameters:
+        - name: done
+          in: query
+          schema:
+            type: boolean
+          description: Filter by completion status (default false)
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: label
+          in: query
+          schema:
+            type: string
+          description: Filter by label name
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search in title and notes
+        - name: trashed
+          in: query
+          schema:
+            type: boolean
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+        - name: recurring
+          in: query
+          schema:
+            type: boolean
+        - name: one_off
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create task
+      operationId: createTask
+      tags: [Tasks]
+      description: |
+        Send a raw title string for AI enrichment, or provide structured fields
+        to bypass enrichment. AI enrichment triggers when only `title` is provided
+        (no due_at, priority=0, no labels, no rrule).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Created task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      summary: Get task
+      operationId: getTask
+      tags: [Tasks]
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update task
+      operationId: updateTask
+      tags: [Tasks]
+      description: PATCH semantics — only fields present in the body are updated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Updated task with change metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          fields_changed:
+                            type: array
+                            items:
+                              type: string
+                          description:
+                            type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete task (soft delete to trash)
+      operationId: deleteTask
+      tags: [Tasks]
+      responses:
+        '200':
+          description: Trashed task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/done:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Mark task done
+      operationId: markTaskDone
+      tags: [Tasks]
+      description: |
+        For recurring tasks, advances due_at to the next occurrence.
+        For one-off tasks, sets done=true and archives.
+      responses:
+        '200':
+          description: Completed task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          was_recurring:
+                            type: boolean
+                          next_due_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/undone:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Mark task undone (reopen)
+      operationId: markTaskUndone
+      tags: [Tasks]
+      description: Only works for one-off tasks. For recurring tasks, use undo.
+      responses:
+        '200':
+          description: Reopened task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/snooze:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Snooze task
+      operationId: snoozeTask
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until:
+                  type: string
+                  format: date-time
+                  description: ISO 8601 datetime to snooze until
+      responses:
+        '200':
+          description: Snoozed task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          previous_due_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          original_due_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          description:
+                            type: string
+                            nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Restore task from trash
+      operationId: restoreTask
+      tags: [Tasks]
+      responses:
+        '200':
+          description: Restored task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{id}/reprocess:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Retry AI enrichment
+      operationId: reprocessTask
+      tags: [Tasks]
+      description: Re-runs AI enrichment using the original_title.
+      responses:
+        '200':
+          description: Task queued for reprocessing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Bulk Operations ---
+
+  /api/tasks/bulk/done:
+    post:
+      summary: Mark multiple tasks done
+      operationId: bulkDone
+      tags: [Bulk Operations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_ids]
+              properties:
+                task_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/bulk/snooze:
+    post:
+      summary: Snooze multiple tasks
+      operationId: bulkSnooze
+      tags: [Bulk Operations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_ids, until]
+              properties:
+                task_ids:
+                  type: array
+                  items:
+                    type: integer
+                until:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/bulk/snooze-overdue:
+    post:
+      summary: Snooze all overdue tasks
+      operationId: bulkSnoozeOverdue
+      tags: [Bulk Operations]
+      description: |
+        Snoozes all overdue P0-P3 tasks. P4 (Urgent) tasks are always excluded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until]
+              properties:
+                until:
+                  type: string
+                  format: date-time
+                exclude_task_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/bulk/edit:
+    post:
+      summary: Edit multiple tasks
+      operationId: bulkEdit
+      tags: [Bulk Operations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_ids, changes]
+              properties:
+                task_ids:
+                  type: array
+                  items:
+                    type: integer
+                changes:
+                  type: object
+                  properties:
+                    priority:
+                      type: integer
+                      minimum: 0
+                      maximum: 4
+                    labels:
+                      type: array
+                      items:
+                        type: string
+                    project_id:
+                      type: integer
+      responses:
+        '200':
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/bulk/delete:
+    post:
+      summary: Soft-delete multiple tasks
+      operationId: bulkDelete
+      tags: [Bulk Operations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_ids]
+              properties:
+                task_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Projects ---
+
+  /api/projects:
+    get:
+      summary: List projects
+      operationId: listProjects
+      tags: [Projects]
+      responses:
+        '200':
+          description: List of projects with task counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create project
+      operationId: createProject
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                  enum: [red, orange, yellow, green, blue, purple, pink, gray]
+                  nullable: true
+      responses:
+        '200':
+          description: Created project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get project
+      operationId: getProject
+      tags: [Projects]
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update project
+      operationId: updateProject
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                  enum: [red, orange, yellow, green, blue, purple, pink, gray]
+                  nullable: true
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete project
+      operationId: deleteProject
+      tags: [Projects]
+      responses:
+        '200':
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Undo / Redo ---
+
+  /api/undo:
+    post:
+      summary: Undo last action
+      operationId: undo
+      tags: [Undo]
+      responses:
+        '200':
+          description: Undo result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UndoResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Nothing to undo
+
+  /api/redo:
+    post:
+      summary: Redo last undone action
+      operationId: redo
+      tags: [Undo]
+      responses:
+        '200':
+          description: Redo result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UndoResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Nothing to redo
+
+  # --- Trash ---
+
+  /api/trash:
+    get:
+      summary: List trashed tasks
+      operationId: listTrash
+      tags: [Trash]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+      responses:
+        '200':
+          description: Trashed tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      summary: Empty trash (permanent delete)
+      operationId: emptyTrash
+      tags: [Trash]
+      description: Permanently deletes all trashed tasks. Cannot be undone.
+      responses:
+        '200':
+          description: Number of tasks permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted_count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Export ---
+
+  /api/export:
+    get:
+      summary: Export user data
+      operationId: exportData
+      tags: [Export]
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [tasks, projects]
+          description: Required for CSV format. Each table is a separate file.
+      responses:
+        '200':
+          description: Exported data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tasks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+                      projects:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Project'
+                      completions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Completion'
+                      exported_at:
+                        type: string
+                        format: date-time
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Webhooks ---
+
+  /api/webhooks:
+    get:
+      summary: List webhooks
+      operationId: listWebhooks
+      tags: [Webhooks]
+      responses:
+        '200':
+          description: User's webhooks (secrets excluded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      webhooks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WebhookPublic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create webhook
+      operationId: createWebhook
+      tags: [Webhooks]
+      description: |
+        Creates a webhook with an auto-generated HMAC secret.
+        The secret is returned in this response only — store it securely.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookCreate'
+      responses:
+        '201':
+          description: Created webhook with secret (shown once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/webhooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      summary: Update webhook
+      operationId: updateWebhook
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookUpdate'
+      responses:
+        '200':
+          description: Updated webhook (secret excluded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/WebhookPublic'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete webhook
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      responses:
+        '200':
+          description: Deletion confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/webhooks/{id}/deliveries:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: List recent webhook deliveries
+      operationId: listWebhookDeliveries
+      tags: [Webhooks]
+      description: Returns the last 50 delivery attempts for debugging.
+      responses:
+        '200':
+          description: Delivery history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deliveries:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WebhookDelivery'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Tokens ---
+
+  /api/tokens:
+    get:
+      summary: List API tokens
+      operationId: listTokens
+      tags: [Tokens]
+      responses:
+        '200':
+          description: API tokens (previews only, not full tokens)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        token_preview:
+                          type: string
+                          description: Last 8 characters of the token
+                        created_at:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create API token
+      operationId: createToken
+      tags: [Tokens]
+      description: |
+        Creates a new API token. The full token is returned in this response only.
+        Tokens are stored as SHA-256 hashes — the raw token cannot be retrieved later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  default: API
+      responses:
+        '201':
+          description: Created token (shown once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      token:
+                        type: string
+                        description: Full token value (shown once)
+                      created_at:
+                        type: string
+                        format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tokens/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      summary: Revoke API token
+      operationId: deleteToken
+      tags: [Tokens]
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- Stats ---
+
+  /api/stats:
+    get:
+      summary: Get user statistics
+      operationId: getStats
+      tags: [Stats]
+      parameters:
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date for daily stats range (YYYY-MM-DD)
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date for daily stats range (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Stats summary or daily stats for date range
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/StatsSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Completions ---
+
+  /api/completions:
+    get:
+      summary: Query completion history
+      operationId: listCompletions
+      tags: [Stats]
+      parameters:
+        - name: task_id
+          in: query
+          schema:
+            type: integer
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Filter by completion date (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Completion records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Completion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: API token created via POST /api/tokens or the db:create-token CLI command
+
+  parameters:
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - NOT_FOUND
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - CONFLICT
+            - SERVICE_UNAVAILABLE
+            - INTERNAL_ERROR
+        details:
+          type: object
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        project_id:
+          type: integer
+        title:
+          type: string
+        original_title:
+          type: string
+          nullable: true
+          description: Raw input text before AI enrichment
+        done:
+          type: boolean
+        done_at:
+          type: string
+          format: date-time
+          nullable: true
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: '0=unset, 1=low, 2=medium, 3=high, 4=urgent'
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        rrule:
+          type: string
+          nullable: true
+          description: RFC 5545 recurrence rule
+        recurrence_mode:
+          type: string
+          enum: [from_due, from_completion]
+        anchor_time:
+          type: string
+          nullable: true
+        anchor_dow:
+          type: integer
+          nullable: true
+        anchor_dom:
+          type: integer
+          nullable: true
+        original_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        auto_snooze_minutes:
+          type: integer
+          nullable: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        labels:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+          nullable: true
+        completion_count:
+          type: integer
+        snooze_count:
+          type: integer
+        first_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        is_recurring:
+          type: boolean
+          description: Computed field — true if rrule is set
+        is_snoozed:
+          type: boolean
+          description: Computed field — true if original_due_at is set
+
+    TaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 4
+          default: 0
+        rrule:
+          type: string
+          description: RFC 5545 recurrence rule
+        recurrence_mode:
+          type: string
+          enum: [from_due, from_completion]
+          default: from_due
+        labels:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        project_id:
+          type: integer
+          description: Defaults to user's Inbox project
+        auto_snooze_minutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 4
+        rrule:
+          type: string
+          nullable: true
+        recurrence_mode:
+          type: string
+          enum: [from_due, from_completion]
+        labels:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+          nullable: true
+        project_id:
+          type: integer
+        auto_snooze_minutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          nullable: true
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        owner_id:
+          type: integer
+        shared:
+          type: boolean
+        sort_order:
+          type: integer
+        color:
+          type: string
+          enum: [red, orange, yellow, green, blue, purple, pink, gray]
+          nullable: true
+        active_count:
+          type: integer
+        overdue_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Completion:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+        completed_at:
+          type: string
+          format: date-time
+        due_at_was:
+          type: string
+          format: date-time
+          nullable: true
+        due_at_next:
+          type: string
+          format: date-time
+          nullable: true
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        url:
+          type: string
+          format: uri
+        secret:
+          type: string
+          description: HMAC-SHA256 signing secret (only returned on creation)
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - task.created
+              - task.updated
+              - task.completed
+              - task.deleted
+              - task.snoozed
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WebhookPublic:
+      type: object
+      description: Webhook without the secret field
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - task.created
+              - task.updated
+              - task.completed
+              - task.deleted
+              - task.snoozed
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WebhookCreate:
+      type: object
+      required: [url, events]
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - task.created
+              - task.updated
+              - task.completed
+              - task.deleted
+              - task.snoozed
+
+    WebhookUpdate:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - task.created
+              - task.updated
+              - task.completed
+              - task.deleted
+              - task.snoozed
+        active:
+          type: boolean
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: integer
+        webhook_id:
+          type: integer
+        event:
+          type: string
+        payload:
+          type: string
+          description: JSON string of the delivered payload
+        status_code:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        attempt:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    UndoResult:
+      type: object
+      properties:
+        undone_action:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tasks_affected:
+          type: integer
+
+    BulkResult:
+      type: object
+      properties:
+        tasks_affected:
+          type: integer
+          description: Number of tasks that were modified
+
+    StatsSummary:
+      type: object
+      properties:
+        today:
+          type: object
+          nullable: true
+          properties:
+            completions:
+              type: integer
+            tasks_created:
+              type: integer
+            snoozes:
+              type: integer
+        week:
+          type: object
+          properties:
+            completions:
+              type: integer
+            tasks_created:
+              type: integer
+            snoozes:
+              type: integer
+        month:
+          type: object
+          properties:
+            completions:
+              type: integer
+            tasks_created:
+              type: integer
+            snoozes:
+              type: integer
+        all_time:
+          type: object
+          properties:
+            completions:
+              type: integer
+            tasks_created:
+              type: integer
+            snoozes:
+              type: integer

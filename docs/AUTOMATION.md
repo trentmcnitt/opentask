@@ -27,7 +27,7 @@ The script prints the token to stdout. Store it securely — it cannot be retrie
 Send raw dictated text and let AI enrichment handle the rest:
 
 ```bash
-curl -X POST https://tasks.tk11.mcnitt.io/api/tasks \
+curl -X POST https://tasks.example.com/api/tasks \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title": "call the dentist tomorrow morning high priority"}'
@@ -67,7 +67,7 @@ Result:
 Send structured fields to bypass enrichment entirely:
 
 ```bash
-curl -X POST https://tasks.tk11.mcnitt.io/api/tasks \
+curl -X POST https://tasks.example.com/api/tasks \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -87,7 +87,7 @@ AI enrichment only triggers for title-only tasks (no due_at, priority=0, no labe
 If enrichment fails (task gets `ai-failed` label), retry it:
 
 ```bash
-curl -X POST https://tasks.tk11.mcnitt.io/api/tasks/42/reprocess \
+curl -X POST https://tasks.example.com/api/tasks/42/reprocess \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -117,6 +117,152 @@ This uses `original_title` (the raw input) — not the current title — so the 
 | POST   | `/api/undo` | Undo last action        |
 | POST   | `/api/redo` | Redo last undone action |
 
+### Data Export
+
+| Method | Endpoint                               | Description             |
+| ------ | -------------------------------------- | ----------------------- |
+| GET    | `/api/export?format=json`              | Export all data as JSON |
+| GET    | `/api/export?format=csv&type=tasks`    | Export tasks as CSV     |
+| GET    | `/api/export?format=csv&type=projects` | Export projects as CSV  |
+
+JSON export includes tasks, projects, completions, and an `exported_at` timestamp. CSV export requires the `type` parameter since each table is a separate file.
+
+### Webhooks
+
+| Method | Endpoint                       | Description                             |
+| ------ | ------------------------------ | --------------------------------------- |
+| GET    | `/api/webhooks`                | List your webhooks (secrets hidden)     |
+| POST   | `/api/webhooks`                | Create webhook (secret shown once)      |
+| PATCH  | `/api/webhooks/:id`            | Update webhook (url, events, active)    |
+| DELETE | `/api/webhooks/:id`            | Delete webhook and its delivery logs    |
+| GET    | `/api/webhooks/:id/deliveries` | View recent delivery attempts (last 50) |
+
+## Webhooks
+
+Webhooks send HTTP POST requests to your URL when task events occur. Use them to integrate with n8n, Home Assistant, Node-RED, or any service that accepts webhooks.
+
+### Creating a webhook
+
+```bash
+curl -X POST https://tasks.example.com/api/webhooks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-service.com/webhook",
+    "events": ["task.created", "task.completed"]
+  }'
+```
+
+The response includes a `secret` field — **save it immediately**. The secret is shown once at creation and cannot be retrieved later. You'll need it to verify webhook signatures.
+
+### Events
+
+| Event            | Fires when                  | Payload data                                      |
+| ---------------- | --------------------------- | ------------------------------------------------- |
+| `task.created`   | A task is created           | `{ task: { ... } }`                               |
+| `task.updated`   | A task's fields are changed | `{ task: { ... }, fields_changed: ["priority"] }` |
+| `task.completed` | A task is marked done       | `{ task: { ... } }`                               |
+| `task.deleted`   | A task is trashed           | `{ task_id: 42, title: "..." }`                   |
+| `task.snoozed`   | A task is snoozed           | `{ task: { ... }, previous_due_at: "..." }`       |
+
+Subscribe to all events or just the ones you need. You can update the event list later with PATCH.
+
+### Payload format
+
+Every webhook delivery is a POST request with this JSON body:
+
+```json
+{
+  "event": "task.completed",
+  "timestamp": "2026-02-27T15:00:00.000Z",
+  "data": {
+    "task": {
+      "id": 42,
+      "title": "Call dentist",
+      "done": true,
+      "priority": 2,
+      "due_at": "2026-02-27T14:00:00Z",
+      "labels": ["medical"],
+      "project_id": 1,
+      "is_recurring": false,
+      "is_snoozed": false
+    }
+  }
+}
+```
+
+### Headers
+
+| Header                 | Value                              |
+| ---------------------- | ---------------------------------- |
+| `Content-Type`         | `application/json`                 |
+| `X-OpenTask-Event`     | Event name (e.g. `task.completed`) |
+| `X-OpenTask-Signature` | `sha256=<hex>` HMAC-SHA256 of body |
+
+### Verifying signatures
+
+Every delivery is signed with your webhook's secret using HMAC-SHA256. Verify it to ensure the request came from OpenTask:
+
+```javascript
+// Node.js example
+const crypto = require('crypto')
+
+function verifySignature(body, signature, secret) {
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex')
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+}
+
+// In your webhook handler (body must be the raw request string, not parsed JSON):
+const signature = req.headers['x-opentask-signature']
+const isValid = verifySignature(rawBody, signature, YOUR_WEBHOOK_SECRET)
+```
+
+```python
+# Python example
+import hmac, hashlib
+
+def verify_signature(body: bytes, signature: str, secret: str) -> bool:
+    expected = 'sha256=' + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+```
+
+### Managing webhooks
+
+```bash
+# List your webhooks
+curl https://tasks.example.com/api/webhooks \
+  -H "Authorization: Bearer $TOKEN"
+
+# Disable a webhook (without deleting)
+curl -X PATCH https://tasks.example.com/api/webhooks/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"active": false}'
+
+# Change subscribed events
+curl -X PATCH https://tasks.example.com/api/webhooks/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"events": ["task.created", "task.completed", "task.snoozed"]}'
+
+# Check recent deliveries (useful for debugging)
+curl https://tasks.example.com/api/webhooks/1/deliveries \
+  -H "Authorization: Bearer $TOKEN"
+
+# Delete a webhook
+curl -X DELETE https://tasks.example.com/api/webhooks/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Delivery behavior
+
+- **Timeout**: 10 seconds per request
+- **Retries**: Up to 3 attempts on failure (1s and 5s delays between retries)
+- **Success**: Any 2xx status code
+- **Logging**: All deliveries (success and failure) are logged and visible via the deliveries endpoint
+- **Retention**: Delivery logs are automatically purged after 7 days
+- **Non-blocking**: Webhook delivery never blocks or slows down task operations
+
 ## Response Format
 
 **Success:**
@@ -144,6 +290,10 @@ Task responses include `original_title` — the raw input text before AI enrichm
 | 403  | Forbidden (no access to resource)    |
 | 404  | Not found                            |
 | 500  | Internal error                       |
+
+## OpenAPI Specification
+
+A machine-readable API spec is available at `GET /api/openapi` (no auth required). The spec is OpenAPI 3.1 YAML covering all public endpoints.
 
 ## iOS Shortcuts Tips
 

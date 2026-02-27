@@ -40,3 +40,12 @@ export {
 } from './project'
 
 export type { ProjectCreateInput, ProjectUpdateInput } from './project'
+
+export {
+  webhookCreateSchema,
+  webhookUpdateSchema,
+  validateWebhookCreate,
+  validateWebhookUpdate,
+} from './webhook'
+
+export type { WebhookCreateInput, WebhookUpdateInput } from './webhook'

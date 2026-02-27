@@ -13,6 +13,7 @@
  * - 4:00 AM daily: completions purge
  * - 4:30 AM Sunday: stats purge
  * - 5:00 AM daily: AI activity purge
+ * - 5:30 AM daily: webhook delivery purge
  */
 
 import { log } from '@/lib/logger'
@@ -142,9 +143,20 @@ export async function register() {
       }
     })
 
+    // Purge old webhook deliveries daily at 5:30 AM
+    const { purgeOldDeliveries } = await import('@/core/webhooks/purge')
+    cron.schedule('30 5 * * *', () => {
+      log.info('cron', 'Running webhook delivery purge')
+      try {
+        purgeOldDeliveries()
+      } catch (err) {
+        log.error('cron', 'Webhook delivery purge error:', err)
+      }
+    })
+
     log.info(
       'cron',
-      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), AI activity (5:00 AM daily)',
+      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), AI activity (5:00 AM daily), webhook deliveries (5:30 AM daily)',
     )
 
     // --- AI subsystem ---

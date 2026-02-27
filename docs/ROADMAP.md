@@ -1,13 +1,33 @@
 # OpenTask Roadmap
 
-Ideas and features under consideration. Nothing here is committed — items move to GitHub issues when they're ready for implementation.
+Curated feature list for OpenTask. Items move to implementation when they're ready.
+
+## Implemented
+
+- **Data Export** — JSON and CSV export of tasks, projects, and completions via `GET /api/export`
+- **Webhooks** — HTTP callbacks on task events with HMAC-SHA256 signing, delivery logging, and retry
+- **Reverse Proxy Header Auth** — Authenticate via trusted proxy headers (Authelia, Authentik, Caddy forward_auth)
+- **OpenAPI Spec** — Machine-readable API documentation at `GET /api/openapi`
+
+## Planned
+
+- **Webhook Management UI** — Settings page to create, view, toggle, and debug webhooks without curl
+- **OIDC / SSO** — OpenID Connect support for single sign-on (Authelia, Authentik, Keycloak)
+- **Data Import** — Import from Todoist, OpenTask JSON export, and generic CSV
+- **Subtasks / Checklists** — Nested tasks or checklist items within a task
 
 ## Under Consideration
 
-### Project Icons
+- **CalDAV Sync** — Two-way sync with CalDAV clients (Apple Reminders, Thunderbird, DAVx5)
+- **Kanban View** — Board view with columns mapped to projects or priority levels
+- **Project Icons** — Emoji or icon per project, displayed in project list and task grouping headers
+- **Per-Project Notification Grouping** — Group notifications by project for separate notification stacks
 
-Add an emoji or icon to each project, displayed in the project list and task grouping headers. Could be a simple emoji column on the projects table with a picker in project settings.
+## Not Planned
 
-### Per-Project Notification Grouping
+These features are out of scope for OpenTask. OpenTask is a personal task manager, not a project management tool.
 
-Group notifications by project so each project gets its own notification stack on iOS. Web Push on iOS doesn't support `tag`-based replacement (open WebKit bug), but a future native iOS app could use `thread-id` for proper grouping. Needs investigation into the best approach given current platform constraints.
+- **Gantt Charts** — Timeline visualization is project management territory
+- **Time Tracking** — Use a dedicated time tracker; task completion stats cover the basics
+- **Sprints / Iterations** — Agile workflow tooling doesn't fit a personal task manager
+- **Multi-User Assignment** — Tasks belong to one person; shared projects provide collaboration without assignment complexity

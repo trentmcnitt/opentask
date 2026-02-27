@@ -11,6 +11,8 @@ import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
@@ -24,6 +26,8 @@ export interface UpdateTaskOptions {
   input: TaskUpdateInput
   /** Pre-fetched task to avoid redundant DB lookups (caller must have already validated access) */
   prefetchedTask?: Task
+  /** Skip webhook dispatch — set by callers (e.g. snoozeTask) that dispatch their own event */
+  skipWebhookDispatch?: boolean
 }
 
 export interface UpdateTaskResult {
@@ -39,7 +43,7 @@ export interface UpdateTaskResult {
  * Returns the updated task and list of changed fields.
  */
 export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
-  const { userId, userTimezone, taskId, input, prefetchedTask } = options
+  const { userId, userTimezone, taskId, input, prefetchedTask, skipWebhookDispatch } = options
 
   const task = prefetchedTask ?? getTaskById(taskId)
   if (!task) throw new NotFoundError('Task not found')
@@ -117,6 +121,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   })
 
   emitSyncEvent(userId)
+
+  // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
+  if (!skipWebhookDispatch) {
+    dispatchWebhookEvent(userId, 'task.updated', {
+      task: formatTaskResponse(result.task),
+      fields_changed: result.fieldsChanged,
+    })
+  }
+
   return result
 }
 

@@ -25,7 +25,10 @@ If you've used Todoist or Things and wished you could self-host it with push not
 - **Mobile-first PWA.** Installable on iOS and Android. Not a desktop app with a responsive afterthought.
 - **Native iOS companion app.** Real push notifications with interactive snooze actions, including Apple Watch support. No CalDAV workarounds.
 - **Full undo/redo.** Every action is logged and reversible. Soft-delete everything.
-- **REST API with Bearer token auth.** Script it, automate it, pipe it into Apple Shortcuts.
+- **REST API with Bearer token auth.** Script it, automate it, pipe it into Apple Shortcuts. [OpenAPI spec](docs/AUTOMATION.md#openapi-specification) included.
+- **Webhooks.** HTTP callbacks on task events with HMAC-SHA256 signing. Integrate with n8n, Home Assistant, Node-RED, or anything that accepts webhooks.
+- **Data export.** JSON and CSV export of all your data — tasks, projects, and completions. Your data is always portable.
+- **Reverse proxy auth.** Works with Authelia, Authentik, and other auth proxies out of the box.
 - **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. Powered by Claude — fully optional, the app works great without it.
 
 ## Quick Start (Docker)
@@ -169,6 +172,22 @@ server {
 
 > **Note:** OpenTask uses Server-Sent Events for real-time updates. Make sure your reverse proxy does not buffer responses — Caddy handles this automatically, but Nginx needs `proxy_buffering off`.
 
+### Reverse Proxy Header Auth (Optional)
+
+If you run an auth proxy like [Authelia](https://www.authelia.com/), [Authentik](https://goauthentik.io/), or Caddy's `forward_auth`, OpenTask can trust the authenticated username from a request header — no separate login required.
+
+Set the `OPENTASK_PROXY_AUTH_HEADER` environment variable to the header name your proxy uses:
+
+```yaml
+# docker-compose.yml
+environment:
+  OPENTASK_PROXY_AUTH_HEADER: Remote-User # or X-Forwarded-User, X-Auth-User, etc.
+```
+
+The header value must match an existing OpenTask username (case-insensitive). Users are not auto-created — create them first with `scripts/create-user.ts`.
+
+> **Security:** Your reverse proxy **must** strip this header from external requests before forwarding. If external clients can set this header directly, they can authenticate as any user. This is standard practice for Authelia/Authentik deployments but worth verifying.
+
 ### Push Notifications (Optional)
 
 - **Web Push:** Generate VAPID keys with `npx web-push generate-vapid-keys` and set them in your environment. Works on all platforms including iOS Safari.
@@ -188,10 +207,11 @@ AI currently requires [Claude Code](https://docs.anthropic.com/en/docs/claude-co
 
 ## API
 
-Two auth methods, checked in order:
+Three auth methods, checked in order:
 
 1. **Bearer token** — For scripts and automation. Create with: `npm run db:create-token -- <username> [name]`
-2. **Session cookie** — For the web UI (managed automatically)
+2. **Proxy header** — For reverse proxy auth (Authelia, Authentik). See [Reverse Proxy Header Auth](#reverse-proxy-header-auth-optional).
+3. **Session cookie** — For the web UI (managed automatically)
 
 Key endpoints:
 
@@ -209,8 +229,11 @@ Key endpoints:
 | `/api/undo`                      | POST     | Undo last action                 |
 | `/api/redo`                      | POST     | Redo last undone action          |
 | `/api/projects`                  | GET/POST | List/create projects             |
+| `/api/export`                    | GET      | Export data (JSON or CSV)        |
+| `/api/webhooks`                  | GET/POST | List/create webhooks             |
+| `/api/openapi`                   | GET      | OpenAPI 3.1 spec (no auth)       |
 
-See [docs/AUTOMATION.md](docs/AUTOMATION.md) for the full API reference, curl examples, and Apple Shortcuts integration.
+See [docs/AUTOMATION.md](docs/AUTOMATION.md) for the full API reference, webhook setup, curl examples, and Apple Shortcuts integration.
 
 ## Tech Stack
 

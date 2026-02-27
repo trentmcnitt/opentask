@@ -354,6 +354,17 @@ export function seedDemoData(
   ).run(userId, hashed, preview, `${username} Token`)
   console.log(`  API token created`)
 
+  // Set priority display preferences
+  const priorityDisplay = JSON.stringify({
+    trailingDot: true,
+    badgeStyle: 'icons',
+    colorTitle: false,
+    rightBorder: false,
+    colorCheckbox: false,
+  })
+  db.prepare('UPDATE users SET priority_display = ? WHERE id = ?').run(priorityDisplay, userId)
+  console.log(`  Priority display configured`)
+
   // Seed tasks
   const inserted = seedDemoTasks(db, userId, projectMap)
   console.log(`  Inserted ${inserted} tasks`)
