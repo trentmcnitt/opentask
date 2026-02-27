@@ -12,7 +12,7 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
 - `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
-- `src/app/api/` — REST API routes with dual auth (session cookies + Bearer tokens)
+- `src/app/api/` — REST API routes with triple auth (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], projects, projects/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
@@ -52,15 +52,19 @@ The app applies schema changes to remote databases automatically on restart.
 
 ### Authentication
 
-Dual authentication checked in order:
+Three auth methods checked in order:
 
 | Credential      | Valid? | Result                                     |
 | --------------- | ------ | ------------------------------------------ |
 | Bearer token    | Yes    | Authenticate via token                     |
 | Bearer token    | No     | Return 401 (never fall through to session) |
-| No Bearer token | —      | Fall through to session cookie             |
+| No Bearer token | —      | Check proxy header (if configured)         |
+| Proxy header    | Yes    | Authenticate via proxy (Authelia, etc.)    |
+| Proxy header    | No     | Fall through to session cookie             |
 | Session cookie  | Yes    | Authenticate via session                   |
 | Session cookie  | No     | Return 401                                 |
+
+Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the header name (e.g., `Remote-User`). See `src/core/auth/proxy.ts`.
 
 **Functions** from `@/core/auth`:
 
@@ -536,17 +540,22 @@ npm run type-check && npm run lint && npm test && npm run test:integration && np
 
 Production hosts a demo account for clients and a sandbox account for screenshots alongside Trent's real tasks. User isolation is via `user_id` filtering — no shared projects.
 
-|               | Demo                                                        | Sandbox      |
-| ------------- | ----------------------------------------------------------- | ------------ |
-| Username      | `demo`                                                      | `trent_m`    |
-| Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) | Set manually |
-| Notifications | Disabled                                                    | Disabled     |
-| Daily reset   | Yes (cron at 3 AM CT)                                       | No           |
+|               | Demo                                                        | Sandbox                                             |
+| ------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| Username      | `demo`                                                      | `trent_m`                                           |
+| Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) | In `.secrets`                                       |
+| Notifications | Disabled                                                    | Disabled on reset (enable manually for screenshots) |
+| Daily reset   | Yes (cron at 3 AM CT)                                       | No                                                  |
+| Task style    | Portfolio/niche (MCP, Claude Code, RAG)                     | Realistic personal+work mix (~19 tasks)             |
+| Projects      | Inbox, Client Work, Try It                                  | Inbox, Home, Work, Health                           |
 
 **Scripts:**
 
 - `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
 - `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
+- `npm run db:seed-sandbox` — Seed sandbox tasks (fails if data already exists)
+- `npm run db:reset-sandbox` — Wipe and re-seed sandbox with ~19 realistic tasks
+- `npm run db:reset-sandbox:empty` — Wipe sandbox to blank slate (no tasks or projects)
 
 **Server cron** (on tk11, 3 AM CT = 8:00 UTC):
 

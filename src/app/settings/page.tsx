@@ -421,7 +421,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
+      <main className="mx-auto w-full max-w-2xl space-y-6 px-4 pt-6 pb-10">
         {/* Account info */}
         <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">

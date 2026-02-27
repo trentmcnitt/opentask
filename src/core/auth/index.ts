@@ -7,12 +7,14 @@
 import { NextRequest } from 'next/server'
 import { auth } from '@/app/api/auth/[...nextauth]/auth'
 import { extractBearerToken, validateBearerToken } from './bearer'
+import { getProxyAuthUser } from './proxy'
 import { toAuthUser } from './helpers'
 import type { AuthUser } from '@/types'
 
 export { validateBearerToken, extractBearerToken } from './bearer'
 export { validateCredentials, getUserById } from './session'
 export { toAuthUser } from './helpers'
+export { isProxyAuthEnabled } from './proxy'
 
 /**
  * Get the authenticated user from a request
@@ -36,6 +38,12 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
     // Invalid Bearer token - don't fall through to session
     // This prevents confusion when a token is provided but invalid
     return null
+  }
+
+  // Check for reverse proxy header auth
+  const proxyUser = getProxyAuthUser(request)
+  if (proxyUser) {
+    return proxyUser
   }
 
   // No Bearer token, check for session

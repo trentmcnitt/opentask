@@ -10,6 +10,8 @@ import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
@@ -108,6 +110,7 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   })
 
   emitSyncEvent(userId)
+  dispatchWebhookEvent(userId, 'task.completed', { task: formatTaskResponse(result.task) })
   return result
 }
 

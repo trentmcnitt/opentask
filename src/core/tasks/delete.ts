@@ -8,6 +8,7 @@ import { nowUtc } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -78,6 +79,7 @@ export function deleteTask(options: DeleteTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  dispatchWebhookEvent(userId, 'task.deleted', { task_id: taskId, title: task.title })
   return deletedTask
 }
 

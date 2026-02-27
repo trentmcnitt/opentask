@@ -9,6 +9,8 @@ import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError } from '@/core/errors'
 import { isAIEnabled } from '@/core/ai'
@@ -151,6 +153,7 @@ export function createTask(options: CreateTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  dispatchWebhookEvent(userId, 'task.created', { task: formatTaskResponse(createdTask) })
   return createdTask
 }
 

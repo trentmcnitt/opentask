@@ -8,6 +8,8 @@
 
 import type { Task } from '@/types'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask, updateTask } from './update'
 
@@ -71,6 +73,12 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
     taskId,
     input: { due_at: until },
     prefetchedTask: task,
+    skipWebhookDispatch: true, // snoozeTask dispatches task.snoozed below
+  })
+
+  dispatchWebhookEvent(userId, 'task.snoozed', {
+    task: formatTaskResponse(updatedTask),
+    previous_due_at: previousDueAt,
   })
 
   return {

@@ -255,3 +255,28 @@ CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   error        TEXT
 );
 
+-- Webhooks (HTTP callbacks on task events)
+CREATE TABLE IF NOT EXISTS webhooks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  url         TEXT NOT NULL,
+  secret      TEXT NOT NULL,
+  events      TEXT NOT NULL,
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_webhooks_user_id ON webhooks(user_id);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  webhook_id  INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+  event       TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  status_code INTEGER,
+  error       TEXT,
+  attempt     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
+
