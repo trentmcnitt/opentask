@@ -77,7 +77,9 @@ export default function LoginPage() {
             </label>
             <Input
               id="username"
+              name="username"
               type="text"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter your username"
@@ -94,7 +96,9 @@ export default function LoginPage() {
             </label>
             <Input
               id="password"
+              name="password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"

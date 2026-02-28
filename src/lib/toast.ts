@@ -9,13 +9,15 @@ interface ToastOptions {
     label: string
     onClick: () => void
   }
+  id?: string | number
 }
 
-export function showToast({ message, type, action }: ToastOptions) {
+export function showToast({ message, type, action, id }: ToastOptions) {
   const toastFn =
     type === 'success' ? sonnerToast.success : type === 'error' ? sonnerToast.error : sonnerToast
   if (action) {
     toastFn(message, {
+      id,
       duration: 5000,
       action: {
         label: action.label,
@@ -23,7 +25,7 @@ export function showToast({ message, type, action }: ToastOptions) {
       },
     })
   } else {
-    toastFn(message)
+    toastFn(message, { id })
   }
 }
 
@@ -34,8 +36,10 @@ export function showSuccessToast(message: string) {
 export function showSuccessToastWithAction(
   message: string,
   action: { label: string; onClick: () => void },
+  options?: { id?: string | number },
 ) {
   sonnerToast.success(message, {
+    id: options?.id,
     duration: 5000,
     action: { label: action.label, onClick: action.onClick },
   })

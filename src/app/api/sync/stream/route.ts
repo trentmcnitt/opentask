@@ -17,8 +17,11 @@ import {
   offSyncEvent,
   onEnrichmentCompleteEvent,
   offEnrichmentCompleteEvent,
+  onTaskCreatedEvent,
+  offTaskCreatedEvent,
   type SyncListener,
   type EnrichmentListener,
+  type TaskCreatedListener,
 } from '@/lib/sync-events'
 import { withLogging } from '@/lib/with-logging'
 
@@ -69,8 +72,23 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         }
       }
 
+      const taskCreatedListener: TaskCreatedListener = (changedUserId, payload) => {
+        if (changedUserId !== userId) return
+        try {
+          const data = JSON.stringify({
+            type: 'task_created',
+            taskId: payload.taskId,
+            title: payload.title,
+          })
+          controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+        } catch {
+          // Stream closed, cleanup will happen via abort signal
+        }
+      }
+
       onSyncEvent(listener)
       onEnrichmentCompleteEvent(enrichmentListener)
+      onTaskCreatedEvent(taskCreatedListener)
 
       // Heartbeat to keep connection alive through proxies
       const heartbeat = setInterval(() => {
@@ -85,6 +103,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       request.signal.addEventListener('abort', () => {
         offSyncEvent(listener)
         offEnrichmentCompleteEvent(enrichmentListener)
+        offTaskCreatedEvent(taskCreatedListener)
         clearInterval(heartbeat)
         try {
           controller.close()

@@ -176,6 +176,38 @@ describe('SSE sync stream', () => {
     }
   })
 
+  test('sends task_created event when a task is created', async () => {
+    const sse = connectSSE(TOKEN_A)
+    try {
+      await sse.waitForEvents(1)
+      expect(JSON.parse(sse.events[0]).type).toBe('connected')
+
+      // Create a task
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'SSE test task' },
+      })
+      expect(createRes.status).toBe(201)
+      const { data: created } = await createRes.json()
+
+      // Should receive both sync and task_created events
+      await sse.waitForEvents(3)
+      const eventTypes = sse.events.slice(1).map((e) => JSON.parse(e).type)
+      expect(eventTypes).toContain('sync')
+      expect(eventTypes).toContain('task_created')
+
+      // Verify task_created payload
+      const taskCreatedEvent = sse.events
+        .slice(1)
+        .map((e) => JSON.parse(e))
+        .find((e) => e.type === 'task_created')
+      expect(taskCreatedEvent.taskId).toBe(created.id)
+      expect(taskCreatedEvent.title).toBe('SSE test task')
+    } finally {
+      sse.close()
+    }
+  })
+
   test('sends sync event for bulk operations', async () => {
     const sse = connectSSE(TOKEN_A)
     try {
