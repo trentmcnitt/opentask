@@ -18,6 +18,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setError('')
     setLoading(true)
 
@@ -30,13 +31,13 @@ export default function LoginPage() {
 
       if (result?.error) {
         setError('Invalid username or password')
+        setLoading(false)
       } else {
         router.push('/')
         router.refresh()
       }
     } catch {
       setError('An error occurred')
-    } finally {
       setLoading(false)
     }
   }

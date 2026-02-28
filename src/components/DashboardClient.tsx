@@ -29,9 +29,6 @@ const KeyboardShortcutsDialog = dynamic(() =>
     default: mod.KeyboardShortcutsDialog,
   })),
 )
-const BatchUndoDialog = dynamic(() =>
-  import('@/components/BatchUndoDialog').then((mod) => ({ default: mod.BatchUndoDialog })),
-)
 const ProjectPickerSheet = dynamic(() =>
   import('@/components/ProjectPickerSheet').then((mod) => ({ default: mod.ProjectPickerSheet })),
 )
@@ -160,6 +157,7 @@ function useBulkActions(
   selection: ReturnType<typeof useSelection>,
   fetchTasks: () => Promise<void>,
   handleUndo: () => Promise<void>,
+  bumpUndoCount: () => void,
   setShowProjectPicker: (show: boolean) => void,
   setSearchQuery: (q: string | null) => void,
   setSearchResults: (tasks: Task[]) => void,
@@ -177,6 +175,7 @@ function useBulkActions(
       const tasksSkipped = responseData.data?.tasks_skipped ?? 0
       const tasksAffected = responseData.data?.tasks_affected ?? count
       selection.clear()
+      bumpUndoCount()
       fetchTasks()
       const skippedMsg = tasksSkipped > 0 ? ` (skipped ${tasksSkipped} high/urgent)` : ''
       showToast({
@@ -205,6 +204,7 @@ function useBulkActions(
       const urgentSkipped = responseData.data?.skipped_urgent ?? 0
       const noDueDateSkipped = responseData.data?.skipped_no_due_date ?? 0
       selection.clear()
+      bumpUndoCount()
       fetchTasks()
       const skipParts: string[] = []
       if (urgentSkipped > 0) skipParts.push(`${urgentSkipped} urgent`)
@@ -230,6 +230,7 @@ function useBulkActions(
       })
       if (!res.ok) throw new Error('Delete failed')
       selection.clear()
+      bumpUndoCount()
       fetchTasks()
       showToast({
         message: `${count} ${taskWord(count)} deleted`,
@@ -255,6 +256,7 @@ function useBulkActions(
       })
       if (!res.ok) throw new Error('Move failed')
       selection.clear()
+      bumpUndoCount()
       fetchTasks()
       showToast({
         message: `${count} ${taskWord(count)} moved`,
@@ -473,8 +475,6 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   const [quickActionOpen, setQuickActionOpen] = useState(false)
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
   const [createPanelOpen, setCreatePanelOpen] = useState(false)
-  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
-  const [batchDialogMode, setBatchDialogMode] = useState<'undo' | 'redo'>('undo')
   const bulkSheetOpenRef = useRef<(() => void) | null>(null)
   const searchFocusRef = useRef<(() => void) | null>(null)
 
@@ -876,6 +876,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     displayTasks,
     fetchTasks: refreshAll,
     handleUndo: actions.handleUndo,
+    onUndoCountBump: actions.bumpUndoCount,
     timezone,
     defaultSnoozeOption,
     morningTime,
@@ -885,6 +886,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     selection,
     refreshAll,
     actions.handleUndo,
+    actions.bumpUndoCount,
     setShowProjectPicker,
     setSearchQuery,
     setSearchResults,
@@ -1078,25 +1080,6 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onShortcutsDialogChange={setShowShortcutsDialog}
       onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
       bulkSheetOpenRef={bulkSheetOpenRef}
-      batchDialogOpen={batchDialogOpen}
-      batchDialogMode={batchDialogMode}
-      onBatchDialogChange={setBatchDialogOpen}
-      onOpenBatchUndo={() => {
-        setBatchDialogMode('undo')
-        setBatchDialogOpen(true)
-      }}
-      onOpenBatchRedo={() => {
-        setBatchDialogMode('redo')
-        setBatchDialogOpen(true)
-      }}
-      onBatchConfirm={() => {
-        setBatchDialogOpen(false)
-        if (batchDialogMode === 'undo') {
-          actions.handleBatchUndo()
-        } else {
-          actions.handleBatchRedo()
-        }
-      }}
       aiAvailable={aiAvailable}
       aiMode={aiMode}
       onAiModeChange={handleModeChange}
@@ -1217,12 +1200,6 @@ function DashboardView({
   onShortcutsDialogChange,
   onShortcutsDialogCloseAutoFocus,
   bulkSheetOpenRef,
-  batchDialogOpen,
-  batchDialogMode,
-  onBatchDialogChange,
-  onOpenBatchUndo,
-  onOpenBatchRedo,
-  onBatchConfirm,
   aiAvailable,
   aiMode,
   onAiModeChange,
@@ -1330,12 +1307,6 @@ function DashboardView({
   onShortcutsDialogChange: (open: boolean) => void
   onShortcutsDialogCloseAutoFocus: (e: Event) => void
   bulkSheetOpenRef: React.MutableRefObject<(() => void) | null>
-  batchDialogOpen: boolean
-  batchDialogMode: 'undo' | 'redo'
-  onBatchDialogChange: (open: boolean) => void
-  onOpenBatchUndo: () => void
-  onOpenBatchRedo: () => void
-  onBatchConfirm: () => void
   aiAvailable: boolean
   aiMode: AiMode
   onAiModeChange: (mode: AiMode) => void
@@ -1401,8 +1372,6 @@ function DashboardView({
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}
         redoCount={actions.redoCount}
-        onBatchUndo={onOpenBatchUndo}
-        onBatchRedo={onOpenBatchRedo}
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}
@@ -1685,14 +1654,6 @@ function DashboardView({
         open={showShortcutsDialog}
         onOpenChange={onShortcutsDialogChange}
         onCloseAutoFocus={onShortcutsDialogCloseAutoFocus}
-      />
-
-      <BatchUndoDialog
-        open={batchDialogOpen}
-        onOpenChange={onBatchDialogChange}
-        mode={batchDialogMode}
-        count={batchDialogMode === 'undo' ? actions.undoCount : actions.redoCount}
-        onConfirm={onBatchConfirm}
       />
     </div>
   )

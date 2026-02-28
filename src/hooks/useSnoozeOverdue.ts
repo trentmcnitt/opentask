@@ -17,6 +17,7 @@ interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
   fetchTasks: () => void
   handleUndo: () => void
+  onUndoCountBump?: () => void
   timezone: string
   defaultSnoozeOption: string
   morningTime: string
@@ -30,8 +31,15 @@ interface UseSnoozeOverdueOptions {
  * allows SnoozeAllFab long-press menu to override the default duration.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
-  const { displayTasks, fetchTasks, handleUndo, timezone, defaultSnoozeOption, morningTime } =
-    options
+  const {
+    displayTasks,
+    fetchTasks,
+    handleUndo,
+    onUndoCountBump,
+    timezone,
+    defaultSnoozeOption,
+    morningTime,
+  } = options
 
   return useCallback(
     async (until?: string) => {
@@ -58,6 +66,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         const responseData = await res.json()
         const tasksAffected = responseData.data?.tasks_affected ?? 0
         const skippedUrgent = responseData.data?.skipped_urgent ?? 0
+        if (tasksAffected > 0) onUndoCountBump?.()
         fetchTasks()
 
         const skipSuffix = skippedUrgent > 0 ? ` (${skippedUrgent} urgent skipped)` : ''
@@ -78,6 +87,14 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         showToast({ message: 'Snooze failed', type: 'error' })
       }
     },
-    [displayTasks, fetchTasks, handleUndo, timezone, defaultSnoozeOption, morningTime],
+    [
+      displayTasks,
+      fetchTasks,
+      handleUndo,
+      onUndoCountBump,
+      timezone,
+      defaultSnoozeOption,
+      morningTime,
+    ],
   )
 }

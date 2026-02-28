@@ -57,8 +57,6 @@ interface HeaderProps {
   onRedo: () => void
   undoCount?: number
   redoCount?: number
-  onBatchUndo?: () => void
-  onBatchRedo?: () => void
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   onSnoozeOverdue?: (until?: string) => void
@@ -79,8 +77,6 @@ export function Header({
   onRedo,
   undoCount = 0,
   redoCount = 0,
-  onBatchUndo,
-  onBatchRedo,
   onSearch,
   onSearchClear,
   onSnoozeOverdue,
@@ -129,11 +125,6 @@ export function Header({
   const snoozePress = useSimpleLongPress({
     onLongPress: () => setSnoozeMenuOpen(true),
     onShortPress: () => onSnoozeOverdue?.(),
-  })
-
-  const undoPress = useSimpleLongPress({
-    onLongPress: () => onBatchUndo?.(),
-    onShortPress: () => onUndo(),
   })
 
   return (
@@ -290,21 +281,13 @@ export function Header({
               </SnoozeMenu>
             )}
 
-            {/* Undo button in toolbar — all viewports.
-                Single tap: undo one action.
-                Long-press (400ms): triggers batch undo. */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={undoPress.onClick}
-                  onPointerDown={undoPress.onPointerDown}
-                  onPointerUp={undoPress.onPointerUp}
-                  onPointerLeave={undoPress.onPointerLeave}
-                  aria-label={
-                    undoCount > 0 ? `Undo (${undoCount} available, hold for all)` : 'Undo'
-                  }
+                  onClick={() => onUndo()}
+                  aria-label={undoCount > 0 ? `Undo (${undoCount} available)` : 'Undo'}
                   className="relative"
                 >
                   <Undo2 className="size-5" />
@@ -315,7 +298,7 @@ export function Header({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Undo (hold for all)</TooltipContent>
+              <TooltipContent>Undo</TooltipContent>
             </Tooltip>
 
             {/* Hamburger menu */}

@@ -19,6 +19,17 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return unauthorized()
     }
 
+    // Optional session watermark for session-scoped counts
+    let sessionStartId: number | undefined
+    try {
+      const body = await request.json()
+      if (typeof body.session_start_id === 'number') {
+        sessionStartId = body.session_start_id
+      }
+    } catch {
+      // No body or invalid JSON — that's fine, counts will be all-time
+    }
+
     if (!canUndo(user.id)) {
       return badRequest('Nothing to undo')
     }
@@ -35,8 +46,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       undone_action: result.undone_action,
       description: result.description,
       tasks_affected: result.tasks_affected,
-      undoable_count: countUndoable(user.id),
-      redoable_count: countRedoable(user.id),
+      undoable_count: countUndoable(user.id, sessionStartId),
+      redoable_count: countRedoable(user.id, sessionStartId),
     })
   } catch (err) {
     if (err instanceof AuthError) {

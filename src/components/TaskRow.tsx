@@ -204,11 +204,18 @@ export function TaskRow({
         snoozeFiredRef.current = false
         return
       }
+      // Non-overdue tasks: open snooze menu instead of instant snooze
+      // (instant snooze would rewind a future due date to now + offset)
+      if (!isOverdue) {
+        snoozeFiredRef.current = true
+        setSnoozeMenuOpen(true)
+        return
+      }
       // Fallback for keyboard activation (Enter/Space) — pointer path won't set snoozeFiredRef
       const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
       onSnooze(task.id, until)
     },
-    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze],
+    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze, isOverdue],
   )
 
   const handleSnoozePointerDown = useCallback((e: React.PointerEvent) => {
@@ -227,14 +234,19 @@ export function TaskRow({
         clearTimeout(snoozeTimerRef.current)
         snoozeTimerRef.current = null
       }
-      // Quick tap: timer was running but long-press didn't fire → trigger snooze
+      // Quick tap: timer was running but long-press didn't fire
       if (!snoozeFiredRef.current) {
         snoozeFiredRef.current = true // suppress any subsequent click
+        // Non-overdue tasks: open snooze menu instead of instant snooze
+        if (!isOverdue) {
+          setSnoozeMenuOpen(true)
+          return
+        }
         const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
         onSnooze(task.id, until)
       }
     },
-    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze],
+    [task.id, defaultSnoozeOption, timezone, morningTime, onSnooze, isOverdue],
   )
 
   const handleSnoozePointerLeave = useCallback(() => {

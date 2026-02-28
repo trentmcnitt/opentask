@@ -29,12 +29,8 @@ import { saveTaskChanges } from '@/lib/save-task-changes'
  * arrays. This avoids eslint-disable for react-hooks/exhaustive-deps and keeps
  * callbacks stable.
  *
- * Session watermark: On mount, fetches the current top undo_log ID and stores
- * it in sessionStorage. Undo is blocked from going past this boundary. Counts
- * are tracked and exposed for Header badges.
+ * Undo/redo counts are tracked and exposed for Header badges.
  */
-
-const SESSION_WATERMARK_KEY = 'opentask_session_undo_id'
 
 interface UseTaskActionsListConfig {
   mode: 'list'
@@ -72,33 +68,18 @@ export function useTaskActions(config: UseTaskActionsConfig) {
   const configRef = useRef(config)
   configRef.current = config
 
-  // --- Session watermark and undo/redo counts ---
   const [undoCount, setUndoCount] = useState(0)
   const [redoCount, setRedoCount] = useState(0)
-  const sessionStartIdRef = useRef<number | null>(null)
-
-  // Initialize session watermark on mount
+  // Session watermark: the latest undo_log ID at page load. Actions after this ID
+  // are "this session's" actions. Used to scope undo/redo counts to the session.
+  const sessionWatermarkRef = useRef<number | null>(null)
+  // Fetch the session watermark on mount (don't set counts — session starts at 0)
   useEffect(() => {
-    // Check sessionStorage first (survives soft navigations)
-    const stored = sessionStorage.getItem(SESSION_WATERMARK_KEY)
-    if (stored !== null) {
-      sessionStartIdRef.current = parseInt(stored, 10)
-    }
-
-    // Fetch current status from server
     fetch('/api/undo/status')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.data) return
-        const { latest_id, undoable_count, redoable_count } = data.data
-        setUndoCount(undoable_count ?? 0)
-        setRedoCount(redoable_count ?? 0)
-
-        // Only set watermark if not already stored (first load of this session)
-        if (stored === null && latest_id !== null) {
-          sessionStartIdRef.current = latest_id
-          sessionStorage.setItem(SESSION_WATERMARK_KEY, String(latest_id))
-        }
+        sessionWatermarkRef.current = data.data.latest_id ?? null
       })
       .catch(() => {})
   }, [])
@@ -119,7 +100,12 @@ export function useTaskActions(config: UseTaskActionsConfig) {
 
   const handleUndo = useCallback(async () => {
     try {
-      const res = await fetch('/api/undo', { method: 'POST' })
+      const fetchOptions: RequestInit = { method: 'POST' }
+      if (sessionWatermarkRef.current !== null) {
+        fetchOptions.headers = { 'Content-Type': 'application/json' }
+        fetchOptions.body = JSON.stringify({ session_start_id: sessionWatermarkRef.current })
+      }
+      const res = await fetch('/api/undo', fetchOptions)
       if (!res.ok) {
         showToast({ message: 'Nothing to undo' })
         return
@@ -141,7 +127,12 @@ export function useTaskActions(config: UseTaskActionsConfig) {
 
   const handleRedo = useCallback(async () => {
     try {
-      const res = await fetch('/api/redo', { method: 'POST' })
+      const fetchOptions: RequestInit = { method: 'POST' }
+      if (sessionWatermarkRef.current !== null) {
+        fetchOptions.headers = { 'Content-Type': 'application/json' }
+        fetchOptions.body = JSON.stringify({ session_start_id: sessionWatermarkRef.current })
+      }
+      const res = await fetch('/api/redo', fetchOptions)
       if (!res.ok) {
         showToast({ message: 'Nothing to redo' })
         return
@@ -163,64 +154,6 @@ export function useTaskActions(config: UseTaskActionsConfig) {
 
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
-
-  // --- Batch undo/redo handlers ---
-
-  const handleBatchUndo = useCallback(async () => {
-    const sessionStartId = sessionStartIdRef.current
-    try {
-      const body: Record<string, number> = {}
-      if (sessionStartId !== null) {
-        body.session_start_id = sessionStartId
-      } else {
-        // No session watermark — undo everything
-        body.count = 9999
-      }
-      const res = await fetch('/api/undo/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to undo' })
-        return
-      }
-      const data = await res.json()
-      updateCounts(data)
-      configRef.current.onRefresh()
-      showToast({
-        message: `Undid ${data.data.count} actions`,
-        type: 'success',
-        action: { label: 'Redo', onClick: () => handleRedoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Batch undo failed', type: 'error' })
-    }
-  }, [updateCounts])
-
-  const handleBatchRedo = useCallback(async () => {
-    try {
-      const res = await fetch('/api/redo/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: 9999 }),
-      })
-      if (!res.ok) {
-        showToast({ message: 'Nothing to redo' })
-        return
-      }
-      const data = await res.json()
-      updateCounts(data)
-      configRef.current.onRefresh()
-      showToast({
-        message: `Redid ${data.data.count} actions`,
-        type: 'success',
-        action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-      })
-    } catch {
-      showToast({ message: 'Batch redo failed', type: 'error' })
-    }
-  }, [updateCounts])
 
   // --- List-mode handlers (dashboard, project page) ---
 
@@ -351,19 +284,24 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     }
   }, [])
 
+  /** Increment undo count by 1 and clear redo. Call after any successful mutation. */
+  const bumpUndoCount = useCallback(() => {
+    setUndoCount((c) => c + 1)
+    setRedoCount(0)
+  }, [])
+
   if (config.mode === 'list') {
     return {
       handleUndo,
       handleRedo,
       handleUndoRef,
       handleRedoRef,
-      handleBatchUndo,
-      handleBatchRedo,
       handleDone: handleDoneList,
       handleSnooze,
       handleSaveAllChanges: handleSaveAllChangesList,
       undoCount,
       redoCount,
+      bumpUndoCount,
     }
   }
 
@@ -372,12 +310,11 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     handleRedo,
     handleUndoRef,
     handleRedoRef,
-    handleBatchUndo,
-    handleBatchRedo,
     handleDone: handleDoneSingle,
     handleSaveAllChanges: handleSaveAllChangesSingle,
     undoCount,
     redoCount,
+    bumpUndoCount,
   }
 }
 
@@ -387,23 +324,21 @@ export type ListTaskActionsReturn = {
   handleRedo: () => Promise<void>
   handleUndoRef: MutableRefObject<(() => Promise<void>) | null>
   handleRedoRef: MutableRefObject<(() => Promise<void>) | null>
-  handleBatchUndo: () => Promise<void>
-  handleBatchRedo: () => Promise<void>
   handleDone: (taskId: number) => Promise<void>
   handleSnooze: (taskId: number, until: string) => Promise<void>
   handleSaveAllChanges: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   undoCount: number
   redoCount: number
+  bumpUndoCount: () => void
 }
 export type SingleTaskActionsReturn = {
   handleUndo: () => Promise<void>
   handleRedo: () => Promise<void>
   handleUndoRef: MutableRefObject<(() => Promise<void>) | null>
   handleRedoRef: MutableRefObject<(() => Promise<void>) | null>
-  handleBatchUndo: () => Promise<void>
-  handleBatchRedo: () => Promise<void>
   handleDone: () => Promise<void>
   handleSaveAllChanges: (changes: QuickActionPanelChanges) => Promise<void>
   undoCount: number
   redoCount: number
+  bumpUndoCount: () => void
 }

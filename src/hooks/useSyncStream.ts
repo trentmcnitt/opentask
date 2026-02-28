@@ -35,6 +35,9 @@ interface SyncStreamCallbacks {
  *
  * Optional onEnrichmentComplete callback fires immediately (no debounce) when
  * AI enrichment finishes for a task created via the on-demand path.
+ *
+ * Optional onTaskCreated callback fires immediately when a task is created
+ * from any client, enabling cross-device "Task added" toasts.
  */
 export function useSyncStream(callbacks: SyncStreamCallbacks) {
   const callbacksRef = useRef(callbacks)

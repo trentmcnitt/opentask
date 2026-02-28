@@ -55,10 +55,17 @@ export function getUndoHistory(userId: number, limit: number = 50): UndoLogEntry
 
 /**
  * Count undoable actions (non-undone entries) for a user.
+ * When `afterId` is provided, only counts entries with id > afterId (session-scoped).
  * Also used as the boolean check: count > 0 means canUndo.
  */
-export function countUndoable(userId: number): number {
+export function countUndoable(userId: number, afterId?: number): number {
   const db = getDb()
+  if (afterId !== undefined) {
+    const row = db
+      .prepare('SELECT COUNT(*) as count FROM undo_log WHERE user_id = ? AND undone = 0 AND id > ?')
+      .get(userId, afterId) as { count: number }
+    return row.count
+  }
   const row = db
     .prepare('SELECT COUNT(*) as count FROM undo_log WHERE user_id = ? AND undone = 0')
     .get(userId) as { count: number }
@@ -67,9 +74,16 @@ export function countUndoable(userId: number): number {
 
 /**
  * Count redoable actions (undone entries) for a user.
+ * When `afterId` is provided, only counts entries with id > afterId (session-scoped).
  */
-export function countRedoable(userId: number): number {
+export function countRedoable(userId: number, afterId?: number): number {
   const db = getDb()
+  if (afterId !== undefined) {
+    const row = db
+      .prepare('SELECT COUNT(*) as count FROM undo_log WHERE user_id = ? AND undone = 1 AND id > ?')
+      .get(userId, afterId) as { count: number }
+    return row.count
+  }
   const row = db
     .prepare('SELECT COUNT(*) as count FROM undo_log WHERE user_id = ? AND undone = 1')
     .get(userId) as { count: number }

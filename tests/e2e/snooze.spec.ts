@@ -1,16 +1,33 @@
 import { test, expect } from './fixtures'
 
 test.describe('Snooze', () => {
-  test('quick tap triggers immediate snooze', async ({ authenticatedPage: page }) => {
-    await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
+  test('quick tap on overdue task triggers immediate snooze', async ({
+    authenticatedPage: page,
+  }) => {
+    // "Reply to email" is overdue — quick-tap should instant-snooze
+    await expect(page.getByText('Reply to email')).toBeVisible({ timeout: 5000 })
 
     // Click snooze button (force: true because it's opacity-0 until hover)
+    const snoozeBtn = page.getByRole('button', { name: /snooze "Reply to email"/i })
+    await snoozeBtn.click({ force: true })
+
+    // Quick tap on overdue task triggers immediate snooze with a toast
+    await expect(page.getByText(/Snoozed to .+ — "Reply to email"/)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('Undo')).toBeVisible({ timeout: 3000 })
+  })
+
+  test('quick tap on future task opens snooze menu instead of instant snooze', async ({
+    authenticatedPage: page,
+  }) => {
+    // "Buy groceries" is future-dated — quick-tap should open menu, not instant-snooze
+    await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
+
     const snoozeBtn = page.getByRole('button', { name: /snooze "Buy groceries"/i })
     await snoozeBtn.click({ force: true })
 
-    // Quick tap triggers immediate snooze with a toast
-    await expect(page.getByText('Task snoozed')).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('Undo')).toBeVisible({ timeout: 3000 })
+    // Snooze menu should open instead of instant snooze
+    const menu = page.getByRole('menu', { name: 'Snooze options' })
+    await expect(menu).toBeVisible({ timeout: 3000 })
   })
 
   test('long-press opens snooze menu', async ({ authenticatedPage: page }) => {

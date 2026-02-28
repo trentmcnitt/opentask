@@ -7,10 +7,11 @@ import { cn } from '@/lib/utils'
 interface SwipeableRowProps {
   children: React.ReactNode
   onSwipeRight?: () => void // done
-  onSwipeLeft?: () => void // snooze +1h
+  onSwipeLeft?: () => void // snooze (overdue) or edit (future/no due date)
   onDragStart?: () => void // called on first meaningful drag movement
   threshold?: number // fraction of width, default 0.4
   disabled?: boolean // disable swiping (e.g. during selection mode)
+  leftAction?: 'snooze' | 'edit' // controls swipe-left label and color (default: 'snooze')
 }
 
 export function SwipeableRow({
@@ -20,6 +21,7 @@ export function SwipeableRow({
   onDragStart,
   threshold = 0.4,
   disabled = false,
+  leftAction = 'snooze',
 }: SwipeableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
@@ -99,9 +101,10 @@ export function SwipeableRow({
     },
   )
 
-  const bgColor = offset > 0 ? 'bg-green-500' : offset < 0 ? 'bg-blue-500' : ''
-
-  const label = offset > 0 ? 'Done' : offset < 0 ? 'Snooze' : ''
+  const leftColor = leftAction === 'edit' ? 'bg-amber-500' : 'bg-blue-500'
+  const leftLabel = leftAction === 'edit' ? 'Edit' : 'Snooze'
+  const bgColor = offset > 0 ? 'bg-green-500' : offset < 0 ? leftColor : ''
+  const label = offset > 0 ? 'Done' : offset < 0 ? leftLabel : ''
 
   return (
     <div
