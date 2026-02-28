@@ -155,6 +155,25 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiInsightsScoreChips, setAiInsightsScoreChipsState] = useState(true)
   const [aiQuickTake, setAiQuickTakeState] = useState(false)
 
+  // Register the iOS APNs device token with the server using session cookie auth.
+  // Called after preferences load and on late token arrival (CustomEvent).
+  function registerDeviceToken() {
+    const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
+      | { token: string; bundleId: string; environment: string }
+      | undefined
+    if (!info?.token) return
+
+    fetch('/api/push/apns/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_token: info.token,
+        bundle_id: info.bundleId,
+        environment: info.environment,
+      }),
+    }).catch(() => {})
+  }
+
   useEffect(() => {
     if (status !== 'authenticated') return
     fetch('/api/user/preferences')
@@ -247,8 +266,26 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_quick_take !== undefined) {
           setAiQuickTakeState(data.data.ai_quick_take)
         }
+
+        // Register iOS device token using session cookie auth.
+        // This ensures push notifications follow the web-logged-in user,
+        // not the bearer token user from initial iOS setup.
+        registerDeviceToken()
       })
       .catch(() => {})
+  }, [status])
+
+  // Handle late APNs token arrival — iOS dispatches this CustomEvent when
+  // the device token arrives after the WebView has already loaded.
+  useEffect(() => {
+    if (status !== 'authenticated') return
+
+    function onDeviceToken() {
+      registerDeviceToken()
+    }
+
+    window.addEventListener('opentask-device-token', onDeviceToken)
+    return () => window.removeEventListener('opentask-device-token', onDeviceToken)
   }, [status])
 
   return (

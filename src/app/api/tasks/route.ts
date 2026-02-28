@@ -16,6 +16,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { syncBadgeCount } from '@/core/notifications/dismiss'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
@@ -100,6 +101,12 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       userTimezone: user.timezone,
       input,
     })
+
+    // If the task was created already overdue, sync the iOS badge immediately
+    // (otherwise the badge won't update until the next cron cycle)
+    if (task.due_at && new Date(task.due_at) < new Date()) {
+      syncBadgeCount(user.id)
+    }
 
     // Fire-and-forget: trigger immediate enrichment if task has the ai-to-process label
     if (isAIEnabled() && task.labels.includes('ai-to-process')) {
