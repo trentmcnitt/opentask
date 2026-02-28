@@ -26,18 +26,8 @@ final class AppConfig {
         self.serverURL = serverURL
         self.isConfigured = true
 
-        // If we already have an APNs token from before setup, register it now
-        if let token = deviceToken {
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-            Task {
-                do {
-                    try await APIClient.shared.registerDevice(token: token, bundleId: bundleId)
-                    print("[OpenTask] Device registered with server (deferred)")
-                } catch {
-                    print("[OpenTask] Deferred device registration failed: \(error)")
-                }
-            }
-        }
+        // Device token registration is handled by the web app via session cookie auth
+        // (in PreferencesProvider) — no bearer token registration needed here.
 
         // Sync credentials to Watch app
         if let appDelegate = UIApplication.shared.delegate as? AppDelegate {

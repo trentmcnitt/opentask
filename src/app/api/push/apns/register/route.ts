@@ -14,6 +14,7 @@ import { success, unauthorized, badRequest, handleError } from '@/lib/api-respon
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { syncBadgeCount } from '@/core/notifications/dismiss'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -40,6 +41,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
          environment = excluded.environment`,
     ).run(user.id, device_token, bundle_id, env)
 
+    // Sync badge count immediately so the app icon reflects this user's overdue count
+    // (critical after user switching — otherwise the old user's badge persists)
+    syncBadgeCount(user.id)
+
     return success({ registered: true })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)
@@ -50,7 +55,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
 export const DELETE = withLogging(async function DELETE(request: NextRequest) {
   try {
-    const user = await requireAuth(request)
+    await requireAuth(request)
     const body = await request.json()
 
     const { device_token } = body
@@ -58,11 +63,11 @@ export const DELETE = withLogging(async function DELETE(request: NextRequest) {
       return badRequest('Missing required field: device_token')
     }
 
+    // Delete by device_token only — after session-based registration, the bearer
+    // token user (from iOS disconnect) may differ from the registered user.
+    // Possessing the device token implies device ownership.
     const db = getDb()
-    db.prepare('DELETE FROM apns_devices WHERE user_id = ? AND device_token = ?').run(
-      user.id,
-      device_token,
-    )
+    db.prepare('DELETE FROM apns_devices WHERE device_token = ?').run(device_token)
 
     return success({ unregistered: true })
   } catch (err) {

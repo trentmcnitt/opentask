@@ -205,17 +205,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         AppConfig.shared.deviceToken = token
 
-        // Register with server (fire-and-forget)
-        guard APIClient.shared.isConfigured else { return }
-        let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
-
-        Task {
-            do {
-                try await APIClient.shared.registerDevice(token: token, bundleId: bundleId)
-                print("[OpenTask] Device registered with server")
-            } catch {
-                print("[OpenTask] Device registration failed: \(error)")
-            }
+        // Inject token into live WebView so the web app can register it via session cookie.
+        // This handles the case where APNs token arrives after WebView has already loaded.
+        // The CustomEvent wakes up the PreferencesProvider listener if it already mounted.
+        DispatchQueue.main.async {
+            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
+            #if DEBUG
+            let env = "development"
+            #else
+            let env = "production"
+            #endif
+            let js = """
+                window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };
+                window.dispatchEvent(new CustomEvent('opentask-device-token'));
+                """
+            WebViewManager.shared.webView?.evaluateJavaScript(js)
         }
     }
 

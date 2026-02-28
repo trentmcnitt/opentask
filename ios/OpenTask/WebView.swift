@@ -55,6 +55,23 @@ struct WebView: UIViewRepresentable {
         )
         config.userContentController.addUserScript(dtScript)
 
+        // Inject APNs device token info so the web app can register it via session cookie.
+        // This ensures push notifications follow the web-logged-in user, not the bearer token user.
+        if let deviceToken = AppConfig.shared.deviceToken {
+            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
+            #if DEBUG
+            let env = "development"
+            #else
+            let env = "production"
+            #endif
+            let tokenScript = WKUserScript(
+                source: "window.__OPENTASK_DEVICE_INFO = { token: '\(deviceToken)', bundleId: '\(bundleId)', environment: '\(env)' };",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+            config.userContentController.addUserScript(tokenScript)
+        }
+
         // Register JS bridge for native actions (disconnect, etc.)
         config.userContentController.add(context.coordinator, name: "opentask")
 
@@ -159,6 +176,26 @@ struct WebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             refreshControl?.endRefreshing()
+            injectDeviceInfo(into: webView)
+
+            // Force WKWebView to flush cookies to disk so session survives force-quit.
+            // WKWebView doesn't guarantee immediate persistence — getAllCookies triggers a sync.
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { _ in }
+        }
+
+        /// Inject device token info into the page after every navigation.
+        /// The WKUserScript set at WebView creation may have missed the token
+        /// (APNs responds async), so this ensures it's available after logout → login.
+        private func injectDeviceInfo(into webView: WKWebView) {
+            guard let token = AppConfig.shared.deviceToken else { return }
+            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
+            #if DEBUG
+            let env = "development"
+            #else
+            let env = "production"
+            #endif
+            let js = "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };"
+            webView.evaluateJavaScript(js)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
