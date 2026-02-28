@@ -8,7 +8,7 @@ import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
-import { emitSyncEvent } from '@/lib/sync-events'
+import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
@@ -153,7 +153,9 @@ export function createTask(options: CreateTaskOptions): Task {
   })
 
   emitSyncEvent(userId)
+  emitTaskCreatedEvent(userId, { taskId: createdTask.id, title: createdTask.title })
   dispatchWebhookEvent(userId, 'task.created', { task: formatTaskResponse(createdTask) })
+
   return createdTask
 }
 

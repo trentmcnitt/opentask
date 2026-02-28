@@ -50,9 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </PreferencesProvider>
           </SessionProvider>
         </ThemeProvider>
-        {process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID && (
+        {process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID && process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL && (
           <Script
-            src={`${process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL || 'https://analytics.tk11.mcnitt.io'}/script.js`}
+            src={`${process.env.NEXT_PUBLIC_UMAMI_SCRIPT_URL}/script.js`}
             data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID}
             strategy="afterInteractive"
           />

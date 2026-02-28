@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT NOT NULL UNIQUE,
   name          TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  timezone      TEXT NOT NULL DEFAULT 'America/Chicago',
+  timezone      TEXT NOT NULL,
   ntfy_topic    TEXT,            -- Vestigial (ntfy removed); kept for existing DB compat
   ntfy_server   TEXT,           -- Vestigial (ntfy removed); kept for existing DB compat
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat

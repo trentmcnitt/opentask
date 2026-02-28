@@ -18,7 +18,7 @@ import { SelectionProvider, useSelection } from '@/components/SelectionProvider'
 import { SelectionActionSheet } from '@/components/SelectionActionSheet'
 import { SnoozeAllFab } from '@/components/SnoozeAllFab'
 import { useQuickActionShortcut } from '@/hooks/useQuickActionShortcut'
-import { showToast, showAiSuccessToastWithAction } from '@/lib/toast'
+import { showToast, showSuccessToastWithAction, showAiSuccessToastWithAction } from '@/lib/toast'
 import dynamic from 'next/dynamic'
 
 const QuickActionPopover = dynamic(() =>
@@ -141,6 +141,7 @@ function useDashboardActions(
         showToast({
           message: 'Task added',
           type: 'success',
+          id: `task-created-${task.id}`,
           action: { label: 'View', onClick: () => onViewTask(task) },
         })
         return task.id as number
@@ -312,6 +313,16 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   useSyncStream({
     onSync: refreshAll,
+    onTaskCreated: (data) => {
+      // Sonner deduplicates by toast ID — if this device just created the task,
+      // the local toast already has this ID, so Sonner updates it in place
+      // rather than showing a duplicate.
+      showSuccessToastWithAction(
+        'Task added',
+        { label: 'View', onClick: () => router.push(`/tasks/${data.taskId}`) },
+        { id: `task-created-${data.taskId}` },
+      )
+    },
     onEnrichmentComplete: (data) => {
       // If the banner is showing for this task, update it with enrichment data
       if (bannerTaskIdRef.current === data.taskId) {

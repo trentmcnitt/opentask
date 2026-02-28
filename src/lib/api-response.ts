@@ -107,6 +107,9 @@ export function handleError(err: unknown): NextResponse {
   if (err instanceof AppError) {
     return error(err.message, err.code, err.statusCode)
   }
+  if (err instanceof SyntaxError) {
+    return badRequest('Invalid JSON in request body')
+  }
   if (err instanceof Error) {
     return internalError('Internal server error')
   }

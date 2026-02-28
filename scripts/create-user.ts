@@ -26,14 +26,25 @@ const DEFAULT_PROJECTS = [
 const username = process.argv[2]
 const password = process.argv[3]
 const email = process.argv[4] || `${(username || 'user').toLowerCase()}@localhost`
-const timezone = process.argv[5] || 'America/Chicago'
+const timezone = process.argv[5] || process.env.OPENTASK_DEFAULT_TIMEZONE
 
 if (!username || !password) {
-  console.error('Usage: tsx scripts/create-user.ts <username> <password> [email] [timezone]')
+  console.error('Usage: tsx scripts/create-user.ts <username> <password> [email] <timezone>')
   console.error('')
   console.error('Examples:')
-  console.error('  tsx scripts/create-user.ts admin changeme')
   console.error('  tsx scripts/create-user.ts admin changeme admin@example.com America/New_York')
+  console.error('')
+  console.error('Timezone can also be set via OPENTASK_DEFAULT_TIMEZONE env var.')
+  process.exit(1)
+}
+
+if (!timezone) {
+  console.error('Error: timezone is required.')
+  console.error('Provide as 5th argument or set OPENTASK_DEFAULT_TIMEZONE env var.')
+  console.error(
+    'Example: tsx scripts/create-user.ts admin changeme admin@example.com America/New_York',
+  )
+  console.error('Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones')
   process.exit(1)
 }
 

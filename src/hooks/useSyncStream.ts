@@ -10,9 +10,15 @@ export interface EnrichmentCompleteData {
   priority?: number
 }
 
+export interface TaskCreatedData {
+  taskId: number
+  title: string
+}
+
 interface SyncStreamCallbacks {
   onSync: () => void
   onEnrichmentComplete?: (data: EnrichmentCompleteData) => void
+  onTaskCreated?: (data: TaskCreatedData) => void
 }
 
 /**
@@ -57,6 +63,9 @@ export function useSyncStream(callbacks: SyncStreamCallbacks) {
             // Fire immediately — enrichment events are rare and the user is waiting
             callbacksRef.current.onEnrichmentComplete?.(data)
             debouncedSync()
+          } else if (data.type === 'task_created') {
+            // Fire immediately — the companion sync event handles data refetch
+            callbacksRef.current.onTaskCreated?.(data)
           }
         } catch {
           // Ignore malformed messages

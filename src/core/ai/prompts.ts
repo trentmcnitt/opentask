@@ -53,6 +53,11 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
+// TODO: Future improvement — have the AI output local time (no timezone conversion)
+// and do the local→UTC conversion deterministically in post-processing. This would
+// remove timezone math from the AI (where "output 2 AM UTC" for a 9 AM local task
+// is unintuitive) and let Luxon handle conversion reliably. Would require changes to
+// the output schema, the enrichment prompt context block, and collectEnrichmentChanges().
 2. **due_at** — ISO 8601 UTC datetime, or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm"). Use the provided timezone to convert to UTC. If no date is mentioned, return null.
 
 3. **priority** — Integer 0-4:

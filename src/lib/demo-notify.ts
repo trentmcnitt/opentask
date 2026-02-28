@@ -1,18 +1,18 @@
 /**
  * Demo engagement notifications via Pushover
  *
- * Sends a fire-and-forget Pushover notification to Trent when the demo
- * user interacts with tasks. Used to gauge whether the demo drives real
+ * Sends a fire-and-forget Pushover notification when the demo user
+ * interacts with tasks. Used to gauge whether the demo drives real
  * engagement (as opposed to just page views).
  *
  * Rate limited to 1 notification per action type per 60 seconds to
  * prevent alert flooding from rapid editing.
  *
- * Enabled when PUSHOVER_TRENT_CRITICAL_KEY and PUSHOVER_TRENT_USER are set.
+ * Enabled when OPENTASK_DEMO_PUSHOVER_APP_TOKEN and OPENTASK_DEMO_PUSHOVER_USER_KEY are set.
  */
 
-const APP_TOKEN = process.env.PUSHOVER_TRENT_CRITICAL_KEY || ''
-const USER_KEY = process.env.PUSHOVER_TRENT_USER || ''
+const APP_TOKEN = process.env.OPENTASK_DEMO_PUSHOVER_APP_TOKEN || ''
+const USER_KEY = process.env.OPENTASK_DEMO_PUSHOVER_USER_KEY || ''
 const RATE_LIMIT_MS = 60_000
 
 const lastNotified = new Map<string, number>()
@@ -31,7 +31,7 @@ const messages: Record<DemoAction, string> = {
 }
 
 /**
- * Notify Trent that the demo user performed an action.
+ * Notify that the demo user performed an action.
  * Fire-and-forget — never throws, never blocks.
  */
 export function notifyDemoEngagement(userName: string, action: DemoAction): void {

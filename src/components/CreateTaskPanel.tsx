@@ -164,10 +164,11 @@ export function CreateTaskPanel({
 
         // Show success toast with navigation action
         if (createdTask?.id) {
-          showSuccessToastWithAction('Task created', {
-            label: 'View',
-            onClick: () => router.push(`/tasks/${createdTask.id}`),
-          })
+          showSuccessToastWithAction(
+            'Task created',
+            { label: 'View', onClick: () => router.push(`/tasks/${createdTask.id}`) },
+            { id: `task-created-${createdTask.id}` },
+          )
         }
 
         // If the task has ai-to-process, start polling for enrichment result

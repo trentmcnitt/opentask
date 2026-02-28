@@ -23,6 +23,13 @@ export interface EnrichmentCompletePayload {
 
 export type EnrichmentListener = (userId: number, payload: EnrichmentCompletePayload) => void
 
+export interface TaskCreatedPayload {
+  taskId: number
+  title: string
+}
+
+export type TaskCreatedListener = (userId: number, payload: TaskCreatedPayload) => void
+
 const globalForSync = globalThis as typeof globalThis & {
   __syncEmitter?: EventEmitter
 }
@@ -36,6 +43,7 @@ const emitter = globalForSync.__syncEmitter!
 
 const SYNC_EVENT = 'sync'
 const ENRICHMENT_COMPLETE_EVENT = 'enrichment_complete'
+const TASK_CREATED_EVENT = 'task_created'
 
 /** Emit a sync event for a user. Call after any data mutation. */
 export function emitSyncEvent(userId: number): void {
@@ -68,4 +76,19 @@ export function onEnrichmentCompleteEvent(listener: EnrichmentListener): void {
 /** Unsubscribe from enrichment complete events. */
 export function offEnrichmentCompleteEvent(listener: EnrichmentListener): void {
   emitter.off(ENRICHMENT_COMPLETE_EVENT, listener)
+}
+
+/** Emit a task-created event. Call after creating a task. */
+export function emitTaskCreatedEvent(userId: number, payload: TaskCreatedPayload): void {
+  emitter.emit(TASK_CREATED_EVENT, userId, payload)
+}
+
+/** Subscribe to task-created events. */
+export function onTaskCreatedEvent(listener: TaskCreatedListener): void {
+  emitter.on(TASK_CREATED_EVENT, listener)
+}
+
+/** Unsubscribe from task-created events. */
+export function offTaskCreatedEvent(listener: TaskCreatedListener): void {
+  emitter.off(TASK_CREATED_EVENT, listener)
 }

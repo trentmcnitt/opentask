@@ -45,6 +45,7 @@ cat > .env <<EOF
 AUTH_SECRET=$(openssl rand -base64 32)
 OPENTASK_INIT_USERNAME=admin
 OPENTASK_INIT_PASSWORD=changeme
+OPENTASK_INIT_TIMEZONE=America/New_York
 EOF
 
 docker compose up -d
