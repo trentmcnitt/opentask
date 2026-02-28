@@ -3,30 +3,20 @@ import { test, expect } from './fixtures'
 /**
  * AI feature E2E tests.
  *
- * E2E tests run without AI configured (no OPENAI_API_KEY in the Playwright
- * webServer env), so AI endpoints return 503. These tests verify graceful
- * degradation: the app works normally, AI-dependent panels don't render,
- * and the AI Status modal shows a meaningful "not available" state.
+ * E2E tests run without OPENTASK_AI_ENABLED set, so AI is fully disabled.
+ * These tests verify graceful degradation: the app works normally and
+ * AI-dependent UI elements don't render.
  */
 test.describe('AI features (disabled)', () => {
-  test('AI Status modal opens from hamburger menu and shows not-available state', async ({
-    authenticatedPage: page,
-  }) => {
+  test('AI Status menu item is hidden when AI is disabled', async ({ authenticatedPage: page }) => {
     // Open the hamburger menu
     await page.getByRole('button', { name: 'Menu' }).click()
 
-    // Click "AI Status" menu item
-    await page.getByRole('menuitem', { name: 'AI Status' }).click()
+    // Settings menu item should be visible (confirms menu opened)
+    await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible()
 
-    // The modal should open with "AI Status" as the title
-    await expect(page.getByRole('heading', { name: 'AI Status' })).toBeVisible({ timeout: 5000 })
-
-    // When AI is disabled, the status endpoint returns non-ok, so the modal
-    // shows the error state: "AI features are not available."
-    await expect(page.getByText('AI features are not available.')).toBeVisible({ timeout: 5000 })
-
-    // A "Retry" button should be available
-    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
+    // AI Status menu item should NOT render when AI is disabled
+    await expect(page.getByRole('menuitem', { name: 'AI Status' })).not.toBeVisible()
   })
 
   test('AI chip does not render when AI is disabled', async ({ authenticatedPage: page }) => {
@@ -52,23 +42,5 @@ test.describe('AI features (disabled)', () => {
 
     // The new task should appear in the task list
     await expect(page.getByText(taskTitle)).toBeVisible({ timeout: 10000 })
-  })
-
-  test('hamburger menu AI Status item does not show status dot when AI is disabled', async ({
-    authenticatedPage: page,
-  }) => {
-    // Open the hamburger menu — this triggers a fetch to /api/ai/status
-    await page.getByRole('button', { name: 'Menu' }).click()
-
-    // Wait for the menu to render and the lazy AI status fetch to complete
-    const aiStatusItem = page.getByRole('menuitem', { name: 'AI Status' })
-    await expect(aiStatusItem).toBeVisible()
-
-    // When AI is disabled (503 response), the AIStatusDot should not render.
-    // The dot is a span with rounded-full class inside the AI Status menu item.
-    // The handler sets aiSlotState to 'disabled', and the Header only renders
-    // AIStatusDot when state !== 'disabled'.
-    const dot = aiStatusItem.locator('span.rounded-full')
-    await expect(dot).not.toBeVisible()
   })
 })
