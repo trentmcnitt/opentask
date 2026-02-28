@@ -11,13 +11,16 @@ final class AppConfig {
 
     var isConfigured: Bool
     var serverURL: String
-    var deviceToken: String?
+    var deviceToken: String? {
+        didSet { UserDefaults.standard.set(deviceToken, forKey: "apnsDeviceToken") }
+    }
 
     private init() {
         let url = KeychainHelper.read(key: "serverURL")
         let token = KeychainHelper.read(key: "bearerToken")
         self.serverURL = url ?? ""
         self.isConfigured = url != nil && token != nil
+        self.deviceToken = UserDefaults.standard.string(forKey: "apnsDeviceToken")
     }
 
     func configure(serverURL: String, bearerToken: String) {

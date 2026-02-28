@@ -168,6 +168,15 @@ export default async function globalSetup() {
   `,
   ).run(6, 1, 1, 'Prepare slides', threeDays, 2)
 
+  // Overdue: "Reply to email" due 2 hours ago (for testing swipe-to-snooze on overdue tasks)
+  const twoHoursAgo = DateTime.now().setZone(tz).minus({ hours: 2 }).toUTC().toISO()!
+  db.prepare(
+    `
+    INSERT INTO tasks (id, user_id, project_id, title, due_at, priority)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `,
+  ).run(7, 1, 1, 'Reply to email', twoHoursAgo, 2)
+
   db.close()
   console.log('[e2e] Database seeded at', DB_PATH)
 }

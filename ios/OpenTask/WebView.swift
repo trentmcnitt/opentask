@@ -89,6 +89,9 @@ struct WebView: UIViewRepresentable {
         webView.scrollView.addSubview(refreshControl)
         context.coordinator.refreshControl = refreshControl
 
+        // Observe cookie changes to flush to disk immediately (survives force-quit)
+        config.websiteDataStore.httpCookieStore.add(context.coordinator)
+
         // Store references for live Dynamic Type updates and deep linking
         context.coordinator.webView = webView
         WebViewManager.shared.webView = webView
@@ -108,7 +111,7 @@ struct WebView: UIViewRepresentable {
         // No updates needed — URL doesn't change during the view's lifecycle
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver {
         var refreshControl: UIRefreshControl?
         var onNavigationError: ((Error) -> Void)?
         weak var webView: WKWebView?
@@ -116,6 +119,13 @@ struct WebView: UIViewRepresentable {
 
         init(onNavigationError: ((Error) -> Void)?) {
             self.onNavigationError = onNavigationError
+        }
+
+        /// Flush cookies to disk whenever any cookie changes (e.g., after login).
+        /// WKWebView doesn't guarantee immediate persistence — force-quit can lose
+        /// in-memory cookies. getAllCookies triggers a sync to disk.
+        func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+            cookieStore.getAllCookies { _ in }
         }
 
         deinit {

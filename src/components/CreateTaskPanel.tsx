@@ -165,7 +165,7 @@ export function CreateTaskPanel({
         // Show success toast with navigation action
         if (createdTask?.id) {
           showSuccessToastWithAction(
-            'Task created',
+            'Task added',
             { label: 'View', onClick: () => router.push(`/tasks/${createdTask.id}`) },
             { id: `task-created-${createdTask.id}` },
           )

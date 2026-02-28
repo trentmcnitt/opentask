@@ -253,14 +253,20 @@ export function TaskList({
     }
   }, [selection.isSelectionMode])
 
-  // Swipe-left snooze uses the user's configured default snooze option
+  // Swipe-left behavior depends on whether the task is overdue:
+  // - Overdue: snooze with default option (push forward from now)
+  // - Future or no due date: open QuickActionPanel (nothing to "snooze")
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
-  const handleSwipeSnooze = useCallback(
+  const handleSwipeLeft = useCallback(
     (task: Task) => {
-      const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-      onSnooze(task.id, until)
+      if (isTaskOverdue(task)) {
+        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+        onSnooze(task.id, until)
+      } else {
+        onDoubleClick?.(task)
+      }
     },
-    [defaultSnoozeOption, timezone, morningTime, onSnooze],
+    [defaultSnoozeOption, timezone, morningTime, onSnooze, onDoubleClick],
   )
 
   if (tasks.length === 0) {
@@ -410,7 +416,8 @@ export function TaskList({
                       <SwipeableRow
                         key={task.id}
                         onSwipeRight={() => onDone(task.id)}
-                        onSwipeLeft={() => handleSwipeSnooze(task)}
+                        onSwipeLeft={() => handleSwipeLeft(task)}
+                        leftAction={isTaskOverdue(task) ? 'snooze' : 'edit'}
                         onDragStart={() => cancelRef.current?.()}
                         disabled={selection.isSelectionMode}
                       >

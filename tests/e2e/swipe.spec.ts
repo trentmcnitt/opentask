@@ -28,7 +28,35 @@ test.describe('Swipe gestures', () => {
     await expect(page.getByText('Weekly standup')).toBeVisible()
   })
 
-  test('left swipe triggers snooze action', async ({ authenticatedPage: page }) => {
+  test('left swipe on overdue task triggers snooze action', async ({ authenticatedPage: page }) => {
+    // "Reply to email" is overdue (due 2 hours ago) — swipe left should snooze
+    await expect(page.getByText('Reply to email')).toBeVisible({ timeout: 5000 })
+
+    const taskLink = page.getByRole('link', { name: 'Reply to email' })
+    const box = await taskLink.boundingBox()
+
+    if (box) {
+      const startX = box.x + box.width - 10
+      const startY = box.y + box.height / 2
+      const endX = box.x + box.width - 250 // swipe left ~250px
+
+      await page.mouse.move(startX, startY)
+      await page.mouse.down()
+      for (let x = startX; x >= endX; x -= 15) {
+        await page.mouse.move(x, startY)
+        await page.waitForTimeout(10)
+      }
+      await page.mouse.up()
+    }
+
+    // Task should still be present (snooze doesn't remove)
+    await expect(page.getByText('Reply to email')).toBeVisible()
+  })
+
+  test('left swipe on future task opens edit panel instead of snoozing', async ({
+    authenticatedPage: page,
+  }) => {
+    // "Morning routine" is future-dated (tomorrow) — swipe left should open QuickActionPanel
     await expect(page.getByText('Morning routine')).toBeVisible({ timeout: 5000 })
 
     const taskLink = page.getByRole('link', { name: 'Morning routine' })
@@ -48,7 +76,7 @@ test.describe('Swipe gestures', () => {
       await page.mouse.up()
     }
 
-    // Task should still be present (snooze doesn't remove)
+    // Task should still be present
     await expect(page.getByText('Morning routine')).toBeVisible()
   })
 })
