@@ -98,11 +98,9 @@ npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality tes
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
-npm run db:seed-dev      # Seed dev database with ~80 realistic tasks
 npm run db:seed-demo     # Seed demo user with ~55 generic professional tasks
 npm run db:reset-demo    # Delete and re-create all demo user data
 npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]
-npm run db:migrate-due   # Data migration from the "Due" app
 ```
 
 **Quick check** (referenced throughout this file): `npm run type-check && npm run lint && npm test`
@@ -413,12 +411,12 @@ During iterative UI verification deploys to dev, committing between each deploy 
 
 - [ ] Quick check passes
 - [ ] E2E tests pass (`npm run test:e2e`)
-- [ ] Deployed to dev via `./scripts/deploy.sh dev`
+- [ ] Deployed to dev environment (see `CLAUDE.local.md` for deploy commands)
 - [ ] Playwright: screenshots at desktop (1280x800+) and mobile (375x812) viewports (save to `.tmp/`)
 - [ ] Playwright: no console errors/warnings, no failed network requests
 - [ ] Interactive flows tested with Playwright (if applicable — clicks, form submissions, state changes)
 - [ ] Fixes applied and re-deployed if anything looked wrong
-- [ ] Dev link shared with results: https://tasks-dev.tk11.mcnitt.io
+- [ ] Dev link shared with results
 
 Backend/logic-only changes with no UI touchpoint do not need browser verification — passing tests are sufficient.
 
@@ -492,21 +490,11 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
 2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
 
-## Environments and Deployment
+## Deployment
 
-|         | Production                                                    | Development                     | Dev2                             | Local          |
-| ------- | ------------------------------------------------------------- | ------------------------------- | -------------------------------- | -------------- |
-| URL     | opentask.mcnitt.io (canonical), tasks.tk11.mcnitt.io (legacy) | tasks-dev.tk11.mcnitt.io        | tasks-dev2.tk11.mcnitt.io        | localhost:3000 |
-| Port    | 3100                                                          | 3101                            | 3102                             | 3000           |
-| Service | opentask.service                                              | opentask-dev.service            | opentask-dev2.service            | —              |
-| DB Path | /opt/opentask/data/tasks.db                                   | /opt/opentask-dev/data/tasks.db | /opt/opentask-dev2/data/tasks.db | data/tasks.db  |
-| Server  | tk11.mcnitt.io                                                | tk11.mcnitt.io                  | tk11.mcnitt.io                   | —              |
+**Local development:** `npm run dev` starts a hot-reloading server on port 3000.
 
-Remote instances run behind Caddy reverse proxy on Ubuntu 24.04. Server: `ssh admin@tk11.mcnitt.io`.
-
-**Git remote**: Forgejo at `git.tk11.mcnitt.io` (use `tea` CLI, not `gh`).
-
-### Deployment
+**Production deployment:** OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. Deploy the built output however you prefer — systemd service, Docker, etc. Schema migrations run automatically on app startup.
 
 **Commit policy for deployments** (overrides the global "only commit when explicitly instructed" rule):
 
@@ -515,59 +503,34 @@ Remote instances run behind Caddy reverse proxy on Ubuntu 24.04. Server: `ssh ad
 - **Final dev deploy** (after verification): Commit the verified version, then re-deploy from the clean commit
 - If there are uncommitted changes and you need to deploy, ask the user to confirm a commit first
 
-**Remote deployment (dev or prod):**
+**Rollback:** Prefer `git revert HEAD` (creates a new commit, preserves history). Only use `git checkout <sha>` if you need to roll back multiple commits.
 
-```bash
-# 1. Verify (full suite for production; quick check sufficient for iterative dev deploys)
-npm run type-check && npm run lint && npm test && npm run test:integration && npm run test:e2e
+**Database inspection:** `sqlite3 data/tasks.db` for the local database.
 
-# 2. Deploy (requires explicit target — no default)
-./scripts/deploy.sh dev   # Deploy to development
-./scripts/deploy.sh prod  # Deploy to production
-```
+See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (server addresses, service names, deploy scripts, etc.).
 
-**What `deploy.sh` does:** (1) builds locally, (2) rsyncs the standalone bundle to the server, (3) fetches a Linux-native `better-sqlite3` binary via `prebuild-install`, and (4) restarts the systemd service. Deploys never touch the database — schema migrations run on app startup.
+### Demo User
 
-**Server debugging:** `ssh admin@tk11.mcnitt.io` then `journalctl -u opentask-dev -f` (or `opentask` for prod) to tail logs.
+The demo account showcases OpenTask with curated portfolio-style tasks. User isolation is via `user_id` filtering.
 
-**Rollback:** Prefer `git revert HEAD` (creates a new commit, preserves history). Only use `git checkout <sha>` if you need to roll back multiple commits. If you do, create a new branch from that point before deploying. Then re-deploy with `./scripts/deploy.sh <target>`.
-
-**Database inspection:** `sqlite3 data/tasks.db` (local) or `ssh admin@tk11.mcnitt.io` then `sqlite3 /opt/opentask/data/tasks.db` (prod) / `sqlite3 /opt/opentask-dev/data/tasks.db` (dev).
-
-**First-time server setup:** The deploy script assumes the systemd service already exists. For a new environment, create a systemd unit file on the server (use `opentask-dev.service` as a template) and run `systemctl enable` before the first deploy.
-
-### Demo & Sandbox Users
-
-Production hosts a demo account for clients and a sandbox account for screenshots alongside Trent's real tasks. User isolation is via `user_id` filtering — no shared projects.
-
-|               | Demo                                                        | Sandbox                                             |
-| ------------- | ----------------------------------------------------------- | --------------------------------------------------- |
-| Username      | `demo`                                                      | `trent_m`                                           |
-| Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) | In `.secrets`                                       |
-| Notifications | Disabled                                                    | Disabled on reset (enable manually for screenshots) |
-| Daily reset   | Yes (cron at 3 AM CT)                                       | No                                                  |
-| Task style    | Portfolio/niche (MCP, Claude Code, RAG)                     | Realistic personal+work mix (~19 tasks)             |
-| Projects      | Inbox, Client Work, Try It                                  | Inbox, Home, Work, Health                           |
+| Setting       | Value                                                       |
+| ------------- | ----------------------------------------------------------- |
+| Username      | `demo`                                                      |
+| Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) |
+| Notifications | Disabled                                                    |
+| Daily reset   | Yes (via cron)                                              |
+| Projects      | Inbox, Client Work, Try It                                  |
 
 **Scripts:**
 
 - `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
 - `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
-- `npm run db:seed-sandbox` — Seed sandbox tasks (fails if data already exists)
-- `npm run db:reset-sandbox` — Wipe and re-seed sandbox with ~19 realistic tasks
-- `npm run db:reset-sandbox:empty` — Wipe sandbox to blank slate (no tasks or projects)
-
-**Server cron** (on tk11, 3 AM CT = 8:00 UTC):
-
-```
-0 8 * * * cd /opt/opentask && OPENTASK_DB_PATH=/opt/opentask/data/tasks.db /usr/local/bin/npx tsx scripts/reset-demo-user.ts >> /var/log/opentask-demo-reset.log 2>&1
-```
 
 ### Security Hardening
 
 - **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. Raw token is shown once at creation.
 - **Login rate limiting**: In-memory, 5 failures per username in 15 min triggers lockout with exponential backoff (30s, 60s, 120s...).
-- **Security headers**: Set in both `next.config.ts` (local dev) and `deploy/Caddyfile.snippet` (production): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+- **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 - **JWT sessions**: `maxAge` set to 7 days (default was 30).
 
 ## iOS App (`ios/`)

@@ -1449,7 +1449,7 @@ export const quickTakeScenarios: AITestScenario[] = [
         // ── Inbox (1 task, undated) ──
         {
           id: 13,
-          title: 'Want to work together? Reach out to Trent at trent@mcnitt.io',
+          title: 'Welcome to OpenTask — explore the demo!',
           priority: 0,
           due_at: null,
           original_due_at: null,

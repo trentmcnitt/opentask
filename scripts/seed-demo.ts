@@ -176,12 +176,12 @@ function getDemoTasks(): DemoTaskDef[] {
 
   const INBOX_TASKS: DemoTaskDef[] = [
     {
-      title: 'Want to work together? Reach out to Trent at trent@mcnitt.io',
+      title: 'Welcome to OpenTask — explore the demo!',
       project: 'Inbox',
       noDue: true,
       createdDaysAgo: 3,
       notes:
-        'AI consultant specializing in Claude Code, MCP, and AI workflow automation. View my work at mcnitt.io',
+        'OpenTask is an open-source, self-hosted task manager. Check out the README on GitHub for setup instructions and documentation.',
     },
   ]
 
