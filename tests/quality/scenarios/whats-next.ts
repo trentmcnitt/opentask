@@ -7,6 +7,9 @@
  */
 
 import type { AITestScenario } from '../types'
+import { daysAgo, daysAgoAt, weeksAgo, monthsAgo, todayAt, daysFromNowAt } from '../helpers/dates'
+
+const tz = 'America/Chicago'
 
 export const whatsNextScenarios: AITestScenario[] = [
   {
@@ -20,9 +23,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 10,
           title: 'Schedule oil change',
           priority: 0,
-          due_at: '2026-01-20T15:00:00Z',
-          original_due_at: '2026-01-10T15:00:00Z',
-          created_at: '2026-01-05T16:00:00Z',
+          due_at: daysAgoAt(42, 9, 0, tz),
+          original_due_at: daysAgoAt(56, 9, 0, tz),
+          created_at: weeksAgo(8),
           labels: ['car'],
           project_name: null,
           is_recurring: false,
@@ -34,9 +37,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 11,
           title: 'Return library books',
           priority: 1,
-          due_at: '2026-01-25T15:00:00Z',
-          original_due_at: '2026-01-15T15:00:00Z',
-          created_at: '2026-01-12T16:00:00Z',
+          due_at: daysAgoAt(35, 9, 0, tz),
+          original_due_at: daysAgoAt(49, 9, 0, tz),
+          created_at: weeksAgo(7),
           labels: ['errand'],
           project_name: null,
           is_recurring: false,
@@ -50,7 +53,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2025-12-20T16:00:00Z',
+          created_at: weeksAgo(10),
           labels: ['home'],
           project_name: null,
           is_recurring: false,
@@ -63,9 +66,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 20,
           title: 'Morning affirmation',
           priority: 0,
-          due_at: '2026-02-09T12:00:00Z',
-          original_due_at: '2026-02-09T12:00:00Z',
-          created_at: '2026-01-01T12:00:00Z',
+          due_at: daysAgoAt(1, 6, 0, tz),
+          original_due_at: daysAgoAt(1, 6, 0, tz),
+          created_at: monthsAgo(2),
           labels: [],
           project_name: null,
           is_recurring: true,
@@ -77,9 +80,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 21,
           title: 'Buy groceries',
           priority: 0,
-          due_at: '2026-02-09T15:00:00Z',
-          original_due_at: '2026-02-09T15:00:00Z',
-          created_at: '2026-02-09T12:00:00Z',
+          due_at: todayAt(9, 0, tz),
+          original_due_at: todayAt(9, 0, tz),
+          created_at: daysAgo(0),
           labels: ['shopping'],
           project_name: 'Shopping List',
           is_recurring: false,
@@ -91,9 +94,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 22,
           title: 'URGENT: Fix server outage',
           priority: 4,
-          due_at: '2026-02-09T15:00:00Z',
-          original_due_at: '2026-02-09T15:00:00Z',
-          created_at: '2026-02-09T14:00:00Z',
+          due_at: todayAt(9, 0, tz),
+          original_due_at: todayAt(9, 0, tz),
+          created_at: daysAgo(0),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -106,9 +109,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 30 + i,
           title: `Routine task ${i + 1}`,
           priority: 0,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -122,9 +125,9 @@ export const whatsNextScenarios: AITestScenario[] = [
       must_include: {},
       quality_notes:
         'MUST surface the old lingering tasks (IDs 10, 11, 12). ' +
-        'ID 10: created Jan 5, priority 0 — on the list for 5+ weeks. ' +
-        'ID 11: created Jan 12, priority 1 — lingering for nearly 4 weeks. ' +
-        'ID 12: created in December with no due date — sitting for 7+ weeks. ' +
+        'ID 10: priority 0 — on the list for ~8 weeks. ' +
+        'ID 11: priority 1 — lingering for ~7 weeks. ' +
+        'ID 12: no due date — sitting for ~10 weeks. ' +
         'Must NOT surface: daily recurring affirmation (20), shopping (21), or urgent task (22). ' +
         'Reasons should mention how long the task has been on the list (based on created_at). ' +
         'Reasons must NOT reference original_due_at or deferral counts for P0-2 tasks. ' +
@@ -142,9 +145,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 42,
           title: 'Call Granddaddy',
           priority: 1,
-          due_at: '2026-02-08T15:00:00Z',
-          original_due_at: '2026-01-20T15:00:00Z',
-          created_at: '2026-01-18T16:00:00Z',
+          due_at: daysAgoAt(21, 9, 0, tz),
+          original_due_at: daysAgoAt(42, 9, 0, tz),
+          created_at: weeksAgo(6),
           labels: ['family'],
           project_name: null,
           is_recurring: false,
@@ -158,7 +161,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2026-01-25T16:00:00Z',
+          created_at: weeksAgo(5),
           labels: ['family'],
           project_name: null,
           is_recurring: false,
@@ -170,9 +173,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 44,
           title: 'RSVP to neighborhood cookout',
           priority: 0,
-          due_at: '2026-02-15T15:00:00Z',
-          original_due_at: '2026-02-15T15:00:00Z',
-          created_at: '2026-02-01T16:00:00Z',
+          due_at: daysFromNowAt(4, 9, 0, tz),
+          original_due_at: daysFromNowAt(4, 9, 0, tz),
+          created_at: weeksAgo(4),
           labels: ['social'],
           project_name: null,
           is_recurring: false,
@@ -185,9 +188,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 50,
           title: 'Update spreadsheet',
           priority: 0,
-          due_at: '2026-02-12T15:00:00Z',
-          original_due_at: '2026-02-12T15:00:00Z',
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(3, 9, 0, tz),
+          original_due_at: daysFromNowAt(3, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -199,9 +202,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 51,
           title: 'Evening walk',
           priority: 0,
-          due_at: '2026-02-09T23:00:00Z',
-          original_due_at: '2026-02-09T23:00:00Z',
-          created_at: '2026-01-01T23:00:00Z',
+          due_at: daysAgoAt(1, 17, 0, tz),
+          original_due_at: daysAgoAt(1, 17, 0, tz),
+          created_at: monthsAgo(2),
           labels: ['health'],
           project_name: null,
           is_recurring: true,
@@ -213,9 +216,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 60 + i,
           title: `Work task ${i + 1}`,
           priority: 0,
-          due_at: `2026-02-${String(13 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(13 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -230,7 +233,7 @@ export const whatsNextScenarios: AITestScenario[] = [
       quality_notes:
         'MUST surface social obligations: Call Granddaddy (42), thank-you card (43), RSVP (44). ' +
         'Social/family tasks become awkward if delayed and slip through the cracks. ' +
-        'Task 42 (P1) commentary should reference task age (created Jan 18, ~3 weeks), not deferral. ' +
+        'Task 42 (P1) commentary should reference task age (created ~6 weeks ago), not deferral. ' +
         'Task 44 commentary should reference notes (headcount for Mary by Saturday). ' +
         'Should NOT surface the recurring evening walk (51) or obvious work tasks. ' +
         'Reasons should mention the social/relational aspect.',
@@ -246,9 +249,9 @@ export const whatsNextScenarios: AITestScenario[] = [
         id: 100 + i,
         title: `Daily affirmation ${i + 1}`,
         priority: 0,
-        due_at: '2026-02-09T12:00:00Z',
-        original_due_at: '2026-02-09T12:00:00Z',
-        created_at: '2026-01-01T12:00:00Z',
+        due_at: daysAgoAt(1, 6, 0, tz),
+        original_due_at: daysAgoAt(1, 6, 0, tz),
+        created_at: monthsAgo(2),
         labels: [],
         project_name: null,
         is_recurring: true,
@@ -278,7 +281,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2026-01-15T16:00:00Z',
+          created_at: weeksAgo(7),
           labels: ['home'],
           project_name: null,
           is_recurring: false,
@@ -292,7 +295,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2026-01-20T16:00:00Z',
+          created_at: weeksAgo(6),
           labels: ['family'],
           project_name: null,
           is_recurring: false,
@@ -305,9 +308,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 90 + i,
           title: `Regular task ${i + 1}`,
           priority: 1,
-          due_at: `2026-02-${String(15 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(15 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: ['work'],
           project_name: null,
           is_recurring: false,
@@ -341,9 +344,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 200,
           title: 'Pay quarterly estimated taxes',
           priority: 3,
-          due_at: '2026-02-08T22:00:00Z',
-          original_due_at: '2026-02-08T22:00:00Z',
-          created_at: '2026-01-20T16:00:00Z',
+          due_at: daysAgoAt(21, 16, 0, tz),
+          original_due_at: daysAgoAt(21, 16, 0, tz),
+          created_at: weeksAgo(6),
           labels: ['finance'],
           project_name: null,
           is_recurring: false,
@@ -356,9 +359,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 210 + i,
           title: `Routine task ${i + 1}`,
           priority: 0,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -389,9 +392,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 300,
           title: 'Organize photo albums',
           priority: 0,
-          due_at: '2026-02-08T20:00:00Z',
-          original_due_at: '2026-01-10T15:00:00Z',
-          created_at: '2026-01-05T16:00:00Z',
+          due_at: daysAgoAt(21, 14, 0, tz),
+          original_due_at: daysAgoAt(56, 9, 0, tz),
+          created_at: weeksAgo(8),
           labels: ['home'],
           project_name: null,
           is_recurring: false,
@@ -403,9 +406,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 301,
           title: 'Research new internet providers',
           priority: 1,
-          due_at: '2026-02-07T15:00:00Z',
-          original_due_at: '2026-01-15T15:00:00Z',
-          created_at: '2026-01-12T16:00:00Z',
+          due_at: daysAgoAt(21, 9, 0, tz),
+          original_due_at: daysAgoAt(28, 9, 0, tz),
+          created_at: weeksAgo(7),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -417,9 +420,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 302,
           title: 'Clean out email inbox',
           priority: 0,
-          due_at: '2026-02-09T12:00:00Z',
-          original_due_at: '2026-01-18T12:00:00Z',
-          created_at: '2026-01-15T16:00:00Z',
+          due_at: daysAgoAt(21, 6, 0, tz),
+          original_due_at: daysAgoAt(42, 6, 0, tz),
+          created_at: weeksAgo(7),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -432,9 +435,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 310 + i,
           title: `Recent task ${i + 1}`,
           priority: 1,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -448,9 +451,9 @@ export const whatsNextScenarios: AITestScenario[] = [
       must_include: {},
       quality_notes:
         'MUST surface tasks 300, 301, 302. All are low priority (0-1) and have been on the list for weeks. ' +
-        'ID 300: created Jan 5, priority 0 — on the list for over a month. ' +
-        'ID 301: created Jan 12, priority 1 — on the list for nearly a month. ' +
-        'ID 302: created Jan 15, priority 0 — on the list for nearly a month. ' +
+        'ID 300: priority 0 — on the list for ~8 weeks. ' +
+        'ID 301: priority 1 — on the list for ~7 weeks. ' +
+        'ID 302: priority 0 — on the list for ~7 weeks. ' +
         'Commentary MUST focus on task age (how long since created_at), ' +
         'NOT on "X hours overdue" or deferral patterns. ' +
         'The AI does not see original_due_at for P0-2 tasks and must not reference deferral gaps.',
@@ -468,23 +471,23 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 400,
           title: 'Submit insurance claim for water damage',
           priority: 3,
-          due_at: '2026-02-07T22:00:00Z',
-          original_due_at: '2026-02-07T22:00:00Z',
-          created_at: '2026-02-01T16:00:00Z',
+          due_at: daysAgoAt(21, 16, 0, tz),
+          original_due_at: daysAgoAt(21, 16, 0, tz),
+          created_at: weeksAgo(4),
           labels: ['finance'],
           project_name: null,
           is_recurring: false,
           rrule: null,
-          notes: '7-day filing window from incident date (Feb 1). Claim #WD-9921.',
+          notes: '7-day filing window from incident date. Claim #WD-9921.',
           recurrence_mode: 'from_due' as const,
         },
         {
           id: 401,
           title: 'Clean out email inbox',
           priority: 0,
-          due_at: '2026-02-08T15:00:00Z',
-          original_due_at: '2026-01-18T15:00:00Z',
-          created_at: '2026-01-15T16:00:00Z',
+          due_at: daysAgoAt(21, 9, 0, tz),
+          original_due_at: daysAgoAt(42, 9, 0, tz),
+          created_at: weeksAgo(7),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -496,9 +499,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 402,
           title: 'Water the plants',
           priority: 1,
-          due_at: '2026-02-07T15:00:00Z',
-          original_due_at: '2026-02-07T15:00:00Z',
-          created_at: '2026-01-01T16:00:00Z',
+          due_at: daysAgoAt(21, 9, 0, tz),
+          original_due_at: daysAgoAt(21, 9, 0, tz),
+          created_at: monthsAgo(2),
           labels: ['home'],
           project_name: null,
           is_recurring: true,
@@ -511,9 +514,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 410 + i,
           title: `Background task ${i + 1}`,
           priority: 0,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -529,8 +532,8 @@ export const whatsNextScenarios: AITestScenario[] = [
         'MUST surface all three key tasks (400, 401, 402) with DIFFERENT commentary styles: ' +
         'ID 400 (priority 3, insurance claim): Must treat the deadline as real and consequential. ' +
         'Should reference notes (7-day filing window, claim #WD-9921). This is urgent. ' +
-        'ID 401 (priority 0, email inbox): Must focus on task age (created Jan 15, nearly a month ' +
-        'on the list). NOT "X hours overdue" or deferral patterns — original_due_at is not shown for P0-2. ' +
+        'ID 401 (priority 0, email inbox): Must focus on task age (created ~7 weeks ago, ' +
+        'on the list for weeks). NOT "X hours overdue" or deferral patterns — original_due_at is not shown for P0-2. ' +
         'ID 402 (recurring from_completion, water plants): Must recognize that from_completion + overdue ' +
         'means the plants literally need watering — the task waits for completion before advancing. ' +
         'Three different situations requiring three different kinds of commentary.',
@@ -550,9 +553,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 500,
           title: "Refill dad's insulin prescription",
           priority: 2,
-          due_at: '2026-02-08T15:00:00Z',
-          original_due_at: '2026-02-05T15:00:00Z',
-          created_at: '2026-01-25T16:00:00Z',
+          due_at: daysAgoAt(21, 9, 0, tz),
+          original_due_at: daysAgoAt(28, 9, 0, tz),
+          created_at: weeksAgo(5),
           labels: ['health'],
           project_name: null,
           is_recurring: false,
@@ -566,7 +569,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2026-01-10T16:00:00Z',
+          created_at: weeksAgo(8),
           labels: ['health'],
           project_name: null,
           is_recurring: false,
@@ -580,7 +583,7 @@ export const whatsNextScenarios: AITestScenario[] = [
           priority: 0,
           due_at: null,
           original_due_at: null,
-          created_at: '2026-01-20T16:00:00Z',
+          created_at: weeksAgo(6),
           labels: ['finance'],
           project_name: null,
           is_recurring: false,
@@ -593,9 +596,9 @@ export const whatsNextScenarios: AITestScenario[] = [
           id: 510 + i,
           title: `Routine task ${i + 1}`,
           priority: 0,
-          due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          original_due_at: `2026-02-${String(10 + i).padStart(2, '0')}T15:00:00Z`,
-          created_at: '2026-02-08T15:00:00Z',
+          due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          original_due_at: daysFromNowAt(i + 1, 9, 0, tz),
+          created_at: daysAgo(1),
           labels: [],
           project_name: null,
           is_recurring: false,
@@ -611,8 +614,8 @@ export const whatsNextScenarios: AITestScenario[] = [
         'MUST surface the insulin prescription (500) and kid flu shots (501). ' +
         "The user context says they're a caregiver for a diabetic father — the insulin refill is especially important. " +
         'Task 500 commentary should be contextually aware (caregiving role makes this more urgent than a generic errand). ' +
-        'Task 501 has been sitting for a month — easy to overlook with young kids. ' +
-        'Task 502 (insurance) is also old and should likely be surfaced. ' +
+        'Task 501 has been sitting for ~8 weeks — easy to overlook with young kids. ' +
+        'Task 502 (insurance) is also ~6 weeks old and should likely be surfaced. ' +
         'Commentary should be grounded in task data and user context without hallucinating.',
     },
   },

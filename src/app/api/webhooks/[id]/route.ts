@@ -7,7 +7,14 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError, handleZodError } from '@/lib/api-response'
+import {
+  success,
+  unauthorized,
+  notFound,
+  badRequest,
+  handleError,
+  handleZodError,
+} from '@/lib/api-response'
 import { updateWebhook, deleteWebhook } from '@/core/webhooks'
 import { validateWebhookUpdate } from '@/core/validation/webhook'
 import { log } from '@/lib/logger'
@@ -20,6 +27,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
     const user = await requireAuth(request)
     const { id } = await context.params
     const webhookId = parseInt(id)
+    if (isNaN(webhookId)) return badRequest('Invalid webhook ID')
     const body = await request.json()
     const input = validateWebhookUpdate(body)
 
@@ -43,6 +51,7 @@ export const DELETE = withLogging(async function DELETE(
     const user = await requireAuth(request)
     const { id } = await context.params
     const webhookId = parseInt(id)
+    if (isNaN(webhookId)) return badRequest('Invalid webhook ID')
 
     const deleted = deleteWebhook(webhookId, user.id)
     if (!deleted) return notFound('Webhook not found')

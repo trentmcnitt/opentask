@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { success, unauthorized, notFound, badRequest, handleError } from '@/lib/api-response'
 import { getWebhookDeliveries } from '@/core/webhooks'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -17,6 +17,7 @@ export const GET = withLogging(async function GET(request: NextRequest, context:
     const user = await requireAuth(request)
     const { id } = await context.params
     const webhookId = parseInt(id)
+    if (isNaN(webhookId)) return badRequest('Invalid webhook ID')
 
     const deliveries = getWebhookDeliveries(webhookId, user.id)
     if (!deliveries) return notFound('Webhook not found')

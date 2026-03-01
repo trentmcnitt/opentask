@@ -221,7 +221,6 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     timeoutMs: perCallTimeout,
   } = options
 
-  const resolvedModel = model
   const startTime = Date.now()
   const timeoutMs = resolveQueryTimeout(perCallTimeout)
 
@@ -240,7 +239,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       // running inside a bundled Next.js standalone app (where the SDK's
       // default resolution finds the wrong cli.js).
       const queryOptions: Options = {
-        model: resolvedModel,
+        model: model,
         maxTurns,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -261,7 +260,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       let structuredOutput: Record<string, unknown> | null = null
       let textResult: string | null = null
 
-      log.debug('ai', `[sdk] ${action} starting (model: ${resolvedModel}, timeout: ${timeoutMs}ms)`)
+      log.debug('ai', `[sdk] ${action} starting (model: ${model}, timeout: ${timeoutMs}ms)`)
 
       // Wrap the SDK query in a timeout to prevent hanging subprocesses.
       // The AbortController is passed to the SDK options to kill the subprocess.
@@ -311,13 +310,13 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         status: hasOutput ? 'success' : 'error',
         input: inputText ?? null,
         output: structuredOutput ? JSON.stringify(structuredOutput) : textResult,
-        model: resolvedModel,
+        model: model,
         duration_ms: durationMs,
         error: hasOutput ? null : 'Subprocess completed but returned no output',
         provider: 'sdk',
       })
 
-      log.info('ai', `[sdk] ${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
+      log.info('ai', `[sdk] ${action} completed in ${durationMs}ms (model: ${model})`)
 
       return {
         structuredOutput,
@@ -333,7 +332,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       taskId,
       action,
       inputText,
-      resolvedModel,
+      model,
       provider: 'sdk',
     })
   }
@@ -349,7 +348,7 @@ export function handleQueryError(
     taskId?: number
     action: string
     inputText?: string
-    resolvedModel: string
+    model: string
     provider: AIProvider
   },
 ): AIQueryResult {
@@ -369,7 +368,7 @@ export function handleQueryError(
     status: 'error',
     input: ctx.inputText ?? null,
     output: null,
-    model: ctx.resolvedModel,
+    model: ctx.model,
     duration_ms: durationMs,
     error: errorMessage,
     provider: ctx.provider,

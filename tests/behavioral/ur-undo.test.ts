@@ -20,30 +20,10 @@ import {
   executeBatchRedo,
 } from '@/core/undo'
 import { nowUtc } from '@/core/recurrence'
-import bcrypt from 'bcrypt'
+import { setupTestDb } from '../helpers/setup'
 
-// Test setup helpers
-async function setupTestDb() {
-  resetDb()
+function createTestTask(overrides: Record<string, unknown> = {}) {
   const db = getDb()
-
-  // Create test user
-  const passwordHash = await bcrypt.hash('test', 10)
-  db.prepare(
-    `INSERT INTO users (email, name, password_hash, timezone)
-     VALUES ('test@example.com', 'Test User', ?, 'America/Chicago')`,
-  ).run(passwordHash)
-
-  // Create test project
-  db.prepare(
-    `INSERT INTO projects (name, owner_id, shared, sort_order)
-     VALUES ('Test Project', 1, 0, 0)`,
-  ).run()
-
-  return db
-}
-
-function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, unknown> = {}) {
   const defaults = {
     user_id: 1,
     project_id: 1,
@@ -81,8 +61,8 @@ function createTestTask(db: ReturnType<typeof getDb>, overrides: Record<string, 
   return Number(result.lastInsertRowid)
 }
 
-function getTask(db: ReturnType<typeof getDb>, taskId: number) {
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as {
+function getTask(taskId: number) {
+  const row = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as {
     id: number
     due_at: string | null
     original_due_at: string | null
@@ -99,10 +79,8 @@ function getTask(db: ReturnType<typeof getDb>, taskId: number) {
 }
 
 describe('UR-001: Undo Mark Done (Recurring)', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -111,21 +89,21 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
 
   test('undoing a recurring mark-done restores due_at and original_due_at', () => {
     // Create a recurring task
-    const taskId = createTestTask(db, {
+    const taskId = createTestTask({
       due_at: '2026-01-31T14:00:00Z', // Today at 8 AM Chicago
       original_due_at: null,
       rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0',
     })
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
     expect(beforeTask.due_at).toBe('2026-01-31T14:00:00Z')
     expect(beforeTask.original_due_at).toBeNull()
 
     // Simulate mark done - advance due_at
     const newDueAt = '2026-02-01T14:00:00Z' // Tomorrow at 8 AM
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskId)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskId)
 
-    const afterTask = getTask(db, taskId)
+    const afterTask = getTask(taskId)
 
     // Log the action
     logAction(
@@ -137,7 +115,7 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
     )
 
     // Verify after state
-    const taskAfterDone = getTask(db, taskId)
+    const taskAfterDone = getTask(taskId)
     expect(taskAfterDone.due_at).toBe('2026-02-01T14:00:00Z')
 
     // Execute undo
@@ -148,17 +126,15 @@ describe('UR-001: Undo Mark Done (Recurring)', () => {
     expect(result!.tasks_affected).toBe(1)
 
     // Verify task is restored
-    const taskAfterUndo = getTask(db, taskId)
+    const taskAfterUndo = getTask(taskId)
     expect(taskAfterUndo.due_at).toBe('2026-01-31T14:00:00Z')
     expect(taskAfterUndo.original_due_at).toBeNull()
   })
 })
 
 describe('UR-002: Undo Mark Done (One-Off)', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -167,26 +143,24 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
 
   test('undoing a one-off mark-done restores done=0, clears done_at and archived_at', () => {
     // Create a one-off task (no rrule)
-    const taskId = createTestTask(db, {
+    const taskId = createTestTask({
       rrule: null,
       recurrence_mode: 'from_due',
       anchor_time: null,
     })
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
     expect(beforeTask.done).toBe(false)
     expect(beforeTask.done_at).toBeNull()
     expect(beforeTask.archived_at).toBeNull()
 
     // Simulate mark done
     const now = nowUtc()
-    db.prepare('UPDATE tasks SET done = 1, done_at = ?, archived_at = ? WHERE id = ?').run(
-      now,
-      now,
-      taskId,
-    )
+    getDb()
+      .prepare('UPDATE tasks SET done = 1, done_at = ?, archived_at = ? WHERE id = ?')
+      .run(now, now, taskId)
 
-    const afterTask = getTask(db, taskId)
+    const afterTask = getTask(taskId)
 
     // Log the action
     logAction(
@@ -203,7 +177,7 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
     expect(result).not.toBeNull()
 
     // Verify task is restored
-    const taskAfterUndo = getTask(db, taskId)
+    const taskAfterUndo = getTask(taskId)
     expect(taskAfterUndo.done).toBe(false)
     expect(taskAfterUndo.done_at).toBeNull()
     expect(taskAfterUndo.archived_at).toBeNull()
@@ -211,10 +185,8 @@ describe('UR-002: Undo Mark Done (One-Off)', () => {
 })
 
 describe('UR-003: Undo Snooze', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -222,21 +194,21 @@ describe('UR-003: Undo Snooze', () => {
   })
 
   test('undoing a snooze restores due_at and original_due_at', () => {
-    const taskId = createTestTask(db, {
+    const taskId = createTestTask({
       due_at: '2026-01-31T14:00:00Z', // 8 AM Chicago
       original_due_at: null,
     })
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
 
     // Simulate snooze
-    db.prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?').run(
+    getDb().prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?').run(
       '2026-01-31T20:00:00Z', // Snoozed to 2 PM
       '2026-01-31T14:00:00Z', // Original 8 AM
       taskId,
     )
 
-    const afterTask = getTask(db, taskId)
+    const afterTask = getTask(taskId)
 
     // Log the action
     logAction(
@@ -253,17 +225,15 @@ describe('UR-003: Undo Snooze', () => {
     expect(result).not.toBeNull()
 
     // Verify task is restored
-    const taskAfterUndo = getTask(db, taskId)
+    const taskAfterUndo = getTask(taskId)
     expect(taskAfterUndo.due_at).toBe('2026-01-31T14:00:00Z')
     expect(taskAfterUndo.original_due_at).toBeNull()
   })
 })
 
 describe('UR-004: Undo Is Surgical', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -271,18 +241,18 @@ describe('UR-004: Undo Is Surgical', () => {
   })
 
   test('undo only restores changed fields, preserves other edits', () => {
-    const taskId = createTestTask(db, {
+    const taskId = createTestTask({
       title: 'Original Title',
       due_at: '2026-01-31T14:00:00Z',
       original_due_at: null,
     })
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
 
     // Action 1: Mark done (changes due_at, original_due_at)
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
 
-    const afterDone = getTask(db, taskId)
+    const afterDone = getTask(taskId)
 
     logAction(
       1,
@@ -293,10 +263,10 @@ describe('UR-004: Undo Is Surgical', () => {
     )
 
     // Action 2: Edit title (separate edit, not logged to undo for this test)
-    db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run('New Title', taskId)
+    getDb().prepare('UPDATE tasks SET title = ? WHERE id = ?').run('New Title', taskId)
 
     // Verify title changed
-    expect(getTask(db, taskId).title).toBe('New Title')
+    expect(getTask(taskId).title).toBe('New Title')
 
     // Undo Action 1
     const result = executeUndo(1)
@@ -304,17 +274,15 @@ describe('UR-004: Undo Is Surgical', () => {
     expect(result).not.toBeNull()
 
     // Verify: due_at restored, but title stays "New Title"
-    const taskAfterUndo = getTask(db, taskId)
+    const taskAfterUndo = getTask(taskId)
     expect(taskAfterUndo.due_at).toBe('2026-01-31T14:00:00Z')
     expect(taskAfterUndo.title).toBe('New Title') // Title was NOT affected
   })
 })
 
 describe('UR-005: Undo Bulk Done', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -327,7 +295,7 @@ describe('UR-005: Undo Bulk Done', () => {
     const beforeTasks: Array<{ id: number; due_at: string }> = []
 
     for (let i = 0; i < 5; i++) {
-      const id = createTestTask(db, {
+      const id = createTestTask({
         title: `Task ${i + 1}`,
         due_at: `2026-01-3${i + 1}T14:00:00Z`,
       })
@@ -340,7 +308,7 @@ describe('UR-005: Undo Bulk Done', () => {
 
     for (let i = 0; i < 5; i++) {
       const newDueAt = `2026-02-0${i + 1}T14:00:00Z`
-      db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskIds[i])
+      getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskIds[i])
 
       snapshots.push({
         task_id: taskIds[i],
@@ -361,17 +329,15 @@ describe('UR-005: Undo Bulk Done', () => {
 
     // Verify all tasks restored
     for (let i = 0; i < 5; i++) {
-      const task = getTask(db, taskIds[i])
+      const task = getTask(taskIds[i])
       expect(task.due_at).toBe(beforeTasks[i].due_at)
     }
   })
 })
 
 describe('UR-006: Redo After Undo', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -379,17 +345,17 @@ describe('UR-006: Redo After Undo', () => {
   })
 
   test('after undoing, redo re-applies the action', () => {
-    const taskId = createTestTask(db, {
+    const taskId = createTestTask({
       due_at: '2026-01-31T14:00:00Z',
     })
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
 
     // Mark done
     const newDueAt = '2026-02-01T14:00:00Z'
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskId)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run(newDueAt, taskId)
 
-    const afterTask = getTask(db, taskId)
+    const afterTask = getTask(taskId)
 
     logAction(
       1,
@@ -401,7 +367,7 @@ describe('UR-006: Redo After Undo', () => {
 
     // Undo
     executeUndo(1)
-    expect(getTask(db, taskId).due_at).toBe('2026-01-31T14:00:00Z')
+    expect(getTask(taskId).due_at).toBe('2026-01-31T14:00:00Z')
 
     // Redo
     const result = executeRedo(1)
@@ -410,15 +376,13 @@ describe('UR-006: Redo After Undo', () => {
     expect(result!.redone_action).toBe('done')
 
     // Verify task is back to done state
-    expect(getTask(db, taskId).due_at).toBe('2026-02-01T14:00:00Z')
+    expect(getTask(taskId).due_at).toBe('2026-02-01T14:00:00Z')
   })
 })
 
 describe('UR-007: New Action Clears Redo Stack', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -426,13 +390,13 @@ describe('UR-007: New Action Clears Redo Stack', () => {
   })
 
   test('after undoing, performing a new action clears redo', () => {
-    const taskId = createTestTask(db)
+    const taskId = createTestTask()
 
-    const beforeTask = getTask(db, taskId)
+    const beforeTask = getTask(taskId)
 
     // Action 1: Mark done
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
-    const afterTask = getTask(db, taskId)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', taskId)
+    const afterTask = getTask(taskId)
     logAction(
       1,
       'done',
@@ -446,13 +410,11 @@ describe('UR-007: New Action Clears Redo Stack', () => {
     expect(canRedo(1)).toBe(true)
 
     // New action: Snooze
-    const taskBeforeSnooze = getTask(db, taskId)
-    db.prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?').run(
-      '2026-01-31T20:00:00Z',
-      '2026-01-31T14:00:00Z',
-      taskId,
-    )
-    const taskAfterSnooze = getTask(db, taskId)
+    const taskBeforeSnooze = getTask(taskId)
+    getDb()
+      .prepare('UPDATE tasks SET due_at = ?, original_due_at = ? WHERE id = ?')
+      .run('2026-01-31T20:00:00Z', '2026-01-31T14:00:00Z', taskId)
+    const taskAfterSnooze = getTask(taskId)
     logAction(
       1,
       'snooze',
@@ -467,23 +429,24 @@ describe('UR-007: New Action Clears Redo Stack', () => {
 })
 
 describe('UR-008: Per-User Isolation', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
 
     // Create second user
-    const passwordHash = await bcrypt.hash('test2', 10)
-    db.prepare(
-      `INSERT INTO users (email, name, password_hash, timezone)
-       VALUES ('test2@example.com', 'Test User 2', ?, 'America/Chicago')`,
-    ).run(passwordHash)
+    getDb()
+      .prepare(
+        `INSERT INTO users (email, name, password_hash, timezone)
+       VALUES ('test2@example.com', 'Test User 2', 'hash', 'America/Chicago')`,
+      )
+      .run()
 
     // Create project for user 2
-    db.prepare(
-      `INSERT INTO projects (name, owner_id, shared, sort_order)
+    getDb()
+      .prepare(
+        `INSERT INTO projects (name, owner_id, shared, sort_order)
        VALUES ('Test Project 2', 2, 0, 0)`,
-    ).run()
+      )
+      .run()
   })
 
   afterEach(() => {
@@ -492,15 +455,15 @@ describe('UR-008: Per-User Isolation', () => {
 
   test('user A undo history is independent of user B', () => {
     // Create task for user 1
-    const task1Id = createTestTask(db, { user_id: 1, project_id: 1 })
+    const task1Id = createTestTask({ user_id: 1, project_id: 1 })
 
     // Create task for user 2
-    const task2Id = createTestTask(db, { user_id: 2, project_id: 2 })
+    const task2Id = createTestTask({ user_id: 2, project_id: 2 })
 
     // User 1 marks their task done
-    const before1 = getTask(db, task1Id)
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', task1Id)
-    const after1 = getTask(db, task1Id)
+    const before1 = getTask(task1Id)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-01T14:00:00Z', task1Id)
+    const after1 = getTask(task1Id)
     logAction(
       1,
       'done',
@@ -510,9 +473,9 @@ describe('UR-008: Per-User Isolation', () => {
     )
 
     // User 2 marks their task done
-    const before2 = getTask(db, task2Id)
-    db.prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-02T14:00:00Z', task2Id)
-    const after2 = getTask(db, task2Id)
+    const before2 = getTask(task2Id)
+    getDb().prepare('UPDATE tasks SET due_at = ? WHERE id = ?').run('2026-02-02T14:00:00Z', task2Id)
+    const after2 = getTask(task2Id)
     logAction(
       2,
       'done',
@@ -529,20 +492,18 @@ describe('UR-008: Per-User Isolation', () => {
 
     // User 1's undo only affects their task
     executeUndo(1)
-    expect(getTask(db, task1Id).due_at).toBe('2026-01-31T14:00:00Z') // Restored
-    expect(getTask(db, task2Id).due_at).toBe('2026-02-02T14:00:00Z') // Unchanged
+    expect(getTask(task1Id).due_at).toBe('2026-01-31T14:00:00Z') // Restored
+    expect(getTask(task2Id).due_at).toBe('2026-02-02T14:00:00Z') // Unchanged
 
     // User 2's undo only affects their task
     executeUndo(2)
-    expect(getTask(db, task2Id).due_at).toBe('2026-01-31T14:00:00Z') // Restored
+    expect(getTask(task2Id).due_at).toBe('2026-01-31T14:00:00Z') // Restored
   })
 })
 
 describe('UR-009: Undo Task Creation (soft delete)', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -551,8 +512,8 @@ describe('UR-009: Undo Task Creation (soft delete)', () => {
 
   test('undoing a task creation soft-deletes the task', () => {
     // Create a task and log the create action
-    const taskId = createTestTask(db, { rrule: null, title: 'New Task' })
-    const task = getTask(db, taskId)
+    const taskId = createTestTask({ rrule: null, title: 'New Task' })
+    const task = getTask(taskId)
 
     logAction(
       1,
@@ -574,8 +535,8 @@ describe('UR-009: Undo Task Creation (soft delete)', () => {
     )
 
     // Verify the task exists and is not deleted
-    expect(getTask(db, taskId).title).toBe('New Task')
-    const beforeUndo = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
+    expect(getTask(taskId).title).toBe('New Task')
+    const beforeUndo = getDb().prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
       deleted_at: string | null
     }
     expect(beforeUndo.deleted_at).toBeNull()
@@ -586,7 +547,7 @@ describe('UR-009: Undo Task Creation (soft delete)', () => {
     expect(result!.undone_action).toBe('create')
 
     // Verify the task was soft-deleted, not permanently removed
-    const afterUndo = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
+    const afterUndo = getDb().prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as {
       deleted_at: string | null
     }
     expect(afterUndo).not.toBeUndefined()
@@ -595,10 +556,8 @@ describe('UR-009: Undo Task Creation (soft delete)', () => {
 })
 
 describe('UR-010: Count and Watermark Functions', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -610,10 +569,10 @@ describe('UR-010: Count and Watermark Functions', () => {
 
     // Create 3 logged actions
     for (let i = 0; i < 3; i++) {
-      const taskId = createTestTask(db, { title: `Task ${i}` })
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
-      const after = getTask(db, taskId)
+      const taskId = createTestTask({ title: `Task ${i}` })
+      const before = getTask(taskId)
+      getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -633,10 +592,10 @@ describe('UR-010: Count and Watermark Functions', () => {
   test('countRedoable returns correct count', () => {
     expect(countRedoable(1)).toBe(0)
 
-    const taskId = createTestTask(db)
-    const before = getTask(db, taskId)
-    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
-    const after = getTask(db, taskId)
+    const taskId = createTestTask()
+    const before = getTask(taskId)
+    getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+    const after = getTask(taskId)
     logAction(1, 'edit', 'Edit', ['priority'], [createTaskSnapshot(before, after, ['priority'])])
 
     // Undo it
@@ -653,10 +612,10 @@ describe('UR-010: Count and Watermark Functions', () => {
     expect(getLatestUndoId(1)).toBeNull()
 
     // Create an action
-    const taskId = createTestTask(db)
-    const before = getTask(db, taskId)
-    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
-    const after = getTask(db, taskId)
+    const taskId = createTestTask()
+    const before = getTask(taskId)
+    getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+    const after = getTask(taskId)
     logAction(1, 'edit', 'Edit 1', ['priority'], [createTaskSnapshot(before, after, ['priority'])])
 
     const id1 = getLatestUndoId(1)
@@ -664,9 +623,9 @@ describe('UR-010: Count and Watermark Functions', () => {
     expect(typeof id1).toBe('number')
 
     // Create another action - ID should increase
-    const before2 = getTask(db, taskId)
-    db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(3, taskId)
-    const after2 = getTask(db, taskId)
+    const before2 = getTask(taskId)
+    getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(3, taskId)
+    const after2 = getTask(taskId)
     logAction(
       1,
       'edit',
@@ -682,10 +641,8 @@ describe('UR-010: Count and Watermark Functions', () => {
 })
 
 describe('UR-011: Batch Undo', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -696,11 +653,13 @@ describe('UR-011: Batch Undo', () => {
     // Create 5 actions
     const taskIds: number[] = []
     for (let i = 0; i < 5; i++) {
-      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      const taskId = createTestTask({ title: `Task ${i}`, priority: 0 })
       taskIds.push(taskId)
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
-      const after = getTask(db, taskId)
+      const before = getTask(taskId)
+      getDb()
+        .prepare('UPDATE tasks SET priority = ? WHERE id = ?')
+        .run(i + 1, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -720,17 +679,17 @@ describe('UR-011: Batch Undo', () => {
 
     // All tasks should be back to priority 0
     for (const taskId of taskIds) {
-      expect(getTask(db, taskId).priority).toBe(0)
+      expect(getTask(taskId).priority).toBe(0)
     }
   })
 
   test('executeBatchUndo respects sessionStartId boundary', () => {
     // Create 2 "pre-session" actions
     for (let i = 0; i < 2; i++) {
-      const taskId = createTestTask(db, { title: `Pre ${i}`, priority: 0 })
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(1, taskId)
-      const after = getTask(db, taskId)
+      const taskId = createTestTask({ title: `Pre ${i}`, priority: 0 })
+      const before = getTask(taskId)
+      getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(1, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -746,11 +705,11 @@ describe('UR-011: Batch Undo', () => {
     // Create 3 "in-session" actions
     const sessionTaskIds: number[] = []
     for (let i = 0; i < 3; i++) {
-      const taskId = createTestTask(db, { title: `Session ${i}`, priority: 0 })
+      const taskId = createTestTask({ title: `Session ${i}`, priority: 0 })
       sessionTaskIds.push(taskId)
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
-      const after = getTask(db, taskId)
+      const before = getTask(taskId)
+      getDb().prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(2, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -769,18 +728,20 @@ describe('UR-011: Batch Undo', () => {
 
     // Session tasks should be restored
     for (const taskId of sessionTaskIds) {
-      expect(getTask(db, taskId).priority).toBe(0)
+      expect(getTask(taskId).priority).toBe(0)
     }
   })
 
   test('executeBatchUndo with throughId undoes down to specific entry', () => {
     const taskIds: number[] = []
     for (let i = 0; i < 5; i++) {
-      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      const taskId = createTestTask({ title: `Task ${i}`, priority: 0 })
       taskIds.push(taskId)
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
-      const after = getTask(db, taskId)
+      const before = getTask(taskId)
+      getDb()
+        .prepare('UPDATE tasks SET priority = ? WHERE id = ?')
+        .run(i + 1, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -791,7 +752,7 @@ describe('UR-011: Batch Undo', () => {
     }
 
     // Get the ID of the 3rd entry (middle one)
-    const entries = db
+    const entries = getDb()
       .prepare('SELECT id FROM undo_log WHERE user_id = ? ORDER BY id ASC')
       .all(1) as { id: number }[]
     const thirdEntryId = entries[2].id
@@ -804,10 +765,8 @@ describe('UR-011: Batch Undo', () => {
 })
 
 describe('UR-012: Batch Redo', () => {
-  let db: ReturnType<typeof getDb>
-
-  beforeEach(async () => {
-    db = await setupTestDb()
+  beforeEach(() => {
+    setupTestDb()
   })
 
   afterEach(() => {
@@ -818,11 +777,13 @@ describe('UR-012: Batch Redo', () => {
     // Create 3 actions and undo them all
     const taskIds: number[] = []
     for (let i = 0; i < 3; i++) {
-      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
+      const taskId = createTestTask({ title: `Task ${i}`, priority: 0 })
       taskIds.push(taskId)
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
-      const after = getTask(db, taskId)
+      const before = getTask(taskId)
+      getDb()
+        .prepare('UPDATE tasks SET priority = ? WHERE id = ?')
+        .run(i + 1, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -844,17 +805,19 @@ describe('UR-012: Batch Redo', () => {
 
     // All tasks should have their new priorities
     for (let i = 0; i < 3; i++) {
-      expect(getTask(db, taskIds[i]).priority).toBe(i + 1)
+      expect(getTask(taskIds[i]).priority).toBe(i + 1)
     }
   })
 
   test('executeBatchRedo with throughId redoes up to specific entry', () => {
     // Create 5 actions and undo them all
     for (let i = 0; i < 5; i++) {
-      const taskId = createTestTask(db, { title: `Task ${i}`, priority: 0 })
-      const before = getTask(db, taskId)
-      db.prepare('UPDATE tasks SET priority = ? WHERE id = ?').run(i + 1, taskId)
-      const after = getTask(db, taskId)
+      const taskId = createTestTask({ title: `Task ${i}`, priority: 0 })
+      const before = getTask(taskId)
+      getDb()
+        .prepare('UPDATE tasks SET priority = ? WHERE id = ?')
+        .run(i + 1, taskId)
+      const after = getTask(taskId)
       logAction(
         1,
         'edit',
@@ -868,7 +831,7 @@ describe('UR-012: Batch Redo', () => {
     expect(countRedoable(1)).toBe(5)
 
     // Get the ID of the 3rd entry
-    const entries = db
+    const entries = getDb()
       .prepare('SELECT id FROM undo_log WHERE user_id = ? ORDER BY id ASC')
       .all(1) as { id: number }[]
     const thirdEntryId = entries[2].id

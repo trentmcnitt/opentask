@@ -15,9 +15,7 @@ import { snoozeTask } from '@/core/tasks/snooze'
 import { executeUndo, getUndoHistory } from '@/core/undo'
 import { computeSnoozeTime, snapToHour } from '@/lib/snooze'
 import { DateTime } from 'luxon'
-
-const TEST_TIMEZONE = 'America/Chicago'
-const TEST_USER_ID = 1
+import { setupTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 // Helper to create a future time (always in the future)
 function futureTime(hoursFromNow: number = 1): string {
@@ -36,24 +34,7 @@ function futureLocalTime(hour: number, minute: number = 0, daysFromNow: number =
 
 describe('Snooze Behavioral Tests', () => {
   beforeEach(() => {
-    resetDb()
-    const db = getDb()
-
-    // Seed test user
-    db.prepare(
-      `
-      INSERT INTO users (id, email, name, password_hash, timezone)
-      VALUES (?, ?, ?, ?, ?)
-    `,
-    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
-
-    // Seed inbox project
-    db.prepare(
-      `
-      INSERT INTO projects (id, name, owner_id, shared, sort_order)
-      VALUES (1, 'Inbox', ?, 0, 0)
-    `,
-    ).run(TEST_USER_ID)
+    setupTestDb()
   })
 
   afterEach(() => {

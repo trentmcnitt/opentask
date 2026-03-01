@@ -300,6 +300,7 @@ export async function enrichmentQuery(
         model: getModel(),
         duration_ms: durationMs,
         error: result ? null : 'No output from enrichment slot',
+        provider: 'sdk',
       })
     }
 
@@ -324,6 +325,7 @@ export async function enrichmentQuery(
         model: getModel(),
         duration_ms: durationMs,
         error: err instanceof Error ? err.message : String(err),
+        provider: 'sdk',
       })
     }
 

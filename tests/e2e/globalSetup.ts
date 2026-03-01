@@ -10,6 +10,7 @@ import bcrypt from 'bcrypt'
 import fs from 'fs'
 import path from 'path'
 import { DateTime } from 'luxon'
+import { hashToken, tokenPreview } from '../../src/core/auth/token-hash'
 
 const DB_PATH = path.join(process.cwd(), 'data', 'test-e2e.db')
 const SCHEMA_PATH = path.join(process.cwd(), 'src', 'core', 'db', 'schema.sql')
@@ -67,13 +68,14 @@ export default async function globalSetup() {
   `,
   ).run(3, 'Work', 1, 0, 2)
 
-  // Create API token
+  // Create API token (stored as SHA-256 hash, matching production pattern)
+  const rawToken = 'a'.repeat(64)
   db.prepare(
     `
-    INSERT INTO api_tokens (user_id, token, name)
-    VALUES (?, ?, ?)
+    INSERT INTO api_tokens (user_id, token, token_preview, name)
+    VALUES (?, ?, ?, ?)
   `,
-  ).run(1, 'a'.repeat(64), 'E2E Token')
+  ).run(1, hashToken(rawToken), tokenPreview(rawToken), 'E2E Token')
 
   // Create tasks with specific dates
   // All dates use future times to ensure tests are time-agnostic (pass at any time of day)

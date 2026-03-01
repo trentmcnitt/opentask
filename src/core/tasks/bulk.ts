@@ -440,6 +440,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const activityEntries: ActivityEntry[] = []
   const batchId = crypto.randomUUID()
   const allFieldsChanged = new Set<string>()
+  const perTaskFields = new Map<number, string[]>()
   let totalSnoozedCount = 0
 
   const result = withTransaction((tx) => {
@@ -494,6 +495,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         })
 
         data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
+        perTaskFields.set(task.id, data.fieldsChanged)
 
         // Track snooze count for stats (handled at end)
         if (data.isSnoozeScenario) {
@@ -531,7 +533,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.updated', {
         task: formatTaskResponse(fresh),
-        fields_changed: Array.from(allFieldsChanged),
+        fields_changed: perTaskFields.get(snapshot.task_id) ?? Array.from(allFieldsChanged),
       })
     }
   }

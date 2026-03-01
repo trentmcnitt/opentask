@@ -7,24 +7,11 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { getDb, resetDb } from '@/core/db'
-
-const TEST_USER_ID = 1
-const TEST_TIMEZONE = 'America/Chicago'
+import { setupTestDb, TEST_USER_ID } from '../helpers/setup'
 
 describe('APNs Device Registration', () => {
   beforeEach(() => {
-    resetDb()
-    const db = getDb()
-
-    db.prepare(
-      `INSERT INTO users (id, email, name, password_hash, timezone)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(TEST_USER_ID, 'test@example.com', 'Test User', 'hash', TEST_TIMEZONE)
-
-    db.prepare(
-      `INSERT INTO projects (id, name, owner_id, shared, sort_order)
-       VALUES (1, 'Inbox', ?, 0, 0)`,
-    ).run(TEST_USER_ID)
+    setupTestDb()
   })
 
   afterEach(() => {
