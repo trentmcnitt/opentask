@@ -17,6 +17,8 @@ import { formatTaskLine, getScheduleBlock } from './format'
 import { WhatsNextResultSchema } from './types'
 import type { WhatsNextResult, TaskSummary } from './types'
 import { logAIActivity, getAIActivity } from './activity'
+import { getApiProvider, type AIProvider } from './provider'
+import { requireFeatureModel } from './models'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 
@@ -32,8 +34,8 @@ export async function generateWhatsNext(
   timezone: string,
   tasks: TaskSummary[],
   userContext?: string | null,
-  /** Override model for this call. Used by the API route to pass the user's preference. */
-  modelOverride?: string,
+  /** Provider to use for this call. 'sdk' or an API provider name. */
+  provider?: AIProvider,
   /** Whether this is a scheduled cron run or an on-demand user request. */
   source?: 'scheduled' | 'on-demand',
 ): Promise<WhatsNextResult | null> {
@@ -85,7 +87,8 @@ Surface 0-8 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
-  const whatsNextModel = modelOverride || process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku'
+  const effectiveProvider = provider ?? getApiProvider()
+  const whatsNextModel = requireFeatureModel('whats_next', effectiveProvider)
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
@@ -96,6 +99,7 @@ Surface 0-8 tasks and return the JSON result.`
     userId,
     action: 'whats_next',
     inputText: `${tasks.length} tasks`,
+    provider: effectiveProvider,
   })
 
   // The AI sometimes returns text with JSON in a markdown code block rather than
@@ -151,6 +155,7 @@ Surface 0-8 tasks and return the JSON result.`
     model: whatsNextModel,
     duration_ms: result.durationMs,
     error: null,
+    provider: effectiveProvider,
   })
 
   return validResult

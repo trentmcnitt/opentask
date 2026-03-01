@@ -129,8 +129,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     }
 
                 case "SNOOZE_ALL_CUSTOM":
-                    if let delta = selectedDeltaMinutes {
-                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: delta)
+                    if let dueAt = selectedDueAt {
+                        let result = try await APIClient.shared.snoozeOverdue(until: dueAt)
                         wasBulkSnooze = result.tasksAffected > 0
                     }
 

@@ -18,6 +18,7 @@ const testEnv = {
   ...process.env,
   OPENTASK_DB_PATH: DB_PATH,
   OPENTASK_TEST_MODE: '1',
+  OPENTASK_AI_PROVIDER: 'anthropic',
   AUTH_SECRET: 'test-secret-for-integration-tests',
 }
 

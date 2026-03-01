@@ -1,4 +1,16 @@
 export { isAIEnabled, initAI, aiQuery } from './sdk'
+export type { AIProvider } from './provider'
+export {
+  isSdkAvailable,
+  isSdkAvailableSync,
+  isAnthropicAvailable,
+  isOpenAIAvailable,
+  getServerDefaultProvider,
+  getApiProvider,
+  resolveModelId,
+} from './provider'
+export { resolveFeatureModel, requireFeatureModel } from './models'
+export type { AIFeature } from './models'
 export { processEnrichmentQueue, enrichSingleTask, getEnrichmentPipelineStatus } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
@@ -30,7 +42,8 @@ export {
   shutdownQuickTakeSlot,
 } from './quick-take-slot'
 export type { QuickTakeSlotStats } from './quick-take-slot'
-export { getUserAiContext, getUserWhatsNextModel } from './user-context'
+export { getUserAiContext, getUserFeatureModes } from './user-context'
+export type { FeatureMode } from './user-context'
 export { withSlot, getQueueStats } from './queue'
 export {
   initEnrichmentSlot,

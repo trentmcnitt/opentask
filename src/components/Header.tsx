@@ -40,7 +40,11 @@ import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { CountBadge } from '@/components/CountBadge'
 import { SearchBar } from './SearchBar'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
-import { useSnoozePreferences, useAiAvailable } from '@/components/PreferencesProvider'
+import {
+  useSnoozePreferences,
+  useAiAvailable,
+  useAiFeatureInfo,
+} from '@/components/PreferencesProvider'
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
@@ -93,11 +97,17 @@ export function Header({
   const [aiSlotState, setAiSlotState] = useState<string | null>(null)
   const { defaultSnoozeOption } = useSnoozePreferences()
   const aiAvailable = useAiAvailable()
+  const { aiFeatureInfo } = useAiFeatureInfo()
 
-  /** Fetch AI slot state lazily when the hamburger menu opens */
+  // Only show the status dot when at least one feature uses SDK mode
+  const hasSdkFeature = aiFeatureInfo
+    ? Object.values(aiFeatureInfo).some((f) => f.mode === 'sdk')
+    : false
+
+  /** Fetch AI slot state lazily when the hamburger menu opens (SDK features only) */
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
-      if (!aiAvailable) return
+      if (!aiAvailable || !hasSdkFeature) return
       if (open && aiSlotState === null) {
         fetch('/api/ai/status')
           .then((res) => {
@@ -112,14 +122,29 @@ export function Header({
             return res.json()
           })
           .then((json) => {
-            if (json?.data?.enrichment_slot?.state) {
-              setAiSlotState(json.data.enrichment_slot.state)
+            if (!json?.data) return
+            // Use worst slot state across SDK-mode features
+            const states: string[] = []
+            if (aiFeatureInfo?.enrichment?.mode === 'sdk' && json.data.enrichment_slot?.state) {
+              states.push(json.data.enrichment_slot.state)
             }
+            if (aiFeatureInfo?.quick_take?.mode === 'sdk' && json.data.quick_take_slot?.state) {
+              states.push(json.data.quick_take_slot.state)
+            }
+            // Priority: dead > uninitialized > initializing > busy > available
+            const worst =
+              states.find((s) => s === 'dead') ??
+              states.find((s) => s === 'uninitialized') ??
+              states.find((s) => s === 'initializing') ??
+              states.find((s) => s === 'busy') ??
+              states[0] ??
+              'unknown'
+            setAiSlotState(worst)
           })
           .catch(() => setAiSlotState('unknown'))
       }
     },
-    [aiSlotState, aiAvailable],
+    [aiSlotState, aiAvailable, hasSdkFeature, aiFeatureInfo],
   )
 
   const snoozePress = useSimpleLongPress({
@@ -339,7 +364,7 @@ export function Header({
                   <DropdownMenuItem onClick={() => setAiStatusOpen(true)}>
                     <Bot className="size-4" />
                     AI Status
-                    {aiSlotState && aiSlotState !== 'disabled' && (
+                    {hasSdkFeature && aiSlotState && aiSlotState !== 'disabled' && (
                       <AIStatusDot state={aiSlotState} className="ml-auto" />
                     )}
                   </DropdownMenuItem>

@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { AIActivityEntry } from '@/core/ai/types'
 import type { EnrichmentSlotStats, QuickTakeSlotStats } from '@/core/ai'
+import type { FeatureInfoMap, FeatureMode } from '@/components/PreferencesProvider'
+import type { AIFeature } from '@/core/ai/models'
 
 interface QueueStats {
   active: number
@@ -45,25 +47,37 @@ export interface AIStatusData {
   recent_activity: AIActivityEntry[]
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  enrich: 'Enrichment',
+const FEATURE_LABELS: Record<string, string> = {
+  enrichment: 'Enrichment',
   quick_take: 'Quick Take',
   whats_next: "What's Next",
   insights: 'Insights',
 }
 
+/** Map action keys (used in activity log) to feature keys (used in FEATURE_LABELS). */
+const ACTION_TO_FEATURE: Record<string, string> = { enrich: 'enrichment' }
+
+function getActionLabel(action: string): string {
+  const featureKey = ACTION_TO_FEATURE[action] || action
+  return FEATURE_LABELS[featureKey] || action
+}
+
+const FEATURE_DISPLAY_ORDER: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+
 const ACTION_FILTER_OPTIONS = [
   { value: '', label: 'All' },
-  { value: 'enrich', label: 'Enrichment' },
-  { value: 'quick_take', label: 'Quick Take' },
-  { value: 'whats_next', label: "What's Next" },
-  { value: 'insights', label: 'Insights' },
+  { value: 'enrich', label: getActionLabel('enrich') },
+  { value: 'quick_take', label: getActionLabel('quick_take') },
+  { value: 'whats_next', label: getActionLabel('whats_next') },
+  { value: 'insights', label: getActionLabel('insights') },
 ]
 
 interface AIStatusContentProps {
   data: AIStatusData
   timezone: string
   onRefresh: () => void
+  /** Per-feature mode/provider/model info from preferences */
+  featureInfo?: FeatureInfoMap | null
   /** Whether to show filter chips and pagination controls */
   showFilters?: boolean
   /** Current action filter value */
@@ -82,6 +96,7 @@ export function AIStatusContent({
   data,
   timezone,
   onRefresh,
+  featureInfo,
   showFilters = false,
   actionFilter = '',
   onActionFilterChange,
@@ -89,116 +104,26 @@ export function AIStatusContent({
   onLoadMore,
   loadingMore = false,
 }: AIStatusContentProps) {
+  /* Show SDK-specific sections (slots, queue) when at least one feature uses SDK mode.
+     Defaults to true when featureInfo hasn't loaded yet. */
+  const hasSdkFeatures = featureInfo
+    ? Object.values(featureInfo).some((f) => f.mode === 'sdk')
+    : true
+
   return (
     <div className="space-y-6">
-      {/* Enrichment slot status */}
-      <div className="border-border rounded-lg border p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Enrichment Slot</h3>
-          <Button variant="ghost" size="sm" onClick={onRefresh} className="text-xs">
-            <RefreshCw className="mr-1 h-3 w-3" />
-            Refresh
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="text-muted-foreground">State</span>
-            <div className="mt-0.5">
-              <SlotStateBadge state={data.enrichment_slot.state} />
-            </div>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Model</span>
-            <p className="mt-0.5 font-medium">{data.enrichment_slot.model}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Requests</span>
-            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRequests}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Recycles</span>
-            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRecycles}</p>
-          </div>
-          {data.enrichment_slot.activatedAt && (
-            <div className="col-span-2">
-              <span className="text-muted-foreground">Up since</span>
-              <p className="mt-0.5 text-xs">
-                {new Date(data.enrichment_slot.activatedAt).toLocaleString('en-US', {
-                  timeZone: timezone,
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Feature Overview — per-feature mode, provider, and model */}
+      {featureInfo && <FeatureOverviewSection featureInfo={featureInfo} onRefresh={onRefresh} />}
 
-      {/* Quick Take slot status */}
-      <div className="border-border rounded-lg border p-4">
-        <h3 className="mb-3 text-sm font-semibold">Quick Take Slot</h3>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="text-muted-foreground">State</span>
-            <div className="mt-0.5">
-              <SlotStateBadge state={data.quick_take_slot.state} />
-            </div>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Model</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.model}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Requests</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRequests}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Recycles</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRecycles}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Superseded</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalSuperseded}</p>
-          </div>
-          {data.quick_take_slot.activatedAt && (
-            <div>
-              <span className="text-muted-foreground">Up since</span>
-              <p className="mt-0.5 text-xs">
-                {new Date(data.quick_take_slot.activatedAt).toLocaleString('en-US', {
-                  timeZone: timezone,
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Queue status */}
-      <div className="border-border rounded-lg border p-4">
-        <h3 className="mb-3 text-sm font-semibold">Queue</h3>
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <div>
-            <span className="text-muted-foreground">Active</span>
-            <p className="mt-0.5 font-medium">{data.queue.active}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Waiting</span>
-            <p className="mt-0.5 font-medium">{data.queue.waiting}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Max</span>
-            <p className="mt-0.5 font-medium">{data.queue.maxConcurrent}</p>
-          </div>
-        </div>
-      </div>
+      {/* SDK-specific sections: slots + queue (only when at least one feature uses SDK) */}
+      {hasSdkFeatures && (
+        <SdkSlotsSection
+          data={data}
+          timezone={timezone}
+          showRefresh={!featureInfo}
+          onRefresh={onRefresh}
+        />
+      )}
 
       {/* In-progress operations */}
       <InProgressSection data={data} />
@@ -452,7 +377,7 @@ function ExpandableAIActivityRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-xs">
-              {ACTION_LABELS[entry.action] || entry.action}
+              {getActionLabel(entry.action)}
             </Badge>
             <span className={cn('text-xs font-medium', statusColor)}>{entry.status}</span>
             {entry.duration_ms != null && (
@@ -582,6 +507,180 @@ function AIOutputDisplay({ output }: { output: string }) {
     <pre className="bg-muted text-foreground mt-0.5 max-h-40 cursor-text overflow-auto rounded p-2 whitespace-pre-wrap select-text">
       {output}
     </pre>
+  )
+}
+
+/** SDK slot stats + queue — rendered only when at least one feature uses SDK mode. */
+function SdkSlotsSection({
+  data,
+  timezone,
+  showRefresh,
+  onRefresh,
+}: {
+  data: AIStatusData
+  timezone: string
+  showRefresh: boolean
+  onRefresh: () => void
+}) {
+  const formatActivatedAt = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', {
+      timeZone: timezone,
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+
+  return (
+    <>
+      {/* Enrichment slot */}
+      <div className="border-border rounded-lg border p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Enrichment Slot</h3>
+          {showRefresh && (
+            <Button variant="ghost" size="sm" onClick={onRefresh} className="text-xs">
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Refresh
+            </Button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span className="text-muted-foreground">State</span>
+            <div className="mt-0.5">
+              <SlotStateBadge state={data.enrichment_slot.state} />
+            </div>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Model</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.model}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Requests</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRequests}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Recycles</span>
+            <p className="mt-0.5 font-medium">{data.enrichment_slot.totalRecycles}</p>
+          </div>
+          {data.enrichment_slot.activatedAt && (
+            <div className="col-span-2">
+              <span className="text-muted-foreground">Up since</span>
+              <p className="mt-0.5 text-xs">
+                {formatActivatedAt(data.enrichment_slot.activatedAt)}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Take slot */}
+      <div className="border-border rounded-lg border p-4">
+        <h3 className="mb-3 text-sm font-semibold">Quick Take Slot</h3>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span className="text-muted-foreground">State</span>
+            <div className="mt-0.5">
+              <SlotStateBadge state={data.quick_take_slot.state} />
+            </div>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Model</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.model}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Requests</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRequests}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Recycles</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRecycles}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Superseded</span>
+            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalSuperseded}</p>
+          </div>
+          {data.quick_take_slot.activatedAt && (
+            <div>
+              <span className="text-muted-foreground">Up since</span>
+              <p className="mt-0.5 text-xs">
+                {formatActivatedAt(data.quick_take_slot.activatedAt)}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Queue */}
+      <div className="border-border rounded-lg border p-4">
+        <h3 className="mb-3 text-sm font-semibold">Queue</h3>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <span className="text-muted-foreground">Active</span>
+            <p className="mt-0.5 font-medium">{data.queue.active}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Waiting</span>
+            <p className="mt-0.5 font-medium">{data.queue.waiting}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Max</span>
+            <p className="mt-0.5 font-medium">{data.queue.maxConcurrent}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** Feature Overview section — shows each AI feature's mode, provider, and model. */
+function FeatureOverviewSection({
+  featureInfo,
+  onRefresh,
+}: {
+  featureInfo: FeatureInfoMap
+  onRefresh: () => void
+}) {
+  return (
+    <div className="border-border rounded-lg border p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Features</h3>
+        <Button variant="ghost" size="sm" onClick={onRefresh} className="text-xs">
+          <RefreshCw className="mr-1 h-3 w-3" />
+          Refresh
+        </Button>
+      </div>
+      <div className="space-y-2 text-sm">
+        {FEATURE_DISPLAY_ORDER.map((key) => {
+          const info = featureInfo[key]
+          if (!info) return null
+          return (
+            <div key={key} className="flex items-center gap-2">
+              <span className="w-24 flex-shrink-0 font-medium">{FEATURE_LABELS[key] || key}</span>
+              <FeatureModeBadge mode={info.mode} />
+              <span className="text-muted-foreground truncate text-xs">
+                {info.model_display || '—'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FeatureModeBadge({ mode }: { mode: FeatureMode }) {
+  const styles: Record<string, string> = {
+    off: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+    sdk: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    api: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  }
+
+  return (
+    <Badge className={cn('w-10 justify-center text-[10px] uppercase', styles[mode] || styles.off)}>
+      {mode}
+    </Badge>
   )
 }
 

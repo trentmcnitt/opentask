@@ -17,6 +17,9 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
 
+// Set a provider so getApiProvider() doesn't throw in tests (no real API calls are made)
+process.env.OPENTASK_AI_PROVIDER = 'anthropic'
+
 // Mock isAIEnabled to return true for these tests
 vi.mock('@/core/ai/sdk', () => ({
   isAIEnabled: () => true,
@@ -93,6 +96,9 @@ function clearPendingEnrichment(): void {
 
 beforeAll(() => {
   setupTestDb()
+  // Set enrichment mode to 'sdk' so tests use the mocked enrichmentQuery slot path
+  const db = getDb()
+  db.prepare("UPDATE users SET ai_enrichment_mode = 'sdk' WHERE id = ?").run(TEST_USER_ID)
 })
 
 afterAll(() => {
@@ -669,6 +675,8 @@ describe('fair queuing', () => {
     db.prepare(
       'INSERT OR IGNORE INTO users (id, name, email, password_hash, timezone) VALUES (?, ?, ?, ?, ?)',
     ).run(2, 'user2', 'user2@test.com', 'hash', 'America/Chicago')
+    // Set enrichment mode to 'sdk' so it uses the mocked slot path
+    db.prepare("UPDATE users SET ai_enrichment_mode = 'sdk' WHERE id = 2").run()
 
     // Get default project ID (Inbox, ID 1)
     const defaultProjectId = 1

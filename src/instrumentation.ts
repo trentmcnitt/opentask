@@ -35,8 +35,8 @@ export async function register() {
       purgeOldAIActivity,
       initEnrichmentSlot,
       shutdownEnrichmentSlot,
-      initQuickTakeSlot,
       shutdownQuickTakeSlot,
+      getServerDefaultProvider,
     } = await import('@/core/ai')
 
     // Run initial notification check after a short delay
@@ -137,40 +137,51 @@ export async function register() {
 
     await initAI()
     if (isAIEnabled()) {
-      // Warm up the enrichment slot (dedicated subprocess for enrichment queries)
-      initEnrichmentSlot().catch((err) => {
-        log.error('ai', 'Enrichment slot startup failed:', err)
-      })
+      const defaultProvider = getServerDefaultProvider()
 
-      // Quick Take slot: disabled by default for alpha — cold path handles requests.
-      // Uncomment when Quick Take is promoted from experimental.
-      // initQuickTakeSlot().catch((err) => {
-      //   log.error('ai', 'Quick Take slot startup failed:', err)
-      // })
+      // Warm slots are SDK-specific (subprocess lifecycle). API mode uses
+      // stateless HTTP calls and doesn't need warm slots.
+      if (defaultProvider === 'sdk') {
+        // Warm up the enrichment slot (dedicated subprocess for enrichment queries)
+        initEnrichmentSlot().catch((err) => {
+          log.error('ai', 'Enrichment slot startup failed:', err)
+        })
 
-      // What's Next cron: generate recommendations for all active users at 3 AM
-      // Uses Opus for the scheduled batch (no time pressure, maximum quality)
+        // Quick Take slot: disabled by default for alpha — cold path handles requests.
+        // Uncomment when Quick Take is promoted from experimental.
+        // initQuickTakeSlot().catch((err) => {
+        //   log.error('ai', 'Quick Take slot startup failed:', err)
+        // })
+      } else {
+        log.info('ai', 'API provider active — warm slots disabled (not needed for HTTP calls)')
+      }
+
+      // What's Next cron: generate recommendations for active users at 3 AM
       cron.schedule('0 3 * * *', async () => {
         try {
           const { generateWhatsNext, buildTaskSummaries, getUserAiContext } =
             await import('@/core/ai')
+          const { getUserFeatureModes } = await import('@/core/ai/user-context')
+          const { getApiProvider } = await import('@/core/ai/provider')
           const { getDb } = await import('@/core/db')
           const db = getDb()
           const users = db.prepare('SELECT id, timezone FROM users').all() as {
             id: number
             timezone: string
           }[]
-          const cronModel = process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'claude-opus-4-6'
           for (const user of users) {
+            const modes = getUserFeatureModes(user.id)
+            if (modes.whats_next === 'off') continue
             const tasks = buildTaskSummaries(user.id)
             if (tasks.length > 0) {
               const aiContext = getUserAiContext(user.id)
+              const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
               await generateWhatsNext(
                 user.id,
                 user.timezone,
                 tasks,
                 aiContext,
-                cronModel,
+                provider,
                 'scheduled',
               ).catch((err) => {
                 log.error('cron', `What's Next generation failed for user ${user.id}:`, err)
@@ -188,12 +199,14 @@ export async function register() {
         }
       })
 
-      // Insights cron: score and annotate tasks for all active users at 3:15 AM
+      // Insights cron: score and annotate tasks for active users at 3:15 AM
       // Runs after What's Next to avoid semaphore contention (both hold 1 slot sequentially)
       cron.schedule('15 3 * * *', async () => {
         try {
           const { generateInsightsForUser, buildTaskSummaries, getUserAiContext } =
             await import('@/core/ai')
+          const { getUserFeatureModes } = await import('@/core/ai/user-context')
+          const { getApiProvider } = await import('@/core/ai/provider')
           const { getDb } = await import('@/core/db')
           const db = getDb()
           const users = db.prepare('SELECT id, timezone FROM users').all() as {
@@ -202,10 +215,20 @@ export async function register() {
           }[]
           for (const user of users) {
             try {
+              const modes = getUserFeatureModes(user.id)
+              if (modes.insights === 'off') continue
               const tasks = buildTaskSummaries(user.id)
               if (tasks.length > 0) {
                 const aiContext = getUserAiContext(user.id)
-                await generateInsightsForUser(user.id, user.timezone, tasks, aiContext, 'scheduled')
+                const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
+                await generateInsightsForUser(
+                  user.id,
+                  user.timezone,
+                  tasks,
+                  aiContext,
+                  'scheduled',
+                  provider,
+                )
               }
             } catch (err) {
               log.error('cron', `Insights generation failed for user ${user.id}:`, err)
@@ -224,15 +247,17 @@ export async function register() {
 
       log.info(
         'ai',
-        "AI warm slot initializing, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled",
+        `AI provider: ${defaultProvider}, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled`,
       )
 
-      // Graceful shutdown: close warm slots on SIGTERM
-      process.on('SIGTERM', () => {
-        log.info('ai', 'SIGTERM received — shutting down warm slots')
-        shutdownEnrichmentSlot()
-        shutdownQuickTakeSlot()
-      })
+      // Graceful shutdown: close warm slots on SIGTERM (SDK mode only)
+      if (defaultProvider === 'sdk') {
+        process.on('SIGTERM', () => {
+          log.info('ai', 'SIGTERM received — shutting down warm slots')
+          shutdownEnrichmentSlot()
+          shutdownQuickTakeSlot()
+        })
+      }
     }
   }
 }

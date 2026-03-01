@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useAiPreferences } from '@/components/PreferencesProvider'
+import type { FeatureMode } from '@/components/PreferencesProvider'
 
 export type AiMode = 'off' | 'on'
 
 export interface UseAiModeReturn {
   mode: AiMode
   setMode: (mode: AiMode) => void
+  /** Whether insights are enabled (insights mode !== 'off') */
   showInsights: boolean
   setShowInsights: (show: boolean) => void
   wnCommentaryUnfiltered: boolean
@@ -31,9 +33,9 @@ function patchPreference(fields: Record<string, unknown>) {
 
 /**
  * Manages AI mode toggle state (Off / On) and visibility preferences:
- * - Insights chip toggle (showInsights)
+ * - Insights visibility is derived from insights mode (off = hidden, sdk/api = shown)
  * - WN commentary when not filtering, WN background highlight
- * - Signal/score chip visibility when Insights chip is off
+ * - Signal/score chip visibility
  *
  * Backed by PreferencesProvider (server-persisted per user).
  *
@@ -45,8 +47,8 @@ export function useAiMode(): UseAiModeReturn {
     aiMode,
     setAiMode,
     setAiShowScores,
-    aiShowInsights,
-    setAiShowInsights,
+    aiInsightsMode,
+    setAiInsightsMode,
     aiWnCommentaryUnfiltered,
     setAiWnCommentaryUnfiltered,
     aiWnHighlight,
@@ -100,12 +102,17 @@ export function useAiMode(): UseAiModeReturn {
     [setAiMode],
   )
 
+  // Insights visibility: derived from ai_insights_mode.
+  // Toggle sets mode between 'off' and 'api'.
+  const showInsights = aiInsightsMode !== 'off'
+
   const setShowInsights = useCallback(
     (show: boolean) => {
-      setAiShowInsights(show)
-      patchPreference({ ai_show_insights: show })
+      const newMode: FeatureMode = show ? 'api' : 'off'
+      setAiInsightsMode(newMode)
+      patchPreference({ ai_insights_mode: newMode })
     },
-    [setAiShowInsights],
+    [setAiInsightsMode],
   )
 
   const setWnCommentaryUnfiltered = useCallback(
@@ -143,7 +150,7 @@ export function useAiMode(): UseAiModeReturn {
   return {
     mode: aiMode,
     setMode,
-    showInsights: aiShowInsights,
+    showInsights,
     setShowInsights,
     wnCommentaryUnfiltered: aiWnCommentaryUnfiltered,
     setWnCommentaryUnfiltered,

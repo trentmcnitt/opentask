@@ -4,6 +4,11 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
 import type { AiMode } from '@/hooks/useAiMode'
+import type { FeatureMode } from '@/core/ai/user-context'
+import type { FeatureInfo, AIFeature } from '@/core/ai/models'
+
+export type { FeatureMode, FeatureInfo }
+export type FeatureInfoMap = Record<AIFeature, FeatureInfo>
 
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
@@ -12,8 +17,6 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   rightBorder: false,
   colorCheckbox: true,
 }
-
-export type WhatsNextModel = 'haiku' | 'claude-opus-4-6'
 
 interface PreferencesContextValue {
   aiAvailable: boolean
@@ -49,14 +52,14 @@ interface PreferencesContextValue {
   setAiShowScores: (show: boolean) => void
   aiShowSignals: boolean
   setAiShowSignals: (show: boolean) => void
-  aiShowWhatsNext: boolean
-  setAiShowWhatsNext: (show: boolean) => void
-  aiShowInsights: boolean
-  setAiShowInsights: (show: boolean) => void
-  aiShowCommentary: boolean
-  setAiShowCommentary: (show: boolean) => void
-  aiWhatsNextModel: WhatsNextModel
-  setAiWhatsNextModel: (model: WhatsNextModel) => void
+  aiEnrichmentMode: FeatureMode
+  setAiEnrichmentMode: (mode: FeatureMode) => void
+  aiQuickTakeMode: FeatureMode
+  setAiQuickTakeMode: (mode: FeatureMode) => void
+  aiWhatsNextMode: FeatureMode
+  setAiWhatsNextMode: (mode: FeatureMode) => void
+  aiInsightsMode: FeatureMode
+  setAiInsightsMode: (mode: FeatureMode) => void
   aiWnCommentaryUnfiltered: boolean
   setAiWnCommentaryUnfiltered: (show: boolean) => void
   aiWnHighlight: boolean
@@ -65,8 +68,17 @@ interface PreferencesContextValue {
   setAiInsightsSignalChips: (show: boolean) => void
   aiInsightsScoreChips: boolean
   setAiInsightsScoreChips: (show: boolean) => void
-  aiQuickTake: boolean
-  setAiQuickTake: (enabled: boolean) => void
+  aiSdkAvailable: boolean
+  aiApiAvailable: boolean
+  aiFeatureInfo: FeatureInfoMap | null
+  setAiFeatureInfo: (info: FeatureInfoMap) => void
+}
+
+/** Apply a feature mode value from the API response to a state setter, with validation. */
+function applyFeatureMode(value: unknown, setter: (mode: FeatureMode) => void) {
+  if (value !== undefined && (value === 'off' || value === 'sdk' || value === 'api')) {
+    setter(value)
+  }
 }
 
 const PreferencesContext = createContext<PreferencesContextValue>({
@@ -103,14 +115,14 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiShowScores: () => {},
   aiShowSignals: true,
   setAiShowSignals: () => {},
-  aiShowWhatsNext: true,
-  setAiShowWhatsNext: () => {},
-  aiShowInsights: true,
-  setAiShowInsights: () => {},
-  aiShowCommentary: true,
-  setAiShowCommentary: () => {},
-  aiWhatsNextModel: 'haiku',
-  setAiWhatsNextModel: () => {},
+  aiEnrichmentMode: 'api',
+  setAiEnrichmentMode: () => {},
+  aiQuickTakeMode: 'api',
+  setAiQuickTakeMode: () => {},
+  aiWhatsNextMode: 'api',
+  setAiWhatsNextMode: () => {},
+  aiInsightsMode: 'api',
+  setAiInsightsMode: () => {},
   aiWnCommentaryUnfiltered: false,
   setAiWnCommentaryUnfiltered: () => {},
   aiWnHighlight: true,
@@ -119,8 +131,10 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiInsightsSignalChips: () => {},
   aiInsightsScoreChips: true,
   setAiInsightsScoreChips: () => {},
-  aiQuickTake: false,
-  setAiQuickTake: () => {},
+  aiSdkAvailable: false,
+  aiApiAvailable: false,
+  aiFeatureInfo: null,
+  setAiFeatureInfo: () => {},
 })
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
@@ -145,15 +159,17 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [aiMode, setAiModeState] = useState<AiMode>('on')
   const [aiShowScores, setAiShowScoresState] = useState(true)
   const [aiShowSignals, setAiShowSignalsState] = useState(true)
-  const [aiShowWhatsNext, setAiShowWhatsNextState] = useState(true)
-  const [aiShowInsights, setAiShowInsightsState] = useState(true)
-  const [aiShowCommentary, setAiShowCommentaryState] = useState(true)
-  const [aiWhatsNextModel, setAiWhatsNextModelState] = useState<WhatsNextModel>('haiku')
+  const [aiEnrichmentMode, setAiEnrichmentModeState] = useState<FeatureMode>('api')
+  const [aiQuickTakeMode, setAiQuickTakeModeState] = useState<FeatureMode>('api')
+  const [aiWhatsNextMode, setAiWhatsNextModeState] = useState<FeatureMode>('api')
+  const [aiInsightsMode, setAiInsightsModeState] = useState<FeatureMode>('api')
   const [aiWnCommentaryUnfiltered, setAiWnCommentaryUnfilteredState] = useState(false)
   const [aiWnHighlight, setAiWnHighlightState] = useState(true)
   const [aiInsightsSignalChips, setAiInsightsSignalChipsState] = useState(true)
   const [aiInsightsScoreChips, setAiInsightsScoreChipsState] = useState(true)
-  const [aiQuickTake, setAiQuickTakeState] = useState(false)
+  const [aiSdkAvailable, setAiSdkAvailable] = useState(false)
+  const [aiApiAvailable, setAiApiAvailable] = useState(false)
+  const [aiFeatureInfo, setAiFeatureInfoState] = useState<FeatureInfoMap | null>(null)
 
   // Register the iOS APNs device token with the server using session cookie auth.
   // Called after preferences load and on late token arrival (CustomEvent).
@@ -236,21 +252,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_show_signals !== undefined) {
           setAiShowSignalsState(data.data.ai_show_signals)
         }
-        if (data?.data?.ai_show_whats_next !== undefined) {
-          setAiShowWhatsNextState(data.data.ai_show_whats_next)
-        }
-        if (data?.data?.ai_show_insights !== undefined) {
-          setAiShowInsightsState(data.data.ai_show_insights)
-        }
-        if (data?.data?.ai_show_commentary !== undefined) {
-          setAiShowCommentaryState(data.data.ai_show_commentary)
-        }
-        if (data?.data?.ai_whats_next_model) {
-          const model = data.data.ai_whats_next_model
-          if (model === 'haiku' || model === 'claude-opus-4-6') {
-            setAiWhatsNextModelState(model)
-          }
-        }
+        applyFeatureMode(data?.data?.ai_enrichment_mode, setAiEnrichmentModeState)
+        applyFeatureMode(data?.data?.ai_quicktake_mode, setAiQuickTakeModeState)
+        applyFeatureMode(data?.data?.ai_whats_next_mode, setAiWhatsNextModeState)
+        applyFeatureMode(data?.data?.ai_insights_mode, setAiInsightsModeState)
         if (data?.data?.ai_wn_commentary_unfiltered !== undefined) {
           setAiWnCommentaryUnfilteredState(data.data.ai_wn_commentary_unfiltered)
         }
@@ -263,8 +268,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.ai_insights_score_chips !== undefined) {
           setAiInsightsScoreChipsState(data.data.ai_insights_score_chips)
         }
-        if (data?.data?.ai_quick_take !== undefined) {
-          setAiQuickTakeState(data.data.ai_quick_take)
+        if (data?.data?.ai_sdk_available !== undefined) {
+          setAiSdkAvailable(data.data.ai_sdk_available)
+        }
+        if (data?.data?.ai_api_available !== undefined) {
+          setAiApiAvailable(data.data.ai_api_available)
+        }
+        if (data?.data?.ai_feature_info) {
+          setAiFeatureInfoState(data.data.ai_feature_info)
         }
 
         // Register iOS device token using session cookie auth.
@@ -331,14 +342,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiShowScores: setAiShowScoresState,
         aiShowSignals,
         setAiShowSignals: setAiShowSignalsState,
-        aiShowWhatsNext,
-        setAiShowWhatsNext: setAiShowWhatsNextState,
-        aiShowInsights,
-        setAiShowInsights: setAiShowInsightsState,
-        aiShowCommentary,
-        setAiShowCommentary: setAiShowCommentaryState,
-        aiWhatsNextModel,
-        setAiWhatsNextModel: setAiWhatsNextModelState,
+        aiEnrichmentMode,
+        setAiEnrichmentMode: setAiEnrichmentModeState,
+        aiQuickTakeMode,
+        setAiQuickTakeMode: setAiQuickTakeModeState,
+        aiWhatsNextMode,
+        setAiWhatsNextMode: setAiWhatsNextModeState,
+        aiInsightsMode,
+        setAiInsightsMode: setAiInsightsModeState,
         aiWnCommentaryUnfiltered,
         setAiWnCommentaryUnfiltered: setAiWnCommentaryUnfilteredState,
         aiWnHighlight,
@@ -347,8 +358,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAiInsightsSignalChips: setAiInsightsSignalChipsState,
         aiInsightsScoreChips,
         setAiInsightsScoreChips: setAiInsightsScoreChipsState,
-        aiQuickTake,
-        setAiQuickTake: setAiQuickTakeState,
+        aiSdkAvailable,
+        aiApiAvailable,
+        aiFeatureInfo,
+        setAiFeatureInfo: setAiFeatureInfoState,
       }}
     >
       {children}
@@ -428,14 +441,14 @@ export function useAiPreferences() {
     setAiShowScores,
     aiShowSignals,
     setAiShowSignals,
-    aiShowWhatsNext,
-    setAiShowWhatsNext,
-    aiShowInsights,
-    setAiShowInsights,
-    aiShowCommentary,
-    setAiShowCommentary,
-    aiWhatsNextModel,
-    setAiWhatsNextModel,
+    aiEnrichmentMode,
+    setAiEnrichmentMode,
+    aiQuickTakeMode,
+    setAiQuickTakeMode,
+    aiWhatsNextMode,
+    setAiWhatsNextMode,
+    aiInsightsMode,
+    setAiInsightsMode,
     aiWnCommentaryUnfiltered,
     setAiWnCommentaryUnfiltered,
     aiWnHighlight,
@@ -444,8 +457,8 @@ export function useAiPreferences() {
     setAiInsightsSignalChips,
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
-    aiQuickTake,
-    setAiQuickTake,
+    aiSdkAvailable,
+    aiApiAvailable,
   } = useContext(PreferencesContext)
   return {
     aiMode,
@@ -454,14 +467,14 @@ export function useAiPreferences() {
     setAiShowScores,
     aiShowSignals,
     setAiShowSignals,
-    aiShowWhatsNext,
-    setAiShowWhatsNext,
-    aiShowInsights,
-    setAiShowInsights,
-    aiShowCommentary,
-    setAiShowCommentary,
-    aiWhatsNextModel,
-    setAiWhatsNextModel,
+    aiEnrichmentMode,
+    setAiEnrichmentMode,
+    aiQuickTakeMode,
+    setAiQuickTakeMode,
+    aiWhatsNextMode,
+    setAiWhatsNextMode,
+    aiInsightsMode,
+    setAiInsightsMode,
     aiWnCommentaryUnfiltered,
     setAiWnCommentaryUnfiltered,
     aiWnHighlight,
@@ -470,11 +483,16 @@ export function useAiPreferences() {
     setAiInsightsSignalChips,
     aiInsightsScoreChips,
     setAiInsightsScoreChips,
-    aiQuickTake,
-    setAiQuickTake,
+    aiSdkAvailable,
+    aiApiAvailable,
   }
 }
 
 export function useAiAvailable() {
   return useContext(PreferencesContext).aiAvailable
+}
+
+export function useAiFeatureInfo() {
+  const { aiFeatureInfo, setAiFeatureInfo } = useContext(PreferencesContext)
+  return { aiFeatureInfo, setAiFeatureInfo }
 }

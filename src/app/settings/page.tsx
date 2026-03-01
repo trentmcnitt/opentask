@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { X, Trash2 } from 'lucide-react'
+import { X, Trash2, Info, Loader2, Check, AlertTriangle } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
 import { useProjects } from '@/components/ProjectsProvider'
 import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
@@ -32,8 +32,10 @@ import {
   useAiContext,
   useAiPreferences,
   useAiAvailable,
+  useAiFeatureInfo,
 } from '@/components/PreferencesProvider'
-import type { WhatsNextModel } from '@/components/PreferencesProvider'
+import type { FeatureMode, FeatureInfo } from '@/components/PreferencesProvider'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
@@ -70,7 +72,19 @@ export default function SettingsPage() {
   } = useNotificationConfig()
   const aiAvailable = useAiAvailable()
   const { aiContext, setAiContext } = useAiContext()
-  const { aiWhatsNextModel, setAiWhatsNextModel, aiQuickTake, setAiQuickTake } = useAiPreferences()
+  const {
+    aiEnrichmentMode,
+    setAiEnrichmentMode,
+    aiQuickTakeMode,
+    setAiQuickTakeMode,
+    aiWhatsNextMode,
+    setAiWhatsNextMode,
+    aiInsightsMode,
+    setAiInsightsMode,
+    aiSdkAvailable,
+    aiApiAvailable,
+  } = useAiPreferences()
+  const { aiFeatureInfo, setAiFeatureInfo } = useAiFeatureInfo()
   const [aiContextDraft, setAiContextDraft] = useState('')
   const [aiContextSynced, setAiContextSynced] = useState(false)
   const [customSnoozeMinutes, setCustomSnoozeMinutes] = useState('')
@@ -315,39 +329,33 @@ export default function SettingsPage() {
     }
   }
 
-  const handleWhatsNextModelChange = async (value: WhatsNextModel) => {
-    const prev = aiWhatsNextModel
-    setAiWhatsNextModel(value)
+  const handleFeatureModeChange = async (
+    feature: 'enrichment' | 'quicktake' | 'whats_next' | 'insights',
+    value: FeatureMode,
+    setter: (mode: FeatureMode) => void,
+    prev: FeatureMode,
+  ) => {
+    setter(value)
+    const fieldMap = {
+      enrichment: 'ai_enrichment_mode',
+      quicktake: 'ai_quicktake_mode',
+      whats_next: 'ai_whats_next_mode',
+      insights: 'ai_insights_mode',
+    }
     try {
       const res = await fetch('/api/user/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_whats_next_model: value }),
+        body: JSON.stringify({ [fieldMap[feature]]: value }),
       })
       if (!res.ok) throw new Error('Failed to save')
+      const json = await res.json()
+      if (json?.data?.ai_feature_info) {
+        setAiFeatureInfo(json.data.ai_feature_info)
+      }
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
-      setAiWhatsNextModel(prev)
-      showToast({ message: 'Failed to save preference', type: 'error' })
-    }
-  }
-
-  const handleQuickTakeChange = async (enabled: boolean) => {
-    const prev = aiQuickTake
-    setAiQuickTake(enabled)
-    try {
-      const res = await fetch('/api/user/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_quick_take: enabled }),
-      })
-      if (!res.ok) throw new Error('Failed to save')
-      showToast({
-        message: enabled ? 'Quick Take enabled' : 'Quick Take disabled',
-        type: 'success',
-      })
-    } catch {
-      setAiQuickTake(prev)
+      setter(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -1100,42 +1108,65 @@ export default function SettingsPage() {
                 Save
               </Button>
             </div>
-            <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
-              <div>
-                <div className="text-sm">What&apos;s Next model</div>
+            {/* Per-feature AI mode selectors */}
+            <div className="mt-4 space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+              <div className="mb-2">
+                <div className="text-sm font-medium">Feature modes</div>
                 <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Model for on-demand What&apos;s Next refresh. Opus is slower but more insightful.
+                  Off disables the feature. SDK uses Claude Code subprocesses. API makes direct HTTP
+                  calls.
                 </div>
               </div>
-              <select
-                value={aiWhatsNextModel}
-                onChange={(e) => handleWhatsNextModelChange(e.target.value as WhatsNextModel)}
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                <option value="haiku">Haiku (fast)</option>
-                <option value="claude-opus-4-6">Opus (powerful)</option>
-              </select>
-            </div>
-          </section>
-        )}
-
-        {/* Experimental — only shown when AI is enabled server-side */}
-        {aiAvailable && (
-          <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Experimental
-            </h2>
-            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Features under active development. They may produce unexpected results.
-            </p>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm">Quick Take</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Show a one-line AI observation when you add a task
-                </div>
-              </div>
-              <Switch checked={aiQuickTake} onCheckedChange={handleQuickTakeChange} />
+              {(
+                [
+                  {
+                    label: 'Enrichment',
+                    desc: 'Parses new tasks into structured fields',
+                    mode: aiEnrichmentMode,
+                    setter: setAiEnrichmentMode,
+                    key: 'enrichment' as const,
+                    infoKey: 'enrichment',
+                  },
+                  {
+                    label: 'Quick Take',
+                    desc: 'One-line AI observation when you add a task',
+                    mode: aiQuickTakeMode,
+                    setter: setAiQuickTakeMode,
+                    key: 'quicktake' as const,
+                    infoKey: 'quick_take',
+                  },
+                  {
+                    label: "What's Next",
+                    desc: 'Recommends which tasks to work on',
+                    mode: aiWhatsNextMode,
+                    setter: setAiWhatsNextMode,
+                    key: 'whats_next' as const,
+                    infoKey: 'whats_next',
+                  },
+                  {
+                    label: 'Insights',
+                    desc: 'Scores tasks by review urgency',
+                    mode: aiInsightsMode,
+                    setter: setAiInsightsMode,
+                    key: 'insights' as const,
+                    infoKey: 'insights',
+                  },
+                ] as const
+              ).map((feature) => (
+                <FeatureModeRow
+                  key={feature.key}
+                  label={feature.label}
+                  desc={feature.desc}
+                  mode={feature.mode}
+                  infoKey={feature.infoKey}
+                  info={aiFeatureInfo?.[feature.infoKey] ?? null}
+                  sdkAvailable={aiSdkAvailable}
+                  apiAvailable={aiApiAvailable}
+                  onModeChange={(value) =>
+                    handleFeatureModeChange(feature.key, value, feature.setter, feature.mode)
+                  }
+                />
+              ))}
             </div>
           </section>
         )}
@@ -1469,6 +1500,187 @@ function AutoSnoozeRow({
           <option value="custom">Custom...</option>
         </select>
       )}
+    </div>
+  )
+}
+
+// --- FeatureModeRow: Per-feature mode selector with info popover and test button ---
+
+function FeatureModeRow({
+  label,
+  desc,
+  mode,
+  infoKey,
+  info,
+  sdkAvailable,
+  apiAvailable,
+  onModeChange,
+}: {
+  label: string
+  desc: string
+  mode: FeatureMode
+  infoKey: string
+  info: FeatureInfo | null
+  sdkAvailable: boolean
+  apiAvailable: boolean
+  onModeChange: (value: FeatureMode) => void
+}) {
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  const handleTest = async () => {
+    setTestState('testing')
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feature: infoKey }),
+      })
+      const json = await res.json()
+      if (res.ok && json?.data?.success) {
+        setTestState('success')
+        setTestResult(`OK — ${(json.data.duration_ms / 1000).toFixed(1)}s`)
+      } else {
+        setTestState('error')
+        setTestResult(json?.data?.error || json?.error || 'Test failed')
+      }
+    } catch {
+      setTestState('error')
+      setTestResult('Network error')
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">{label}</span>
+          <Popover
+            onOpenChange={(open) => {
+              if (!open) {
+                setTestState('idle')
+                setTestResult(null)
+              }
+            }}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={`${label} info`}
+              >
+                <Info className="size-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-64 p-3 text-xs">
+              <FeatureInfoPopover
+                info={info}
+                mode={mode}
+                testState={testState}
+                testResult={testResult}
+                onTest={handleTest}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">{desc}</div>
+      </div>
+      <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700">
+        {(['off', 'sdk', 'api'] as const).map((opt) => {
+          const unavailable = (opt === 'sdk' && !sdkAvailable) || (opt === 'api' && !apiAvailable)
+          const active = mode === opt
+          return (
+            <button
+              key={opt}
+              onClick={() => onModeChange(opt)}
+              className={cn(
+                'px-3 py-1 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md',
+                active && unavailable
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                  : active
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                    : unavailable
+                      ? 'text-zinc-300 hover:text-zinc-400 dark:text-zinc-600 dark:hover:text-zinc-500'
+                      : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800',
+              )}
+            >
+              {opt === 'off' ? 'Off' : opt.toUpperCase()}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FeatureInfoPopover({
+  info,
+  mode,
+  testState,
+  testResult,
+  onTest,
+}: {
+  info: FeatureInfo | null
+  mode: FeatureMode
+  testState: 'idle' | 'testing' | 'success' | 'error'
+  testResult: string | null
+  onTest: () => void
+}) {
+  if (mode === 'off') {
+    return <p className="text-muted-foreground">Feature is disabled.</p>
+  }
+
+  if (info && !info.available) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 size-3.5 flex-shrink-0" />
+          <span>
+            {mode === 'sdk'
+              ? 'SDK mode selected but Claude Code is not installed on this server.'
+              : 'API mode selected but no API key configured.'}
+          </span>
+        </div>
+        <FeatureInfoRow label="Provider" value="Not available" />
+        <FeatureInfoRow label="Model" value="Not configured" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <FeatureInfoRow label="Provider" value={info?.provider_display ?? '—'} />
+      <FeatureInfoRow label="Model" value={info?.model_display ?? '—'} />
+      <div className="border-t border-zinc-200 pt-2 dark:border-zinc-700">
+        {testState === 'idle' && (
+          <Button size="sm" variant="outline" className="h-6 text-xs" onClick={onTest}>
+            Test
+          </Button>
+        )}
+        {testState === 'testing' && (
+          <span className="text-muted-foreground flex items-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" /> Testing...
+          </span>
+        )}
+        {testState === 'success' && (
+          <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+            <Check className="size-3" /> {testResult}
+          </span>
+        )}
+        {testState === 'error' && (
+          <span className="text-red-600 dark:text-red-400">{testResult}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FeatureInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground font-medium">{value}</span>
     </div>
   )
 }

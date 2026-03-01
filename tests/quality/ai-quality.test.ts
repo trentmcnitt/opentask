@@ -29,6 +29,7 @@ import { describe, test, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { allScenarios } from './scenarios/index'
+import { requireFeatureModel } from '@/core/ai/models'
 import type {
   AITestScenario,
   EnrichmentInput,
@@ -130,7 +131,7 @@ afterAll(() => {
   // Write summary.json
   const summary: RunSummary = {
     feature: 'all',
-    model: process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku',
+    model: getModelForFeature('enrichment'),
     timestamp: new Date().toISOString(),
     total: scenarioResults.length,
     generated,
@@ -407,7 +408,7 @@ Parse this task and return the structured result.`
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku',
+    model: getModelForFeature('enrichment'),
     maxTurns: 1,
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_enrich',
@@ -468,10 +469,10 @@ Surface 3-7 tasks and return the JSON result.`
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku',
+    model: getModelForFeature('whats_next'),
     maxTurns: 1,
     // Match production: enable extended thinking for Opus models
-    ...((process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku').includes('opus') && {
+    ...(getModelForFeature('whats_next').includes('opus') && {
       maxThinkingTokens: 10000,
     }),
     userId: QUALITY_TEST_USER_ID,
@@ -532,7 +533,7 @@ async function runQuickTake(
     tasksForPrompt,
   )
 
-  const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
+  const model = getModelForFeature('quick_take')
 
   const result = await aiQuery({
     prompt,
@@ -600,10 +601,10 @@ Score every task below. Return a JSON array with one entry per task.`
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
-    model: process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6',
+    model: getModelForFeature('insights'),
     maxTurns: 1,
     // Match production: enable extended thinking for Opus models
-    ...((process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6').includes('opus') && {
+    ...(getModelForFeature('insights').includes('opus') && {
       maxThinkingTokens: 10000,
     }),
     userId: QUALITY_TEST_USER_ID,
@@ -1123,16 +1124,14 @@ function validateInsightsExpectations(
 // ---------------------------------------------------------------------------
 
 function getModelForFeature(feature: string): string {
-  switch (feature) {
-    case 'enrichment':
-      return process.env.OPENTASK_AI_ENRICHMENT_MODEL || 'haiku'
-    case 'whats_next':
-      return process.env.OPENTASK_AI_WHATS_NEXT_MODEL || 'haiku'
-    case 'insights':
-      return process.env.OPENTASK_AI_INSIGHTS_MODEL || 'claude-opus-4-6'
-    case 'quick_take':
-      return process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'haiku'
-    default:
-      return 'haiku'
+  // Quality tests use the centralized model resolution from models.ts.
+  // Tests always run against 'sdk' provider.
+  const validFeatures = ['enrichment', 'quick_take', 'whats_next', 'insights']
+  if (validFeatures.includes(feature)) {
+    return requireFeatureModel(
+      feature as 'enrichment' | 'quick_take' | 'whats_next' | 'insights',
+      'sdk',
+    )
   }
+  return requireFeatureModel('enrichment', 'sdk')
 }

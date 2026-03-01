@@ -23,6 +23,9 @@ import { getTasks } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { isAIEnabled, aiQuery } from './sdk'
 import { quickTakeSlotQuery } from './quick-take-slot'
+import { getApiProvider } from './provider'
+import { getUserFeatureModes } from './user-context'
+import { requireFeatureModel } from './models'
 import { log } from '@/lib/logger'
 
 const PRIORITY_LABELS: Record<number, string> = {
@@ -625,33 +628,41 @@ export async function generateQuickTake(
   if (!isAIEnabled()) return null
 
   try {
+    const modes = getUserFeatureModes(userId)
+    if (modes.quick_take === 'off') return null
+
     const { text: compactTaskList, count, stats, tasks } = buildFromDb(userId, timezone)
+    const provider = modes.quick_take === 'sdk' ? ('sdk' as const) : getApiProvider()
+    const model = requireFeatureModel('quick_take', provider)
 
-    // Try warm slot first
-    const userPrompt = buildQuickTakeUserPrompt(
-      compactTaskList,
-      count,
-      timezone,
-      newTaskTitle,
-      stats,
-      newTaskHasDueDate,
-      tasks,
-    )
+    // SDK mode: try warm slot first for low latency
+    if (modes.quick_take === 'sdk') {
+      const userPrompt = buildQuickTakeUserPrompt(
+        compactTaskList,
+        count,
+        timezone,
+        newTaskTitle,
+        stats,
+        newTaskHasDueDate,
+        tasks,
+      )
 
-    const slotResult = await quickTakeSlotQuery(userPrompt, {
-      userId,
-      inputText: newTaskTitle,
-    })
+      const slotResult = await quickTakeSlotQuery(userPrompt, {
+        userId,
+        inputText: newTaskTitle,
+      })
 
-    if (slotResult !== null) {
-      // Warm slot handled the request (even if text is null from superseding)
-      if (!slotResult.text) return null
-      return stripQuotes(slotResult.text) || null
+      if (slotResult !== null) {
+        // Warm slot handled the request (even if text is null from superseding)
+        if (!slotResult.text) return null
+        return stripQuotes(slotResult.text) || null
+      }
+
+      // Warm slot unavailable — fall through to cold path
+      log.debug('ai', 'Quick Take: warm slot unavailable, using cold path')
     }
 
-    // Warm slot unavailable — fall back to cold path
-    log.debug('ai', 'Quick Take: warm slot unavailable, using cold path')
-
+    // Cold path: direct API call (used by non-SDK providers and SDK fallback)
     const prompt = buildQuickTakePrompt(
       compactTaskList,
       count,
@@ -662,8 +673,6 @@ export async function generateQuickTake(
       tasks,
     )
 
-    const model = process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'sonnet'
-
     const result = await aiQuery({
       prompt,
       model,
@@ -672,6 +681,7 @@ export async function generateQuickTake(
       userId,
       action: 'quick_take',
       inputText: newTaskTitle,
+      provider,
     })
 
     if (!result.success || !result.textResult) {

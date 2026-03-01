@@ -147,5 +147,6 @@ export interface AIActivityEntry {
   model: string | null
   duration_ms: number | null
   error: string | null
+  provider?: string | null
   created_at?: string
 }

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
+import { useAiFeatureInfo } from '@/components/PreferencesProvider'
 
 interface AIStatusModalProps {
   open: boolean
@@ -18,6 +19,7 @@ interface AIStatusModalProps {
 }
 
 export function AIStatusModal({ open, onOpenChange, timezone }: AIStatusModalProps) {
+  const { aiFeatureInfo } = useAiFeatureInfo()
   const [data, setData] = useState<AIStatusData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -73,7 +75,12 @@ export function AIStatusModal({ open, onOpenChange, timezone }: AIStatusModalPro
             </button>
           </div>
         ) : (
-          <AIStatusContent data={data} timezone={timezone} onRefresh={fetchStatus} />
+          <AIStatusContent
+            data={data}
+            timezone={timezone}
+            onRefresh={fetchStatus}
+            featureInfo={aiFeatureInfo}
+          />
         )}
       </DialogContent>
     </Dialog>

@@ -1,12 +1,12 @@
 /**
- * Behavioral tests for user preference fields: wake_time, sleep_time, ai_whats_next_model
+ * Behavioral tests for user preference fields: wake_time, sleep_time, per-feature AI modes
  *
- * Tests getUserWhatsNextModel() helper and database default values for new preference columns.
+ * Tests getUserFeatureModes() helper and database default values for preference columns.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID } from '../helpers/setup'
-import { getUserWhatsNextModel } from '@/core/ai/user-context'
+import { getUserFeatureModes } from '@/core/ai/user-context'
 import { getDb } from '@/core/db'
 
 beforeAll(() => {
@@ -17,45 +17,43 @@ afterAll(() => {
   teardownTestDb()
 })
 
-describe('getUserWhatsNextModel', () => {
-  test('returns haiku when user has no preference set (default)', () => {
-    const result = getUserWhatsNextModel(TEST_USER_ID)
-    expect(result).toBe('haiku')
+describe('getUserFeatureModes', () => {
+  test('returns api for all features by default', () => {
+    const modes = getUserFeatureModes(TEST_USER_ID)
+    expect(modes.enrichment).toBe('api')
+    expect(modes.quick_take).toBe('api')
+    expect(modes.whats_next).toBe('api')
+    expect(modes.insights).toBe('api')
   })
 
-  test('returns the stored value when set to claude-opus-4-6', () => {
+  test('returns stored modes when set', () => {
     const db = getDb()
-    db.prepare('UPDATE users SET ai_whats_next_model = ? WHERE id = ?').run(
-      'claude-opus-4-6',
-      TEST_USER_ID,
-    )
+    db.prepare(
+      "UPDATE users SET ai_enrichment_mode = 'sdk', ai_quicktake_mode = 'off' WHERE id = ?",
+    ).run(TEST_USER_ID)
 
-    const result = getUserWhatsNextModel(TEST_USER_ID)
-    expect(result).toBe('claude-opus-4-6')
+    const modes = getUserFeatureModes(TEST_USER_ID)
+    expect(modes.enrichment).toBe('sdk')
+    expect(modes.quick_take).toBe('off')
+    expect(modes.whats_next).toBe('api')
+    expect(modes.insights).toBe('api')
 
     // Clean up
-    db.prepare('UPDATE users SET ai_whats_next_model = ? WHERE id = ?').run('haiku', TEST_USER_ID)
+    db.prepare(
+      "UPDATE users SET ai_enrichment_mode = 'api', ai_quicktake_mode = 'api' WHERE id = ?",
+    ).run(TEST_USER_ID)
   })
 
-  test('returns haiku for non-existent user', () => {
-    const result = getUserWhatsNextModel(99999)
-    expect(result).toBe('haiku')
-  })
-
-  test('returns haiku after resetting to default', () => {
-    const db = getDb()
-    db.prepare('UPDATE users SET ai_whats_next_model = ? WHERE id = ?').run(
-      'claude-opus-4-6',
-      TEST_USER_ID,
-    )
-    expect(getUserWhatsNextModel(TEST_USER_ID)).toBe('claude-opus-4-6')
-
-    db.prepare('UPDATE users SET ai_whats_next_model = ? WHERE id = ?').run('haiku', TEST_USER_ID)
-    expect(getUserWhatsNextModel(TEST_USER_ID)).toBe('haiku')
+  test('returns api for non-existent user', () => {
+    const modes = getUserFeatureModes(99999)
+    expect(modes.enrichment).toBe('api')
+    expect(modes.quick_take).toBe('api')
+    expect(modes.whats_next).toBe('api')
+    expect(modes.insights).toBe('api')
   })
 })
 
-describe('database defaults for new preference columns', () => {
+describe('database defaults for preference columns', () => {
   test('new user gets wake_time = 07:00', () => {
     const db = getDb()
     const row = db.prepare('SELECT wake_time FROM users WHERE id = ?').get(TEST_USER_ID) as {
@@ -72,14 +70,22 @@ describe('database defaults for new preference columns', () => {
     expect(row.sleep_time).toBe('22:00')
   })
 
-  test('new user gets ai_whats_next_model = haiku', () => {
+  test('new user gets per-feature modes = api', () => {
     const db = getDb()
     const row = db
-      .prepare('SELECT ai_whats_next_model FROM users WHERE id = ?')
+      .prepare(
+        'SELECT ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode FROM users WHERE id = ?',
+      )
       .get(TEST_USER_ID) as {
-      ai_whats_next_model: string
+      ai_enrichment_mode: string
+      ai_quicktake_mode: string
+      ai_whats_next_mode: string
+      ai_insights_mode: string
     }
-    expect(row.ai_whats_next_model).toBe('haiku')
+    expect(row.ai_enrichment_mode).toBe('api')
+    expect(row.ai_quicktake_mode).toBe('api')
+    expect(row.ai_whats_next_mode).toBe('api')
+    expect(row.ai_insights_mode).toBe('api')
   })
 
   test('wake_time and sleep_time are stored as HH:MM strings', () => {

@@ -10,6 +10,9 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { isAIEnabled } from '@/core/ai/sdk'
+import { isSdkAvailableSync, getApiProvider } from '@/core/ai/provider'
+import { getFeatureInfo } from '@/core/ai/models'
+import type { FeatureMode } from '@/core/ai/user-context'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -17,7 +20,7 @@ import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 const VALID_GROUPINGS = ['time', 'project', 'unified'] as const
 const VALID_AI_MODES = ['off', 'on'] as const
-const VALID_WHATS_NEXT_MODELS = ['haiku', 'claude-opus-4-6'] as const
+const VALID_FEATURE_MODES = ['off', 'sdk', 'api'] as const
 const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   trailingDot: true,
   badgeStyle: 'words',
@@ -246,7 +249,26 @@ function validateGeneralFields(
   return null
 }
 
-/** Validate AI-related preference fields (context, mode, show scores/signals). */
+/** Validate a per-feature AI mode field. */
+function validateFeatureMode(
+  body: Record<string, unknown>,
+  field: string,
+  updates: string[],
+  params: unknown[],
+): string | null {
+  if (body[field] === undefined) return null
+  if (!VALID_FEATURE_MODES.includes(body[field] as (typeof VALID_FEATURE_MODES)[number]))
+    return `${field} must be "off", "sdk", or "api"`
+  // Allow saving any valid mode even if the provider isn't available yet.
+  // The UI shows an amber warning for unavailable modes, and the feature info
+  // popover explains what's missing. This lets users pre-configure modes before
+  // the admin sets up the provider.
+  updates.push(`${field} = ?`)
+  params.push(body[field])
+  return null
+}
+
+/** Validate AI-related preference fields (context, mode, show scores/signals, per-feature modes). */
 function validateAiFields(
   body: Record<string, unknown>,
   updates: string[],
@@ -284,33 +306,16 @@ function validateAiFields(
     params.push(body.ai_show_signals ? 1 : 0)
   }
 
-  if (body.ai_show_whats_next !== undefined) {
-    if (typeof body.ai_show_whats_next !== 'boolean') return 'ai_show_whats_next must be a boolean'
-    updates.push('ai_show_whats_next = ?')
-    params.push(body.ai_show_whats_next ? 1 : 0)
-  }
-
-  if (body.ai_show_insights !== undefined) {
-    if (typeof body.ai_show_insights !== 'boolean') return 'ai_show_insights must be a boolean'
-    updates.push('ai_show_insights = ?')
-    params.push(body.ai_show_insights ? 1 : 0)
-  }
-
-  if (body.ai_show_commentary !== undefined) {
-    if (typeof body.ai_show_commentary !== 'boolean') return 'ai_show_commentary must be a boolean'
-    updates.push('ai_show_commentary = ?')
-    params.push(body.ai_show_commentary ? 1 : 0)
-  }
-
-  if (body.ai_whats_next_model !== undefined) {
-    if (
-      !VALID_WHATS_NEXT_MODELS.includes(
-        body.ai_whats_next_model as (typeof VALID_WHATS_NEXT_MODELS)[number],
-      )
-    )
-      return `ai_whats_next_model must be one of: ${VALID_WHATS_NEXT_MODELS.join(', ')}`
-    updates.push('ai_whats_next_model = ?')
-    params.push(body.ai_whats_next_model)
+  // Per-feature AI mode fields
+  const featureModeFields = [
+    'ai_enrichment_mode',
+    'ai_quicktake_mode',
+    'ai_whats_next_mode',
+    'ai_insights_mode',
+  ]
+  for (const field of featureModeFields) {
+    const err = validateFeatureMode(body, field, updates, params)
+    if (err) return err
   }
 
   if (body.ai_wn_commentary_unfiltered !== undefined) {
@@ -340,12 +345,6 @@ function validateAiFields(
     params.push(body.ai_insights_score_chips ? 1 : 0)
   }
 
-  if (body.ai_quick_take !== undefined) {
-    if (typeof body.ai_quick_take !== 'boolean') return 'ai_quick_take must be a boolean'
-    updates.push('ai_quick_take = ?')
-    params.push(body.ai_quick_take ? 1 : 0)
-  }
-
   return null
 }
 
@@ -369,7 +368,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_show_whats_next, ai_show_insights, ai_show_commentary, ai_whats_next_model, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_quick_take FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -388,15 +387,14 @@ interface PreferencesRow {
   ai_mode: string
   ai_show_scores: number
   ai_show_signals: number
-  ai_show_whats_next: number
-  ai_show_insights: number
-  ai_show_commentary: number
-  ai_whats_next_model: string
+  ai_enrichment_mode: string
+  ai_quicktake_mode: string
+  ai_whats_next_mode: string
+  ai_insights_mode: string
   ai_wn_commentary_unfiltered: number
   ai_wn_highlight: number
   ai_insights_signal_chips: number
   ai_insights_score_chips: number
-  ai_quick_take: number
 }
 
 /** Fallback row when user record is missing (should not happen in practice). */
@@ -417,15 +415,14 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   ai_mode: 'on',
   ai_show_scores: 1,
   ai_show_signals: 1,
-  ai_show_whats_next: 1,
-  ai_show_insights: 1,
-  ai_show_commentary: 1,
-  ai_whats_next_model: 'haiku',
+  ai_enrichment_mode: 'api',
+  ai_quicktake_mode: 'api',
+  ai_whats_next_mode: 'api',
+  ai_insights_mode: 'api',
   ai_wn_commentary_unfiltered: 0,
   ai_wn_highlight: 1,
   ai_insights_signal_chips: 1,
   ai_insights_score_chips: 1,
-  ai_quick_take: 0,
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -448,15 +445,29 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_mode: row.ai_mode,
     ai_show_scores: row.ai_show_scores !== 0,
     ai_show_signals: row.ai_show_signals !== 0,
-    ai_show_whats_next: row.ai_show_whats_next !== 0,
-    ai_show_insights: row.ai_show_insights !== 0,
-    ai_show_commentary: row.ai_show_commentary !== 0,
-    ai_whats_next_model: row.ai_whats_next_model,
+    ai_enrichment_mode: row.ai_enrichment_mode as FeatureMode,
+    ai_quicktake_mode: row.ai_quicktake_mode as FeatureMode,
+    ai_whats_next_mode: row.ai_whats_next_mode as FeatureMode,
+    ai_insights_mode: row.ai_insights_mode as FeatureMode,
     ai_wn_commentary_unfiltered: row.ai_wn_commentary_unfiltered !== 0,
     ai_wn_highlight: row.ai_wn_highlight !== 0,
     ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
     ai_insights_score_chips: row.ai_insights_score_chips !== 0,
-    ai_quick_take: row.ai_quick_take !== 0,
+    ai_sdk_available: isSdkAvailableSync(),
+    ai_api_available: (() => {
+      try {
+        getApiProvider()
+        return true
+      } catch {
+        return false
+      }
+    })(),
+    ai_feature_info: {
+      enrichment: getFeatureInfo('enrichment', row.ai_enrichment_mode as FeatureMode),
+      quick_take: getFeatureInfo('quick_take', row.ai_quicktake_mode as FeatureMode),
+      whats_next: getFeatureInfo('whats_next', row.ai_whats_next_mode as FeatureMode),
+      insights: getFeatureInfo('insights', row.ai_insights_mode as FeatureMode),
+    },
   }
 }
 

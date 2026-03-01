@@ -1,5 +1,5 @@
 /**
- * Integration tests for user preference fields: wake_time, sleep_time, ai_whats_next_model
+ * Integration tests for user preference fields: wake_time, sleep_time, per-feature AI modes
  *
  * Tests GET/PATCH /api/user/preferences for the new preference fields,
  * including default values, valid updates, and validation rejections.
@@ -228,107 +228,100 @@ describe('sleep_time preference', () => {
   })
 })
 
-describe('ai_whats_next_model preference', () => {
-  test('GET returns default ai_whats_next_model of haiku', async () => {
+describe('per-feature AI mode preferences', () => {
+  test('GET returns default per-feature modes of api', async () => {
     const res = await apiFetch('/api/user/preferences')
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_whats_next_model).toBe('haiku')
+    expect(body.data.ai_enrichment_mode).toBe('api')
+    expect(body.data.ai_quicktake_mode).toBe('api')
+    expect(body.data.ai_whats_next_mode).toBe('api')
+    expect(body.data.ai_insights_mode).toBe('api')
   })
 
-  test('PATCH with claude-opus-4-6 saves and returns updated value', async () => {
+  test('PATCH ai_whats_next_mode to off saves and returns updated value', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: 'claude-opus-4-6' },
+      body: { ai_whats_next_mode: 'off' },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_mode).toBe('off')
   })
 
-  test('GET returns the updated ai_whats_next_model', async () => {
+  test('GET returns the updated ai_whats_next_mode', async () => {
     const res = await apiFetch('/api/user/preferences')
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_mode).toBe('off')
   })
 
-  test('PATCH back to haiku succeeds', async () => {
+  test('PATCH back to api succeeds', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: 'haiku' },
+      body: { ai_whats_next_mode: 'api' },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data.ai_whats_next_model).toBe('haiku')
+    expect(body.data.ai_whats_next_mode).toBe('api')
   })
 
-  test('PATCH with "gpt-4" returns 400', async () => {
+  test('PATCH with invalid mode returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: 'gpt-4' },
+      body: { ai_whats_next_mode: 'gpt-4' },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_whats_next_model')
-  })
-
-  test('PATCH with "sonnet" returns 400', async () => {
-    const res = await apiFetch('/api/user/preferences', {
-      method: 'PATCH',
-      body: { ai_whats_next_model: 'sonnet' },
-    })
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(body.error).toContain('ai_whats_next_model')
+    expect(body.error).toContain('ai_whats_next_mode')
   })
 
   test('PATCH with empty string returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: '' },
+      body: { ai_insights_mode: '' },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_whats_next_model')
+    expect(body.error).toContain('ai_insights_mode')
   })
 
   test('PATCH with numeric value returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: 123 },
+      body: { ai_enrichment_mode: 123 },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_whats_next_model')
+    expect(body.error).toContain('ai_enrichment_mode')
   })
 
   test('PATCH with null returns 400', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
-      body: { ai_whats_next_model: null },
+      body: { ai_quicktake_mode: null },
     })
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('ai_whats_next_model')
+    expect(body.error).toContain('ai_quicktake_mode')
   })
 })
 
 describe('combined preference updates', () => {
-  test('PATCH with wake_time, sleep_time, and ai_whats_next_model together', async () => {
+  test('PATCH with wake_time, sleep_time, and ai_whats_next_mode together', async () => {
     const res = await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: {
         wake_time: '08:00',
         sleep_time: '23:00',
-        ai_whats_next_model: 'claude-opus-4-6',
+        ai_whats_next_mode: 'off',
       },
     })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.data.wake_time).toBe('08:00')
     expect(body.data.sleep_time).toBe('23:00')
-    expect(body.data.ai_whats_next_model).toBe('claude-opus-4-6')
+    expect(body.data.ai_whats_next_mode).toBe('off')
 
     // Reset all to defaults
     await apiFetch('/api/user/preferences', {
@@ -336,7 +329,7 @@ describe('combined preference updates', () => {
       body: {
         wake_time: '07:00',
         sleep_time: '22:00',
-        ai_whats_next_model: 'haiku',
+        ai_whats_next_mode: 'api',
       },
     })
   })

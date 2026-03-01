@@ -7,6 +7,8 @@
 
 import { getDb } from '@/core/db'
 
+export type FeatureMode = 'off' | 'sdk' | 'api'
+
 export function getUserAiContext(userId: number): string | null {
   const db = getDb()
   const row = db.prepare('SELECT ai_context FROM users WHERE id = ?').get(userId) as
@@ -16,13 +18,38 @@ export function getUserAiContext(userId: number): string | null {
 }
 
 /**
- * Get the user's preferred model for on-demand What's Next generation.
- * Defaults to 'haiku' (fast) if not set.
+ * Get a user's per-feature AI modes.
+ * Returns the mode for each feature (off / sdk / api).
  */
-export function getUserWhatsNextModel(userId: number): string {
+export function getUserFeatureModes(userId: number): {
+  enrichment: FeatureMode
+  quick_take: FeatureMode
+  whats_next: FeatureMode
+  insights: FeatureMode
+} {
   const db = getDb()
-  const row = db.prepare('SELECT ai_whats_next_model FROM users WHERE id = ?').get(userId) as
-    | { ai_whats_next_model: string | null }
+  const row = db
+    .prepare(
+      'SELECT ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode FROM users WHERE id = ?',
+    )
+    .get(userId) as
+    | {
+        ai_enrichment_mode: string
+        ai_quicktake_mode: string
+        ai_whats_next_mode: string
+        ai_insights_mode: string
+      }
     | undefined
-  return row?.ai_whats_next_model ?? 'haiku'
+
+  return {
+    enrichment: parseMode(row?.ai_enrichment_mode),
+    quick_take: parseMode(row?.ai_quicktake_mode),
+    whats_next: parseMode(row?.ai_whats_next_mode),
+    insights: parseMode(row?.ai_insights_mode),
+  }
+}
+
+function parseMode(value: string | null | undefined): FeatureMode {
+  if (value === 'off' || value === 'sdk' || value === 'api') return value
+  return 'api'
 }

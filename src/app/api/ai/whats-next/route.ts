@@ -7,8 +7,9 @@ import {
   getCachedWhatsNext,
   buildTaskSummaries,
   getUserAiContext,
-  getUserWhatsNextModel,
+  getApiProvider,
 } from '@/core/ai'
+import { getUserFeatureModes } from '@/core/ai/user-context'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 
@@ -18,6 +19,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
 
     if (!isAIEnabled()) {
       return serviceUnavailable('AI features are not enabled')
+    }
+
+    const modes = getUserFeatureModes(user.id)
+    if (modes.whats_next === 'off') {
+      return serviceUnavailable("What's Next is disabled")
     }
 
     const { searchParams } = new URL(request.url)
@@ -32,16 +38,15 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     }
 
     // Generate fresh recommendations
-    // On-demand uses the user's preferred model (default: haiku for speed)
     const taskSummaries = buildTaskSummaries(user.id)
     const aiContext = getUserAiContext(user.id)
-    const whatsNextModel = getUserWhatsNextModel(user.id)
+    const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
     const result = await generateWhatsNext(
       user.id,
       user.timezone,
       taskSummaries,
       aiContext,
-      whatsNextModel,
+      provider,
       'on-demand',
     )
 
