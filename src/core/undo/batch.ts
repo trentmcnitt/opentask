@@ -13,6 +13,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot } from '@/types'
 import { undoEntry, type ParsedUndoEntry } from './execute-undo'
 import { redoEntry, type ParsedRedoEntry } from './execute-redo'
+import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 import { countUndoable, countRedoable } from './index'
 
 interface RawEntry {
@@ -101,6 +102,10 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
 
   emitSyncEvent(userId)
 
+  for (const entry of parsed) {
+    dispatchUndoRedoWebhooks(userId, entry.snapshots, entry.fieldsChanged, 'undo')
+  }
+
   return {
     count: parsed.length,
     remaining_undoable: countUndoable(userId),
@@ -163,6 +168,10 @@ export function executeBatchRedo(userId: number, options: BatchRedoOptions): Bat
   })
 
   emitSyncEvent(userId)
+
+  for (const entry of parsed) {
+    dispatchUndoRedoWebhooks(userId, entry.snapshots, entry.fieldsChanged, 'redo')
+  }
 
   return {
     count: parsed.length,

@@ -10,6 +10,8 @@ import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
@@ -170,6 +172,14 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   })
 
   emitSyncEvent(userId)
+
+  for (const task of tasks) {
+    const fresh = getTaskById(task.id)
+    if (fresh) {
+      dispatchWebhookEvent(userId, 'task.completed', { task: formatTaskResponse(fresh) })
+    }
+  }
+
   return result
 }
 
@@ -355,6 +365,17 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   })
 
   emitSyncEvent(userId)
+
+  for (const task of snoozeable) {
+    const fresh = getTaskById(task.id)
+    if (fresh) {
+      dispatchWebhookEvent(userId, 'task.snoozed', {
+        task: formatTaskResponse(fresh),
+        previous_due_at: task.due_at,
+      })
+    }
+  }
+
   return result
 }
 
@@ -504,6 +525,17 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   })
 
   emitSyncEvent(userId)
+
+  for (const snapshot of snapshots) {
+    const fresh = getTaskById(snapshot.task_id)
+    if (fresh) {
+      dispatchWebhookEvent(userId, 'task.updated', {
+        task: formatTaskResponse(fresh),
+        fields_changed: Array.from(allFieldsChanged),
+      })
+    }
+  }
+
   return result
 }
 
@@ -569,5 +601,10 @@ export function bulkDelete(options: BulkDeleteOptions): BulkDeleteResult {
   })
 
   emitSyncEvent(userId)
+
+  for (const task of tasks) {
+    dispatchWebhookEvent(userId, 'task.deleted', { task_id: task.id, title: task.title })
+  }
+
   return result
 }

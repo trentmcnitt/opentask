@@ -1,11 +1,17 @@
 /**
  * Webhook integration tests
  *
- * Tests CRUD via HTTP, auth, user isolation, and delivery endpoints.
+ * Tests CRUD via HTTP, auth, user isolation, delivery endpoints,
+ * and webhook dispatch from mutations.
  */
 
 import { describe, test, expect, beforeAll, beforeEach } from 'vitest'
 import { apiFetch, apiFetchB, apiAnon, resetTestData } from './helpers'
+
+/** Wait for async webhook dispatch to complete */
+function waitForDispatch(ms = 200) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 describe('Webhooks integration', () => {
   beforeAll(async () => {
@@ -159,5 +165,101 @@ describe('Webhooks integration', () => {
       const res = await apiFetchB(`/api/webhooks/${userAWebhookId}/deliveries`)
       expect(res.status).toBe(404)
     })
+  })
+})
+
+/**
+ * Webhook dispatch verification
+ *
+ * Creates a webhook pointing to an unreachable URL. When a mutation fires,
+ * the dispatch attempt fails and is logged as a delivery. We verify via
+ * GET /api/webhooks/:id/deliveries that the correct event was dispatched.
+ */
+describe('Webhook dispatch from mutations', () => {
+  let webhookId: number
+
+  beforeAll(async () => {
+    await resetTestData()
+  })
+
+  beforeEach(async () => {
+    await resetTestData()
+
+    // Create a webhook that listens to all events, pointing to unreachable URL
+    const res = await apiFetch('/api/webhooks', {
+      method: 'POST',
+      body: {
+        url: 'https://127.0.0.1:1/hook',
+        events: ['task.created', 'task.updated', 'task.completed', 'task.snoozed', 'task.deleted'],
+      },
+    })
+    expect(res.status).toBe(201)
+    webhookId = (await res.json()).data.id
+  })
+
+  test('create task dispatches task.created', async () => {
+    await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Webhook test task', project_id: 1 },
+    })
+
+    await waitForDispatch()
+
+    const delRes = await apiFetch(`/api/webhooks/${webhookId}/deliveries`)
+    const deliveries = (await delRes.json()).data.deliveries
+    const created = deliveries.find((d: { event: string }) => d.event === 'task.created')
+    expect(created).toBeDefined()
+    expect(created.error).toBeDefined() // unreachable URL → error logged
+  })
+
+  test('update task dispatches task.updated', async () => {
+    await apiFetch('/api/tasks/1', {
+      method: 'PATCH',
+      body: { title: 'Updated for webhook test' },
+    })
+
+    await waitForDispatch()
+
+    const delRes = await apiFetch(`/api/webhooks/${webhookId}/deliveries`)
+    const deliveries = (await delRes.json()).data.deliveries
+    const updated = deliveries.find((d: { event: string }) => d.event === 'task.updated')
+    expect(updated).toBeDefined()
+  })
+
+  test('mark done dispatches task.completed', async () => {
+    await apiFetch('/api/tasks/7/done', { method: 'POST' })
+
+    await waitForDispatch()
+
+    const delRes = await apiFetch(`/api/webhooks/${webhookId}/deliveries`)
+    const deliveries = (await delRes.json()).data.deliveries
+    const completed = deliveries.find((d: { event: string }) => d.event === 'task.completed')
+    expect(completed).toBeDefined()
+  })
+
+  test('snooze dispatches task.snoozed', async () => {
+    const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    await apiFetch('/api/tasks/1/snooze', {
+      method: 'POST',
+      body: { until },
+    })
+
+    await waitForDispatch()
+
+    const delRes = await apiFetch(`/api/webhooks/${webhookId}/deliveries`)
+    const deliveries = (await delRes.json()).data.deliveries
+    const snoozed = deliveries.find((d: { event: string }) => d.event === 'task.snoozed')
+    expect(snoozed).toBeDefined()
+  })
+
+  test('delete dispatches task.deleted', async () => {
+    await apiFetch('/api/tasks/8', { method: 'DELETE' })
+
+    await waitForDispatch()
+
+    const delRes = await apiFetch(`/api/webhooks/${webhookId}/deliveries`)
+    const deliveries = (await delRes.json()).data.deliveries
+    const deleted = deliveries.find((d: { event: string }) => d.event === 'task.deleted')
+    expect(deleted).toBeDefined()
   })
 })

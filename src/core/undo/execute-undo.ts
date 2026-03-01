@@ -11,6 +11,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot, UndoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
+import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
 /** Parsed undo_log entry ready for undoEntry() */
 export interface ParsedUndoEntry {
@@ -107,6 +108,8 @@ export function executeUndo(userId: number): UndoResult | null {
   })
 
   emitSyncEvent(userId)
+
+  dispatchUndoRedoWebhooks(userId, parsed.snapshots, parsed.fieldsChanged, 'undo')
 
   return result
 }

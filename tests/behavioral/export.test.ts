@@ -153,6 +153,76 @@ describe('Data export', () => {
     })
   })
 
+  describe('CSV edge cases', () => {
+    test('null due_at produces empty CSV field', () => {
+      const task = makeFakeTask({ id: 1, due_at: null })
+      const csv = tasksToCsv([task])
+      const dataRow = csv.split('\n')[1]
+      const fields = dataRow.match(/"[^"]*"|""/g)!
+      // due_at is the 5th column (0-indexed: id, title, done, priority, due_at)
+      expect(fields[4]).toBe('""')
+    })
+
+    test('newlines in notes are preserved inside quoted CSV field', () => {
+      const task = makeFakeTask({ id: 1, notes: 'Line 1\nLine 2\nLine 3' })
+      const csv = tasksToCsv([task])
+      // The notes field should contain the newlines within quotes
+      expect(csv).toContain('"Line 1\nLine 2\nLine 3"')
+    })
+
+    test('labels containing semicolons are preserved in value', () => {
+      const task = makeFakeTask({ id: 1, labels: ['sales;marketing', 'urgent'] })
+      const csv = tasksToCsv([task])
+      const dataRow = csv.split('\n')[1]
+      expect(dataRow).toContain('"sales;marketing;urgent"')
+    })
+
+    test('null notes produces empty CSV field', () => {
+      const task = makeFakeTask({ id: 1, notes: null })
+      const csv = tasksToCsv([task])
+      const dataRow = csv.split('\n')[1]
+      // Notes column should be an empty quoted string
+      expect(dataRow).toContain('""')
+    })
+
+    test('each data row has same number of columns as header', () => {
+      const tasks = [
+        makeFakeTask({ id: 1, title: 'Task A', labels: ['a', 'b'], notes: 'Some notes' }),
+        makeFakeTask({ id: 2, title: 'Task B', due_at: null, notes: null }),
+      ]
+      const csv = tasksToCsv(tasks)
+      const lines = csv.split('\n')
+      const headerColCount = lines[0].split(',').length
+      for (let i = 1; i < lines.length; i++) {
+        // Count commas to check column count (all fields are quoted, so commas inside quotes won't interfere)
+        const rowColCount = lines[i].split(',').length
+        expect(rowColCount).toBe(headerColCount)
+      }
+    })
+  })
+
+  describe('Export limits', () => {
+    test('exportUserData caps at 10,000 tasks', () => {
+      const db = getDb()
+      const now = new Date().toISOString()
+
+      // Batch insert 10,001 tasks using a prepared statement
+      const insert = db.prepare(
+        `INSERT INTO tasks (user_id, project_id, title, done, priority, labels, created_at, updated_at)
+         VALUES (?, 1, ?, 0, 0, '[]', ?, ?)`,
+      )
+      const batchInsert = db.transaction(() => {
+        for (let i = 0; i < 10001; i++) {
+          insert.run(TEST_USER_ID, `Limit task ${i}`, now, now)
+        }
+      })
+      batchInsert()
+
+      const data = exportUserData(TEST_USER_ID)
+      expect(data.tasks.length).toBe(10000)
+    })
+  })
+
   describe('projectsToCsv', () => {
     test('produces header row with correct columns', () => {
       const csv = projectsToCsv([])
