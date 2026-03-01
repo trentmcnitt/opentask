@@ -87,4 +87,28 @@ describe('getProxyAuthUser', () => {
     const rightHeader = makeRequest({ 'Remote-User': 'Test User' })
     expect(getProxyAuthUser(rightHeader)).not.toBeNull()
   })
+
+  it('returns null for empty string header value', () => {
+    vi.stubEnv('OPENTASK_PROXY_AUTH_HEADER', 'X-Forwarded-User')
+    const request = makeRequest({ 'X-Forwarded-User': '' })
+    const result = getProxyAuthUser(request)
+    expect(result).toBeNull()
+  })
+
+  it('returns null for whitespace-only header value', () => {
+    vi.stubEnv('OPENTASK_PROXY_AUTH_HEADER', 'X-Forwarded-User')
+    const request = makeRequest({ 'X-Forwarded-User': '   ' })
+    const result = getProxyAuthUser(request)
+    expect(result).toBeNull()
+  })
+
+  it('matches despite whitespace in header value (HTTP headers trim automatically)', () => {
+    // HTTP header values are trimmed per the Fetch spec, so " Test User " becomes
+    // "Test User" before it reaches the SQL query. This is correct behavior.
+    vi.stubEnv('OPENTASK_PROXY_AUTH_HEADER', 'X-Forwarded-User')
+    const request = makeRequest({ 'X-Forwarded-User': ' Test User ' })
+    const result = getProxyAuthUser(request)
+    expect(result).not.toBeNull()
+    expect(result!.name).toBe('Test User')
+  })
 })

@@ -96,4 +96,35 @@ describe('login rate limiting', () => {
     expect(checkRateLimit('user-a')).not.toBeNull()
     expect(checkRateLimit('user-b')).toBeNull()
   })
+
+  it('window boundary: new failure at T=14:59 triggers lockout, window expiry at T=15:01 resets', () => {
+    // 5 failures at T=0 — triggers lockout with 30s backoff
+    for (let i = 0; i < 5; i++) {
+      recordFailedAttempt('boundary-user')
+    }
+    expect(checkRateLimit('boundary-user')).not.toBeNull()
+
+    // Advance to T=14:59 — backoff (30s) expired long ago, but still within 15-min window
+    vi.advanceTimersByTime(14 * 60 * 1000 + 59 * 1000)
+    expect(checkRateLimit('boundary-user')).toBeNull() // backoff expired
+
+    // 6th failure at T=14:59 — count still tracked (window hasn't expired)
+    recordFailedAttempt('boundary-user')
+    expect(checkRateLimit('boundary-user')).not.toBeNull() // locked again (60s backoff)
+
+    // Advance 2 seconds to T=15:01 — window expires, all counts reset
+    vi.advanceTimersByTime(2 * 1000)
+    expect(checkRateLimit('boundary-user')).toBeNull()
+  })
+
+  it('backoff overflow safety: 100 failed attempts does not crash', () => {
+    for (let i = 0; i < 100; i++) {
+      recordFailedAttempt('overflow-user')
+    }
+    // Should not throw — backoff calculation may produce Infinity but checkRateLimit handles it
+    const wait = checkRateLimit('overflow-user')
+    expect(wait).not.toBeNull()
+    // The wait value may be very large or Infinity-derived, but it should be a number
+    expect(typeof wait).toBe('number')
+  })
 })

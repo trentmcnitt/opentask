@@ -6,7 +6,7 @@
 
 import { describe, test, expect, beforeAll, afterEach, vi } from 'vitest'
 import crypto from 'crypto'
-import { setupTestDb, TEST_USER_ID } from '../helpers/setup'
+import { setupTestDb, TEST_USER_ID, TEST_TIMEZONE, localTime } from '../helpers/setup'
 import { getDb } from '@/core/db'
 import {
   createWebhook,
@@ -18,6 +18,15 @@ import {
 } from '@/core/webhooks'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { purgeOldDeliveries } from '@/core/webhooks/purge'
+import { createTask } from '@/core/tasks/create'
+import { updateTask } from '@/core/tasks/update'
+import { markDone } from '@/core/tasks/mark-done'
+import { snoozeTask } from '@/core/tasks/snooze'
+import { deleteTask } from '@/core/tasks/delete'
+import { bulkDone, bulkSnooze, bulkEdit, bulkDelete } from '@/core/tasks/bulk'
+import { executeUndo } from '@/core/undo/execute-undo'
+import { executeRedo } from '@/core/undo/execute-redo'
+import { executeBatchUndo } from '@/core/undo/batch'
 
 describe('Webhooks', () => {
   beforeAll(() => {
@@ -256,6 +265,482 @@ describe('Webhooks', () => {
         .prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ?')
         .all(webhook.id)
       expect(remaining).toHaveLength(1)
+    })
+  })
+
+  describe('Retry and failure behavior', () => {
+    test('retries on failure and succeeds on second attempt', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({ status: 500 })
+        .mockResolvedValueOnce({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+      vi.useFakeTimers()
+
+      const webhook = createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      dispatchWebhookEvent(TEST_USER_ID, 'task.created', { task_id: 1 })
+
+      // First attempt happens immediately
+      await vi.advanceTimersByTimeAsync(50)
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+
+      // Advance past first retry delay (1000ms)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+
+      // Verify both attempts logged
+      const deliveries = getWebhookDeliveries(webhook.id, TEST_USER_ID)
+      expect(deliveries).not.toBeNull()
+      expect(deliveries!.length).toBe(2)
+      expect(deliveries![0].status_code).toBe(500)
+      expect(deliveries![0].attempt).toBe(1)
+      expect(deliveries![1].status_code).toBe(200)
+      expect(deliveries![1].attempt).toBe(2)
+
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    test('stops after MAX_ATTEMPTS (3) failed deliveries', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 500 })
+      vi.stubGlobal('fetch', mockFetch)
+      vi.useFakeTimers()
+
+      const webhook = createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      dispatchWebhookEvent(TEST_USER_ID, 'task.created', { task_id: 1 })
+
+      // Attempt 1
+      await vi.advanceTimersByTimeAsync(50)
+      // Attempt 2 (after 1000ms delay)
+      await vi.advanceTimersByTimeAsync(1000)
+      // Attempt 3 (after 5000ms delay)
+      await vi.advanceTimersByTimeAsync(5000)
+      // No more retries
+      await vi.advanceTimersByTimeAsync(10000)
+
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+
+      const deliveries = getWebhookDeliveries(webhook.id, TEST_USER_ID)
+      expect(deliveries!.length).toBe(3)
+      expect(deliveries![2].attempt).toBe(3)
+      expect(deliveries![2].status_code).toBe(500)
+
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    test('retries on network error and logs error message', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Connection refused'))
+        .mockResolvedValueOnce({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+      vi.useFakeTimers()
+
+      const webhook = createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      dispatchWebhookEvent(TEST_USER_ID, 'task.created', { task_id: 1 })
+
+      await vi.advanceTimersByTimeAsync(50)
+      await vi.advanceTimersByTimeAsync(1000)
+
+      const deliveries = getWebhookDeliveries(webhook.id, TEST_USER_ID)
+      expect(deliveries!.length).toBe(2)
+      // First attempt: network error
+      expect(deliveries![0].status_code).toBeNull()
+      expect(deliveries![0].error).toBe('Connection refused')
+      // Second attempt: success
+      expect(deliveries![1].status_code).toBe(200)
+      expect(deliveries![1].error).toBeNull()
+
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    test('delivery is logged on every attempt', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 503 })
+      vi.stubGlobal('fetch', mockFetch)
+      vi.useFakeTimers()
+
+      const webhook = createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      dispatchWebhookEvent(TEST_USER_ID, 'task.created', { task_id: 1 })
+
+      await vi.advanceTimersByTimeAsync(50)
+      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(5000)
+
+      const deliveries = getWebhookDeliveries(webhook.id, TEST_USER_ID)
+      expect(deliveries!.length).toBe(3)
+      for (let i = 0; i < 3; i++) {
+        expect(deliveries![i].attempt).toBe(i + 1)
+        expect(deliveries![i].status_code).toBe(503)
+      }
+
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    test('3xx response triggers retry (non-2xx)', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({ status: 301 })
+        .mockResolvedValueOnce({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+      vi.useFakeTimers()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      dispatchWebhookEvent(TEST_USER_ID, 'task.created', { task_id: 1 })
+
+      await vi.advanceTimersByTimeAsync(50)
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('Dispatch from single mutations', () => {
+    /** Helper to create a test task and return its ID */
+    function createTestTask(title: string = 'Test task'): number {
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title, project_id: 1, due_at: localTime(9, 0, 1) },
+      })
+      return task.id
+    }
+
+    test('createTask dispatches task.created webhook', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.created'])
+      createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Webhook test', project_id: 1 },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.created')
+      expect(body.data.task.title).toBe('Webhook test')
+
+      vi.unstubAllGlobals()
+    })
+
+    test('updateTask dispatches task.updated webhook', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskId = createTestTask()
+      mockFetch.mockClear() // Clear the task.created call
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.updated'])
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId,
+        input: { priority: 3 },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.updated')
+      expect(body.data.fields_changed).toContain('priority')
+
+      vi.unstubAllGlobals()
+    })
+
+    test('markDone dispatches task.completed webhook', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskId = createTestTask()
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.completed'])
+      markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.completed')
+
+      vi.unstubAllGlobals()
+    })
+
+    test('snoozeTask dispatches task.snoozed webhook', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskId = createTestTask()
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.snoozed'])
+      snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId,
+        until: localTime(14, 0, 2),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.snoozed')
+      expect(body.data.previous_due_at).toBeDefined()
+
+      vi.unstubAllGlobals()
+    })
+
+    test('deleteTask dispatches task.deleted webhook', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskId = createTestTask()
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.deleted'])
+      deleteTask({ userId: TEST_USER_ID, taskId })
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.deleted')
+      expect(body.data.task_id).toBe(taskId)
+
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('Dispatch from bulk mutations', () => {
+    function createTestTasks(count: number): number[] {
+      const ids: number[] = []
+      for (let i = 0; i < count; i++) {
+        const task = createTask({
+          userId: TEST_USER_ID,
+          userTimezone: TEST_TIMEZONE,
+          input: { title: `Bulk task ${i}`, project_id: 1, due_at: localTime(9, 0, 1) },
+        })
+        ids.push(task.id)
+      }
+      return ids
+    }
+
+    test('bulkDone dispatches task.completed per task', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskIds = createTestTasks(3)
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.completed'])
+      bulkDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskIds })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+      for (const call of mockFetch.mock.calls) {
+        const body = JSON.parse(call[1].body)
+        expect(body.event).toBe('task.completed')
+      }
+
+      vi.unstubAllGlobals()
+    })
+
+    test('bulkSnooze dispatches task.snoozed per task', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskIds = createTestTasks(2)
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.snoozed'])
+      bulkSnooze({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskIds,
+        until: localTime(14, 0, 2),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      for (const call of mockFetch.mock.calls) {
+        const body = JSON.parse(call[1].body)
+        expect(body.event).toBe('task.snoozed')
+        expect(body.data.previous_due_at).toBeDefined()
+      }
+
+      vi.unstubAllGlobals()
+    })
+
+    test('bulkEdit dispatches task.updated per task', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskIds = createTestTasks(2)
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.updated'])
+      bulkEdit({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskIds,
+        changes: { priority: 3 },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      for (const call of mockFetch.mock.calls) {
+        const body = JSON.parse(call[1].body)
+        expect(body.event).toBe('task.updated')
+        expect(body.data.fields_changed).toContain('priority')
+      }
+
+      vi.unstubAllGlobals()
+    })
+
+    test('bulkDelete dispatches task.deleted per task', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const taskIds = createTestTasks(2)
+      mockFetch.mockClear()
+
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.deleted'])
+      bulkDelete({ userId: TEST_USER_ID, taskIds })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      for (const call of mockFetch.mock.calls) {
+        const body = JSON.parse(call[1].body)
+        expect(body.event).toBe('task.deleted')
+      }
+
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('Dispatch from undo/redo', () => {
+    test('undo dispatches task.updated with trigger: undo', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Undo test', project_id: 1, due_at: localTime(9, 0, 1) },
+      })
+      mockFetch.mockClear()
+
+      // Mark done (creates undo entry)
+      markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: task.id })
+      mockFetch.mockClear()
+
+      // Now set up webhook and undo
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.updated'])
+      executeUndo(TEST_USER_ID)
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.updated')
+      expect(body.data.trigger).toBe('undo')
+
+      vi.unstubAllGlobals()
+    })
+
+    test('redo dispatches task.updated with trigger: redo', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const task = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Redo test', project_id: 1, priority: 2 },
+      })
+      // Update to create an undoable action
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: task.id,
+        input: { priority: 3 },
+      })
+      // Undo it
+      executeUndo(TEST_USER_ID)
+      mockFetch.mockClear()
+
+      // Now set up webhook and redo
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.updated'])
+      executeRedo(TEST_USER_ID)
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.event).toBe('task.updated')
+      expect(body.data.trigger).toBe('redo')
+
+      vi.unstubAllGlobals()
+    })
+
+    test('batch undo dispatches webhook per affected task', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ status: 200 })
+      vi.stubGlobal('fetch', mockFetch)
+
+      // Create 2 tasks and update each (2 undo entries)
+      const task1 = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Batch undo 1', project_id: 1 },
+      })
+      const task2 = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Batch undo 2', project_id: 1 },
+      })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: task1.id,
+        input: { priority: 2 },
+      })
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: task2.id,
+        input: { priority: 3 },
+      })
+      mockFetch.mockClear()
+
+      // Set up webhook and batch undo
+      createWebhook(TEST_USER_ID, 'https://example.com/hook', ['task.updated'])
+      executeBatchUndo(TEST_USER_ID, { count: 2 })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // Should fire 2 webhooks (one per task affected)
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      for (const call of mockFetch.mock.calls) {
+        const body = JSON.parse(call[1].body)
+        expect(body.event).toBe('task.updated')
+        expect(body.data.trigger).toBe('undo')
+      }
+
+      vi.unstubAllGlobals()
     })
   })
 })
