@@ -8,7 +8,7 @@
  *   npx tsx scripts/migrate-due.ts [--input PATH] [--dry-run] [--clear]
  *
  * Options:
- *   --input PATH   Path to Due export JSON (default: latest in ~/working_dir/todo-manager/data/)
+ *   --input PATH   Path to Due export JSON (required)
  *   --dry-run      Preview changes without writing to database
  *   --clear        Clear existing tasks before import (use with caution!)
  */
@@ -166,7 +166,7 @@ function deriveAnchors(dueDate: DateTime): {
  * Find the latest Due export file
  */
 function findLatestExport(): string | null {
-  const dataDir = path.join(process.env.HOME || '', 'working_dir/todo-manager/data')
+  const dataDir = path.join(process.env.HOME || '', 'due-export')
 
   if (!fs.existsSync(dataDir)) {
     return null

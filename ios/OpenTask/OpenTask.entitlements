@@ -7,8 +7,6 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>webcredentials:opentask.mcnitt.io</string>
-		<string>webcredentials:tasks.tk11.mcnitt.io</string>
-		<string>webcredentials:tasks-dev.tk11.mcnitt.io</string>
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>

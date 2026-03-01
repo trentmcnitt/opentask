@@ -6,8 +6,8 @@
  * Usage: tsx scripts/create-token.ts <username> [token-name]
  *
  * Examples:
- *   tsx scripts/create-token.ts Trent                → name defaults to "API"
- *   tsx scripts/create-token.ts Trent "iOS Shortcut" → custom token name
+ *   tsx scripts/create-token.ts admin                → name defaults to "API"
+ *   tsx scripts/create-token.ts admin "iOS Shortcut" → custom token name
  */
 
 import crypto from 'crypto'

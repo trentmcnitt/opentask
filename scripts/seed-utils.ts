@@ -1,5 +1,5 @@
 /**
- * Shared utilities for seed scripts (seed-demo, seed-sandbox, seed-dev)
+ * Shared utilities for seed scripts (seed-demo)
  */
 
 import { DateTime } from 'luxon'
