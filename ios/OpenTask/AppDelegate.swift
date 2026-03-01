@@ -133,14 +133,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         case "io.mcnitt.opentask.snooze-tomorrow":
             Task {
                 do {
-                    // Calculate minutes from now to 9 AM tomorrow in device local time
-                    let calendar = Calendar.current
-                    let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date())!
-                    let tomorrow9am = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)!
-                    let deltaMinutes = max(1, Int(tomorrow9am.timeIntervalSinceNow / 60))
-
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: deltaMinutes)
-                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks to tomorrow 9am")
+                    // Send empty body — server uses the user's default_snooze_option
+                    // preference (defaults to "tomorrow" at their configured morning_time)
+                    let result = try await APIClient.shared.snoozeOverdueDefault()
+                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks to tomorrow")
                 } catch {
                     print("[OpenTask] Quick action snooze tomorrow error: \(error)")
                 }

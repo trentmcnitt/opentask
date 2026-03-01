@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { Sparkles, X } from 'lucide-react'
+import { ArrowRight, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { URGENT_PRIORITY } from '@/lib/priority'
@@ -30,6 +30,7 @@ interface QuickTakeBannerProps {
   enrichment?: { title?: string; due_at?: string | null; priority?: number } | null
   timezone: string
   onDismiss: () => void
+  onViewTask?: () => void
 }
 
 /**
@@ -56,6 +57,7 @@ export function QuickTakeBanner({
   enrichment,
   timezone,
   onDismiss,
+  onViewTask,
 }: QuickTakeBannerProps) {
   const [hovered, setHovered] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -128,6 +130,8 @@ export function QuickTakeBanner({
         'animate-in fade-in slide-in-from-top-2 mb-3 flex w-fit max-w-full gap-2 rounded-lg border border-indigo-200/50 bg-indigo-50/50 px-3 pt-2 transition-all duration-300 dark:border-indigo-800/50 dark:bg-indigo-950/30',
         bottomPadding,
       )}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <Sparkles className="mt-0.5 size-3.5 flex-shrink-0 text-indigo-500 dark:text-indigo-400" />
 
@@ -166,14 +170,24 @@ export function QuickTakeBanner({
         ) : quickTakeText ? (
           <p className="mt-1 text-sm text-indigo-600 dark:text-indigo-300">{quickTakeText}</p>
         ) : null}
+
+        {/* "View" link — appears once enrichment has updated the task */}
+        {onViewTask && enrichment && (
+          <button
+            type="button"
+            onClick={onViewTask}
+            className="animate-in fade-in mt-1 inline-flex items-center gap-0.5 text-xs font-medium text-indigo-500 transition-colors duration-200 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-200"
+          >
+            View task
+            <ArrowRight className="size-3" />
+          </button>
+        )}
       </div>
 
       {/* Dismiss button with countdown ring */}
       <button
         type="button"
         onClick={onDismiss}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         className="relative mt-0.5 flex size-6 flex-shrink-0 items-center justify-center rounded text-indigo-400 transition-colors hover:text-indigo-600 dark:text-indigo-500 dark:hover:text-indigo-300"
         aria-label="Dismiss"
       >

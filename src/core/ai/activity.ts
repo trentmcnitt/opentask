@@ -19,8 +19,8 @@ export function logAIActivity(entry: Omit<AIActivityEntry, 'id' | 'created_at'>)
 
   const result = db
     .prepare(
-      `INSERT INTO ai_activity_log (user_id, task_id, action, status, input, output, model, duration_ms, error, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ai_activity_log (user_id, task_id, action, status, input, output, model, duration_ms, error, provider, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       entry.user_id,
@@ -32,6 +32,7 @@ export function logAIActivity(entry: Omit<AIActivityEntry, 'id' | 'created_at'>)
       entry.model,
       entry.duration_ms,
       entry.error,
+      entry.provider ?? null,
       now,
     )
 
@@ -60,7 +61,7 @@ export function getAIActivity(
 
   return db
     .prepare(
-      `SELECT id, user_id, task_id, action, status, input, output, model, duration_ms, error, created_at
+      `SELECT id, user_id, task_id, action, status, input, output, model, duration_ms, error, provider, created_at
        FROM ai_activity_log
        WHERE ${conditions.join(' AND ')}
        ORDER BY created_at DESC

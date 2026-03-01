@@ -94,6 +94,34 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'critical_alert_volume')) {
     database.exec('ALTER TABLE users ADD COLUMN critical_alert_volume REAL NOT NULL DEFAULT 1.0')
   }
+  // AI provider selection (2026-03)
+  if (!hasColumn(database, 'users', 'ai_provider')) {
+    database.exec("ALTER TABLE users ADD COLUMN ai_provider TEXT NOT NULL DEFAULT 'default'")
+  }
+  if (!hasColumn(database, 'ai_activity_log', 'provider')) {
+    database.exec('ALTER TABLE ai_activity_log ADD COLUMN provider TEXT')
+  }
+  // Rename 'api' → 'anthropic' in ai_provider (2026-03)
+  database.exec("UPDATE users SET ai_provider = 'anthropic' WHERE ai_provider = 'api'")
+  // Per-feature AI backend modes (2026-03)
+  if (!hasColumn(database, 'users', 'ai_enrichment_mode')) {
+    database.exec("ALTER TABLE users ADD COLUMN ai_enrichment_mode TEXT NOT NULL DEFAULT 'api'")
+    database.exec("ALTER TABLE users ADD COLUMN ai_quicktake_mode TEXT NOT NULL DEFAULT 'api'")
+    database.exec("ALTER TABLE users ADD COLUMN ai_whats_next_mode TEXT NOT NULL DEFAULT 'api'")
+    database.exec("ALTER TABLE users ADD COLUMN ai_insights_mode TEXT NOT NULL DEFAULT 'api'")
+    // Migrate from old ai_provider column: sdk → sdk, anthropic/openai/default → api
+    database.exec(
+      `UPDATE users SET
+        ai_enrichment_mode = CASE WHEN ai_provider = 'sdk' THEN 'sdk' ELSE 'api' END,
+        ai_quicktake_mode = CASE WHEN ai_provider = 'sdk' THEN 'sdk' ELSE 'api' END,
+        ai_whats_next_mode = CASE WHEN ai_provider = 'sdk' THEN 'sdk' ELSE 'api' END,
+        ai_insights_mode = CASE WHEN ai_provider = 'sdk' THEN 'sdk' ELSE 'api' END`,
+    )
+    // Migrate visibility toggles: show=0 → mode='off'
+    database.exec("UPDATE users SET ai_whats_next_mode = 'off' WHERE ai_show_whats_next = 0")
+    database.exec("UPDATE users SET ai_insights_mode = 'off' WHERE ai_show_insights = 0")
+    database.exec("UPDATE users SET ai_quicktake_mode = 'off' WHERE ai_show_commentary = 0")
+  }
   // Token hashing: add token_preview column and hash existing plaintext tokens (2026-02)
   if (!hasColumn(database, 'api_tokens', 'token_preview')) {
     database.exec('ALTER TABLE api_tokens ADD COLUMN token_preview TEXT')

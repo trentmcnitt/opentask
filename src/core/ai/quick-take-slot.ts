@@ -15,6 +15,7 @@ import { log } from '@/lib/logger'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { QUICK_TAKE_SYSTEM_PROMPT } from './quick-take'
+import { requireFeatureModel } from './models'
 import {
   type SlotState,
   type BaseSlotStats,
@@ -36,7 +37,7 @@ function getMaxReuses(): number {
 }
 
 function getModel(): string {
-  return process.env.OPENTASK_AI_QUICKTAKE_MODEL || 'sonnet'
+  return requireFeatureModel('quick_take', 'sdk')
 }
 
 function getQueryTimeout(): number {

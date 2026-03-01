@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS users (
   ai_insights_signal_chips INTEGER NOT NULL DEFAULT 1,
   ai_insights_score_chips INTEGER NOT NULL DEFAULT 1,
   ai_quick_take INTEGER NOT NULL DEFAULT 0,
+  ai_provider   TEXT NOT NULL DEFAULT 'default',
+  ai_enrichment_mode  TEXT NOT NULL DEFAULT 'api',
+  ai_quicktake_mode   TEXT NOT NULL DEFAULT 'api',
+  ai_whats_next_mode  TEXT NOT NULL DEFAULT 'api',
+  ai_insights_mode    TEXT NOT NULL DEFAULT 'api',
   notifications_enabled INTEGER NOT NULL DEFAULT 1,
   critical_alert_volume REAL NOT NULL DEFAULT 1.0,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -176,6 +181,7 @@ CREATE TABLE IF NOT EXISTS ai_activity_log (
   model       TEXT,
   duration_ms INTEGER,
   error       TEXT,
+  provider    TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

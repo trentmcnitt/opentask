@@ -188,13 +188,13 @@ function useBulkActions(
     }
   }
 
-  const bulkSnoozeRelative = async (deltaMinutes: number) => {
+  const bulkSnoozeRelative = async (deltaMinutes: number, taskIds?: number[]) => {
     try {
       const res = await fetch('/api/tasks/bulk/snooze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ids: [...selection.selectedIds],
+          ids: taskIds ?? [...selection.selectedIds],
           delta_minutes: deltaMinutes,
         }),
       })
@@ -626,7 +626,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   // Server-side AI availability flag — gates all AI UI and prevents wasted requests
   const aiAvailable = useAiAvailable()
-  const { aiQuickTake } = useAiPreferences()
+  const { aiQuickTakeMode } = useAiPreferences()
 
   // AI What's Next: fetch recommendations and resolve against current task list
   const aiInsights = useAiInsights(baseTasks, aiAvailable)
@@ -1109,9 +1109,16 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       onSignalLongPress={handleSignalLongPress}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
-      onQuickAdd={aiAvailable && aiQuickTake ? handleQuickAddWithQuickTake : actions.handleQuickAdd}
+      onQuickAdd={
+        aiAvailable && aiQuickTakeMode !== 'off'
+          ? handleQuickAddWithQuickTake
+          : actions.handleQuickAdd
+      }
       bannerState={bannerState}
       onQuickTakeDismiss={handleQuickTakeDismiss}
+      onQuickTakeViewTask={
+        bannerState?.taskId ? () => router.push(`/tasks/${bannerState.taskId}`) : undefined
+      }
       onUnifiedChange={(unified) => {
         if (unified) {
           // Save current grouping so toggling unified off restores it
@@ -1233,6 +1240,7 @@ function DashboardView({
   onQuickAdd,
   bannerState,
   onQuickTakeDismiss,
+  onQuickTakeViewTask,
   searchFocusRef,
 }: {
   tasks: Task[]
@@ -1278,7 +1286,7 @@ function DashboardView({
   onSearch: (q: string) => void
   onSearchClear: () => void
   onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
-  onBulkSnoozeRelative: (deltaMinutes: number) => Promise<void>
+  onBulkSnoozeRelative: (deltaMinutes: number, taskIds?: number[]) => Promise<void>
   onBulkDelete: () => Promise<void>
   onBulkMoveToProject: (projectId: number) => Promise<void>
   onShowProjectPicker: (show: boolean) => void
@@ -1345,6 +1353,7 @@ function DashboardView({
     enrichment: { title?: string; due_at?: string | null; priority?: number } | null
   } | null
   onQuickTakeDismiss: () => void
+  onQuickTakeViewTask?: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
   const anyFilterActive =
@@ -1435,6 +1444,7 @@ function DashboardView({
             enrichment={bannerState.enrichment}
             timezone={timezone}
             onDismiss={onQuickTakeDismiss}
+            onViewTask={onQuickTakeViewTask}
           />
         )}
 
@@ -1578,9 +1588,9 @@ function DashboardView({
         selectedTasks={selectedTasks}
         sheetOpenRef={bulkSheetOpenRef}
         onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
-        onSnooze={(until) =>
+        onSnooze={(until, taskIds) =>
           onBulkAction('/api/tasks/bulk/snooze', {
-            ids: [...selection.selectedIds],
+            ids: taskIds ?? [...selection.selectedIds],
             until,
           })
         }

@@ -27,23 +27,55 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { computeCommonLabels } from '@/lib/bulk-utils'
-import { cn } from '@/lib/utils'
+import { URGENT_PRIORITY } from '@/lib/priority'
+import { cn, taskWord } from '@/lib/utils'
 import type { Task, Project } from '@/types'
+
+interface SnoozeCategories {
+  overdue: Task[]
+  notYetDue: Task[]
+  noDueDate: Task[]
+}
+
+/**
+ * Partition tasks into categories for snooze confirmation.
+ * Pre-filters done tasks and P4/urgent (server skips these anyway).
+ */
+function categorizeTasksForSnooze(tasks: Task[]): SnoozeCategories {
+  const now = new Date()
+  const overdue: Task[] = []
+  const notYetDue: Task[] = []
+  const noDueDate: Task[] = []
+
+  for (const task of tasks) {
+    if (task.done || (task.priority ?? 0) >= URGENT_PRIORITY) continue
+    if (!task.due_at) {
+      noDueDate.push(task)
+    } else if (new Date(task.due_at) >= now) {
+      notYetDue.push(task)
+    } else {
+      overdue.push(task)
+    }
+  }
+
+  return { overdue, notYetDue, noDueDate }
+}
 
 interface SelectionActionSheetProps {
   selectedCount: number
   /** The actual selected tasks (for showing their due dates in QuickActionPanel) */
   selectedTasks: Task[]
   onDone: () => void
-  /** Called with absolute UTC time for preset operations */
-  onSnooze: (until: string) => void
-  /** Called with delta minutes for increment operations */
-  onSnoozeRelative: (deltaMinutes: number) => void
+  /** Called with absolute UTC time for preset operations. Optional taskIds filters which tasks are affected. */
+  onSnooze: (until: string, taskIds?: number[]) => void
+  /** Called with delta minutes for increment operations. Optional taskIds filters which tasks are affected. */
+  onSnoozeRelative: (deltaMinutes: number, taskIds?: number[]) => void
   onDelete: () => void
   /** Called with absolute priority value (0-4) */
   onPriorityChange: (priority: number) => void
@@ -114,6 +146,14 @@ export function SelectionActionSheet({
   const [isPanelDirty, setIsPanelDirty] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
 
+  // Snooze confirmation dialog state.
+  // Dialog is open when snoozeCategories is non-null (no separate boolean needed).
+  // isAbsoluteSnooze is stored separately so we don't read pendingDateRef during render.
+  const [includeNoDueDate, setIncludeNoDueDate] = useState(false)
+  const [includeNotYetDue, setIncludeNotYetDue] = useState(false)
+  const [snoozeCategories, setSnoozeCategories] = useState<SnoozeCategories | null>(null)
+  const [isAbsoluteSnooze, setIsAbsoluteSnooze] = useState(false)
+
   const clearPendingState = useCallback(() => {
     pendingDateRef.current = null
     pendingPriorityRef.current = null
@@ -147,42 +187,72 @@ export function SelectionActionSheet({
     pendingDateRef.current = { type: 'relative', deltaMinutes }
   }, [])
 
-  // Save button: apply pending changes, close, exit selection mode
-  // Note: recurrence changes are handled by QuickActionPanel via onRruleChange
+  // Execute save: apply pending changes, close, exit selection mode.
+  // snoozeTaskIds optionally filters which tasks the date operation affects.
+  // Non-date changes (priority, labels, project) always apply to ALL selected tasks.
+  const executeSave = useCallback(
+    (snoozeTaskIds?: number[]) => {
+      if (pendingDateRef.current) {
+        // Skip the snooze call if filtering left no tasks
+        if (!snoozeTaskIds || snoozeTaskIds.length > 0) {
+          if (pendingDateRef.current.type === 'absolute') {
+            onSnooze(pendingDateRef.current.until, snoozeTaskIds)
+          } else {
+            onSnoozeRelative(pendingDateRef.current.deltaMinutes, snoozeTaskIds)
+          }
+        }
+      }
+      // Apply pending priority change
+      if (pendingPriorityRef.current !== null) {
+        onPriorityChange(pendingPriorityRef.current)
+      }
+      // Apply pending label changes (add/remove)
+      if (pendingLabelsAddRef.current.length > 0 && onLabelsAdd) {
+        onLabelsAdd(pendingLabelsAddRef.current)
+      }
+      if (pendingLabelsRemoveRef.current.length > 0 && onLabelsRemove) {
+        onLabelsRemove(pendingLabelsRemoveRef.current)
+      }
+      // Apply pending project change
+      if (pendingProjectRef.current !== null && onProjectChange) {
+        onProjectChange(pendingProjectRef.current)
+      }
+      setSheetOpen(false)
+      onClear() // Exit selection mode
+    },
+    [
+      onSnooze,
+      onSnoozeRelative,
+      onClear,
+      onPriorityChange,
+      onLabelsAdd,
+      onLabelsRemove,
+      onProjectChange,
+    ],
+  )
+
+  // Save button: check for edge-case tasks before applying date changes.
+  // If the selection includes tasks with no due date (absolute mode) or tasks not yet due,
+  // show a confirmation dialog so the user can choose whether to include them.
   const handleSave = useCallback(() => {
     if (pendingDateRef.current) {
-      if (pendingDateRef.current.type === 'absolute') {
-        onSnooze(pendingDateRef.current.until)
-      } else {
-        onSnoozeRelative(pendingDateRef.current.deltaMinutes)
+      const isAbsolute = pendingDateRef.current.type === 'absolute'
+      const categories = categorizeTasksForSnooze(selectedTasks)
+
+      const hasNoDueDateEdgeCase = isAbsolute && categories.noDueDate.length > 0
+      const hasNotYetDueEdgeCase = categories.notYetDue.length > 0
+
+      if (hasNoDueDateEdgeCase || hasNotYetDueEdgeCase) {
+        setSnoozeCategories(categories)
+        setIsAbsoluteSnooze(isAbsolute)
+        setIncludeNoDueDate(false)
+        setIncludeNotYetDue(false)
+        return
       }
     }
-    // Apply pending priority change
-    if (pendingPriorityRef.current !== null) {
-      onPriorityChange(pendingPriorityRef.current)
-    }
-    // Apply pending label changes (add/remove)
-    if (pendingLabelsAddRef.current.length > 0 && onLabelsAdd) {
-      onLabelsAdd(pendingLabelsAddRef.current)
-    }
-    if (pendingLabelsRemoveRef.current.length > 0 && onLabelsRemove) {
-      onLabelsRemove(pendingLabelsRemoveRef.current)
-    }
-    // Apply pending project change
-    if (pendingProjectRef.current !== null && onProjectChange) {
-      onProjectChange(pendingProjectRef.current)
-    }
-    setSheetOpen(false)
-    onClear() // Exit selection mode
-  }, [
-    onSnooze,
-    onSnoozeRelative,
-    onClear,
-    onPriorityChange,
-    onLabelsAdd,
-    onLabelsRemove,
-    onProjectChange,
-  ])
+
+    executeSave()
+  }, [selectedTasks, executeSave])
 
   // Cancel button: discard changes, close, keep selection
   const handleCancel = useCallback(() => {
@@ -227,6 +297,27 @@ export function SelectionActionSheet({
     setShowCloseConfirm(false)
     handleSave()
   }, [handleSave])
+
+  // Snooze confirmation: compute filtered IDs from checkbox state and proceed with save
+  const handleSnoozeConfirm = useCallback(() => {
+    const categories = snoozeCategories
+    if (!categories) return
+
+    const snoozeIds = categories.overdue.map((t) => t.id)
+    if (includeNoDueDate) {
+      snoozeIds.push(...categories.noDueDate.map((t) => t.id))
+    }
+    if (includeNotYetDue) {
+      snoozeIds.push(...categories.notYetDue.map((t) => t.id))
+    }
+
+    setSnoozeCategories(null)
+    executeSave(snoozeIds)
+  }, [snoozeCategories, includeNoDueDate, includeNotYetDue, executeSave])
+
+  const handleSnoozeCancelConfirm = useCallback(() => {
+    setSnoozeCategories(null)
+  }, [])
 
   // Handle priority change from QuickActionPanel (stages change until Save)
   const handlePriorityChange = useCallback((priority: number) => {
@@ -427,6 +518,65 @@ export function SelectionActionSheet({
               Don&apos;t Save
             </AlertDialogAction>
             <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={snoozeCategories !== null}
+        onOpenChange={(open) => {
+          if (!open) setSnoozeCategories(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm date change</AlertDialogTitle>
+            <AlertDialogDescription>
+              {snoozeCategories &&
+                `${snoozeCategories.overdue.length} ${taskWord(snoozeCategories.overdue.length)} will be snoozed.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 py-2">
+            {snoozeCategories && isAbsoluteSnooze && snoozeCategories.noDueDate.length > 0 && (
+              <label className="flex cursor-pointer items-center gap-3">
+                <Checkbox
+                  checked={includeNoDueDate}
+                  onCheckedChange={(checked) => setIncludeNoDueDate(checked === true)}
+                />
+                <span className="text-sm">
+                  Include {snoozeCategories.noDueDate.length}{' '}
+                  {taskWord(snoozeCategories.noDueDate.length)} with no due date
+                </span>
+              </label>
+            )}
+
+            {snoozeCategories && snoozeCategories.notYetDue.length > 0 && (
+              <label className="flex cursor-pointer items-center gap-3">
+                <Checkbox
+                  checked={includeNotYetDue}
+                  onCheckedChange={(checked) => setIncludeNotYetDue(checked === true)}
+                />
+                <span className="text-sm">
+                  Include {snoozeCategories.notYetDue.length}{' '}
+                  {taskWord(snoozeCategories.notYetDue.length)} not yet due
+                </span>
+              </label>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleSnoozeCancelConfirm}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSnoozeConfirm}>
+              {(() => {
+                const cats = snoozeCategories
+                if (!cats) return 'Apply'
+                let count = cats.overdue.length
+                if (includeNoDueDate) count += cats.noDueDate.length
+                if (includeNotYetDue) count += cats.notYetDue.length
+                return `Apply to ${count} ${taskWord(count)}`
+              })()}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

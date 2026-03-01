@@ -82,6 +82,26 @@ final class APIClient {
         let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [
             "delta_minutes": deltaMinutes,
         ])
+        return parseBulkSnoozeResult(data)
+    }
+
+    /// Bulk snooze all overdue P0-P3 tasks to an absolute time (excludes P4 Urgent).
+    @discardableResult
+    func snoozeOverdue(until: String) async throws -> BulkSnoozeResult {
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [
+            "until": until,
+        ])
+        return parseBulkSnoozeResult(data)
+    }
+
+    /// Bulk snooze all overdue P0-P3 tasks using user's default preference (excludes P4 Urgent).
+    @discardableResult
+    func snoozeOverdueDefault() async throws -> BulkSnoozeResult {
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [:])
+        return parseBulkSnoozeResult(data)
+    }
+
+    private func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
             return BulkSnoozeResult(tasksAffected: 0)

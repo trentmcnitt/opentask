@@ -1,16 +1,30 @@
 /**
- * Claude Agent SDK wrapper
+ * AI query dispatcher
  *
- * Provides a simplified interface for AI queries with error handling,
- * duration measurement, and activity logging. The SDK spawns Claude Code
- * subprocesses — it uses the server's existing Claude Code authentication
- * (Max subscription), so no API key is needed.
+ * Central entry point for all AI queries. Dispatches to:
+ * - Claude Agent SDK (subprocess-based, requires Claude Code installed)
+ * - Anthropic Messages API (direct HTTP, requires ANTHROPIC_API_KEY)
+ * - OpenAI-compatible API (direct HTTP, requires OPENAI_API_KEY;
+ *   supports OpenAI, OpenRouter, Ollama, Together, Groq, etc.)
+ *
+ * The provider is determined per-request based on:
+ * 1. Explicit `provider` option on the call (per-feature mode: sdk or api)
+ * 2. Server-level default (OPENTASK_AI_PROVIDER env var)
+ * 3. Auto-detection (SDK → Anthropic → OpenAI, first available wins)
  */
 
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
 import { withSlot } from './queue'
+import {
+  type AIProvider,
+  isSdkAvailable,
+  isAnthropicAvailable,
+  isOpenAIAvailable,
+  getServerDefaultProvider,
+} from './provider'
+import { resolveFeatureModel, type AIFeature } from './models'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 let aiEnabled: boolean | null = null
@@ -28,7 +42,9 @@ export function isAIEnabled(): boolean {
 
 /**
  * Initialize AI subsystem. Called from instrumentation.ts on server startup.
- * Validates that the SDK is importable and logs the AI status.
+ *
+ * Detects available providers and validates configuration. If the configured
+ * provider is unavailable, attempts auto-fallback to the next available one.
  */
 export async function initAI(): Promise<void> {
   if (!isAIEnabled()) {
@@ -36,16 +52,74 @@ export async function initAI(): Promise<void> {
     return
   }
 
-  try {
-    // Verify the SDK is installed and importable
-    await import('@anthropic-ai/claude-agent-sdk')
-    log.info('ai', 'AI features enabled — Claude Agent SDK loaded')
-  } catch {
+  const sdkOk = await isSdkAvailable()
+  const anthropicOk = isAnthropicAvailable()
+  const openaiOk = isOpenAIAvailable()
+
+  // Expose detection results as env vars so route handlers (which may run in
+  // a different Next.js module context) can read them via isSdkAvailableSync().
+  if (sdkOk) process.env._OPENTASK_SDK_DETECTED = '1'
+
+  if (!sdkOk && !anthropicOk && !openaiOk) {
     log.error(
       'ai',
-      'AI features enabled but SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
+      'AI features enabled but no provider available. Install Claude Code (SDK), set ANTHROPIC_API_KEY, or set OPENAI_API_KEY.',
     )
     aiEnabled = false
+    return
+  }
+
+  const defaultProvider = getServerDefaultProvider()
+
+  // Validate the configured provider is available, auto-fallback if not
+  const providerAvailable: Record<AIProvider, boolean> = {
+    sdk: sdkOk,
+    anthropic: anthropicOk,
+    openai: openaiOk,
+  }
+
+  let effective = defaultProvider
+  if (!providerAvailable[defaultProvider]) {
+    // Find the first available fallback (SDK → Anthropic → OpenAI)
+    const fallback = (['sdk', 'anthropic', 'openai'] as const).find((p) => providerAvailable[p])
+    if (fallback) {
+      log.warn(
+        'ai',
+        `${defaultProvider} provider requested but not available. Falling back to ${fallback}.`,
+      )
+      process.env.OPENTASK_AI_PROVIDER = fallback
+      effective = fallback
+    } else {
+      log.error('ai', `${defaultProvider} provider selected but not available.`)
+      aiEnabled = false
+      return
+    }
+  }
+
+  const available = [sdkOk && 'sdk', anthropicOk && 'anthropic', openaiOk && 'openai']
+    .filter(Boolean)
+    .join(', ')
+  log.info('ai', `AI features enabled — default provider: ${effective}, available: [${available}]`)
+
+  // Validate that all features can resolve a model for the default provider.
+  // Per-feature modes may override the provider at runtime, but this catches
+  // obvious misconfigurations (e.g., OpenAI default with no OPENAI_MODEL).
+  const features: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+  const modelLines: string[] = []
+  for (const feature of features) {
+    const model = resolveFeatureModel(feature, effective)
+    if (model) {
+      modelLines.push(`  ${feature}: ${model}`)
+    } else {
+      log.error(
+        'ai',
+        `No model configured for feature '${feature}' with provider '${effective}'. ` +
+          `AI will fail for this feature until a model is configured.`,
+      )
+    }
+  }
+  if (modelLines.length > 0) {
+    log.info('ai', `Resolved models:\n${modelLines.join('\n')}`)
   }
 }
 
@@ -54,9 +128,11 @@ export interface AIQueryOptions {
   prompt: string
   /** JSON Schema for structured output (optional) */
   outputSchema?: Record<string, unknown>
-  /** Model to use (default: 'haiku'). Each feature should read its own env var. */
-  model?: string
-  /** Maximum conversation turns (default: 3) */
+  /** System prompt (used by API provider; SDK provider ignores this for aiQuery) */
+  systemPrompt?: string
+  /** Model to use. Callers must resolve via requireFeatureModel() before calling. */
+  model: string
+  /** Maximum conversation turns (default: 3, SDK only) */
   maxTurns?: number
   /** Maximum thinking tokens for extended thinking (Opus 4.6). Omit to disable. */
   maxThinkingTokens?: number
@@ -70,6 +146,8 @@ export interface AIQueryOptions {
   inputText?: string
   /** Per-call timeout in ms. Overrides OPENTASK_AI_QUERY_TIMEOUT_MS when provided. */
   timeoutMs?: number
+  /** Override provider for this call. If not set, uses server default. */
+  provider?: AIProvider
 }
 
 export interface AIQueryResult {
@@ -85,20 +163,51 @@ export interface AIQueryResult {
   error: string | null
 }
 
-/** Default timeout for SDK queries (60 seconds) */
-const DEFAULT_QUERY_TIMEOUT_MS = 60_000
+/** Default timeout for AI queries (60 seconds). Shared by all providers. */
+export const DEFAULT_QUERY_TIMEOUT_MS = 60_000
+
+/** Resolve the effective timeout for an AI query (per-call override → env var → default). */
+export function resolveQueryTimeout(perCallTimeout: number | undefined): number {
+  return (
+    perCallTimeout ??
+    parseInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS), 10)
+  )
+}
 
 /**
- * Execute an AI query via the Claude Agent SDK.
+ * Execute an AI query, dispatching to the appropriate provider.
+ *
+ * - SDK: spawns a Claude Code subprocess with the SDK's query() function
+ * - Anthropic: direct HTTP call to the Anthropic Messages API
+ * - OpenAI: direct HTTP call to an OpenAI-compatible API
+ */
+export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
+  const provider = options.provider ?? getServerDefaultProvider()
+
+  if (provider === 'anthropic') {
+    const { apiQuery } = await import('./api-provider')
+    return apiQuery(options)
+  }
+
+  if (provider === 'openai') {
+    const { openaiQuery } = await import('./openai-provider')
+    return openaiQuery(options)
+  }
+
+  return sdkQuery(options)
+}
+
+/**
+ * Execute an AI query via the Claude Agent SDK (subprocess-based).
  *
  * Wraps the SDK's query() function with:
  * - Error handling (catch SDK errors, log, return null)
  * - Duration measurement
  * - Activity logging (writes to ai_activity_log)
  * - Request timeout (kills subprocess via AbortController)
+ * - Semaphore (limits concurrent subprocesses)
  */
-
-export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
+async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
   const {
     prompt,
     outputSchema,
@@ -112,11 +221,9 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     timeoutMs: perCallTimeout,
   } = options
 
-  const resolvedModel = model || 'haiku'
+  const resolvedModel = model
   const startTime = Date.now()
-  const timeoutMs =
-    perCallTimeout ??
-    parseInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS || String(DEFAULT_QUERY_TIMEOUT_MS), 10)
+  const timeoutMs = resolveQueryTimeout(perCallTimeout)
 
   let timedOut = false
 
@@ -154,7 +261,7 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       let structuredOutput: Record<string, unknown> | null = null
       let textResult: string | null = null
 
-      log.debug('ai', `${action} starting (model: ${resolvedModel}, timeout: ${timeoutMs}ms)`)
+      log.debug('ai', `[sdk] ${action} starting (model: ${resolvedModel}, timeout: ${timeoutMs}ms)`)
 
       // Wrap the SDK query in a timeout to prevent hanging subprocesses.
       // The AbortController is passed to the SDK options to kill the subprocess.
@@ -207,9 +314,10 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         model: resolvedModel,
         duration_ms: durationMs,
         error: hasOutput ? null : 'Subprocess completed but returned no output',
+        provider: 'sdk',
       })
 
-      log.info('ai', `${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
+      log.info('ai', `[sdk] ${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
 
       return {
         structuredOutput,
@@ -226,12 +334,13 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       action,
       inputText,
       resolvedModel,
+      provider: 'sdk',
     })
   }
 }
 
-/** Build error result, log activity, and return failure response */
-function handleQueryError(
+/** Build error result, log activity, and return failure response. Shared by all providers. */
+export function handleQueryError(
   err: unknown,
   startTime: number,
   timedOut: boolean,
@@ -241,12 +350,14 @@ function handleQueryError(
     action: string
     inputText?: string
     resolvedModel: string
+    provider: AIProvider
   },
 ): AIQueryResult {
   const durationMs = Date.now() - startTime
+  const prefix = ctx.provider !== 'sdk' ? `[${ctx.provider}] ` : ''
 
   const errorMessage = timedOut
-    ? `Query timed out after ${durationMs}ms`
+    ? `${prefix ? `${ctx.provider} query` : 'Query'} timed out after ${durationMs}ms`
     : err instanceof Error
       ? err.message
       : String(err)
@@ -261,14 +372,19 @@ function handleQueryError(
     model: ctx.resolvedModel,
     duration_ms: durationMs,
     error: errorMessage,
+    provider: ctx.provider,
   })
 
-  notifyError('ai-failure', `AI ${ctx.action} failed`, errorMessage)
+  notifyError(
+    'ai-failure',
+    `AI ${ctx.action} failed${prefix ? ` (${ctx.provider})` : ''}`,
+    errorMessage,
+  )
 
   if (timedOut) {
-    log.warn('ai', `${ctx.action} timed out after ${durationMs}ms`)
+    log.warn('ai', `${prefix}${ctx.action} timed out after ${durationMs}ms`)
   } else {
-    log.error('ai', `${ctx.action} failed after ${durationMs}ms:`, err)
+    log.error('ai', `${prefix}${ctx.action} failed after ${durationMs}ms:`, err)
   }
 
   return {

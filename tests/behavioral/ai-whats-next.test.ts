@@ -9,6 +9,9 @@ import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vite
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
 import type { TaskSummary } from '@/core/ai/types'
 
+// Set a provider so getApiProvider() doesn't throw in tests (no real API calls are made)
+process.env.OPENTASK_AI_PROVIDER = 'anthropic'
+
 // Mock the SDK to prevent real subprocess spawning
 vi.mock('@/core/ai/sdk', () => ({
   isAIEnabled: () => true,

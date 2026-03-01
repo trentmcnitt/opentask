@@ -39,6 +39,9 @@ import { ENRICHMENT_REMINDERS } from './prompts'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
+import { enrichmentApiQuery } from './enrichment-api'
+import { getApiProvider } from './provider'
+import { getUserFeatureModes } from './user-context'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
@@ -488,11 +491,21 @@ ${ENRICHMENT_REMINDERS}
 User's timezone: ${user.timezone} | Current UTC time: ${currentUtcTime}
 Parse the task above and return the structured result.`
 
-  const result = await enrichmentQuery(prompt, {
-    userId: row.user_id,
-    taskId: row.id,
-    inputText: textToEnrich,
-  })
+  const modes = getUserFeatureModes(row.user_id)
+  if (modes.enrichment === 'off') {
+    removeLabel(row.id, 'ai-to-process')
+    log.info(
+      'ai',
+      `Task ${row.id}: enrichment disabled for user ${row.user_id}, removing ai-to-process`,
+    )
+    return []
+  }
+
+  const queryOptions = { userId: row.user_id, taskId: row.id, inputText: textToEnrich }
+  const result =
+    modes.enrichment === 'sdk'
+      ? await enrichmentQuery(prompt, queryOptions)
+      : await enrichmentApiQuery(prompt, { ...queryOptions, provider: getApiProvider() })
 
   // Parse and validate the enrichment result
   let parsed: EnrichmentResult | null = null

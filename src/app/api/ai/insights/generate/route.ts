@@ -13,7 +13,9 @@ import {
   buildTaskSummaries,
   startInsightsGeneration,
   getActiveInsightsSession,
+  getApiProvider,
 } from '@/core/ai'
+import { getUserFeatureModes } from '@/core/ai/user-context'
 import {
   success,
   unauthorized,
@@ -30,6 +32,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     if (!isAIEnabled()) {
       return serviceUnavailable('AI features are not enabled')
+    }
+
+    const modes = getUserFeatureModes(user.id)
+    if (modes.insights === 'off') {
+      return serviceUnavailable('Insights is disabled')
     }
 
     // Check for already-running session
@@ -53,12 +60,14 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     const aiContext = getUserAiContext(user.id)
+    const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
     const { sessionId, totalTasks, singleCall, startedAt } = startInsightsGeneration(
       user.id,
       user.timezone,
       tasks,
       aiContext,
       'on-demand',
+      provider,
     )
 
     return success({

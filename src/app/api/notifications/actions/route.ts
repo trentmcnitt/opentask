@@ -16,6 +16,7 @@ import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { log } from '@/lib/logger'
+import { snapToHour } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
@@ -68,8 +69,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       }
 
       case 'snooze': {
-        const until = new Date(Date.now() + 60 * 60 * 1000)
-        until.setMinutes(0, 0, 0)
+        const until = snapToHour(new Date(Date.now() + 60 * 60 * 1000))
         const result = snoozeTask({
           userId: user.id,
           userTimezone: user.timezone,
@@ -82,8 +82,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       }
 
       case 'snooze2h': {
-        const until = new Date(Date.now() + 2 * 60 * 60 * 1000)
-        until.setMinutes(0, 0, 0)
+        const until = snapToHour(new Date(Date.now() + 2 * 60 * 60 * 1000))
         const result = snoozeTask({
           userId: user.id,
           userTimezone: user.timezone,

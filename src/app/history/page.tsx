@@ -23,6 +23,7 @@ const BatchUndoDialog = dynamic(() =>
 )
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
+import { useAiFeatureInfo } from '@/components/PreferencesProvider'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -1004,6 +1005,7 @@ function formatFieldDetail(snapshot: UndoSnapshot, field: string, timezone: stri
 const ACTIVITY_PAGE_SIZE = 20
 
 function AITab({ timezone }: { timezone: string }) {
+  const { aiFeatureInfo } = useAiFeatureInfo()
   const [data, setData] = useState<AIStatusData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -1096,6 +1098,7 @@ function AITab({ timezone }: { timezone: string }) {
       data={data}
       timezone={timezone}
       onRefresh={handleRefresh}
+      featureInfo={aiFeatureInfo}
       showFilters
       actionFilter={actionFilter}
       onActionFilterChange={handleActionFilterChange}
