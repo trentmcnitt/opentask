@@ -6,8 +6,8 @@
  *
  * Usage: npm run db:reset-demo
  *
- * Cron (server, 3 AM CT = 8:00 UTC):
- *   0 8 * * * cd /opt/opentask && OPENTASK_DB_PATH=/opt/opentask/data/tasks.db npx tsx scripts/reset-demo-user.ts >> /var/log/opentask-demo-reset.log 2>&1
+ * Cron example (3 AM CT = 8:00 UTC):
+ *   0 8 * * * cd /path/to/opentask && OPENTASK_DB_PATH=data/tasks.db npx tsx scripts/reset-demo-user.ts >> /var/log/opentask-demo-reset.log 2>&1
  */
 
 import { getDb, closeDb } from '../src/core/db'

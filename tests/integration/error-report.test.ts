@@ -22,7 +22,7 @@ describe('POST /api/errors/report', () => {
       type: 'js_error',
       message: 'Cannot read property x of undefined',
       stack: 'Error: Cannot read property x\n    at foo.js:1:1',
-      url: 'https://opentask.mcnitt.io/',
+      url: 'https://example.com/',
     })
     expect(res.status).toBe(204)
   })
@@ -31,7 +31,7 @@ describe('POST /api/errors/report', () => {
     const res = await post({
       type: 'react_error',
       message: 'Hydration mismatch',
-      url: 'https://opentask.mcnitt.io/tasks/1',
+      url: 'https://example.com/tasks/1',
     })
     expect(res.status).toBe(204)
   })

@@ -84,9 +84,9 @@ The Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) runs inside the OpenTask
 **Why this approach:**
 
 - Direct database access — AI can read projects, labels, and user preferences without an API layer
-- Single deploy — one `deploy.sh` command updates everything
+- Single deploy — one deploy command updates everything
 - Atomic transactions — AI mutations use the same `withTransaction()` as manual edits
-- Single log stream — `journalctl -u opentask` shows everything
+- Single log stream — all output in one place
 - Sufficient for 1-2 users on a dedicated server
 
 **Prerequisites:** Claude Code must be installed and authenticated on the server. The SDK uses Claude Code's existing authentication (Max subscription) — no API key needed.
