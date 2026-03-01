@@ -108,7 +108,7 @@ Web Push notifications show on Apple Watch but are not interactive — no action
 | `VAPID_PRIVATE_KEY` | VAPID private key                                                   |
 | `VAPID_EMAIL`       | Contact email for VAPID (e.g., `mailto:you@example.com`)            |
 
-Set in systemd service override files on the server (standalone Next.js does NOT read `.env.local`).
+Set as environment variables on the server (standalone Next.js does NOT read `.env.local`).
 
 ## APNs (iOS Native App)
 
@@ -132,12 +132,12 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 
 ### Environment variables
 
-| Variable         | Purpose                                                            |
-| ---------------- | ------------------------------------------------------------------ |
-| `APNS_KEY_ID`    | Key ID from Apple Developer portal                                 |
-| `APNS_TEAM_ID`   | Team ID from Apple Developer portal                                |
-| `APNS_KEY_PATH`  | Path to .p8 key file (e.g., `/opt/opentask/AuthKey_XXXXXXXXXX.p8`) |
-| `APNS_BUNDLE_ID` | App bundle ID (e.g., `io.mcnitt.opentask`)                         |
+| Variable         | Purpose                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| `APNS_KEY_ID`    | Key ID from Apple Developer portal                            |
+| `APNS_TEAM_ID`   | Team ID from Apple Developer portal                           |
+| `APNS_KEY_PATH`  | Path to .p8 key file (e.g., `/path/to/AuthKey_XXXXXXXXXX.p8`) |
+| `APNS_BUNDLE_ID` | App bundle ID (e.g., `io.mcnitt.opentask`)                    |
 
 ## iOS platform constraints
 

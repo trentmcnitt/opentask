@@ -16,8 +16,8 @@ Authorization: Bearer <token>
 npm run db:create-token -- <username> [token-name]
 
 # Examples:
-npm run db:create-token -- Trent               # name defaults to "API"
-npm run db:create-token -- Trent "iOS Shortcut" # custom name
+npm run db:create-token -- admin               # name defaults to "API"
+npm run db:create-token -- admin "iOS Shortcut" # custom name
 ```
 
 The script prints the token to stdout. Store it securely — it cannot be retrieved later.

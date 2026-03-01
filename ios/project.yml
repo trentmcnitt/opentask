@@ -55,8 +55,6 @@ targets:
           - group.io.mcnitt.opentask
         com.apple.developer.associated-domains:
           - webcredentials:opentask.mcnitt.io
-          - webcredentials:tasks.tk11.mcnitt.io
-          - webcredentials:tasks-dev.tk11.mcnitt.io
     dependencies:
       - target: OpenTaskNotification
       - target: OpenTaskWatch
