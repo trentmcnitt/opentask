@@ -14,8 +14,8 @@ import { test, expect } from '@playwright/test'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 
-const USERNAME = 'test_user'
-const PASSWORD = 'password'
+const USERNAME = 'Test User'
+const PASSWORD = 'testpass123'
 
 test('measure dashboard load performance', async ({ page }) => {
   // Login

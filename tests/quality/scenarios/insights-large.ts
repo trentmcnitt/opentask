@@ -12,11 +12,14 @@
 import type { AITestScenario } from '../types'
 import type { TaskSummary } from '@/core/ai/types'
 import { generateRealisticTaskList } from '../helpers/generate-tasks'
+import { daysAgo, daysAgoAt, weeksAgo, monthsAgo, daysFromNowAt } from '../helpers/dates'
 
 // ---------------------------------------------------------------------------
 // Anchor tasks — hand-crafted with known expected behavior
 // IDs in 9001+ range to avoid collision with generated tasks.
 // ---------------------------------------------------------------------------
+
+const tz = 'America/Chicago'
 
 const STALE_ANCHORS: TaskSummary[] = [
   {
@@ -25,7 +28,7 @@ const STALE_ANCHORS: TaskSummary[] = [
     priority: 0,
     due_at: null,
     original_due_at: null,
-    created_at: '2025-11-10T16:00:00Z',
+    created_at: monthsAgo(4),
     labels: ['finance'],
     project_name: null,
     is_recurring: false,
@@ -39,7 +42,7 @@ const STALE_ANCHORS: TaskSummary[] = [
     priority: 0,
     due_at: null,
     original_due_at: null,
-    created_at: '2025-10-20T16:00:00Z',
+    created_at: monthsAgo(5),
     labels: ['home'],
     project_name: null,
     is_recurring: false,
@@ -53,7 +56,7 @@ const STALE_ANCHORS: TaskSummary[] = [
     priority: 1,
     due_at: null,
     original_due_at: null,
-    created_at: '2025-12-01T16:00:00Z',
+    created_at: monthsAgo(3),
     labels: ['home'],
     project_name: null,
     is_recurring: false,
@@ -68,9 +71,9 @@ const P4_ANCHORS: TaskSummary[] = [
     id: 9010,
     title: 'URGENT: Deploy hotfix to production',
     priority: 4,
-    due_at: '2026-02-11T20:00:00Z',
-    original_due_at: '2026-02-11T20:00:00Z',
-    created_at: '2026-02-11T18:00:00Z',
+    due_at: daysAgoAt(1, 14, 0, tz),
+    original_due_at: daysAgoAt(1, 14, 0, tz),
+    created_at: daysAgo(1),
     labels: ['work'],
     project_name: 'Work',
     is_recurring: false,
@@ -82,9 +85,9 @@ const P4_ANCHORS: TaskSummary[] = [
     id: 9011,
     title: 'CRITICAL: Fix payment processing error',
     priority: 4,
-    due_at: '2026-02-10T22:00:00Z',
-    original_due_at: '2026-02-10T22:00:00Z',
-    created_at: '2026-02-10T16:00:00Z',
+    due_at: daysAgoAt(2, 16, 0, tz),
+    original_due_at: daysAgoAt(2, 16, 0, tz),
+    created_at: daysAgo(2),
     labels: ['work'],
     project_name: 'Work',
     is_recurring: false,
@@ -101,7 +104,7 @@ const VAGUE_ANCHORS: TaskSummary[] = [
     priority: 0,
     due_at: null,
     original_due_at: null,
-    created_at: '2026-01-20T16:00:00Z',
+    created_at: weeksAgo(6),
     labels: [],
     project_name: null,
     is_recurring: false,
@@ -115,7 +118,7 @@ const VAGUE_ANCHORS: TaskSummary[] = [
     priority: 0,
     due_at: null,
     original_due_at: null,
-    created_at: '2026-01-15T16:00:00Z',
+    created_at: weeksAgo(7),
     labels: [],
     project_name: null,
     is_recurring: false,
@@ -130,9 +133,9 @@ const WELL_ORGANIZED_ANCHORS: TaskSummary[] = [
     id: 9030,
     title: 'Weekly team standup',
     priority: 2,
-    due_at: '2026-02-13T15:00:00Z',
-    original_due_at: '2026-02-13T15:00:00Z',
-    created_at: '2026-01-01T15:00:00Z',
+    due_at: daysFromNowAt(2, 9, 0, tz),
+    original_due_at: daysFromNowAt(2, 9, 0, tz),
+    created_at: monthsAgo(2),
     labels: ['work'],
     project_name: 'Work',
     is_recurring: true,
@@ -144,9 +147,9 @@ const WELL_ORGANIZED_ANCHORS: TaskSummary[] = [
     id: 9031,
     title: 'Pay electric bill',
     priority: 3,
-    due_at: '2026-02-15T22:00:00Z',
-    original_due_at: '2026-02-15T22:00:00Z',
-    created_at: '2026-02-01T16:00:00Z',
+    due_at: daysFromNowAt(4, 16, 0, tz),
+    original_due_at: daysFromNowAt(4, 16, 0, tz),
+    created_at: monthsAgo(1),
     labels: ['finance'],
     project_name: null,
     is_recurring: true,
@@ -160,9 +163,9 @@ const MISPRIORITIZED_ANCHOR: TaskSummary = {
   id: 9040,
   title: 'Alphabetize the spice rack',
   priority: 4,
-  due_at: '2026-02-14T22:00:00Z',
-  original_due_at: '2026-02-14T22:00:00Z',
-  created_at: '2026-02-10T16:00:00Z',
+  due_at: daysFromNowAt(3, 16, 0, tz),
+  original_due_at: daysFromNowAt(3, 16, 0, tz),
+  created_at: daysAgo(4),
   labels: ['home'],
   project_name: null,
   is_recurring: false,

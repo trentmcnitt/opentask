@@ -21,7 +21,7 @@ import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
 import { RRulePatterns, parseRRule } from '../src/core/recurrence/rrule-builder'
-import { localToUtc } from '../src/core/recurrence/timezone'
+import { localToUtcIso, daysUntilWeekday } from './seed-utils'
 
 const TIMEZONE = 'America/Chicago'
 const SALT_ROUNDS = 10
@@ -54,31 +54,6 @@ interface DemoTaskDef {
   noDue?: boolean
   /** How many days ago the task was created (for realistic created_at). Default: 3 */
   createdDaysAgo?: number
-}
-
-// ── Helpers ──────────────────────────────────
-
-/**
- * Returns the number of days from today until the next occurrence of
- * the given ISO weekday(s) (1=Mon..7=Sun). Always returns at least
- * `minDays` (default 1) so tasks are never due today — prevents
- * accidental overdue after the daily 3 AM reset.
- */
-function daysUntilWeekday(isoWeekdays: number | number[], minDays: number = 1): number {
-  const weekdays = Array.isArray(isoWeekdays) ? isoWeekdays : [isoWeekdays]
-  const today = DateTime.now().setZone(TIMEZONE)
-  for (let d = minDays; d <= 7 + minDays; d++) {
-    if (weekdays.includes(today.plus({ days: d }).weekday)) return d
-  }
-  return minDays
-}
-
-function localToUtcIso(daysOffset: number, hour: number, minute: number): string {
-  const local = DateTime.now()
-    .setZone(TIMEZONE)
-    .plus({ days: daysOffset })
-    .set({ hour, minute, second: 0, millisecond: 0 })
-  return localToUtc(local)
 }
 
 // ── Task definitions ──────────────────────────────────

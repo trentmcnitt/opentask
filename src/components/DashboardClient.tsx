@@ -754,10 +754,9 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   }, [selection, clearAllFilters])
 
   // Build task groups for keyboard navigation
-  const effectiveGrouping = grouping
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, projects, effectiveGrouping, timezone),
-    [tasks_, projects, effectiveGrouping, timezone],
+    () => buildTaskGroups(tasks_, projects, grouping, timezone),
+    [tasks_, projects, grouping, timezone],
   )
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
@@ -804,6 +803,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
           })
           if (!res.ok) throw new Error('Bulk action failed')
           refreshAll()
+          actions.bumpUndoCount()
           showToast({
             message: `${count} ${taskWord(count)} completed`,
             type: 'success',

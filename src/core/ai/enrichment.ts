@@ -255,7 +255,7 @@ export async function processEnrichmentQueue(): Promise<void> {
         continue
       }
 
-      // Check for ai-locked label (belt and suspenders — query excludes them too)
+      // Check for ai-locked label (sole guard — in-memory since the query doesn't filter by label)
       const labels: string[] = JSON.parse(row.labels)
       if (labels.includes('ai-locked')) {
         removeLabel(row.id, 'ai-to-process')
@@ -548,9 +548,9 @@ Parse the task above and return the structured result.`
 }
 
 /**
- * Belt-and-suspenders guard: strip AI-inferred labels unless the user's input
+ * Post-parse guard: strip AI-inferred labels unless the user's input
  * contains explicit label-intent language. The prompt already tells the AI not
- * to infer labels, but this catches any leakage.
+ * to infer labels, but this catches any prompt leakage.
  *
  * - If the input has no label-intent keywords, all labels are stripped.
  * - If label-intent keywords are present, trust the AI's extraction.

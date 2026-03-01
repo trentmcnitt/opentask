@@ -70,7 +70,7 @@ export function applyFieldsToTask(
 
     // Validate column name against allowlist to prevent SQL injection
     if (!VALID_TASK_COLUMNS.has(dbColumn)) {
-      if (dbColumn === 'id' || dbColumn === 'created') continue
+      if (dbColumn === 'id' || dbColumn === 'created_at') continue
       throw new ValidationError(`Invalid field name in undo snapshot: ${dbColumn}`)
     }
 

@@ -102,7 +102,14 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE ai_activity_log ADD COLUMN provider TEXT')
   }
   // Rename 'api' → 'anthropic' in ai_provider (2026-03)
-  database.exec("UPDATE users SET ai_provider = 'anthropic' WHERE ai_provider = 'api'")
+  const apiCount = (
+    database.prepare("SELECT COUNT(*) as c FROM users WHERE ai_provider = 'api'").get() as {
+      c: number
+    }
+  ).c
+  if (apiCount > 0) {
+    database.exec("UPDATE users SET ai_provider = 'anthropic' WHERE ai_provider = 'api'")
+  }
   // Per-feature AI backend modes (2026-03)
   if (!hasColumn(database, 'users', 'ai_enrichment_mode')) {
     database.exec("ALTER TABLE users ADD COLUMN ai_enrichment_mode TEXT NOT NULL DEFAULT 'api'")

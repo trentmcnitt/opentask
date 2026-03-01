@@ -7,7 +7,7 @@
  * Cron schedule:
  * - Every 1 min: notification check (overdue tasks, all priorities)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
- * - 3:00 AM daily: undo purge + What's Next generation (AI)
+ * - 3:00 AM daily: undo purge + What's Next generation (AI, runs in parallel)
  * - 3:15 AM daily: Insights generation (AI)
  * - 3:30 AM daily: trash purge
  * - 4:00 AM daily: completions purge

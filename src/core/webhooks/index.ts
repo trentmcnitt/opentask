@@ -167,9 +167,9 @@ export function getWebhookDeliveries(webhookId: number, userId: number): Webhook
     .prepare(
       'SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC LIMIT 50',
     )
-    .all(webhookId) as WebhookDeliveryRow[]
+    .all(webhookId) as WebhookDelivery[]
 
-  return rows.map(rowToDelivery)
+  return rows
 }
 
 export interface WebhookDelivery {
@@ -181,19 +181,4 @@ export interface WebhookDelivery {
   error: string | null
   attempt: number
   created_at: string
-}
-
-interface WebhookDeliveryRow {
-  id: number
-  webhook_id: number
-  event: string
-  payload: string
-  status_code: number | null
-  error: string | null
-  attempt: number
-  created_at: string
-}
-
-function rowToDelivery(row: WebhookDeliveryRow): WebhookDelivery {
-  return { ...row }
 }

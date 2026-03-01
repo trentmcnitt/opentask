@@ -405,6 +405,7 @@ Parse this task and return the structured result.`
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
 
+  const provider = getTestProvider()
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
@@ -413,6 +414,7 @@ Parse this task and return the structured result.`
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_enrich',
     inputText: input.text,
+    provider: provider === 'sdk' ? undefined : provider,
   })
 
   // Use parseAIResponse with text fallback — the SDK often returns JSON
@@ -466,6 +468,7 @@ Surface 3-7 tasks and return the JSON result.`
 
   const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
+  const whatsNextProvider = getTestProvider()
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
@@ -478,6 +481,7 @@ Surface 3-7 tasks and return the JSON result.`
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_whats_next',
     inputText: `${input.tasks.length} tasks`,
+    provider: whatsNextProvider === 'sdk' ? undefined : whatsNextProvider,
   })
 
   // Use the same parsing + normalization as production whats-next.ts
@@ -534,6 +538,7 @@ async function runQuickTake(
   )
 
   const model = getModelForFeature('quick_take')
+  const quickTakeProvider = getTestProvider()
 
   const result = await aiQuery({
     prompt,
@@ -543,6 +548,7 @@ async function runQuickTake(
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_quick_take',
     inputText: input.newTaskTitle,
+    provider: quickTakeProvider === 'sdk' ? undefined : quickTakeProvider,
   })
 
   if (!result.success || !result.textResult) {
@@ -567,7 +573,7 @@ async function runQuickTake(
 async function runInsights(
   input: InsightsInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { INSIGHTS_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
+  const { INSIGHTS_SYSTEM_PROMPT, INSIGHTS_REMINDERS } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
   const { InsightsBatchResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
@@ -589,15 +595,17 @@ async function runInsights(
 
 Current time: ${currentTime}
 Total tasks: ${input.tasks.length}${userContextBlock}
-
-## Tasks
-
+<tasks>
 ${taskLines}
+</tasks>
 
-Score every task below. Return a JSON array with one entry per task.`
+${INSIGHTS_REMINDERS}
+Current time: ${currentTime}
+Score every task above. Return a JSON array with one entry per task.`
 
   const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
 
+  const insightsProvider = getTestProvider()
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
@@ -611,6 +619,7 @@ Score every task below. Return a JSON array with one entry per task.`
     action: 'quality_test_insights',
     inputText: `${input.tasks.length} tasks`,
     timeoutMs: 600_000,
+    provider: insightsProvider === 'sdk' ? undefined : insightsProvider,
   })
 
   const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
@@ -1123,15 +1132,23 @@ function validateInsightsExpectations(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Read provider from env var, defaulting to 'sdk' (preserves existing behavior). */
+function getTestProvider(): 'sdk' | 'anthropic' | 'openai' {
+  const p = process.env.OPENTASK_AI_PROVIDER
+  if (p === 'anthropic' || p === 'openai') return p
+  return 'sdk'
+}
+
 function getModelForFeature(feature: string): string {
   // Quality tests use the centralized model resolution from models.ts.
-  // Tests always run against 'sdk' provider.
+  // Provider comes from OPENTASK_AI_PROVIDER env var (default: 'sdk').
+  const provider = getTestProvider()
   const validFeatures = ['enrichment', 'quick_take', 'whats_next', 'insights']
   if (validFeatures.includes(feature)) {
     return requireFeatureModel(
       feature as 'enrichment' | 'quick_take' | 'whats_next' | 'insights',
-      'sdk',
+      provider,
     )
   }
-  return requireFeatureModel('enrichment', 'sdk')
+  return requireFeatureModel('enrichment', provider)
 }

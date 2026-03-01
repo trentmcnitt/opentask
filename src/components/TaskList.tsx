@@ -291,10 +291,12 @@ export function TaskList({
       ? groupByProject(tasks, projects)
       : groupByTime(tasks, timezone)
 
-  // Build ordered ID list for range-select, applying the same sort as rendering
-  const orderedIds = groups.flatMap((g) => {
-    return sortTasks(g.tasks, sortOption, reversed, insightsScoreMap).map((t) => t.id)
-  })
+  // Compute sorted groups once, reuse for both orderedIds and rendering
+  const sortedGroups = groups.map((g) => ({
+    ...g,
+    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
+  }))
+  const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
 
   // Determine if we should show the "now" separator
   const hasOverdue = grouping === 'time' && groups.some((g) => g.label === 'Overdue')
@@ -346,8 +348,8 @@ export function TaskList({
         </div>
       )}
       <div className={isUnified ? 'space-y-1' : 'space-y-6'}>
-        {groups.map((group, groupIdx) => {
-          const sortedTasks = sortTasks(group.tasks, sortOption, reversed, insightsScoreMap)
+        {sortedGroups.map((group, groupIdx) => {
+          const { sortedTasks } = group
           const collapsed = !isUnified && isCollapsed(group.label)
 
           return (

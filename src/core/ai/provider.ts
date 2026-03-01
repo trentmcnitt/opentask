@@ -121,11 +121,11 @@ export function getApiProvider(): AIProvider {
  */
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
   haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-4-5-20250514',
-  opus: 'claude-opus-4-6-20250610',
+  sonnet: 'claude-sonnet-4-6',
+  opus: 'claude-opus-4-6',
   'claude-haiku-4-5': 'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-5': 'claude-sonnet-4-5-20250514',
-  'claude-opus-4-6': 'claude-opus-4-6-20250610',
+  'claude-sonnet-4-6': 'claude-sonnet-4-6',
+  'claude-opus-4-6': 'claude-opus-4-6',
 }
 
 /**

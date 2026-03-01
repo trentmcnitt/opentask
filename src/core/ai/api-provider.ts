@@ -75,7 +75,9 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
       createParams.output_config = {
         format: {
           type: 'json_schema',
-          schema: outputSchema as Anthropic.Messages.JSONOutputFormat['schema'],
+          schema: sanitizeSchemaForAnthropic(
+            outputSchema,
+          ) as Anthropic.Messages.JSONOutputFormat['schema'],
         },
       }
     }
@@ -159,8 +161,53 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
       taskId,
       action,
       inputText,
-      resolvedModel,
+      model: resolvedModel,
       provider: 'anthropic',
     })
   }
+}
+
+/**
+ * Strip JSON Schema properties that Anthropic's output_config doesn't support.
+ * Zod's toJSONSchema() emits standard properties like minimum/maximum on integers
+ * that the Anthropic API rejects. Recursively clean the schema before sending.
+ */
+const UNSUPPORTED_NUMERIC_PROPS = [
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+]
+const UNSUPPORTED_STRING_PROPS = ['minLength', 'maxLength', 'pattern']
+const UNSUPPORTED_ARRAY_PROPS = ['minItems', 'maxItems', 'uniqueItems']
+
+function sanitizeSchemaForAnthropic(schema: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...schema }
+
+  const type = result.type as string | undefined
+  if (type === 'integer' || type === 'number') {
+    for (const prop of UNSUPPORTED_NUMERIC_PROPS) delete result[prop]
+  } else if (type === 'string') {
+    for (const prop of UNSUPPORTED_STRING_PROPS) delete result[prop]
+  } else if (type === 'array') {
+    for (const prop of UNSUPPORTED_ARRAY_PROPS) delete result[prop]
+    if (result.items) {
+      result.items = sanitizeSchemaForAnthropic(result.items as Record<string, unknown>)
+    }
+  } else if (type === 'object' && result.properties) {
+    const props = result.properties as Record<string, Record<string, unknown>>
+    result.properties = Object.fromEntries(
+      Object.entries(props).map(([k, v]) => [k, sanitizeSchemaForAnthropic(v)]),
+    )
+  }
+
+  // Handle anyOf/oneOf/allOf
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (Array.isArray(result[key])) {
+      result[key] = (result[key] as Record<string, unknown>[]).map(sanitizeSchemaForAnthropic)
+    }
+  }
+
+  return result
 }

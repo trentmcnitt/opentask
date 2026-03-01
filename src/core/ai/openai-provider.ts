@@ -20,9 +20,15 @@ let client: OpenAI | null = null
 
 function getClient(): OpenAI {
   if (!client) {
+    const apiKey = process.env.OPENAI_API_KEY
+    const baseURL = process.env.OPENAI_BASE_URL
+    log.debug(
+      'ai',
+      `[openai] creating client (key: ${apiKey ? apiKey.slice(0, 8) + '...' : 'MISSING'}, baseURL: ${baseURL || 'default'})`,
+    )
     client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      ...(process.env.OPENAI_BASE_URL && { baseURL: process.env.OPENAI_BASE_URL }),
+      apiKey,
+      ...(baseURL && { baseURL }),
     })
   }
   return client
@@ -55,7 +61,6 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
     timeoutMs: perCallTimeout,
   } = options
 
-  const resolvedModel = model
   const startTime = Date.now()
   const timeoutMs = resolveQueryTimeout(perCallTimeout)
   let timedOut = false
@@ -71,28 +76,37 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
     messages.push({ role: 'user', content: prompt })
 
     const createParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
-      model: resolvedModel,
+      model: model,
       messages,
     }
 
     // Structured output via response_format
     if (outputSchema) {
+      const useStrict = process.env.OPENTASK_AI_OPENAI_STRICT !== 'false'
+      // OpenAI requires the top-level schema to be type: "object". If the schema
+      // is an array (e.g., insights batch), wrap it in an object with a "data" key.
+      const effectiveSchema =
+        outputSchema.type === 'array'
+          ? {
+              type: 'object',
+              properties: { data: outputSchema },
+              required: ['data'],
+              additionalProperties: false,
+            }
+          : outputSchema
       createParams.response_format = {
         type: 'json_schema',
         json_schema: {
           name: SCHEMA_NAMES[action] || `${action}_result`,
-          schema: outputSchema,
-          strict: true,
+          schema: effectiveSchema,
+          ...(useStrict ? { strict: true } : {}),
         },
       }
     }
 
     // maxThinkingTokens is Anthropic-specific — skipped for OpenAI
 
-    log.debug(
-      'ai',
-      `[openai] ${action} starting (model: ${resolvedModel}, timeout: ${timeoutMs}ms)`,
-    )
+    log.debug('ai', `[openai] ${action} starting (model: ${model}, timeout: ${timeoutMs}ms)`)
 
     // Timeout via AbortController
     const controller = new AbortController()
@@ -119,7 +133,17 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
       textResult = content
       if (outputSchema) {
         try {
-          structuredOutput = JSON.parse(content)
+          let parsed = JSON.parse(content)
+          // Unwrap the object wrapper we added for array schemas
+          if (
+            outputSchema.type === 'array' &&
+            parsed &&
+            typeof parsed === 'object' &&
+            'data' in parsed
+          ) {
+            parsed = parsed.data
+          }
+          structuredOutput = parsed
         } catch {
           log.warn('ai', `[openai] ${action}: response content is not valid JSON`)
         }
@@ -140,13 +164,13 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
       status: hasOutput ? 'success' : 'error',
       input: inputText ?? null,
       output: structuredOutput ? JSON.stringify(structuredOutput) : textResult,
-      model: resolvedModel,
+      model: model,
       duration_ms: durationMs,
       error: hasOutput ? null : 'OpenAI response contained no usable output',
       provider: 'openai',
     })
 
-    log.info('ai', `[openai] ${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
+    log.info('ai', `[openai] ${action} completed in ${durationMs}ms (model: ${model})`)
 
     return {
       structuredOutput,
@@ -161,7 +185,7 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
       taskId,
       action,
       inputText,
-      resolvedModel,
+      model: model,
       provider: 'openai',
     })
   }

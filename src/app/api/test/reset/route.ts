@@ -9,7 +9,7 @@
 
 import { resetDb } from '@/core/db'
 import { seedTestData } from '../../../../../scripts/seed-test'
-import { notFound, internalError, success } from '@/lib/api-response'
+import { notFound, success, handleError } from '@/lib/api-response'
 import { log } from '@/lib/logger'
 
 export async function POST() {
@@ -23,6 +23,6 @@ export async function POST() {
     return success({ ok: true })
   } catch (err) {
     log.error('api', 'Test reset failed:', err)
-    return internalError(String(err))
+    return handleError(err)
   }
 }

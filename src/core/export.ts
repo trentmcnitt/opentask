@@ -44,7 +44,13 @@ export function exportUserData(userId: number): ExportData {
   // Direct query: all tasks belonging to this user, regardless of state
   const allRawTasks = db
     .prepare(
-      `SELECT * FROM tasks
+      `SELECT id, user_id, project_id, title, original_title, done, done_at, priority,
+              due_at, rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
+              original_due_at, deleted_at, archived_at, labels,
+              last_notified_at, last_critical_alert_at, auto_snooze_minutes,
+              completion_count, snooze_count, first_completed_at, last_completed_at,
+              notes, created_at, updated_at
+       FROM tasks
        WHERE user_id = ?
        ORDER BY created_at DESC
        LIMIT 10000`,
@@ -65,7 +71,9 @@ export function exportUserData(userId: number): ExportData {
   const projects = getProjects(userId)
 
   const completions = db
-    .prepare('SELECT * FROM completions WHERE user_id = ? ORDER BY completed_at DESC')
+    .prepare(
+      'SELECT id, task_id, user_id, completed_at, due_at_was, due_at_next FROM completions WHERE user_id = ? ORDER BY completed_at DESC',
+    )
     .all(userId) as Completion[]
 
   return { tasks: allTasks, projects, completions }

@@ -65,6 +65,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         INNER JOIN tasks t ON c.task_id = t.id
         WHERE ${conditions.join(' AND ')}
         ORDER BY c.completed_at DESC
+        LIMIT 1000
       `,
       )
       .all(...params) as CompletionRow[]
