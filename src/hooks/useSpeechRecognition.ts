@@ -7,6 +7,9 @@ import { useState, useCallback, useRef, useEffect } from 'react'
  *
  * Environment detection: Only returns isSupported=true on platforms where
  * the API actually works. Known non-working environments:
+ * - Brave: blocks Web Speech API by default (sends audio to Google servers).
+ *   Can be enabled via brave://flags/#brave-web-speech-api but we hide the
+ *   button rather than expect users to flip flags.
  * - WKWebView (native iOS app): fires "service-not-allowed" error immediately
  * - Standalone PWA on iOS: API exists but silently fails (WebKit Bug 225298)
  * - Firefox: API behind a flag, not usable
@@ -42,6 +45,11 @@ function detectSupport(): boolean {
 
   // Firefox — not supported
   if (/Firefox/i.test(ua)) return false
+
+  // Brave — blocks Web Speech API by default (privacy: audio goes to Google).
+  // navigator.brave is Brave's own API; isBrave() returns a resolved promise.
+  // We check synchronously for the property's existence as a reliable signal.
+  if ('brave' in navigator) return false
 
   return true
 }
@@ -176,8 +184,8 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
       const errorMessages: Record<string, string> = {
         'no-speech': 'No speech detected. Try again.',
         'audio-capture': 'No microphone found.',
-        'not-allowed': 'Microphone access denied.',
-        'service-not-allowed': 'Speech recognition unavailable.',
+        'not-allowed': 'Speech recognition blocked. Check your browser privacy settings.',
+        'service-not-allowed': 'Speech recognition unavailable in this browser.',
         network: 'Network error. Check your connection.',
       }
       setError(errorMessages[event.error] || 'Speech recognition failed.')
