@@ -31,14 +31,21 @@ export function validateBearerToken(token: string): AuthUser | null {
   const row = db
     .prepare(
       `
-    SELECT u.id, u.email, u.name, u.timezone, u.default_grouping
+    SELECT u.id, u.email, u.name, u.timezone, u.default_grouping, u.is_demo
     FROM api_tokens t
     JOIN users u ON t.user_id = u.id
     WHERE t.token = ?
   `,
     )
     .get(hashed) as
-    | { id: number; email: string; name: string; timezone: string; default_grouping: string }
+    | {
+        id: number
+        email: string
+        name: string
+        timezone: string
+        default_grouping: string
+        is_demo: number
+      }
     | undefined
 
   if (!row) {

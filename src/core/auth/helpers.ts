@@ -10,6 +10,7 @@ interface UserRow {
   name: string
   timezone: string
   default_grouping: string
+  is_demo: number | boolean
 }
 
 /**
@@ -28,5 +29,6 @@ export function toAuthUser(row: UserRow): AuthUser {
         : row.default_grouping === 'unified'
           ? 'unified'
           : 'project',
+    is_demo: row.is_demo === 1 || row.is_demo === true,
   }
 }

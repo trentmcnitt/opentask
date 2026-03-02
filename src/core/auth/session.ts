@@ -28,7 +28,7 @@ export async function validateCredentials(
   const row = db
     .prepare(
       `
-    SELECT id, email, name, password_hash, timezone, default_grouping
+    SELECT id, email, name, password_hash, timezone, default_grouping, is_demo
     FROM users
     WHERE email = ? COLLATE NOCASE OR name = ? COLLATE NOCASE
   `,
@@ -41,6 +41,7 @@ export async function validateCredentials(
         password_hash: string
         timezone: string
         default_grouping: string
+        is_demo: number
       }
     | undefined
 
@@ -67,13 +68,20 @@ export function getUserById(id: number): AuthUser | null {
   const row = db
     .prepare(
       `
-    SELECT id, email, name, timezone, default_grouping
+    SELECT id, email, name, timezone, default_grouping, is_demo
     FROM users
     WHERE id = ?
   `,
     )
     .get(id) as
-    | { id: number; email: string; name: string; timezone: string; default_grouping: string }
+    | {
+        id: number
+        email: string
+        name: string
+        timezone: string
+        default_grouping: string
+        is_demo: number
+      }
     | undefined
 
   if (!row) {

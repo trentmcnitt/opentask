@@ -169,4 +169,5 @@ export interface AuthUser {
   name: string
   timezone: string
   default_grouping: 'time' | 'project' | 'unified'
+  is_demo: boolean
 }

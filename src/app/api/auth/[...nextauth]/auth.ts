@@ -53,6 +53,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           timezone: user.timezone,
           default_grouping: user.default_grouping,
+          is_demo: user.is_demo,
         }
       },
     }),
@@ -64,6 +65,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id
         token.timezone = user.timezone
         token.default_grouping = user.default_grouping
+        token.is_demo = user.is_demo
       }
 
       // Refresh user data from DB on every request so preference changes
@@ -73,6 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (freshUser) {
           token.timezone = freshUser.timezone
           token.default_grouping = freshUser.default_grouping
+          token.is_demo = freshUser.is_demo
         }
       }
 
@@ -84,6 +87,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id
         session.user.timezone = token.timezone
         session.user.default_grouping = token.default_grouping
+        session.user.is_demo = token.is_demo
       }
       return session
     },

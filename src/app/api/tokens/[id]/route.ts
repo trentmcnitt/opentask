@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, notFound, handleError } from '@/lib/api-response'
+import { success, unauthorized, forbidden, notFound, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -18,6 +18,9 @@ export const DELETE = withLogging(async function DELETE(
 ) {
   try {
     const user = await requireAuth(request)
+    if (user.is_demo) {
+      return forbidden('API tokens cannot be deleted in demo mode')
+    }
     const { id } = await context.params
     const tokenId = parseInt(id)
     if (isNaN(tokenId)) {
