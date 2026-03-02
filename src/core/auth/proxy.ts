@@ -45,13 +45,20 @@ export function getProxyAuthUser(request: NextRequest): AuthUser | null {
   const row = db
     .prepare(
       `
-    SELECT id, email, name, timezone, default_grouping
+    SELECT id, email, name, timezone, default_grouping, is_demo
     FROM users
     WHERE LOWER(name) = LOWER(?)
   `,
     )
     .get(username) as
-    | { id: number; email: string; name: string; timezone: string; default_grouping: string }
+    | {
+        id: number
+        email: string
+        name: string
+        timezone: string
+        default_grouping: string
+        is_demo: number
+      }
     | undefined
 
   if (!row) {

@@ -309,9 +309,18 @@ export default function SettingsPage() {
     }
   }
 
+  const isDemo = session?.user?.is_demo ?? false
   const aiContextDirty = aiContextDraft !== (aiContext ?? '')
 
+  const showDemoToast = () => {
+    showToast({ message: 'This setting is not available in demo mode', type: 'error' })
+  }
+
   const handleAiContextSave = async () => {
+    if (isDemo) {
+      showDemoToast()
+      return
+    }
     const newValue = aiContextDraft.trim() || null
     const prev = aiContext
     setAiContext(newValue)
@@ -335,6 +344,10 @@ export default function SettingsPage() {
     setter: (mode: FeatureMode) => void,
     prev: FeatureMode,
   ) => {
+    if (isDemo) {
+      showDemoToast()
+      return
+    }
     setter(value)
     const fieldMap = {
       enrichment: 'ai_enrichment_mode',
@@ -1086,6 +1099,11 @@ export default function SettingsPage() {
               Help the AI understand your situation. This context is included in all AI features
               (enrichment, what&apos;s next, insights) to improve relevance.
             </p>
+            {isDemo && (
+              <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+                AI settings are view-only in demo mode.
+              </p>
+            )}
             <Textarea
               value={aiContextDraft}
               onChange={(e) => setAiContextDraft(e.target.value)}
@@ -1095,6 +1113,7 @@ export default function SettingsPage() {
               maxLength={1000}
               rows={3}
               className="mb-2 text-sm"
+              disabled={isDemo}
             />
             <div className="flex items-center justify-between">
               <span className="text-xs text-zinc-400">{aiContextDraft.length}/1000</span>
@@ -1102,7 +1121,7 @@ export default function SettingsPage() {
                 size="sm"
                 variant="outline"
                 onClick={handleAiContextSave}
-                disabled={!aiContextDirty}
+                disabled={!aiContextDirty || isDemo}
                 className="h-8"
               >
                 Save
@@ -1162,6 +1181,7 @@ export default function SettingsPage() {
                   info={aiFeatureInfo?.[feature.infoKey] ?? null}
                   sdkAvailable={aiSdkAvailable}
                   apiAvailable={aiApiAvailable}
+                  disabled={isDemo}
                   onModeChange={(value) =>
                     handleFeatureModeChange(feature.key, value, feature.setter, feature.mode)
                   }
@@ -1179,7 +1199,7 @@ export default function SettingsPage() {
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
             Tokens for API access from scripts, Shortcuts, and automation tools.
           </p>
-          <TokenManager />
+          <TokenManager isDemo={isDemo} />
         </section>
 
         {/* Navigation links (mobile access to Archive & Trash) */}
@@ -1514,6 +1534,7 @@ function FeatureModeRow({
   info,
   sdkAvailable,
   apiAvailable,
+  disabled,
   onModeChange,
 }: {
   label: string
@@ -1523,6 +1544,7 @@ function FeatureModeRow({
   info: FeatureInfo | null
   sdkAvailable: boolean
   apiAvailable: boolean
+  disabled?: boolean
   onModeChange: (value: FeatureMode) => void
 }) {
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
@@ -1586,7 +1608,12 @@ function FeatureModeRow({
         </div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">{desc}</div>
       </div>
-      <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700">
+      <div
+        className={cn(
+          'flex rounded-md border border-zinc-200 dark:border-zinc-700',
+          disabled && 'opacity-50',
+        )}
+      >
         {(['off', 'sdk', 'api'] as const).map((opt) => {
           const unavailable = (opt === 'sdk' && !sdkAvailable) || (opt === 'api' && !apiAvailable)
           const active = mode === opt
@@ -1594,6 +1621,7 @@ function FeatureModeRow({
             <button
               key={opt}
               onClick={() => onModeChange(opt)}
+              disabled={disabled}
               className={cn(
                 'px-3 py-1 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md',
                 active && unavailable

@@ -9,7 +9,7 @@ import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { hashToken, tokenPreview } from '@/core/auth/token-hash'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, forbidden, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -36,6 +36,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
+    if (user.is_demo) {
+      return forbidden('API tokens cannot be created in demo mode')
+    }
     const body = await request.json()
 
     const name = typeof body.name === 'string' ? body.name.trim() : ''

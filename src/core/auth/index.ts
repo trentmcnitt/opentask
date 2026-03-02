@@ -60,6 +60,7 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
         name: user.name || '',
         timezone: user.timezone || 'America/Chicago',
         default_grouping: user.default_grouping || 'project',
+        is_demo: user.is_demo ? 1 : 0,
       })
     }
   }

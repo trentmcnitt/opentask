@@ -6,8 +6,7 @@
  *
  * Usage: npm run db:reset-demo
  *
- * Cron example (3 AM CT = 8:00 UTC):
- *   0 8 * * * cd /path/to/opentask && OPENTASK_DB_PATH=data/tasks.db npx tsx scripts/reset-demo-user.ts >> /var/log/opentask-demo-reset.log 2>&1
+ * Cron: every 4 hours — see CLAUDE.local.md for the full cron line
  */
 
 import { getDb, closeDb } from '../src/core/db'

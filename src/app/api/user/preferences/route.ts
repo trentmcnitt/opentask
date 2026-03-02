@@ -7,7 +7,7 @@
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, forbidden, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { isAIEnabled } from '@/core/ai/sdk'
 import { isSdkAvailableSync, getApiProvider } from '@/core/ai/provider'
@@ -471,12 +471,27 @@ function formatPreferencesResponse(row: PreferencesRow) {
   }
 }
 
+// AI fields that demo users cannot modify
+const DEMO_PROTECTED_FIELDS = [
+  'ai_context',
+  'ai_mode',
+  'ai_enrichment_mode',
+  'ai_quicktake_mode',
+  'ai_whats_next_mode',
+  'ai_insights_mode',
+]
+
 export const PATCH = withLogging(async function PATCH(request: NextRequest) {
   try {
     const user = await getAuthUser(request)
     if (!user) return unauthorized()
 
     const body = await request.json()
+
+    if (user.is_demo && DEMO_PROTECTED_FIELDS.some((f) => body[f] !== undefined)) {
+      return forbidden('This setting is not available in demo mode')
+    }
+
     const result = validatePatchFields(body)
     if (typeof result === 'string') return badRequest(result)
 

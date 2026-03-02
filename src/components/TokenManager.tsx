@@ -19,7 +19,7 @@ interface CreatedToken {
   token: string
 }
 
-export default function TokenManager() {
+export default function TokenManager({ isDemo = false }: { isDemo?: boolean }) {
   const [tokens, setTokens] = useState<TokenInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [newTokenName, setNewTokenName] = useState('')
@@ -46,6 +46,10 @@ export default function TokenManager() {
   }, [fetchTokens])
 
   const handleCreate = async () => {
+    if (isDemo) {
+      showToast({ message: 'API tokens cannot be managed in demo mode', type: 'error' })
+      return
+    }
     const name = newTokenName.trim()
     if (!name) return
     setCreating(true)
@@ -72,6 +76,10 @@ export default function TokenManager() {
   }
 
   const handleRevoke = async (id: number) => {
+    if (isDemo) {
+      showToast({ message: 'API tokens cannot be managed in demo mode', type: 'error' })
+      return
+    }
     try {
       const res = await fetch(`/api/tokens/${id}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -152,28 +160,34 @@ export default function TokenManager() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 pt-1">
-        <Input
-          type="text"
-          value={newTokenName}
-          onChange={(e) => setNewTokenName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleCreate()
-          }}
-          placeholder="Token name"
-          className="h-8 text-sm"
-          maxLength={100}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleCreate}
-          disabled={!newTokenName.trim() || creating}
-          className="h-8"
-        >
-          Create
-        </Button>
-      </div>
+      {isDemo ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Token management is not available in demo mode.
+        </p>
+      ) : (
+        <div className="flex items-center gap-2 pt-1">
+          <Input
+            type="text"
+            value={newTokenName}
+            onChange={(e) => setNewTokenName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate()
+            }}
+            placeholder="Token name"
+            className="h-8 text-sm"
+            maxLength={100}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCreate}
+            disabled={!newTokenName.trim() || creating}
+            className="h-8"
+          >
+            Create
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
