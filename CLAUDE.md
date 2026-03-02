@@ -8,12 +8,12 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 
 ### Source layout
 
-- `src/core/` — Business logic (no UI): auth, db, tasks, recurrence, undo, validation, notifications, review, stats, ai, activity
+- `src/core/` — Business logic (no UI): auth, db, errors, projects, tasks, recurrence, undo, validation, notifications, webhooks, review, stats, ai, activity, export
 - `src/components/` — React components (see directory for full inventory)
 - `src/components/ui/` — Shadcn UI primitives (button, input, checkbox, dialog, sheet, etc.)
 - `src/hooks/` — Custom React hooks (`useSelectionMode.ts`, `useGroupSort.ts`, `useTimezone.ts`, `useKeyboardNavigation.ts`, etc.)
-- `src/app/api/` — REST API routes with triple auth (Bearer tokens + proxy headers + session cookies)
-- `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], projects, projects/[id], settings, history, archive, trash
+- `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
+- `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
@@ -42,9 +42,10 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 | Change type                                   | Where to make it                            | Notes                                |
 | --------------------------------------------- | ------------------------------------------- | ------------------------------------ |
 | Additive (new table, new column with default) | `src/core/db/schema.sql`                    | Applied idempotently on startup      |
+| New column on existing table                  | Both `schema.sql` AND `runMigrations()`     | `hasColumn()` guard in migration     |
 | Destructive (rename/remove column)            | `runMigrations()` in `src/core/db/index.ts` | Add explicit `ALTER TABLE` migration |
 
-For new columns on existing tables, add the column in the `CREATE TABLE` statement (for fresh databases) _and_ an `ALTER TABLE ... ADD COLUMN` in `runMigrations()` (for existing databases). The migration uses `hasColumn()` to check before altering.
+New columns on existing tables need both locations: the `CREATE TABLE` statement (for fresh databases) and an `ALTER TABLE ... ADD COLUMN` in `runMigrations()` (for existing databases).
 
 To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild.
 
@@ -73,7 +74,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 `AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' }`.
 
-**Login is username-based, not email-based.** The login form accepts a username (the `name` column, case-insensitive). Email is stored but not used for login. Dev credentials are in `.secrets` at the project root.
+**Login is username-based, not email-based.** The login form accepts a username (the `name` column, case-insensitive). Email is stored but not used for login.
 
 NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks).
 
@@ -94,7 +95,7 @@ npm run test:e2e:ui      # Playwright with UI
 npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
 npm run test:quality:retry  # Re-run failed scenarios from last quality run
 npm run test:quality:run # Run specific scenarios: npm run test:quality:run -- <id> [id ...]
-npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality testing)
+npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality testing section for usage)
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
@@ -102,6 +103,7 @@ npm run db:seed-dev      # Seed dev user with ~25 realistic tasks (for contribut
 npm run db:seed-demo     # Seed demo user with ~55 generic professional tasks
 npm run db:reset-demo    # Delete and re-create all demo user data
 npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]
+npx tsx scripts/create-user.ts <username> <email>  # Create user (no npm script wrapper)
 ```
 
 **Quick check** (referenced throughout this file): `npm run type-check && npm run lint && npm test`
@@ -135,6 +137,8 @@ All task deletions are soft-deletes (set `deleted_at`). The only hard-delete ope
 db.prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?').run(now, taskId)
 ```
 
+These undo and soft-delete requirements apply to task mutations specifically. Project and user mutations do not use the undo system.
+
 ### Reject invalid tokens immediately
 
 If an Authorization header is present but the token is invalid, return 401 immediately — never fall through to session auth. See the [Authentication](#authentication) section for the full decision table.
@@ -153,7 +157,8 @@ OpenTask is not a traditional task manager. Due dates for most tasks are **remin
 
 **Priority determines whether a due date is a deadline or a notification trigger:**
 
-- **Priority 0-3 (Unset/Low/Medium/High):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem. For high-priority tasks, being overdue is more significant but still bulk-snoozable.
+- **Priority 0-2 (Unset/Low/Medium):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem.
+- **Priority 3 (High):** `due_at` is a deadline, but these tasks are still eligible for bulk snooze. Being overdue is significant.
 - **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
 
 | Priority        | Due date means | Bulk snooze | "Overdue" significance |
@@ -201,7 +206,7 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 ### Snooze
 
-Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze uses two-tier priority filtering — see [Due Date Philosophy](#due-date-philosophy).
+Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze excludes P4 (Urgent) tasks — see [Due Date Philosophy](#due-date-philosophy).
 
 ### Updating recurrence rules
 
@@ -244,6 +249,7 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 - `src/core/tasks/purge-completions.ts` — removes old task completion records
 - `src/core/tasks/purge-trash.ts` — permanently deletes tasks that have been in trash past the retention period
 - `src/core/ai/purge.ts` — removes old AI generation artifacts
+- `src/core/webhooks/purge.ts` — purges old webhook delivery entries
 
 ## Conventions
 
@@ -263,12 +269,12 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
 - **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at a glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as you build or modify features — when in doubt, err on the side of documenting.
 - ESLint warns on: `max-lines-per-function: 150` (excluding blank lines and comments), `complexity: 20`, `max-depth: 5`, `max-nested-callbacks: 4`.
-- When modifying an existing endpoint that uses `getAuthUser`, you do not need to migrate it to `requireAuth` unless explicitly asked.
-- See [Critical Requirements](#critical-requirements) for the lint suppression and brittle-fix rules.
+- See [Authentication](#authentication) for `requireAuth` vs `getAuthUser` guidance. Do not migrate existing `getAuthUser` endpoints unless explicitly asked.
 
 ### Tooling
 
 - **Pre-commit hook**: `lint-staged` runs Prettier and ESLint on staged files before every commit. If a commit is rejected, fix the issues and retry — do not bypass with `--no-verify`. Common failures: Prettier formatting (fix with `npm run format`), ESLint errors (fix the code, do not suppress).
+- **Node version**: Pinned in `.node-version` at the project root.
 - **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). Run `npm run format` to format all files.
 
 ## API Reference
@@ -277,7 +283,7 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 
 All route handlers are wrapped with `withLogging()` from `@/lib/with-logging`, which logs every request with method, path, status, duration, and auth type. Log level varies by status: 5xx → `error`, 4xx → `warn`, 2xx → `info`. Uses the `http` namespace.
 
-Preferred pattern using `requireAuth` (adapted from `src/app/api/tasks/[id]/route.ts`, which still uses `getAuthUser`):
+Preferred pattern for new route handlers:
 
 ```ts
 import { NextRequest } from 'next/server'
@@ -316,7 +322,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
 })
 ```
 
-Both `getAuthUser` and `requireAuth` are valid — see [Authentication](#authentication) for guidance on which to use. All handlers should log errors before calling `handleError()`.
+All handlers should log errors before calling `handleError()`.
 
 Note: `updateTask()` handles its own transaction and undo logging internally.
 
@@ -327,7 +333,7 @@ Follow the pattern above, and verify:
 - [ ] Use `requireAuth(request)` (preferred) or `getAuthUser(request)` for authentication
 - [ ] Await `context.params` (Next.js 16 requirement)
 - [ ] Validate request body with validation functions from `@/core/validation` (`validateTaskCreate`, `validateTaskUpdate`, etc. — these call Zod `.parse()` internally)
-- [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`. Core functions may also throw `NotFoundError`, `ForbiddenError`, or `ValidationError` from `@/core/errors` — handle these alongside `AuthError` and `ZodError`.
+- [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`. Core functions may also throw `NotFoundError`, `ForbiddenError`, or `ValidationError` from `@/core/errors` — `handleError()` handles these automatically via the `AppError` base class.
 - [ ] Use PATCH for updates (not PUT)
 - [ ] If you created a new core mutation function, ensure it uses `withTransaction()` and calls `logAction()` with before/after snapshots (see [Critical Requirements](#critical-requirements))
 - [ ] Format task responses with `formatTaskResponse()` from `@/lib/format-task`
@@ -362,7 +368,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 **Production has essentially no feedback loop for AI quality.** There is no user rating system, no A/B testing, no way to know if the AI is producing good results in the field. Quality testing IS the quality bar — the AI will only perform as well as our tests prove it can. This makes two things critical:
 
 1. **How extensive and realistic the quality test scenarios are** — scenarios must cover the full range of real-world inputs: dictation artifacts, typos, edge cases, ambiguous phrasing, colloquial language, and every field combination. If a scenario isn't tested, assume it doesn't work.
-2. **How well the AI holds up under that testing** — every scenario must be evaluated in Layer 2, and any score below 6 means the prompt needs iteration. Do not ship prompt changes that degrade quality on existing scenarios.
+2. **How well the AI holds up under that testing** — every scenario must be evaluated in Layer 2 (0-10 scoring rubric in `tests/quality/validator-prompt.md`; pass threshold: >= 6). Do not ship prompt changes that degrade quality on existing scenarios.
 
 **`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details. Layer 1 validates structural correctness (valid JSON, required fields, type checks). Layer 2 evaluates semantic quality (is the AI output actually good?) using an LLM-as-judge rubric.
 
@@ -373,7 +379,7 @@ npm run dump-prompts                              # All prompts (templates only)
 npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
 npm run dump-prompts -- --feature insights         # Just the insights prompt
 npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
-npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows cold path + warm slot split)
+npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows static system prompt and per-request dynamic slot separately)
 npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
 npm run dump-prompts -- --list                     # List available scenarios
 ```
@@ -398,7 +404,7 @@ npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  #
 
 ### Pre-existing test failures
 
-If a test fails that is unrelated to your current change, report it to the user before proceeding. Do not silently skip failing tests. After reporting a pre-existing failure, you may continue with your current work unless instructed otherwise. Do not modify the failing test to make it pass.
+If a test fails that is unrelated to your current change, report it to the user before proceeding. Do not silently skip failing tests. After reporting a pre-existing failure, you may continue with your current work unless instructed otherwise — pre-existing failures do not block checklists or workflows. Do not modify the failing test to make it pass.
 
 ### UI verification
 
@@ -408,7 +414,7 @@ During iterative UI verification deploys to dev, committing between each deploy 
 
 **Dev login credentials** are in `.secrets` at the project root. Read that file before logging in via Playwright.
 
-**UI change is not done until every box is checked.** Pre-existing test failures (reported to the user per the policy above) do not block this checklist — note them in your results.
+**UI change is not done until every box is checked.** Note any pre-existing test failures in your results.
 
 - [ ] Quick check passes
 - [ ] E2E tests pass (`npm run test:e2e`)
@@ -495,7 +501,7 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 
 **Local development:** `npm run dev` starts a hot-reloading server on port 3000.
 
-**Production deployment:** OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. Deploy the built output however you prefer — systemd service, Docker, etc. Schema migrations run automatically on app startup.
+**Production deployment:** OpenTask uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory. Deploy the built output however you prefer — systemd service, Docker, etc. A `Dockerfile` and `docker-compose.yml` are provided; a GitHub Actions workflow (`.github/workflows/docker-publish.yml`) publishes images to GHCR on version tags. Schema migrations run automatically on app startup.
 
 **Commit policy for deployments** (overrides the global "only commit when explicitly instructed" rule):
 
@@ -506,9 +512,7 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 
 **Rollback:** Prefer `git revert HEAD` (creates a new commit, preserves history). Only use `git checkout <sha>` if you need to roll back multiple commits.
 
-**Database inspection:** `sqlite3 data/tasks.db` for the local database.
-
-See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (server addresses, service names, deploy scripts, etc.).
+See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (server addresses, service names, deploy scripts, database inspection, etc.).
 
 ### Demo User
 
@@ -527,7 +531,7 @@ The demo account showcases OpenTask with curated portfolio-style tasks. User iso
 - `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
 - `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
 
-### Security Hardening
+### Security
 
 - **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. Raw token is shown once at creation.
 - **Login rate limiting**: In-memory, 5 failures per username in 15 min triggers lockout with exponential backoff (30s, 60s, 120s...).
@@ -559,7 +563,7 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 
 **No automated tests** — the iOS app has no test targets. Testing is manual.
 
-### Notification phases
+### Notification mechanisms
 
 1. **Default actions** (AppDelegate): Done, +1hr, All +1hr buttons — used from lock screen or when content extension is unavailable
 2. **Silent dismissal**: Server sends `content-available: 1` push with `type: "dismiss"` when a task is snoozed/completed from the web UI — iOS app removes matching delivered notifications
@@ -577,7 +581,7 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 - **Avoid `devicectl device process launch` on the user's phone** unless specifically needed. It kills the running app process, which can reset app state and force the user to re-enter credentials. Prefer letting the user launch the app themselves after install.
 - **`install_app_device` (XcodeBuildMCP) / `devicectl device install app` is safe** — it replaces the binary without losing Keychain data or app state.
 
-### XcodeBuildMCP tips
+### XcodeBuildMCP workarounds
 
 XcodeBuildMCP is an MCP tool server for building and interacting with iOS simulators and devices from Claude Code.
 
