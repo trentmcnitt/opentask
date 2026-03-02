@@ -24,6 +24,8 @@ import { getApiProvider, type AIProvider } from './provider'
 import { requireFeatureModel } from './models'
 import { log } from '@/lib/logger'
 
+const INSIGHTS_JSON_SCHEMA = z.toJSONSchema(InsightsBatchResultSchema) as Record<string, unknown>
+
 // ---------------------------------------------------------------------------
 // Signal vocabulary — display properties for UI rendering
 // ---------------------------------------------------------------------------
@@ -337,7 +339,6 @@ async function processInsightsChunks(
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
-  const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
   const scheduleBlock = getScheduleBlock(userId)
@@ -401,7 +402,7 @@ Score every task above. Return a JSON array with one entry per task.`
       const insightsModel = requireFeatureModel('insights', effectiveProvider)
       const result = await aiQuery({
         prompt,
-        outputSchema: jsonSchema,
+        outputSchema: INSIGHTS_JSON_SCHEMA,
         model: insightsModel,
         maxTurns: 1,
         // Enable extended thinking for Opus models to improve scoring quality

@@ -283,7 +283,7 @@ npm run dev
 # Open http://localhost:3000 — login: dev / dev
 ```
 
-[CLAUDE.md](CLAUDE.md) has detailed development conventions for AI-assisted development.
+[AGENTS.md](AGENTS.md) has detailed development conventions for AI-assisted development.
 
 ## License
 

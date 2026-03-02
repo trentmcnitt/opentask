@@ -33,6 +33,7 @@ import {
   sendApnsBadgeUpdate,
   isApnsConfigured,
 } from '@/core/notifications/apns'
+import { getOverdueCount } from '@/core/notifications/dismiss'
 
 const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
 
@@ -219,7 +220,6 @@ export async function checkOverdueTasks(): Promise<void> {
           AND datetime(t.due_at) < datetime('now')
           AND u.notifications_enabled = 1
         ORDER BY t.priority DESC, t.due_at ASC
-        LIMIT 50
       `,
       )
       .all() as OverdueTask[]
@@ -247,15 +247,7 @@ export async function checkOverdueTasks(): Promise<void> {
 
       // Badge count: total overdue tasks for this user (all priorities).
       // Uses all overdue tasks, not just those eligible for notification this tick.
-      const badgeCount = (
-        db
-          .prepare(
-            `SELECT COUNT(*) as count FROM tasks
-             WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
-               AND due_at IS NOT NULL AND datetime(due_at) < datetime('now')`,
-          )
-          .get(userId) as { count: number }
-      ).count
+      const badgeCount = getOverdueCount(userId)
 
       await sendBucket(regular, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
       await sendBucket(high, userId, overdueCount, badgeCount, webPushEnabled, apnsEnabled)
@@ -267,15 +259,7 @@ export async function checkOverdueTasks(): Promise<void> {
     if (apnsEnabled) {
       for (const userId of usersWithOverdue) {
         if (tasksByUser.has(userId)) continue // already got badge via visible notification
-        const badgeCount = (
-          db
-            .prepare(
-              `SELECT COUNT(*) as count FROM tasks
-               WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
-                 AND due_at IS NOT NULL AND datetime(due_at) < datetime('now')`,
-            )
-            .get(userId) as { count: number }
-        ).count
+        const badgeCount = getOverdueCount(userId)
         log.info('notifications', `Badge-only update for user ${userId}: ${badgeCount} overdue`)
         await sendApnsBadgeUpdate(userId, badgeCount)
       }

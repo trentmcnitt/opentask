@@ -276,6 +276,7 @@ export async function quickTakeSlotQuery(
         model: getModel(),
         duration_ms: durationMs,
         error: text ? null : 'No output from Quick Take slot',
+        provider: 'sdk',
       })
     }
 
@@ -296,6 +297,7 @@ export async function quickTakeSlotQuery(
         model: getModel(),
         duration_ms: durationMs,
         error: err instanceof Error ? err.message : String(err),
+        provider: 'sdk',
       })
     }
 

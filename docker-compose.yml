@@ -20,8 +20,8 @@ services:
       # Initial user (created on first start, ignored if user already exists)
       - OPENTASK_INIT_USERNAME=${OPENTASK_INIT_USERNAME:-admin}
       - OPENTASK_INIT_PASSWORD=${OPENTASK_INIT_PASSWORD:-changeme}
+      - OPENTASK_INIT_TIMEZONE=${OPENTASK_INIT_TIMEZONE:-America/New_York}
       # - OPENTASK_INIT_EMAIL=admin@example.com
-      # - OPENTASK_INIT_TIMEZONE=America/Chicago
       # Set AUTH_URL to your public URL when using a reverse proxy
       # - AUTH_URL=https://tasks.example.com
       # Optional: enable AI features (requires Claude Code on the host)

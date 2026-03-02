@@ -69,6 +69,23 @@ export function clearAttempts(username: string): void {
 }
 
 /**
+ * Remove expired entries from the rate limit map.
+ * Runs every 15 minutes to bound memory growth from credential stuffing.
+ */
+function cleanupExpired(): void {
+  const now = Date.now()
+  for (const [key, record] of attempts) {
+    if (now - record.firstAttempt > WINDOW_MS) {
+      attempts.delete(key)
+    }
+  }
+}
+
+// Run cleanup every 15 minutes. Uses unref() so the timer doesn't keep the process alive.
+const cleanupInterval = setInterval(cleanupExpired, 15 * 60 * 1000)
+cleanupInterval.unref()
+
+/**
  * Reset all rate limit state. For testing only.
  */
 export function resetRateLimits(): void {

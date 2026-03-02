@@ -26,14 +26,9 @@ import {
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 
-/**
- * Send a badge update to iOS with the current overdue count.
- * Fire-and-forget — errors are logged but never thrown.
- * Called by dismissNotificationsForTasks and directly by undo/redo routes.
- */
-export function syncBadgeCount(userId: number): void {
-  if (!isApnsConfigured()) return
-  const badgeCount = (
+/** Count overdue tasks for a user — shared by badge updates and notification logic. */
+export function getOverdueCount(userId: number): number {
+  return (
     getDb()
       .prepare(
         `SELECT COUNT(*) as count FROM tasks
@@ -42,6 +37,16 @@ export function syncBadgeCount(userId: number): void {
       )
       .get(userId) as { count: number }
   ).count
+}
+
+/**
+ * Send a badge update to iOS with the current overdue count.
+ * Fire-and-forget — errors are logged but never thrown.
+ * Called by dismissNotificationsForTasks and directly by undo/redo routes.
+ */
+export function syncBadgeCount(userId: number): void {
+  if (!isApnsConfigured()) return
+  const badgeCount = getOverdueCount(userId)
   log.info('notifications', `Badge update for user ${userId}: ${badgeCount} overdue`)
   sendApnsBadgeUpdate(userId, badgeCount)
     .then(() => log.info('notifications', `Badge update sent for user ${userId}: ${badgeCount}`))

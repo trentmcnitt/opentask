@@ -52,7 +52,7 @@ AI quality tests (`npm run test:quality`) require `OPENTASK_AI_ENABLED=true` and
 - **Naming:** Components are PascalCase (`TaskRow.tsx`), other files are kebab-case (`api-response.ts`)
 - **Dates:** Stored as UTC in the database, converted to user timezone in API responses and UI
 - **Updates:** Use PATCH, not PUT — handlers update only fields present in the request body
-- **Mutations:** Every task mutation must be atomic and logged for undo (see CLAUDE.md for the pattern)
+- **Mutations:** Every task mutation must be atomic and logged for undo (see AGENTS.md for the pattern)
 - **Deletions:** Always soft-delete (`deleted_at`). Only "Empty Trash" hard-deletes.
 - **Lint:** Never suppress lint errors with `eslint-disable` or `@ts-ignore` — fix the root cause
 - **Formatting:** Prettier runs automatically via pre-commit hook. Run `npm run format` to fix formatting manually.
@@ -74,7 +74,7 @@ tests/
 └── quality/          # AI prompt quality tests
 ```
 
-See [CLAUDE.md](CLAUDE.md) for detailed architecture docs, API patterns, undo system, recurrence model, and testing conventions.
+See [AGENTS.md](AGENTS.md) for detailed architecture docs, API patterns, undo system, recurrence model, and testing conventions.
 
 ## Environment Variables
 
@@ -91,4 +91,4 @@ Only `AUTH_SECRET` is required for local development. Everything else has sensib
 
 ## AI-Assisted Development
 
-This project uses [CLAUDE.md](CLAUDE.md) extensively. If you use Claude Code or similar AI tools, CLAUDE.md provides detailed conventions, patterns, and anti-patterns that help the AI produce correct code for this codebase.
+This project uses [AGENTS.md](AGENTS.md) for AI-assisted development. If you use Claude Code, Codex, Cursor, Copilot, or similar AI tools, AGENTS.md provides detailed conventions, patterns, and anti-patterns that help the AI produce correct code for this codebase.

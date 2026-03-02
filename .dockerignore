@@ -18,6 +18,7 @@ blob-report
 !.env.example
 docs
 assets
+AGENTS.md
 CLAUDE.md
 CLAUDE.local.md
 DEV_LOG.md

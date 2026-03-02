@@ -142,8 +142,10 @@ export default function HistoryPage() {
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
         {/* Tab bar */}
-        <div className="mb-6 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
+        <div role="tablist" className="mb-6 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
           <button
+            role="tab"
+            aria-selected={tab === 'activity'}
             onClick={() => handleTabChange('activity')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'activity'
@@ -154,6 +156,8 @@ export default function HistoryPage() {
             Activity
           </button>
           <button
+            role="tab"
+            aria-selected={tab === 'completions'}
             onClick={() => handleTabChange('completions')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'completions'
@@ -164,6 +168,8 @@ export default function HistoryPage() {
             Completions
           </button>
           <button
+            role="tab"
+            aria-selected={tab === 'ai'}
             onClick={() => handleTabChange('ai')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'ai'
@@ -176,26 +182,34 @@ export default function HistoryPage() {
         </div>
 
         {tab === 'completions' && (
-          <CompletionsTab
-            date={date}
-            setDate={setDate}
-            loading={loading}
-            completions={completions}
-            timezone={timezone}
-          />
+          <div role="tabpanel">
+            <CompletionsTab
+              date={date}
+              setDate={setDate}
+              loading={loading}
+              completions={completions}
+              timezone={timezone}
+            />
+          </div>
         )}
 
         {tab === 'activity' && (
-          <ActivityTab
-            loading={loading}
-            activities={activities}
-            timezone={timezone}
-            onRefresh={fetchActivity}
-            now={activityFetchedAt}
-          />
+          <div role="tabpanel">
+            <ActivityTab
+              loading={loading}
+              activities={activities}
+              timezone={timezone}
+              onRefresh={fetchActivity}
+              now={activityFetchedAt}
+            />
+          </div>
         )}
 
-        {tab === 'ai' && <AITab timezone={timezone} />}
+        {tab === 'ai' && (
+          <div role="tabpanel">
+            <AITab timezone={timezone} />
+          </div>
+        )}
       </main>
     </div>
   )
@@ -492,9 +506,12 @@ function formatEditDetails(
 /**
  * Determines whether to show a separator pill between two adjacent entries.
  * Threshold adapts based on the age of the older entry (entries are newest-first):
- * - Last 24 hours: separator if gap > 5 minutes (fine granularity when it matters)
- * - 1–7 days ago: separator if gap > 2 hours (collapse rapid bursts)
- * - Beyond 1 week: separator if gap > 24 hours (day-level only)
+ * - < 1 hour old: gap > 3 minutes
+ * - 1-2 hours old: gap > 15 minutes
+ * - < 24 hours old: gap > 30 minutes
+ * - 1-3 days old: gap > 3 hours
+ * - 3-7 days old: gap > 6 hours
+ * - > 1 week old: gap > 24 hours (day-level only)
  */
 function shouldShowSeparator(prev: UndoEntry, current: UndoEntry, now: number): boolean {
   const prevTime = new Date(prev.created_at).getTime()
