@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>A self-hosted task manager where due dates are reminders, not deadlines.</strong><br>
-  Snooze-first workflow. Single container. Your data, your server.
+  <strong>A self-hosted task manager with a modern UI, full API, and optional AI.</strong><br>
+  Opinionated workflow. Single container. Your data, your server.
 </p>
 
 <p align="center">
@@ -18,34 +18,39 @@
 </p>
 
 <p align="center">
-  <a href="https://opentask.mcnitt.io">Try the Demo</a> · <a href="docs/SPEC.md">Documentation</a> · <a href="docs/AUTOMATION.md">API Guide</a> · <a href="docs/ROADMAP.md">Roadmap</a>
+  <a href="https://opentask.mcnitt.io">Try the Demo</a> · <a href="https://opentask.mcnitt.io/docs/">Documentation</a> · <a href="https://opentask.mcnitt.io/docs/api/">API Reference</a> · <a href="https://opentask.mcnitt.io/docs/roadmap">Roadmap</a>
 </p>
 
-## Why OpenTask?
+> [!NOTE]
+> 🚧 **Early public release — looking for testers and contributors!** 🎉
 
-Most task managers treat due dates as deadlines. OpenTask treats them as reminders.
+OpenTask is a self-hosted task manager I built for personal use. I've been using it daily, and it's reached a point where I'm excited to open it up.
 
-Wake up with 15 overdue tasks from yesterday? Tap the bulk snooze button — they all move forward an hour. Work through a few, snooze the rest again later. A task snoozed five times in one day and completed that evening is a success, not a failure.
+It runs as a single Docker container with SQLite — no Postgres, no Redis, no external services to manage. Your data lives in one file on your server.
 
-Only tasks you mark as urgent are true deadlines — they're excluded from bulk snooze and must be handled individually. Everything else is fair game for triage.
+## ✨ Features
 
-If you've used Todoist or Things and wished you could self-host it with push notifications that actually work, this might be for you.
+### 📱 The app (web + iOS)
 
-**What makes it different:**
+- **Mobile-first PWA** — Installable on iOS and Android. Designed for phones first, looks great on desktop too.
+- **Snooze everything** — Bulk snooze all overdue tasks in one tap. Individual snooze with presets, fine-grained adjustments, or custom times.
+- **Native iOS app** — Real push notifications with interactive snooze actions, including Apple Watch support. (Source included — not on the App Store.)
+- **Full undo/redo** — Every action is logged and reversible.
+- **Trash & archive** — Deleted tasks go to trash, completed tasks go to archive. Nothing is permanently lost until you say so.
 
-- **Snooze-centric workflow.** Bulk snooze all overdue tasks in one tap. The snooze button lives in the top bar — it's the most prominent action in the app, because you'll use it dozens of times a day.
-- **Personal task management, not project management.** This isn't trying to be Jira or Trello. It's a fast, focused tool for managing your own tasks.
-- **Single container, no external services.** SQLite with WAL mode. No Postgres, no Redis, no separate database to manage. Back up your data by copying one file.
-- **Mobile-first PWA.** Installable on iOS and Android. Not a desktop app with a responsive afterthought.
-- **Native iOS companion app.** Real push notifications with interactive snooze actions, including Apple Watch support. No CalDAV workarounds.
-- **Full undo/redo.** Every action is logged and reversible. Soft-delete everything.
-- **REST API with Bearer token auth.** Script it, automate it, pipe it into Apple Shortcuts. [OpenAPI spec](docs/AUTOMATION.md#openapi-specification) included.
-- **Webhooks.** HTTP callbacks on task events with HMAC-SHA256 signing. Integrate with n8n, Home Assistant, Node-RED, or anything that accepts webhooks.
-- **Data export.** JSON and CSV export of all your data — tasks, projects, and completions. Your data is always portable.
-- **Reverse proxy auth.** Works with Authelia, Authentik, and other auth proxies out of the box.
-- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. Works with any OpenAI-compatible API — fully optional, the app works great without it.
+### 🏠 Self-hosting
 
-## Quick Start (Docker)
+- **Single container** — SQLite with WAL mode. No external database, no message queue, no cache layer. Back up your data by copying one file.
+- **Reverse proxy auth** — Works with Authelia, Authentik, and other auth proxies out of the box.
+- **Data export** — JSON and CSV export of all your tasks, projects, and completions. Nothing is locked in.
+
+### 🔧 Automation
+
+- **Full REST API** — Every UI operation available over HTTP. Bearer token auth, [interactive API docs](https://opentask.mcnitt.io/docs/api/), and curl-friendly. Script it, automate it, pipe it into Apple Shortcuts.
+- **Webhooks** — HTTP callbacks on task events with HMAC-SHA256 signing. Integrate with n8n, Home Assistant, or anything that accepts webhooks.
+- **Optional AI** — Disabled by default. When enabled, you get natural language task creation, insights, "what's next" suggestions, and contextual commentary on new tasks. Works with Anthropic, OpenAI, Grok, DeepSeek, Ollama, and others. Turn it off and every trace of AI disappears from the UI.
+
+## 🚀 Quick Start (Docker)
 
 ```bash
 # Create a directory for OpenTask
@@ -78,20 +83,21 @@ Your data is stored in `./data/` and persists across updates. Store this directo
 
 ### Backup
 
-SQLite makes backups simple. Use the built-in `.backup` command for a safe, consistent copy (it handles WAL mode correctly):
+SQLite makes backups simple — use the built-in `.backup` command for a safe, consistent copy:
 
 ```bash
-# From the host (recommended)
+# While running (recommended)
 docker compose exec opentask sqlite3 /app/data/tasks.db '.backup /app/data/backup.db'
 cp data/backup.db /path/to/your/backups/tasks-$(date +%F).db
 
-# Or stop the container first, then copy directly
+# Or stop first, then copy directly
 docker compose stop
 cp data/tasks.db /path/to/your/backups/
 docker compose start
 ```
 
-> **Note:** SQLite uses WAL (write-ahead logging), so `tasks.db-wal` and `tasks.db-shm` files may exist alongside the main database. A plain `cp tasks.db` while the app is running could produce an inconsistent backup. The `sqlite3 .backup` command avoids this.
+> [!TIP]
+> SQLite uses WAL (write-ahead logging), so `tasks.db-wal` and `tasks.db-shm` files may exist alongside the main database. A plain `cp tasks.db` while the app is running could produce an inconsistent backup. The `sqlite3 .backup` command handles this correctly.
 
 ### Additional Users
 
@@ -117,7 +123,7 @@ docker compose exec opentask tsx scripts/create-token.ts <username> [token-name]
 npm run db:create-token -- <username> [token-name]
 ```
 
-## Manual Installation (without Docker)
+## 🛠️ Manual Installation
 
 Requires Node.js 20+ and npm.
 
@@ -140,7 +146,7 @@ npm run start
 
 For development: `npm run dev` starts a hot-reloading server on port 3000.
 
-## Configuration
+## ⚙️ Configuration
 
 See `.env.example` for all options. The essentials:
 
@@ -155,9 +161,10 @@ Login is **username-based**, not email-based.
 
 ### Reverse Proxy
 
-OpenTask runs on port 3000 by default. Set `AUTH_URL` to your public URL in the compose environment when using a reverse proxy.
+OpenTask runs on port 3000 by default. Set `AUTH_URL` to your public URL when using a reverse proxy.
 
-**Caddy:**
+<details>
+<summary>Caddy</summary>
 
 ```
 tasks.example.com {
@@ -165,7 +172,10 @@ tasks.example.com {
 }
 ```
 
-**Nginx:**
+</details>
+
+<details>
+<summary>Nginx</summary>
 
 ```nginx
 server {
@@ -185,57 +195,47 @@ server {
 }
 ```
 
-> **Note:** OpenTask uses Server-Sent Events for real-time updates. Make sure your reverse proxy does not buffer responses — Caddy handles this automatically, but Nginx needs `proxy_buffering off`.
+</details>
 
-### Reverse Proxy Header Auth (Optional)
+> [!NOTE]
+> OpenTask uses Server-Sent Events for real-time updates. Caddy handles this automatically. Nginx needs `proxy_buffering off`.
+
+### Reverse Proxy Header Auth
 
 If you run an auth proxy like [Authelia](https://www.authelia.com/), [Authentik](https://goauthentik.io/), or Caddy's `forward_auth`, OpenTask can trust the authenticated username from a request header — no separate login required.
-
-Set the `OPENTASK_PROXY_AUTH_HEADER` environment variable to the header name your proxy uses:
 
 ```yaml
 # docker-compose.yml
 environment:
-  OPENTASK_PROXY_AUTH_HEADER: Remote-User # or X-Forwarded-User, X-Auth-User, etc.
+  OPENTASK_PROXY_AUTH_HEADER: Remote-User
 ```
 
-The header value must match an existing OpenTask username (case-insensitive). Users are not auto-created — create them first with `scripts/create-user.ts`.
+The header value must match an existing OpenTask username (case-insensitive). Users are not auto-created.
 
-> **Security:** Your reverse proxy **must** strip this header from external requests before forwarding. If external clients can set this header directly, they can authenticate as any user. This is standard practice for Authelia/Authentik deployments but worth verifying.
+> [!WARNING]
+> Your reverse proxy **must** strip this header from external requests. If external clients can set this header directly, they can authenticate as any user.
 
-### Push Notifications (Optional)
+### Push Notifications
 
-- **Web Push:** Generate VAPID keys with `npx web-push generate-vapid-keys` and set them in your environment. Works on all platforms including iOS Safari.
-- **iOS Native Push (APNs):** Requires the iOS companion app and an Apple Developer Program membership. See `.env.example` for the configuration variables.
+- **Web Push** — Generate VAPID keys with `npx web-push generate-vapid-keys` and set them in your environment. Works on all platforms including iOS Safari.
+- **iOS Native (APNs)** — Requires the iOS companion app and an Apple Developer Program membership. See `.env.example` for configuration.
 
-### AI Features (Optional)
+### AI Features
 
-AI is entirely optional. When disabled (the default), all AI UI elements are hidden and no AI code runs. The app stands on its own as a fast task manager.
+AI is entirely optional — when disabled (the default), all AI UI is hidden and no AI code runs.
 
-When enabled, AI provides:
+When enabled, you get:
 
-- **Task enrichment** — Natural language parsing into structured tasks with title, due date, priority, labels, and project
-- **Quick Take** — One-liner contextual commentary when you add a task
-- **What's Next** — Recommendations surfacing overlooked or forgotten tasks
-- **Insights** — Scoring and signals (stale, quick win, etc.) to help prioritize
+- **Task enrichment** — Natural language → structured task with title, due date, priority, labels, and project
+- **Quick Take** — One-liner commentary when you add a task
+- **What's Next** — Suggestions surfacing overlooked or forgotten tasks
+- **Insights** — Scoring and signals to help prioritize
 
-Three provider options:
+Tested with Claude (Anthropic API), GPT-4.1-mini, Grok, and DeepSeek. Any OpenAI-compatible provider works too — see `.env.example` for quick-start examples.
 
-| Provider              | Setup                                                                               | Best for                                             |
-| --------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Claude Code (SDK)** | Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on the server | Development, Max subscription users                  |
-| **Anthropic API**     | Set `ANTHROPIC_API_KEY`                                                             | Production with Anthropic models                     |
-| **OpenAI-compatible** | Set `OPENAI_API_KEY` + `OPENAI_MODEL`                                               | OpenAI, xAI/Grok, OpenRouter, DeepSeek, Ollama, etc. |
+## 🔗 API
 
-Tested with Claude Sonnet 4.6, GPT-4.1-mini, Grok 4.1 Fast, and DeepSeek V3. Any provider with an OpenAI-compatible chat completions endpoint should work — see `.env.example` for configuration details and quick-start examples.
-
-## API
-
-Three auth methods, checked in order:
-
-1. **Bearer token** — For scripts and automation. Create with: `npm run db:create-token -- <username> [name]`
-2. **Proxy header** — For reverse proxy auth (Authelia, Authentik). See [Reverse Proxy Header Auth](#reverse-proxy-header-auth-optional).
-3. **Session cookie** — For the web UI (managed automatically)
+Three auth methods, checked in order: **Bearer token** → **Proxy header** → **Session cookie**
 
 Key endpoints:
 
@@ -257,17 +257,19 @@ Key endpoints:
 | `/api/webhooks`                  | GET/POST | List/create webhooks             |
 | `/api/openapi`                   | GET      | OpenAPI 3.1 spec (no auth)       |
 
-See [docs/AUTOMATION.md](docs/AUTOMATION.md) for the full API reference, webhook setup, curl examples, and Apple Shortcuts integration.
+Full API reference with curl examples, webhook setup, and Apple Shortcuts integration: **[Documentation →](https://opentask.mcnitt.io/docs/automation/getting-started)**
 
-## Tech Stack
+## 🧱 Tech Stack
 
-- **Runtime:** Next.js 16 (App Router) + React 19 + TypeScript
-- **Database:** SQLite with WAL mode (better-sqlite3) — no external database
-- **Auth:** NextAuth/Auth.js (credentials provider, JWT sessions)
-- **Styling:** Tailwind CSS 4 + Shadcn UI
-- **Testing:** Vitest (behavioral + integration) + Playwright (E2E)
+| Layer    | Technology                                           |
+| -------- | ---------------------------------------------------- |
+| Runtime  | Next.js 16 (App Router) + React 19 + TypeScript      |
+| Database | SQLite with WAL mode (better-sqlite3)                |
+| Auth     | NextAuth/Auth.js (credentials, JWT sessions)         |
+| Styling  | Tailwind CSS 4 + Shadcn UI                           |
+| Testing  | Vitest (behavioral + integration) + Playwright (E2E) |
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 src/
@@ -282,9 +284,9 @@ tests/                # Behavioral, integration, E2E, and AI quality tests
 docs/                 # Product spec, design rationale, API guide, roadmap
 ```
 
-## Contributing
+## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Quick setup:
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 ```bash
 git clone https://github.com/trentmcnitt/opentask.git
@@ -297,8 +299,8 @@ npm run dev
 # Open http://localhost:3000 — login: dev / dev
 ```
 
-[AGENTS.md](AGENTS.md) has detailed development conventions for AI-assisted development.
+[CLAUDE.md](CLAUDE.md) has detailed development conventions for AI-assisted development.
 
-## License
+## 📄 License
 
 [AGPL-3.0](LICENSE)

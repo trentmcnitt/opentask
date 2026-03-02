@@ -37,8 +37,8 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# tsx for management scripts, sqlite for backup commands
-RUN apk add --no-cache sqlite && \
+# tsx for management scripts, sqlite for backup commands, su-exec to drop privileges
+RUN apk add --no-cache sqlite su-exec && \
     npm install -g tsx@4
 
 # Copy the standalone Next.js server (includes production node_modules)
@@ -60,9 +60,8 @@ COPY --chmod=755 docker-entrypoint.sh ./
 # Create data directory for SQLite
 RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
-USER nextjs
-
 EXPOSE 3000
 
+# Entrypoint runs as root to fix volume permissions, then drops to nextjs
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "server.js"]
