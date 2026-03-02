@@ -194,8 +194,11 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
 /**
  * Format the relative time portion: "in 26 mins", "3h ago", "in 2 days", etc.
  *
- * For same-day durations, shows hours and minutes (e.g., "in 2h 30m").
- * For multi-day durations, shows only days (e.g., "in 2 days" not "in 2 days 1h").
+ * Rules:
+ * - Same calendar day: Always show hours/minutes ("in 2h", "in 30m")
+ * - Tomorrow & <12 hours away: Show hours ("in 8h", "in 11h")
+ * - Tomorrow & 12+ hours away: Show "in 1 day"
+ * - Beyond tomorrow: Count calendar days ("in 2 days", "in 5 days")
  */
 export function formatRelativeTime(isoUtc: string, now?: Date): string {
   const target = new Date(isoUtc)
@@ -207,19 +210,31 @@ export function formatRelativeTime(isoUtc: string, now?: Date): string {
   const totalMinutes = Math.floor(absDiffMs / 60000)
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
-  const days = Math.floor(hours / 24)
+
+  // Get calendar dates (using browser's local timezone)
+  // Note: toDateString() strips time, leaving just the date at midnight
+  const targetDate = new Date(target.toDateString())
+  const referenceDate = new Date(reference.toDateString())
+  const calendarDiffMs = targetDate.getTime() - referenceDate.getTime()
+  const calendarDays = Math.abs(Math.round(calendarDiffMs / (24 * 60 * 60 * 1000)))
 
   let text: string
-  if (days > 0) {
-    // Multi-day: show only days (no hours)
-    text = days === 1 ? '1 day' : `${days} days`
-  } else if (hours > 0) {
+
+  if (calendarDays === 0) {
+    // Same calendar day: always use hours/minutes
+    if (hours > 0) {
+      text = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+    } else if (totalMinutes > 0) {
+      text = `${totalMinutes} min${totalMinutes !== 1 ? 's' : ''}`
+    } else {
+      return isPast ? 'just now' : 'in <1 min'
+    }
+  } else if (calendarDays === 1 && hours < 12) {
+    // Tomorrow but less than 12 hours away: show hours
     text = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
-  } else if (totalMinutes > 0) {
-    text = `${totalMinutes} min${totalMinutes !== 1 ? 's' : ''}`
   } else {
-    // Less than 1 minute
-    return isPast ? 'just now' : 'in <1 min'
+    // Tomorrow 12+ hours away, or any day beyond: show calendar days
+    text = calendarDays === 1 ? '1 day' : `${calendarDays} days`
   }
 
   return isPast ? `${text} ago` : `in ${text}`

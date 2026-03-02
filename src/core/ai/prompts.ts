@@ -67,6 +67,8 @@ The user dictated everything in one breath because they couldn't structure it. Y
    - 3 = high ("high priority", "important")
    - 4 = urgent ("urgent", "ASAP", "critical", "immediately")
 
+   "critical" means urgency only when describing a situation: "critical alert", "critical issue", "critical bug". Do NOT trigger priority 4 when "critical" is part of a compound noun or academic term: "critical thinking", "critical path", "critical analysis", "critical mass", "critical infrastructure".
+
    Priority keyword detection is case-insensitive. Dictation software typically produces lowercase, so "urgent" and "URGENT" should both trigger priority 4.
 
    Use natural language cues beyond keywords. Emotional urgency ("this is killing me", "I really really need to") indicates priority 2-3 (medium to high), NOT 4. Reserve priority 4 exclusively for explicit urgency keywords like "urgent", "ASAP", "critical", or "immediately". Don't over-infer — leaving priority at 0 is better than guessing wrong.

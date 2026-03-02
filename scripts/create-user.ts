@@ -18,9 +18,9 @@ const SALT_ROUNDS = 10
 
 const DEFAULT_PROJECTS = [
   { name: 'Inbox', color: 'blue', sort_order: 0 },
-  { name: 'Routine', color: 'green', sort_order: 1 },
-  { name: 'Remember', color: 'purple', sort_order: 2 },
-  { name: 'One-offs', color: 'orange', sort_order: 3 },
+  { name: 'Personal', color: 'green', sort_order: 1 },
+  { name: 'Work', color: 'purple', sort_order: 2 },
+  { name: 'Errands', color: 'orange', sort_order: 3 },
 ]
 
 const username = process.argv[2]

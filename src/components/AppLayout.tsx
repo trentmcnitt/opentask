@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
+import { usePathname, useRouter } from 'next/navigation'
 import { Sidebar } from './Sidebar'
 import { BottomTabs } from './BottomTabs'
 // import { DemoBanner } from './DemoBanner'
@@ -16,8 +17,21 @@ const CreateTaskPanel = dynamic(() =>
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const { projects } = useProjects()
+  const pathname = usePathname()
+  const router = useRouter()
   const [showAddForm, setShowAddForm] = useState(false)
   const [addFormTitle, setAddFormTitle] = useState('')
+
+  // Navigate to dashboard first when Add Task is pressed from a non-dashboard page.
+  // AppLayout persists across client-side navigations, so showAddForm stays true
+  // during the transition. The modal opens with its animation, and by the time it
+  // closes after creation, DashboardClient is mounted to receive the task-created event.
+  const handleAddClick = useCallback(() => {
+    if (pathname !== '/') {
+      router.push('/')
+    }
+    setShowAddForm(true)
+  }, [pathname, router])
 
   useEffect(() => {
     // Handle ?action=create from iOS quick action (check URL directly to avoid
@@ -77,14 +91,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen select-none">
       <OfflineBanner />
-      <Sidebar onAddClick={() => setShowAddForm(true)} />
+      <Sidebar onAddClick={handleAddClick} />
 
       <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
         {/* <DemoBanner /> */}
         {children}
       </div>
 
-      <BottomTabs onAddClick={() => setShowAddForm(true)} />
+      <BottomTabs onAddClick={handleAddClick} />
 
       <CreateTaskPanel
         open={showAddForm}
