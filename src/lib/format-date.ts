@@ -27,7 +27,7 @@ export function getTimezoneDayBoundaries(timezone: string): DayBoundaries {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(now)
 
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
@@ -71,7 +71,7 @@ export function parseInTimezone(year: number, month: number, day: number, timezo
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   })
 
   // Compute offset using full datetime difference (not just hours) to avoid
@@ -134,12 +134,11 @@ export function toLocalDatetimeInput(isoUtc: string, timezone: string): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(d)
 
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
-  const hour = get('hour') === '24' ? '00' : get('hour')
-  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
 }
 
 export interface DueTimeParts {
@@ -420,7 +419,7 @@ export function parseLocalDatetimeInput(value: string, timezone: string): string
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(utcGuess)
 
   const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')

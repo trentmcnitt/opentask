@@ -83,7 +83,7 @@ export function snapToNextPreset(
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(reference)
   const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0')
   const tomorrowMidnight = parseInTimezone(get('year'), get('month'), get('day') + 1, timezone)
@@ -114,14 +114,14 @@ export function adjustDate(
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hourCycle: 'h23',
     }).formatToParts(current)
 
     const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
     const year = parseInt(get('year'))
     const month = parseInt(get('month'))
     const day = parseInt(get('day'))
-    const hourStr = get('hour') === '24' ? '00' : get('hour')
+    const hourStr = get('hour')
     const minuteStr = get('minute')
 
     // Add calendar days

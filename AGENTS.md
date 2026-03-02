@@ -1,10 +1,10 @@
-# AGENTS.md
+# CLAUDE.md
 
 OpenTask is a self-hosted task management PWA. This file is the authoritative reference for contributing to this codebase.
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts), and `DEV_LOG.md` for a reverse-chronological journal of design decisions, problems overcome, and narrative context that can't be inferred from git history alone.
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts), and `DEV_LOG.md` for a reverse-chronological journal of design decisions, problems overcome, and narrative context that can't be inferred from git history alone. Additional docs: `docs/NOTIFICATIONS.md` (push notification architecture), `docs/IOS-DEV-LOG.md` (iOS development history), `docs/openapi.yaml` (REST API schema).
 
 ### Source layout
 
@@ -15,7 +15,8 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
-- `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`)
+- Real-time sync via Server-Sent Events: `src/app/api/sync/stream/`, `src/lib/sync-events.ts`, `src/hooks/useSyncStream.ts`
+- `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`), Web Speech API types (`speech-recognition.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
 - `ios/` — Native iOS companion app (see [iOS App](#ios-app-ios) section)
 - `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). Copy exports to `public/` when updated.
@@ -31,7 +32,7 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 ### Database
 
 - **Singleton**: Access via `getDb()` from `@/core/db`
-- **Schema**: `src/core/db/schema.sql` — `getDb()` applies this idempotently on first call using `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
+- **Schema**: `src/core/db/schema.sql` — `getDb()` applies this on first call (safe to re-run) using `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
 - **Config**: `OPENTASK_DB_PATH` env var (default: `data/tasks.db`). See `.env.example` for all env vars.
 - **Mode**: WAL (write-ahead logging) for concurrent read performance, 5-second busy timeout (waits for locks to release before failing), foreign keys enforced
 - **Operations**: All synchronous (better-sqlite3)
@@ -39,15 +40,15 @@ Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + Next
 
 **Schema changes:**
 
-| Change type                                   | Where to make it                            | Notes                                |
-| --------------------------------------------- | ------------------------------------------- | ------------------------------------ |
-| Additive (new table, new column with default) | `src/core/db/schema.sql`                    | Applied idempotently on startup      |
-| New column on existing table                  | Both `schema.sql` AND `runMigrations()`     | `hasColumn()` guard in migration     |
-| Destructive (rename/remove column)            | `runMigrations()` in `src/core/db/index.ts` | Add explicit `ALTER TABLE` migration |
+| Change type                                   | Where to make it                            | Notes                                             |
+| --------------------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| Additive (new table, new column with default) | `src/core/db/schema.sql`                    | Applied automatically on startup (safe to re-run) |
+| New column on existing table                  | Both `schema.sql` AND `runMigrations()`     | `hasColumn()` guard in migration                  |
+| Destructive (rename/remove column)            | `runMigrations()` in `src/core/db/index.ts` | Add explicit `ALTER TABLE` migration              |
 
 New columns on existing tables need both locations: the `CREATE TABLE` statement (for fresh databases) and an `ALTER TABLE ... ADD COLUMN` in `runMigrations()` (for existing databases).
 
-To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild.
+To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` should apply the change idempotently.
 
 The app applies schema changes to remote databases automatically on restart.
 
@@ -55,15 +56,14 @@ The app applies schema changes to remote databases automatically on restart.
 
 Three auth methods checked in order:
 
-| Credential      | Valid? | Result                                     |
-| --------------- | ------ | ------------------------------------------ |
-| Bearer token    | Yes    | Authenticate via token                     |
-| Bearer token    | No     | Return 401 (never fall through to session) |
-| No Bearer token | —      | Check proxy header (if configured)         |
-| Proxy header    | Yes    | Authenticate via proxy (Authelia, etc.)    |
-| Proxy header    | No     | Fall through to session cookie             |
-| Session cookie  | Yes    | Authenticate via session                   |
-| Session cookie  | No     | Return 401                                 |
+| Condition                                        | Result                                     |
+| ------------------------------------------------ | ------------------------------------------ |
+| Bearer token present and valid                   | Authenticate via token                     |
+| Bearer token present but invalid                 | Return 401 (never fall through to session) |
+| No Bearer token, proxy header valid              | Authenticate via proxy (Authelia, etc.)    |
+| No Bearer token, proxy header missing or invalid | Fall through to session cookie             |
+| Session cookie valid                             | Authenticate via session                   |
+| Session cookie missing or invalid                | Return 401                                 |
 
 Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the header name (e.g., `Remote-User`). See `src/core/auth/proxy.ts`.
 
@@ -71,6 +71,8 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 - `requireAuth(request)` — Returns `AuthUser` or throws `AuthError`. Preferred for new endpoints.
 - `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the 401 response (e.g., returning a different message or status code based on context). Most existing route handlers use this with a manual null check.
+
+Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
 `AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' }`.
 
@@ -129,6 +131,8 @@ Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to
 
 For task creation, pass `{ id: taskId }` as `beforeTask` (there is no full before-state). On undo, the `'create'` action type causes the system to soft-delete the task (since there is no before-state to restore). See `createTask()` in `src/core/tasks/create.ts` for the pattern.
 
+For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_done`, `bulk_snooze`) and pass an array of snapshots — one per affected task. See `src/core/tasks/bulk.ts` for the pattern.
+
 ### All deletions must be soft deletes
 
 All task deletions are soft-deletes (set `deleted_at`). The only hard-delete operation is "Empty Trash," which permanently deletes data, cannot be undone, and must require explicit user confirmation.
@@ -149,13 +153,13 @@ Never use `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`, or similar supp
 
 ### No brittle fixes or tolerances
 
-Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops.
+Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops. This applies to application code and behavioral tests. Playwright's built-in waiting mechanisms (`waitForSelector`, auto-waiting) are the correct approach for E2E tests.
 
 ## Due Date Philosophy
 
 OpenTask is not a traditional task manager. Due dates for most tasks are **reminders, not deadlines**. Understanding that distinction is critical for interpreting task data correctly, especially in AI features. See `docs/DESIGN.md` for the full rationale.
 
-**Priority determines whether a due date is a deadline or a notification trigger:**
+**Priority determines whether a due date is a deadline or a reminder:**
 
 - **Priority 0-2 (Unset/Low/Medium):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem.
 - **Priority 3 (High):** `due_at` is a deadline, but these tasks are still eligible for bulk snooze. Being overdue is significant.
@@ -173,7 +177,7 @@ OpenTask is not a traditional task manager. Due dates for most tasks are **remin
 **Implications for code and AI:**
 
 - `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
-- The gap between `original_due_at` and `due_at` shows total drift but not how many times or why the task was snoozed. Don't infer snooze counts or user intent from dates alone.
+- The gap between `original_due_at` and `due_at` shows how far the due date has moved from its original value, but not how many times or why the task was snoozed. Don't infer snooze counts or user intent from dates alone.
 - `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
 - For P0-3 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
 
@@ -269,7 +273,7 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
 - **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at a glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as you build or modify features — when in doubt, err on the side of documenting.
 - ESLint warns on: `max-lines-per-function: 150` (excluding blank lines and comments), `complexity: 20`, `max-depth: 5`, `max-nested-callbacks: 4`.
-- See [Authentication](#authentication) for `requireAuth` vs `getAuthUser` guidance. Do not migrate existing `getAuthUser` endpoints unless explicitly asked.
+- See [Authentication](#authentication) for `requireAuth` vs `getAuthUser` guidance.
 
 ### Tooling
 
@@ -322,7 +326,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
 })
 ```
 
-All handlers should log errors before calling `handleError()`.
+All handlers must log errors before calling `handleError()`.
 
 Note: `updateTask()` handles its own transaction and undo logging internally.
 
@@ -370,7 +374,7 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 1. **How extensive and realistic the quality test scenarios are** — scenarios must cover the full range of real-world inputs: dictation artifacts, typos, edge cases, ambiguous phrasing, colloquial language, and every field combination. If a scenario isn't tested, assume it doesn't work.
 2. **How well the AI holds up under that testing** — every scenario must be evaluated in Layer 2 (0-10 scoring rubric in `tests/quality/validator-prompt.md`; pass threshold: >= 6). Do not ship prompt changes that degrade quality on existing scenarios.
 
-**`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details. Layer 1 validates structural correctness (valid JSON, required fields, type checks). Layer 2 evaluates semantic quality (is the AI output actually good?) using an LLM-as-judge rubric.
+**`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details. Layer 1 validates structural correctness (valid JSON, required fields, type checks). Layer 2 evaluates semantic quality (is the AI output actually good?) using an LLM-as-judge rubric. Concretely, Layer 2 means running outputs through the scoring rubric in `tests/quality/validator-prompt.md` and evaluating each scenario on a 0-10 scale.
 
 **`dump-prompts` is the only reliable way to see what the AI actually receives.** Prompt source code is spread across `src/core/ai/prompts.ts`, `src/core/ai/quick-take.ts`, shared sections, and template literals — reading the source alone is not sufficient. Always dump and review the fully rendered prompt before and after any AI prompt change. This is non-negotiable: if you're touching AI prompts, you must run `dump-prompts` to verify the final output.
 
@@ -392,7 +396,7 @@ npm run test:quality:run -- enrich-simple-clean               # Run one scenario
 npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  # Run multiple
 ```
 
-**When modifying AI prompts or enrichment logic:**
+**When modifying AI prompts or enrichment logic (task field inference in `src/core/ai/`):**
 
 1. **Dump the rendered prompt first** (`npm run dump-prompts -- --feature <feature>`) — read the full output in `.tmp/` and check for contradictions, stale rules, and redundancy. Do this before writing any code.
 2. Make your changes
@@ -439,7 +443,7 @@ Helper: `tests/helpers/setup.ts`
 
 Location: `tests/integration/`
 
-Integration tests send real HTTP requests to a running `next start` server (the production build). The `globalSetup.ts` builds the app and starts the server automatically. These tests authenticate using hardcoded tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
+Integration tests send real HTTP requests to a running `next start` server (the production build). The `globalSetup.ts` builds the app and starts the server automatically. These tests authenticate using test-only tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
 
 Call `resetTestData()` between test files — this calls `POST /api/test/reset`, which is only available when `OPENTASK_TEST_MODE=1`.
 
@@ -514,7 +518,7 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 
 See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (server addresses, service names, deploy scripts, database inspection, etc.).
 
-### Demo User
+## Demo User
 
 The demo account showcases OpenTask with curated portfolio-style tasks. User isolation is via `user_id` filtering.
 
@@ -531,9 +535,9 @@ The demo account showcases OpenTask with curated portfolio-style tasks. User iso
 - `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
 - `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
 
-### Security
+## Security
 
-- **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. Raw token is shown once at creation.
+- **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. The raw token is displayed once when generated and cannot be retrieved afterward.
 - **Login rate limiting**: In-memory, 5 failures per username in 15 min triggers lockout with exponential backoff (30s, 60s, 120s...).
 - **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 - **JWT sessions**: `maxAge` set to 7 days (default was 30).
