@@ -5,6 +5,7 @@ import { Plus, Mic } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
+import { showToast } from '@/lib/toast'
 
 interface QuickAddProps {
   onAdd: (title: string) => void | Promise<void>
@@ -15,9 +16,16 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const { isSupported, isListening, startListening, stopListening, transcript } =
+  const { isSupported, isListening, startListening, stopListening, transcript, error } =
     useSpeechRecognition()
   const titleBeforeListeningRef = useRef('')
+
+  // Surface speech recognition errors as toasts
+  useEffect(() => {
+    if (error) {
+      showToast({ message: error, type: 'error' })
+    }
+  }, [error])
 
   // While listening, show live preview of base title + transcript.
   // The base title is snapshotted in the mic button click handler.
@@ -99,10 +107,10 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
               }
             }}
             className={cn(
-              'flex-shrink-0 rounded p-0.5 transition-colors',
+              'flex-shrink-0 rounded p-0.5 transition-colors active:scale-90',
               isListening
                 ? 'text-red-500 hover:text-red-600'
-                : 'text-muted-foreground hover:text-primary hover:bg-accent',
+                : 'text-muted-foreground hover:text-primary hover:bg-accent active:bg-accent',
             )}
             aria-label={isListening ? 'Stop dictation' : 'Start dictation'}
           >
