@@ -36,7 +36,7 @@ const UNSET = 0,
   MED = 2,
   HIGH = 3
 
-type ProjectName = 'Inbox' | 'Client Work' | 'Try It'
+type ProjectName = 'Inbox' | 'Client Work' | 'Try It' | 'Personal'
 type ProjectMap = Record<ProjectName, number>
 
 interface DemoTaskDef {
@@ -50,6 +50,8 @@ interface DemoTaskDef {
   priority?: number
   notes?: string
   done?: boolean
+  /** When true, task appears in trash (soft-deleted) */
+  deleted?: boolean
   /** When true, skip due date computation entirely (task has no due date) */
   noDue?: boolean
   /** How many days ago the task was created (for realistic created_at). Default: 3 */
@@ -70,7 +72,8 @@ function getDemoTasks(): DemoTaskDef[] {
         'OpenTask uses AI to parse natural language into structured tasks. Try it yourself — type or paste the text above and watch the AI enrich it.',
     },
     {
-      title: "Try voice input — say 'Review deployment pipeline Friday afternoon medium priority'",
+      title:
+        "Try voice input — tap the microphone icon and say 'Review deployment pipeline Friday afternoon medium priority'",
       project: 'Try It',
       noDue: true,
       createdDaysAgo: 3,
@@ -101,6 +104,39 @@ function getDemoTasks(): DemoTaskDef[] {
     },
   ]
 
+  const PERSONAL_TASKS: DemoTaskDef[] = [
+    {
+      title: 'Go for a run',
+      project: 'Personal',
+      rrule: RRulePatterns.weekly([MON, THU], 7, 0),
+      dueOffset: daysUntilWeekday([1, 4]), // next Mon or Thu, always future
+      createdDaysAgo: 10,
+    },
+    {
+      title: 'Try that new ramen place on 5th',
+      project: 'Personal',
+      noDue: true,
+      createdDaysAgo: 5,
+    },
+    {
+      title: 'Cancel that free trial before it charges',
+      project: 'Personal',
+      dueOffset: 2,
+      hour: 20,
+      priority: MED,
+      createdDaysAgo: 6,
+    },
+    {
+      title: 'Plan camping trip for Memorial Day weekend',
+      project: 'Personal',
+      dueOffset: 5,
+      hour: 18,
+      priority: LOW,
+      createdDaysAgo: 3,
+      notes: 'Check if the state park near the lake has open sites. Need to reserve soon.',
+    },
+  ]
+
   const CLIENT_WORK_TASKS: DemoTaskDef[] = [
     {
       title: 'Prepare implementation plan for client onboarding',
@@ -109,32 +145,6 @@ function getDemoTasks(): DemoTaskDef[] {
       hour: 10,
       priority: HIGH,
       createdDaysAgo: 4,
-    },
-    {
-      title: 'Build MCP server for client CRM integration',
-      project: 'Client Work',
-      dueOffset: daysUntilWeekday(5), // next Friday
-      hour: 14,
-      priority: MED,
-      createdDaysAgo: 5,
-      notes:
-        'Client wants Salesforce contacts synced to internal dashboard. Claude Code + MCP adapter pattern. Need to evaluate whether to use stdio or SSE transport.',
-    },
-    {
-      title: 'Set up Claude Code workflow for automated testing',
-      project: 'Client Work',
-      dueOffset: daysUntilWeekday(4), // next Thursday
-      hour: 15,
-      priority: MED,
-      createdDaysAgo: 5,
-    },
-    {
-      title: 'Schedule intro call — new AI automation project',
-      project: 'Client Work',
-      dueOffset: daysUntilWeekday(4), // next Thursday
-      hour: 14,
-      priority: MED,
-      createdDaysAgo: 3,
     },
     {
       // The ONE old task — triggers the `stale` signal in AI Insights (requires 21+ days),
@@ -149,28 +159,12 @@ function getDemoTasks(): DemoTaskDef[] {
         'Vector database evaluation needed — Pinecone vs pgvector. Client processing ~50K docs. Start with proof of concept on a smaller subset.',
     },
     {
-      title: 'Review pull request — API authentication updates',
-      project: 'Client Work',
-      dueOffset: 1, // tomorrow — never overdue on seed day
-      hour: 17,
-      priority: HIGH,
-      createdDaysAgo: 1,
-    },
-    {
       title: 'Client status update',
       project: 'Client Work',
       rrule: RRulePatterns.weekly([MON, THU], 10, 0),
       dueOffset: daysUntilWeekday([1, 4]), // next Mon or Thu, always future
       priority: LOW,
       createdDaysAgo: 7,
-    },
-    {
-      title: 'Follow up on proposal — workflow automation project',
-      project: 'Client Work',
-      dueOffset: daysUntilWeekday(3), // next Wednesday
-      hour: 9,
-      priority: MED,
-      createdDaysAgo: 4,
     },
   ]
 
@@ -195,16 +189,48 @@ function getDemoTasks(): DemoTaskDef[] {
       createdDaysAgo: 5,
     },
     {
-      title: 'Configure CI/CD pipeline with automated tests',
-      project: 'Client Work',
+      title: 'Book flights for conference',
+      project: 'Personal',
       done: true,
-      dueOffset: -2,
-      hour: 16,
-      createdDaysAgo: 6,
+      dueOffset: -3,
+      hour: 12,
+      createdDaysAgo: 10,
+    },
+    {
+      title: 'Set up home office monitor arm',
+      project: 'Personal',
+      done: true,
+      dueOffset: -5,
+      hour: 18,
+      createdDaysAgo: 12,
     },
   ]
 
-  return [...TRY_IT_TASKS, ...CLIENT_WORK_TASKS, ...INBOX_TASKS, ...COMPLETED_TASKS]
+  const DELETED_TASKS: DemoTaskDef[] = [
+    {
+      title: 'Research new phone plans',
+      project: 'Personal',
+      deleted: true,
+      noDue: true,
+      createdDaysAgo: 15,
+    },
+    {
+      title: 'Sign up for pottery class',
+      project: 'Personal',
+      deleted: true,
+      noDue: true,
+      createdDaysAgo: 9,
+    },
+  ]
+
+  return [
+    ...TRY_IT_TASKS,
+    ...PERSONAL_TASKS,
+    ...CLIENT_WORK_TASKS,
+    ...INBOX_TASKS,
+    ...COMPLETED_TASKS,
+    ...DELETED_TASKS,
+  ]
 }
 
 // ── Task seeding helper ─────────────────────
@@ -254,6 +280,7 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
     const done = task.done ? 1 : 0
     const doneAt = task.done ? dueAt : null
     const archivedAt = task.done ? dueAt : null
+    const deletedAt = task.deleted ? now : null
     const createdAt = localToUtcIso(-(task.createdDaysAgo ?? 3), 10, 0)
 
     insertTask.run(
@@ -269,7 +296,7 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
       anchors.anchor_dow,
       anchors.anchor_dom,
       dueAt, // original_due_at — matches createTask() behavior
-      null, // deleted_at
+      deletedAt,
       archivedAt,
       '[]', // labels
       notes,
@@ -310,7 +337,8 @@ export function seedDemoData(
   const projects: { name: ProjectName; order: number; color: string }[] = [
     { name: 'Inbox', order: 0, color: 'blue' },
     { name: 'Try It', order: 1, color: 'green' },
-    { name: 'Client Work', order: 2, color: 'orange' },
+    { name: 'Personal', order: 2, color: 'purple' },
+    { name: 'Client Work', order: 3, color: 'orange' },
   ]
 
   const projectMap = {} as ProjectMap
@@ -372,8 +400,8 @@ export async function seedDemoUser(
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
   const userResult = db
     .prepare(
-      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled, is_demo)
+       VALUES (?, ?, ?, ?, ?, 1)`,
     )
     .run(email, username, passwordHash, TIMEZONE, 0)
   const userId = Number(userResult.lastInsertRowid)
