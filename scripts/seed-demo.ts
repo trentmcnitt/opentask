@@ -340,6 +340,15 @@ export function seedDemoData(
   db.prepare('UPDATE users SET priority_display = ? WHERE id = ?').run(priorityDisplay, userId)
   console.log(`  Priority display configured`)
 
+  // Ensure AI features use API mode (not SDK) so the demo works with the server's
+  // configured API provider (e.g., xAI/Grok) without requiring Claude Code installed.
+  db.prepare(
+    `UPDATE users SET ai_mode = 'on', ai_enrichment_mode = 'api',
+     ai_quicktake_mode = 'api', ai_whats_next_mode = 'api', ai_insights_mode = 'api'
+     WHERE id = ?`,
+  ).run(userId)
+  console.log(`  AI features set to API mode`)
+
   // Seed tasks
   const inserted = seedDemoTasks(db, userId, projectMap)
   console.log(`  Inserted ${inserted} tasks`)
