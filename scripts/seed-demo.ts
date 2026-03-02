@@ -309,8 +309,8 @@ export function seedDemoData(
   )
   const projects: { name: ProjectName; order: number; color: string }[] = [
     { name: 'Inbox', order: 0, color: 'blue' },
-    { name: 'Client Work', order: 1, color: 'orange' },
-    { name: 'Try It', order: 2, color: 'green' },
+    { name: 'Try It', order: 1, color: 'green' },
+    { name: 'Client Work', order: 2, color: 'orange' },
   ]
 
   const projectMap = {} as ProjectMap

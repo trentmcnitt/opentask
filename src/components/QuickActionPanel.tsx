@@ -41,6 +41,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { showToast } from '@/lib/toast'
 import { useQuickSelectDate } from '@/hooks/useQuickSelectDate'
 import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
@@ -270,6 +271,13 @@ export function QuickActionPanel({
 
     speechPrevListeningRef.current = speech.isListening
   }, [speech.isListening, speech.transcript, isCreateMode])
+
+  // Surface speech recognition errors as toasts
+  useEffect(() => {
+    if (speech.error) {
+      showToast({ message: speech.error, type: 'error' })
+    }
+  }, [speech.error])
 
   // State for Mark Done confirmation dialog
   const [showDoneConfirm, setShowDoneConfirm] = useState(false)
@@ -998,10 +1006,10 @@ export function QuickActionPanel({
                     }
                   }}
                   className={cn(
-                    'mt-1 flex-shrink-0 rounded p-0.5 transition-colors',
+                    'mt-1 flex-shrink-0 rounded p-0.5 transition-colors active:scale-90',
                     speech.isListening
                       ? 'text-red-500 hover:text-red-600'
-                      : 'text-muted-foreground hover:text-primary hover:bg-accent',
+                      : 'text-muted-foreground hover:text-primary hover:bg-accent active:bg-accent',
                   )}
                   aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                 >
