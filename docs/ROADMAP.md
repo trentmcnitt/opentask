@@ -23,6 +23,8 @@ Curated feature list for OpenTask. Items move to implementation when they're rea
 - **Kanban View** — Board view with columns mapped to projects or priority levels
 - **Project Icons** — Emoji or icon per project, displayed in project list and task grouping headers
 - **Per-Project Notification Grouping** — Group notifications by project for separate notification stacks
+- **Exact Notification Timing** — Pre-schedule notifications at the exact `due_at` time instead of discovering overdue tasks on a ~60-second poll. Keep the poll as a safety net.
+- **Web Push Action Page** — Quick-action landing page opened from Web Push notification tap (Done/Snooze/Details buttons), since iOS Safari doesn't support notification action buttons
 
 ## Not Planned
 

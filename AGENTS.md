@@ -1,10 +1,24 @@
-# CLAUDE.md
+# AGENTS.md
 
 OpenTask is a self-hosted task management PWA. This file is the authoritative reference for contributing to this codebase.
 
 ## Architecture
 
 Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts), and `DEV_LOG.md` for a reverse-chronological journal of design decisions, problems overcome, and narrative context that can't be inferred from git history alone. Additional docs: `docs/NOTIFICATIONS.md` (push notification architecture), `docs/IOS-DEV-LOG.md` (iOS development history), `docs/openapi.yaml` (REST API schema).
+
+### Documentation site
+
+The public docs site lives in a separate repo (`opentask-docs`, typically at `~/working_dir/opentask-docs`) (VitePress, deployed to `opentask.mcnitt.io/docs/`). When you change features, API behavior, or configuration in this repo, the docs site may need a corresponding update. Key sync points:
+
+| Change in this repo                          | Update in opentask-docs                           |
+| -------------------------------------------- | ------------------------------------------------- |
+| API routes or response format                | `openapi.json` (convert from `docs/openapi.yaml`) |
+| AI features or provider options              | `setup/ai.md`, `setup/configuration.md`           |
+| Environment variables                        | `setup/configuration.md`                          |
+| Core behavior (snooze, priority, recurrence) | `concepts/` pages                                 |
+| New feature or major change                  | `overview.md`                                     |
+
+See `~/working_dir/opentask-docs/CLAUDE.md` for build/deploy instructions and full sync details.
 
 ### Source layout
 
@@ -555,6 +569,8 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 **Shared code** (`Shared/`): `APIClient.swift` (HTTP with Bearer auth), `KeychainHelper.swift` (App Group keychain for credential sharing between app, extension, and Watch app), `DateHelpers.swift` (ISO 8601, snap-to-preset, delta formatting). All shared code uses only `Foundation`/`Security` — no platform-specific imports, compiles on both iOS and watchOS.
 
 **Build:** xcodegen generates `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
+
+**Contributing:** The bundle ID (`io.mcnitt.opentask`) and Apple Developer Team ID in `ios/project.yml` belong to the maintainer. To build locally, update `bundleIdPrefix` and `DEVELOPMENT_TEAM` to your own values and run `xcodegen` to regenerate the project.
 
 **Server API endpoints used by the iOS app:**
 
