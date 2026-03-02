@@ -541,13 +541,13 @@ The demo account showcases OpenTask with curated portfolio-style tasks. User iso
 | Username      | `demo`                                                      |
 | Password      | `demo` (shown on login page when `NEXT_PUBLIC_DEMO_MODE=1`) |
 | Notifications | Disabled                                                    |
-| Daily reset   | Yes (via cron)                                              |
-| Projects      | Inbox, Client Work, Try It                                  |
+| Reset         | Every 4 hours (via cron)                                    |
+| Projects      | Inbox, Try It, Personal, Client Work                        |
 
 **Scripts:**
 
-- `npm run db:seed-demo` — Create the demo user and ~55 tasks (run once)
-- `npm run db:reset-demo` — Delete and re-create all demo data (daily cron)
+- `npm run db:seed-demo` — Create the demo user and tasks (run once)
+- `npm run db:reset-demo` — Delete and re-create all demo data (cron)
 
 ## Security
 
