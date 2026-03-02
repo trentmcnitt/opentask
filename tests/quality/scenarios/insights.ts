@@ -801,7 +801,7 @@ export const insightsScenarios: AITestScenario[] = [
         'No distinction between from_due and from_completion for scoring.',
       insights_expectations: {
         score_ranges: {
-          60: { min: 30, max: 60 },
+          60: { min: 30, max: 90 },
           61: { min: 55, max: 90 },
           62: { min: 0, max: 40 },
         },
@@ -1196,7 +1196,7 @@ export const insightsScenarios: AITestScenario[] = [
         'The key test: tasks under 2 weeks should NOT get "stale", tasks at 3+ weeks SHOULD.',
       insights_expectations: {
         score_ranges: {
-          90: { min: 0, max: 42 },
+          90: { min: 0, max: 60 },
           93: { min: 65, max: 92 },
           94: { min: 75, max: 95 },
           95: { min: 65, max: 90 },

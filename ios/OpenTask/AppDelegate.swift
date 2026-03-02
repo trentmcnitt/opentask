@@ -12,6 +12,10 @@ import WatchConnectivity
 /// be transferred via WCSession.updateApplicationContext().
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, WCSessionDelegate {
 
+    /// Saved shortcut item from cold launch or warm-launch scene delegate.
+    /// Processed by OpenTaskApp's scenePhase observer when the scene becomes active.
+    var savedShortcutItem: UIApplicationShortcutItem?
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -99,12 +103,31 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     // MARK: - Home Screen Quick Actions
+    //
+    // SwiftUI's WindowGroup uses the scene-based lifecycle, so the old
+    // application(_:performActionFor:) is never called. Instead:
+    // - Cold launch: configurationForConnecting saves the shortcut item,
+    //   and OpenTaskApp's scenePhase observer processes it when .active.
+    // - Warm launch: QuickActionSceneDelegate.windowScene(_:performActionFor:)
+    //   calls handleShortcutItem directly.
 
     func application(
         _ application: UIApplication,
-        performActionFor shortcutItem: UIApplicationShortcutItem,
-        completionHandler: @escaping (Bool) -> Void
-    ) {
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        // Capture shortcut item from cold launch for deferred processing
+        if let shortcutItem = options.shortcutItem {
+            savedShortcutItem = shortcutItem
+        }
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = QuickActionSceneDelegate.self
+        return config
+    }
+
+    /// Process a home screen quick action. Called from QuickActionSceneDelegate (warm launch)
+    /// and from OpenTaskApp's scenePhase observer (cold launch).
+    func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
         print("[OpenTask] Quick action: \(shortcutItem.type)")
 
         switch shortcutItem.type {
@@ -133,8 +156,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         case "io.mcnitt.opentask.snooze-tomorrow":
             Task {
                 do {
-                    // Send empty body — server uses the user's default_snooze_option
-                    // preference (defaults to "tomorrow" at their configured morning_time)
                     let result = try await APIClient.shared.snoozeOverdueDefault()
                     print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks to tomorrow")
                 } catch {

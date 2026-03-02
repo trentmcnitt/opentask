@@ -98,6 +98,7 @@ npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality tes
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
+npm run db:seed-dev      # Seed dev user with ~25 realistic tasks (for contributors)
 npm run db:seed-demo     # Seed demo user with ~55 generic professional tasks
 npm run db:reset-demo    # Delete and re-create all demo user data
 npm run db:create-token  # Create API token: npm run db:create-token -- <user> [name]

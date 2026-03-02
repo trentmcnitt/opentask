@@ -29,7 +29,7 @@ If you've used Todoist or Things and wished you could self-host it with push not
 - **Webhooks.** HTTP callbacks on task events with HMAC-SHA256 signing. Integrate with n8n, Home Assistant, Node-RED, or anything that accepts webhooks.
 - **Data export.** JSON and CSV export of all your data — tasks, projects, and completions. Your data is always portable.
 - **Reverse proxy auth.** Works with Authelia, Authentik, and other auth proxies out of the box.
-- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. Powered by Claude — fully optional, the app works great without it.
+- **Optional AI enrichment.** Type "call dentist next tuesday high priority" and AI parses it into a structured task. Daily insights surface forgotten tasks. Works with any OpenAI-compatible API — fully optional, the app works great without it.
 
 ## Quick Start (Docker)
 
@@ -60,7 +60,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Your data is stored in `./data/` and persists across updates.
+Your data is stored in `./data/` and persists across updates. Store this directory on a local filesystem — network mounts (NFS, CIFS) are not compatible with SQLite's file locking.
 
 ### Backup
 
@@ -201,10 +201,19 @@ AI is entirely optional. When disabled (the default), all AI UI elements are hid
 When enabled, AI provides:
 
 - **Task enrichment** — Natural language parsing into structured tasks with title, due date, priority, labels, and project
+- **Quick Take** — One-liner contextual commentary when you add a task
 - **What's Next** — Recommendations surfacing overlooked or forgotten tasks
 - **Insights** — Scoring and signals (stale, quick win, etc.) to help prioritize
 
-AI currently requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated on the server. Direct API key support is planned.
+Three provider options:
+
+| Provider              | Setup                                                                               | Best for                                             |
+| --------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Claude Code (SDK)** | Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on the server | Development, Max subscription users                  |
+| **Anthropic API**     | Set `ANTHROPIC_API_KEY`                                                             | Production with Anthropic models                     |
+| **OpenAI-compatible** | Set `OPENAI_API_KEY` + `OPENAI_MODEL`                                               | OpenAI, xAI/Grok, OpenRouter, DeepSeek, Ollama, etc. |
+
+Tested with Claude Sonnet 4.6, GPT-4.1-mini, Grok 4.1 Fast, and DeepSeek V3. Any provider with an OpenAI-compatible chat completions endpoint should work — see `.env.example` for configuration details and quick-start examples.
 
 ## API
 
@@ -261,16 +270,20 @@ docs/                 # Product spec, design rationale, API guide, roadmap
 
 ## Contributing
 
-```bash
-# Quick check (run after every change)
-npm run type-check && npm run lint && npm test
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Quick setup:
 
-# Full test suite
-npm run test:integration  # HTTP API tests
-npm run test:e2e          # Playwright browser tests
+```bash
+git clone https://github.com/trentmcnitt/opentask.git
+cd opentask
+npm install
+cp .env.example .env.local
+echo 'AUTH_SECRET=dev-secret-change-me' >> .env.local
+npm run db:seed-dev
+npm run dev
+# Open http://localhost:3000 — login: dev / dev
 ```
 
-`CLAUDE.md` has detailed development conventions, coding standards, and the full test matrix.
+[CLAUDE.md](CLAUDE.md) has detailed development conventions for AI-assisted development.
 
 ## License
 

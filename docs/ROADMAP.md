@@ -18,6 +18,7 @@ Curated feature list for OpenTask. Items move to implementation when they're rea
 
 ## Under Consideration
 
+- **Due Date vs Notification Separation** — Snoozing shifts `due_at` while `original_due_at` preserves the real date, but the AI only sees snooze drift for P3-4 tasks. A P0 task snoozed forward 3 days looks "due tomorrow" to the AI with no awareness it was supposed to be done days ago. Needs a design decision on whether to separate notification schedule from actual due date — possibly with a user-movable "fixed due date" distinct from snooze-shifted `due_at`. Affects AI scoring, dashboard display, and the meaning of snoozing.
 - **CalDAV Sync** — Two-way sync with CalDAV clients (Apple Reminders, Thunderbird, DAVx5)
 - **Kanban View** — Board view with columns mapped to projects or priority levels
 - **Project Icons** — Emoji or icon per project, displayed in project list and task grouping headers

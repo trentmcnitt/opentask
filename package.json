@@ -2,6 +2,9 @@
   "name": "opentask",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "NEXT_PUBLIC_BUILD_ID=$(tsx scripts/prebuild.ts) next build",
@@ -18,10 +21,10 @@
     "test:quality:retry": "./scripts/quality-retry.sh",
     "test:quality:run": "./scripts/quality-run.sh",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed-dev": "tsx scripts/seed-dev.ts",
     "db:create-token": "tsx scripts/create-token.ts",
     "db:seed-demo": "tsx scripts/seed-demo.ts",
     "db:reset-demo": "tsx scripts/reset-demo-user.ts",
-    "db:migrate-due": "tsx scripts/migrate-due.ts",
     "dump-prompts": "tsx scripts/dump-prompts.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
