@@ -22,6 +22,8 @@ import { requireFeatureModel } from './models'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 
+const WHATS_NEXT_JSON_SCHEMA = z.toJSONSchema(WhatsNextResultSchema) as Record<string, unknown>
+
 /**
  * Generate What's Next recommendations for a user.
  *
@@ -85,13 +87,11 @@ ${WHATS_NEXT_REMINDERS}
 Current time: ${currentTime}
 Surface 0-8 tasks and return the JSON result.`
 
-  const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
-
   const effectiveProvider = provider ?? getApiProvider()
   const whatsNextModel = requireFeatureModel('whats_next', effectiveProvider)
   const result = await aiQuery({
     prompt,
-    outputSchema: jsonSchema,
+    outputSchema: WHATS_NEXT_JSON_SCHEMA,
     model: whatsNextModel,
     maxTurns: 1,
     // Enable extended thinking for Opus models to improve recommendation quality
@@ -144,7 +144,9 @@ Surface 0-8 tasks and return the JSON result.`
     generated_at: parsed.generated_at || nowUtc(),
   }
 
-  // Cache in ai_activity_log for same-day retrieval
+  // Cache the post-processed result in ai_activity_log for same-day retrieval
+  // via getCachedWhatsNext(). Note: aiQuery() already logged the raw AI response;
+  // this second entry stores the filtered/validated result that the UI actually uses.
   logAIActivity({
     user_id: userId,
     task_id: null,

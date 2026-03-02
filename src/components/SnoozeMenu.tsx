@@ -24,6 +24,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
+import { to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
 
 interface SnoozeMenuProps {
@@ -33,12 +34,6 @@ interface SnoozeMenuProps {
   onSnooze: (until: string) => void
   /** Trigger element — rendered as-is; parent controls click/long-press behavior */
   children?: React.ReactNode
-}
-
-/** Convert 12-hour + period back to 24-hour */
-function to24Hour(hour12: number, period: 'AM' | 'PM'): number {
-  if (period === 'AM') return hour12 % 12
-  return (hour12 % 12) + 12
 }
 
 /**

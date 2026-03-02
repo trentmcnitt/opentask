@@ -67,10 +67,10 @@ export function requireFeatureModel(feature: AIFeature, provider: AIProvider): s
 /** Human-friendly model display names for the settings UI and AI status modal. */
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
   haiku: 'Claude Haiku 4.5',
-  sonnet: 'Claude Sonnet 4.5',
+  sonnet: 'Claude Sonnet 4.6',
   'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
-  'claude-sonnet-4-5-20250514': 'Claude Sonnet 4.5',
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'claude-opus-4-6-20250610': 'Claude Opus 4.6',
 }
 

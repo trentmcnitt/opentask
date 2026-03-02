@@ -283,7 +283,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         // not the bearer token user from initial iOS setup.
         registerDeviceToken()
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        console.error('Failed to fetch preferences:', err)
+      })
   }, [status])
 
   // Handle late APNs token arrival — iOS dispatches this CustomEvent when

@@ -534,6 +534,10 @@ ONE sentence, max 25 words. Only state what the Summary confirms.`
  *
  * Exported so the quality test runner and dump-prompts can use the exact
  * same prompt as production without duplicating the template.
+ *
+ * Composes QUICK_TAKE_SYSTEM_PROMPT + buildQuickTakeUserPrompt() to avoid
+ * duplicating the prompt text. The warm slot loads these separately; the cold
+ * path and test tooling use this combined version.
  */
 export function buildQuickTakePrompt(
   compactTaskList: string,
@@ -544,52 +548,16 @@ export function buildQuickTakePrompt(
   newTaskHasDueDate?: boolean,
   tasks?: QuickTakeTask[],
 ): string {
-  const currentTime = DateTime.now().setZone(timezone).toFormat('ccc, LLL d, h:mm a')
-
-  // Build summary block from stats if provided, otherwise a simple count
-  const summaryBlock = stats
-    ? `\n${formatSummaryBlock(count, stats)}\n`
-    : `\nSummary:\n- ${count} active tasks\n`
-
-  const newTaskLine = formatNewTaskLine(newTaskTitle, newTaskHasDueDate ?? false)
-  const notablePattern = stats ? computeNotablePattern(count, stats) : null
-  const notableLine = notablePattern ? `\nNotable: ${notablePattern}\n` : ''
-
-  const contextLine = stats && tasks ? computeNewTaskContext(newTaskTitle, tasks, stats) : null
-  const contextBlock = contextLine ? `Context: ${contextLine}\n` : ''
-
-  // -------------------------------------------------------------------
-  // Prompt structure:
-  //   1. Role + scene (what the model is reading, what it produces)
-  //   2. OpenTask context (just enough to make the data legible)
-  //   3. Examples (carry the teaching load)
-  //   4. Conventions (word limit, output format, stats usage)
-  //   5. Data block (notable pattern, summary stats, context, new task, task list)
-  //   6. Closing block (reinforcement at recency peak)
-  // -------------------------------------------------------------------
-
-  return `You are the AI in OpenTask, a task management app. The user just quick-added a task. Write one sentence about what's notable in context — a pattern, a contrast, a crowded day, an outlier. Report what the data shows. A boring truth always beats a clever falsehood.
-
-Examples:
-- "3 Acme tasks this week — this makes it a theme."
-- "4 personal errands now among 20 Platform Team tasks — a different gear."
-- "Tuesday's getting crowded — 5 things and counting."
-- "first task on an empty board."
-- "another fix for Website Redesign — the bug backlog grows."
-- "this one's a one-off among your daily routines."
-- "Friday is already stacked: a deploy, happy hour, and now slides."
-
-The Summary stats are precomputed and exact — use them instead of counting the task list. Never claim "only" or "first" unless the stats confirm it. Most new tasks have no due date — that's the default, not noteworthy.
-
-Max 25 words. No quotes. Observe, never advise. Vary your angle.
-
-Current time: ${currentTime} (${timezone})
-${notableLine}${summaryBlock}${contextBlock}${newTaskLine}
-
-Existing tasks:
-${compactTaskList}
-
-ONE sentence, max 25 words. Only state what the Summary confirms.`
+  const userPrompt = buildQuickTakeUserPrompt(
+    compactTaskList,
+    count,
+    timezone,
+    newTaskTitle,
+    stats,
+    newTaskHasDueDate,
+    tasks,
+  )
+  return `${QUICK_TAKE_SYSTEM_PROMPT}\n\n${userPrompt}`
 }
 
 // ---------------------------------------------------------------------------

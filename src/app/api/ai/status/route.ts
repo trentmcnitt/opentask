@@ -34,15 +34,16 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const enrichmentPipeline = getEnrichmentPipelineStatus()
     const activeInsightsSession = getActiveInsightsSession(user.id)
 
-    // Count tasks pending enrichment
+    // Count tasks pending enrichment (scoped to current user)
     const db = getDb()
     const pendingRow = db
       .prepare(
         `SELECT COUNT(*) as count FROM tasks
-         WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
+         WHERE user_id = ?
+           AND EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
            AND deleted_at IS NULL`,
       )
-      .get() as { count: number }
+      .get(user.id) as { count: number }
 
     return success({
       enrichment_slot: enrichmentSlot,

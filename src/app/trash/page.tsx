@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
+import { showToast } from '@/lib/toast'
 import type { Project } from '@/types'
 
 interface TrashedTask {
@@ -112,7 +113,7 @@ export default function TrashPage() {
         setTasks((prev) => prev.filter((t) => t.id !== taskId))
       }
     } catch {
-      // Handled silently
+      showToast({ message: 'Failed to restore task', type: 'error' })
     } finally {
       setRestoringId(null)
     }
@@ -126,7 +127,7 @@ export default function TrashPage() {
         setTasks([])
       }
     } catch {
-      // Handled silently
+      showToast({ message: 'Failed to empty trash', type: 'error' })
     } finally {
       setEmptyingTrash(false)
       setShowConfirm(false)
