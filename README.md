@@ -1,11 +1,25 @@
-# OpenTask
+<p align="center">
+  <img src="public/opentask-sun-logo.png" alt="OpenTask" width="128">
+</p>
 
-A self-hosted task manager where due dates are reminders, not deadlines. Snooze-first workflow, one-container deploy.
+<p align="center">
+  <img src="public/opentask-text-logo.png" alt="OpenTask" width="400">
+</p>
 
-<!-- TODO: Add hero screenshot showing desktop dashboard with demo data -->
-<!-- ![OpenTask dashboard](docs/screenshots/desktop-dashboard.png) -->
+<p align="center">
+  <strong>A self-hosted task manager where due dates are reminders, not deadlines.</strong><br>
+  Snooze-first workflow. Single container. Your data, your server.
+</p>
 
-**[Try the live demo](https://opentask.mcnitt.io)** (username: `demo`, password: `demo`) · [Documentation](docs/SPEC.md) · [API Guide](docs/AUTOMATION.md)
+<p align="center">
+  <a href="https://opentask.mcnitt.io"><img src="https://img.shields.io/badge/Live_Demo-opentask.mcnitt.io-ff69b4" alt="Live Demo"></a>
+  <a href="https://github.com/trentmcnitt/opentask/pkgs/container/opentask"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue" alt="Docker"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-green.svg" alt="License: AGPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="https://opentask.mcnitt.io">Try the Demo</a> · <a href="docs/SPEC.md">Documentation</a> · <a href="docs/AUTOMATION.md">API Guide</a> · <a href="docs/ROADMAP.md">Roadmap</a>
+</p>
 
 ## Why OpenTask?
 

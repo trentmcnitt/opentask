@@ -7,13 +7,14 @@
  * Cron schedule:
  * - Every 1 min: notification check (overdue tasks, all priorities)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
- * - 3:00 AM daily: undo purge + What's Next generation (AI, runs in parallel)
- * - 3:15 AM daily: Insights generation (AI)
- * - 3:30 AM daily: trash purge
- * - 4:00 AM daily: completions purge
- * - 4:30 AM Sunday: stats purge
- * - 5:00 AM daily: AI activity purge
- * - 5:30 AM daily: webhook delivery purge
+ * - 3:00 AM CT daily: What's Next generation (AI, timezone-aware)
+ * - 3:15 AM CT daily: Insights generation (AI, timezone-aware)
+ * - 3:00 AM UTC daily: undo purge
+ * - 3:30 AM UTC daily: trash purge
+ * - 4:00 AM UTC daily: completions purge
+ * - 4:30 AM UTC Sunday: stats purge
+ * - 5:00 AM UTC daily: AI activity purge
+ * - 5:30 AM UTC daily: webhook delivery purge
  */
 
 import { log } from '@/lib/logger'
@@ -156,98 +157,107 @@ export async function register() {
         log.info('ai', 'API provider active — warm slots disabled (not needed for HTTP calls)')
       }
 
-      // What's Next cron: generate recommendations for active users at 3 AM
-      cron.schedule('0 3 * * *', async () => {
-        try {
-          const { generateWhatsNext, buildTaskSummaries, getUserAiContext } =
-            await import('@/core/ai')
-          const { getUserFeatureModes } = await import('@/core/ai/user-context')
-          const { getApiProvider } = await import('@/core/ai/provider')
-          const { getDb } = await import('@/core/db')
-          const db = getDb()
-          const users = db.prepare('SELECT id, timezone FROM users').all() as {
-            id: number
-            timezone: string
-          }[]
-          for (const user of users) {
-            const modes = getUserFeatureModes(user.id)
-            if (modes.whats_next === 'off') continue
-            const tasks = buildTaskSummaries(user.id)
-            if (tasks.length > 0) {
-              const aiContext = getUserAiContext(user.id)
-              const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
-              await generateWhatsNext(
-                user.id,
-                user.timezone,
-                tasks,
-                aiContext,
-                provider,
-                'scheduled',
-              ).catch((err) => {
-                log.error('cron', `What's Next generation failed for user ${user.id}:`, err)
-              })
-            }
-          }
-          log.info('cron', `What's Next cron: generated for ${users.length} users`)
-        } catch (err) {
-          log.error('cron', "What's Next cron error:", err)
-          notifyError(
-            'cron-failure',
-            "What's Next cron failed",
-            err instanceof Error ? err.message : String(err),
-          )
-        }
-      })
-
-      // Insights cron: score and annotate tasks for active users at 3:15 AM
-      // Runs after What's Next to avoid semaphore contention (both hold 1 slot sequentially)
-      cron.schedule('15 3 * * *', async () => {
-        try {
-          const { generateInsightsForUser, buildTaskSummaries, getUserAiContext } =
-            await import('@/core/ai')
-          const { getUserFeatureModes } = await import('@/core/ai/user-context')
-          const { getApiProvider } = await import('@/core/ai/provider')
-          const { getDb } = await import('@/core/db')
-          const db = getDb()
-          const users = db.prepare('SELECT id, timezone FROM users').all() as {
-            id: number
-            timezone: string
-          }[]
-          for (const user of users) {
-            try {
+      // What's Next cron: generate recommendations for active users at 3 AM CT
+      const CT = { timezone: 'America/Chicago' }
+      cron.schedule(
+        '0 3 * * *',
+        async () => {
+          try {
+            const { generateWhatsNext, buildTaskSummaries, getUserAiContext } =
+              await import('@/core/ai')
+            const { getUserFeatureModes } = await import('@/core/ai/user-context')
+            const { getApiProvider } = await import('@/core/ai/provider')
+            const { getDb } = await import('@/core/db')
+            const db = getDb()
+            const users = db.prepare('SELECT id, timezone FROM users').all() as {
+              id: number
+              timezone: string
+            }[]
+            for (const user of users) {
               const modes = getUserFeatureModes(user.id)
-              if (modes.insights === 'off') continue
+              if (modes.whats_next === 'off') continue
               const tasks = buildTaskSummaries(user.id)
               if (tasks.length > 0) {
                 const aiContext = getUserAiContext(user.id)
-                const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
-                await generateInsightsForUser(
+                const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
+                await generateWhatsNext(
                   user.id,
                   user.timezone,
                   tasks,
                   aiContext,
-                  'scheduled',
                   provider,
-                )
+                  'scheduled',
+                ).catch((err) => {
+                  log.error('cron', `What's Next generation failed for user ${user.id}:`, err)
+                })
               }
-            } catch (err) {
-              log.error('cron', `Insights generation failed for user ${user.id}:`, err)
             }
+            log.info('cron', `What's Next cron: generated for ${users.length} users`)
+          } catch (err) {
+            log.error('cron', "What's Next cron error:", err)
+            notifyError(
+              'cron-failure',
+              "What's Next cron failed",
+              err instanceof Error ? err.message : String(err),
+            )
           }
-          log.info('cron', `Insights cron: generated for ${users.length} users`)
-        } catch (err) {
-          log.error('cron', 'Insights cron error:', err)
-          notifyError(
-            'cron-failure',
-            'Insights cron failed',
-            err instanceof Error ? err.message : String(err),
-          )
-        }
-      })
+        },
+        CT,
+      )
+
+      // Insights cron: score and annotate tasks for active users at 3:15 AM CT
+      // Runs after What's Next to avoid semaphore contention (both hold 1 slot sequentially)
+      cron.schedule(
+        '15 3 * * *',
+        async () => {
+          try {
+            const { generateInsightsForUser, buildTaskSummaries, getUserAiContext } =
+              await import('@/core/ai')
+            const { getUserFeatureModes } = await import('@/core/ai/user-context')
+            const { getApiProvider } = await import('@/core/ai/provider')
+            const { getDb } = await import('@/core/db')
+            const db = getDb()
+            const users = db.prepare('SELECT id, timezone FROM users').all() as {
+              id: number
+              timezone: string
+            }[]
+            for (const user of users) {
+              try {
+                const modes = getUserFeatureModes(user.id)
+                if (modes.insights === 'off') continue
+                const tasks = buildTaskSummaries(user.id)
+                if (tasks.length > 0) {
+                  const aiContext = getUserAiContext(user.id)
+                  const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
+                  await generateInsightsForUser(
+                    user.id,
+                    user.timezone,
+                    tasks,
+                    aiContext,
+                    'scheduled',
+                    provider,
+                  )
+                }
+              } catch (err) {
+                log.error('cron', `Insights generation failed for user ${user.id}:`, err)
+              }
+            }
+            log.info('cron', `Insights cron: generated for ${users.length} users`)
+          } catch (err) {
+            log.error('cron', 'Insights cron error:', err)
+            notifyError(
+              'cron-failure',
+              'Insights cron failed',
+              err instanceof Error ? err.message : String(err),
+            )
+          }
+        },
+        CT,
+      )
 
       log.info(
         'ai',
-        `AI provider: ${defaultProvider}, What's Next cron (3 AM) + Insights cron (3:15 AM) scheduled`,
+        `AI provider: ${defaultProvider}, What's Next cron (3 AM CT) + Insights cron (3:15 AM CT) scheduled`,
       )
 
       // Graceful shutdown: close warm slots on SIGTERM (SDK mode only)
