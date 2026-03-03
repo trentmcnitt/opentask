@@ -163,10 +163,13 @@ export async function register() {
         '0 3 * * *',
         async () => {
           try {
-            const { generateWhatsNext, buildTaskSummaries, getUserAiContext } =
-              await import('@/core/ai')
+            const {
+              generateWhatsNext,
+              buildTaskSummaries,
+              getUserAiContext,
+              resolveFeatureAIConfig,
+            } = await import('@/core/ai')
             const { getUserFeatureModes } = await import('@/core/ai/user-context')
-            const { getApiProvider } = await import('@/core/ai/provider')
             const { getDb } = await import('@/core/db')
             const db = getDb()
             const users = db.prepare('SELECT id, timezone FROM users').all() as {
@@ -179,13 +182,13 @@ export async function register() {
               const tasks = buildTaskSummaries(user.id)
               if (tasks.length > 0) {
                 const aiContext = getUserAiContext(user.id)
-                const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
+                const aiConfig = resolveFeatureAIConfig('whats_next', modes.whats_next)
                 await generateWhatsNext(
                   user.id,
                   user.timezone,
                   tasks,
                   aiContext,
-                  provider,
+                  aiConfig,
                   'scheduled',
                 ).catch((err) => {
                   log.error('cron', `What's Next generation failed for user ${user.id}:`, err)
@@ -211,10 +214,13 @@ export async function register() {
         '15 3 * * *',
         async () => {
           try {
-            const { generateInsightsForUser, buildTaskSummaries, getUserAiContext } =
-              await import('@/core/ai')
+            const {
+              generateInsightsForUser,
+              buildTaskSummaries,
+              getUserAiContext,
+              resolveFeatureAIConfig,
+            } = await import('@/core/ai')
             const { getUserFeatureModes } = await import('@/core/ai/user-context')
-            const { getApiProvider } = await import('@/core/ai/provider')
             const { getDb } = await import('@/core/db')
             const db = getDb()
             const users = db.prepare('SELECT id, timezone FROM users').all() as {
@@ -228,14 +234,14 @@ export async function register() {
                 const tasks = buildTaskSummaries(user.id)
                 if (tasks.length > 0) {
                   const aiContext = getUserAiContext(user.id)
-                  const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
+                  const aiConfig = resolveFeatureAIConfig('insights', modes.insights)
                   await generateInsightsForUser(
                     user.id,
                     user.timezone,
                     tasks,
                     aiContext,
                     'scheduled',
-                    provider,
+                    aiConfig,
                   )
                 }
               } catch (err) {

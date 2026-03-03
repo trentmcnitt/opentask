@@ -23,8 +23,16 @@ import {
   isAnthropicAvailable,
   isOpenAIAvailable,
   getServerDefaultProvider,
+  resolveModelId,
 } from './provider'
-import { resolveFeatureModel, type AIFeature } from './models'
+import {
+  AI_FEATURES,
+  FEATURE_ENV_VARS,
+  resolveFeatureModel,
+  resolveFeatureProvider,
+  type AIFeature,
+  type FeatureProviderConfig,
+} from './models'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 let aiEnabled: boolean | null = null
@@ -101,25 +109,38 @@ export async function initAI(): Promise<void> {
     .join(', ')
   log.info('ai', `AI features enabled — default provider: ${effective}, available: [${available}]`)
 
-  // Validate that all features can resolve a model for the default provider.
-  // Per-feature modes may override the provider at runtime, but this catches
-  // obvious misconfigurations (e.g., OpenAI default with no OPENAI_MODEL).
-  const features: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
-  const modelLines: string[] = []
-  for (const feature of features) {
-    const model = resolveFeatureModel(feature, effective)
-    if (model) {
-      modelLines.push(`  ${feature}: ${model}`)
-    } else {
+  // Log resolved config per feature (provider type, model, masked key, base URL).
+  // This catches misconfigurations at startup rather than at first request.
+  const configLines: string[] = []
+  for (const feature of AI_FEATURES) {
+    const model = resolveFeatureModel(feature)
+    if (!model) {
       log.error(
         'ai',
-        `No model configured for feature '${feature}' with provider '${effective}'. ` +
-          `AI will fail for this feature until a model is configured.`,
+        `No model configured for feature '${feature}'. ` +
+          `Set ${FEATURE_ENV_VARS[feature]}. AI will fail for this feature.`,
       )
+      continue
+    }
+
+    // Try to resolve per-feature provider config (for API mode)
+    try {
+      const providerConfig = resolveFeatureProvider(feature)
+      if (providerConfig) {
+        const maskedKey = providerConfig.apiKey.slice(0, 8) + '...'
+        const baseUrlInfo = providerConfig.baseUrl ? `, url: ${providerConfig.baseUrl}` : ''
+        configLines.push(
+          `  ${feature}: ${model} via ${providerConfig.providerType} (key: ${maskedKey}${baseUrlInfo})`,
+        )
+      } else {
+        configLines.push(`  ${feature}: ${model} (no API provider — SDK only)`)
+      }
+    } catch {
+      configLines.push(`  ${feature}: ${model} (provider config error)`)
     }
   }
-  if (modelLines.length > 0) {
-    log.info('ai', `Resolved models:\n${modelLines.join('\n')}`)
+  if (configLines.length > 0) {
+    log.info('ai', `Feature configs:\n${configLines.join('\n')}`)
   }
 }
 
@@ -148,6 +169,8 @@ export interface AIQueryOptions {
   timeoutMs?: number
   /** Override provider for this call. If not set, uses server default. */
   provider?: AIProvider
+  /** Per-feature provider config (API key, base URL). Passed to API providers. */
+  providerConfig?: FeatureProviderConfig
 }
 
 export interface AIQueryResult {
@@ -221,6 +244,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
     timeoutMs: perCallTimeout,
   } = options
 
+  const resolvedModel = resolveModelId(model)
   const startTime = Date.now()
   const timeoutMs = resolveQueryTimeout(perCallTimeout)
 
@@ -239,7 +263,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       // running inside a bundled Next.js standalone app (where the SDK's
       // default resolution finds the wrong cli.js).
       const queryOptions: Options = {
-        model: model,
+        model: resolvedModel,
         maxTurns,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -260,7 +284,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       let structuredOutput: Record<string, unknown> | null = null
       let textResult: string | null = null
 
-      log.debug('ai', `[sdk] ${action} starting (model: ${model}, timeout: ${timeoutMs}ms)`)
+      log.debug('ai', `[sdk] ${action} starting (model: ${resolvedModel}, timeout: ${timeoutMs}ms)`)
 
       // Wrap the SDK query in a timeout to prevent hanging subprocesses.
       // The AbortController is passed to the SDK options to kill the subprocess.
@@ -310,13 +334,13 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         status: hasOutput ? 'success' : 'error',
         input: inputText ?? null,
         output: structuredOutput ? JSON.stringify(structuredOutput) : textResult,
-        model: model,
+        model: resolvedModel,
         duration_ms: durationMs,
         error: hasOutput ? null : 'Subprocess completed but returned no output',
         provider: 'sdk',
       })
 
-      log.info('ai', `[sdk] ${action} completed in ${durationMs}ms (model: ${model})`)
+      log.info('ai', `[sdk] ${action} completed in ${durationMs}ms (model: ${resolvedModel})`)
 
       return {
         structuredOutput,
@@ -332,7 +356,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       taskId,
       action,
       inputText,
-      model,
+      model: resolvedModel,
       provider: 'sdk',
     })
   }

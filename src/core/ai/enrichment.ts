@@ -40,7 +40,7 @@ import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
-import { getApiProvider } from './provider'
+import { resolveFeatureAIConfig } from './models'
 import { getUserFeatureModes } from './user-context'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
@@ -502,10 +502,22 @@ Parse the task above and return the structured result.`
   }
 
   const queryOptions = { userId: row.user_id, taskId: row.id, inputText: textToEnrich }
-  const result =
-    modes.enrichment === 'sdk'
-      ? await enrichmentQuery(prompt, queryOptions)
-      : await enrichmentApiQuery(prompt, { ...queryOptions, provider: getApiProvider() })
+  let result: {
+    structuredOutput: Record<string, unknown> | null
+    text: string | null
+    durationMs: number
+  }
+  if (modes.enrichment === 'sdk') {
+    result = await enrichmentQuery(prompt, queryOptions)
+  } else {
+    const config = resolveFeatureAIConfig('enrichment', modes.enrichment)
+    result = await enrichmentApiQuery(prompt, {
+      ...queryOptions,
+      providerConfig: config.providerConfig,
+      model: config.model,
+      provider: config.provider,
+    })
+  }
 
   // Parse and validate the enrichment result
   let parsed: EnrichmentResult | null = null

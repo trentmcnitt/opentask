@@ -20,8 +20,7 @@ import { INSIGHTS_SYSTEM_PROMPT, INSIGHTS_REMINDERS } from './prompts'
 import { formatTaskLine, getScheduleBlock } from './format'
 import { InsightsBatchResultSchema } from './types'
 import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
-import { getApiProvider, type AIProvider } from './provider'
-import { requireFeatureModel } from './models'
+import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
 import { log } from '@/lib/logger'
 
 const INSIGHTS_JSON_SCHEMA = z.toJSONSchema(InsightsBatchResultSchema) as Record<string, unknown>
@@ -258,7 +257,7 @@ export async function generateInsightsForUser(
   tasks: TaskSummary[],
   userContext?: string | null,
   source?: 'scheduled' | 'on-demand',
-  provider?: AIProvider,
+  aiConfig?: FeatureAIConfig,
 ): Promise<void> {
   const sessionId = uuid()
   const now = nowUtc()
@@ -270,7 +269,7 @@ export async function generateInsightsForUser(
   ).run(sessionId, userId, tasks.length, now)
 
   try {
-    await processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, provider)
+    await processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig)
   } catch (err) {
     log.error('ai', 'Insights generation failed:', err)
     db.prepare(
@@ -293,7 +292,7 @@ export function startInsightsGeneration(
   tasks: TaskSummary[],
   userContext?: string | null,
   source?: 'scheduled' | 'on-demand',
-  provider?: AIProvider,
+  aiConfig?: FeatureAIConfig,
 ): { sessionId: string; totalTasks: number; singleCall: boolean; startedAt: string } {
   const sessionId = uuid()
   const now = nowUtc()
@@ -307,7 +306,7 @@ export function startInsightsGeneration(
   ).run(sessionId, userId, tasks.length, now)
 
   // Start processing in background (fire-and-forget)
-  processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, provider).catch(
+  processInsightsChunks(sessionId, userId, timezone, tasks, userContext, source, aiConfig).catch(
     (err) => {
       log.error('ai', 'Insights generation failed:', err)
       db.prepare(
@@ -334,7 +333,7 @@ async function processInsightsChunks(
   tasks: TaskSummary[],
   userContext?: string | null,
   source?: 'scheduled' | 'on-demand',
-  provider?: AIProvider,
+  aiConfig?: FeatureAIConfig,
 ): Promise<void> {
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
@@ -363,7 +362,8 @@ async function processInsightsChunks(
   }
 
   let processedCount = 0
-  const effectiveProvider = provider ?? getApiProvider()
+  const config = aiConfig ?? resolveFeatureAIConfig('insights', 'api')
+  const { provider: effectiveProvider, providerConfig, model: insightsModel } = config
 
   for (let ci = 0; ci < chunks.length; ci++) {
     const chunk = chunks[ci]
@@ -399,7 +399,6 @@ Score every task above. Return a JSON array with one entry per task.`
         : `chunk ${ci + 1}/${chunks.length} (${chunk.length} tasks)`
 
     try {
-      const insightsModel = requireFeatureModel('insights', effectiveProvider)
       const result = await aiQuery({
         prompt,
         outputSchema: INSIGHTS_JSON_SCHEMA,
@@ -412,6 +411,7 @@ Score every task above. Return a JSON array with one entry per task.`
         inputText: inputLabel,
         timeoutMs: INSIGHTS_TIMEOUT_MS,
         provider: effectiveProvider,
+        providerConfig,
       })
 
       const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {

@@ -9,7 +9,7 @@
  * - No subprocess overhead (faster for simple queries)
  * - Stateless HTTP calls (no warm slot machinery needed)
  *
- * Requires ANTHROPIC_API_KEY environment variable.
+ * Supports per-feature API keys via FeatureProviderConfig.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
@@ -19,13 +19,15 @@ import { resolveModelId } from './provider'
 import { handleQueryError, resolveQueryTimeout } from './sdk'
 import type { AIQueryOptions, AIQueryResult } from './sdk'
 
-let client: Anthropic | null = null
+/** Cache of Anthropic clients keyed by API key. */
+const clients = new Map<string, Anthropic>()
 
-function getClient(): Anthropic {
+function getClient(apiKey?: string): Anthropic {
+  const key = apiKey || process.env.ANTHROPIC_API_KEY || ''
+  let client = clients.get(key)
   if (!client) {
-    client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
+    client = new Anthropic({ apiKey: key || undefined })
+    clients.set(key, client)
   }
   return client
 }
@@ -48,6 +50,7 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
     action,
     inputText,
     timeoutMs: perCallTimeout,
+    providerConfig,
   } = options
 
   const resolvedModel = resolveModelId(model)
@@ -56,7 +59,7 @@ export async function apiQuery(options: AIQueryOptions): Promise<AIQueryResult> 
   let timedOut = false
 
   try {
-    const anthropic = getClient()
+    const anthropic = getClient(providerConfig?.apiKey)
 
     // Build the create params
     const createParams: Anthropic.MessageCreateParamsNonStreaming = {

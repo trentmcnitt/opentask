@@ -15,9 +15,13 @@ import {
   handleError,
 } from '@/lib/api-response'
 import { isAIEnabled, aiQuery } from '@/core/ai/sdk'
-import { getFeatureInfo, AI_FEATURES, type AIFeature } from '@/core/ai/models'
+import {
+  getFeatureInfo,
+  resolveFeatureAIConfig,
+  AI_FEATURES,
+  type AIFeature,
+} from '@/core/ai/models'
 import { getUserFeatureModes } from '@/core/ai/user-context'
-import { resolveModelId } from '@/core/ai/provider'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 
@@ -53,18 +57,19 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       )
     }
 
-    // Resolve model ID for Anthropic API (SDK and OpenAI pass through as-is)
-    const resolvedModel = info.provider === 'anthropic' ? resolveModelId(info.model) : info.model
+    // Get per-feature provider config for the test call
+    const aiConfig = resolveFeatureAIConfig(featureKey, mode)
 
     const result = await aiQuery({
       prompt: 'Reply with exactly: ok',
-      model: resolvedModel,
+      model: aiConfig.model,
       maxTurns: 1,
       timeoutMs: 15_000,
       userId: user.id,
       action: 'test',
       inputText: `Test: ${feature}`,
-      provider: info.provider === 'sdk' ? undefined : info.provider,
+      provider: aiConfig.provider,
+      providerConfig: aiConfig.providerConfig,
     })
 
     return success({

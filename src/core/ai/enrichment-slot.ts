@@ -38,7 +38,7 @@ function getMaxReuses(): number {
 }
 
 function getModel(): string {
-  return requireFeatureModel('enrichment', 'sdk')
+  return requireFeatureModel('enrichment')
 }
 
 function getQueryTimeout(): number {

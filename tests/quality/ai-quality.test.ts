@@ -1141,14 +1141,9 @@ function getTestProvider(): 'sdk' | 'anthropic' | 'openai' {
 
 function getModelForFeature(feature: string): string {
   // Quality tests use the centralized model resolution from models.ts.
-  // Provider comes from OPENTASK_AI_PROVIDER env var (default: 'sdk').
-  const provider = getTestProvider()
   const validFeatures = ['enrichment', 'quick_take', 'whats_next', 'insights']
   if (validFeatures.includes(feature)) {
-    return requireFeatureModel(
-      feature as 'enrichment' | 'quick_take' | 'whats_next' | 'insights',
-      provider,
-    )
+    return requireFeatureModel(feature as 'enrichment' | 'quick_take' | 'whats_next' | 'insights')
   }
-  return requireFeatureModel('enrichment', provider)
+  return requireFeatureModel('enrichment')
 }

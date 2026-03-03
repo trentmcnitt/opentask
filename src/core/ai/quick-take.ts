@@ -23,9 +23,8 @@ import { getTasks } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { isAIEnabled, aiQuery } from './sdk'
 import { quickTakeSlotQuery } from './quick-take-slot'
-import { getApiProvider } from './provider'
+import { resolveFeatureAIConfig } from './models'
 import { getUserFeatureModes } from './user-context'
-import { requireFeatureModel } from './models'
 import { log } from '@/lib/logger'
 
 const PRIORITY_LABELS: Record<number, string> = {
@@ -600,8 +599,8 @@ export async function generateQuickTake(
     if (modes.quick_take === 'off') return null
 
     const { text: compactTaskList, count, stats, tasks } = buildFromDb(userId, timezone)
-    const provider = modes.quick_take === 'sdk' ? ('sdk' as const) : getApiProvider()
-    const model = requireFeatureModel('quick_take', provider)
+    const config = resolveFeatureAIConfig('quick_take', modes.quick_take)
+    const { provider, model } = config
 
     // SDK mode: try warm slot first for low latency
     if (modes.quick_take === 'sdk') {
@@ -650,6 +649,7 @@ export async function generateQuickTake(
       action: 'quick_take',
       inputText: newTaskTitle,
       provider,
+      providerConfig: config.providerConfig,
     })
 
     if (!result.success || !result.textResult) {

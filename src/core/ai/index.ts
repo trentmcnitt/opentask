@@ -6,11 +6,21 @@ export {
   isAnthropicAvailable,
   isOpenAIAvailable,
   getServerDefaultProvider,
-  getApiProvider,
   resolveModelId,
 } from './provider'
-export { resolveFeatureModel, requireFeatureModel } from './models'
-export type { AIFeature } from './models'
+export {
+  resolveFeatureModel,
+  requireFeatureModel,
+  resolveFeatureProvider,
+  resolveFeatureAIConfig,
+  isAnyApiProviderAvailable,
+} from './models'
+export type {
+  AIFeature,
+  FeatureProviderConfig,
+  FeatureProviderType,
+  FeatureAIConfig,
+} from './models'
 export { processEnrichmentQueue, enrichSingleTask, getEnrichmentPipelineStatus } from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'

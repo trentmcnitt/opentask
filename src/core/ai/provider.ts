@@ -91,31 +91,14 @@ export function getServerDefaultProvider(): AIProvider {
   return 'sdk'
 }
 
-/**
- * Resolve the admin-configured API provider (Anthropic or OpenAI).
- * Used when a feature's mode is 'api' to determine which HTTP backend to call.
- *
- * Reads OPENTASK_AI_PROVIDER env var, then auto-detects from available API keys.
- * Throws if no API provider is available.
- */
-export function getApiProvider(): AIProvider {
-  const explicit = process.env.OPENTASK_AI_PROVIDER
-  if (explicit === 'anthropic' || explicit === 'openai') return explicit
-  if (isAnthropicAvailable()) return 'anthropic'
-  if (isOpenAIAvailable()) return 'openai'
-  throw new Error(
-    'No API provider configured. Set OPENTASK_AI_PROVIDER, ANTHROPIC_API_KEY, or OPENAI_API_KEY.',
-  )
-}
-
 // --- Model name resolution (Anthropic-specific) ---
 
 /**
- * Map short model names (used by SDK and env vars) to full Anthropic API model IDs.
+ * Map short model names to full Anthropic API model IDs.
  *
- * The SDK accepts short names like 'haiku' and resolves them internally.
- * The Anthropic Messages API requires full model IDs. This mapping bridges
- * the two. Dated snapshot IDs are used for reproducibility.
+ * Applied by all providers (SDK and API) before making API calls.
+ * Short names may appear in env var overrides or legacy DB values.
+ * Dated snapshot IDs are used for reproducibility.
  *
  * Not used by the OpenAI provider — it passes model strings through as-is.
  */

@@ -37,7 +37,7 @@ function getMaxReuses(): number {
 }
 
 function getModel(): string {
-  return requireFeatureModel('quick_take', 'sdk')
+  return requireFeatureModel('quick_take')
 }
 
 function getQueryTimeout(): number {
