@@ -3,6 +3,16 @@
 import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -110,6 +120,35 @@ function buildEnrichmentToast(
   return `AI enriched: ${changes.join(', ')}`
 }
 
+function DiscardConfirmDialog({
+  open,
+  onOpenChange,
+  onDiscard,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDiscard: () => void
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Discard new task?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved changes that will be lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={onDiscard}>
+            Discard
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 interface CreateTaskPanelProps {
   open: boolean
   onClose: () => void
@@ -129,6 +168,7 @@ export function CreateTaskPanel({
   const timezone = useTimezone()
   const isMobile = useIsMobile()
   const [isPanelDirty, setIsPanelDirty] = useState(false)
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -194,9 +234,15 @@ export function CreateTaskPanel({
 
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
-      if (!newOpen) onClose()
+      if (!newOpen) {
+        if (isPanelDirty) {
+          setShowDiscardConfirm(true)
+        } else {
+          onClose()
+        }
+      }
     },
-    [onClose],
+    [onClose, isPanelDirty],
   )
 
   const panel = (
@@ -222,29 +268,48 @@ export function CreateTaskPanel({
     </div>
   )
 
+  const handleDiscard = useCallback(() => {
+    setShowDiscardConfirm(false)
+    onClose()
+  }, [onClose])
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
-          <VisuallyHidden>
-            <SheetTitle>New Task</SheetTitle>
-            <SheetDescription>Create a new task</SheetDescription>
-          </VisuallyHidden>
-          <div className="px-4 pb-2">{panel}</div>
-        </SheetContent>
-      </Sheet>
+      <>
+        <Sheet open={open} onOpenChange={handleOpenChange}>
+          <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
+            <VisuallyHidden>
+              <SheetTitle>New Task</SheetTitle>
+              <SheetDescription>Create a new task</SheetDescription>
+            </VisuallyHidden>
+            <div className="px-4 pb-2">{panel}</div>
+          </SheetContent>
+        </Sheet>
+        <DiscardConfirmDialog
+          open={showDiscardConfirm}
+          onOpenChange={setShowDiscardConfirm}
+          onDiscard={handleDiscard}
+        />
+      </>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
-        <VisuallyHidden>
-          <DialogTitle>New Task</DialogTitle>
-          <DialogDescription>Create a new task</DialogDescription>
-        </VisuallyHidden>
-        <div className="min-w-0">{panel}</div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="w-[28rem] max-w-[calc(100%-2rem)] p-4" showCloseButton={false}>
+          <VisuallyHidden>
+            <DialogTitle>New Task</DialogTitle>
+            <DialogDescription>Create a new task</DialogDescription>
+          </VisuallyHidden>
+          <div className="min-w-0">{panel}</div>
+        </DialogContent>
+      </Dialog>
+      <DiscardConfirmDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        onDiscard={handleDiscard}
+      />
+    </>
   )
 }
