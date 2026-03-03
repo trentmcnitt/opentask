@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes'
 import { SessionProvider } from '@/components/SessionProvider'
 import { PreferencesProvider } from '@/components/PreferencesProvider'
 import { ProjectsProvider } from '@/components/ProjectsProvider'
+import { NavigationGuardProvider } from '@/components/NavigationGuardProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -44,8 +45,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SessionProvider>
             <PreferencesProvider>
               <ProjectsProvider>
-                <AppLayoutWrapper>{children}</AppLayoutWrapper>
-                <Toaster position="bottom-center" />
+                <NavigationGuardProvider>
+                  <AppLayoutWrapper>{children}</AppLayoutWrapper>
+                  <Toaster position="bottom-center" />
+                </NavigationGuardProvider>
               </ProjectsProvider>
             </PreferencesProvider>
           </SessionProvider>

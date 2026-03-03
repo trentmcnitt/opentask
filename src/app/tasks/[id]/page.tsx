@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from 'next/link'
 import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
 import { Button } from '@/components/ui/button'
@@ -25,6 +24,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Task, Project } from '@/types'
+import { GuardedLink } from '@/components/GuardedLink'
+import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { showToast } from '@/lib/toast'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
@@ -47,27 +48,35 @@ export default function TaskDetailPage() {
   const { annotationMap } = useAiInsights(taskArray)
   const insightsData = useInsightsData(taskArray)
 
-  // Track dirty state from QuickActionPanel for navigation protection
-  const [isDirty, setIsDirty] = useState(false)
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
+  // Navigation guard: bridge dirty state to the app-level navigation guard context
+  // so sidebar/bottom tab links show a confirmation dialog before navigating away.
+  const { setDirty, pendingNavigation, requestNavigation, clearPendingNavigation } =
+    useNavigationGuard()
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
 
-  const handleDirtyChange = useCallback((dirty: boolean) => {
-    setIsDirty(dirty)
-  }, [])
+  const handleDirtyChange = useCallback(
+    (dirty: boolean) => {
+      setDirty(dirty)
+    },
+    [setDirty],
+  )
+
+  // Clean up guard registration on unmount
+  useEffect(() => {
+    return () => setDirty(false)
+  }, [setDirty])
 
   const handleBackClick = useCallback(() => {
-    if (isDirty) {
-      setShowLeaveConfirm(true)
-    } else {
+    if (requestNavigation('/')) {
       router.push('/')
     }
-  }, [isDirty, router])
+  }, [requestNavigation, router])
 
   const handleConfirmLeave = useCallback(() => {
-    setShowLeaveConfirm(false)
-    router.push('/')
-  }, [router])
+    const href = pendingNavigation ?? '/'
+    clearPendingNavigation()
+    router.push(href)
+  }, [pendingNavigation, clearPendingNavigation, router])
 
   // Use a ref to access the shared undo handler in the save-and-leave callback,
   // since actions is created after this callback in the hook order.
@@ -89,12 +98,13 @@ export default function TaskDetailPage() {
       })
     } catch {
       showToast({ message: 'Save failed', type: 'error' })
-      setShowLeaveConfirm(false)
+      clearPendingNavigation()
       return
     }
-    setShowLeaveConfirm(false)
-    router.push('/')
-  }, [router])
+    const href = pendingNavigation ?? '/'
+    clearPendingNavigation()
+    router.push(href)
+  }, [pendingNavigation, clearPendingNavigation, router])
 
   const fetchTask = useCallback(async () => {
     try {
@@ -243,10 +253,10 @@ export default function TaskDetailPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
-                  <Link href="/settings">
+                  <GuardedLink href="/settings">
                     <Settings className="size-4" />
                     Settings
-                  </Link>
+                  </GuardedLink>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -269,8 +279,13 @@ export default function TaskDetailPage() {
           />
         </main>
 
-        {/* Unsaved changes confirmation dialog */}
-        <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+        {/* Unsaved changes confirmation dialog — shown when navigation is attempted while dirty */}
+        <AlertDialog
+          open={pendingNavigation !== null}
+          onOpenChange={(open) => {
+            if (!open) clearPendingNavigation()
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>

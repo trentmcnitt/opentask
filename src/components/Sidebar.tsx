@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -35,7 +35,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             const Icon = item.icon
 
             return (
-              <Link
+              <GuardedLink
                 key={item.href}
                 href={item.href}
                 className={cn(
@@ -47,7 +47,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               >
                 <Icon className="size-4" />
                 {item.label}
-              </Link>
+              </GuardedLink>
             )
           })}
         </div>
@@ -77,7 +77,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
           const Icon = item.icon
 
           return (
-            <Link
+            <GuardedLink
               key={item.href}
               href={item.href}
               className={cn(
@@ -89,7 +89,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             >
               <Icon className="size-4" />
               {item.label}
-            </Link>
+            </GuardedLink>
           )
         })}
       </div>

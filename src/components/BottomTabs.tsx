@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Archive, Plus, Clock, Settings } from 'lucide-react'
 
@@ -45,7 +45,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
           }
 
           return (
-            <Link
+            <GuardedLink
               key={tab.label}
               href={tab.href}
               aria-label={tab.label}
@@ -55,7 +55,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
             >
               <Icon className="h-5 w-5" />
               <span className="mt-0.5 text-[10px]">{tab.label}</span>
-            </Link>
+            </GuardedLink>
           )
         })}
       </div>
