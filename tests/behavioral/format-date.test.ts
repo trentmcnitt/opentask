@@ -143,10 +143,34 @@ describe('formatOriginalDueAt', () => {
     expect(result).toBeNull()
   })
 
-  test('within 7 days shows weekday', () => {
+  test('today shows time instead of day name', () => {
+    vi.setSystemTime(new Date('2025-02-05T17:00:00Z')) // Wednesday 11:00 AM CST
+    const result = formatOriginalDueAt('2025-02-05T15:00:00Z', TZ) // 9:00 AM CST same day
+    expect(result).toBe('snoozed from 9:00 AM')
+  })
+
+  test('yesterday shows "yesterday" with time', () => {
     vi.setSystemTime(new Date('2025-02-05T12:00:00Z')) // Wednesday
-    const result = formatOriginalDueAt('2025-02-03T12:00:00Z', TZ) // Monday
-    expect(result).toBe('snoozed from Mon')
+    const result = formatOriginalDueAt('2025-02-04T15:00:00Z', TZ) // Tuesday 9:00 AM CST
+    expect(result).toBe('snoozed from yesterday 9:00 AM')
+  })
+
+  test('2 days ago shows weekday with time', () => {
+    vi.setSystemTime(new Date('2025-02-05T12:00:00Z')) // Wednesday
+    const result = formatOriginalDueAt('2025-02-03T15:00:00Z', TZ) // Monday 9:00 AM CST (2 days ago)
+    expect(result).toBe('snoozed from Mon 9:00 AM')
+  })
+
+  test('exactly 6 calendar days still shows weekday with time', () => {
+    vi.setSystemTime(new Date('2025-02-07T12:00:00Z')) // Friday
+    const result = formatOriginalDueAt('2025-02-01T15:00:00Z', TZ) // Saturday 9:00 AM CST (6 days ago)
+    expect(result).toBe('snoozed from Sat 9:00 AM')
+  })
+
+  test('exactly 7 calendar days uses date not day name', () => {
+    vi.setSystemTime(new Date('2025-02-07T12:00:00Z')) // Friday
+    const result = formatOriginalDueAt('2025-01-31T15:00:00Z', TZ) // Previous Friday (7 days)
+    expect(result).toBe('snoozed from Jan 31')
   })
 
   test('older than 7 days shows month and day', () => {

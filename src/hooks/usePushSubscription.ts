@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface UsePushSubscriptionResult {
   isSupported: boolean
   permission: NotificationPermission | 'unsupported'
   isSubscribed: boolean
   isLoading: boolean
+  isServerConfigured: boolean | null
   subscribe: () => Promise<void>
   unsubscribe: () => Promise<void>
 }
@@ -18,6 +19,8 @@ export function usePushSubscription(): UsePushSubscriptionResult {
   )
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [isServerConfigured, setIsServerConfigured] = useState<boolean | null>(null)
+  const vapidPublicKeyRef = useRef<string | null>(null)
 
   // Check support and current subscription state on mount
   useEffect(() => {
@@ -31,6 +34,17 @@ export function usePushSubscription(): UsePushSubscriptionResult {
 
       setIsSupported(true)
       setPermission(Notification.permission)
+
+      try {
+        const keyRes = await fetch('/api/push/vapid-key')
+        const keyData = await keyRes.json()
+        setIsServerConfigured(keyData.data?.configured ?? false)
+        if (keyData.data?.publicKey) {
+          vapidPublicKeyRef.current = keyData.data.publicKey
+        }
+      } catch {
+        setIsServerConfigured(false)
+      }
 
       try {
         const registration = await navigator.serviceWorker.ready
@@ -54,10 +68,13 @@ export function usePushSubscription(): UsePushSubscriptionResult {
         return
       }
 
-      // Fetch the VAPID public key from the server
-      const keyRes = await fetch('/api/push/vapid-key')
-      const keyData = await keyRes.json()
-      const vapidPublicKey = keyData.data?.publicKey
+      // Use cached VAPID public key from mount check, or fetch if not available
+      let vapidPublicKey = vapidPublicKeyRef.current
+      if (!vapidPublicKey) {
+        const keyRes = await fetch('/api/push/vapid-key')
+        const keyData = await keyRes.json()
+        vapidPublicKey = keyData.data?.publicKey
+      }
       if (!vapidPublicKey) {
         throw new Error('VAPID public key not configured on server')
       }
@@ -108,7 +125,15 @@ export function usePushSubscription(): UsePushSubscriptionResult {
     }
   }, [])
 
-  return { isSupported, permission, isSubscribed, isLoading, subscribe, unsubscribe }
+  return {
+    isSupported,
+    permission,
+    isSubscribed,
+    isLoading,
+    isServerConfigured,
+    subscribe,
+    unsubscribe,
+  }
 }
 
 // Convert VAPID public key from base64 URL to Uint8Array for pushManager.subscribe()

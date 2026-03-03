@@ -70,9 +70,10 @@ self.addEventListener('push', (event) => {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       const hasFocusedClient = windowClients.some((c) => c.visibilityState === 'visible')
 
-      if (hasFocusedClient) {
+      if (hasFocusedClient && !data.test) {
         // App is open and visible — skip the notification.
         // Having a visible client satisfies the browser's push event requirement.
+        // Test notifications (data.test=true) bypass this so the user sees them immediately.
         return
       }
 

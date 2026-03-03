@@ -24,6 +24,11 @@ services:
       # - OPENTASK_INIT_EMAIL=admin@example.com
       # Set AUTH_URL to your public URL when using a reverse proxy
       # - AUTH_URL=https://tasks.example.com
+      # Web Push: VAPID keys are auto-generated on first start if not provided.
+      # To use your own keys (generated with: npx web-push generate-vapid-keys):
+      # - VAPID_PUBLIC_KEY=
+      # - VAPID_PRIVATE_KEY=
+      # - VAPID_EMAIL=mailto:you@example.com
       # Optional: enable AI features (requires Claude Code on the host)
       # - OPENTASK_AI_ENABLED=true
     restart: unless-stopped

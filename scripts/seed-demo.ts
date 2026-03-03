@@ -11,7 +11,7 @@
  * Usage: npm run db:seed-demo
  *
  * The seedDemoUser() function is also used by reset-demo-user.ts
- * to rebuild demo data on a daily cron.
+ * to rebuild demo data on a cron (every 4 hours).
  */
 
 import bcrypt from 'bcrypt'
@@ -63,44 +63,46 @@ interface DemoTaskDef {
 function getDemoTasks(): DemoTaskDef[] {
   const TRY_IT_TASKS: DemoTaskDef[] = [
     {
-      title:
-        "Try adding a task — type 'Set up weekly standup every Monday at 10am' in the box above",
+      title: 'Swipe right to complete this task',
+      project: 'Try It',
+      dueOffset: 0,
+      hour: 8,
+      createdDaysAgo: 0,
+    },
+    {
+      title: 'Swipe left to snooze this task',
+      project: 'Try It',
+      dueOffset: 0,
+      hour: 8,
+      createdDaysAgo: 0,
+    },
+    {
+      title: 'Tap this task to edit it',
       project: 'Try It',
       noDue: true,
-      createdDaysAgo: 3,
+      createdDaysAgo: 0,
+    },
+    {
+      title: 'Long-press a task to select and bulk-edit',
+      project: 'Try It',
+      noDue: true,
+      createdDaysAgo: 0,
+    },
+    {
+      title: 'Tap chips at the top of the Dashboard to easily filter tasks',
+      project: 'Try It',
+      noDue: true,
+      createdDaysAgo: 0,
       notes:
-        'OpenTask uses AI to parse natural language into structured tasks. Try it yourself — type or paste the text above and watch the AI enrich it.',
+        'Tap "Inbox" to only show that project, "Medium" to only show medium priority tasks, etc.',
     },
     {
-      title:
-        "Try voice input — tap the microphone icon and say 'Review deployment pipeline Friday afternoon medium priority'",
+      title: "Add a task — try 'Weekly standup every Monday at 10am'",
       project: 'Try It',
       noDue: true,
-      createdDaysAgo: 3,
-      notes: 'Works with Siri, dictation, or just typing. The AI handles the rest.',
-    },
-    {
-      title: 'Learn about OpenTask',
-      project: 'Try It',
-      noDue: true,
-      createdDaysAgo: 3,
-      notes: [
-        'Swipe right on a task to snooze, left to complete',
-        'Long-press a task for quick actions (priority, snooze presets)',
-        'Bulk select: tap the circle on any task, then use the action bar',
-        '"What\'s Next" — AI surfaces tasks you might be overlooking',
-        'Recurring tasks with natural language ("every weekday at 9am")',
-        'Works on iOS, Apple Watch, and as a PWA on any device',
-        'Built with Claude Code + Claude Agent SDK',
-      ].join('\n'),
-    },
-    {
-      title: 'Try completing this task — swipe right or tap the circle',
-      project: 'Try It',
-      dueOffset: -1,
-      hour: 15,
-      createdDaysAgo: 2,
-      notes: 'This task is intentionally overdue so you can practice completing it.',
+      createdDaysAgo: 0,
+      notes:
+        'Type or paste the text above into the task input. The AI parses natural language into structured tasks with due dates, recurrence, and priority.',
     },
   ]
 
@@ -110,13 +112,13 @@ function getDemoTasks(): DemoTaskDef[] {
       project: 'Personal',
       rrule: RRulePatterns.weekly([MON, THU], 7, 0),
       dueOffset: daysUntilWeekday([1, 4]), // next Mon or Thu, always future
-      createdDaysAgo: 10,
+      createdDaysAgo: 0,
     },
     {
       title: 'Try that new ramen place on 5th',
       project: 'Personal',
       noDue: true,
-      createdDaysAgo: 5,
+      createdDaysAgo: 0,
     },
     {
       title: 'Cancel that free trial before it charges',
@@ -124,7 +126,7 @@ function getDemoTasks(): DemoTaskDef[] {
       dueOffset: 2,
       hour: 20,
       priority: MED,
-      createdDaysAgo: 6,
+      createdDaysAgo: 0,
     },
     {
       title: 'Plan camping trip for Memorial Day weekend',
@@ -132,7 +134,7 @@ function getDemoTasks(): DemoTaskDef[] {
       dueOffset: 5,
       hour: 18,
       priority: LOW,
-      createdDaysAgo: 3,
+      createdDaysAgo: 0,
       notes: 'Check if the state park near the lake has open sites. Need to reserve soon.',
     },
   ]
@@ -144,17 +146,14 @@ function getDemoTasks(): DemoTaskDef[] {
       dueOffset: 1,
       hour: 10,
       priority: HIGH,
-      createdDaysAgo: 4,
+      createdDaysAgo: 0,
     },
     {
-      // The ONE old task — triggers the `stale` signal in AI Insights (requires 21+ days),
-      // giving the feature something meaningful to showcase. Use 22 to avoid edge cases
-      // where Math.floor on the age rounds down to 20 depending on time of day.
       title: 'Draft project scope for RAG pipeline integration',
       project: 'Client Work',
       noDue: true,
       priority: LOW,
-      createdDaysAgo: 22,
+      createdDaysAgo: 0,
       notes:
         'Vector database evaluation needed — Pinecone vs pgvector. Client processing ~50K docs. Start with proof of concept on a smaller subset.',
     },
@@ -164,7 +163,7 @@ function getDemoTasks(): DemoTaskDef[] {
       rrule: RRulePatterns.weekly([MON, THU], 10, 0),
       dueOffset: daysUntilWeekday([1, 4]), // next Mon or Thu, always future
       priority: LOW,
-      createdDaysAgo: 7,
+      createdDaysAgo: 0,
     },
   ]
 
@@ -173,7 +172,7 @@ function getDemoTasks(): DemoTaskDef[] {
       title: 'Welcome to OpenTask — explore the demo!',
       project: 'Inbox',
       noDue: true,
-      createdDaysAgo: 3,
+      createdDaysAgo: 0,
       notes:
         'OpenTask is an open-source, self-hosted task manager. Check out the README on GitHub for setup instructions and documentation.',
     },
@@ -186,7 +185,7 @@ function getDemoTasks(): DemoTaskDef[] {
       done: true,
       dueOffset: -1,
       hour: 16,
-      createdDaysAgo: 5,
+      createdDaysAgo: 1,
     },
     {
       title: 'Book flights for conference',
@@ -194,7 +193,7 @@ function getDemoTasks(): DemoTaskDef[] {
       done: true,
       dueOffset: -3,
       hour: 12,
-      createdDaysAgo: 10,
+      createdDaysAgo: 3,
     },
     {
       title: 'Set up home office monitor arm',
@@ -202,7 +201,7 @@ function getDemoTasks(): DemoTaskDef[] {
       done: true,
       dueOffset: -5,
       hour: 18,
-      createdDaysAgo: 12,
+      createdDaysAgo: 5,
     },
   ]
 
@@ -212,14 +211,14 @@ function getDemoTasks(): DemoTaskDef[] {
       project: 'Personal',
       deleted: true,
       noDue: true,
-      createdDaysAgo: 15,
+      createdDaysAgo: 0,
     },
     {
       title: 'Sign up for pottery class',
       project: 'Personal',
       deleted: true,
       noDue: true,
-      createdDaysAgo: 9,
+      createdDaysAgo: 0,
     },
   ]
 
@@ -281,7 +280,8 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
     const doneAt = task.done ? dueAt : null
     const archivedAt = task.done ? dueAt : null
     const deletedAt = task.deleted ? now : null
-    const createdAt = localToUtcIso(-(task.createdDaysAgo ?? 3), 10, 0)
+    const daysAgo = task.createdDaysAgo ?? 3
+    const createdAt = daysAgo === 0 ? now : localToUtcIso(-daysAgo, 10, 0)
 
     insertTask.run(
       userId,

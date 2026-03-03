@@ -42,7 +42,7 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
     for (const snapshot of entry.snapshots) {
       applyFieldsToTask(snapshot.task_id, snapshot.before_state, entry.fieldsChanged)
 
-      // If this was a recurring task completion, delete the completion record
+      // If this was a task completion, delete the completion record
       if (snapshot.completion_id) {
         tx.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
       }

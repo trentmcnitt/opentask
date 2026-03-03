@@ -701,14 +701,18 @@ interface MetaSegment {
 function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
   const segments: MetaSegment[] = []
 
+  const isSnoozed = task.original_due_at !== null && task.original_due_at !== task.due_at
+
   if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone)
+    // Snoozed tasks show the new due time in blue (overdue red wins)
+    const snoozedClass = isSnoozed ? 'text-blue-400' : undefined
     segments.push({
       text: dueParts.relative,
-      className: isOverdue ? 'text-destructive font-medium' : undefined,
+      className: isOverdue ? 'text-destructive font-medium' : snoozedClass,
     })
     if (dueParts.absolute) {
-      segments.push({ text: dueParts.absolute })
+      segments.push({ text: dueParts.absolute, className: isOverdue ? undefined : snoozedClass })
     }
   }
 
@@ -717,10 +721,10 @@ function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): M
   }
 
   // Show "snoozed from" when the due date has drifted from the original
-  if (task.original_due_at && task.original_due_at !== task.due_at) {
+  if (isSnoozed && task.original_due_at) {
     const text = formatOriginalDueAt(task.original_due_at, timezone)
     if (text) {
-      segments.push({ text, className: 'text-blue-400' })
+      segments.push({ text, className: 'text-muted-foreground/60' })
     }
   }
 

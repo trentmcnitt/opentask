@@ -19,6 +19,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       title: 'OpenTask',
       body: 'Test push notification — tap to open OpenTask',
       data: { url: APP_URL },
+      test: true,
     })
 
     return success({ sent: true })

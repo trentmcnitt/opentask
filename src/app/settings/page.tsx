@@ -589,9 +589,9 @@ export default function SettingsPage() {
           </h2>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <div className="text-sm">Notifications</div>
+              <div className="text-sm">Task reminders</div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                Send push notifications for overdue tasks
+                Send notifications when tasks become overdue
               </div>
             </div>
             <Switch
@@ -695,30 +695,35 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          {/* Browser Push */}
+          {/* Web Push */}
           <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-800">
             <h3 className="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Browser Push
+              Web Push
             </h3>
             {!push.isSupported ? (
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Push notifications are not supported in this browser. On iOS, add the app to your
-                home screen first.
+                Web push notifications are not supported in this browser. On iOS, add the app to
+                your home screen first.
+              </p>
+            ) : push.isServerConfigured === false ? (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Web push notifications are not configured on this server. The server administrator
+                needs to set up VAPID keys.
               </p>
             ) : push.permission === 'denied' ? (
               <p className="text-xs text-red-600 dark:text-red-400">
-                Push notifications are blocked. Reset the permission in your browser settings to
+                Web push notifications are blocked. Reset the permission in your browser settings to
                 enable them.
               </p>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm">Push notifications</div>
+                    <div className="text-sm">Web push notifications</div>
                     <div className="text-xs text-zinc-500 dark:text-zinc-400">
                       {push.isSubscribed
-                        ? 'Receiving push notifications on this device'
-                        : 'Enable browser push notifications'}
+                        ? 'This browser will receive push notifications'
+                        : 'Enable push notifications in this browser'}
                     </div>
                   </div>
                   <Switch
@@ -728,16 +733,25 @@ export default function SettingsPage() {
                       try {
                         if (checked) {
                           await push.subscribe()
-                          showToast({ message: 'Push notifications enabled', type: 'success' })
+                          showToast({
+                            message: 'Web push enabled for this browser',
+                            type: 'success',
+                          })
                         } else {
                           await push.unsubscribe()
-                          showToast({ message: 'Push notifications disabled', type: 'success' })
+                          showToast({
+                            message: 'Web push disabled for this browser',
+                            type: 'success',
+                          })
                         }
                       } catch {
-                        showToast({ message: 'Failed to update push subscription', type: 'error' })
+                        showToast({
+                          message: 'Failed to update web push subscription',
+                          type: 'error',
+                        })
                       }
                     }}
-                    aria-label="Toggle push notifications"
+                    aria-label="Toggle web push notifications"
                   />
                 </div>
                 {push.isSubscribed && (
@@ -771,7 +785,8 @@ export default function SettingsPage() {
               Test Notifications
             </h3>
             <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Send a test notification to verify your endpoints are configured correctly.
+              Creates a real test task and sends notifications to all channels (web push and iOS)
+              after a 3-second delay. Each button tests a different priority level.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -1099,11 +1114,6 @@ export default function SettingsPage() {
               Help the AI understand your situation. This context is included in all AI features
               (enrichment, what&apos;s next, insights) to improve relevance.
             </p>
-            {isDemo && (
-              <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
-                AI settings are view-only in demo mode.
-              </p>
-            )}
             <Textarea
               value={aiContextDraft}
               onChange={(e) => setAiContextDraft(e.target.value)}
@@ -1188,6 +1198,11 @@ export default function SettingsPage() {
                 />
               ))}
             </div>
+            {isDemo && (
+              <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+                AI settings are view-only in demo mode.
+              </p>
+            )}
           </section>
         )}
 

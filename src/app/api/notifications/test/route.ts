@@ -114,6 +114,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
               title,
               body: 'Test notification — tap an action to test cross-device dismiss',
               data: { url: `${APP_URL}/?task=${taskId}`, taskId },
+              test: true,
             }),
           )
         }

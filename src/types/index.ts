@@ -127,7 +127,7 @@ export interface UndoSnapshot {
   task_id: number
   before_state: Partial<Task>
   after_state: Partial<Task>
-  completion_id?: number // For recurring task done - tracks the completion record to delete on undo
+  completion_id?: number // Tracks the completion record to delete on undo
 }
 
 // API input types — canonical definitions live in @/core/validation/task (Zod schemas)
