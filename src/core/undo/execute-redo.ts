@@ -40,7 +40,7 @@ export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
     for (const snapshot of entry.snapshots) {
       applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
 
-      // If this was a recurring task completion, recreate the completion record
+      // If this was a task completion, recreate the completion record
       if (snapshot.completion_id) {
         const afterState = snapshot.after_state as Partial<Task> & {
           _completion?: {

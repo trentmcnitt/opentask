@@ -287,15 +287,35 @@ export function formatOriginalDueAt(isoUtc: string, timezone: string): string | 
   // Only render if original_due_at is in the past
   if (snoozedDate > now) return null
 
-  const diffMs = now.getTime() - snoozedDate.getTime()
-  const diffDays = diffMs / (24 * 60 * 60 * 1000)
+  const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(timezone)
+  const time = formatTimeInZone(snoozedDate, timezone)
 
-  if (diffDays <= 7) {
+  // Today — show time instead of day name (avoids "snoozed from Tue" when today is Tue)
+  if (snoozedDate >= todayStart) {
+    return `snoozed from ${time}`
+  }
+
+  // Yesterday
+  if (snoozedDate >= yesterdayStart) {
+    return `snoozed from yesterday ${time}`
+  }
+
+  // Use calendar-day math (timezone-aware) to decide between day name and date.
+  // Day names are only unambiguous within 6 calendar days — e.g., if today is Friday,
+  // "Sat" (6 days ago) clearly means last Saturday, but "Fri" (7 days ago) is ambiguous
+  // with today.
+  const snoozedDateStr = snoozedDate.toLocaleDateString('en-US', { timeZone: timezone })
+  const todayStr = now.toLocaleDateString('en-US', { timeZone: timezone })
+  const calendarDays = Math.round(
+    (new Date(todayStr).getTime() - new Date(snoozedDateStr).getTime()) / (24 * 60 * 60 * 1000),
+  )
+
+  if (calendarDays <= 6) {
     const dayName = snoozedDate.toLocaleDateString('en-US', {
       timeZone: timezone,
       weekday: 'short',
     })
-    return `snoozed from ${dayName}`
+    return `snoozed from ${dayName} ${time}`
   }
 
   const dateStr = snoozedDate.toLocaleDateString('en-US', {

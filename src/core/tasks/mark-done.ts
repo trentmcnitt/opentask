@@ -134,7 +134,7 @@ export function markUndone(options: MarkDoneOptions): Task {
     throw new ForbiddenError('Access denied')
   }
 
-  // Cannot undone a recurring task (use undo instead)
+  // Cannot mark a recurring task undone (use undo instead)
   if (isRecurring(task.rrule)) {
     throw new ValidationError('Cannot mark recurring task undone - use undo instead')
   }
@@ -146,36 +146,70 @@ export function markUndone(options: MarkDoneOptions): Task {
 
   const nowStr = nowUtc()
 
+  // Compute restored completion stats
+  const restoredCount = Math.max(0, task.completion_count - 1)
+  const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
+  const restoredLastCompleted = restoredCount === 0 ? null : task.last_completed_at
+
+  const fieldsChanged = [
+    'done',
+    'done_at',
+    'archived_at',
+    'completion_count',
+    'first_completed_at',
+    'last_completed_at',
+  ]
+
   // Execute update and undo log in a transaction
   const updatedTask = withTransaction((tx) => {
-    // Update task: clear done, done_at, archived_at
+    // Update task: clear done, done_at, archived_at, restore completion stats
     tx.prepare(
       `
       UPDATE tasks
-      SET done = 0, done_at = NULL, archived_at = NULL, updated_at = ?
+      SET done = 0, done_at = NULL, archived_at = NULL,
+          completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+          updated_at = ?
       WHERE id = ?
     `,
-    ).run(nowStr, taskId)
+    ).run(restoredCount, restoredFirstCompleted, restoredLastCompleted, nowStr, taskId)
 
-    // Log to undo
+    // Delete the completion record created when the task was marked done
+    tx.prepare(
+      `DELETE FROM completions WHERE id = (
+        SELECT id FROM completions WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1
+      )`,
+    ).run(taskId, userId)
+
     const snapshot = createTaskSnapshot(
-      { id: taskId, done: true, done_at: task.done_at, archived_at: task.archived_at },
-      { id: taskId, done: false, done_at: null, archived_at: null },
-      ['done', 'done_at', 'archived_at'],
+      {
+        id: taskId,
+        title: task.title,
+        done: true,
+        done_at: task.done_at,
+        archived_at: task.archived_at,
+        completion_count: task.completion_count,
+        first_completed_at: task.first_completed_at,
+        last_completed_at: task.last_completed_at,
+      },
+      {
+        id: taskId,
+        title: task.title,
+        done: false,
+        done_at: null,
+        archived_at: null,
+        completion_count: restoredCount,
+        first_completed_at: restoredFirstCompleted,
+        last_completed_at: restoredLastCompleted,
+      },
+      fieldsChanged,
     )
-    logAction(
-      userId,
-      'undone',
-      `Reopened "${task.title}"`,
-      ['done', 'done_at', 'archived_at'],
-      [snapshot],
-    )
+    logAction(userId, 'undone', `Reopened "${task.title}"`, fieldsChanged, [snapshot])
 
     logActivity({
       userId,
       taskId,
       action: 'uncomplete',
-      fields: ['done', 'done_at', 'archived_at'],
+      fields: fieldsChanged,
       before: snapshot.before_state,
       after: snapshot.after_state,
     })

@@ -78,8 +78,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     setClauses: [],
     values: [],
     fieldsChanged: [],
-    beforeState: { id: task.id },
-    afterState: { id: task.id },
+    beforeState: { id: task.id, title: task.title },
+    afterState: { id: task.id, title: task.title },
     isSnoozeScenario: false,
   }
 

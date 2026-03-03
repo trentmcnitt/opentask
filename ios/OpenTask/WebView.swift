@@ -77,6 +77,7 @@ struct WebView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = true
+        webView.allowsLinkPreview = false
         webView.navigationDelegate = context.coordinator
 
         // Pull-to-refresh

@@ -427,9 +427,13 @@ describe('Activity Log', () => {
       expect(Object.keys(before)).toContain('priority')
       expect(Object.keys(after)).toContain('priority')
 
-      // Should NOT include unchanged fields like title or due_at
-      expect(before.title).toBeUndefined()
-      expect(after.title).toBeUndefined()
+      // title is always included as metadata for activity display
+      expect(before.title).toBe('Focused diff')
+      expect(after.title).toBe('Focused diff')
+
+      // Other unchanged fields like due_at should NOT be included
+      expect(before.due_at).toBeUndefined()
+      expect(after.due_at).toBeUndefined()
     })
 
     test('snooze via due_at edit uses snooze action, not edit', () => {

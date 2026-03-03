@@ -15,6 +15,7 @@ interface PushPayload {
   body: string
   data?: { url?: string; taskId?: number }
   tag?: string
+  test?: boolean
 }
 
 interface PushSubscriptionRow {

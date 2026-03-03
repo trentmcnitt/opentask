@@ -54,8 +54,8 @@ export function deleteTask(options: DeleteTaskOptions): Task {
 
     // Log to undo
     const snapshot = createTaskSnapshot(
-      { id: taskId, deleted_at: null },
-      { id: taskId, deleted_at: now },
+      { id: taskId, title: task.title, deleted_at: null },
+      { id: taskId, title: task.title, deleted_at: now },
       ['deleted_at'],
     )
     logAction(userId, 'delete', `Deleted "${task.title}"`, ['deleted_at'], [snapshot])
@@ -114,8 +114,8 @@ export function restoreTask(options: RestoreTaskOptions): Task {
 
     // Log to undo
     const snapshot = createTaskSnapshot(
-      { id: taskId, deleted_at: task.deleted_at },
-      { id: taskId, deleted_at: null },
+      { id: taskId, title: task.title, deleted_at: task.deleted_at },
+      { id: taskId, title: task.title, deleted_at: null },
       ['deleted_at'],
     )
     logAction(userId, 'restore', `Restored "${task.title}"`, ['deleted_at'], [snapshot])

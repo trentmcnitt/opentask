@@ -58,6 +58,12 @@ export function createSnapshot(
 ): Partial<Task> {
   const snapshot: Partial<Task> = { id: task.id }
 
+  // Always include title for activity display. This is safe because undo/redo
+  // uses fieldsChanged (not snapshot keys) to determine which fields to restore.
+  if ('title' in task && task.title !== undefined) {
+    snapshot.title = task.title
+  }
+
   for (const field of fieldsChanged) {
     if (field in task) {
       ;(snapshot as Record<string, unknown>)[field] = (task as Record<string, unknown>)[field]
