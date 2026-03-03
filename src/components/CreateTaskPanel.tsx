@@ -140,7 +140,7 @@ function DiscardConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep Editing</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onDiscard}>
+          <AlertDialogAction variant="outline" onClick={onDiscard}>
             Discard
           </AlertDialogAction>
         </AlertDialogFooter>
