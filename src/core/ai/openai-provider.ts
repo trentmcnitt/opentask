@@ -2,12 +2,10 @@
  * OpenAI-compatible API provider
  *
  * Direct HTTP calls via the openai npm SDK.
- * Supports OpenAI, OpenRouter, Ollama, Together, Groq, and any
- * provider implementing the OpenAI chat completions API.
+ * Supports OpenAI, OpenRouter, Ollama, Together, Groq, xAI, Google Gemini,
+ * and any provider implementing the OpenAI chat completions API.
  *
- * Requires OPENAI_API_KEY environment variable.
- * Optional OPENAI_BASE_URL for non-OpenAI endpoints (default: https://api.openai.com/v1).
- * Optional OPENAI_MODEL for default model selection (default: gpt-4o-mini).
+ * Supports per-feature API keys and base URLs via FeatureProviderConfig.
  */
 
 import OpenAI from 'openai'
@@ -16,20 +14,25 @@ import { logAIActivity } from './activity'
 import { handleQueryError, resolveQueryTimeout } from './sdk'
 import type { AIQueryOptions, AIQueryResult } from './sdk'
 
-let client: OpenAI | null = null
+/** Cache of OpenAI clients keyed by "apiKey:baseUrl". */
+const clients = new Map<string, OpenAI>()
 
-function getClient(): OpenAI {
+function getClient(apiKey?: string, baseUrl?: string): OpenAI {
+  const effectiveKey = apiKey || process.env.OPENAI_API_KEY || ''
+  const effectiveBase = baseUrl || process.env.OPENAI_BASE_URL || ''
+  const cacheKey = `${effectiveKey}:${effectiveBase}`
+
+  let client = clients.get(cacheKey)
   if (!client) {
-    const apiKey = process.env.OPENAI_API_KEY
-    const baseURL = process.env.OPENAI_BASE_URL
     log.debug(
       'ai',
-      `[openai] creating client (key: ${apiKey ? apiKey.slice(0, 8) + '...' : 'MISSING'}, baseURL: ${baseURL || 'default'})`,
+      `[openai] creating client (key: ${effectiveKey ? effectiveKey.slice(0, 8) + '...' : 'MISSING'}, baseURL: ${effectiveBase || 'default'})`,
     )
     client = new OpenAI({
-      apiKey,
-      ...(baseURL && { baseURL }),
+      apiKey: effectiveKey || undefined,
+      ...(effectiveBase && { baseURL: effectiveBase }),
     })
+    clients.set(cacheKey, client)
   }
   return client
 }
@@ -59,6 +62,7 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
     action,
     inputText,
     timeoutMs: perCallTimeout,
+    providerConfig,
   } = options
 
   const startTime = Date.now()
@@ -66,7 +70,7 @@ export async function openaiQuery(options: AIQueryOptions): Promise<AIQueryResul
   let timedOut = false
 
   try {
-    const openai = getClient()
+    const openai = getClient(providerConfig?.apiKey, providerConfig?.baseUrl)
 
     // Build messages array
     const messages: OpenAI.ChatCompletionMessageParam[] = []

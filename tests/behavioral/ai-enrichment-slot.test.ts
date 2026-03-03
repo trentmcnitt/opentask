@@ -10,6 +10,9 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createFakeStream, makeSuccessResult, makeErrorResult } from '../helpers/fake-sdk-stream'
 import type { FakeStreamControl } from '../helpers/fake-sdk-stream'
 
+// Set model env var so requireFeatureModel() works (no real API calls are made)
+process.env.OPENTASK_AI_ENRICHMENT_MODEL = 'test-model'
+
 // --- Mocks ---
 
 vi.mock('@/lib/logger', () => ({

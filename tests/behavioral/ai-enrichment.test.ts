@@ -17,8 +17,10 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
 
-// Set a provider so getApiProvider() doesn't throw in tests (no real API calls are made)
+// Set provider and models so resolveFeatureAIConfig() works in tests (no real API calls are made)
 process.env.OPENTASK_AI_PROVIDER = 'anthropic'
+process.env.ANTHROPIC_API_KEY = 'test-key'
+process.env.OPENTASK_AI_ENRICHMENT_MODEL = 'test-model'
 
 // Mock isAIEnabled to return true for these tests
 vi.mock('@/core/ai/sdk', () => ({

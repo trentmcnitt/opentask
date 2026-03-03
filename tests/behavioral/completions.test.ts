@@ -661,6 +661,83 @@ describe('Completions', () => {
     })
   })
 
+  describe('CM-008b: Redo bulk done recreates all completion records', () => {
+    test('redoing a bulk done recreates completion records with correct data', () => {
+      const task1 = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Bulk redo 1', due_at: localTime(8, 0) },
+      })
+      const task2 = createTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        input: { title: 'Bulk redo 2', due_at: localTime(9, 0) },
+      })
+
+      bulkDone({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskIds: [task1.id, task2.id],
+      })
+
+      expect(getAllCompletions()).toHaveLength(2)
+
+      // Capture completion data for comparison after redo
+      const comp1 = getCompletions(task1.id)[0]
+      const comp2 = getCompletions(task2.id)[0]
+
+      // Undo the bulk done
+      executeUndo(TEST_USER_ID)
+      expect(getAllCompletions()).toHaveLength(0)
+
+      // Redo the bulk done
+      const result = executeRedo(TEST_USER_ID)
+      expect(result).not.toBeNull()
+      expect(result!.redone_action).toBe('bulk_done')
+      expect(result!.tasks_affected).toBe(2)
+
+      // Completion records should be recreated with matching data
+      expect(getAllCompletions()).toHaveLength(2)
+
+      const redoneComp1 = getCompletions(task1.id)[0]
+      const redoneComp2 = getCompletions(task2.id)[0]
+      expect(redoneComp1.id).toBe(comp1.id)
+      expect(redoneComp1.completed_at).toBe(comp1.completed_at)
+      expect(redoneComp1.due_at_was).toBe(comp1.due_at_was)
+      expect(redoneComp1.due_at_next).toBeNull()
+      expect(redoneComp2.id).toBe(comp2.id)
+      expect(redoneComp2.completed_at).toBe(comp2.completed_at)
+      expect(redoneComp2.due_at_was).toBe(comp2.due_at_was)
+      expect(redoneComp2.due_at_next).toBeNull()
+
+      // Tasks should be done and archived again
+      const t1 = getDb()
+        .prepare('SELECT done, done_at, archived_at, completion_count FROM tasks WHERE id = ?')
+        .get(task1.id) as {
+        done: number
+        done_at: string | null
+        archived_at: string | null
+        completion_count: number
+      }
+      const t2 = getDb()
+        .prepare('SELECT done, done_at, archived_at, completion_count FROM tasks WHERE id = ?')
+        .get(task2.id) as {
+        done: number
+        done_at: string | null
+        archived_at: string | null
+        completion_count: number
+      }
+      expect(t1.done).toBe(1)
+      expect(t1.done_at).not.toBeNull()
+      expect(t1.archived_at).not.toBeNull()
+      expect(t1.completion_count).toBe(1)
+      expect(t2.done).toBe(1)
+      expect(t2.done_at).not.toBeNull()
+      expect(t2.archived_at).not.toBeNull()
+      expect(t2.completion_count).toBe(1)
+    })
+  })
+
   describe('CM-009: emptyTrash cleans up completion records', () => {
     test('emptyTrash deletes completion records for trashed tasks', () => {
       const task = createTask({

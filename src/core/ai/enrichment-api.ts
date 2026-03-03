@@ -11,7 +11,7 @@ import { aiQuery } from './sdk'
 import type { AIProvider } from './provider'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
 import { EnrichmentResultSchema } from './types'
-import { requireFeatureModel } from './models'
+import type { FeatureProviderConfig } from './models'
 import { z } from 'zod'
 
 /** Pre-computed JSON schema for enrichment output (EnrichmentResultSchema is static). */
@@ -31,6 +31,8 @@ export async function enrichmentApiQuery(
     inputText?: string
     timeoutMs?: number
     provider?: AIProvider
+    providerConfig?: FeatureProviderConfig
+    model?: string
   },
 ): Promise<{
   structuredOutput: Record<string, unknown> | null
@@ -38,7 +40,10 @@ export async function enrichmentApiQuery(
   durationMs: number
 }> {
   const provider = options?.provider ?? 'anthropic'
-  const model = requireFeatureModel('enrichment', provider)
+  const model = options?.model
+  if (!model) {
+    throw new Error('No model configured for enrichment. Set OPENTASK_AI_ENRICHMENT_MODEL.')
+  }
 
   const result = await aiQuery({
     prompt,
@@ -52,6 +57,7 @@ export async function enrichmentApiQuery(
     inputText: options?.inputText,
     timeoutMs: options?.timeoutMs,
     provider,
+    providerConfig: options?.providerConfig,
   })
 
   return {

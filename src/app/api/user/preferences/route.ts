@@ -10,8 +10,8 @@ import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, forbidden, badRequest, handleError } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { isAIEnabled } from '@/core/ai/sdk'
-import { isSdkAvailableSync, getApiProvider } from '@/core/ai/provider'
-import { getFeatureInfo } from '@/core/ai/models'
+import { isSdkAvailableSync } from '@/core/ai/provider'
+import { getFeatureInfo, isAnyApiProviderAvailable } from '@/core/ai/models'
 import type { FeatureMode } from '@/core/ai/user-context'
 import { LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
@@ -454,14 +454,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
     ai_insights_score_chips: row.ai_insights_score_chips !== 0,
     ai_sdk_available: isSdkAvailableSync(),
-    ai_api_available: (() => {
-      try {
-        getApiProvider()
-        return true
-      } catch {
-        return false
-      }
-    })(),
+    ai_api_available: isAnyApiProviderAvailable(),
     ai_feature_info: {
       enrichment: getFeatureInfo('enrichment', row.ai_enrichment_mode as FeatureMode),
       quick_take: getFeatureInfo('quick_take', row.ai_quicktake_mode as FeatureMode),

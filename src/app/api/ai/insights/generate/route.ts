@@ -13,7 +13,7 @@ import {
   buildTaskSummaries,
   startInsightsGeneration,
   getActiveInsightsSession,
-  getApiProvider,
+  resolveFeatureAIConfig,
 } from '@/core/ai'
 import { getUserFeatureModes } from '@/core/ai/user-context'
 import {
@@ -60,14 +60,14 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     const aiContext = getUserAiContext(user.id)
-    const provider = modes.insights === 'sdk' ? ('sdk' as const) : getApiProvider()
+    const aiConfig = resolveFeatureAIConfig('insights', modes.insights)
     const { sessionId, totalTasks, singleCall, startedAt } = startInsightsGeneration(
       user.id,
       user.timezone,
       tasks,
       aiContext,
       'on-demand',
-      provider,
+      aiConfig,
     )
 
     return success({

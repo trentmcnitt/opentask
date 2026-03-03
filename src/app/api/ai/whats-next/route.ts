@@ -7,7 +7,7 @@ import {
   getCachedWhatsNext,
   buildTaskSummaries,
   getUserAiContext,
-  getApiProvider,
+  resolveFeatureAIConfig,
 } from '@/core/ai'
 import { getUserFeatureModes } from '@/core/ai/user-context'
 import { log } from '@/lib/logger'
@@ -40,13 +40,13 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // Generate fresh recommendations
     const taskSummaries = buildTaskSummaries(user.id)
     const aiContext = getUserAiContext(user.id)
-    const provider = modes.whats_next === 'sdk' ? ('sdk' as const) : getApiProvider()
+    const aiConfig = resolveFeatureAIConfig('whats_next', modes.whats_next)
     const result = await generateWhatsNext(
       user.id,
       user.timezone,
       taskSummaries,
       aiContext,
-      provider,
+      aiConfig,
       'on-demand',
     )
 
