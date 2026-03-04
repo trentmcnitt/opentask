@@ -354,7 +354,7 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
 async function runEnrichment(
   input: EnrichmentInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { ENRICHMENT_SYSTEM_PROMPT } = await import('@/core/ai/prompts')
+  const { ENRICHMENT_SYSTEM_PROMPT, ENRICHMENT_REMINDERS } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
   const { EnrichmentResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
@@ -375,12 +375,24 @@ async function runEnrichment(
   const formattedWake = formatMorningTime(wakeTime)
   const formattedSleep = formatMorningTime(sleepTime)
 
-  const prompt = `${ENRICHMENT_SYSTEM_PROMPT}
+  const currentUtcTime = new Date().toISOString()
 
-## Context
+  // Compute explicit UTC offset to eliminate DST ambiguity (matches production)
+  const now = new Date()
+  const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' })
+  const localStr = now.toLocaleString('en-US', { timeZone: input.timezone })
+  const utcOffsetMinutes = (new Date(localStr).getTime() - new Date(utcStr).getTime()) / 60000
+  const offsetSign = utcOffsetMinutes >= 0 ? '+' : '-'
+  const absHours = Math.floor(Math.abs(utcOffsetMinutes) / 60)
+  const absMinutes = Math.abs(utcOffsetMinutes) % 60
+  const utcOffsetStr = `UTC${offsetSign}${absHours}${absMinutes > 0 ? `:${String(absMinutes).padStart(2, '0')}` : ''}`
 
-User's timezone: ${input.timezone}
-Current UTC time: ${new Date().toISOString()}
+  // Prompt matches production (enrichment.ts lines 466-504):
+  // system prompt passed separately, user prompt has context + <task> + reminders
+  const prompt = `## Context
+
+User's timezone: ${input.timezone} (currently ${utcOffsetStr})
+Current UTC time: ${currentUtcTime}
 
 User's schedule:
 - Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
@@ -397,17 +409,20 @@ When resolving time-of-day language:
 Available projects:
 ${projectList}${userContextBlock}
 
-## Task to parse
+<task>
+${input.text}
+</task>
 
-"${input.text}"
-
-Parse this task and return the structured result.`
+${ENRICHMENT_REMINDERS}
+User's timezone: ${input.timezone} (${utcOffsetStr}) | Current UTC time: ${currentUtcTime}
+Parse the task above and return the structured result.`
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
 
   const provider = getTestProvider()
   const result = await aiQuery({
     prompt,
+    systemPrompt: ENRICHMENT_SYSTEM_PROMPT,
     outputSchema: jsonSchema,
     model: getModelForFeature('enrichment'),
     maxTurns: 1,
