@@ -372,7 +372,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 }
 
 export function useLabelConfig() {
-  return useContext(PreferencesContext)
+  const { labelConfig, setLabelConfig } = useContext(PreferencesContext)
+  return { labelConfig, setLabelConfig }
 }
 
 export function usePriorityDisplay() {

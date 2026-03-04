@@ -127,7 +127,7 @@ export default function HistoryPage() {
   if (status === 'loading') {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="animate-pulse text-zinc-500">Loading...</div>
+        <div className="text-muted-foreground animate-pulse">Loading...</div>
       </div>
     )
   }
@@ -142,15 +142,15 @@ export default function HistoryPage() {
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
         {/* Tab bar */}
-        <div role="tablist" className="mb-6 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
+        <div role="tablist" className="bg-muted mb-6 flex gap-1 rounded-lg p-1">
           <button
             role="tab"
             aria-selected={tab === 'activity'}
             onClick={() => handleTabChange('activity')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'activity'
-                ? 'bg-white shadow-sm dark:bg-zinc-800'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                ? 'bg-background shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Activity
@@ -161,8 +161,8 @@ export default function HistoryPage() {
             onClick={() => handleTabChange('completions')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'completions'
-                ? 'bg-white shadow-sm dark:bg-zinc-800'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                ? 'bg-background shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Completions
@@ -173,8 +173,8 @@ export default function HistoryPage() {
             onClick={() => handleTabChange('ai')}
             className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
               tab === 'ai'
-                ? 'bg-white shadow-sm dark:bg-zinc-800'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                ? 'bg-background shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             AI
@@ -238,7 +238,7 @@ function CompletionsTab({
             d.setDate(d.getDate() - 1)
             setDate(d.toISOString().split('T')[0])
           }}
-          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          className="text-muted-foreground hover:bg-accent rounded-lg p-2"
           aria-label="Previous day"
         >
           &larr;
@@ -247,7 +247,7 @@ function CompletionsTab({
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+          className="border-border bg-background rounded-lg border px-3 py-1.5 text-sm"
         />
         <button
           onClick={() => {
@@ -255,7 +255,7 @@ function CompletionsTab({
             d.setDate(d.getDate() + 1)
             setDate(d.toISOString().split('T')[0])
           }}
-          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          className="text-muted-foreground hover:bg-accent rounded-lg p-2"
           aria-label="Next day"
         >
           &rarr;
@@ -263,20 +263,17 @@ function CompletionsTab({
       </div>
 
       {loading ? (
-        <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+        <div className="text-muted-foreground animate-pulse py-8 text-center">Loading...</div>
       ) : completions.length === 0 ? (
-        <p className="py-8 text-center text-zinc-400">No completions for this date.</p>
+        <p className="text-muted-foreground py-8 text-center">No completions for this date.</p>
       ) : (
         <div className="space-y-2">
           {completions.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
-            >
+            <div key={c.id} className="border-border flex items-center gap-3 rounded-lg border p-3">
               <span className="text-green-500">&#x2713;</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{c.task_title}</p>
-                <p className="text-xs text-zinc-400">
+                <p className="text-muted-foreground text-xs">
                   {new Date(c.completed_at).toLocaleTimeString('en-US', {
                     timeZone: timezone,
                     hour: 'numeric',
@@ -737,9 +734,9 @@ function ActivityTab({
   return (
     <div>
       {loading ? (
-        <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+        <div className="text-muted-foreground animate-pulse py-8 text-center">Loading...</div>
       ) : activities.length === 0 ? (
-        <p className="py-8 text-center text-zinc-400">No activity recorded.</p>
+        <p className="text-muted-foreground py-8 text-center">No activity recorded.</p>
       ) : (
         <div>
           {activities.map((a, i) => {
@@ -749,11 +746,11 @@ function ActivityTab({
                 {/* Time-ago pill: shows how long ago the entries below occurred */}
                 {showSep && (
                   <div className="flex items-end gap-2 pt-1.5 pb-4">
-                    <div className="h-1.5 flex-1 rounded-bl-md border-b border-l border-zinc-200/60 dark:border-zinc-700/60" />
-                    <span className="translate-y-[5px] text-[11px] leading-none text-zinc-400/70">
+                    <div className="border-border/60 h-1.5 flex-1 rounded-bl-md border-b border-l" />
+                    <span className="text-muted-foreground/70 translate-y-[5px] text-[11px] leading-none">
                       {formatTimeAgoLabel(activities[i - 1], now, timezone)}
                     </span>
-                    <div className="h-1.5 flex-1 rounded-br-md border-r border-b border-zinc-200/60 dark:border-zinc-700/60" />
+                    <div className="border-border/60 h-1.5 flex-1 rounded-br-md border-r border-b" />
                   </div>
                 )}
                 <div className={i > 0 && !showSep ? 'mt-2' : ''}>
@@ -805,9 +802,9 @@ function ExpandableActivityItem({
   return (
     <div
       className={cn(
-        'rounded-lg border border-zinc-200 dark:border-zinc-800',
+        'border-border rounded-lg border',
         activity.undone && 'border-l-4 border-l-amber-300 dark:border-l-amber-600',
-        hasDetails && 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+        hasDetails && 'hover:bg-accent/50',
       )}
     >
       {/* Header - always visible, clickable if has details */}
@@ -823,9 +820,9 @@ function ExpandableActivityItem({
         >
           {hasDetails ? (
             expanded ? (
-              <ChevronDown className="size-4 flex-shrink-0 text-zinc-400" />
+              <ChevronDown className="text-muted-foreground size-4 flex-shrink-0" />
             ) : (
-              <ChevronRight className="size-4 flex-shrink-0 text-zinc-400" />
+              <ChevronRight className="text-muted-foreground size-4 flex-shrink-0" />
             )
           ) : (
             <span className="size-4 flex-shrink-0" />
@@ -835,7 +832,7 @@ function ExpandableActivityItem({
             <p className={cn('text-sm font-medium', !expanded && 'truncate')}>
               {formatActivityDescription(activity, timezone)}
             </p>
-            <p className="text-xs text-zinc-400">
+            <p className="text-muted-foreground text-xs">
               {new Date(activity.created_at).toLocaleString('en-US', {
                 timeZone: timezone,
                 month: 'short',
@@ -876,7 +873,7 @@ function ExpandableActivityItem({
 
       {/* Expanded details */}
       {expanded && hasDetails && (
-        <div className="border-t border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <div className="border-border bg-muted/50 border-t p-3">
           <ActivityDetails activity={activity} timezone={timezone} />
         </div>
       )}
@@ -905,7 +902,7 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
       {/* Fields changed badges */}
       {displayFields.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-zinc-500">Changed:</span>
+          <span className="text-muted-foreground text-xs">Changed:</span>
           {displayFields.map((field) => (
             <Badge key={field} variant="secondary" className="text-xs">
               {formatFieldName(field)}
@@ -916,7 +913,7 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
 
       {/* For bulk operations, show affected task titles */}
       {isBulk && snapshot.length > 0 && (
-        <div className="text-xs text-zinc-500">
+        <div className="text-muted-foreground text-xs">
           <span className="font-medium">{snapshot.length} tasks:</span>{' '}
           {snapshot
             .slice(0, 5)
@@ -934,10 +931,8 @@ function ActivityDetails({ activity, timezone }: { activity: UndoEntry; timezone
             if (!detail) return null
             return (
               <div key={field} className="flex gap-2 text-xs">
-                <span className="font-medium text-zinc-600 dark:text-zinc-400">
-                  {formatFieldName(field)}:
-                </span>
-                <span className="text-zinc-500">{detail}</span>
+                <span className="text-muted-foreground font-medium">{formatFieldName(field)}:</span>
+                <span className="text-muted-foreground/80">{detail}</span>
               </div>
             )
           })}
@@ -1096,13 +1091,15 @@ function AITab({ timezone }: { timezone: string }) {
   }, [fetchStatus])
 
   if (loading) {
-    return <div className="animate-pulse py-8 text-center text-zinc-500">Loading...</div>
+    return <div className="text-muted-foreground animate-pulse py-8 text-center">Loading...</div>
   }
 
   if (error || !data) {
     return (
       <div className="py-8 text-center">
-        <p className="text-zinc-400">{error ? 'AI features are not available.' : 'No data.'}</p>
+        <p className="text-muted-foreground">
+          {error ? 'AI features are not available.' : 'No data.'}
+        </p>
         <Button variant="ghost" size="sm" onClick={handleRefresh} className="mt-2">
           Retry
         </Button>

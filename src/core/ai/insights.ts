@@ -12,7 +12,7 @@
 import { v4 as uuid } from 'uuid'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
-import { getDb } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
 import { nowUtc } from '@/core/recurrence'
 import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
@@ -362,6 +362,7 @@ async function processInsightsChunks(
   }
 
   let processedCount = 0
+  let failedTasks = 0
   const config = aiConfig ?? resolveFeatureAIConfig('insights', 'api')
   const { provider: effectiveProvider, providerConfig, model: insightsModel } = config
 
@@ -439,10 +440,12 @@ Score every task above. Return a JSON array with one entry per task.`
         processedCount += chunk.length
       } else {
         log.warn('ai', `Insights chunk ${ci + 1} failed to parse — skipping ${chunk.length} tasks`)
+        failedTasks += chunk.length
         processedCount += chunk.length
       }
     } catch (err) {
       log.error('ai', `Insights chunk ${ci + 1} error:`, err)
+      failedTasks += chunk.length
       processedCount += chunk.length
     }
 
@@ -451,6 +454,10 @@ Score every task above. Return a JSON array with one entry per task.`
       processedCount,
       sessionId,
     )
+  }
+
+  if (failedTasks > 0) {
+    log.warn('ai', `Insights generation: ${failedTasks}/${tasks.length} tasks failed to process`)
   }
 
   // Mark session complete. The AND status = 'running' guard ensures cleanup only
@@ -477,23 +484,24 @@ Score every task above. Return a JSON array with one entry per task.`
  * Store insights results for a batch (upsert).
  */
 function storeInsightsResults(userId: number, items: InsightsItem[]): void {
-  const db = getDb()
   const now = nowUtc()
 
-  const stmt = db.prepare(
-    `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id, task_id) DO UPDATE SET
-       score = excluded.score,
-       commentary = excluded.commentary,
-       signals = excluded.signals,
-       generated_at = excluded.generated_at`,
-  )
+  withTransaction((db) => {
+    const stmt = db.prepare(
+      `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, task_id) DO UPDATE SET
+         score = excluded.score,
+         commentary = excluded.commentary,
+         signals = excluded.signals,
+         generated_at = excluded.generated_at`,
+    )
 
-  for (const item of items) {
-    const signals = item.signals.length > 0 ? JSON.stringify(item.signals) : null
-    stmt.run(userId, item.task_id, item.score, item.commentary, signals, now)
-  }
+    for (const item of items) {
+      const signals = item.signals.length > 0 ? JSON.stringify(item.signals) : null
+      stmt.run(userId, item.task_id, item.score, item.commentary, signals, now)
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

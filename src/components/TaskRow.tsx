@@ -26,7 +26,11 @@ import { cn } from '@/lib/utils'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
-import { useLabelConfig, useSnoozePreferences } from '@/components/PreferencesProvider'
+import {
+  useLabelConfig,
+  usePriorityDisplay,
+  useSnoozePreferences,
+} from '@/components/PreferencesProvider'
 import { getLabelClasses, LABEL_COLORS } from '@/lib/label-colors'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
@@ -184,7 +188,8 @@ export function TaskRow({
   projectColor,
 }: TaskRowProps) {
   const timezone = useTimezone()
-  const { labelConfig, priorityDisplay } = useLabelConfig()
+  const { labelConfig } = useLabelConfig()
+  const { priorityDisplay } = usePriorityDisplay()
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
 

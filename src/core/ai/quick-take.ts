@@ -20,7 +20,7 @@
 
 import { DateTime } from 'luxon'
 import { getTasks } from '@/core/tasks'
-import { getDb } from '@/core/db'
+import { getProjectNameMap } from '@/core/projects'
 import { isAIEnabled, aiQuery } from './sdk'
 import { quickTakeSlotQuery } from './quick-take-slot'
 import { resolveFeatureAIConfig } from './models'
@@ -251,20 +251,9 @@ function buildFromDb(
     }
   }
 
-  // Bulk project name lookup (same pattern as buildTaskSummaries)
-  const db = getDb()
+  // Bulk project name lookup
   const projectIds = [...new Set(tasks.map((t) => t.project_id))]
-  const projectMap = new Map<number, string>()
-
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(', ')
-    const rows = db
-      .prepare(`SELECT id, name FROM projects WHERE id IN (${placeholders})`)
-      .all(...projectIds) as { id: number; name: string }[]
-    for (const row of rows) {
-      projectMap.set(row.id, row.name)
-    }
-  }
+  const projectMap = getProjectNameMap(projectIds)
 
   // Parse labels from JSON string (DB stores labels as JSON text)
   const withNames: QuickTakeTask[] = tasks.map((t) => {
