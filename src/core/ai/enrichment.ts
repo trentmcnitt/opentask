@@ -33,9 +33,8 @@ import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recur
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
-import { formatMorningTime } from '@/lib/snooze'
 import { isAIEnabled } from './sdk'
-import { ENRICHMENT_REMINDERS } from './prompts'
+import { buildEnrichmentUserPrompt } from './prompts'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
@@ -447,61 +446,19 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     )
     .all(user.id) as { id: number; name: string; shared: number }[]
 
-  const projectList = projects
-    .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
-    .join('\n')
-
   // Use original_title when available (preserves raw dictated input for re-enrichment).
   // Legacy tasks with null original_title fall back to current title.
   const textToEnrich = row.original_title || row.title
 
-  const userContextBlock = user.ai_context ? `\nUser context: ${user.ai_context}\n` : ''
-
-  const formattedMorning = formatMorningTime(user.morning_time)
-  const formattedWake = formatMorningTime(user.wake_time)
-  const formattedSleep = formatMorningTime(user.sleep_time)
-
-  const currentUtcTime = nowUtc()
-
-  // Compute local time and UTC offset so the model doesn't need to convert
-  const localNow = new Date().toLocaleString('en-US', {
-    timeZone: user.timezone,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
+  const prompt = buildEnrichmentUserPrompt({
+    timezone: user.timezone,
+    morningTime: user.morning_time,
+    wakeTime: user.wake_time,
+    sleepTime: user.sleep_time,
+    projects,
+    userContext: user.ai_context,
+    taskText: textToEnrich,
   })
-
-  const prompt = `## Context
-
-User's timezone: ${user.timezone}
-Current local time: ${localNow}
-Current UTC time: ${currentUtcTime}
-
-User's schedule:
-- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
-- Wakes up: ${formattedWake}
-- Goes to sleep: ${formattedSleep}
-
-When resolving time-of-day language:
-- "tomorrow" with no time specified → default task time (${formattedMorning})
-- "morning" → default task time (${formattedMorning})
-- "afternoon" → use your judgment, typically early afternoon
-- "evening" → use your judgment, typically early evening
-- "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
-
-Available projects:
-${projectList}${userContextBlock}
-
-<task>
-${textToEnrich}
-</task>
-
-${ENRICHMENT_REMINDERS}
-Current local time: ${localNow} | Current UTC time: ${currentUtcTime}
-Parse the task above and return the structured result.`
 
   const modes = getUserFeatureModes(row.user_id)
   if (modes.enrichment === 'off') {

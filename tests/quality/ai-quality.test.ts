@@ -354,70 +354,21 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
 async function runEnrichment(
   input: EnrichmentInput,
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
-  const { ENRICHMENT_SYSTEM_PROMPT, ENRICHMENT_REMINDERS } = await import('@/core/ai/prompts')
+  const { ENRICHMENT_SYSTEM_PROMPT, buildEnrichmentUserPrompt } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
   const { EnrichmentResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
-  const { formatMorningTime } = await import('@/lib/snooze')
   const { z } = await import('zod')
 
-  const projectList = input.projects
-    .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
-    .join('\n')
-
-  const userContextBlock = input.userContext ? `\nUser context: ${input.userContext}\n` : ''
-
-  // Use scenario-provided values or sensible defaults matching production
-  const morningTime = input.morningTime ?? '09:00'
-  const wakeTime = input.wakeTime ?? '07:00'
-  const sleepTime = input.sleepTime ?? '22:00'
-  const formattedMorning = formatMorningTime(morningTime)
-  const formattedWake = formatMorningTime(wakeTime)
-  const formattedSleep = formatMorningTime(sleepTime)
-
-  const currentUtcTime = new Date().toISOString()
-
-  // Compute local time so the model doesn't need to convert (matches production)
-  const localNow = new Date().toLocaleString('en-US', {
-    timeZone: input.timezone,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
+  const prompt = buildEnrichmentUserPrompt({
+    timezone: input.timezone,
+    morningTime: input.morningTime ?? '09:00',
+    wakeTime: input.wakeTime ?? '07:00',
+    sleepTime: input.sleepTime ?? '22:00',
+    projects: input.projects,
+    userContext: input.userContext,
+    taskText: input.text,
   })
-
-  // Prompt matches production (enrichment.ts):
-  // system prompt passed separately, user prompt has context + <task> + reminders
-  const prompt = `## Context
-
-User's timezone: ${input.timezone}
-Current local time: ${localNow}
-Current UTC time: ${currentUtcTime}
-
-User's schedule:
-- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
-- Wakes up: ${formattedWake}
-- Goes to sleep: ${formattedSleep}
-
-When resolving time-of-day language:
-- "tomorrow" with no time specified → default task time (${formattedMorning})
-- "morning" → default task time (${formattedMorning})
-- "afternoon" → use your judgment, typically early afternoon
-- "evening" → use your judgment, typically early evening
-- "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
-
-Available projects:
-${projectList}${userContextBlock}
-
-<task>
-${input.text}
-</task>
-
-${ENRICHMENT_REMINDERS}
-Current local time: ${localNow} | Current UTC time: ${currentUtcTime}
-Parse the task above and return the structured result.`
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
 

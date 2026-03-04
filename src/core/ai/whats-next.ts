@@ -24,6 +24,41 @@ import { DateTime } from 'luxon'
 const WHATS_NEXT_JSON_SCHEMA = z.toJSONSchema(WhatsNextResultSchema) as Record<string, unknown>
 
 /**
+ * Build the full What's Next prompt from structured parameters.
+ *
+ * Shared by production and dump-prompts so the template is defined once.
+ */
+export function buildWhatsNextFullPrompt(params: {
+  currentTime: string
+  totalTaskCount: number | string
+  taskList: string
+  scheduleBlock?: string
+  sourceBlock?: string
+  userContext?: string | null
+}): string {
+  const { currentTime, totalTaskCount, taskList, userContext } = params
+  const scheduleBlock = params.scheduleBlock ?? ''
+  const sourceBlock =
+    params.sourceBlock ??
+    '\nThe user is actively looking for what to do next. Focus on what is actionable right now.\n'
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  return `${WHATS_NEXT_SYSTEM_PROMPT}
+
+## Context
+
+Current time: ${currentTime}
+Total active tasks: ${totalTaskCount}${scheduleBlock}${sourceBlock}${userContextBlock}
+<tasks>
+${taskList}
+</tasks>
+
+${WHATS_NEXT_REMINDERS}
+Current time: ${currentTime}
+Surface 0-8 tasks and return the JSON result.`
+}
+
+/**
  * Generate What's Next recommendations for a user.
  *
  * Sends a summary of the user's active tasks to AI and returns
@@ -63,8 +98,6 @@ export async function generateWhatsNext(
 
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
 
-  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
-
   const scheduleBlock = getScheduleBlock(userId)
 
   const sourceBlock =
@@ -72,19 +105,14 @@ export async function generateWhatsNext(
       ? '\nThis is an automated briefing. Focus on what the user should have on their radar for the day ahead.\n'
       : '\nThe user is actively looking for what to do next. Focus on what is actionable right now.\n'
 
-  const prompt = `${WHATS_NEXT_SYSTEM_PROMPT}
-
-## Context
-
-Current time: ${currentTime}
-Total active tasks: ${tasks.length}${scheduleBlock}${sourceBlock}${userContextBlock}
-<tasks>
-${taskList}
-</tasks>
-
-${WHATS_NEXT_REMINDERS}
-Current time: ${currentTime}
-Surface 0-8 tasks and return the JSON result.`
+  const prompt = buildWhatsNextFullPrompt({
+    currentTime,
+    totalTaskCount: tasks.length,
+    taskList,
+    scheduleBlock,
+    sourceBlock,
+    userContext,
+  })
 
   const config = aiConfig ?? resolveFeatureAIConfig('whats_next', 'api')
   const { provider, providerConfig, model: whatsNextModel } = config

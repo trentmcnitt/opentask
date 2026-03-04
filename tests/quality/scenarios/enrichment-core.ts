@@ -34,7 +34,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should be unchanged or minimally cleaned. ' +
-        'May match Shopping List project given "Buy milk". ' +
+        'project_name should be null — no explicit project assignment in input. ' +
         'Labels must be an empty array — no explicit label request in input. ' +
         'No due date or recurrence should be inferred.',
     },
@@ -104,7 +104,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title should remove "urgent" and "right now" (extracted into priority/date). ' +
         'Something like "Fix the leak in the kitchen". ' +
         'due_at could be now/today given "right now". ' +
-        'Should match Home project. Labels must be an empty array — no explicit label request in input.',
+        'project_name should be null — no explicit project assignment. Labels must be an empty array — no explicit label request in input.',
     },
   },
   {
@@ -178,7 +178,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
   {
     id: 'enrich-shopping-context',
     feature: 'enrichment',
-    description: 'Shopping item with Shopping List project available',
+    description: 'Shopping item with Shopping List project available — no explicit assignment',
     input: {
       text: 'whole milk',
       timezone: 'America/Chicago',
@@ -190,12 +190,14 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
     requirements: {
       must_include: {
         priority: 0,
+        project_name: null,
         rrule: null,
         labels: [],
       },
       quality_notes:
         'Title should be "Whole milk" or unchanged. ' +
-        'project_name should be "Shopping List" (clear shopping context). ' +
+        'project_name MUST be null — Shopping List project exists but the user did not explicitly assign it. ' +
+        'Content-based project inference is forbidden. ' +
         'Labels must be an empty array — no explicit label request in input. ' +
         'No date or priority should be inferred.',
     },
@@ -299,7 +301,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Priority must be 2 (explicit "medium priority"). ' +
         'due_at should be end of the current month. ' +
         'notes MUST preserve: quote amount ($4,800), phone (847-555-0192). ' +
-        'Labels must be an empty array — no explicit label request in input. May match Home project.',
+        'Labels must be an empty array — no explicit label request in input. ' +
+        'project_name should be null — no explicit project assignment.',
     },
   },
   {
@@ -422,7 +425,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'auto_snooze_minutes must be exactly 0 (explicitly disabled, not null). ' +
         'priority must be 3 (high). ' +
         'rrule should be FREQ=WEEKLY;BYDAY=MO. ' +
-        'Labels must be an empty array — no explicit label request in input. May match Work project.',
+        'Labels must be an empty array — no explicit label request in input. ' +
+        'project_name should be null — no explicit project assignment.',
     },
   },
 
@@ -475,7 +479,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'recurrence_mode MUST be "from_completion" — "after I finish it" is explicit. ' +
         'auto_snooze_minutes must be 240 (4 hours). ' +
         'rrule should reflect 10-day interval. ' +
-        'Labels must be an empty array — no explicit label request in input. May match Home project.',
+        'Labels must be an empty array — no explicit label request in input. ' +
+        'project_name should be null — no explicit project assignment.',
     },
   },
   {
@@ -551,7 +556,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Submit the quarterly report" or similar (urgency phrase removed). ' +
         'Labels should be an empty array — no explicit label request in input. ' +
         'Priority should be 2-3 (importance signal without "urgent"/"critical" keyword — NOT 4). ' +
-        'due_at should be Wednesday EOD. May match Work project.',
+        'due_at should be Wednesday EOD. ' +
+        'project_name should be null — no explicit project assignment.',
     },
   },
   {
@@ -604,7 +610,8 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'recurrence_mode MUST be "from_completion" — "from the last time I actually did it". ' +
         'rrule should reflect 3-month interval. ' +
         'notes MUST preserve: model (AO Smith GCR-50), instructions. ' +
-        'Labels must be an empty array — no explicit label request in input. May match Home project.',
+        'Labels must be an empty array — no explicit label request in input. ' +
+        'project_name should be null — no explicit project assignment.',
     },
   },
   {
