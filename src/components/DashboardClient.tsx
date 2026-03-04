@@ -935,6 +935,19 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     }
   }, [overdueCount])
 
+  // Update PWA dock badge with overdue count (Badging API)
+  useEffect(() => {
+    if (!navigator.setAppBadge) return
+    if (overdueCount > 0) {
+      navigator.setAppBadge(overdueCount)
+    } else {
+      navigator.clearAppBadge()
+    }
+    return () => {
+      navigator.clearAppBadge?.()
+    }
+  }, [overdueCount])
+
   // Compute per-project today task counts for ProjectFilterBar
   const todayCounts = useMemo(() => {
     if (!timezone) return new Map<number, number>()
