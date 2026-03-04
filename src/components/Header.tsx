@@ -48,6 +48,7 @@ import {
 import { formatCompactSnoozeLabel } from '@/lib/snooze'
 import { AIStatusDot } from '@/components/AIStatusContent'
 import { AIStatusModal } from '@/components/AIStatusModal'
+import { GuardedLink } from '@/components/GuardedLink'
 
 interface HeaderProps {
   backHref?: string
@@ -396,10 +397,10 @@ export function Header({
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings">
+                  <GuardedLink href="/settings">
                     <Settings className="size-4" />
                     Settings
-                  </Link>
+                  </GuardedLink>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

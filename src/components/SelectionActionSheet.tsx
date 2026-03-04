@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
 import { QuickActionPanel } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -504,23 +505,12 @@ export function SelectionActionSheet({
         </Dialog>
       )}
 
-      <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-            <AlertDialogDescription>
-              You have unsaved changes. What would you like to do?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="outline" onClick={handleDiscardAndClose}>
-              Don&apos;t Save
-            </AlertDialogAction>
-            <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <UnsavedChangesDialog
+        open={showCloseConfirm}
+        onOpenChange={setShowCloseConfirm}
+        onDiscard={handleDiscardAndClose}
+        onSave={handleSaveAndClose}
+      />
 
       <AlertDialog
         open={snoozeCategories !== null}

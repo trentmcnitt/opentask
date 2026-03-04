@@ -5,8 +5,8 @@
  * in a single query (avoids N+1 per-task lookups).
  */
 
-import { getDb } from '@/core/db'
 import { getTasks } from '@/core/tasks'
+import { getProjectNameMap } from '@/core/projects'
 import type { TaskSummary } from './types'
 
 /**
@@ -20,19 +20,8 @@ export function buildTaskSummaries(userId: number): TaskSummary[] {
   if (tasks.length === 0) return []
 
   // Pre-fetch all project names in one query to avoid N+1
-  const db = getDb()
   const projectIds = [...new Set(tasks.map((t) => t.project_id))]
-  const projectMap = new Map<number, string>()
-
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(', ')
-    const rows = db
-      .prepare(`SELECT id, name FROM projects WHERE id IN (${placeholders})`)
-      .all(...projectIds) as { id: number; name: string }[]
-    for (const row of rows) {
-      projectMap.set(row.id, row.name)
-    }
-  }
+  const projectMap = getProjectNameMap(projectIds)
 
   return tasks.map((t) => ({
     id: t.id,

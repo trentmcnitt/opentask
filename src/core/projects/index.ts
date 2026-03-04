@@ -11,6 +11,25 @@ import { formatProjectResponse, type ProjectRow } from '@/lib/format-project'
 import type { Project } from '@/types'
 
 /**
+ * Bulk project name lookup — returns a Map of id→name for the given project IDs.
+ * Runs a single query regardless of how many IDs are passed.
+ */
+export function getProjectNameMap(projectIds: number[]): Map<number, string> {
+  const map = new Map<number, string>()
+  if (projectIds.length === 0) return map
+
+  const db = getDb()
+  const placeholders = projectIds.map(() => '?').join(', ')
+  const rows = db
+    .prepare(`SELECT id, name FROM projects WHERE id IN (${placeholders})`)
+    .all(...projectIds) as { id: number; name: string }[]
+  for (const row of rows) {
+    map.set(row.id, row.name)
+  }
+  return map
+}
+
+/**
  * Get all projects accessible to a user (owned + shared), with task counts.
  */
 export function getProjects(userId: number): Project[] {

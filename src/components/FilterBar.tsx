@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
@@ -425,6 +425,13 @@ function SignalChipButton({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const originRef = useRef<{ x: number; y: number } | null>(null)
   const firedRef = useRef(false)
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    [],
+  )
 
   const cancel = useCallback(() => {
     if (timerRef.current) {

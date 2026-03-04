@@ -60,6 +60,60 @@ function isStaleTokenError(err: unknown): boolean {
   return typeof reason === 'string' && STALE_TOKEN_REASONS.has(reason)
 }
 
+/**
+ * Shared helper that handles the common APNs device-send pattern:
+ * look up devices, send via Promise.allSettled, clean stale tokens, log failures.
+ *
+ * @param userId - User whose devices to send to
+ * @param buildNotification - Callback that builds the notification for each device
+ * @param logLabel - Label for failure log messages (e.g., "notification", "badge update")
+ * @param preLog - Optional callback for pre-send logging, receives the device list
+ */
+async function sendToAllDevices(
+  userId: number,
+  buildNotification: (device: ApnsDeviceRow) => Notification | SilentNotification,
+  logLabel: string,
+  preLog?: (devices: ApnsDeviceRow[]) => void,
+): Promise<void> {
+  if (!isApnsConfigured()) return
+
+  const db = getDb()
+  const devices = db
+    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
+    .all(userId) as ApnsDeviceRow[]
+
+  if (devices.length === 0) return
+
+  if (preLog) preLog(devices)
+
+  const results = await Promise.allSettled(
+    devices.map(async (device) => {
+      const notification = buildNotification(device)
+
+      try {
+        const apns = getClient(device.environment)
+        await apns.send(notification)
+      } catch (err: unknown) {
+        if (isStaleTokenError(err)) {
+          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
+          log.info('apns', `Removed stale device token ${device.id}`)
+        } else {
+          throw err
+        }
+      }
+    }),
+  )
+
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+  if (failures.length > 0) {
+    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
+    log.error(
+      'apns',
+      `Failed to send ${failures.length}/${devices.length} APNs ${logLabel}: ${reasons}`,
+    )
+  }
+}
+
 export interface ApnsPushPayload {
   title: string
   body: string
@@ -83,26 +137,12 @@ export async function sendApnsNotification(
   userId: number,
   payload: ApnsPushPayload,
 ): Promise<void> {
-  if (!isApnsConfigured()) return
+  const isCritical = payload.interruptionLevel === 'critical'
 
-  const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
-
-  if (devices.length === 0) return
-
-  const bundleIds = devices.map((d) => d.bundle_id).join(', ')
-  log.info(
-    'apns',
-    `Sending notification for task ${payload.taskId} to ${devices.length} device(s) [${bundleIds}]`,
-  )
-
-  const results = await Promise.allSettled(
-    devices.map(async (device) => {
-      const apns = getClient(device.environment)
-      const isCritical = payload.interruptionLevel === 'critical'
-      const notification = new Notification(device.device_token, {
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new Notification(device.device_token, {
         alert: { title: payload.title, body: payload.body },
         topic: device.bundle_id,
         category: 'TASK_REMINDER',
@@ -121,29 +161,16 @@ export async function sendApnsNotification(
         aps: {
           'interruption-level': payload.interruptionLevel,
         },
-      })
-
-      try {
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
-          log.info('apns', `Removed stale device token ${device.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
+      }),
+    'notifications',
+    (devices) => {
+      const bundleIds = devices.map((d) => d.bundle_id).join(', ')
+      log.info(
+        'apns',
+        `Sending notification for task ${payload.taskId} to ${devices.length} device(s) [${bundleIds}]`,
+      )
+    },
   )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${devices.length} APNs notifications: ${reasons}`,
-    )
-  }
 }
 
 /**
@@ -156,47 +183,18 @@ export async function sendApnsSummaryNotification(
   title: string,
   body: string,
 ): Promise<void> {
-  if (!isApnsConfigured()) return
-
-  const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
-
-  if (devices.length === 0) return
-
-  const results = await Promise.allSettled(
-    devices.map(async (device) => {
-      const apns = getClient(device.environment)
-      const notification = new Notification(device.device_token, {
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new Notification(device.device_token, {
         alert: { title, body },
         topic: device.bundle_id,
         threadId: 'opentask-overdue',
         sound: 'default',
         collapseId: 'overdue-summary',
-      })
-
-      try {
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
-          log.info('apns', `Removed stale device token ${device.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
+      }),
+    'summary notifications',
   )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${devices.length} APNs summary notifications: ${reasons}`,
-    )
-  }
 }
 
 /**
@@ -210,45 +208,16 @@ export async function sendApnsSummaryNotification(
  * handler reads the count and calls setBadgeCount() programmatically.
  */
 export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
-  if (!isApnsConfigured()) return
-
-  const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
-
-  if (devices.length === 0) return
-
-  const results = await Promise.allSettled(
-    devices.map(async (device) => {
-      const apns = getClient(device.environment)
-      const notification = new SilentNotification(device.device_token, {
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new SilentNotification(device.device_token, {
         topic: device.bundle_id,
         collapseId: 'badge-update',
         data: { type: 'badge-update', badge },
-      })
-
-      try {
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
-          log.info('apns', `Removed stale device token ${device.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
+      }),
+    'badge updates',
   )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${devices.length} badge updates: ${reasons}`,
-    )
-  }
 }
 
 /**
@@ -257,53 +226,24 @@ export async function sendApnsBadgeUpdate(userId: number, badge: number): Promis
  * matching delivered notifications.
  */
 export async function dismissApnsNotifications(userId: number, taskIds: number[]): Promise<void> {
-  if (!isApnsConfigured() || taskIds.length === 0) return
+  if (taskIds.length === 0) return
 
-  const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
-
-  if (devices.length === 0) {
-    log.info('apns', `Dismiss: no devices registered for user ${userId}`)
-    return
-  }
-
-  const bundleIds = devices.map((d) => d.bundle_id).join(', ')
-  log.info(
-    'apns',
-    `Dismiss: sending silent push for tasks [${taskIds.join(',')}] to ${devices.length} device(s) [${bundleIds}]`,
-  )
-
-  const results = await Promise.allSettled(
-    devices.map(async (device) => {
-      const apns = getClient(device.environment)
-      const notification = new SilentNotification(device.device_token, {
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new SilentNotification(device.device_token, {
         topic: device.bundle_id,
         data: { type: 'dismiss', taskIds },
-      })
-
-      try {
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
-          log.info('apns', `Removed stale device token ${device.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
+      }),
+    'dismiss signals',
+    (devices) => {
+      const bundleIds = devices.map((d) => d.bundle_id).join(', ')
+      log.info(
+        'apns',
+        `Dismiss: sending silent push for tasks [${taskIds.join(',')}] to ${devices.length} device(s) [${bundleIds}]`,
+      )
+    },
   )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${devices.length} APNs dismiss signals: ${reasons}`,
-    )
-  }
 }
 
 /**
@@ -313,45 +253,20 @@ export async function dismissApnsNotifications(userId: number, taskIds: number[]
  * all delivered notifications.
  */
 export async function dismissAllApnsNotifications(userId: number): Promise<void> {
-  if (!isApnsConfigured()) return
-
-  const db = getDb()
-  const devices = db
-    .prepare('SELECT id, device_token, bundle_id, environment FROM apns_devices WHERE user_id = ?')
-    .all(userId) as ApnsDeviceRow[]
-
-  if (devices.length === 0) return
-
-  const bundleIds = devices.map((d) => d.bundle_id).join(', ')
-  log.info('apns', `Dismiss-all: sending silent push to ${devices.length} device(s) [${bundleIds}]`)
-
-  const results = await Promise.allSettled(
-    devices.map(async (device) => {
-      const apns = getClient(device.environment)
-      const notification = new SilentNotification(device.device_token, {
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new SilentNotification(device.device_token, {
         topic: device.bundle_id,
         data: { type: 'dismiss-all' },
-      })
-
-      try {
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
-          log.info('apns', `Removed stale device token ${device.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
+      }),
+    'dismiss-all signals',
+    (devices) => {
+      const bundleIds = devices.map((d) => d.bundle_id).join(', ')
+      log.info(
+        'apns',
+        `Dismiss-all: sending silent push to ${devices.length} device(s) [${bundleIds}]`,
+      )
+    },
   )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${devices.length} APNs dismiss-all signals: ${reasons}`,
-    )
-  }
 }

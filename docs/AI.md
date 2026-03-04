@@ -426,16 +426,15 @@ Code-enforced signal rules (defense-in-depth): P4 scores capped at 25, `act_soon
 | `ANTHROPIC_API_KEY`    | —                           | Required for Anthropic API mode                               |
 | `OPENAI_API_KEY`       | —                           | Required for OpenAI-compatible mode                           |
 | `OPENAI_BASE_URL`      | `https://api.openai.com/v1` | Override for non-OpenAI endpoints (Ollama, Groq, etc.)        |
-| `OPENAI_MODEL`         | —                           | Default model for all features when using OpenAI (required)   |
 
 ### Per-feature models
 
-| Env var                        | SDK/Anthropic default | OpenAI default | Description               |
-| ------------------------------ | --------------------- | -------------- | ------------------------- |
-| `OPENTASK_AI_ENRICHMENT_MODEL` | `haiku`               | `OPENAI_MODEL` | Model for task enrichment |
-| `OPENTASK_AI_QUICKTAKE_MODEL`  | `sonnet`              | `OPENAI_MODEL` | Model for Quick Take      |
-| `OPENTASK_AI_WHATS_NEXT_MODEL` | `haiku`               | `OPENAI_MODEL` | Model for What's Next     |
-| `OPENTASK_AI_INSIGHTS_MODEL`   | `claude-opus-4-6`     | `OPENAI_MODEL` | Model for Insights        |
+| Env var                        | SDK/Anthropic default | Description               |
+| ------------------------------ | --------------------- | ------------------------- |
+| `OPENTASK_AI_ENRICHMENT_MODEL` | `haiku`               | Model for task enrichment |
+| `OPENTASK_AI_QUICKTAKE_MODEL`  | `sonnet`              | Model for Quick Take      |
+| `OPENTASK_AI_WHATS_NEXT_MODEL` | `haiku`               | Model for What's Next     |
+| `OPENTASK_AI_INSIGHTS_MODEL`   | `claude-opus-4-6`     | Model for Insights        |
 
 Short names (`haiku`, `sonnet`, `opus`) are mapped to full Anthropic model IDs automatically. OpenAI model strings pass through as-is.
 
@@ -466,22 +465,31 @@ These only apply when using the Claude Agent SDK (subprocess) provider:
 OPENTASK_AI_ENABLED=true
 ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# OpenAI
+# OpenAI (per-feature models required)
 OPENTASK_AI_ENABLED=true
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1-mini
+OPENTASK_AI_ENRICHMENT_MODEL=gpt-4.1-mini
+OPENTASK_AI_QUICKTAKE_MODEL=gpt-4.1-mini
+OPENTASK_AI_WHATS_NEXT_MODEL=gpt-4.1-mini
+OPENTASK_AI_INSIGHTS_MODEL=gpt-4.1
 
 # xAI (Grok)
 OPENTASK_AI_ENABLED=true
 OPENAI_API_KEY=xai-...
 OPENAI_BASE_URL=https://api.x.ai/v1
-OPENAI_MODEL=grok-4-1-fast
+OPENTASK_AI_ENRICHMENT_MODEL=grok-4-1-fast
+OPENTASK_AI_QUICKTAKE_MODEL=grok-4-1-fast
+OPENTASK_AI_WHATS_NEXT_MODEL=grok-4-1-fast
+OPENTASK_AI_INSIGHTS_MODEL=grok-4-1-fast
 
 # Ollama (local, free)
 OPENTASK_AI_ENABLED=true
 OPENAI_API_KEY=ollama
 OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_MODEL=llama3.1
+OPENTASK_AI_ENRICHMENT_MODEL=llama3.1
+OPENTASK_AI_QUICKTAKE_MODEL=llama3.1
+OPENTASK_AI_WHATS_NEXT_MODEL=llama3.1
+OPENTASK_AI_INSIGHTS_MODEL=llama3.1
 
 # Claude Code SDK (no API key needed — uses your Claude Code auth)
 OPENTASK_AI_ENABLED=true
@@ -596,8 +604,6 @@ Each scenario defines:
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
 
-When adding new AI behavior, always add scenarios that test it. Untested behavior is unverified behavior.
-
 ### How to adjust evaluation criteria
 
 Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature with specific criteria for each.
@@ -611,3 +617,40 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |
+
+### Dump-prompts reference
+
+The main `AGENTS.md` has a condensed AI quality testing section with pointers here. The subsections below provide the operational details.
+
+`dump-prompts` is the only reliable way to see what the AI actually receives. Prompt source code is spread across `src/core/ai/prompts.ts`, `src/core/ai/quick-take.ts`, shared sections, and template literals — reading the source alone is not sufficient.
+
+```bash
+npm run dump-prompts                              # All prompts (templates only) → .tmp/prompts.txt
+npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
+npm run dump-prompts -- --feature insights         # Just the insights prompt
+npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
+npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows static system prompt and per-request dynamic slot separately)
+npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
+npm run dump-prompts -- --list                     # List available scenarios
+```
+
+### Targeted re-runs
+
+For iterating on failures without re-running the full suite. Layer 2 evaluation still applies — follow the same two-step process.
+
+```bash
+npm run test:quality:retry                                    # Re-run failures from last run
+npm run test:quality:run -- enrich-simple-clean               # Run one scenario
+npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  # Run multiple
+```
+
+### Workflow for modifying AI prompts
+
+When modifying AI prompts or enrichment logic (task field inference in `src/core/ai/`):
+
+1. **Dump the rendered prompt first** (`npm run dump-prompts -- --feature <feature>`) — read the full output in `.tmp/` and check for contradictions, stale rules, and redundancy. Do this before writing any code.
+2. Make your changes
+3. **Dump again after changes** — verify the rendered output matches your intent. The source code alone won't show you the complete picture.
+4. Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones) — see [Testing philosophy](#testing-philosophy) for why full coverage is required
+5. Fix any regressions before proceeding
+6. Add scenarios for new behavior — see [Scenario organization](#scenario-organization) for where they live

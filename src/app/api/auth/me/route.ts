@@ -24,6 +24,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       name: user.name,
       timezone: user.timezone,
       default_grouping: user.default_grouping,
+      is_demo: user.is_demo,
     })
   } catch (err) {
     if (err instanceof AuthError) {

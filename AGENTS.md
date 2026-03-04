@@ -1,10 +1,16 @@
-# AGENTS.md
+# OpenTask
 
-OpenTask is a self-hosted task management PWA. This file is the authoritative reference for contributing to this codebase.
+Self-hosted task management PWA. This is the authoritative reference for contributing to this codebase (also linked as `CLAUDE.md`).
+
+**Start here:** [Critical Requirements](#critical-requirements) (data-loss prevention), [Commands](#commands) (build/test), [Route Handler Guide](#route-handler-guide) (API patterns), [Development and Testing](#development-and-testing) (what to run when). Reference sections (task model, due dates) are at the end — consult them when working on related features.
+
+See also: `README.md` (project overview), `CONTRIBUTING.md` (quickstart), `TASKS.md` (backlog).
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode, which bundles the server and dependencies into a self-contained directory for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications with interactive snooze/done actions. See `docs/SPEC.md` for product requirements, `docs/ROADMAP.md` for planned features, `docs/AUTOMATION.md` for external API integration (Shortcuts, Claude Code, scripts), and `DEV_LOG.md` for a reverse-chronological journal of design decisions, problems overcome, and narrative context that can't be inferred from git history alone. Additional docs: `docs/NOTIFICATIONS.md` (push notification architecture), `docs/IOS-DEV-LOG.md` (iOS development history), `docs/openapi.yaml` (REST API schema).
+Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications.
+
+Additional docs: `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (planned features), `docs/AUTOMATION.md` (external API integration), `DEV_LOG.md` (design decisions and narrative context), `docs/NOTIFICATIONS.md` (push architecture), `docs/IOS-DEV-LOG.md` (iOS history), `docs/openapi.yaml` (REST API schema).
 
 ### Documentation site
 
@@ -29,11 +35,11 @@ See `~/working_dir/opentask-docs/CLAUDE.md` for build/deploy instructions and fu
 - `src/app/api/` — REST API routes with three auth methods (Bearer tokens + proxy headers + session cookies)
 - `src/app/` — Pages (App Router): root (`/`), login, tasks/[id], settings, history, archive, trash
 - `src/lib/` — Utilities (`api-response.ts`, `format-task.ts`, `format-date.ts`, `format-rrule.ts`, `logger.ts`, `priority.ts`, `toast.ts`, `utils.ts`, etc.)
-- Real-time sync via Server-Sent Events: `src/app/api/sync/stream/`, `src/lib/sync-events.ts`, `src/hooks/useSyncStream.ts`
+- Real-time sync via Server-Sent Events (pushes task changes to open browser tabs): `src/app/api/sync/stream/`, `src/lib/sync-events.ts`, `src/hooks/useSyncStream.ts`
 - `src/types/` — Domain types (`index.ts`), API route types (`api.ts`), NextAuth augmentation (`next-auth.d.ts`), Web Speech API types (`speech-recognition.d.ts`)
 - `src/instrumentation.ts` — Next.js server init hook that starts notification cron jobs
 - `ios/` — Native iOS companion app (see [iOS App](#ios-app-ios) section)
-- `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). Copy exports to `public/` when updated.
+- `assets/` — Source logo and branding files (Pixelmator sources + exported PNGs). After updating source files in `assets/`, copy exports to `public/`.
 
 ### UI vocabulary
 
@@ -62,9 +68,14 @@ See `~/working_dir/opentask-docs/CLAUDE.md` for build/deploy instructions and fu
 
 New columns on existing tables need both locations: the `CREATE TABLE` statement (for fresh databases) and an `ALTER TABLE ... ADD COLUMN` in `runMigrations()` (for existing databases).
 
-To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` should apply the change idempotently.
+```ts
+// In runMigrations() — each migration is idempotent via hasColumn():
+if (!hasColumn(database, 'tasks', 'new_column')) {
+  database.exec('ALTER TABLE tasks ADD COLUMN new_column TEXT DEFAULT NULL')
+}
+```
 
-The app applies schema changes to remote databases automatically on restart.
+To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` applies the change idempotently.
 
 ### Authentication
 
@@ -84,15 +95,22 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 **Functions** from `@/core/auth`:
 
 - `requireAuth(request)` — Returns `AuthUser` or throws `AuthError`. Preferred for new endpoints.
-- `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the 401 response (e.g., returning a different message or status code based on context). Most existing route handlers use this with a manual null check.
+- `getAuthUser(request)` — Returns `AuthUser | null`. Use when you need to customize the error response (e.g., returning a different message or status code). Most existing route handlers use this with a manual null check.
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' }`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified', is_demo: boolean }`.
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 
 NextAuth is configured in `src/app/api/auth/[...nextauth]/auth.ts` (credentials provider, JWT sessions, custom callbacks).
+
+### Security
+
+- **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. The raw token is displayed once when generated and cannot be retrieved afterward.
+- **Login rate limiting**: In-memory; 5 failures per username in 15 minutes trigger a lockout with exponential backoff (30s, 60s, 120s...).
+- **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+- **JWT sessions**: `maxAge` set to 7 days (NextAuth default is 30 days).
 
 ## Commands
 
@@ -111,7 +129,7 @@ npm run test:e2e:ui      # Playwright with UI
 npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
 npm run test:quality:retry  # Re-run failed scenarios from last quality run
 npm run test:quality:run # Run specific scenarios: npm run test:quality:run -- <id> [id ...]
-npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see AI quality testing section for usage)
+npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see docs/AI.md § Quality Testing for flags)
 npm run test:watch       # Vitest watch mode
 npm run test:coverage    # Vitest with coverage report
 npm run db:seed          # Seed database with initial users and projects
@@ -122,7 +140,7 @@ npm run db:create-token  # Create API token: npm run db:create-token -- <user> [
 npx tsx scripts/create-user.ts <username> <password> [email] [timezone]  # Create user (no npm script wrapper)
 ```
 
-**Quick check** (referenced throughout this file): `npm run type-check && npm run lint && npm test`
+**Quick check**: `npm run type-check && npm run lint && npm test`
 
 ## Critical Requirements
 
@@ -143,7 +161,7 @@ withTransaction((db) => {
 
 Use `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` to build the before/after snapshot. The `completionId` parameter is only needed when completing a recurring task — it links the `completions` row to the undo snapshot (see `markDone()` in `src/core/tasks/mark-done.ts` for the pattern).
 
-For task creation, pass `{ id: taskId }` as `beforeTask` (there is no full before-state). On undo, the `'create'` action type causes the system to soft-delete the task (since there is no before-state to restore). See `createTask()` in `src/core/tasks/create.ts` for the pattern.
+For task creation, pass `{ id: taskId }` as `beforeTask` (there is no full before-state). On undo, the system soft-deletes the task (since there is no before-state to restore). See `createTask()` in `src/core/tasks/create.ts` for the pattern.
 
 For bulk operations, use the corresponding `bulk_*` action type (e.g., `bulk_done`, `bulk_snooze`) and pass an array of snapshots — one per affected task. See `src/core/tasks/bulk.ts` for the pattern.
 
@@ -167,107 +185,7 @@ Never use `// eslint-disable`, `@ts-ignore`, `@ts-expect-error`, or similar supp
 
 ### No brittle fixes or tolerances
 
-Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops. This applies to application code and behavioral tests. Playwright's built-in waiting mechanisms (`waitForSelector`, auto-waiting) are the correct approach for E2E tests.
-
-## Due Date Philosophy
-
-OpenTask is not a traditional task manager. Due dates for most tasks are **reminders, not deadlines**. Understanding that distinction is critical for interpreting task data correctly, especially in AI features. See `docs/DESIGN.md` for the full rationale.
-
-**Priority determines whether a due date is a deadline or a reminder:**
-
-- **Priority 0-2 (Unset/Low/Medium):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem.
-- **Priority 3 (High):** `due_at` is a deadline, but these tasks are still eligible for bulk snooze. Being overdue is significant.
-- **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
-
-| Priority        | Due date means | Bulk snooze | "Overdue" significance |
-| --------------- | -------------- | ----------- | ---------------------- |
-| 0-1 (Unset/Low) | Reminder       | Eligible    | Normal — not a problem |
-| 2 (Medium)      | Reminder       | Eligible    | Low                    |
-| 3 (High)        | Deadline       | Eligible    | Significant            |
-| 4 (Urgent)      | Hard deadline  | Never       | Critical               |
-
-**Bulk snooze:** One pass — all overdue P0-P3 tasks are snoozed, P4 (Urgent) is always excluded. No tiers, no multi-click flow.
-
-**Implications for code and AI:**
-
-- `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
-- The gap between `original_due_at` and `due_at` shows how far the due date has moved from its original value, but not how many times or why the task was snoozed. Don't infer snooze counts or user intent from dates alone.
-- `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
-- For P0-3 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
-
-## Task Model Reference
-
-### Priority values
-
-| Value | Meaning |
-| ----- | ------- |
-| 0     | Unset   |
-| 1     | Low     |
-| 2     | Medium  |
-| 3     | High    |
-| 4     | Urgent  |
-
-### Recurrence model
-
-RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEKLY;BYDAY=MO`) stored in `task.rrule`. Anchor fields preserve the intended local time across DST (Daylight Saving Time) transitions (e.g., a task due at 9 AM stays at 9 AM local time when clocks change):
-
-- `anchor_time` — time of day
-- `anchor_dow` — day of week
-- `anchor_dom` — day of month
-
-`computeNextOccurrence()` in `src/core/recurrence/` handles timezone-aware advancement.
-
-### Completion behavior
-
-- **Recurring tasks** advance in place: completing a daily task moves `due_at` forward and leaves `done=0`
-- **One-off (non-recurring) tasks**: when completed, the app sets `done=1` and `archived_at` to the current time
-
-### Snooze
-
-Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow. Bulk snooze excludes P4 (Urgent) tasks — see [Due Date Philosophy](#due-date-philosophy).
-
-### Updating recurrence rules
-
-Updating `rrule` also re-derives `anchor_*` fields and may recompute `due_at`. When logging this for undo, include all derived fields in `fieldsChanged` so undo restores the complete prior state:
-
-```ts
-const fieldsChanged = ['rrule', 'anchor_time', 'anchor_dow', 'anchor_dom', 'due_at']
-```
-
-### Undo system
-
-Functions from `@/core/undo`:
-
-```ts
-logAction(
-  userId: number,
-  action: UndoAction, // 'done' | 'undone' | 'snooze' | 'edit' | 'delete' | 'create' | 'restore' | 'bulk_done' | 'bulk_snooze' | 'bulk_edit' | 'bulk_delete'
-  description: string | null,
-  fieldsChanged: string[],
-  snapshots: UndoSnapshot[],
-): number
-```
-
-- `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build an `UndoSnapshot`. See [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for usage details and the `completionId` pattern.
-- `executeUndo(userId)` — restores the task to `before_state` from the most recent undoable action
-- `executeRedo(userId)` — re-applies `after_state` from the most recent undone action
-
-Undo history is per-user and works as a stack (last action undone first).
-
-### Task access
-
-`canUserAccessTask(userId, task)` from `@/core/tasks` — returns `true` if the user owns the task or it's in a shared project. Use this in route handlers that need to verify access.
-
-### Purge modules
-
-Automatic data cleanup modules run on a schedule via cron jobs started in `src/instrumentation.ts`:
-
-- `src/core/undo/purge.ts` — prunes old undo log entries
-- `src/core/stats/purge.ts` — cleans up stale stats data
-- `src/core/tasks/purge-completions.ts` — removes old task completion records
-- `src/core/tasks/purge-trash.ts` — permanently deletes tasks that have been in trash past the retention period
-- `src/core/ai/purge.ts` — removes old AI generation artifacts
-- `src/core/webhooks/purge.ts` — purges old webhook delivery entries
+Don't add buffers, timeouts, or tolerances to work around symptoms. If something seems like a race condition or timing issue, understand the actual requirement first. Code should be deterministic and precise, not held together by tolerances and timeouts. For example, if a test fails intermittently, find the ordering or state bug rather than adding `setTimeout` or retry loops. This applies to application code and behavioral tests. For E2E tests, use Playwright's built-in waiting mechanisms (`waitForSelector`, auto-waiting) instead of manual timeouts.
 
 ## Conventions
 
@@ -283,11 +201,9 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 ### Code policies
 
 - Store all dates as UTC in the database. Convert to the user's timezone (from `AuthUser.timezone`) in API responses and UI code.
-- Update endpoints use PATCH, not PUT — the handler updates only fields present in the request body.
 - When you need a UI primitive not already in `src/components/ui/`, install it with `npx shadcn@latest add <component>`. This generates the file in `src/components/ui/`.
 - **Document unintuitive or complex code within the same code file.** Non-obvious behavior (e.g., UX flows, UI layouts, backend behaviors) can be hard to infer from code at a glance. Add a comment block explaining what the behavior is and why, so future readers don't have to reverse-engineer it. Do this as you build or modify features — when in doubt, err on the side of documenting.
 - ESLint warns on: `max-lines-per-function: 150` (excluding blank lines and comments), `complexity: 20`, `max-depth: 5`, `max-nested-callbacks: 4`.
-- See [Authentication](#authentication) for `requireAuth` vs `getAuthUser` guidance.
 
 ### Tooling
 
@@ -295,11 +211,11 @@ Automatic data cleanup modules run on a schedule via cron jobs started in `src/i
 - **Node version**: Pinned in `.node-version` at the project root.
 - **Formatting**: Prettier (semi: false, singleQuote: true, printWidth: 100, Tailwind plugin). Run `npm run format` to format all files.
 
-## API Reference
+## Route Handler Guide
 
 ### Route handler pattern
 
-All route handlers are wrapped with `withLogging()` from `@/lib/with-logging`, which logs every request with method, path, status, duration, and auth type. Log level varies by status: 5xx → `error`, 4xx → `warn`, 2xx → `info`. Uses the `http` namespace.
+Wrap all route handlers with `withLogging()` from `@/lib/with-logging`, which logs every request with method, path, status, duration, and auth type. Log level varies by status: 5xx → `error`, 4xx → `warn`, 2xx → `info`. Uses the `http` namespace.
 
 Preferred pattern for new route handlers:
 
@@ -340,11 +256,11 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
 })
 ```
 
-All handlers must log errors before calling `handleError()`.
+Log unexpected errors in the catch-all before calling `handleError()` — expected errors like `AuthError` and `ZodError` don't need explicit logging.
 
 Note: `updateTask()` handles its own transaction and undo logging internally.
 
-### New endpoint checklist
+### New route handler checklist
 
 Follow the pattern above, and verify:
 
@@ -358,6 +274,7 @@ Follow the pattern above, and verify:
 - [ ] Return using response helpers: `success()`, `badRequest()`, `unauthorized()`, `forbidden()`, `notFound()`, `conflict()`, `internalError()`, `handleZodError()`, `handleError()` — success format: `{ data: ... }`, error format: `{ error, code, details? }`
 - [ ] Wrap handlers with `withLogging()` from `@/lib/with-logging` (use named function expression for stack traces)
 - [ ] Add tests: behavioral (core logic), integration (HTTP), E2E if user-facing
+- [ ] Update `docs/openapi.yaml` if this adds or changes a public API endpoint
 
 ## Development and Testing
 
@@ -369,10 +286,11 @@ If a change spans multiple rows in this table, combine the test suites from all 
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                      |
 | API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                |
-| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (both layers, requires `OPENTASK_AI_ENABLED=true`) — see [AI quality testing](#ai-quality-testing) |
+| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (both layers; requires `OPENTASK_AI_ENABLED=true`) — see [AI quality testing](#ai-quality-testing) |
 | UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                         |
+| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`. Manual testing on device. No automated test suite.                                                |
 | Refactoring / code reorganization             | All test suites                                                                                                                         |
-| Production deploy                             | All test suites (see [Deployment](#deployment) section)                                                                                 |
+| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)     |
 
 During rapid iteration (deploy, verify in browser, fix, re-deploy), the quick check between deploys is sufficient. Run the full checklist on the final version before reporting results.
 
@@ -383,42 +301,13 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 ### AI quality testing
 
-**Production has essentially no feedback loop for AI quality.** There is no user rating system, no A/B testing, no way to know if the AI is producing good results in the field. Quality testing IS the quality bar — the AI will only perform as well as our tests prove it can. This makes two things critical:
+AI quality testing has two layers: **Layer 1** (automated structural validation — valid JSON, required fields, type checks) and **Layer 2** (LLM-as-judge semantic evaluation using `tests/quality/validator-prompt.md`, scoring 0-10, pass threshold >= 6). Running `npm run test:quality` is only Layer 1. You must then perform Layer 2 by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done.
 
-1. **How extensive and realistic the quality test scenarios are** — scenarios must cover the full range of real-world inputs: dictation artifacts, typos, edge cases, ambiguous phrasing, colloquial language, and every field combination. If a scenario isn't tested, assume it doesn't work.
-2. **How well the AI holds up under that testing** — every scenario must be evaluated in Layer 2 (0-10 scoring rubric in `tests/quality/validator-prompt.md`; pass threshold: >= 6). Do not ship prompt changes that degrade quality on existing scenarios.
+Production has no feedback loop for AI quality — quality testing IS the quality bar. If a scenario isn't tested, assume it doesn't work. Do not ship prompt changes that degrade quality on existing scenarios.
 
-**`test:quality` is a two-step process.** Running `npm run test:quality` is only Layer 1 (generation + structural validation). You must then perform Layer 2 (quality evaluation) by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done. See `docs/AI.md` for details. Layer 1 validates structural correctness (valid JSON, required fields, type checks). Layer 2 evaluates semantic quality (is the AI output actually good?) using an LLM-as-judge rubric. Concretely, Layer 2 means running outputs through the scoring rubric in `tests/quality/validator-prompt.md` and evaluating each scenario on a 0-10 scale.
+Always dump and review the rendered prompt before and after any AI prompt change: `npm run dump-prompts -- --feature <feature>`. See `docs/AI.md` § Quality Testing for the full workflow, all `dump-prompts` flags, and targeted re-run commands.
 
-**`dump-prompts` is the only reliable way to see what the AI actually receives.** Prompt source code is spread across `src/core/ai/prompts.ts`, `src/core/ai/quick-take.ts`, shared sections, and template literals — reading the source alone is not sufficient. Always dump and review the fully rendered prompt before and after any AI prompt change. This is non-negotiable: if you're touching AI prompts, you must run `dump-prompts` to verify the final output.
-
-```bash
-npm run dump-prompts                              # All prompts (templates only) → .tmp/prompts.txt
-npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
-npm run dump-prompts -- --feature insights         # Just the insights prompt
-npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
-npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows static system prompt and per-request dynamic slot separately)
-npm run dump-prompts -- --scenario insights-medium-list  # Render with a test scenario's task data
-npm run dump-prompts -- --list                     # List available scenarios
-```
-
-**Targeted re-runs** for iterating on failures without re-running the full suite. Layer 2 evaluation still applies to these re-runs — follow the same two-step process.
-
-```bash
-npm run test:quality:retry                                    # Re-run failures from last run
-npm run test:quality:run -- enrich-simple-clean               # Run one scenario
-npm run test:quality:run -- insights-boundary-stale insights-mixed-priorities  # Run multiple
-```
-
-**When modifying AI prompts or enrichment logic (task field inference in `src/core/ai/`):**
-
-1. **Dump the rendered prompt first** (`npm run dump-prompts -- --feature <feature>`) — read the full output in `.tmp/` and check for contradictions, stale rules, and redundancy. Do this before writing any code.
-2. Make your changes
-3. **Dump again after changes** — verify the rendered output matches your intent. The source code alone won't show you the complete picture.
-4. Run both Layer 1 and Layer 2 on ALL scenarios (not just new ones)
-5. If any scenario regresses, fix the prompt before proceeding
-6. When adding new behavior, add scenarios that test it — untested behavior is unverified behavior
-7. Scenarios live in `tests/quality/scenarios/` organized by category
+Scenarios live in `tests/quality/scenarios/` organized by category.
 
 ### Pre-existing test failures
 
@@ -432,7 +321,7 @@ During iterative UI verification deploys to dev, committing between each deploy 
 
 **Dev login credentials** are in `.secrets` at the project root. Read that file before logging in via Playwright.
 
-**UI change is not done until every box is checked.** Note any pre-existing test failures in your results.
+**A UI change is not done until every box is checked.** Note any pre-existing test failures in your results — they do not block this checklist.
 
 - [ ] Quick check passes
 - [ ] E2E tests pass (`npm run test:e2e`)
@@ -449,7 +338,7 @@ Backend/logic-only changes with no UI touchpoint do not need browser verificatio
 
 Location: `tests/behavioral/`
 
-Behavioral tests exercise core logic with no HTTP or UI. Each file calls `setupTestDb()` in `beforeAll` which resets DB and seeds a test user. Test files run sequentially (not in parallel) because they share a single database.
+Behavioral tests exercise core logic with no HTTP or UI. Each file calls `setupTestDb()` in `beforeAll`, which resets the DB and seeds a test user. Test files run sequentially (not in parallel) because they share a single database.
 
 Helper: `tests/helpers/setup.ts`
 
@@ -457,7 +346,7 @@ Helper: `tests/helpers/setup.ts`
 
 Location: `tests/integration/`
 
-Integration tests send real HTTP requests to a running `next start` server (the production build). The `globalSetup.ts` builds the app and starts the server automatically. These tests authenticate using test-only tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
+Integration tests send real HTTP requests to a running `next start` server (the production build). The global setup script (`globalSetup.ts`) builds the app and starts the server automatically. These tests authenticate using test-only tokens (`TOKEN_A`/`TOKEN_B` in `tests/integration/helpers.ts`).
 
 Call `resetTestData()` between test files — this calls `POST /api/test/reset`, which is only available when `OPENTASK_TEST_MODE=1`.
 
@@ -510,10 +399,7 @@ See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts
 
 ### Handling unsaved-changes dialogs in Playwright
 
-The task detail page (and any page with QuickActionPanel) has a `beforeunload` handler that triggers a browser "Leave site?" confirmation dialog when there are unsaved changes. When using Playwright for browser testing:
-
-1. Reset dirty state first: Click "Reset" or "Cancel" before navigating away
-2. Or handle the dialog: Use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss the dialog and proceed
+If navigating away triggers a `beforeunload` dialog in Playwright, either reset dirty state first (click Reset/Cancel) or use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss it.
 
 ## Deployment
 
@@ -528,13 +414,27 @@ The task detail page (and any page with QuickActionPanel) has a `beforeunload` h
 - **Final dev deploy** (after verification): Commit the verified version, then re-deploy from the clean commit
 - If there are uncommitted changes and you need to deploy, ask the user to confirm a commit first
 
-**Rollback:** Prefer `git revert HEAD` (creates a new commit, preserves history). Only use `git checkout <sha>` if you need to roll back multiple commits.
+**Rollback:** `git revert HEAD`, then re-deploy. Database migrations are not rolled back — additive schema changes remain in place and are harmless. Destructive migrations (rare) may need manual SQL. Only use `git checkout <sha>` if you need to roll back multiple commits.
 
 See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (server addresses, service names, deploy scripts, database inspection, etc.).
 
+## Task Model & Due Dates
+
+See `docs/TASK-MODEL.md` for the complete task model reference: priority values, recurrence, completion behavior, snooze semantics, undo system API, and task access control.
+
+**Due Date Philosophy (critical for AI work):** Due dates for P0-2 tasks are reminders, not deadlines. P3 is a deadline. P4 (Urgent) is a hard deadline and is excluded from bulk snooze. See `docs/TASK-MODEL.md` for full details and implications for code/AI.
+
+**Undo system essentials** (see [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for the atomic mutation rule):
+
+- `logAction(userId, action, description, fieldsChanged, snapshots)` — log for undo
+- `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build snapshot
+- `executeUndo(userId)` / `executeRedo(userId)` — undo/redo stack
+
+**Purge modules** run via cron jobs started in `src/instrumentation.ts`: `src/core/undo/purge.ts`, `src/core/stats/purge.ts`, `src/core/tasks/purge-completions.ts`, `src/core/tasks/purge-trash.ts`, `src/core/ai/purge.ts`, `src/core/webhooks/purge.ts`.
+
 ## Demo User
 
-The demo account showcases OpenTask with curated portfolio-style tasks. User isolation is via `user_id` filtering.
+The demo account showcases OpenTask with curated portfolio-style tasks. Each user only sees their own data (filtered by `user_id`).
 
 | Setting       | Value                                                       |
 | ------------- | ----------------------------------------------------------- |
@@ -549,13 +449,6 @@ The demo account showcases OpenTask with curated portfolio-style tasks. User iso
 - `npm run db:seed-demo` — Create the demo user and tasks (run once)
 - `npm run db:reset-demo` — Delete and re-create all demo data (cron)
 
-## Security
-
-- **API tokens**: Stored as SHA-256 hashes. The `token` column in `api_tokens` holds the hash; `token_preview` stores the last 8 chars of the raw token for UI display. The raw token is displayed once when generated and cannot be retrieved afterward.
-- **Login rate limiting**: In-memory, 5 failures per username in 15 min triggers lockout with exponential backoff (30s, 60s, 120s...).
-- **Security headers**: Set in `next.config.ts` and your reverse proxy config: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
-- **JWT sessions**: `maxAge` set to 7 days (default was 30).
-
 ## iOS App (`ios/`)
 
 Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA in a WKWebView and adds APNs push notifications. All task data and business logic live on the server; the app stores no local data beyond connection credentials.
@@ -568,7 +461,7 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 
 **Shared code** (`Shared/`): `APIClient.swift` (HTTP with Bearer auth), `KeychainHelper.swift` (App Group keychain for credential sharing between app, extension, and Watch app), `DateHelpers.swift` (ISO 8601, snap-to-preset, delta formatting). All shared code uses only `Foundation`/`Security` — no platform-specific imports, compiles on both iOS and watchOS.
 
-**Build:** xcodegen generates `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
+**Build:** `xcodegen` generates `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
 
 **Contributing:** The bundle ID (`io.mcnitt.opentask`) and Apple Developer Team ID in `ios/project.yml` belong to the maintainer. To build locally, update `bundleIdPrefix` and `DEVELOPMENT_TEAM` to your own values and run `xcodegen` to regenerate the project.
 
@@ -581,35 +474,6 @@ Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA
 - `DELETE /api/push/apns/register` — device token unregistration
 - `GET /api/user/preferences` — connection validation during setup
 
-**No automated tests** — the iOS app has no test targets. Testing is manual.
+**No automated tests** — testing is manual.
 
-### Notification mechanisms
-
-1. **Default actions** (AppDelegate): Done, +1hr, All +1hr buttons — used from lock screen or when content extension is unavailable
-2. **Silent dismissal**: Server sends `content-available: 1` push with `type: "dismiss"` when a task is snoozed/completed from the web UI — iOS app removes matching delivered notifications
-3. **Content extension** (long-press): Interactive 3x4 snooze grid (presets, increments, decrements) — extension makes API calls directly and dismisses
-
-### Simulator limitations
-
-- **Notification content extensions cannot be tested in the simulator.** Long-press expansion is a known Apple limitation across all Xcode versions. Use a physical device.
-- **watchOS notification actions cannot be tested in the simulator.** Mirrored notifications and action forwarding require a physical iPhone + Apple Watch pair.
-- `xcrun simctl push` delivers banners but does not invoke service or content extensions.
-- iOS 18.2 simulator: apps don't appear in Settings (known bug, fixed in 18.4+).
-
-### Physical device caution
-
-- **Avoid `devicectl device process launch` on the user's phone** unless specifically needed. It kills the running app process, which can reset app state and force the user to re-enter credentials. Prefer letting the user launch the app themselves after install.
-- **`install_app_device` (XcodeBuildMCP) / `devicectl device install app` is safe** — it replaces the binary without losing Keychain data or app state.
-
-### XcodeBuildMCP workarounds
-
-XcodeBuildMCP is an MCP tool server for building and interacting with iOS simulators and devices from Claude Code.
-
-- On iOS 26+, use `touch` (down+up) instead of `tap` to focus SwiftUI text fields — `tap` doesn't reliably activate them.
-- WKWebView content is not exposed in the accessibility tree. Use screenshot coordinates for web view interactions.
-- **watchOS device builds**: XcodeBuildMCP's `build_device` and `install_app_device` don't work reliably for watchOS targets (hardcoded to iOS platform, install reports success but app isn't actually installed). Use xcodebuild and devicectl directly instead:
-  - Build: `xcodebuild -project OpenTask.xcodeproj -scheme OpenTaskWatch -destination 'platform=watchOS,id=DEVICE_ID' -allowProvisioningUpdates -allowProvisioningDeviceRegistration build`
-  - Get the Watch device ID: `xcodebuild -scheme OpenTaskWatch -showdestinations` (different from the UDID in `list_devices`)
-  - Install: `xcrun devicectl device install app --device WATCH_UDID path/to/OpenTaskWatch.app`
-  - Launch: `xcrun devicectl device process launch --device WATCH_UDID io.mcnitt.opentask.watchapp`
-  - Verify: `xcrun devicectl device info apps --device WATCH_UDID | grep opentask`
+See `ios/CLAUDE.md` for notification mechanisms, simulator limitations, physical device cautions, and XcodeBuildMCP workarounds.

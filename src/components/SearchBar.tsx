@@ -19,6 +19,13 @@ export function SearchBar({ onSearch, onClear, onExpandedChange, focusRef }: Sea
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    },
+    [],
+  )
+
   const setExpandedState = useCallback(
     (value: boolean) => {
       setExpanded(value)

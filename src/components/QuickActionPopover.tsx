@@ -2,16 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { QuickActionPanel, QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -143,23 +134,12 @@ export function QuickActionPopover({
   )
 
   const confirmDialog = (
-    <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-          <AlertDialogDescription>
-            You have unsaved changes. What would you like to do?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="outline" onClick={handleDiscardAndClose}>
-            Don&apos;t Save
-          </AlertDialogAction>
-          <AlertDialogAction onClick={handleSaveAndClose}>Save</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <UnsavedChangesDialog
+      open={showCloseConfirm}
+      onOpenChange={setShowCloseConfirm}
+      onDiscard={handleDiscardAndClose}
+      onSave={handleSaveAndClose}
+    />
   )
 
   if (isMobile) {
