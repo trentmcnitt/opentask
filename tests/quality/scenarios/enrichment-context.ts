@@ -143,7 +143,7 @@ export const enrichmentContextScenarios: AITestScenario[] = [
         'Title should be "Buy groceries" or similar. ' +
         "Context says wife handles groceries, but user didn't reference her — no leakage. " +
         'due_at should be null (no time reference). ' +
-        'May match Shopping List project. Labels must be empty.',
+        'project_name should be null — no explicit project assignment. Labels must be empty.',
     },
   },
   {

@@ -1129,7 +1129,13 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       bannerState={bannerState}
       onQuickTakeDismiss={handleQuickTakeDismiss}
       onQuickTakeViewTask={
-        bannerState?.taskId ? () => router.push(`/tasks/${bannerState.taskId}`) : undefined
+        bannerState?.taskId
+          ? () => {
+              const task = tasks.find((t) => t.id === bannerState.taskId)
+              if (task) handleViewTask(task)
+              else router.push(`/tasks/${bannerState.taskId}`)
+            }
+          : undefined
       }
       onUnifiedChange={(unified) => {
         if (unified) {

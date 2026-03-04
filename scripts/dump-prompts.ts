@@ -17,18 +17,16 @@
  *   npx tsx scripts/dump-prompts.ts --feature enrichment
  *   npx tsx scripts/dump-prompts.ts --feature insights --scenario insights-medium-list
  *   npx tsx scripts/dump-prompts.ts --scenario insights-consequences
+ *
+ * All prompt text comes from the production code paths — this script only
+ * supplies placeholder data when no scenario is provided.
  */
 
 import { writeFileSync, mkdirSync } from 'fs'
 import { DateTime } from 'luxon'
-import {
-  ENRICHMENT_SYSTEM_PROMPT,
-  WHATS_NEXT_SYSTEM_PROMPT,
-  INSIGHTS_SYSTEM_PROMPT,
-  ENRICHMENT_REMINDERS,
-  WHATS_NEXT_REMINDERS,
-  INSIGHTS_REMINDERS,
-} from '../src/core/ai/prompts'
+import { ENRICHMENT_SYSTEM_PROMPT, buildEnrichmentUserPrompt } from '../src/core/ai/prompts'
+import { buildWhatsNextFullPrompt } from '../src/core/ai/whats-next'
+import { buildInsightsFullPrompt } from '../src/core/ai/insights'
 import { formatTaskLine } from '../src/core/ai/format'
 import {
   buildQuickTakePrompt,
@@ -50,6 +48,21 @@ function separator(title: string): string {
 
 function charCount(text: string): string {
   return `[${text.length.toLocaleString()} chars]`
+}
+
+// ---------------------------------------------------------------------------
+// Default placeholder values (used only when no scenario is provided)
+// ---------------------------------------------------------------------------
+
+const DEFAULTS = {
+  timezone: 'America/Chicago',
+  morningTime: '09:00',
+  wakeTime: '07:00',
+  sleepTime: '22:00',
+  projects: [
+    { id: 1, name: 'Home' },
+    { id: 2, name: 'Work' },
+  ],
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +91,10 @@ interface ScenarioInput {
     text?: string
     newTaskTitle?: string
     userContext?: string
+    morningTime?: string
+    wakeTime?: string
+    sleepTime?: string
+    projects?: Array<{ id: number; name: string; shared?: boolean }>
   }
 }
 
@@ -87,49 +104,21 @@ async function loadScenarios(): Promise<ScenarioInput[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Prompt rendering
+// Prompt rendering — all use production builder functions
 // ---------------------------------------------------------------------------
 
 function renderEnrichmentPrompt(scenario?: ScenarioInput): string {
-  const timezone = scenario?.input.timezone || 'America/Chicago'
-  const currentUtcTime = new Date().toISOString()
-  const rawInput = scenario?.input.text || '<raw task text would appear here>'
-  const userContextBlock = scenario?.input.userContext
-    ? `\nUser context: ${scenario.input.userContext}\n`
-    : ''
+  const userPrompt = buildEnrichmentUserPrompt({
+    timezone: scenario?.input.timezone || DEFAULTS.timezone,
+    morningTime: scenario?.input.morningTime ?? DEFAULTS.morningTime,
+    wakeTime: scenario?.input.wakeTime ?? DEFAULTS.wakeTime,
+    sleepTime: scenario?.input.sleepTime ?? DEFAULTS.sleepTime,
+    projects: scenario?.input.projects ?? DEFAULTS.projects,
+    userContext: scenario?.input.userContext,
+    taskText: scenario?.input.text || '<raw task text would appear here>',
+  })
 
-  // The enrichment prompt uses ENRICHMENT_SYSTEM_PROMPT as a system prompt (separate),
-  // and the user prompt is assembled with context + task text + reminders
   const systemPrompt = ENRICHMENT_SYSTEM_PROMPT
-
-  const userPrompt = `## Context
-
-User's timezone: ${timezone}
-Current UTC time: ${currentUtcTime}
-
-User's schedule:
-- Default task time: 9:00 AM (when no specific time is mentioned, use this)
-- Wakes up: 7:00 AM
-- Goes to sleep: 10:30 PM
-
-When resolving time-of-day language:
-- "tomorrow" with no time specified → default task time (9:00 AM)
-- "morning" → default task time (9:00 AM)
-- "afternoon" → use your judgment, typically early afternoon
-- "evening" → use your judgment, typically early evening
-- "tonight" / "bedtime" / "before bed" → sleep time (10:30 PM)
-
-Available projects:
-- Home (id: 1)
-- Work (id: 2)${userContextBlock}
-
-<task>
-${rawInput}
-</task>
-
-${ENRICHMENT_REMINDERS}
-User's timezone: ${timezone} | Current UTC time: ${currentUtcTime}
-Parse the task above and return the structured result.`
 
   return `${separator('ENRICHMENT — System Prompt ' + charCount(systemPrompt))}
 ${systemPrompt}
@@ -139,67 +128,49 @@ ${userPrompt}`
 }
 
 function renderWhatsNextPrompt(scenario?: ScenarioInput): string {
-  const timezone = scenario?.input.timezone || 'America/Chicago'
+  const timezone = scenario?.input.timezone || DEFAULTS.timezone
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
   const tasks = scenario?.input.tasks || []
-  const taskList = tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
-  const userContextBlock = scenario?.input.userContext
-    ? `\nUser context: ${scenario.input.userContext}\n`
-    : ''
-  const taskPlaceholder = tasks.length > 0 ? taskList : '<task lines would appear here>'
+  const taskList =
+    tasks.length > 0
+      ? tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
+      : '<task lines would appear here>'
 
-  const prompt = `${WHATS_NEXT_SYSTEM_PROMPT}
-
-## Context
-
-Current time: ${currentTime}
-Total active tasks: ${tasks.length || '<N>'}
-The user is actively looking for what to do next. Focus on what is actionable right now.
-${userContextBlock}
-<tasks>
-${taskPlaceholder}
-</tasks>
-
-${WHATS_NEXT_REMINDERS}
-Current time: ${currentTime}
-Surface 2-8 tasks and return the JSON result.`
+  const prompt = buildWhatsNextFullPrompt({
+    currentTime,
+    totalTaskCount: tasks.length || '<N>',
+    taskList,
+    userContext: scenario?.input.userContext,
+  })
 
   return `${separator("WHAT'S NEXT — Full Prompt " + charCount(prompt))}
 ${prompt}`
 }
 
 function renderInsightsPrompt(scenario?: ScenarioInput): string {
-  const timezone = scenario?.input.timezone || 'America/Chicago'
+  const timezone = scenario?.input.timezone || DEFAULTS.timezone
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
   const tasks = scenario?.input.tasks || []
-  const taskLines = tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
-  const userContextBlock = scenario?.input.userContext
-    ? `\nUser context: ${scenario.input.userContext}\n`
-    : ''
-  const taskPlaceholder = tasks.length > 0 ? taskLines : '<task lines would appear here>'
+  const taskLines =
+    tasks.length > 0
+      ? tasks.map((t) => formatTaskLine(t as TaskSummary, timezone, now)).join('\n')
+      : '<task lines would appear here>'
 
-  const prompt = `${INSIGHTS_SYSTEM_PROMPT}
-
-## Context
-
-Current time: ${currentTime}
-Total tasks: ${tasks.length || '<N>'}${userContextBlock}
-<tasks>
-${taskPlaceholder}
-</tasks>
-
-${INSIGHTS_REMINDERS}
-Current time: ${currentTime}
-Score every task above. Return a JSON array with one entry per task.`
+  const prompt = buildInsightsFullPrompt({
+    currentTime,
+    totalTaskCount: tasks.length || '<N>',
+    taskLines,
+    userContext: scenario?.input.userContext,
+  })
 
   return `${separator('INSIGHTS — Full Prompt ' + charCount(prompt))}
 ${prompt}`
 }
 
 function renderQuickTakePrompt(scenario?: ScenarioInput): string {
-  const timezone = scenario?.input.timezone || 'America/Chicago'
+  const timezone = scenario?.input.timezone || DEFAULTS.timezone
   const tasks = scenario?.input.tasks || []
   const newTaskTitle =
     scenario?.feature === 'quick_take' && scenario.input.newTaskTitle

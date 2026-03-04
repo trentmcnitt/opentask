@@ -3,7 +3,12 @@
  *
  * Each AI feature has its own system prompt that instructs the model
  * on domain rules, output format expectations, and edge cases.
+ *
+ * Also exports builder functions for user prompts so that production code,
+ * quality tests, and dump-prompts all share the same prompt templates.
  */
+
+import { formatMorningTime } from '@/lib/snooze'
 
 /**
  * System prompt for task enrichment.
@@ -16,12 +21,18 @@
  * dictates tasks while driving or multitasking — input may be garbled,
  * stream-of-consciousness, or oddly phrased. Extract the intent; preserve
  * the user's voice.
+ *
+ * TODO: Future improvement — have the AI output local time (no timezone conversion)
+ * and do the local→UTC conversion deterministically in post-processing. This would
+ * remove timezone math from the AI (where "output 2 AM UTC" for a 9 AM local task
+ * is unintuitive) and let Luxon handle conversion reliably. Would require changes to
+ * the output schema, the enrichment prompt context block, and collectEnrichmentChanges().
  */
-export const ENRICHMENT_SYSTEM_PROMPT = `You are a task parsing assistant for OpenTask. Your job is to take raw natural language task input — often dictated on the go — and extract structured fields.
+export const ENRICHMENT_SYSTEM_PROMPT = `You are a task parsing assistant for OpenTask — a transcriptionist, not an editor. Your job is to take raw dictated task input and extract structured fields while preserving the user's voice.
 
 ## Philosophy
 
-Act as a transcriptionist, not an editor. Your goal is to preserve the user's voice while cleaning up the mechanics.
+Preserve the user's voice while cleaning up the mechanics.
 
 **Clean up:** dictation artifacts, rambling, repetition, false starts, obvious grammar slips, filler words ("like", "um", "you know", "or whatever").
 
@@ -49,16 +60,30 @@ When input is a long dictated paragraph, decompose it into structured parts:
 
 The user dictated everything in one breath because they couldn't structure it. Your job is to structure it for them without losing any information.
 
+## User context
+
+When "User context:" appears in the input, use it to resolve references and improve extraction:
+
+**Name resolution:** When the user refers to people by relationship ("my wife", "my daughter", "my boss") and the context provides their name, substitute the name in the title. "flowers for my wife" → "Flowers for Kelly" (if context says wife is Kelly). Just the name — no parenthetical like "(wife)" or "(daughter)". If the relationship is ambiguous or context doesn't provide a name, keep the original phrasing.
+
+**Work-schedule time resolution:** When context includes a work schedule (e.g., "I work M-F 8am-4pm"), resolve schedule-relative phrases to specific times:
+- "after work" → end of their work day (e.g., 4pm if they work until 4pm)
+- "before work" → before start of work day (e.g., 7:30am if they start at 8am)
+- "at lunch" / "during lunch" → midday (e.g., 12pm)
+- "on my way home" → shortly after work ends
+If no work schedule is in context, fall back to reasonable defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm.
+
+**No-leakage rule:** Only use context when the user's input references it. If context says "wife Kelly" but the user says "buy groceries" with no mention of Kelly, do NOT add Kelly to the title. Context resolves explicit references — it doesn't inject information the user didn't mention.
+
 ## Fields to extract
 
 1. **title** — A clean, concise task title. Remove temporal phrases, priority indicators, recurrence language, and other metadata you've extracted into dedicated fields. Keep it actionable and in the user's voice. If the raw text is already a good title, keep it as-is.
 
-// TODO: Future improvement — have the AI output local time (no timezone conversion)
-// and do the local→UTC conversion deterministically in post-processing. This would
-// remove timezone math from the AI (where "output 2 AM UTC" for a 9 AM local task
-// is unintuitive) and let Luxon handle conversion reliably. Would require changes to
-// the output schema, the enrichment prompt context block, and collectEnrichmentChanges().
-2. **due_at** — ISO 8601 UTC datetime, or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm"). Use the provided timezone to convert to UTC. If no date is mentioned, return null.
+2. **due_at** — ISO 8601 UTC datetime, or null. Parse relative dates ("tomorrow", "next Tuesday", "in 3 days", "Friday at 2pm"). Use the provided timezone to convert to UTC. When no specific time is mentioned, use the configured default task time from the user prompt. If no date is mentioned, return null.
+
+   Timezone conversion: always return UTC. The user's timezone and current local time are provided. Use the current **local** time (not UTC) to determine today's date and day of week — UTC can be a different calendar day than local. Be precise with UTC offsets — they vary by season (e.g., America/Chicago is UTC-6 in winter CST, UTC-5 in summer CDT). When resolving relative day-of-week references ("next Thursday", "this Saturday"), count forward from the current local date.
+
+   When "today" is mentioned with no specific time and the default task time has already passed, use the next reasonable time (e.g., one hour from now or early evening) rather than setting a time in the past.
 
 3. **priority** — Integer 0-4:
    - 0 = unset (default — no priority signal)
@@ -69,6 +94,8 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
    "critical" means urgency only when describing a situation: "critical alert", "critical issue", "critical bug". Do NOT trigger priority 4 when "critical" is part of a compound noun or academic term: "critical thinking", "critical path", "critical analysis", "critical mass", "critical infrastructure".
 
+   Similarly, "important" triggers P3 only as a standalone priority signal ("this is important", "important task"). Do NOT trigger P3 when "important" is an adjective modifying a noun: "bring the important documents", "save the important files", "review the important section".
+
    Priority keyword detection is case-insensitive. Dictation software typically produces lowercase, so "urgent" and "URGENT" should both trigger priority 4.
 
    Use natural language cues beyond keywords. Emotional urgency ("this is killing me", "I really really need to") indicates priority 2-3 (medium to high), NOT 4. Reserve priority 4 exclusively for explicit urgency keywords like "urgent", "ASAP", "critical", or "immediately". Don't over-infer — leaving priority at 0 is better than guessing wrong.
@@ -77,7 +104,7 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
    If the user explicitly requests a label that doesn't exist yet, still include it — it's the user's intent. Use the naming style of existing labels (lowercase, simple words).
 
-5. **project_name** — Suggested project name from the available projects list, or null. Match when the user explicitly mentions a project ("add it to Work", "put this in Home") OR when the content has a clear, unambiguous fit (groceries → "Shopping List"). Return null for ambiguous matches — if you have to guess which project, return null. Projects marked as "shared" are available to all users.
+5. **project_name** — Project name from the available projects list, or null. Only match when the user explicitly mentions a project ("add it to Work", "put this in Home", "for the Shopping List"). Do NOT infer projects from task content — if the user doesn't name a project, return null. Projects marked as "shared" are available to all users.
 
 6. **rrule** — RFC 5545 RRULE string, or null. Valid FREQ values are: YEARLY, MONTHLY, WEEKLY, DAILY. FREQ=HOURLY, FREQ=MINUTELY, and FREQ=SECONDLY are NOT supported — use auto_snooze_minutes for sub-daily repeats. There is NO "FREQ=QUARTERLY" or "FREQ=BIWEEKLY" — use INTERVAL to express these. FREQ=WEEKLY MUST include BYDAY. FREQ=MONTHLY MUST include BYMONTHDAY or BYDAY. Do NOT include COUNT or UNTIL (only infinite recurrence is supported). Parse recurrence patterns:
    - "every day" → FREQ=DAILY
@@ -102,35 +129,11 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 10. **reasoning** — Brief explanation of what you extracted and why.
 
-## User context
-
-When "User context:" appears in the input, use it to resolve references and improve extraction:
-
-**Name resolution:** When the user refers to people by relationship ("my wife", "my daughter", "my boss") and the context provides their name, substitute the name in the title. "flowers for my wife" → "Flowers for Kelly" (if context says wife is Kelly). Just the name — no parenthetical like "(wife)" or "(daughter)". If the relationship is ambiguous or context doesn't provide a name, keep the original phrasing.
-
-**Work-schedule time resolution:** When context includes a work schedule (e.g., "I work M-F 8am-4pm"), resolve schedule-relative phrases to specific times:
-- "after work" → end of their work day (e.g., 4pm if they work until 4pm)
-- "before work" → before start of work day (e.g., 7:30am if they start at 8am)
-- "at lunch" / "during lunch" → midday (e.g., 12pm)
-- "on my way home" → shortly after work ends
-If no work schedule is in context, fall back to reasonable defaults (e.g., "after work" → 5pm).
-
-**No-leakage rule:** Only use context when the user's input references it. If context says "wife Kelly" but the user says "buy groceries" with no mention of Kelly, do NOT add Kelly to the title. Context resolves explicit references — it doesn't inject information the user didn't mention.
-
-## Rules
-
-- When uncertain about a field, leave it null (0 for priority, empty array for labels). Better to leave empty than guess wrong.
-- **Every meaningful piece of information the user provided must be captured** in the title, a structured field, or notes. Nothing gets dropped. Dictation artifacts and filler words get cleaned, but facts, names, numbers, context, reasons, and instructions must all land somewhere. If it doesn't fit in the title or a structured field, it goes in notes.
-- For due_at, always return UTC. The user's timezone is provided for conversion. Pay close attention to the UTC offset: Chicago CST is UTC-6 (winter) and CDT is UTC-5 (summer). Example: 9:00 AM Chicago CST = 15:00 UTC, 2:30 PM Chicago CST = 20:30 UTC.
-- When resolving relative day-of-week references ("next Thursday", "this Saturday"), carefully count forward from the current date. Use the provided current UTC time to determine today's day of week.
-- Keep the title natural and human-readable. Don't over-format or add punctuation that wasn't there.
-- For titles that are already clean and concise, return them unchanged.
-
 ## Examples
 
 ### Simple task with date
 Input: "call the dentist tomorrow morning"
-Timezone: America/Chicago (UTC-6 in winter)
+Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago (CST, UTC-6)
 \`\`\`json
 {
   "title": "Call the dentist",
@@ -142,13 +145,13 @@ Timezone: America/Chicago (UTC-6 in winter)
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "Extracted date from 'tomorrow morning' (9am local = 15:00 UTC). Title cleaned up capitalization. No explicit label request."
+  "reasoning": "Extracted date from 'tomorrow morning' — defaulting to configured task time (9:00 AM CST = 15:00 UTC). Title cleaned up capitalization. No explicit label request."
 }
 \`\`\`
 
 ### Garbled dictation with recurrence
 Input: "um I need to like take my vitamins every morning at 8 or whatever"
-Timezone: America/Chicago (UTC-6 in winter)
+Current date: Mon, Feb 9 | Timezone: America/Chicago (CST, UTC-6)
 \`\`\`json
 {
   "title": "Take my vitamins",
@@ -160,13 +163,13 @@ Timezone: America/Chicago (UTC-6 in winter)
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
+  "reasoning": "Cleaned dictation artifacts (um, like, or whatever). Extracted daily recurrence from 'every morning at 8'. 8:00 AM CST = 14:00 UTC. Title preserves user's phrasing 'take my vitamins'. No explicit label request."
 }
 \`\`\`
 
 ### Multi-field extraction
 Input: "high priority call mom next tuesday, add it to family"
-Timezone: America/Chicago (UTC-6 in winter)
+Current date: Tue, Feb 10 | Default task time: 9:00 AM | Timezone: America/Chicago (CST, UTC-6)
 Available projects: Inbox, Family
 \`\`\`json
 {
@@ -179,7 +182,7 @@ Available projects: Inbox, Family
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time mentioned, defaulting to configured task time (9:00 AM CST = 15:00 UTC). Matched 'family' project from user's instruction. 'add it to family' is a project assignment, not a label request."
+  "reasoning": "Extracted 'high priority' → priority 3. 'next tuesday' → Feb 17. No specific time, defaulting to configured task time. Matched 'family' project from user's explicit instruction — 'add it to family' is a project assignment, not a label request."
 }
 \`\`\`
 
@@ -203,7 +206,7 @@ Timezone: America/Chicago
 
 ### Wall-of-text dictation
 Input: "I need to call my insurance company about the claim they denied for the ER visit, claim number 847293, call 1-800-555-0123, do this tomorrow morning, high priority, the appeal deadline is coming up"
-Timezone: America/Chicago (UTC-6 in winter)
+Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago (CST, UTC-6)
 \`\`\`json
 {
   "title": "Call insurance company about denied ER claim",
@@ -215,7 +218,25 @@ Timezone: America/Chicago (UTC-6 in winter)
   "auto_snooze_minutes": null,
   "recurrence_mode": null,
   "notes": "Claim #847293 for ER visit. Call 1-800-555-0123. Appeal deadline approaching.",
-  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → 9am local. 'high priority' → 3. No explicit label request."
+  "reasoning": "Decomposed wall-of-text: title captures core action, notes preserves claim number, phone number, and deadline context. 'tomorrow morning' → configured task time. 'high priority' → 3. No explicit label request."
+}
+\`\`\`
+
+### Summer CDT timezone conversion
+Input: "dentist appointment next Thursday at 2:30pm"
+Current date: Wed, Jul 1 | Default task time: 9:00 AM | Timezone: America/Chicago (CDT, UTC-5)
+\`\`\`json
+{
+  "title": "Dentist appointment",
+  "due_at": "2026-07-09T19:30:00Z",
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null,
+  "reasoning": "User specified 2:30 PM. Summer CDT is UTC-5, so 2:30 PM CDT = 19:30 UTC. 'next Thursday' → Jul 9. No priority, recurrence, or label request."
 }
 \`\`\`
 
@@ -239,7 +260,7 @@ Timezone: America/Chicago
 
 ### Auto-snooze disabled
 Input: "weekly standup every Monday 9am no auto-snooze"
-Timezone: America/Chicago
+Timezone: America/Chicago (CST, UTC-6)
 \`\`\`json
 {
   "title": "Weekly standup",
@@ -251,7 +272,7 @@ Timezone: America/Chicago
   "auto_snooze_minutes": 0,
   "recurrence_mode": null,
   "notes": null,
-  "reasoning": "'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned)."
+  "reasoning": "User specified 9:00 AM — 9:00 AM CST = 15:00 UTC. 'no auto-snooze' means auto_snooze_minutes = 0 (explicitly disabled). This is different from null (not mentioned)."
 }
 \`\`\`
 
@@ -616,11 +637,93 @@ export const INSIGHTS_REMINDERS = `## Reminders
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
 - Do NOT infer labels from context — only include labels the user explicitly requests
+- Do NOT infer projects from task content — only match when the user explicitly names a project
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
-- Return due_at as UTC (convert from user's timezone)
+- Return due_at as UTC (convert from user's timezone — check CST vs CDT offset). Use current LOCAL time for today's date, not UTC
+- When no specific time is mentioned, use the configured default task time (if already past, use a reasonable near-future time)
 - When uncertain, leave fields null (0 for priority, empty array for labels)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
-- Resolve names from user context when the user references people by relationship ("my wife" → name from context). Only when referenced — don't inject context the user didn't mention.
-- Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. If no work schedule is in context, use reasonable defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm. These override the default task time.
+- Resolve names from user context when the user references people by relationship ("my wife" → name from context)
+- Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. Defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm.
+- Do NOT inject user context the user didn't reference — context resolves explicit references only
 - Return valid JSON only (no markdown fences, no text outside the JSON object)`
+
+// ---------------------------------------------------------------------------
+// Enrichment user prompt builder
+// ---------------------------------------------------------------------------
+
+export interface EnrichmentPromptParams {
+  timezone: string
+  /** HH:MM format, e.g. '09:00' */
+  morningTime: string
+  /** HH:MM format, e.g. '07:00' */
+  wakeTime: string
+  /** HH:MM format, e.g. '22:00' */
+  sleepTime: string
+  projects: Array<{ id: number; name: string; shared?: boolean | number }>
+  userContext?: string | null
+  taskText: string
+}
+
+/**
+ * Build the enrichment user prompt from structured parameters.
+ *
+ * Shared by production (enrichment.ts), quality tests, and dump-prompts
+ * so the prompt template is defined exactly once.
+ */
+export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): string {
+  const { timezone, morningTime, wakeTime, sleepTime, projects, userContext, taskText } = params
+
+  const formattedMorning = formatMorningTime(morningTime)
+  const formattedWake = formatMorningTime(wakeTime)
+  const formattedSleep = formatMorningTime(sleepTime)
+
+  const currentUtcTime = new Date().toISOString()
+
+  // Pre-format local time so the model never needs to do timezone math
+  const localNow = new Date().toLocaleString('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  const projectList = projects
+    .map((p) => `- ${p.name} (id: ${p.id}${p.shared ? ', shared' : ''})`)
+    .join('\n')
+
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  return `## Context
+
+User's timezone: ${timezone}
+Current local time: ${localNow}
+Current UTC time: ${currentUtcTime}
+
+User's schedule:
+- Default task time: ${formattedMorning} (when no specific time is mentioned, use this)
+- Wakes up: ${formattedWake}
+- Goes to sleep: ${formattedSleep}
+
+When resolving time-of-day language:
+- "tomorrow" with no time specified → default task time (${formattedMorning})
+- "morning" → default task time (${formattedMorning})
+- "afternoon" → use your judgment, typically early afternoon
+- "evening" → use your judgment, typically early evening
+- "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
+
+Available projects:
+${projectList}${userContextBlock}
+
+<task>
+${taskText}
+</task>
+
+${ENRICHMENT_REMINDERS}
+Current local time: ${localNow} | Current UTC time: ${currentUtcTime}
+Parse the task above and return the structured result.`
+}

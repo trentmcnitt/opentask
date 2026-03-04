@@ -177,10 +177,10 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
     },
   },
   {
-    id: 'enrich-user-context-project-matching',
+    id: 'enrich-user-context-no-project-inference',
     feature: 'enrichment',
     description:
-      'User context helps with project matching — context says "I work from home as a software engineer"',
+      'User context must NOT trigger content-based project matching — context says software engineer but no explicit project assignment',
     input: {
       text: 'fix that deployment bug',
       timezone: 'America/Chicago',
@@ -193,15 +193,16 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
     },
     requirements: {
       must_include: {
+        project_name: null,
         rrule: null,
         labels: [],
       },
       quality_notes:
         'Title should be clean (e.g., "Fix that deployment bug" or "Fix deployment bug"). ' +
-        'Project matching should lean toward "Work" given the user context about being a software engineer. ' +
+        'project_name MUST be null — even though user context says "software engineer" and a Work project exists, ' +
+        'content-based project inference is forbidden. Only explicit assignment (e.g., "add to Work") triggers project matching. ' +
         'The user context should NOT appear in the title or notes — it is background knowledge only. ' +
-        'Priority should remain 0 (no urgency signal in the input). ' +
-        'This tests that user context influences project matching without leaking into the output.',
+        'Priority should remain 0 (no urgency signal in the input).',
     },
   },
   {
@@ -228,7 +229,7 @@ export const enrichmentEdgeScenarios: AITestScenario[] = [
         'Title should be "Buy milk" or similar — the user context about wife/kids must NOT appear in the title. ' +
         'Notes should be null — do not add context like "wife usually handles groceries" to the notes field. ' +
         'The AI should still structurally extract the task normally. ' +
-        'May match Shopping List project. ' +
+        'project_name should be null — no explicit project assignment. ' +
         'This tests that user context is used as background knowledge without leaking into any output field.',
     },
   },

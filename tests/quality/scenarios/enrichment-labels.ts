@@ -112,7 +112,7 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Pick up bananas and bread" or similar. ' +
         'Labels MUST be empty — groceries do NOT warrant inferring "shopping". ' +
-        "Project matching to Shopping List is fine (that's project, not label). " +
+        'project_name should be null — no explicit project assignment (content-based inference is forbidden for both labels and projects). ' +
         'Contextual inference is forbidden for labels.',
     },
   },
@@ -160,7 +160,7 @@ export const enrichmentLabelScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Send the TPS report to accounting" or similar. ' +
         'Labels MUST be empty — work context does NOT warrant a "work" label. ' +
-        "Project matching to Work is fine (that's project, not label).",
+        'project_name should be null — no explicit project assignment.',
     },
   },
   {

@@ -23,6 +23,44 @@ import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
 import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
 import { log } from '@/lib/logger'
 
+/**
+ * Build the full Insights prompt from structured parameters.
+ *
+ * Shared by production and dump-prompts so the template is defined once.
+ * Handles both single-call and chunked modes via the optional summaryBlock/contextBlock.
+ */
+export function buildInsightsFullPrompt(params: {
+  currentTime: string
+  totalTaskCount: number | string
+  taskLines: string
+  scheduleBlock?: string
+  sourceBlock?: string
+  userContext?: string | null
+  summaryBlock?: string
+  contextBlock?: string
+}): string {
+  const { currentTime, totalTaskCount, taskLines, userContext } = params
+  const scheduleBlock = params.scheduleBlock ?? ''
+  const sourceBlock = params.sourceBlock ?? ''
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+  const summaryBlock = params.summaryBlock ? `\n${params.summaryBlock}\n` : ''
+  const contextBlock = params.contextBlock ?? `Total tasks: ${totalTaskCount}`
+
+  return `${INSIGHTS_SYSTEM_PROMPT}
+${summaryBlock}
+## Context
+
+Current time: ${currentTime}
+${contextBlock}${scheduleBlock}${sourceBlock}${userContextBlock}
+<tasks>
+${taskLines}
+</tasks>
+
+${INSIGHTS_REMINDERS}
+Current time: ${currentTime}
+Score every task above. Return a JSON array with one entry per task.`
+}
+
 const INSIGHTS_JSON_SCHEMA = z.toJSONSchema(InsightsBatchResultSchema) as Record<string, unknown>
 
 // ---------------------------------------------------------------------------
@@ -338,7 +376,6 @@ async function processInsightsChunks(
   const db = getDb()
   const now = DateTime.now().setZone(timezone)
   const currentTime = now.toFormat("cccc, LLL d, yyyy, h:mm a '('z')'")
-  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
   const scheduleBlock = getScheduleBlock(userId)
 
@@ -378,21 +415,16 @@ async function processInsightsChunks(
         ? `Total tasks: ${tasks.length}`
         : `Total tasks in full list: ${tasks.length}\nTasks in this subset: ${chunk.length} (random sample — see summary above)`
 
-    const summaryBlock = summaryHeader ? `\n${summaryHeader}\n` : ''
-
-    const prompt = `${INSIGHTS_SYSTEM_PROMPT}
-${summaryBlock}
-## Context
-
-Current time: ${currentTime}
-${contextBlock}${scheduleBlock}${sourceBlock}${userContextBlock}
-<tasks>
-${taskLines}
-</tasks>
-
-${INSIGHTS_REMINDERS}
-Current time: ${currentTime}
-Score every task above. Return a JSON array with one entry per task.`
+    const prompt = buildInsightsFullPrompt({
+      currentTime,
+      totalTaskCount: tasks.length,
+      taskLines,
+      scheduleBlock,
+      sourceBlock,
+      userContext,
+      summaryBlock: summaryHeader ?? undefined,
+      contextBlock,
+    })
 
     const inputLabel =
       chunks.length === 1

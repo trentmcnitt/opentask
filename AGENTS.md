@@ -1,16 +1,16 @@
 # OpenTask
 
-Self-hosted task management PWA. This is the authoritative reference for contributing to this codebase (also linked as `CLAUDE.md`).
+Self-hosted task management PWA. This is the authoritative reference for contributing to this codebase. Canonical filename: `AGENTS.md` (symlinked as `CLAUDE.md` for Claude Code compatibility).
 
 **Start here:** [Critical Requirements](#critical-requirements) (data-loss prevention), [Commands](#commands) (build/test), [Route Handler Guide](#route-handler-guide) (API patterns), [Development and Testing](#development-and-testing) (what to run when). Reference sections (task model, due dates) are at the end — consult them when working on related features.
 
-See also: `README.md` (project overview), `CONTRIBUTING.md` (quickstart), `TASKS.md` (backlog).
+See also: `README.md` (project overview), `CONTRIBUTING.md` (quickstart), `TASKS.md` (backlog). Environment-specific details (server addresses, deploy scripts, credentials) are in `CLAUDE.local.md` (gitignored).
 
 ## Architecture
 
-Next.js 16 (App Router) + React 19 + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications.
+Next.js 16 (App Router) + React 19 + React Compiler + TypeScript + SQLite (better-sqlite3) + NextAuth 5 + Tailwind CSS 4 + Shadcn UI. Mobile-first PWA optimized for iOS. Basic offline support: `public/sw.js` caches the app shell so navigation works offline, but there is no offline data access or mutation queuing. Uses Next.js standalone output mode for deployment. A native iOS companion app (`ios/`) wraps the PWA in a WKWebView and adds APNs push notifications.
 
-Additional docs: `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (planned features), `docs/AUTOMATION.md` (external API integration), `DEV_LOG.md` (design decisions and narrative context), `docs/NOTIFICATIONS.md` (push architecture), `docs/IOS-DEV-LOG.md` (iOS history), `docs/openapi.yaml` (REST API schema).
+Additional docs: `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (planned features), `docs/AUTOMATION.md` (external API integration), `DEV_LOG.md` (design decisions and narrative context), `docs/NOTIFICATIONS.md` (push architecture), `docs/IOS-DEV-LOG.md` (iOS history), `docs/openapi.yaml` (REST API schema), `docs/AI.md` (AI architecture and quality testing), `docs/TASK-MODEL.md` (task model reference), `docs/DESIGN.md` (design philosophy).
 
 ### Documentation site
 
@@ -264,7 +264,7 @@ Note: `updateTask()` handles its own transaction and undo logging internally.
 
 Follow the pattern above, and verify:
 
-- [ ] Use `requireAuth(request)` (preferred) or `getAuthUser(request)` for authentication
+- [ ] Use `requireAuth(request)` (preferred for new handlers) or `getAuthUser(request)` for authentication
 - [ ] Await `context.params` (Next.js 16 requirement)
 - [ ] Validate request body with validation functions from `@/core/validation` (`validateTaskCreate`, `validateTaskUpdate`, etc. — these call Zod `.parse()` internally)
 - [ ] Wrap in try/catch: `AuthError` → `unauthorized()`, `ZodError` → `handleZodError()`, else → `handleError()`. Core functions may also throw `NotFoundError`, `ForbiddenError`, or `ValidationError` from `@/core/errors` — `handleError()` handles these automatically via the `AppError` base class.
@@ -282,15 +282,15 @@ Follow the pattern above, and verify:
 
 If a change spans multiple rows in this table, combine the test suites from all matching rows. If a change affects what the user sees on screen (even via a shared utility like `format-task.ts`), treat it as a UI change.
 
-| Change type                                   | What to run                                                                                                                             |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                      |
-| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                                |
-| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (both layers; requires `OPENTASK_AI_ENABLED=true`) — see [AI quality testing](#ai-quality-testing) |
-| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                         |
-| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`. Manual testing on device. No automated test suite.                                                |
-| Refactoring / code reorganization             | All test suites                                                                                                                         |
-| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed)     |
+| Change type                                   | What to run                                                                                                                         |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Every change (always run)                     | The quick check (`npm run type-check && npm run lint && npm test`)                                                                  |
+| API routes, core logic, validation, auth      | Quick check + `npm run test:integration`                                                                                            |
+| AI prompts, enrichment logic, AI behavior     | Quick check + `npm run test:quality` (Layer 1; then perform Layer 2 — see [AI quality testing](#ai-quality-testing))                |
+| UI components, hooks, styles, client behavior | Quick check + `npm run test:e2e` + **deploy to dev + [browser verification](#ui-verification)**                                     |
+| iOS app (Swift, project.yml)                  | Build with `xcodegen` + `xcodebuild`. Manual testing on device. No automated test suite.                                            |
+| Refactoring / code reorganization             | All test suites                                                                                                                     |
+| Production deploy                             | All test suites relevant to changes being deployed (always: quick check + integration + E2E; add `test:quality` if AI code changed) |
 
 During rapid iteration (deploy, verify in browser, fix, re-deploy), the quick check between deploys is sufficient. Run the full checklist on the final version before reporting results.
 
@@ -301,9 +301,14 @@ Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 ### AI quality testing
 
-AI quality testing has two layers: **Layer 1** (automated structural validation — valid JSON, required fields, type checks) and **Layer 2** (LLM-as-judge semantic evaluation using `tests/quality/validator-prompt.md`, scoring 0-10, pass threshold >= 6). Running `npm run test:quality` is only Layer 1. You must then perform Layer 2 by following the instructions printed to stdout. Do not report quality tests as complete until Layer 2 is done.
+AI quality testing has two layers:
 
-Production has no feedback loop for AI quality — quality testing IS the quality bar. If a scenario isn't tested, assume it doesn't work. Do not ship prompt changes that degrade quality on existing scenarios.
+1. **Layer 1** — Automated structural validation (valid JSON, required fields, type checks). Run with `npm run test:quality`.
+2. **Layer 2** — LLM-as-judge semantic evaluation using `tests/quality/validator-prompt.md` (scoring 0-10, pass >= 6). Perform manually by following the instructions printed by Layer 1.
+
+Do not report quality tests as complete until both layers pass.
+
+Production has no feedback loop for AI quality — quality testing **is** the quality bar. If a scenario isn't tested, assume it doesn't work. Do not ship prompt changes that degrade quality on existing scenarios.
 
 Always dump and review the rendered prompt before and after any AI prompt change: `npm run dump-prompts -- --feature <feature>`. See `docs/AI.md` § Quality Testing for the full workflow, all `dump-prompts` flags, and targeted re-run commands.
 
@@ -360,6 +365,8 @@ Playwright with headless Chromium. Uses separate DB (`data/test-e2e.db`). The `a
 
 Helpers: `tests/e2e/fixtures.ts`, `tests/e2e/globalSetup.ts`
 
+If navigating away triggers a `beforeunload` dialog, either reset dirty state first (click Reset/Cancel) or use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss it.
+
 ### Test data seeding
 
 `scripts/seed-test.ts` seeds deterministic test data for integration and E2E tests. For development (not testing), `npm run db:seed` (which runs `scripts/seed.ts`) seeds the development database with initial users and projects.
@@ -397,10 +404,6 @@ const tomorrow5pm = DateTime.now().plus({ days: 1 }).set({ hour: 17 })
 
 See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts` for examples.
 
-### Handling unsaved-changes dialogs in Playwright
-
-If navigating away triggers a `beforeunload` dialog in Playwright, either reset dirty state first (click Reset/Cancel) or use `mcp__playwright__browser_handle_dialog` with `accept: true` to dismiss it.
-
 ## Deployment
 
 **Local development:** `npm run dev` starts a hot-reloading server on port 3000.
@@ -424,11 +427,7 @@ See `docs/TASK-MODEL.md` for the complete task model reference: priority values,
 
 **Due Date Philosophy (critical for AI work):** Due dates for P0-2 tasks are reminders, not deadlines. P3 is a deadline. P4 (Urgent) is a hard deadline and is excluded from bulk snooze. See `docs/TASK-MODEL.md` for full details and implications for code/AI.
 
-**Undo system essentials** (see [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for the atomic mutation rule):
-
-- `logAction(userId, action, description, fieldsChanged, snapshots)` — log for undo
-- `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build snapshot
-- `executeUndo(userId)` / `executeRedo(userId)` — undo/redo stack
+**Undo system:** See [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for the atomic mutation pattern and API, or `docs/TASK-MODEL.md` for the full undo reference.
 
 **Purge modules** run via cron jobs started in `src/instrumentation.ts`: `src/core/undo/purge.ts`, `src/core/stats/purge.ts`, `src/core/tasks/purge-completions.ts`, `src/core/tasks/purge-trash.ts`, `src/core/ai/purge.ts`, `src/core/webhooks/purge.ts`.
 
@@ -451,29 +450,14 @@ The demo account showcases OpenTask with curated portfolio-style tasks. Each use
 
 ## iOS App (`ios/`)
 
-Native iOS companion app — a thin SwiftUI wrapper (iOS 17+) that hosts the PWA in a WKWebView and adds APNs push notifications. All task data and business logic live on the server; the app stores no local data beyond connection credentials.
+Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Three targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWatch` (watchOS companion). No automated tests — testing is manual. Build with `cd ios && xcodegen`.
 
-**Three targets:**
+**Server API endpoints used by the iOS app** (changes to these require manual iOS testing):
 
-- `OpenTask` — Main app: WKWebView host, first-launch setup (server URL + Bearer token), APNs device registration, notification action handling, silent-push dismissal for cross-device sync
-- `OpenTaskNotification` — Content extension: interactive snooze grid on notification long-press, direct API calls for snooze/done without forwarding to the main app
-- `OpenTaskWatch` — watchOS companion (watchOS 10+): handles notification actions (Done/Snooze) directly on Apple Watch instead of forwarding to iPhone. Reads credentials from shared App Group keychain — no setup UI needed. Provides haptic feedback on success/failure.
-
-**Shared code** (`Shared/`): `APIClient.swift` (HTTP with Bearer auth), `KeychainHelper.swift` (App Group keychain for credential sharing between app, extension, and Watch app), `DateHelpers.swift` (ISO 8601, snap-to-preset, delta formatting). All shared code uses only `Foundation`/`Security` — no platform-specific imports, compiles on both iOS and watchOS.
-
-**Build:** `xcodegen` generates `.xcodeproj` from `project.yml`. Regenerate with `cd ios && xcodegen` after changing `project.yml`.
-
-**Contributing:** The bundle ID (`io.mcnitt.opentask`) and Apple Developer Team ID in `ios/project.yml` belong to the maintainer. To build locally, update `bundleIdPrefix` and `DEVELOPMENT_TEAM` to your own values and run `xcodegen` to regenerate the project.
-
-**Server API endpoints used by the iOS app:**
-
-- `POST /api/push/apns/register` — device token registration
+- `POST /api/push/apns/register`, `DELETE /api/push/apns/register` — device token registration
 - `POST /api/notifications/actions` — done/snooze from notification actions
 - `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
 - `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action
-- `DELETE /api/push/apns/register` — device token unregistration
 - `GET /api/user/preferences` — connection validation during setup
 
-**No automated tests** — testing is manual.
-
-See `ios/CLAUDE.md` for notification mechanisms, simulator limitations, physical device cautions, and XcodeBuildMCP workarounds.
+See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.
