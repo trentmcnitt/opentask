@@ -8,6 +8,7 @@
  *   npm run db:reset-demo              # Resets the 'demo' user (default)
  *   npx tsx scripts/reset-demo-user.ts trent_m   # Resets 'trent_m' with demo data
  *   npx tsx scripts/reset-demo-user.ts trent_m --empty  # Wipes 'trent_m' to blank slate
+ *   npx tsx scripts/reset-demo-user.ts trent_m --ai-context "I'm Trent..."  # Set AI context after seed
  *
  * Cron: every 4 hours — see CLAUDE.local.md for the full cron line
  */
@@ -15,7 +16,7 @@
 import { getDb, closeDb } from '../src/core/db'
 import { seedDemoData } from './seed-demo'
 
-function resetUser(username: string, empty: boolean): void {
+function resetUser(username: string, empty: boolean, aiContext: string | null): void {
   const db = getDb()
 
   const user = db.prepare('SELECT id FROM users WHERE name = ? COLLATE NOCASE').get(username) as
@@ -42,10 +43,15 @@ function resetUser(username: string, empty: boolean): void {
     { name: 'push_subscriptions', col: 'user_id' },
     { name: 'apns_devices', col: 'user_id' },
     { name: 'user_daily_stats', col: 'user_id' },
+    { name: 'webhooks', col: 'user_id' },
     { name: 'tasks', col: 'user_id' },
-    { name: 'api_tokens', col: 'user_id' },
     { name: 'projects', col: 'owner_id' },
   ]
+
+  // Only delete API tokens for the demo user — other users need theirs preserved across resets
+  if (username === 'demo') {
+    tables.push({ name: 'api_tokens', col: 'user_id' })
+  }
 
   for (const { name, col } of tables) {
     const result = db.prepare(`DELETE FROM ${name} WHERE ${col} = ?`).run(userId)
@@ -72,17 +78,32 @@ function resetUser(username: string, empty: boolean): void {
     console.log(`\nReset complete! User "${username}" (ID: ${userId}), ${taskCount} tasks.`)
   }
 
+  // Set AI context on the user row if provided — useful for initial setup or restoring
+  // after a full wipe. The column survives normal resets since the user row is preserved.
+  if (aiContext !== null) {
+    db.prepare('UPDATE users SET ai_context = ? WHERE id = ?').run(aiContext, userId)
+    console.log(`  AI context set (${aiContext.length} chars)`)
+  }
+
   closeDb()
 }
 
-// Parse args: [username] [--empty]
+// Parse args: [username] [--empty] [--ai-context "..."]
 const args = process.argv.slice(2)
 const empty = args.includes('--empty')
-const positional = args.filter((a) => !a.startsWith('--'))
+const aiContextIdx = args.indexOf('--ai-context')
+if (aiContextIdx !== -1 && args[aiContextIdx + 1] === undefined) {
+  console.error('--ai-context requires a value')
+  process.exit(1)
+}
+const aiContext = aiContextIdx !== -1 ? args[aiContextIdx + 1] : null
+const positional = args.filter(
+  (a, i) => !a.startsWith('--') && (aiContextIdx === -1 || i !== aiContextIdx + 1),
+)
 const username = positional[0] || 'demo'
 
 try {
-  resetUser(username, empty)
+  resetUser(username, empty, aiContext)
 } catch (err) {
   console.error('Reset failed:', err)
   process.exit(1)
