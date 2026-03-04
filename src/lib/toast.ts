@@ -61,8 +61,10 @@ export function showAiSuccessToastWithAction(
   message: string,
   action: { label: string; onClick: () => void },
   description?: string,
+  options?: { id?: string | number },
 ) {
   sonnerToast.success(message, {
+    id: options?.id,
     icon: sparkleIcon,
     duration: 5000,
     description,
