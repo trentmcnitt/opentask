@@ -319,14 +319,21 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       // Sonner deduplicates by toast ID — if this device just created the task,
       // the local toast already has this ID, so Sonner updates it in place
       // rather than showing a duplicate.
+      const task = tasks.find((t) => t.id === data.taskId)
       showSuccessToastWithAction(
         'Task added',
-        { label: 'View', onClick: () => router.push(`/tasks/${data.taskId}`) },
+        {
+          label: 'View',
+          onClick: () => {
+            if (task) handleViewTask(task)
+            else router.push(`/tasks/${data.taskId}`)
+          },
+        },
         { id: `task-created-${data.taskId}` },
       )
     },
     onEnrichmentComplete: (data) => {
-      // If the banner is showing for this task, update it with enrichment data
+      // Update banner if it's showing for this task
       if (bannerTaskIdRef.current === data.taskId) {
         setBannerState((prev) =>
           prev
@@ -340,17 +347,22 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
               }
             : prev,
         )
-      } else {
-        // Different task — show the normal enrichment toast
-        showAiSuccessToastWithAction(
-          data.title,
-          {
-            label: 'View',
-            onClick: () => router.push(`/tasks/${data.taskId}`),
-          },
-          data.description,
-        )
       }
+
+      // Always show enrichment toast (replaces "Task added" toast via shared ID)
+      const task = tasks.find((t) => t.id === data.taskId)
+      showAiSuccessToastWithAction(
+        `Enriched: ${data.title}`,
+        {
+          label: 'View',
+          onClick: () => {
+            if (task) handleViewTask(task)
+            else router.push(`/tasks/${data.taskId}`)
+          },
+        },
+        data.description,
+        { id: `task-created-${data.taskId}` },
+      )
     },
   })
   const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
