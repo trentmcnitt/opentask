@@ -2,10 +2,15 @@
  * Centralized AI model resolution
  *
  * Single source of truth for which model each AI feature uses.
- * No hardcoded defaults — every feature must have its model explicitly configured
- * via per-feature env var (e.g., OPENTASK_AI_ENRICHMENT_MODEL).
  *
- * Resolution: per-feature env var → null (requireFeatureModel throws).
+ * Two independent resolution paths:
+ * - **API mode**: per-feature env var (e.g., OPENTASK_AI_ENRICHMENT_MODEL) — required,
+ *   throws if missing. Model name must be valid for the configured API provider.
+ * - **SDK mode**: per-feature SDK env var → global SDK default → 'sonnet' fallback.
+ *   Always resolves to a Claude-compatible model name.
+ *
+ * This split allows a deployment to serve SDK-mode users (Claude models) and
+ * API-mode users (any provider's models) simultaneously for the same feature.
  */
 
 import { isSdkAvailableSync } from './provider'
@@ -15,6 +20,7 @@ export type AIFeature = 'enrichment' | 'quick_take' | 'whats_next' | 'insights'
 
 export const AI_FEATURES: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
 
+/** Env vars for API-mode models (provider-specific model names, e.g., 'grok-4-1-fast'). */
 export const FEATURE_ENV_VARS: Record<AIFeature, string> = {
   enrichment: 'OPENTASK_AI_ENRICHMENT_MODEL',
   quick_take: 'OPENTASK_AI_QUICKTAKE_MODEL',
@@ -22,8 +28,16 @@ export const FEATURE_ENV_VARS: Record<AIFeature, string> = {
   insights: 'OPENTASK_AI_INSIGHTS_MODEL',
 }
 
+/** Env vars for SDK-mode models (Claude model names, e.g., 'sonnet', 'haiku'). */
+export const FEATURE_SDK_ENV_VARS: Record<AIFeature, string> = {
+  enrichment: 'OPENTASK_AI_ENRICHMENT_SDK_MODEL',
+  quick_take: 'OPENTASK_AI_QUICKTAKE_SDK_MODEL',
+  whats_next: 'OPENTASK_AI_WHATS_NEXT_SDK_MODEL',
+  insights: 'OPENTASK_AI_INSIGHTS_SDK_MODEL',
+}
+
 /**
- * Resolve the model for a feature.
+ * Resolve the API-mode model for a feature.
  * Returns the per-feature env var value, or null if not set.
  */
 export function resolveFeatureModel(feature: AIFeature): string | null {
@@ -32,7 +46,7 @@ export function resolveFeatureModel(feature: AIFeature): string | null {
 
 /**
  * Same as resolveFeatureModel but throws on null.
- * Used at call sites where a model is required.
+ * Used at call sites where an API-mode model is required.
  */
 export function requireFeatureModel(feature: AIFeature): string {
   const model = resolveFeatureModel(feature)
@@ -42,6 +56,15 @@ export function requireFeatureModel(feature: AIFeature): string {
     )
   }
   return model
+}
+
+/**
+ * Resolve the SDK-mode model for a feature.
+ * Fallback chain: per-feature SDK env var → global OPENTASK_AI_SDK_MODEL → 'sonnet'.
+ * Always returns a valid Claude model name (never null, never throws).
+ */
+export function resolveSDKModel(feature: AIFeature): string {
+  return process.env[FEATURE_SDK_ENV_VARS[feature]] || process.env.OPENTASK_AI_SDK_MODEL || 'sonnet'
 }
 
 // --- Per-feature provider resolution ---
@@ -150,10 +173,8 @@ export interface FeatureAIConfig {
  * Resolve the full AI config for a feature given its mode.
  * Combines provider resolution + model resolution into a single call.
  *
- * For 'sdk' mode: returns provider='sdk', no providerConfig, model from env var.
- * For 'api' mode: resolves per-feature provider config + model.
- *
- * Throws if model or API key is missing.
+ * For 'sdk' mode: returns provider='sdk', model from SDK resolution (always succeeds).
+ * For 'api' mode: resolves per-feature provider config + API model (throws if missing).
  */
 export function resolveFeatureAIConfig(feature: AIFeature, mode: FeatureMode): FeatureAIConfig {
   if (mode === 'off') {
@@ -163,13 +184,12 @@ export function resolveFeatureAIConfig(feature: AIFeature, mode: FeatureMode): F
     )
   }
 
-  const model = requireFeatureModel(feature)
-
   if (mode === 'sdk') {
-    return { provider: 'sdk', model }
+    return { provider: 'sdk', model: resolveSDKModel(feature) }
   }
 
   // mode === 'api'
+  const model = requireFeatureModel(feature)
   const providerConfig = resolveFeatureProvider(feature)
   if (!providerConfig) {
     throw new Error(
@@ -241,7 +261,7 @@ export function getFeatureInfo(feature: AIFeature, mode: FeatureMode): FeatureIn
   }
 
   if (mode === 'sdk') {
-    const model = resolveFeatureModel(feature)
+    const model = resolveSDKModel(feature)
     return {
       mode,
       provider: 'sdk',

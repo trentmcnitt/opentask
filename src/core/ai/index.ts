@@ -13,6 +13,7 @@ export {
   requireFeatureModel,
   resolveFeatureProvider,
   resolveFeatureAIConfig,
+  resolveSDKModel,
   isAnyApiProviderAvailable,
 } from './models'
 export type {

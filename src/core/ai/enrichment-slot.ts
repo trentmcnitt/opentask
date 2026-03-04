@@ -24,7 +24,7 @@ import {
   checkCircuitBreaker,
 } from './slot-shared'
 import { EnrichmentResultSchema } from './types'
-import { requireFeatureModel } from './models'
+import { resolveSDKModel } from './models'
 import { z } from 'zod'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
@@ -38,7 +38,7 @@ function getMaxReuses(): number {
 }
 
 function getModel(): string {
-  return requireFeatureModel('enrichment')
+  return resolveSDKModel('enrichment')
 }
 
 function getQueryTimeout(): number {

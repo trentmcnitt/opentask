@@ -10,8 +10,8 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createFakeStream, makeSuccessResult, makeErrorResult } from '../helpers/fake-sdk-stream'
 import type { FakeStreamControl } from '../helpers/fake-sdk-stream'
 
-// Set model env var so requireFeatureModel() works (no real API calls are made)
-process.env.OPENTASK_AI_QUICKTAKE_MODEL = 'test-model'
+// Set SDK model env var so resolveSDKModel() returns a known value (no real API calls are made)
+process.env.OPENTASK_AI_QUICKTAKE_SDK_MODEL = 'test-model'
 
 // --- Mocks ---
 
