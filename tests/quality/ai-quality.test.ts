@@ -377,21 +377,23 @@ async function runEnrichment(
 
   const currentUtcTime = new Date().toISOString()
 
-  // Compute explicit UTC offset to eliminate DST ambiguity (matches production)
-  const now = new Date()
-  const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' })
-  const localStr = now.toLocaleString('en-US', { timeZone: input.timezone })
-  const utcOffsetMinutes = (new Date(localStr).getTime() - new Date(utcStr).getTime()) / 60000
-  const offsetSign = utcOffsetMinutes >= 0 ? '+' : '-'
-  const absHours = Math.floor(Math.abs(utcOffsetMinutes) / 60)
-  const absMinutes = Math.abs(utcOffsetMinutes) % 60
-  const utcOffsetStr = `UTC${offsetSign}${absHours}${absMinutes > 0 ? `:${String(absMinutes).padStart(2, '0')}` : ''}`
+  // Compute local time so the model doesn't need to convert (matches production)
+  const localNow = new Date().toLocaleString('en-US', {
+    timeZone: input.timezone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
 
-  // Prompt matches production (enrichment.ts lines 466-504):
+  // Prompt matches production (enrichment.ts):
   // system prompt passed separately, user prompt has context + <task> + reminders
   const prompt = `## Context
 
-User's timezone: ${input.timezone} (currently ${utcOffsetStr})
+User's timezone: ${input.timezone}
+Current local time: ${localNow}
 Current UTC time: ${currentUtcTime}
 
 User's schedule:
@@ -414,7 +416,7 @@ ${input.text}
 </task>
 
 ${ENRICHMENT_REMINDERS}
-User's timezone: ${input.timezone} (${utcOffsetStr}) | Current UTC time: ${currentUtcTime}
+Current local time: ${localNow} | Current UTC time: ${currentUtcTime}
 Parse the task above and return the structured result.`
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
