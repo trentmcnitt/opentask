@@ -327,7 +327,7 @@ describe('enrichment success path', () => {
     expect(after.title).toBe('simple task')
   })
 
-  test('enrichment is logged in undo history', async () => {
+  test('initial enrichment does not create a separate undo entry', async () => {
     createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -344,14 +344,16 @@ describe('enrichment success path', () => {
 
     await processEnrichmentQueue()
 
+    // The most recent undo entry should be 'create', not 'edit' —
+    // initial enrichment of a newly created task skips the undo log
+    // so that a single undo removes the task entirely.
     const db = getDb()
     const undoEntry = db
       .prepare('SELECT * FROM undo_log WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(TEST_USER_ID) as { id: number; action: string; description: string } | undefined
 
     expect(undoEntry).toBeDefined()
-    expect(undoEntry!.action).toBe('edit')
-    expect(undoEntry!.description).toContain('AI')
+    expect(undoEntry!.action).toBe('create')
   })
 })
 
@@ -998,7 +1000,7 @@ describe('new enrichment fields', () => {
     expect(after.auto_snooze_minutes).toBe(60)
   })
 
-  test('undo reverts new enrichment fields', async () => {
+  test('undo of enriched new task soft-deletes it (single undo)', async () => {
     const { executeUndo } = await import('@/core/undo')
 
     const task = createTask({
@@ -1023,12 +1025,12 @@ describe('new enrichment fields', () => {
     expect(enriched.auto_snooze_minutes).toBe(45)
     expect(enriched.notes).toBe('Some context notes')
 
+    // Single undo should soft-delete the task (undoing the 'create' action)
+    // because initial enrichment doesn't log a separate undo entry
     executeUndo(TEST_USER_ID)
 
     const undone = getTaskById(task.id)!
-    expect(undone.auto_snooze_minutes).toBeNull()
-    expect(undone.notes).toBeNull()
-    expect(undone.title).toBe('undo test for new fields')
+    expect(undone.deleted_at).not.toBeNull()
   })
 })
 

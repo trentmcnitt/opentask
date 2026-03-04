@@ -12,6 +12,7 @@ import { enrichmentDictationScenarios } from './enrichment-dictation'
 import { enrichmentRecurrenceScenarios } from './enrichment-recurrence'
 import { enrichmentVoiceScenarios } from './enrichment-voice'
 import { enrichmentEdgeScenarios } from './enrichment-edge'
+import { enrichmentContextScenarios } from './enrichment-context'
 import { whatsNextScenarios } from './whats-next'
 import { insightsScenarios } from './insights'
 import { insightsLargeScenarios } from './insights-large'
@@ -24,6 +25,7 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentRecurrenceScenarios,
   ...enrichmentVoiceScenarios,
   ...enrichmentEdgeScenarios,
+  ...enrichmentContextScenarios,
 ]
 
 export const allScenarios: AITestScenario[] = [

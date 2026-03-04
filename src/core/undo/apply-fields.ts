@@ -76,8 +76,13 @@ export function applyFieldsToTask(
 
     if (stateKey in state) {
       if (dbColumn === 'labels') {
+        // Strip AI state labels to prevent re-enrichment loops when undoing
+        let labels = state[stateKey as keyof Task] as string[]
+        if (Array.isArray(labels)) {
+          labels = labels.filter((l: string) => l !== 'ai-to-process' && l !== 'ai-failed')
+        }
         setClauses.push(`${dbColumn} = ?`)
-        values.push(JSON.stringify(state[stateKey as keyof Task]))
+        values.push(JSON.stringify(labels))
       } else if (dbColumn === 'done') {
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { done?: boolean }).done ? 1 : 0)

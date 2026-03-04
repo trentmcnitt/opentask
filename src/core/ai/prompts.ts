@@ -104,7 +104,18 @@ The user dictated everything in one breath because they couldn't structure it. Y
 
 ## User context
 
-When "User context:" appears in the input, use it as background knowledge to improve project matching and title clarity. Do NOT reference the user context directly in the output — it informs your interpretation, not the task fields. For example, if context says "my wife handles groceries" and the input is "buy milk", you still extract "Buy milk" as the title; the context just helps you understand the user's world.
+When "User context:" appears in the input, use it to resolve references and improve extraction:
+
+**Name resolution:** When the user refers to people by relationship ("my wife", "my daughter", "my boss") and the context provides their name, substitute the name in the title. "flowers for my wife" → "Flowers for Kelly" (if context says wife is Kelly). Just the name — no parenthetical like "(wife)" or "(daughter)". If the relationship is ambiguous or context doesn't provide a name, keep the original phrasing.
+
+**Work-schedule time resolution:** When context includes a work schedule (e.g., "I work M-F 8am-4pm"), resolve schedule-relative phrases to specific times:
+- "after work" → end of their work day (e.g., 4pm if they work until 4pm)
+- "before work" → before start of work day (e.g., 7:30am if they start at 8am)
+- "at lunch" / "during lunch" → midday (e.g., 12pm)
+- "on my way home" → shortly after work ends
+If no work schedule is in context, fall back to reasonable defaults (e.g., "after work" → 5pm).
+
+**No-leakage rule:** Only use context when the user's input references it. If context says "wife Kelly" but the user says "buy groceries" with no mention of Kelly, do NOT add Kelly to the title. Context resolves explicit references — it doesn't inject information the user didn't mention.
 
 ## Rules
 
@@ -610,4 +621,6 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - When uncertain, leave fields null (0 for priority, empty array for labels)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
+- Resolve names from user context when the user references people by relationship ("my wife" → name from context). Only when referenced — don't inject context the user didn't mention.
+- Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. If no work schedule is in context, use reasonable defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm. These override the default task time.
 - Return valid JSON only (no markdown fences, no text outside the JSON object)`

@@ -463,9 +463,21 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
 
   const currentUtcTime = nowUtc()
 
+  // Compute explicit UTC offset to eliminate DST ambiguity for the model
+  const utcOffsetMinutes = (() => {
+    const now = new Date()
+    const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' })
+    const localStr = now.toLocaleString('en-US', { timeZone: user.timezone })
+    return (new Date(localStr).getTime() - new Date(utcStr).getTime()) / 60000
+  })()
+  const offsetSign = utcOffsetMinutes >= 0 ? '+' : '-'
+  const absHours = Math.floor(Math.abs(utcOffsetMinutes) / 60)
+  const absMinutes = Math.abs(utcOffsetMinutes) % 60
+  const utcOffsetStr = `UTC${offsetSign}${absHours}${absMinutes > 0 ? `:${String(absMinutes).padStart(2, '0')}` : ''}`
+
   const prompt = `## Context
 
-User's timezone: ${user.timezone}
+User's timezone: ${user.timezone} (currently ${utcOffsetStr})
 Current UTC time: ${currentUtcTime}
 
 User's schedule:
@@ -488,7 +500,7 @@ ${textToEnrich}
 </task>
 
 ${ENRICHMENT_REMINDERS}
-User's timezone: ${user.timezone} | Current UTC time: ${currentUtcTime}
+User's timezone: ${user.timezone} (${utcOffsetStr}) | Current UTC time: ${currentUtcTime}
 Parse the task above and return the structured result.`
 
   const modes = getUserFeatureModes(row.user_id)
@@ -736,25 +748,45 @@ function applyEnrichment(
     return []
   }
 
+  // Check if this is the initial enrichment of a newly created task.
+  // If so, skip the undo log entry — undoing the 'create' action will
+  // soft-delete the task (removing the enriched version entirely).
+  // Re-enrichment (user manually adds ai-to-process) still logs normally
+  // because the manual edit creates a second undo entry (count > 1).
+  const db = getDb()
+  const taskUndoCount = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM undo_log
+       WHERE user_id = ?
+       AND EXISTS (
+         SELECT 1 FROM json_each(snapshot)
+         WHERE json_extract(value, '$.task_id') = ?
+       )`,
+    )
+    .get(user.id, row.id) as { count: number }
+  const isInitialEnrichment = taskUndoCount.count === 1
+
   // Add updated_at to the SET clauses
   changes.setClauses.push('updated_at = ?')
   changes.values.push(nowUtc())
   changes.values.push(row.id) // for WHERE clause
 
-  withTransaction((db) => {
+  withTransaction((txDb) => {
     const sql = `UPDATE tasks SET ${changes.setClauses.join(', ')} WHERE id = ?`
-    db.prepare(sql).run(...changes.values)
+    txDb.prepare(sql).run(...changes.values)
 
-    const updatedTask = getTaskById(row.id)
-    if (!updatedTask) throw new Error('Failed to retrieve enriched task')
+    if (!isInitialEnrichment) {
+      const updatedTask = getTaskById(row.id)
+      if (!updatedTask) throw new Error('Failed to retrieve enriched task')
 
-    const changeList = changes.fieldsChanged
-      .filter((f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
-      .join(', ')
-    const description = `AI: Enriched task — set ${changeList}`
+      const changeList = changes.fieldsChanged
+        .filter((f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
+        .join(', ')
+      const description = `AI: Enriched task — set ${changeList}`
 
-    const snapshot = createTaskSnapshot(task, updatedTask, changes.fieldsChanged)
-    logAction(user.id, 'edit', description, changes.fieldsChanged, [snapshot])
+      const snapshot = createTaskSnapshot(task, updatedTask, changes.fieldsChanged)
+      logAction(user.id, 'edit', description, changes.fieldsChanged, [snapshot])
+    }
   })
 
   log.info('ai', `Task ${row.id} enriched: ${changes.fieldsChanged.join(', ')}`)
