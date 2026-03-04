@@ -15,7 +15,7 @@ import { log } from '@/lib/logger'
 import { logAIActivity } from './activity'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { QUICK_TAKE_SYSTEM_PROMPT } from './quick-take'
-import { requireFeatureModel } from './models'
+import { resolveSDKModel } from './models'
 import {
   type SlotState,
   type BaseSlotStats,
@@ -37,7 +37,7 @@ function getMaxReuses(): number {
 }
 
 function getModel(): string {
-  return requireFeatureModel('quick_take')
+  return resolveSDKModel('quick_take')
 }
 
 function getQueryTimeout(): number {

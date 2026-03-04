@@ -14,6 +14,7 @@ function clearAIEnv() {
   // Clear all AI-related env vars
   const prefixes = [
     'OPENTASK_AI_PROVIDER',
+    'OPENTASK_AI_SDK_MODEL',
     'OPENTASK_AI_ENRICHMENT',
     'OPENTASK_AI_QUICKTAKE',
     'OPENTASK_AI_WHATS_NEXT',
@@ -92,6 +93,50 @@ describe('requireFeatureModel', () => {
     expect(() => requireFeatureModel('quick_take')).toThrow('OPENTASK_AI_QUICKTAKE_MODEL')
     expect(() => requireFeatureModel('whats_next')).toThrow('OPENTASK_AI_WHATS_NEXT_MODEL')
     expect(() => requireFeatureModel('insights')).toThrow('OPENTASK_AI_INSIGHTS_MODEL')
+  })
+})
+
+describe('resolveSDKModel', () => {
+  test('returns per-feature SDK env var when set', async () => {
+    process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'haiku'
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('enrichment')).toBe('haiku')
+  })
+
+  test('falls back to global SDK model', async () => {
+    process.env.OPENTASK_AI_SDK_MODEL = 'opus'
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('enrichment')).toBe('opus')
+  })
+
+  test('falls back to sonnet when nothing configured', async () => {
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('enrichment')).toBe('sonnet')
+  })
+
+  test('per-feature overrides global', async () => {
+    process.env.OPENTASK_AI_SDK_MODEL = 'opus'
+    process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'haiku'
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('enrichment')).toBe('haiku')
+  })
+
+  test('each feature reads its own SDK env var', async () => {
+    process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'haiku'
+    process.env.OPENTASK_AI_QUICKTAKE_SDK_MODEL = 'sonnet'
+    const { resolveSDKModel } = await getModels()
+    expect(resolveSDKModel('enrichment')).toBe('haiku')
+    expect(resolveSDKModel('quick_take')).toBe('sonnet')
+    // Unconfigured features fall back to hardcoded default
+    expect(resolveSDKModel('whats_next')).toBe('sonnet')
+    expect(resolveSDKModel('insights')).toBe('sonnet')
+  })
+
+  test('is independent of API model env vars', async () => {
+    process.env.OPENTASK_AI_ENRICHMENT_MODEL = 'grok-4-1-fast-non-reasoning'
+    const { resolveSDKModel } = await getModels()
+    // API model should not affect SDK model resolution
+    expect(resolveSDKModel('enrichment')).toBe('sonnet')
   })
 })
 
@@ -213,13 +258,21 @@ describe('resolveFeatureProvider', () => {
 })
 
 describe('resolveFeatureAIConfig', () => {
-  test('sdk mode returns provider sdk with model', async () => {
-    process.env.OPENTASK_AI_ENRICHMENT_MODEL = 'test-model'
+  test('sdk mode uses SDK model, not API model', async () => {
+    process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'haiku'
+    process.env.OPENTASK_AI_ENRICHMENT_MODEL = 'grok-4-1-fast-non-reasoning'
     const { resolveFeatureAIConfig } = await getModels()
     const config = resolveFeatureAIConfig('enrichment', 'sdk')
     expect(config.provider).toBe('sdk')
-    expect(config.model).toBe('test-model')
+    expect(config.model).toBe('haiku')
     expect(config.providerConfig).toBeUndefined()
+  })
+
+  test('sdk mode falls back to sonnet with no config', async () => {
+    const { resolveFeatureAIConfig } = await getModels()
+    const config = resolveFeatureAIConfig('enrichment', 'sdk')
+    expect(config.provider).toBe('sdk')
+    expect(config.model).toBe('sonnet')
   })
 
   test('api mode returns provider config', async () => {
@@ -234,12 +287,19 @@ describe('resolveFeatureAIConfig', () => {
     expect(config.providerConfig!.apiKey).toBe('sk-ant-test')
   })
 
-  test('throws when model is missing', async () => {
+  test('api mode throws when model is missing', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test'
     const { resolveFeatureAIConfig } = await getModels()
     expect(() => resolveFeatureAIConfig('enrichment', 'api')).toThrow(
       "No model configured for feature 'enrichment'",
     )
+  })
+
+  test('sdk mode never throws on missing model (has fallback)', async () => {
+    // No SDK model, no API model, no global SDK model — should still work
+    const { resolveFeatureAIConfig } = await getModels()
+    expect(() => resolveFeatureAIConfig('enrichment', 'sdk')).not.toThrow()
+    expect(resolveFeatureAIConfig('enrichment', 'sdk').model).toBe('sonnet')
   })
 
   test('throws when API provider is missing', async () => {
@@ -329,5 +389,22 @@ describe('getFeatureInfo', () => {
     const info = getFeatureInfo('enrichment', 'api')
     expect(info.available).toBe(false)
     expect(info.provider).toBeNull()
+  })
+
+  test('sdk mode returns SDK model and provider', async () => {
+    process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'haiku'
+    const { getFeatureInfo } = await getModels()
+    const info = getFeatureInfo('enrichment', 'sdk')
+    expect(info.mode).toBe('sdk')
+    expect(info.provider).toBe('sdk')
+    expect(info.provider_display).toBe('Claude Code (SDK)')
+    expect(info.model).toBe('haiku')
+    expect(info.model_display).toBe('haiku')
+  })
+
+  test('sdk mode falls back to sonnet with no config', async () => {
+    const { getFeatureInfo } = await getModels()
+    const info = getFeatureInfo('enrichment', 'sdk')
+    expect(info.model).toBe('sonnet')
   })
 })

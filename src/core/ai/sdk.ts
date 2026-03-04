@@ -27,10 +27,9 @@ import {
 } from './provider'
 import {
   AI_FEATURES,
-  FEATURE_ENV_VARS,
   resolveFeatureModel,
+  resolveSDKModel,
   resolveFeatureProvider,
-  type AIFeature,
   type FeatureProviderConfig,
 } from './models'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
@@ -109,35 +108,38 @@ export async function initAI(): Promise<void> {
     .join(', ')
   log.info('ai', `AI features enabled — default provider: ${effective}, available: [${available}]`)
 
-  // Log resolved config per feature (provider type, model, masked key, base URL).
-  // This catches misconfigurations at startup rather than at first request.
+  // Log resolved config per feature showing both SDK and API model info.
+  // SDK models always resolve (fallback to 'sonnet'). API models may not be configured.
   const configLines: string[] = []
   for (const feature of AI_FEATURES) {
-    const model = resolveFeatureModel(feature)
-    if (!model) {
-      log.error(
-        'ai',
-        `No model configured for feature '${feature}'. ` +
-          `Set ${FEATURE_ENV_VARS[feature]}. AI will fail for this feature.`,
-      )
-      continue
+    const parts: string[] = []
+
+    // SDK model (always resolves via fallback chain)
+    const sdkModel = resolveSDKModel(feature)
+    parts.push(`sdk: ${sdkModel}`)
+
+    // API model + provider (may not be configured)
+    const apiModel = resolveFeatureModel(feature)
+    if (apiModel) {
+      try {
+        const providerConfig = resolveFeatureProvider(feature)
+        if (providerConfig) {
+          const maskedKey = providerConfig.apiKey.slice(0, 8) + '...'
+          const baseUrlInfo = providerConfig.baseUrl ? `, url: ${providerConfig.baseUrl}` : ''
+          parts.push(
+            `api: ${apiModel} via ${providerConfig.providerType} (key: ${maskedKey}${baseUrlInfo})`,
+          )
+        } else {
+          parts.push(`api: ${apiModel} (no API provider)`)
+        }
+      } catch {
+        parts.push(`api: ${apiModel} (provider config error)`)
+      }
+    } else {
+      parts.push('api: not configured')
     }
 
-    // Try to resolve per-feature provider config (for API mode)
-    try {
-      const providerConfig = resolveFeatureProvider(feature)
-      if (providerConfig) {
-        const maskedKey = providerConfig.apiKey.slice(0, 8) + '...'
-        const baseUrlInfo = providerConfig.baseUrl ? `, url: ${providerConfig.baseUrl}` : ''
-        configLines.push(
-          `  ${feature}: ${model} via ${providerConfig.providerType} (key: ${maskedKey}${baseUrlInfo})`,
-        )
-      } else {
-        configLines.push(`  ${feature}: ${model} (no API provider — SDK only)`)
-      }
-    } catch {
-      configLines.push(`  ${feature}: ${model} (provider config error)`)
-    }
+    configLines.push(`  ${feature}: ${parts.join(' | ')}`)
   }
   if (configLines.length > 0) {
     log.info('ai', `Feature configs:\n${configLines.join('\n')}`)

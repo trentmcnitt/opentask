@@ -37,7 +37,7 @@ export async function register() {
       initEnrichmentSlot,
       shutdownEnrichmentSlot,
       shutdownQuickTakeSlot,
-      getServerDefaultProvider,
+      isSdkAvailableSync,
     } = await import('@/core/ai')
 
     // Run initial notification check after a short delay
@@ -138,12 +138,10 @@ export async function register() {
 
     await initAI()
     if (isAIEnabled()) {
-      const defaultProvider = getServerDefaultProvider()
-
-      // Warm slots are SDK-specific (subprocess lifecycle). API mode uses
-      // stateless HTTP calls and doesn't need warm slots.
-      if (defaultProvider === 'sdk') {
-        // Warm up the enrichment slot (dedicated subprocess for enrichment queries)
+      // Warm slots use Claude Agent SDK subprocesses. Init them whenever SDK is
+      // available, regardless of server default provider — any user with mode='sdk'
+      // for a feature needs the slot, even if most users are on API mode.
+      if (isSdkAvailableSync()) {
         initEnrichmentSlot().catch((err) => {
           log.error('ai', 'Enrichment slot startup failed:', err)
         })
@@ -154,7 +152,7 @@ export async function register() {
         //   log.error('ai', 'Quick Take slot startup failed:', err)
         // })
       } else {
-        log.info('ai', 'API provider active — warm slots disabled (not needed for HTTP calls)')
+        log.info('ai', 'SDK not available — warm slots disabled')
       }
 
       // What's Next cron: generate recommendations for active users at 3 AM CT
@@ -261,13 +259,10 @@ export async function register() {
         CT,
       )
 
-      log.info(
-        'ai',
-        `AI provider: ${defaultProvider}, What's Next cron (3 AM CT) + Insights cron (3:15 AM CT) scheduled`,
-      )
+      log.info('ai', "What's Next cron (3 AM CT) + Insights cron (3:15 AM CT) scheduled")
 
-      // Graceful shutdown: close warm slots on SIGTERM (SDK mode only)
-      if (defaultProvider === 'sdk') {
+      // Graceful shutdown: close warm slots on SIGTERM
+      if (isSdkAvailableSync()) {
         process.on('SIGTERM', () => {
           log.info('ai', 'SIGTERM received — shutting down warm slots')
           shutdownEnrichmentSlot()
