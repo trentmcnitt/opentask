@@ -32,7 +32,7 @@ export const enrichmentContextScenarios: AITestScenario[] = [
       quality_notes:
         'Title MUST include "Kelly" instead of "my wife" — e.g., "Flowers for Kelly". ' +
         'No parenthetical like "(wife)" after the name. ' +
-        'due_at MUST be around 4pm local (end of work day per context) converted to UTC. ' +
+        'due_at MUST be around 4:00 PM local (end of work day per context, e.g., T16:00:00, no Z suffix). ' +
         'NOT 9am (default morning time) — "after work" means after 4pm. ' +
         'Priority should be 0 (no urgency signal). Labels must be empty.',
     },
@@ -57,7 +57,7 @@ export const enrichmentContextScenarios: AITestScenario[] = [
         rrule: null,
       },
       quality_notes:
-        'due_at MUST be around 4pm local (end of work day per context) converted to UTC. ' +
+        'due_at MUST be around 4:00 PM local (end of work day per context, e.g., T16:00:00, no Z suffix). ' +
         'Title should keep "kids" — the user said "kids" not a specific child, ' +
         'so substituting both names or keeping "kids" are both acceptable. ' +
         'Do NOT use one child name when the user said "kids" (plural/ambiguous). ' +
@@ -83,8 +83,8 @@ export const enrichmentContextScenarios: AITestScenario[] = [
         rrule: null,
       },
       quality_notes:
-        'due_at MUST be before 8am local (before start of work day per context). ' +
-        'Reasonable times: 7:00-7:45am local converted to UTC. ' +
+        'due_at MUST be before 8:00 AM local (before start of work day per context, e.g., T07:30:00, no Z suffix). ' +
+        'Reasonable times: 7:00-7:45 AM local. ' +
         'NOT 9am (default morning time) — "before work" means before 8am. ' +
         'Title should be clean, e.g., "Drop off dry cleaning". ' +
         'Priority should be 0. Labels must be empty.',
@@ -165,7 +165,7 @@ export const enrichmentContextScenarios: AITestScenario[] = [
         rrule: null,
       },
       quality_notes:
-        'due_at MUST be around 12pm local (midday / lunch time per work schedule context) converted to UTC. ' +
+        'due_at MUST be around 12:00 PM local (midday / lunch time per work schedule context, e.g., T12:00:00, no Z suffix). ' +
         'NOT 9am (default morning time) — "at lunch" means midday. ' +
         'Title should preserve "Sarah" — e.g., "Meet Sarah at lunch" or "Meet Sarah". ' +
         'Priority should be 0. Labels must be empty.',
@@ -219,8 +219,8 @@ export const enrichmentContextScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Context has no work schedule, so "after work" should fall back to a reasonable default. ' +
-        'due_at should be around 5pm local converted to UTC (reasonable default for end-of-workday). ' +
-        'Acceptable range: 4:30pm-6pm local. NOT 9am (default morning time). ' +
+        'due_at should be around 5:00 PM local (reasonable default for end-of-workday, e.g., T17:00:00, no Z suffix). ' +
+        'Acceptable range: 4:30-6:00 PM local. NOT 9am (default morning time). ' +
         'Title should be clean — e.g., "Grab coffee after work" or "Grab coffee". ' +
         'Priority should be 0. Labels must be empty.',
     },

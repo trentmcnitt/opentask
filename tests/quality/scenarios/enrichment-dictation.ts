@@ -126,7 +126,7 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Dentist appointment" (date phrase removed). ' +
-        'due_at should be tomorrow at 3pm Chicago time in UTC. ' +
+        'due_at should be tomorrow at 3:00 PM local (e.g., T15:00:00, no Z suffix). ' +
         '"tommorow" is a common misspelling — must still parse correctly.',
     },
   },
@@ -166,7 +166,7 @@ export const enrichmentDictationScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Take the dog out" or similar. ' +
         'rrule should be FREQ=DAILY (from "evry day"). ' +
-        'due_at should be 7am Chicago time in UTC. ' +
+        'due_at should be 7:00 AM local (e.g., T07:00:00, no Z suffix). ' +
         'Multiple typos ("tke", "evry", "mornin") should all be interpreted correctly.',
     },
   },

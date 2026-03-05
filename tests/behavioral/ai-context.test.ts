@@ -1,7 +1,8 @@
 /**
  * Behavioral tests for AI user context
  *
- * Tests getUserAiContext() and prompt construction with/without user context.
+ * Tests getUserAiContext() and prompt construction with/without user context
+ * across all AI features: enrichment, What's Next, and Insights.
  */
 
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
@@ -22,6 +23,8 @@ vi.mock('@/core/ai/sdk', () => ({
 
 import { getUserAiContext } from '@/core/ai/user-context'
 import { generateWhatsNext } from '@/core/ai/whats-next'
+import { buildInsightsFullPrompt } from '@/core/ai/insights'
+import { buildEnrichmentUserPrompt } from '@/core/ai/prompts'
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
 
@@ -144,6 +147,85 @@ describe("What's Next prompt includes user context", () => {
 
     expect(mockAiQuery).toHaveBeenCalledTimes(1)
     const prompt = mockAiQuery.mock.calls[0][0].prompt as string
+    const contextSection = prompt.split('## Tasks')[0].split('## Context')[1]
+    expect(contextSection).not.toContain('User context:')
+  })
+})
+
+describe('Enrichment prompt includes user context', () => {
+  test('includes "User context:" when userContext is provided', () => {
+    const prompt = buildEnrichmentUserPrompt({
+      timezone: TEST_TIMEZONE,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects: [{ id: 1, name: 'Inbox' }],
+      userContext: 'My wife is Kelly. I work M-F 8am-4pm.',
+      taskText: 'flowers for my wife after work',
+    })
+
+    expect(prompt).toContain('User context: My wife is Kelly. I work M-F 8am-4pm.')
+  })
+
+  test('does not include "User context:" when null', () => {
+    const prompt = buildEnrichmentUserPrompt({
+      timezone: TEST_TIMEZONE,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects: [{ id: 1, name: 'Inbox' }],
+      userContext: null,
+      taskText: 'buy milk',
+    })
+
+    expect(prompt).not.toContain('User context:')
+  })
+
+  test('does not include "User context:" when undefined', () => {
+    const prompt = buildEnrichmentUserPrompt({
+      timezone: TEST_TIMEZONE,
+      morningTime: '09:00',
+      wakeTime: '07:00',
+      sleepTime: '22:00',
+      projects: [{ id: 1, name: 'Inbox' }],
+      taskText: 'buy milk',
+    })
+
+    expect(prompt).not.toContain('User context:')
+  })
+})
+
+describe('Insights prompt includes user context', () => {
+  test('includes "User context:" when userContext is provided', () => {
+    const prompt = buildInsightsFullPrompt({
+      currentTime: 'Monday, Feb 9, 2026, 10:00 AM (CST)',
+      totalTaskCount: 3,
+      taskLines: 'Task 1\nTask 2\nTask 3',
+      userContext: 'I am a caregiver for my elderly parents',
+    })
+
+    expect(prompt).toContain('User context: I am a caregiver for my elderly parents')
+  })
+
+  test('does not include "User context:" when null', () => {
+    const prompt = buildInsightsFullPrompt({
+      currentTime: 'Monday, Feb 9, 2026, 10:00 AM (CST)',
+      totalTaskCount: 3,
+      taskLines: 'Task 1\nTask 2\nTask 3',
+      userContext: null,
+    })
+
+    const contextSection = prompt.split('## Tasks')[0].split('## Context')[1]
+    expect(contextSection).not.toContain('User context:')
+  })
+
+  test('does not include "User context:" when undefined', () => {
+    const prompt = buildInsightsFullPrompt({
+      currentTime: 'Monday, Feb 9, 2026, 10:00 AM (CST)',
+      totalTaskCount: 3,
+      taskLines: 'Task 1\nTask 2\nTask 3',
+    })
+
     const contextSection = prompt.split('## Tasks')[0].split('## Context')[1]
     expect(contextSection).not.toContain('User context:')
   })

@@ -10,6 +10,26 @@ import type { AITestScenario } from '../types'
 
 export const enrichmentEdgeScenarios: AITestScenario[] = [
   {
+    id: 'enrich-edge-dst-boundary',
+    feature: 'enrichment',
+    description: 'DST boundary — task date crosses CST/CDT transition',
+    input: {
+      text: 'team meeting next Monday at 10am',
+      timezone: 'America/Chicago',
+      projects: [{ id: 1, name: 'Inbox', shared: false }],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+      },
+      quality_notes:
+        'due_at should be Monday at 10:00 AM local (e.g., T10:00:00, no Z suffix). ' +
+        'The AI must return local time without UTC conversion — DST transition handling ' +
+        'is done by the application, not the AI. ' +
+        'Title: "Team meeting" or similar.',
+    },
+  },
+  {
     id: 'enrich-edge-near-empty',
     feature: 'enrichment',
     description: 'Near-empty input — "do it" with no context',

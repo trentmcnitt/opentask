@@ -55,7 +55,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should be clean (e.g., "Call the dentist"). ' +
-        'due_at must be tomorrow morning in UTC (Chicago is UTC-6 or UTC-5). ' +
+        'due_at should be tomorrow morning in local time (e.g., T09:00:00, no Z suffix). ' +
         '"Morning" typically means 8-10am local. ' +
         'Labels must be an empty array — no explicit label request in input. Priority should be 0 (no urgency signal).',
     },
@@ -123,7 +123,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Take vitamins" (recurrence phrase removed). ' +
         'rrule MUST be "FREQ=DAILY" (no DTSTART). ' +
-        'due_at should be set to 8am Chicago time converted to UTC. ' +
+        'due_at should be 8:00 AM local (e.g., T08:00:00, no Z suffix). ' +
         'Labels must be an empty array — no explicit label request in input. Priority 0.',
     },
   },
@@ -271,7 +271,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should be clean: "Doctor Patel appointment" or similar. ' +
-        'due_at should be next Thursday at 2:30pm Chicago time in UTC. ' +
+        'due_at should be next Thursday at 2:30 PM local (e.g., T14:30:00, no Z suffix). ' +
         'notes MUST preserve: address (4200 Medical Parkway Suite 310), ' +
         'phone (512-555-0847), what to bring (insurance card, MRI results), ' +
         'and fasting instructions (fast 4 hours before). ' +
@@ -321,7 +321,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title should capture the core action: something about travel/flight or trip prep. ' +
-        'due_at should be Saturday at 6:15am Chicago time in UTC. ' +
+        'due_at should be Saturday at 6:15 AM local (e.g., T06:15:00, no Z suffix). ' +
         'notes MUST preserve ALL confirmation numbers and details: ' +
         'Southwest flight ABC123, confirmation 2847, Midway departure, ' +
         'Hertz rental, Marriott confirmation H-99281. ' +
@@ -398,7 +398,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Take the dog out" or similar. ' +
         'auto_snooze_minutes must be 120 (2 hours converted to minutes). ' +
         'rrule should be null — sub-daily recurrence uses auto_snooze_minutes: 240, not rrule. ' +
-        'due_at should be 7am Chicago time in UTC. ' +
+        'due_at should be 7:00 AM local (e.g., T07:00:00, no Z suffix). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
   },
@@ -632,7 +632,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
         'Title: "Refill mom\'s heart medication" or similar (urgency/alert phrases removed). ' +
         'Priority MUST be 4 (explicit "urgent" and "critical"). ' +
         'Labels must be empty — no explicit label request in input. ' +
-        'due_at should be tonight at 9pm Chicago time in UTC. ' +
+        'due_at should be tonight at 9:00 PM local (e.g., T21:00:00, no Z suffix). ' +
         'notes MUST preserve: Rx number (RX-7742190), Walgreens location (on Main).',
     },
   },
@@ -688,7 +688,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "HOA meeting" or similar. ' +
-        'due_at should be next Wednesday at 7pm Chicago time in UTC. ' +
+        'due_at should be next Wednesday at 7:00 PM local (e.g., T19:00:00, no Z suffix). ' +
         'priority should be 1-2 ("kinda important" is a mild signal, not urgent). ' +
         'project_name should be "Home". ' +
         'notes should preserve: form reference (noise complaint form B-12). ' +
@@ -792,7 +792,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Title: "Remind me about this" or similar. ' +
-        'due_at should be tomorrow evening in UTC — typically 5-8 PM local time. ' +
+        'due_at should be tomorrow evening in local time — typically 5-8 PM (e.g., T17:00:00 to T20:00:00, no Z suffix). ' +
         'The AI has time-of-day guidance: "evening" should use judgment, typically early evening. ' +
         'Labels must be an empty array — no explicit label request in input.',
     },
@@ -813,7 +813,7 @@ export const enrichmentCoreScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Take vitamins" or similar. ' +
         'rrule should be FREQ=DAILY. ' +
-        'due_at should use the sleep time (10:00 PM / 22:00 local by default) converted to UTC. ' +
+        'due_at should use the sleep time (10:00 PM / 22:00 local by default, e.g., T22:00:00, no Z suffix). ' +
         'The AI has guidance: "before bed" / "bedtime" → sleep time (10:00 PM). ' +
         'Labels must be an empty array — no explicit label request in input.',
     },

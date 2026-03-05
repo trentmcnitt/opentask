@@ -563,12 +563,12 @@ export function useKeyboardNavigation({
     setIsKeyboardActive(true)
   }, [])
 
-  // Reset keyboard focus when orderedIds changes and current focus is no longer in list
+  // Clear keyboard focus when the focused task is removed from the list.
+  // Keyboard-driven completions (Cmd+D) precompute next focus in the keydown handler,
+  // so this only fires for non-keyboard removals (swipe, SSE sync) where clearing is correct.
   useEffect(() => {
     if (keyboardFocusedId !== null && !orderedIds.includes(keyboardFocusedId)) {
-      // Find nearest visible task
-      const nearestId = orderedIds[0] ?? null
-      setKeyboardFocusedId(nearestId)
+      setKeyboardFocusedId(null)
     }
   }, [orderedIds, keyboardFocusedId, setKeyboardFocusedId])
 

@@ -21,7 +21,7 @@ export const EnrichmentResultSchema = z.object({
   due_at: z
     .string()
     .nullable()
-    .describe('ISO 8601 UTC datetime, or null if no date mentioned')
+    .describe('ISO 8601 local datetime (no Z, no offset), or null if no date mentioned')
     .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'due_at must be a valid ISO 8601 datetime',
     }),
