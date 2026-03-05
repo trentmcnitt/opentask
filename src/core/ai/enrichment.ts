@@ -41,6 +41,7 @@ import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
 import { resolveFeatureAIConfig } from './models'
 import { getUserFeatureModes } from './user-context'
+import { DateTime } from 'luxon'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
@@ -518,11 +519,20 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     throw new Error('Failed to parse enrichment result')
   }
 
-  // Normalize due_at to UTC — AI may return timezone-offset strings.
-  // Done post-parse because EnrichmentResultSchema uses .refine() (not .transform())
-  // to stay compatible with z.toJSONSchema() for structured output.
+  // Convert due_at from local time to UTC using Luxon.
+  // The AI returns local time (no Z, no offset). Luxon handles DST transitions
+  // correctly for the target date, unlike naive Date() parsing.
   if (parsed.due_at) {
-    parsed = { ...parsed, due_at: new Date(parsed.due_at).toISOString() }
+    let dueAt = parsed.due_at
+    // Defensive: strip Z suffix or offset if AI includes one despite instructions
+    dueAt = dueAt.replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '')
+    const local = DateTime.fromISO(dueAt, { zone: user.timezone })
+    if (local.isValid) {
+      parsed = { ...parsed, due_at: local.toUTC().toISO()! }
+    } else {
+      log.warn('ai', `Enrichment[${row.id}]: invalid due_at "${parsed.due_at}", setting to null`)
+      parsed = { ...parsed, due_at: null }
+    }
   }
 
   return applyEnrichment(row, parsed, user, textToEnrich)

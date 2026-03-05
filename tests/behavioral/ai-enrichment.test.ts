@@ -62,7 +62,7 @@ function mockResult(overrides: Record<string, unknown> = {}) {
     structuredOutput: {
       title: 'Clean title',
       priority: 3,
-      due_at: '2026-02-20T14:00:00Z',
+      due_at: '2026-02-20T08:00:00',
       labels: ['errand'],
       rrule: null,
       project_name: null,
@@ -229,7 +229,7 @@ describe('enrichment success path', () => {
       mockResult({
         title: 'Call dentist',
         priority: 3,
-        due_at: '2026-02-20T14:00:00Z',
+        due_at: '2026-02-20T08:00:00',
         labels: ['errand'],
       }),
     )
@@ -239,6 +239,7 @@ describe('enrichment success path', () => {
     const after = getTaskById(task.id)!
     expect(after.title).toBe('Call dentist')
     expect(after.priority).toBe(3)
+    // 8 AM CST (UTC-6) = 14:00 UTC
     expect(after.due_at).toBe('2026-02-20T14:00:00.000Z')
     expect(after.labels).not.toContain('errand')
     expect(after.labels).not.toContain('ai-to-process')
@@ -255,7 +256,7 @@ describe('enrichment success path', () => {
       mockResult({
         title: 'Weekly standup',
         priority: 0,
-        due_at: '2026-02-17T15:00:00Z',
+        due_at: '2026-02-17T09:00:00',
         labels: [],
         rrule: 'FREQ=WEEKLY;BYDAY=TU',
       }),
@@ -372,7 +373,7 @@ describe('enrichSingleTask (fire-and-forget)', () => {
       mockResult({
         title: 'Pick up dry cleaning',
         priority: 1,
-        due_at: '2026-02-10T17:00:00Z',
+        due_at: '2026-02-10T11:00:00',
         labels: ['errand'],
       }),
     )
@@ -848,6 +849,107 @@ describe('label merging', () => {
   })
 })
 
+describe('local→UTC timezone conversion', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('converts local time to UTC correctly across DST boundary', async () => {
+    // March 4 is CST (UTC-6), but March 9 is CDT (UTC-5) — DST starts March 8
+    vi.setSystemTime(new Date('2026-03-04T16:00:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'team meeting next Monday at 10am' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Team standup',
+        due_at: '2026-03-09T10:00:00', // March 9 = CDT (UTC-5)
+        rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // 10 AM CDT (UTC-5) = 15:00 UTC, NOT 16:00 UTC (CST offset)
+    expect(after.due_at).toBe('2026-03-09T15:00:00.000Z')
+  })
+
+  test('strips Z suffix if AI includes it despite instructions', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'test z stripping' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Test Z stripping', due_at: '2026-02-20T09:00:00Z' }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // Z stripped, then parsed as local → 9 AM CST (UTC-6) = 15:00 UTC
+    expect(after.due_at).toBe('2026-02-20T15:00:00.000Z')
+  })
+
+  test('strips timezone offset if AI includes one despite instructions', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'test offset stripping' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Test offset stripping', due_at: '2026-02-20T09:00:00-06:00' }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // Offset stripped, then parsed as local → 9 AM CST (UTC-6) = 15:00 UTC
+    expect(after.due_at).toBe('2026-02-20T15:00:00.000Z')
+  })
+
+  test('strips colon-free timezone offset', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'test colon-free offset' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Test colon-free offset', due_at: '2026-02-20T09:00:00-0600' }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // Colon-free offset stripped, then parsed as local → 9 AM CST = 15:00 UTC
+    expect(after.due_at).toBe('2026-02-20T15:00:00.000Z')
+  })
+
+  test('sets due_at to null when AI returns invalid date', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'test invalid date' },
+    })
+
+    // Feb 30 passes Zod's new Date() refine but fails Luxon's stricter parsing
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Test invalid date', due_at: '2026-02-30T09:00:00' }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    expect(after.due_at).toBeNull()
+  })
+})
+
 describe('original_title', () => {
   test('create task sets original_title to input title', () => {
     const task = createTask({
@@ -875,7 +977,7 @@ describe('original_title', () => {
       mockResult({
         title: 'Call the dentist',
         priority: 0,
-        due_at: '2026-02-20T15:00:00Z',
+        due_at: '2026-02-20T09:00:00',
         labels: ['medical'],
       }),
     )
@@ -951,7 +1053,7 @@ describe('new enrichment fields', () => {
       mockResult({
         title: 'Call insurance about denied claim',
         priority: 3,
-        due_at: '2026-02-20T15:00:00Z',
+        due_at: '2026-02-20T09:00:00',
         labels: ['finance'],
         notes: 'Claim #847293. Call 1-800-555-0123.',
       }),
@@ -1057,7 +1159,7 @@ describe('reprocess uses original_title', () => {
       mockResult({
         title: 'Call my dentist',
         priority: 3,
-        due_at: '2026-02-20T15:00:00Z',
+        due_at: '2026-02-20T09:00:00',
         labels: ['medical'],
       }),
     )

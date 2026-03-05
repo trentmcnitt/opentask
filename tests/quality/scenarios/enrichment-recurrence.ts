@@ -29,7 +29,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Check email" (recurrence phrase removed). ' +
         'rrule should be FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR. ' +
-        'due_at should be 9am Chicago time in UTC. ' +
+        'due_at should be 9:00 AM local (e.g., T09:00:00, no Z suffix). ' +
         'Labels must be empty — no explicit label request.',
     },
   },
@@ -49,7 +49,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Go to the gym" (recurrence phrase removed). ' +
         'rrule should be FREQ=WEEKLY;BYDAY=MO,WE. ' +
-        'due_at should be 6pm Chicago time in UTC.',
+        'due_at should be 6:00 PM local (e.g., T18:00:00, no Z suffix).',
     },
   },
   {
@@ -187,7 +187,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
       quality_notes:
         'Title: "Team standup" (recurrence phrase removed). ' +
         'rrule should be FREQ=WEEKLY;BYDAY=TU,TH,FR. ' +
-        'due_at should be 10am Chicago time in UTC. May match Work project.',
+        'due_at should be 10:00 AM local (e.g., T10:00:00, no Z suffix). May match Work project.',
     },
   },
   {
@@ -208,7 +208,7 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
         'Title: "Check the oven" (recurrence phrase removed). ' +
         'auto_snooze_minutes should be 120 — this is sub-daily recurrence, not rrule. ' +
         'FREQ=HOURLY is not supported; sub-daily intervals use auto_snooze_minutes instead. ' +
-        'due_at should be noon Chicago time in UTC.',
+        'due_at should be noon local (e.g., T12:00:00, no Z suffix).',
     },
   },
 ]
