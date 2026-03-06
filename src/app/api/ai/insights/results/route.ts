@@ -25,9 +25,14 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const activeSession = getActiveInsightsSession(user.id)
     const durationMs = getLastInsightsDurationMs(user.id)
 
+    // Insights are stale if generated_at is not today (UTC), matching What's Next behavior
+    const todayUtc = new Date().toISOString().split('T')[0]
+    const stale = results.length > 0 && (!generatedAt || generatedAt.split('T')[0] !== todayUtc)
+
     return success({
       results,
       generated_at: generatedAt,
+      stale,
       duration_ms: durationMs,
       signal_counts: signalCounts,
       signals: INSIGHTS_SIGNALS.map((s) => ({

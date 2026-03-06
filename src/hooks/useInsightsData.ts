@@ -38,6 +38,8 @@ export interface UseInsightsDataReturn {
   activeSignals: SignalDef[]
   /** Whether any insights results exist */
   hasResults: boolean
+  /** Whether cached results are stale (generated on a previous day) */
+  stale: boolean
   /** True when all tasks fit in a single AI call (no incremental progress) */
   singleCall: boolean
   /** Error message from the last failed generation attempt, cleared on next generate() */
@@ -71,6 +73,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
   const [error, setError] = useState<string | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [generationStartedAt, setGenerationStartedAt] = useState<string | null>(null)
+  const [stale, setStale] = useState(false)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -231,6 +234,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
   // Fetch results on mount when tasks are available.
   // Also checks for an active generation session and resumes polling if found
   // (handles page refresh mid-generation).
+  // If results exist but are stale (generated on a previous day), auto-regenerates.
   const hasFetched = useRef(false)
   useEffect(() => {
     if (!enabled) return
@@ -246,6 +250,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
         setSignalCounts(json.data.signal_counts || {})
         setGeneratedAt(json.data.generated_at)
         setDurationMs(json.data.duration_ms ?? null)
+        setStale(!!json.data.stale)
 
         // Resume polling if a session is actively running (e.g. page was refreshed mid-generation)
         const active = json.data.active_session
@@ -256,13 +261,17 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
             active.total_tasks || 0,
             active.started_at,
           )
+        } else if (json.data.stale && (json.data.results?.length ?? 0) > 0) {
+          // Results are stale and no generation in progress — auto-refresh
+          generate()
         }
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [tasks.length, resumeSession, enabled])
+    // generate is stable (useCallback with stable deps); hasFetched guards against re-execution
+  }, [tasks.length, resumeSession, enabled, generate])
 
   return {
     results,
@@ -281,6 +290,7 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
     insightsSignalMap,
     activeSignals,
     hasResults,
+    stale,
     error,
     generate,
     fetchResults,

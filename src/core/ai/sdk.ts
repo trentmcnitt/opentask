@@ -151,7 +151,7 @@ export interface AIQueryOptions {
   prompt: string
   /** JSON Schema for structured output (optional) */
   outputSchema?: Record<string, unknown>
-  /** System prompt (used by API provider; SDK provider ignores this for aiQuery) */
+  /** System prompt (passed to SDK and API providers) */
   systemPrompt?: string
   /** Model to use. Callers must resolve via requireFeatureModel() before calling. */
   model: string
@@ -235,6 +235,7 @@ export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
 async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
   const {
     prompt,
+    systemPrompt,
     outputSchema,
     model,
     maxTurns = 3,
@@ -270,6 +271,11 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         persistSession: false,
+        // Clear NODE_OPTIONS to prevent debugger bootloaders (VS Code, etc.)
+        // from being inherited by the Claude CLI subprocess, which causes
+        // it to crash with exit code 1.
+        env: { ...process.env, NODE_OPTIONS: '' },
+        ...(systemPrompt && { systemPrompt }),
         ...(maxThinkingTokens && { maxThinkingTokens }),
         ...(process.env.OPENTASK_AI_CLI_PATH && {
           pathToClaudeCodeExecutable: process.env.OPENTASK_AI_CLI_PATH,

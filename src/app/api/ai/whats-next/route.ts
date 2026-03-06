@@ -37,6 +37,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       }
     }
 
+    // Demo users only get pre-baked cached results — never trigger AI generation
+    if (user.is_demo) {
+      return success({ tasks: [], summary: null, generated_at: null, duration_ms: null })
+    }
+
     // Generate fresh recommendations
     const taskSummaries = buildTaskSummaries(user.id)
     const aiContext = getUserAiContext(user.id)

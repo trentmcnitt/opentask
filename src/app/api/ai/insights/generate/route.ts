@@ -39,6 +39,15 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       return serviceUnavailable('Insights is disabled')
     }
 
+    // Demo users only get pre-baked insights — never trigger AI generation
+    if (user.is_demo) {
+      return success({
+        session_id: null,
+        total_tasks: 0,
+        message: 'Demo user — using pre-baked data',
+      })
+    }
+
     // Check for already-running session
     const active = getActiveInsightsSession(user.id)
     if (active) {

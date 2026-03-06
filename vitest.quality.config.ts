@@ -47,6 +47,18 @@ function loadCredsEnv(): Record<string, string> {
 const creds = loadCredsEnv()
 
 /**
+ * Determine the test provider mode.
+ *
+ * Only inject API keys when explicitly running in API mode (OPENTASK_AI_PROVIDER
+ * set to 'anthropic' or 'openai'). In SDK mode (the default), the Claude CLI
+ * subprocess uses the user's Claude Code subscription — injecting an API key
+ * would cause the CLI to use the Anthropic API directly instead, which fails
+ * if the key has no credits.
+ */
+const testProvider = process.env.OPENTASK_AI_PROVIDER || 'sdk'
+const isApiMode = testProvider === 'anthropic' || testProvider === 'openai'
+
+/**
  * Resolve the API key for the OpenAI-compatible provider.
  *
  * When OPENAI_BASE_URL points to a non-OpenAI endpoint (xAI, OpenRouter),
@@ -75,11 +87,10 @@ export default defineConfig({
     env: {
       OPENTASK_DB_PATH: path.resolve(__dirname, 'data', 'test-quality.db'),
       OPENTASK_AI_ENABLED: 'true',
-      // API keys from credentials file — vitest strips *_API_KEY env vars from
-      // the process environment, so we read them from disk at config load time.
-      ...(creds.ANTHROPIC_API_KEY && { ANTHROPIC_API_KEY: creds.ANTHROPIC_API_KEY }),
-      // For the OpenAI provider, resolve the key based on OPENAI_BASE_URL
-      ...(resolveOpenAIKey() && { OPENAI_API_KEY: resolveOpenAIKey()! }),
+      // API keys — only inject in API mode. In SDK mode, the Claude CLI uses
+      // its own auth; injecting a depleted API key causes the CLI to fail.
+      ...(isApiMode && creds.ANTHROPIC_API_KEY && { ANTHROPIC_API_KEY: creds.ANTHROPIC_API_KEY }),
+      ...(isApiMode && resolveOpenAIKey() && { OPENAI_API_KEY: resolveOpenAIKey()! }),
       // Provider config from shell env (OPENTASK_AI_* vars are NOT stripped)
       ...(process.env.OPENAI_BASE_URL && { OPENAI_BASE_URL: process.env.OPENAI_BASE_URL }),
       ...(process.env.OPENAI_MODEL && { OPENAI_MODEL: process.env.OPENAI_MODEL }),
@@ -101,6 +112,13 @@ export default defineConfig({
       ...(process.env.OPENTASK_AI_INSIGHTS_MODEL && {
         OPENTASK_AI_INSIGHTS_MODEL: process.env.OPENTASK_AI_INSIGHTS_MODEL,
       }),
+      // Pass through OPENTASK_AI_CLI_PATH if explicitly set by the user
+      ...(process.env.OPENTASK_AI_CLI_PATH && {
+        OPENTASK_AI_CLI_PATH: process.env.OPENTASK_AI_CLI_PATH,
+      }),
+      // Clear NODE_OPTIONS — debugger bootloaders (VS Code, etc.) inherited via
+      // this var cause Claude CLI subprocesses to crash with exit code 1.
+      NODE_OPTIONS: '',
     },
   },
   resolve: {

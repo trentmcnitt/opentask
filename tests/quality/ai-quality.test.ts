@@ -29,7 +29,8 @@ import { describe, test, beforeAll, afterAll } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { allScenarios } from './scenarios/index'
-import { requireFeatureModel } from '@/core/ai/models'
+import { requireFeatureModel, resolveSDKModel } from '@/core/ai/models'
+import type { AIFeature } from '@/core/ai/models'
 import type {
   AITestScenario,
   EnrichmentInput,
@@ -373,16 +374,19 @@ async function runEnrichment(
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
 
   const provider = getTestProvider()
+  // SDK mode needs extra turns for structured output (the CLI uses one turn
+  // for generation and one for schema validation). API mode handles it in one call.
+  const maxTurns = provider === 'sdk' ? 3 : 1
   const result = await aiQuery({
     prompt,
     systemPrompt: ENRICHMENT_SYSTEM_PROMPT,
     outputSchema: jsonSchema,
     model: getModelForFeature('enrichment'),
-    maxTurns: 1,
+    maxTurns,
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_enrich',
     inputText: input.text,
-    provider: provider === 'sdk' ? undefined : provider,
+    provider,
   })
 
   // Use parseAIResponse with text fallback — the SDK often returns JSON
@@ -437,11 +441,12 @@ Surface 3-7 tasks and return the JSON result.`
   const jsonSchema = z.toJSONSchema(WhatsNextResultSchema)
 
   const whatsNextProvider = getTestProvider()
+  const maxTurns = whatsNextProvider === 'sdk' ? 3 : 1
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
     model: getModelForFeature('whats_next'),
-    maxTurns: 1,
+    maxTurns,
     // Match production: enable extended thinking for Opus models
     ...(getModelForFeature('whats_next').includes('opus') && {
       maxThinkingTokens: 10000,
@@ -449,7 +454,7 @@ Surface 3-7 tasks and return the JSON result.`
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_whats_next',
     inputText: `${input.tasks.length} tasks`,
-    provider: whatsNextProvider === 'sdk' ? undefined : whatsNextProvider,
+    provider: whatsNextProvider,
   })
 
   // Use the same parsing + normalization as production whats-next.ts
@@ -507,7 +512,8 @@ async function runQuickTake(
 
   const model = getModelForFeature('quick_take')
   const quickTakeProvider = getTestProvider()
-
+  // Quick Take returns plain text (no outputSchema), so maxTurns: 1 works
+  // for both SDK and API mode — no schema validation turn needed.
   const result = await aiQuery({
     prompt,
     model,
@@ -516,7 +522,7 @@ async function runQuickTake(
     userId: QUALITY_TEST_USER_ID,
     action: 'quality_test_quick_take',
     inputText: input.newTaskTitle,
-    provider: quickTakeProvider === 'sdk' ? undefined : quickTakeProvider,
+    provider: quickTakeProvider,
   })
 
   if (!result.success || !result.textResult) {
@@ -574,11 +580,12 @@ Score every task above. Return a JSON array with one entry per task.`
   const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
 
   const insightsProvider = getTestProvider()
+  const maxTurns = insightsProvider === 'sdk' ? 3 : 1
   const result = await aiQuery({
     prompt,
     outputSchema: jsonSchema,
     model: getModelForFeature('insights'),
-    maxTurns: 1,
+    maxTurns,
     // Match production: enable extended thinking for Opus models
     ...(getModelForFeature('insights').includes('opus') && {
       maxThinkingTokens: 10000,
@@ -587,7 +594,7 @@ Score every task above. Return a JSON array with one entry per task.`
     action: 'quality_test_insights',
     inputText: `${input.tasks.length} tasks`,
     timeoutMs: 600_000,
-    provider: insightsProvider === 'sdk' ? undefined : insightsProvider,
+    provider: insightsProvider,
   })
 
   const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
@@ -1108,10 +1115,15 @@ function getTestProvider(): 'sdk' | 'anthropic' | 'openai' {
 }
 
 function getModelForFeature(feature: string): string {
-  // Quality tests use the centralized model resolution from models.ts.
-  const validFeatures = ['enrichment', 'quick_take', 'whats_next', 'insights']
-  if (validFeatures.includes(feature)) {
-    return requireFeatureModel(feature as 'enrichment' | 'quick_take' | 'whats_next' | 'insights')
+  const validFeatures: AIFeature[] = ['enrichment', 'quick_take', 'whats_next', 'insights']
+  const f: AIFeature = validFeatures.includes(feature as AIFeature)
+    ? (feature as AIFeature)
+    : 'enrichment'
+
+  // SDK mode uses resolveSDKModel (has sensible defaults, never throws).
+  // API mode uses requireFeatureModel (requires explicit env var per feature).
+  if (getTestProvider() === 'sdk') {
+    return resolveSDKModel(f)
   }
-  return requireFeatureModel('enrichment')
+  return requireFeatureModel(f)
 }

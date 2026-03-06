@@ -22,6 +22,8 @@ interface QuickActionPopoverProps {
   onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
   /** Called to delete task */
   onDelete?: (taskId: number) => void
+  /** Called to mark task as done */
+  onMarkDone?: (taskId: number) => void
   /** Called to navigate to task detail page */
   onNavigateToDetail?: (taskId: number) => void
   /** Available projects for project picker in the quick panel */
@@ -38,6 +40,7 @@ export function QuickActionPopover({
   onClose,
   onSaveAll,
   onDelete,
+  onMarkDone,
   onNavigateToDetail,
   projects,
   annotation,
@@ -58,6 +61,13 @@ export function QuickActionPopover({
       onClose()
     }
   }, [focusedTask, onDelete, onClose])
+
+  const handleMarkDone = useCallback(() => {
+    if (focusedTask && onMarkDone) {
+      onMarkDone(focusedTask.id)
+      onClose()
+    }
+  }, [focusedTask, onMarkDone, onClose])
 
   // Batched save handler - wraps onSaveAll with taskId and closes the popover
   const handleSaveAll = useCallback(
@@ -121,6 +131,7 @@ export function QuickActionPopover({
         titleVariant="prominent"
         onSaveAll={handleSaveAll}
         onDelete={onDelete ? handleDelete : undefined}
+        onMarkDone={onMarkDone ? handleMarkDone : undefined}
         onNavigateToDetail={onNavigateToDetail ? handleNavigateToDetail : undefined}
         onSave={onClose}
         onCancel={onClose}

@@ -509,10 +509,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     selectedCount: selection.selectedIds.size,
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
-  const { defaultGrouping: grouping, setDefaultGrouping } = useDefaultGrouping()
+  const { defaultGrouping, setDefaultGrouping } = useDefaultGrouping()
 
-  // Track the non-unified grouping so we can restore it when leaving unified view
-  // (whether triggered by AI sort auto-switch or manual unified toggle).
+  // AI sort auto-switches to unified as a local override (not persisted to DB).
+  // This preserves the user's real grouping preference for when AI sort is disabled.
+  const [aiSortUnified, setAiSortUnified] = useState(false)
+  const grouping = aiSortUnified ? 'unified' : defaultGrouping
+
+  // Track the non-unified grouping so we can restore it when leaving manual unified toggle.
   const prevNonUnifiedGrouping = useRef<GroupingMode | null>(null)
   const prevSortOption = useRef(sortOption)
 
@@ -522,15 +526,11 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     prevSortOption.current = sortOption
 
     if (!wasAiSort && isAiSort) {
-      // Entering AI sort: save current grouping and switch to unified
-      prevNonUnifiedGrouping.current = grouping
-      if (grouping !== 'unified') setDefaultGrouping('unified')
-    } else if (wasAiSort && !isAiSort && prevNonUnifiedGrouping.current) {
-      // Leaving AI sort: restore previous grouping
-      setDefaultGrouping(prevNonUnifiedGrouping.current)
-      prevNonUnifiedGrouping.current = null
+      setAiSortUnified(true)
+    } else if (wasAiSort && !isAiSort) {
+      setAiSortUnified(false)
     }
-  }, [sortOption, grouping, setDefaultGrouping])
+  }, [sortOption])
 
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
@@ -1132,6 +1132,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       selectedSignals={selectedSignals}
       onSignalClick={handleSignalClick}
       onSignalLongPress={handleSignalLongPress}
+      onQuickActionDone={actions.handleDone}
       onQuickActionDelete={handleQuickActionDelete}
       onReprocess={handleReprocess}
       onQuickAdd={
@@ -1151,13 +1152,16 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
           : undefined
       }
       onUnifiedChange={(unified) => {
-        if (unified) {
-          // Save current grouping so toggling unified off restores it
-          if (grouping !== 'unified') prevNonUnifiedGrouping.current = grouping
+        if (sortOption === 'ai_insights') {
+          // During AI sort: only toggle local override, don't persist to DB
+          setAiSortUnified(unified)
+        } else if (unified) {
+          // Manual unified on: save current grouping and persist
+          if (defaultGrouping !== 'unified') prevNonUnifiedGrouping.current = defaultGrouping
           setDefaultGrouping('unified')
         } else {
-          // Restore the previous non-unified grouping (default to 'time')
-          setDefaultGrouping(prevNonUnifiedGrouping.current || 'time')
+          // Manual unified off: restore previous grouping
+          setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
           prevNonUnifiedGrouping.current = null
         }
       }}
@@ -1265,6 +1269,7 @@ function DashboardView({
   selectedSignals,
   onSignalClick,
   onSignalLongPress,
+  onQuickActionDone,
   onQuickActionDelete,
   onReprocess,
   onUnifiedChange,
@@ -1327,6 +1332,7 @@ function DashboardView({
   onTaskFocus: (task: Task) => void
   onQuickActionClose: () => void
   onQuickActionSaveAll: (taskId: number, changes: QuickActionPanelChanges) => void
+  onQuickActionDone: (taskId: number) => void
   onQuickActionDelete: (taskId: number) => void
   onQuickActionNavigate: (taskId: number) => void
   onNavigateToDetail: (taskId: number) => void
@@ -1685,6 +1691,7 @@ function DashboardView({
         onClose={onQuickActionClose}
         onSaveAll={onQuickActionSaveAll}
         onDelete={onQuickActionDelete}
+        onMarkDone={onQuickActionDone}
         onNavigateToDetail={onQuickActionNavigate}
         projects={projects}
         annotation={focusedTask ? effectiveAnnotationMap.get(focusedTask.id) : undefined}
