@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { X, Trash2, Info, Loader2, Check, AlertTriangle } from 'lucide-react'
+import { X, Trash2, Info, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
 import { useProjects } from '@/components/ProjectsProvider'
 import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
@@ -482,6 +482,22 @@ export default function SettingsPage() {
               <option value="dark">Dark</option>
             </select>
           </div>
+        </section>
+
+        {/* Help */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Help
+          </h2>
+          <a
+            href="https://opentask.mcnitt.io/docs/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="-mx-2 flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <span className="text-sm">Documentation</span>
+            <ExternalLink className="h-4 w-4 text-zinc-400" />
+          </a>
         </section>
 
         {/* Priority Display */}
