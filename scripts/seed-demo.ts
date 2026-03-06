@@ -232,9 +232,20 @@ function getDemoTasks(): DemoTaskDef[] {
   ]
 }
 
+interface SeededTask {
+  id: number
+  title: string
+  done: boolean
+  deleted: boolean
+}
+
 // ── Task seeding helper ─────────────────────
 
-function seedDemoTasks(db: Database.Database, userId: number, projectMap: ProjectMap): number {
+function seedDemoTasks(
+  db: Database.Database,
+  userId: number,
+  projectMap: ProjectMap,
+): SeededTask[] {
   const insertTask = db.prepare(`
     INSERT INTO tasks (
       user_id, project_id, title, done, done_at, priority, due_at,
@@ -253,6 +264,7 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
 
   const now = DateTime.utc().toISO()!
   const tasks = getDemoTasks()
+  const seededTasks: SeededTask[] = []
 
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i]
@@ -283,7 +295,7 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
     const daysAgo = task.createdDaysAgo ?? 3
     const createdAt = daysAgo === 0 ? now : localToUtcIso(-daysAgo, 10, 0)
 
-    insertTask.run(
+    const result = insertTask.run(
       userId,
       projectId,
       task.title,
@@ -307,9 +319,127 @@ function seedDemoTasks(db: Database.Database, userId: number, projectMap: Projec
       createdAt,
       now,
     )
+
+    seededTasks.push({
+      id: Number(result.lastInsertRowid),
+      title: task.title,
+      done: !!task.done,
+      deleted: !!task.deleted,
+    })
   }
 
-  return tasks.length
+  return seededTasks
+}
+
+// ── Pre-baked AI data ─────────────────────────
+// Curated insights and What's Next results so the demo user sees AI features
+// immediately without triggering real AI generation.
+
+/** Curated insights keyed by task title → { score, signals, commentary } */
+const DEMO_INSIGHTS: Record<string, { score: number; signals: string[]; commentary: string }> = {
+  'Prepare implementation plan for client onboarding': {
+    score: 88,
+    signals: ['act_soon'],
+    commentary: 'Due soon with high priority — prepare before the deadline',
+  },
+  'Cancel that free trial before it charges': {
+    score: 75,
+    signals: ['review'],
+    commentary: 'Medium priority with a real cost if missed — worth prioritizing',
+  },
+  'Draft project scope for RAG pipeline integration': {
+    score: 60,
+    signals: ['vague'],
+    commentary: 'No due date and scope is undefined — clarify requirements',
+  },
+  'Client status update': {
+    score: 52,
+    signals: [],
+    commentary: 'Recurring check-in, handle when it comes up',
+  },
+  'Plan camping trip for Memorial Day weekend': {
+    score: 45,
+    signals: [],
+    commentary: 'Low priority but has a due date — keep it on radar',
+  },
+  'Go for a run': {
+    score: 30,
+    signals: [],
+    commentary: 'Recurring habit — low urgency, just stay consistent',
+  },
+  'Try that new ramen place on 5th': {
+    score: 15,
+    signals: ['quick_win'],
+    commentary: 'Fun low-effort task with no deadline pressure',
+  },
+  'Welcome to OpenTask — explore the demo!': {
+    score: 10,
+    signals: [],
+    commentary: 'Informational — no action needed',
+  },
+}
+
+/** Fallback insights for Try It tasks (low scores, no signals) */
+const TRY_IT_INSIGHT = {
+  score: 6,
+  signals: [] as string[],
+  commentary: 'Onboarding step — complete at your own pace',
+}
+
+/** Titles for What's Next picks (top 3 from insights) */
+const WHATS_NEXT_PICKS: { title: string; reason: string }[] = [
+  {
+    title: 'Prepare implementation plan for client onboarding',
+    reason: 'High priority and due tomorrow — the most time-sensitive task on your list',
+  },
+  {
+    title: 'Cancel that free trial before it charges',
+    reason: 'Real cost if missed — quick action to avoid an unwanted charge',
+  },
+  {
+    title: 'Draft project scope for RAG pipeline integration',
+    reason: "No due date but important client work — good to make progress while it's fresh",
+  },
+]
+
+function seedDemoInsights(db: Database.Database, userId: number, tasks: SeededTask[]): void {
+  const now = DateTime.utc().toISO()!
+  const stmt = db.prepare(
+    `INSERT INTO ai_insights_results (user_id, task_id, score, commentary, signals, generated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  )
+
+  const activeTasks = tasks.filter((t) => !t.done && !t.deleted)
+  for (const task of activeTasks) {
+    const insight = DEMO_INSIGHTS[task.title] ?? TRY_IT_INSIGHT
+    const signals = insight.signals.length > 0 ? JSON.stringify(insight.signals) : null
+    stmt.run(userId, task.id, insight.score, insight.commentary, signals, now)
+  }
+  console.log(`  Pre-baked insights for ${activeTasks.length} tasks`)
+}
+
+function seedDemoWhatsNext(db: Database.Database, userId: number, tasks: SeededTask[]): void {
+  const now = DateTime.utc().toISO()!
+  const tasksByTitle = new Map(tasks.map((t) => [t.title, t]))
+
+  const whatsNextTasks = WHATS_NEXT_PICKS.map((pick) => {
+    const task = tasksByTitle.get(pick.title)
+    if (!task) throw new Error(`What's Next pick not found: "${pick.title}"`)
+    return { task_id: task.id, reason: pick.reason }
+  })
+
+  const output = JSON.stringify({
+    tasks: whatsNextTasks,
+    summary: "Here's what needs attention today",
+    generated_at: now,
+  })
+
+  db.prepare(
+    `INSERT INTO ai_activity_log (user_id, task_id, action, status, input, output, model, duration_ms, provider, created_at)
+     VALUES (?, NULL, 'whats_next', 'success', ?, ?, 'demo', 0, 'prebaked', ?)`,
+  ).run(userId, `${tasks.filter((t) => !t.done && !t.deleted).length} tasks`, output, now)
+
+  console.log(`  Pre-baked What's Next with ${whatsNextTasks.length} picks`)
 }
 
 // ── Exported seed functions ─────────────────
@@ -378,8 +508,12 @@ export function seedDemoData(
   console.log(`  AI features set to API mode`)
 
   // Seed tasks
-  const inserted = seedDemoTasks(db, userId, projectMap)
-  console.log(`  Inserted ${inserted} tasks`)
+  const seededTasks = seedDemoTasks(db, userId, projectMap)
+  console.log(`  Inserted ${seededTasks.length} tasks`)
+
+  // Pre-bake AI data so demo user sees insights and What's Next without triggering AI
+  seedDemoInsights(db, userId, seededTasks)
+  seedDemoWhatsNext(db, userId, seededTasks)
 }
 
 /**

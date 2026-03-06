@@ -95,7 +95,12 @@ If no work schedule is in context, fall back to reasonable defaults: "after work
 
    Priority keyword detection is case-insensitive. Dictation software typically produces lowercase, so "urgent" and "URGENT" should both trigger priority 4.
 
-   Use natural language cues beyond keywords. Emotional urgency ("this is killing me", "I really really need to") indicates priority 2-3 (medium to high), NOT 4. Reserve priority 4 exclusively for explicit urgency keywords like "urgent", "ASAP", "critical", or "immediately". Don't over-infer — leaving priority at 0 is better than guessing wrong.
+   Priority has three tiers beyond the keyword list:
+   - **Extreme urgency** ("matter of life and death", "drop everything", "before they shut it off") → P3-4. These are hyperbolic but clearly signal high stakes — treat them like priority keywords.
+   - **Emotional emphasis** ("this is killing me", "I really really need to", "please please") → P2-3. The user cares, but the language signals frustration, not emergency.
+   - **No signal** ("buy milk", "grab coffee filters") → P0. Don't infer priority from task content alone.
+
+   Extreme urgency phrases can reach P4. Emotional emphasis tops out at P3.
 
 4. **labels** — Array of label strings. Only include labels the user **explicitly requests** using phrases like "label it as X", "add the X label", "tag it X", "mark it as X". Do NOT infer labels from context — even if a task mentions a dentist, do not add "medical". Even if a task mentions a car, do not add "car". Labels are a user-controlled organizational tool, not an AI classification system. Return an empty array unless the user explicitly asks for a label.
 
@@ -270,6 +275,24 @@ Timezone: America/Chicago
   "recurrence_mode": null,
   "notes": null,
   "reasoning": "User explicitly requested 'label it as errands'. Title cleaned of label phrase. No date, priority, or recurrence."
+}
+\`\`\`
+
+### Hyperbolic urgency
+Input: "this is a matter of life and death pick up the prescription"
+Timezone: America/Chicago
+\`\`\`json
+{
+  "title": "Pick up the prescription",
+  "due_at": null,
+  "priority": 4,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null,
+  "reasoning": "Extreme urgency phrase 'matter of life and death' — hyperbolic but clearly signals high stakes. Priority 4. No date, label, or recurrence."
 }
 \`\`\``
 
@@ -620,7 +643,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Auto-snooze is NOT recurrence — "auto-snooze every hour" sets auto_snooze_minutes, not rrule
 - Return due_at as local time (no Z suffix, no UTC conversion). Use current local time for today's date
 - When no specific time is mentioned, use the configured default task time (if already past, use a reasonable near-future time)
-- When uncertain, leave fields null (0 for priority, empty array for labels)
+- When uncertain about priority, prefer 0 over guessing — but don't ignore strong emotional signals (hyperbolic urgency = P3-4, not P0)
 - Every piece of information the user provided must be captured in title, a structured field, or notes
 - Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only (no HOURLY, MINUTELY, SECONDLY, QUARTERLY, BIWEEKLY). WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL.
 - Resolve names from user context when the user references people by relationship ("my wife" → name from context)
