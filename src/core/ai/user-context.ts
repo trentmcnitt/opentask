@@ -49,6 +49,18 @@ export function getUserFeatureModes(userId: number): {
   }
 }
 
+/**
+ * Get a user's per-user AI query timeout override.
+ * Returns the timeout in ms, or null if no override is set (use global default).
+ */
+export function getUserQueryTimeout(userId: number): number | null {
+  const db = getDb()
+  const row = db.prepare('SELECT ai_query_timeout_ms FROM users WHERE id = ?').get(userId) as
+    | { ai_query_timeout_ms: number | null }
+    | undefined
+  return row?.ai_query_timeout_ms ?? null
+}
+
 function parseMode(value: string | null | undefined): FeatureMode {
   if (value === 'off' || value === 'sdk' || value === 'api') return value
   return 'api'
