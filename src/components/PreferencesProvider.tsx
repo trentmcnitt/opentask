@@ -190,6 +190,43 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     }).catch(() => {})
   }
 
+  // Auto-provision a Bearer token for iOS notification actions (Done, Snooze).
+  // The native app and notification extensions can't use session cookies, so they
+  // need a Bearer token stored in the Keychain. This provisions one automatically
+  // via session cookie auth, eliminating manual token setup.
+  function provisionBearerToken() {
+    // Only run inside the iOS native wrapper (device info is injected by AppDelegate)
+    const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
+      | { token: string }
+      | undefined
+    if (!info?.token) return
+
+    const hasLocalToken =
+      (window as unknown as Record<string, unknown>).__OPENTASK_HAS_TOKEN === true
+
+    fetch('/api/tokens/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ has_local_token: hasLocalToken }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.data?.token) {
+          // New token provisioned — send to native via JS bridge
+          const w = window as unknown as {
+            webkit?: {
+              messageHandlers?: { opentask?: { postMessage: (msg: unknown) => void } }
+            }
+          }
+          w.webkit?.messageHandlers?.opentask?.postMessage({
+            action: 'provisionToken',
+            token: data.data.token,
+          })
+        }
+      })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     if (status !== 'authenticated') return
     fetch('/api/user/preferences')
@@ -278,10 +315,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setAiFeatureInfoState(data.data.ai_feature_info)
         }
 
-        // Register iOS device token using session cookie auth.
+        // Register iOS device token and provision Bearer token using session cookie auth.
         // This ensures push notifications follow the web-logged-in user,
         // not the bearer token user from initial iOS setup.
         registerDeviceToken()
+        provisionBearerToken()
       })
       .catch((err: unknown) => {
         console.error('Failed to fetch preferences:', err)
@@ -295,6 +333,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
     function onDeviceToken() {
       registerDeviceToken()
+      provisionBearerToken()
     }
 
     window.addEventListener('opentask-device-token', onDeviceToken)

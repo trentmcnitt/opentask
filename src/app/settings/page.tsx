@@ -1286,7 +1286,7 @@ export default function SettingsPage() {
             {showDisconnectConfirm ? (
               <div className="space-y-2">
                 <p className="text-sm text-red-600 dark:text-red-400">
-                  You&apos;ll need to re-enter the server URL and API token to reconnect.
+                  You&apos;ll need to re-enter the server URL to reconnect.
                 </p>
                 <div className="flex gap-2">
                   <Button
