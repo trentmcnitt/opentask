@@ -256,6 +256,8 @@ describe('isNotificationBoundary', () => {
 })
 
 // ─── Integration tests with DB + mocked push ────────────────────────────────
+// These tests use nowOverride to control the clock for both the SQL query
+// and the JS boundary check, ensuring the <= filter is properly tested.
 
 describe('checkOverdueTasks', () => {
   beforeEach(() => {
@@ -264,48 +266,62 @@ describe('checkOverdueTasks', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     resetDb()
   })
 
-  test('sends notification for task at boundary', async () => {
-    // Task due at 10:00, check at 10:30 → 30 min boundary (default P0 interval)
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
+  test('sends notification for task at exact due time (<=)', async () => {
+    // Task due at 10:00, check at exactly 10:00 → minutesSinceDue = 0, 0 % 30 = 0 → fires
     insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
 
-    await checkOverdueTasks()
-
-    expect(sendPushNotification).toHaveBeenCalledTimes(1)
-  })
-
-  test('sends notification for task 1 minute overdue', async () => {
-    // Task due at 10:00, check at 10:01 → first overdue minute fires immediately
-    vi.setSystemTime(new Date('2026-01-15T10:01:00.000Z'))
-    insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
-
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:00:00.000Z'))
 
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
   })
 
-  test('skips task between boundaries', async () => {
-    // Task due at 10:00, check at 10:15 → not a 30-min boundary
-    vi.setSystemTime(new Date('2026-01-15T10:15:00.000Z'))
+  test('sends notification for task 1 minute overdue', async () => {
+    // Task due at 10:00, check at 10:01 → minutesSinceDue = 1, fires via special case
     insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:01:00.000Z'))
+
+    expect(sendPushNotification).toHaveBeenCalledTimes(1)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  test('does NOT include task that is not yet due', async () => {
+    // Task due at 10:05, check at 10:00 → task is in the future, should NOT notify
+    insertTask(1, 'Future task', '2026-01-15T10:05:00.000Z', 0)
+
+    await checkOverdueTasks(new Date('2026-01-15T10:00:00.000Z'))
+
+    expect(sendPushNotification).not.toHaveBeenCalled()
+    expect(sendApnsNotification).not.toHaveBeenCalled()
+  })
+
+  test('sends notification for task at boundary', async () => {
+    // Task due at 10:00, check at 10:30 → 30 min boundary (default P0 interval)
+    insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
+
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
+
+    expect(sendPushNotification).toHaveBeenCalledTimes(1)
+  })
+
+  test('skips task between boundaries', async () => {
+    // Task due at 10:00, check at 10:15 → not a 30-min boundary
+    insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
+
+    await checkOverdueTasks(new Date('2026-01-15T10:15:00.000Z'))
 
     expect(sendPushNotification).not.toHaveBeenCalled()
   })
 
   test('P4 task gets both web push and APNs time-sensitive', async () => {
     // Task due at 10:00, check at 10:05 → 5 min boundary (P4 urgent)
-    // Critical alerts require Apple entitlement approval — using time-sensitive until approved
-    vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
     insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:05:00.000Z'))
 
     // P4 gets individual web push AND APNs with time-sensitive interruption level
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
@@ -323,10 +339,9 @@ describe('checkOverdueTasks', () => {
   })
 
   test('P3 task gets time-sensitive APNs', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:15:00.000Z'))
     insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:15:00.000Z'))
 
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledWith(
@@ -342,10 +357,9 @@ describe('checkOverdueTasks', () => {
 
   test('P3 task uses high interval', async () => {
     // Task due at 10:00, check at 10:15 → 15 min boundary (P3 high)
-    vi.setSystemTime(new Date('2026-01-15T10:15:00.000Z'))
     insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:15:00.000Z'))
 
     // Web push + APNs, both individual
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
@@ -354,12 +368,11 @@ describe('checkOverdueTasks', () => {
 
   test('multiple tasks with different priorities — all get individual notifications', async () => {
     // At 10:30: P0 at 30-min boundary, P3 at 30-min boundary, P4 at 30-min boundary
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     insertTask(1, 'Low task', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'High task', '2026-01-15T10:00:00.000Z', 3)
     insertTask(3, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // Web push: 3 individual (1 per bucket, all under caps)
     expect(sendPushNotification).toHaveBeenCalledTimes(3)
@@ -368,11 +381,10 @@ describe('checkOverdueTasks', () => {
   })
 
   test('P0-P1 tasks under cap get individual notifications', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     insertTask(1, 'Task A', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'Task B', '2026-01-15T10:00:00.000Z', 1)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // Under the cap of 4, so both get individual web push + APNs
     expect(sendPushNotification).toHaveBeenCalledTimes(2)
@@ -381,10 +393,9 @@ describe('checkOverdueTasks', () => {
   })
 
   test('does not write last_notified_at to database', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     insertTask(1, 'Test task', '2026-01-15T10:00:00.000Z', 0)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     const db = getDb()
     const task = db.prepare('SELECT last_notified_at FROM tasks WHERE id = 1').get() as {
@@ -403,18 +414,16 @@ describe('consolidation caps', () => {
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     resetDb()
   })
 
   test('Regular bucket (P0-P2): 4 individual + 1 summary when > 4 tasks', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     // 6 P0 tasks, all at 30-min boundary
     for (let i = 1; i <= 6; i++) {
       insertTask(i, `Task ${i}`, '2026-01-15T10:00:00.000Z', 0)
     }
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // 4 individual web push + 1 summary web push = 5
     expect(sendPushNotification).toHaveBeenCalledTimes(5)
@@ -428,7 +437,6 @@ describe('consolidation caps', () => {
   })
 
   test('Regular bucket prioritizes P2 over P1 over P0 for individual slots', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     // 6 tasks: 2 P0, 2 P1, 2 P2. Only 4 get individual. P2 should get slots first.
     insertTask(1, 'P0-A', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'P0-B', '2026-01-15T10:00:00.000Z', 0)
@@ -437,7 +445,7 @@ describe('consolidation caps', () => {
     insertTask(5, 'P2-A', '2026-01-15T10:00:00.000Z', 2)
     insertTask(6, 'P2-B', '2026-01-15T10:00:00.000Z', 2)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // 4 individual + 1 summary = 5 web push
     expect(sendPushNotification).toHaveBeenCalledTimes(5)
@@ -453,13 +461,12 @@ describe('consolidation caps', () => {
   })
 
   test('High bucket (P3): 5 individual + 1 summary when > 5 tasks', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     // 7 P3 tasks, all at 30-min boundary (30 % 15 === 0)
     for (let i = 1; i <= 7; i++) {
       insertTask(i, `High ${i}`, '2026-01-15T10:00:00.000Z', 3)
     }
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // 5 individual web push + 1 summary = 6
     expect(sendPushNotification).toHaveBeenCalledTimes(6)
@@ -471,13 +478,12 @@ describe('consolidation caps', () => {
   })
 
   test('Urgent bucket (P4): unlimited, no summary', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:05:00.000Z'))
     // 10 P4 tasks, all at 5-min boundary
     for (let i = 1; i <= 10; i++) {
       insertTask(i, `Urgent ${i}`, '2026-01-15T10:00:00.000Z', 4)
     }
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:05:00.000Z'))
 
     // All 10 get individual web push + APNs, no summary
     expect(sendPushNotification).toHaveBeenCalledTimes(10)
@@ -486,7 +492,6 @@ describe('consolidation caps', () => {
   })
 
   test('mixed priorities: each bucket consolidates independently', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     // 6 P0 tasks (Regular: 4 individual + 1 summary)
     for (let i = 1; i <= 6; i++) {
       insertTask(i, `Low ${i}`, '2026-01-15T10:00:00.000Z', 0)
@@ -499,7 +504,7 @@ describe('consolidation caps', () => {
     insertTask(14, 'Urgent A', '2026-01-15T10:00:00.000Z', 4)
     insertTask(15, 'Urgent B', '2026-01-15T10:00:00.000Z', 4)
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // Web push: (4+1) + (5+1) + 2 = 13
     expect(sendPushNotification).toHaveBeenCalledTimes(13)
@@ -510,13 +515,12 @@ describe('consolidation caps', () => {
   })
 
   test('exactly at cap: no summary sent', async () => {
-    vi.setSystemTime(new Date('2026-01-15T10:30:00.000Z'))
     // Exactly 4 P0 tasks — at cap, no overflow
     for (let i = 1; i <= 4; i++) {
       insertTask(i, `Task ${i}`, '2026-01-15T10:00:00.000Z', 0)
     }
 
-    await checkOverdueTasks()
+    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
 
     // 4 individual, no summary
     expect(sendPushNotification).toHaveBeenCalledTimes(4)

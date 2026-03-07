@@ -197,17 +197,19 @@ async function sendBucket(
   await Promise.allSettled(sends)
 }
 
-export async function checkOverdueTasks(): Promise<void> {
+export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
   const webPushEnabled = isWebPushConfigured()
   const apnsEnabled = isApnsConfigured()
   if (!webPushEnabled && !apnsEnabled) return
 
   try {
     const db = getDb()
-    const now = new Date()
+    const now = nowOverride ?? new Date()
 
     // Fetch all overdue tasks across all priorities. Boundary filtering
     // is done in JS because the repeat interval varies per task/priority.
+    // Uses a parameterized timestamp (not datetime('now')) so the SQL filter
+    // and JS boundary check use the same clock — important for testability.
     const overdueTasks = db
       .prepare(
         `
@@ -223,12 +225,12 @@ export async function checkOverdueTasks(): Promise<void> {
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
           AND t.due_at IS NOT NULL
-          AND datetime(t.due_at) <= datetime('now')
+          AND datetime(t.due_at) <= datetime(?)
           AND u.notifications_enabled = 1
         ORDER BY t.priority DESC, t.due_at ASC
       `,
       )
-      .all() as OverdueTask[]
+      .all(now.toISOString()) as OverdueTask[]
 
     // Collect unique user IDs with overdue tasks for badge updates
     const usersWithOverdue = new Set(overdueTasks.map((t) => t.user_id))
