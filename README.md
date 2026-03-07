@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/opentask-sun-logo.png" alt="OpenTask" width="128">
+  <img src="public/opentask-sun-logo-transparent-bg.png" alt="OpenTask" width="128">
 </p>
 
 <p align="center">
