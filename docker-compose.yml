@@ -29,6 +29,6 @@ services:
       # - VAPID_PUBLIC_KEY=
       # - VAPID_PRIVATE_KEY=
       # - VAPID_EMAIL=mailto:you@example.com
-      # Optional: enable AI features (requires Claude Code on the host)
+      # Optional: enable AI features (see .env.example for provider setup)
       # - OPENTASK_AI_ENABLED=true
     restart: unless-stopped

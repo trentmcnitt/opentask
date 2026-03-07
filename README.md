@@ -61,13 +61,13 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 
 ## 🧠 AI-native task management (optional)
 
-Every task gets AI-generated commentary and a priority score. AI sees your full task list and writes a one-liner — what it means, why it matters, what you might be forgetting.
+Every task gets AI-generated commentary and an attention score. AI sees your full task list and writes a one-liner — what it means, why it matters, what you might be forgetting.
 
 <p align="center">
-  <img src="docs/images/task-card-ai-insight-readme.png" alt="Task card with AI commentary and priority score" width="400">
+  <img src="docs/images/task-card-ai-insight-readme.png" alt="Task card with AI commentary and attention score" width="400">
 </p>
 
-- **Commentary + scoring** — Each task gets a contextual one-liner and a relevance score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
+- **Commentary + scoring** — Each task gets a contextual one-liner and an attention score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
 - **Natural language input** — Type tasks in plain English. AI extracts the title, due date, recurrence, priority, project, and notes.
 - **What's Next** — Recommendations that surface overlooked or forgotten tasks.
 - **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others.
