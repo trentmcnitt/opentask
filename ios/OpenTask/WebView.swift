@@ -72,6 +72,16 @@ struct WebView: UIViewRepresentable {
             config.userContentController.addUserScript(tokenScript)
         }
 
+        // Tell the web app whether native has a Bearer token in Keychain.
+        // Used by the auto-provisioning flow to decide whether to create a new token.
+        let hasToken = KeychainHelper.read(key: "bearerToken") != nil
+        let hasTokenScript = WKUserScript(
+            source: "window.__OPENTASK_HAS_TOKEN = \(hasToken);",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        config.userContentController.addUserScript(hasTokenScript)
+
         // Register JS bridge for native actions (disconnect, etc.)
         config.userContentController.add(context.coordinator, name: "opentask")
 
@@ -205,7 +215,11 @@ struct WebView: UIViewRepresentable {
             #else
             let env = "production"
             #endif
-            let js = "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };"
+            let hasToken = KeychainHelper.read(key: "bearerToken") != nil
+            let js = """
+                window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };
+                window.__OPENTASK_HAS_TOKEN = \(hasToken);
+                """
             webView.evaluateJavaScript(js)
         }
 
@@ -232,6 +246,14 @@ struct WebView: UIViewRepresentable {
             case "disconnect":
                 Task {
                     await AppConfig.shared.disconnect()
+                }
+            case "provisionToken":
+                if let token = body["token"] as? String, !token.isEmpty {
+                    KeychainHelper.save(key: "bearerToken", value: token)
+                    if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+                        appDelegate.sendCredentialsToWatch()
+                    }
+                    print("[OpenTask] Bearer token provisioned via JS bridge")
                 }
             default:
                 print("[OpenTask] Unknown JS bridge action: \(action)")

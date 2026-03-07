@@ -99,7 +99,7 @@ private struct ErrorView: View {
             Button("Disconnect", role: .destructive, action: onDisconnect)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You'll need to re-enter the server URL and API token to reconnect.")
+            Text("You'll need to re-enter the server URL to reconnect.")
         }
     }
 }

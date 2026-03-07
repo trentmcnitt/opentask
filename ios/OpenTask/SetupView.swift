@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// First-launch setup: server URL and Bearer token entry.
+/// First-launch setup: server URL entry.
 ///
-/// Validates by calling GET /api/user/preferences with the Bearer token.
-/// On success, stores credentials in Keychain via App Group and transitions
-/// to the main WebView.
+/// Validates by checking the server is reachable. On success, stores the URL
+/// in Keychain and transitions to the main WebView where the user logs in
+/// and a Bearer token is auto-provisioned for notification actions.
 struct SetupView: View {
     @State private var serverURL = ""
-    @State private var bearerToken = ""
     @State private var isValidating = false
     @State private var errorMessage: String?
 
@@ -15,7 +14,7 @@ struct SetupView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Connect to your OpenTask server to enable push notifications with snooze actions.")
+                    Text("Enter your OpenTask server URL to enable push notifications with snooze actions.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -26,17 +25,6 @@ struct SetupView: View {
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                         .keyboardType(.URL)
-                }
-
-                Section("API Token") {
-                    SecureField("Bearer token", text: $bearerToken)
-                        .textContentType(.password)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-
-                    Text("Create a token in Settings > API Tokens on your OpenTask server.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let error = errorMessage {
@@ -67,7 +55,7 @@ struct SetupView: View {
     }
 
     private var canSubmit: Bool {
-        !serverURL.isEmpty && !bearerToken.isEmpty && !isValidating
+        !serverURL.isEmpty && !isValidating
     }
 
     private func validate() async {
@@ -80,21 +68,24 @@ struct SetupView: View {
             url.removeLast()
         }
 
-        // Save temporarily so APIClient can use them
-        KeychainHelper.save(key: "serverURL", value: url)
-        KeychainHelper.save(key: "bearerToken", value: bearerToken.trimmingCharacters(in: .whitespaces))
+        // Verify the server is reachable by loading the login page
+        guard let checkURL = URL(string: "\(url)/login") else {
+            errorMessage = "Invalid URL"
+            isValidating = false
+            return
+        }
 
         do {
-            let isValid = try await APIClient.shared.validateConnection()
-            if isValid {
-                AppConfig.shared.configure(serverURL: url, bearerToken: bearerToken.trimmingCharacters(in: .whitespaces))
+            var request = URLRequest(url: checkURL)
+            request.timeoutInterval = 10
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, (200...399).contains(http.statusCode) {
+                AppConfig.shared.configure(serverURL: url)
             } else {
-                errorMessage = "Server returned an error. Check your token."
-                AppConfig.shared.reset()
+                errorMessage = "Server not reachable (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0))"
             }
         } catch {
             errorMessage = "Connection failed: \(error.localizedDescription)"
-            AppConfig.shared.reset()
         }
 
         isValidating = false

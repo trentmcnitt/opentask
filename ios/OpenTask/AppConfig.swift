@@ -17,25 +17,17 @@ final class AppConfig {
 
     private init() {
         let url = KeychainHelper.read(key: "serverURL")
-        let token = KeychainHelper.read(key: "bearerToken")
         self.serverURL = url ?? ""
-        self.isConfigured = url != nil && token != nil
+        self.isConfigured = url != nil && !url!.isEmpty
         self.deviceToken = UserDefaults.standard.string(forKey: "apnsDeviceToken")
     }
 
-    func configure(serverURL: String, bearerToken: String) {
+    /// Save server URL and mark as configured. Bearer token is provisioned
+    /// automatically after the user logs in via the WebView (see PreferencesProvider).
+    func configure(serverURL: String) {
         KeychainHelper.save(key: "serverURL", value: serverURL)
-        KeychainHelper.save(key: "bearerToken", value: bearerToken)
         self.serverURL = serverURL
         self.isConfigured = true
-
-        // Device token registration is handled by the web app via session cookie auth
-        // (in PreferencesProvider) — no bearer token registration needed here.
-
-        // Sync credentials to Watch app
-        if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
-            appDelegate.sendCredentialsToWatch()
-        }
     }
 
     /// Full disconnect: unregister device, clear WebView data, clear Watch, reset Keychain.
