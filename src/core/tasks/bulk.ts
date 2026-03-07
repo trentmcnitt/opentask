@@ -194,8 +194,10 @@ interface BulkSnoozeFilterResult {
  * P0-P3 (None through High) are eligible for bulk snooze.
  * P4 (Urgent) is excluded — urgent tasks must be snoozed individually.
  */
-function filterForBulkSnooze(tasks: Task[]): BulkSnoozeFilterResult {
-  const eligible = tasks.filter((t) => (t.priority ?? 0) < URGENT_PRIORITY)
+function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkSnoozeFilterResult {
+  const eligible = tasks.filter(
+    (t) => (t.priority ?? 0) < URGENT_PRIORITY || includeTaskIds?.has(t.id),
+  )
   const urgentSkipped = tasks.length - eligible.length
   return { eligible, urgentSkipped }
 }
@@ -208,6 +210,8 @@ export interface BulkSnoozeOptions {
   until?: string
   /** Relative snooze delta (minutes) - added to each task's current due_at */
   deltaMinutes?: number
+  /** Task IDs to include regardless of priority (bypasses P4 filter) */
+  includeTaskIds?: number[]
 }
 
 export interface BulkSnoozeResult {
@@ -227,7 +231,7 @@ export interface BulkSnoozeResult {
  * Follows same original_due_at rules as single snooze.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
-  const { userId, userTimezone, taskIds, until, deltaMinutes } = options
+  const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds } = options
 
   if (taskIds.length === 0) {
     return { tasksAffected: 0, tasksSkipped: 0, urgentSkipped: 0, noDueDateSkipped: 0 }
@@ -254,8 +258,9 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // P0-P3 eligible, P4 (Urgent) excluded
-  const { eligible, urgentSkipped } = filterForBulkSnooze(tasks)
+  // P0-P3 eligible, P4 (Urgent) excluded — unless explicitly included
+  const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
+  const { eligible, urgentSkipped } = filterForBulkSnooze(tasks, includeSet)
 
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0

@@ -234,7 +234,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     playHaptic(.success)
 
                 case "SNOOZE_ALL_1HR":
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
                     if result.tasksAffected > 0 {
                         await dismissSnoozedNotifications()

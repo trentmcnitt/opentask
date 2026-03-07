@@ -66,6 +66,17 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     const taskIds = overdueTasks.map((t) => t.id)
 
+    // Merge in explicitly included task IDs (e.g., the P4 task the user is acting on)
+    const includeTaskIds = input.include_task_ids
+    if (includeTaskIds?.length) {
+      const existing = new Set(taskIds)
+      for (const id of includeTaskIds) {
+        if (!existing.has(id)) {
+          taskIds.push(id)
+        }
+      }
+    }
+
     if (taskIds.length === 0) {
       return success({
         tasks_affected: 0,
@@ -74,12 +85,14 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       })
     }
 
-    // bulkSnooze handles priority filtering internally (P0-P3 eligible, P4 excluded)
+    // bulkSnooze handles priority filtering internally (P0-P3 eligible, P4 excluded
+    // unless explicitly included via includeTaskIds)
     const result = bulkSnooze({
       userId: user.id,
       userTimezone: user.timezone,
       taskIds,
       until,
+      includeTaskIds,
     })
 
     // Dismiss only the tasks that were actually snoozed, not tasks that were
