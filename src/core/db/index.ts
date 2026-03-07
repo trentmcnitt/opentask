@@ -129,12 +129,21 @@ function runMigrations(database: Database.Database): void {
     database.exec("UPDATE users SET ai_insights_mode = 'off' WHERE ai_show_insights = 0")
     database.exec("UPDATE users SET ai_quicktake_mode = 'off' WHERE ai_show_commentary = 0")
   }
+  // Per-user AI query timeout (2026-03)
+  if (!hasColumn(database, 'users', 'ai_query_timeout_ms')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_query_timeout_ms INTEGER')
+  }
   // Demo user flag (2026-03)
   if (!hasColumn(database, 'users', 'is_demo')) {
     database.exec('ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0')
   }
   // Auto-set flag for existing demo users (idempotent)
   database.exec("UPDATE users SET is_demo = 1 WHERE LOWER(name) = 'demo' AND is_demo = 0")
+
+  // iOS auto-provisioned token source tracking (2026-03)
+  if (!hasColumn(database, 'api_tokens', 'source')) {
+    database.exec("ALTER TABLE api_tokens ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+  }
 
   // Token hashing: add token_preview column and hash existing plaintext tokens (2026-02)
   if (!hasColumn(database, 'api_tokens', 'token_preview')) {

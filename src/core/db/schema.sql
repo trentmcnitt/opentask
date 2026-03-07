@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS users (
   ai_quicktake_mode   TEXT NOT NULL DEFAULT 'api',
   ai_whats_next_mode  TEXT NOT NULL DEFAULT 'api',
   ai_insights_mode    TEXT NOT NULL DEFAULT 'api',
+  ai_query_timeout_ms INTEGER,
   notifications_enabled INTEGER NOT NULL DEFAULT 1,
   critical_alert_volume REAL NOT NULL DEFAULT 1.0,
   is_demo       INTEGER NOT NULL DEFAULT 0,
@@ -119,6 +120,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   token         TEXT NOT NULL UNIQUE,
   token_preview TEXT,
   name          TEXT NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'manual',
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
