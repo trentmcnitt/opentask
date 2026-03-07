@@ -49,6 +49,14 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
               key={tab.label}
               href={tab.href}
               aria-label={tab.label}
+              onClick={
+                tab.href === '/' && isActive
+                  ? (e: React.MouseEvent<HTMLAnchorElement>) => {
+                      e.preventDefault()
+                      window.dispatchEvent(new CustomEvent('dashboard-reset'))
+                    }
+                  : undefined
+              }
               className={`flex min-w-[48px] flex-col items-center justify-center rounded-lg p-2 ${
                 isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}

@@ -38,6 +38,14 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               <GuardedLink
                 key={item.href}
                 href={item.href}
+                onClick={
+                  item.href === '/' && isActive
+                    ? (e: React.MouseEvent<HTMLAnchorElement>) => {
+                        e.preventDefault()
+                        window.dispatchEvent(new CustomEvent('dashboard-reset'))
+                      }
+                    : undefined
+                }
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                   isActive

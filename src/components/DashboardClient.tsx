@@ -765,6 +765,17 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     clearAllFilters()
   }, [selection, clearAllFilters])
 
+  // Full view reset: clears everything including search (triggered by tapping Dashboard tab)
+  const handleDashboardReset = useCallback(() => {
+    selection.clear()
+    setAiFilterActive(false)
+    setSelectedSignals([])
+    clearAllFilters()
+    setSearchQuery(null)
+    setSearchResults([])
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [selection, clearAllFilters])
+
   // Build task groups for keyboard navigation
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, grouping, timezone),
@@ -988,6 +999,14 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     window.addEventListener('task-created', handler)
     return () => window.removeEventListener('task-created', handler)
   }, [fetchTasks])
+
+  // Reset view when user taps Dashboard tab while already on the dashboard.
+  // Clears all filters, search, selection, and scrolls to top (standard active-tab-tap UX).
+  useEffect(() => {
+    const handler = () => handleDashboardReset()
+    window.addEventListener('dashboard-reset', handler)
+    return () => window.removeEventListener('dashboard-reset', handler)
+  }, [handleDashboardReset])
 
   // Prefetch QuickActionPopover chunk after initial load so first interaction is instant
   // (CreateTaskPanel is prefetched by AppLayout which wraps all pages)
