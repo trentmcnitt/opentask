@@ -58,7 +58,19 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 
 - **Full REST API** — Every UI operation available over HTTP. Bearer token auth, [interactive API docs](https://opentask.mcnitt.io/docs/api/), and curl-friendly. Script it, automate it, pipe it into Apple Shortcuts.
 - **Webhooks** — HTTP callbacks on task events with HMAC-SHA256 signing. Integrate with n8n, Home Assistant, or anything that accepts webhooks.
-- **Optional AI** — Disabled by default. When enabled, you get natural language task creation, insights, "what's next" suggestions, and contextual commentary on new tasks. Works with Anthropic, OpenAI, Grok, DeepSeek, Ollama, and others. Turn it off and every trace of AI disappears from the UI.
+
+## 🧠 AI-native task management (optional)
+
+Every task gets AI-generated commentary and a priority score. AI sees your full task list and writes a one-liner — what it means, why it matters, what you might be forgetting.
+
+<p align="center">
+  <img src="docs/images/task-card-ai-insight-readme.png" alt="Task card with AI commentary and priority score" width="400">
+</p>
+
+- **Commentary + scoring** — Each task gets a contextual one-liner and a relevance score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
+- **Natural language input** — Type tasks in plain English. AI extracts the title, due date, recurrence, priority, project, and notes.
+- **What's Next** — Recommendations that surface overlooked or forgotten tasks.
+- **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others.
 
 ## 🚀 Quick Start (Docker)
 
@@ -81,6 +93,9 @@ docker compose up -d
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and log in with the username and password you set above. The initial user and database are created automatically on first start.
+
+> [!TIP]
+> Run `docker compose logs -f` to see startup output and troubleshoot any issues.
 
 ### Updating
 
@@ -232,16 +247,7 @@ The header value must match an existing OpenTask username (case-insensitive). Us
 
 ### AI Features
 
-AI is entirely optional — when disabled (the default), all AI UI is hidden and no AI code runs.
-
-When enabled, you get:
-
-- **Task enrichment** — Natural language → structured task with title, due date, priority, labels, and project
-- **Quick Take** — One-liner commentary when you add a task
-- **What's Next** — Suggestions surfacing overlooked or forgotten tasks
-- **Insights** — Scoring and signals to help prioritize
-
-Tested with Claude (Anthropic API), GPT-4.1-mini, Grok, and DeepSeek. Any OpenAI-compatible provider works too — see `.env.example` for quick-start examples.
+AI is entirely optional — disabled by default. See [AI-native task management](#ai-native-task-management-optional) above for what it provides. Configure with `OPENTASK_AI_ENABLED=true` and a provider key — see `.env.example` for setup with Claude, GPT-4.1-mini, Grok, DeepSeek, and Ollama.
 
 ## 🔗 API
 
