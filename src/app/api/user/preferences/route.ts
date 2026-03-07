@@ -345,6 +345,16 @@ function validateAiFields(
     params.push(body.ai_insights_score_chips ? 1 : 0)
   }
 
+  if (body.ai_query_timeout_ms !== undefined) {
+    const val = body.ai_query_timeout_ms
+    if (val !== null) {
+      if (typeof val !== 'number' || !Number.isInteger(val) || val < 10000 || val > 300000)
+        return 'ai_query_timeout_ms must be null or an integer between 10000 and 300000'
+    }
+    updates.push('ai_query_timeout_ms = ?')
+    params.push(val)
+  }
+
   return null
 }
 
@@ -368,7 +378,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips FROM users WHERE id = ?'
+  'SELECT default_grouping, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_query_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -395,6 +405,7 @@ interface PreferencesRow {
   ai_wn_highlight: number
   ai_insights_signal_chips: number
   ai_insights_score_chips: number
+  ai_query_timeout_ms: number | null
 }
 
 /** Fallback row when user record is missing (should not happen in practice). */
@@ -423,6 +434,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   ai_wn_highlight: 1,
   ai_insights_signal_chips: 1,
   ai_insights_score_chips: 1,
+  ai_query_timeout_ms: null,
 }
 
 function formatPreferencesResponse(row: PreferencesRow) {
@@ -453,6 +465,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     ai_wn_highlight: row.ai_wn_highlight !== 0,
     ai_insights_signal_chips: row.ai_insights_signal_chips !== 0,
     ai_insights_score_chips: row.ai_insights_score_chips !== 0,
+    ai_query_timeout_ms: row.ai_query_timeout_ms,
     ai_sdk_available: isSdkAvailableSync(),
     ai_api_available: isAnyApiProviderAvailable(),
     ai_feature_info: {
@@ -472,6 +485,7 @@ const DEMO_PROTECTED_FIELDS = [
   'ai_quicktake_mode',
   'ai_whats_next_mode',
   'ai_insights_mode',
+  'ai_query_timeout_ms',
 ]
 
 export const PATCH = withLogging(async function PATCH(request: NextRequest) {
