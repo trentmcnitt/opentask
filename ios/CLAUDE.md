@@ -26,9 +26,20 @@ XcodeBuildMCP is an MCP tool server for building and interacting with iOS simula
 
 - On iOS 26+, use `touch` (down+up) instead of `tap` to focus SwiftUI text fields — `tap` doesn't reliably activate them.
 - WKWebView content is not exposed in the accessibility tree. Use screenshot coordinates for web view interactions.
-- **watchOS device builds**: XcodeBuildMCP's `build_device` and `install_app_device` don't work reliably for watchOS targets (hardcoded to iOS platform, install reports success but app isn't actually installed). Use xcodebuild and devicectl directly instead:
-  - Build: `xcodebuild -project OpenTask.xcodeproj -scheme OpenTaskWatch -destination 'platform=watchOS,id=DEVICE_ID' -allowProvisioningUpdates -allowProvisioningDeviceRegistration build`
-  - Get the Watch device ID: `xcodebuild -scheme OpenTaskWatch -showdestinations` (different from the UDID in `list_devices`)
-  - Install: `xcrun devicectl device install app --device WATCH_UDID path/to/OpenTaskWatch.app`
-  - Launch: `xcrun devicectl device process launch --device WATCH_UDID io.mcnitt.opentask.watchapp`
-  - Verify: `xcrun devicectl device info apps --device WATCH_UDID | grep opentask`
+- **watchOS device builds**: `devicectl` cannot reliably connect to the Apple Watch directly (shows "unavailable" even with Developer Mode on). XcodeBuildMCP's `build_device` and `install_app_device` also don't work for watchOS targets. Instead, deploy the watch app **through the iPhone** — the watch app is embedded in the iOS app bundle and iOS automatically syncs it to the paired watch over Bluetooth:
+
+  ```bash
+  # 1. Build (from ios/ directory) — builds both iOS and watchOS targets
+  xcodebuild -project OpenTask.xcodeproj -scheme OpenTaskWatch \
+    -destination 'generic/platform=watchOS' \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+    -derivedDataPath build build
+
+  # 2. Install the iOS app on the iPhone (the embedded watch app syncs automatically)
+  xcrun devicectl device install app --device IPHONE_UDID \
+    build/Build/Products/Debug-iphoneos/OpenTask.app
+  ```
+
+  - Get the iPhone UDID: `xcrun devicectl list devices`
+  - The watch app lives at `OpenTask.app/Watch/OpenTaskWatch.app` inside the iOS bundle
+  - If the watch shows "unavailable" in devicectl, try `sudo pkill -9 remoted` on the Mac to force a reconnection (though direct watch install is not needed with this approach)
