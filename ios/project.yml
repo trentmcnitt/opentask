@@ -99,6 +99,7 @@ targets:
     info:
       path: OpenTaskWatch/Info.plist
       properties:
+        CFBundleDisplayName: OpenTask
         UIBackgroundModes:
           - remote-notification
         WKApplication: true
