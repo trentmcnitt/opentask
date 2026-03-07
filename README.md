@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>A self-hosted task manager with a modern UI, full API, and optional AI.</strong><br>
-  Opinionated workflow. Single container. Your data, your server.
+  <strong>A self-hosted task manager with deep AI integration, a native iOS app, and a full REST API.</strong><br>
+  Single container. SQLite. Your data, your server.
 </p>
 
 <p align="center">
@@ -19,6 +19,16 @@
 
 <p align="center">
   <a href="https://opentask.mcnitt.io">Try the Demo</a> · <a href="https://opentask.mcnitt.io/docs/">Documentation</a> · <a href="https://opentask.mcnitt.io/docs/api/">API Reference</a> · <a href="https://opentask.mcnitt.io/docs/roadmap">Roadmap</a>
+</p>
+
+<p align="center">
+  🌐 Web (PWA) · 📱 iOS (native) · ⌚ Apple Watch · 🔌 REST API · OpenAPI 3.1
+</p>
+
+<p align="center">
+  <img src="docs/images/ios-dashboard-light-v2-400-readme.png" alt="OpenTask iOS app — light mode" width="160" align="middle">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/images/ios-dashboard-dark-400-readme.png" alt="OpenTask iOS app — dark mode" width="160" align="middle">
 </p>
 
 > [!NOTE]
