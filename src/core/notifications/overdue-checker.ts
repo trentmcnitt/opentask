@@ -223,7 +223,7 @@ export async function checkOverdueTasks(): Promise<void> {
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
           AND t.due_at IS NOT NULL
-          AND datetime(t.due_at) < datetime('now')
+          AND datetime(t.due_at) <= datetime('now')
           AND u.notifications_enabled = 1
         ORDER BY t.priority DESC, t.due_at ASC
       `,
