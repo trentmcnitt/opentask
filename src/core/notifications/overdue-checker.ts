@@ -77,7 +77,13 @@ export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
   const interval = getEffectiveInterval(task)
   if (interval === 0) return false
   const minutesSinceDue = Math.floor((now.getTime() - new Date(task.due_at).getTime()) / 60000)
-  return minutesSinceDue >= 0 && minutesSinceDue % interval === 0
+  if (minutesSinceDue < 0) return false
+  // First overdue minute: tasks due at exact minute boundaries (the common case
+  // from UI pickers) are first seen at minutesSinceDue = 1 because the SQL query
+  // uses strict < (datetime(due_at) < datetime('now')). Without this, the first
+  // notification wouldn't fire until the next interval boundary (e.g., 30 min).
+  if (minutesSinceDue === 1) return true
+  return minutesSinceDue % interval === 0
 }
 
 /** Split eligible tasks into consolidation buckets. */
