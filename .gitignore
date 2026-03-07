@@ -63,8 +63,9 @@ node_modules/
 # Local Claude config (workspace-specific, not merged)
 CLAUDE.local.md
 
-# iOS build artifacts
+# iOS build artifacts and Xcode user data
 ios/build/
+xcuserdata/
 
 # MCP server runtime
 .xcodebuildmcp/
