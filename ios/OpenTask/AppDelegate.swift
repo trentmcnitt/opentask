@@ -376,7 +376,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
 
                 case "SNOOZE_ALL_1HR":
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     if result.tasksAffected > 0 {
                         await dismissSnoozedNotifications()
                     }

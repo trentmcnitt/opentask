@@ -230,6 +230,7 @@ export const bulkSnoozeOverdueSchema = z
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
     until: dateTimeString.optional(),
+    include_task_ids: z.array(z.number().int().positive()).max(10).optional(),
   })
   .refine((data) => !(data.delta_minutes !== undefined && data.until !== undefined), {
     message: 'Cannot provide both until and delta_minutes',

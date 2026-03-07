@@ -76,28 +76,39 @@ final class APIClient {
         ] as [String: Any])
     }
 
-    /// Bulk snooze all overdue P0-P3 tasks by delta minutes (excludes P4 Urgent).
+    /// Bulk snooze all overdue tasks by delta minutes.
+    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdue(deltaMinutes: Int) async throws -> BulkSnoozeResult {
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [
-            "delta_minutes": deltaMinutes,
-        ])
+    func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = ["delta_minutes": deltaMinutes]
+        if let id = includeTaskId {
+            body["include_task_ids"] = [id]
+        }
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
         return parseBulkSnoozeResult(data)
     }
 
-    /// Bulk snooze all overdue P0-P3 tasks to an absolute time (excludes P4 Urgent).
+    /// Bulk snooze all overdue tasks to an absolute time.
+    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdue(until: String) async throws -> BulkSnoozeResult {
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [
-            "until": until,
-        ])
+    func snoozeOverdue(until: String, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = ["until": until]
+        if let id = includeTaskId {
+            body["include_task_ids"] = [id]
+        }
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
         return parseBulkSnoozeResult(data)
     }
 
-    /// Bulk snooze all overdue P0-P3 tasks using user's default preference (excludes P4 Urgent).
+    /// Bulk snooze all overdue tasks using user's default preference.
+    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
-    func snoozeOverdueDefault() async throws -> BulkSnoozeResult {
-        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: [:])
+    func snoozeOverdueDefault(includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = [:]
+        if let id = includeTaskId {
+            body["include_task_ids"] = [id]
+        }
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
         return parseBulkSnoozeResult(data)
     }
 

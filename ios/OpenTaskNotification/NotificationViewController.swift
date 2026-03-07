@@ -120,7 +120,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
 
                 case "SNOOZE_ALL_1HR":
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     wasBulkSnooze = result.tasksAffected > 0
 
                 case "SNOOZE_CUSTOM":
@@ -130,7 +130,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                 case "SNOOZE_ALL_CUSTOM":
                     if let dueAt = selectedDueAt {
-                        let result = try await APIClient.shared.snoozeOverdue(until: dueAt)
+                        let result = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
                         wasBulkSnooze = result.tasksAffected > 0
                     }
 

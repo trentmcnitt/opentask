@@ -1617,4 +1617,79 @@ describe('Bulk Snooze Urgent Exclusion', () => {
     expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 0))
     expect(getTaskById(p4.id)!.due_at).toBe(localTime(10, 0))
   })
+
+  /**
+   * BS-006: includeTaskIds bypasses P4 filter for the specified task only
+   *
+   * When pressing "All" from a P4 notification, that specific P4 task should
+   * be included in the bulk snooze while other P4 tasks remain excluded.
+   */
+  test('BS-006: includeTaskIds allows specific P4 task through filter', () => {
+    const p1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low', due_at: localTime(8, 0), priority: 1 },
+    })
+    const p4included = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent (included)', due_at: localTime(9, 0), priority: 4 },
+    })
+    const p4excluded = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent (excluded)', due_at: localTime(10, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p1.id, p4included.id, p4excluded.id],
+      until: localTime(18, 0),
+      includeTaskIds: [p4included.id],
+    })
+
+    // P1 and the included P4 are snoozed, the other P4 is skipped
+    expect(result.tasksAffected).toBe(2)
+    expect(result.urgentSkipped).toBe(1)
+
+    expect(getTaskById(p1.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p4included.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p4excluded.id)!.due_at).toBe(localTime(10, 0))
+  })
+
+  /**
+   * BS-007: includeTaskIds with undo — included P4 task is restored on undo
+   */
+  test('BS-007: undo restores included P4 task', () => {
+    const p1 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Low', due_at: localTime(8, 0), priority: 1 },
+    })
+    const p4 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent', due_at: localTime(9, 0), priority: 4 },
+    })
+
+    bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p1.id, p4.id],
+      until: localTime(18, 0),
+      includeTaskIds: [p4.id],
+    })
+
+    // Both snoozed
+    expect(getTaskById(p1.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p4.id)!.due_at).toBe(localTime(18, 0))
+
+    // Undo restores both
+    expect(canUndo(TEST_USER_ID)).toBe(true)
+    executeUndo(TEST_USER_ID)
+
+    expect(getTaskById(p1.id)!.due_at).toBe(localTime(8, 0))
+    expect(getTaskById(p4.id)!.due_at).toBe(localTime(9, 0))
+  })
 })
