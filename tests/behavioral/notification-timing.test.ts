@@ -192,6 +192,28 @@ describe('isNotificationBoundary', () => {
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(false)
   })
 
+  test('task 1 minute overdue (exact minute boundary) → fires immediately', () => {
+    // This is the common case: UI sets due time to a round minute (e.g., 10:00:00).
+    // SQL strict < means the task first appears at minutesSinceDue = 1.
+    const dueAt = '2026-01-15T10:00:00.000Z'
+    const task = {
+      id: 1,
+      title: 'Test',
+      due_at: dueAt,
+      priority: 0,
+      user_id: 1,
+      auto_snooze_minutes: null,
+      user_auto_snooze_minutes: 30,
+      user_auto_snooze_urgent_minutes: 5,
+      user_auto_snooze_high_minutes: 15,
+      critical_alert_volume: 1.0,
+    }
+    // 1 minute overdue → should fire (first notification)
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(true)
+    // 2 minutes overdue → should NOT fire (not a boundary)
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:02:00.000Z'))).toBe(false)
+  })
+
   test('task due 1 day ago → only notifies on correct boundaries', () => {
     const dueAt = '2026-01-14T10:00:00.000Z'
     const task = {
@@ -208,7 +230,9 @@ describe('isNotificationBoundary', () => {
     }
     // 1440 minutes later (24h) — 1440 % 30 === 0 → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
-    // 1441 minutes later — 1441 % 30 !== 0 → not boundary
+    // 1441 minutes later — minutesSinceDue === 1 is handled by the first-notification
+    // special case, but for a task 1 day old this is still technically minute 1441.
+    // 1441 % 30 !== 0 AND 1441 !== 1, so not a boundary.
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(false)
   })
 
@@ -252,6 +276,17 @@ describe('checkOverdueTasks', () => {
     await checkOverdueTasks()
 
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
+  })
+
+  test('sends notification for task 1 minute overdue', async () => {
+    // Task due at 10:00, check at 10:01 → first overdue minute fires immediately
+    vi.setSystemTime(new Date('2026-01-15T10:01:00.000Z'))
+    insertTask(1, 'Buy groceries', '2026-01-15T10:00:00.000Z', 0)
+
+    await checkOverdueTasks()
+
+    expect(sendPushNotification).toHaveBeenCalledTimes(1)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
   })
 
   test('skips task between boundaries', async () => {

@@ -93,6 +93,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         due_at: dueAt,
         priority,
         labels: ['test'],
+        auto_snooze_minutes: 0, // Prevent overdue checker from re-notifying about test tasks
       },
     })
 

@@ -160,7 +160,7 @@ function useBulkActions(
   bumpUndoCount: () => void,
   setShowProjectPicker: (show: boolean) => void,
   setSearchQuery: (q: string | null) => void,
-  setSearchResults: (tasks: Task[]) => void,
+  setSearchResults: React.Dispatch<React.SetStateAction<Task[]>>,
 ) {
   const bulkAction = async (endpoint: string, body: Record<string, unknown>) => {
     const count = selection.selectedIds.size
@@ -222,6 +222,7 @@ function useBulkActions(
 
   const bulkDelete = async () => {
     const count = selection.selectedIds.size
+    const deletedIds = new Set(selection.selectedIds)
     try {
       const res = await fetch('/api/tasks/bulk/delete', {
         method: 'POST',
@@ -229,6 +230,7 @@ function useBulkActions(
         body: JSON.stringify({ ids: [...selection.selectedIds] }),
       })
       if (!res.ok) throw new Error('Delete failed')
+      setSearchResults((prev) => prev.filter((t) => !deletedIds.has(t.id)))
       selection.clear()
       bumpUndoCount()
       fetchTasks()
@@ -445,6 +447,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       try {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Failed to delete')
+        setSearchResults((prev) => prev.filter((t) => t.id !== taskId))
         refreshAll()
         showToast({
           message: 'Task moved to trash',
