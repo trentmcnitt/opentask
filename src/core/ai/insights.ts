@@ -21,6 +21,7 @@ import { formatTaskLine, getScheduleBlock } from './format'
 import { InsightsBatchResultSchema } from './types'
 import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
 import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
+import { resolveFeatureTimeout } from './user-context'
 import { log } from '@/lib/logger'
 
 /**
@@ -212,9 +213,6 @@ export function sanitizeSignals(items: InsightsItem[], taskMap: Map<number, Task
  */
 const SINGLE_CALL_THRESHOLD = 500
 
-/** Timeout for insights AI calls (15 minutes) to accommodate Opus with extended thinking on large task lists. */
-const INSIGHTS_TIMEOUT_MS = 15 * 60 * 1000
-
 /**
  * Fisher-Yates shuffle — returns a new array in random order.
  */
@@ -402,6 +400,11 @@ async function processInsightsChunks(
   let failedTasks = 0
   const config = aiConfig ?? resolveFeatureAIConfig('insights', 'api')
   const { provider: effectiveProvider, providerConfig, model: insightsModel } = config
+  const insightsTimeoutMs = resolveFeatureTimeout(
+    userId,
+    'insights',
+    effectiveProvider === 'sdk' ? 'sdk' : 'api',
+  )
 
   for (let ci = 0; ci < chunks.length; ci++) {
     const chunk = chunks[ci]
@@ -442,7 +445,7 @@ async function processInsightsChunks(
         userId,
         action: 'insights',
         inputText: inputLabel,
-        timeoutMs: INSIGHTS_TIMEOUT_MS,
+        timeoutMs: insightsTimeoutMs,
         provider: effectiveProvider,
         providerConfig,
       })

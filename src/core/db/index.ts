@@ -129,9 +129,22 @@ function runMigrations(database: Database.Database): void {
     database.exec("UPDATE users SET ai_insights_mode = 'off' WHERE ai_show_insights = 0")
     database.exec("UPDATE users SET ai_quicktake_mode = 'off' WHERE ai_show_commentary = 0")
   }
-  // Per-user AI query timeout (2026-03)
+  // Per-user AI query timeout (2026-03) — vestigial, kept for existing DBs
   if (!hasColumn(database, 'users', 'ai_query_timeout_ms')) {
     database.exec('ALTER TABLE users ADD COLUMN ai_query_timeout_ms INTEGER')
+  }
+  // Per-feature per-user AI query timeouts (2026-03)
+  if (!hasColumn(database, 'users', 'ai_enrichment_timeout_ms')) {
+    database.exec('ALTER TABLE users ADD COLUMN ai_enrichment_timeout_ms INTEGER')
+    database.exec('ALTER TABLE users ADD COLUMN ai_quicktake_timeout_ms INTEGER')
+    database.exec('ALTER TABLE users ADD COLUMN ai_whats_next_timeout_ms INTEGER')
+    database.exec('ALTER TABLE users ADD COLUMN ai_insights_timeout_ms INTEGER')
+    // Migrate: copy old global timeout to the two features that respected it.
+    // Quick Take (hardcoded 40s) and Insights (hardcoded 15min) were never affected.
+    database.exec(`UPDATE users SET
+      ai_enrichment_timeout_ms = ai_query_timeout_ms,
+      ai_whats_next_timeout_ms = ai_query_timeout_ms
+      WHERE ai_query_timeout_ms IS NOT NULL`)
   }
   // Demo user flag (2026-03)
   if (!hasColumn(database, 'users', 'is_demo')) {
