@@ -26,7 +26,8 @@ const DEFAULT_PROJECTS = [
 const username = process.argv[2]
 const password = process.argv[3]
 const email = process.argv[4] || `${(username || 'user').toLowerCase()}@localhost`
-const timezone = process.argv[5] || process.env.OPENTASK_DEFAULT_TIMEZONE
+const timezone =
+  process.argv[5] || process.env.OPENTASK_DEFAULT_TIMEZONE || process.env.OPENTASK_INIT_TIMEZONE
 
 if (!username || !password) {
   console.error('Usage: tsx scripts/create-user.ts <username> <password> [email] <timezone>')

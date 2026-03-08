@@ -35,37 +35,52 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { computeCommonLabels } from '@/lib/bulk-utils'
 import { URGENT_PRIORITY } from '@/lib/priority'
+import { formatTimeInTimezone } from '@/lib/format-date'
 import { cn, taskWord } from '@/lib/utils'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
   overdue: Task[]
-  notYetDue: Task[]
+  notYetDue: Task[] // relative snooze only (no target time to split on)
+  dueBeforeTarget: Task[] // absolute: due between now and target (auto-included)
+  dueAfterTarget: Task[] // absolute: due at or after target (opt-in checkbox)
   noDueDate: Task[]
 }
 
 /**
  * Partition tasks into categories for snooze confirmation.
  * Pre-filters done tasks and P4/urgent (server skips these anyway).
+ *
+ * For absolute snooze (targetTime provided), splits not-yet-due tasks into
+ * "due before target" (auto-included — snooze pushes them later) and
+ * "due after target" (opt-in — snooze would pull them earlier).
+ * For relative snooze, all not-yet-due tasks go into notYetDue.
  */
-function categorizeTasksForSnooze(tasks: Task[]): SnoozeCategories {
+function categorizeTasksForSnooze(tasks: Task[], targetTime?: string): SnoozeCategories {
   const now = new Date()
+  const target = targetTime ? new Date(targetTime) : null
   const overdue: Task[] = []
   const notYetDue: Task[] = []
+  const dueBeforeTarget: Task[] = []
+  const dueAfterTarget: Task[] = []
   const noDueDate: Task[] = []
 
   for (const task of tasks) {
     if (task.done || (task.priority ?? 0) >= URGENT_PRIORITY) continue
     if (!task.due_at) {
       noDueDate.push(task)
-    } else if (new Date(task.due_at) >= now) {
-      notYetDue.push(task)
-    } else {
+    } else if (new Date(task.due_at) < now) {
       overdue.push(task)
+    } else if (target && new Date(task.due_at) >= target) {
+      dueAfterTarget.push(task)
+    } else if (target) {
+      dueBeforeTarget.push(task)
+    } else {
+      notYetDue.push(task)
     }
   }
 
-  return { overdue, notYetDue, noDueDate }
+  return { overdue, notYetDue, dueBeforeTarget, dueAfterTarget, noDueDate }
 }
 
 interface SelectionActionSheetProps {
@@ -152,8 +167,10 @@ export function SelectionActionSheet({
   // isAbsoluteSnooze is stored separately so we don't read pendingDateRef during render.
   const [includeNoDueDate, setIncludeNoDueDate] = useState(false)
   const [includeNotYetDue, setIncludeNotYetDue] = useState(false)
+  const [includeDueAfterTarget, setIncludeDueAfterTarget] = useState(false)
   const [snoozeCategories, setSnoozeCategories] = useState<SnoozeCategories | null>(null)
   const [isAbsoluteSnooze, setIsAbsoluteSnooze] = useState(false)
+  const [snoozeTargetTime, setSnoozeTargetTime] = useState<string | null>(null)
 
   const clearPendingState = useCallback(() => {
     pendingDateRef.current = null
@@ -233,21 +250,27 @@ export function SelectionActionSheet({
   )
 
   // Save button: check for edge-case tasks before applying date changes.
-  // If the selection includes tasks with no due date (absolute mode) or tasks not yet due,
-  // show a confirmation dialog so the user can choose whether to include them.
+  // For absolute snooze, tasks due before the target are auto-included (snooze pushes
+  // them later). Tasks due after the target get a checkbox (snooze would pull them earlier).
+  // For relative snooze, all not-yet-due tasks get a single checkbox.
   const handleSave = useCallback(() => {
     if (pendingDateRef.current) {
       const isAbsolute = pendingDateRef.current.type === 'absolute'
-      const categories = categorizeTasksForSnooze(selectedTasks)
+      const targetTime =
+        pendingDateRef.current.type === 'absolute' ? pendingDateRef.current.until : undefined
+      const categories = categorizeTasksForSnooze(selectedTasks, targetTime)
 
-      const hasNoDueDateEdgeCase = isAbsolute && categories.noDueDate.length > 0
-      const hasNotYetDueEdgeCase = categories.notYetDue.length > 0
+      const hasEdgeCase = isAbsolute
+        ? categories.dueAfterTarget.length > 0 || categories.noDueDate.length > 0
+        : categories.notYetDue.length > 0
 
-      if (hasNoDueDateEdgeCase || hasNotYetDueEdgeCase) {
+      if (hasEdgeCase) {
         setSnoozeCategories(categories)
         setIsAbsoluteSnooze(isAbsolute)
+        setSnoozeTargetTime(targetTime ?? null)
         setIncludeNoDueDate(false)
         setIncludeNotYetDue(false)
+        setIncludeDueAfterTarget(false)
         return
       }
     }
@@ -299,22 +322,38 @@ export function SelectionActionSheet({
     handleSave()
   }, [handleSave])
 
-  // Snooze confirmation: compute filtered IDs from checkbox state and proceed with save
+  // Snooze confirmation: compute filtered IDs from checkbox state and proceed with save.
+  // Absolute: overdue + dueBeforeTarget are auto-included; dueAfterTarget and noDueDate are opt-in.
+  // Relative: overdue are auto-included; notYetDue is opt-in.
   const handleSnoozeConfirm = useCallback(() => {
     const categories = snoozeCategories
     if (!categories) return
 
     const snoozeIds = categories.overdue.map((t) => t.id)
+    if (isAbsoluteSnooze) {
+      snoozeIds.push(...categories.dueBeforeTarget.map((t) => t.id))
+      if (includeDueAfterTarget) {
+        snoozeIds.push(...categories.dueAfterTarget.map((t) => t.id))
+      }
+    } else {
+      if (includeNotYetDue) {
+        snoozeIds.push(...categories.notYetDue.map((t) => t.id))
+      }
+    }
     if (includeNoDueDate) {
       snoozeIds.push(...categories.noDueDate.map((t) => t.id))
-    }
-    if (includeNotYetDue) {
-      snoozeIds.push(...categories.notYetDue.map((t) => t.id))
     }
 
     setSnoozeCategories(null)
     executeSave(snoozeIds)
-  }, [snoozeCategories, includeNoDueDate, includeNotYetDue, executeSave])
+  }, [
+    snoozeCategories,
+    isAbsoluteSnooze,
+    includeNoDueDate,
+    includeNotYetDue,
+    includeDueAfterTarget,
+    executeSave,
+  ])
 
   const handleSnoozeCancelConfirm = useCallback(() => {
     setSnoozeCategories(null)
@@ -523,11 +562,32 @@ export function SelectionActionSheet({
             <AlertDialogTitle>Confirm date change</AlertDialogTitle>
             <AlertDialogDescription>
               {snoozeCategories &&
-                `${snoozeCategories.overdue.length} ${taskWord(snoozeCategories.overdue.length)} will be snoozed.`}
+                (() => {
+                  const autoCount = isAbsoluteSnooze
+                    ? snoozeCategories.overdue.length + snoozeCategories.dueBeforeTarget.length
+                    : snoozeCategories.overdue.length
+                  return `${autoCount} ${taskWord(autoCount)} will be snoozed.`
+                })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="space-y-3 py-2">
+            {/* Absolute snooze: checkbox for tasks due after the target time */}
+            {snoozeCategories && isAbsoluteSnooze && snoozeCategories.dueAfterTarget.length > 0 && (
+              <label className="flex cursor-pointer items-center gap-3">
+                <Checkbox
+                  checked={includeDueAfterTarget}
+                  onCheckedChange={(checked) => setIncludeDueAfterTarget(checked === true)}
+                />
+                <span className="text-sm">
+                  Include {snoozeCategories.dueAfterTarget.length}{' '}
+                  {taskWord(snoozeCategories.dueAfterTarget.length)} due after{' '}
+                  {snoozeTargetTime && formatTimeInTimezone(snoozeTargetTime, timezone)}
+                </span>
+              </label>
+            )}
+
+            {/* Absolute snooze: checkbox for tasks with no due date */}
             {snoozeCategories && isAbsoluteSnooze && snoozeCategories.noDueDate.length > 0 && (
               <label className="flex cursor-pointer items-center gap-3">
                 <Checkbox
@@ -541,7 +601,8 @@ export function SelectionActionSheet({
               </label>
             )}
 
-            {snoozeCategories && snoozeCategories.notYetDue.length > 0 && (
+            {/* Relative snooze: checkbox for tasks not yet due */}
+            {snoozeCategories && !isAbsoluteSnooze && snoozeCategories.notYetDue.length > 0 && (
               <label className="flex cursor-pointer items-center gap-3">
                 <Checkbox
                   checked={includeNotYetDue}
@@ -562,8 +623,13 @@ export function SelectionActionSheet({
                 const cats = snoozeCategories
                 if (!cats) return 'Apply'
                 let count = cats.overdue.length
+                if (isAbsoluteSnooze) {
+                  count += cats.dueBeforeTarget.length
+                  if (includeDueAfterTarget) count += cats.dueAfterTarget.length
+                } else {
+                  if (includeNotYetDue) count += cats.notYetDue.length
+                }
                 if (includeNoDueDate) count += cats.noDueDate.length
-                if (includeNotYetDue) count += cats.notYetDue.length
                 return `Apply to ${count} ${taskWord(count)}`
               })()}
             </AlertDialogAction>

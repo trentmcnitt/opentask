@@ -7,7 +7,7 @@
  */
 
 export const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || 'dev'
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.1'
 
 /**
  * Format a build ID for human-readable display.
