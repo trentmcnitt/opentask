@@ -7,6 +7,7 @@ services:
       - '3000:3000'
     volumes:
       - ./data:/app/data
+    env_file: .env
     healthcheck:
       test:
         ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/health']
@@ -15,20 +16,8 @@ services:
       retries: 3
       start_period: 10s
     environment:
+      # Validates AUTH_SECRET is set in .env (fails fast with a clear message)
       - AUTH_SECRET=${AUTH_SECRET:?Set AUTH_SECRET in .env -- generate with openssl rand -base64 32}
+      # Docker-specific database path (do not change unless you modify the volume mount)
       - OPENTASK_DB_PATH=/app/data/tasks.db
-      # Initial user (created on first start, ignored if user already exists)
-      - OPENTASK_INIT_USERNAME=${OPENTASK_INIT_USERNAME:-admin}
-      - OPENTASK_INIT_PASSWORD=${OPENTASK_INIT_PASSWORD:-changeme}
-      - OPENTASK_INIT_TIMEZONE=${OPENTASK_INIT_TIMEZONE:-America/New_York}
-      # - OPENTASK_INIT_EMAIL=admin@example.com
-      # Set AUTH_URL to your public URL when using a reverse proxy
-      # - AUTH_URL=https://tasks.example.com
-      # Web Push: VAPID keys are auto-generated on first start if not provided.
-      # To use your own keys (generated with: npx web-push generate-vapid-keys):
-      # - VAPID_PUBLIC_KEY=
-      # - VAPID_PRIVATE_KEY=
-      # - VAPID_EMAIL=mailto:you@example.com
-      # Optional: enable AI features (see .env.example for provider setup)
-      # - OPENTASK_AI_ENABLED=true
     restart: unless-stopped

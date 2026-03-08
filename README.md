@@ -133,7 +133,7 @@ Create more users from the command line:
 docker compose exec opentask tsx scripts/create-user.ts <username> <password>
 
 # Bare metal
-npx tsx scripts/create-user.ts <username> <password> [email] [timezone]
+npx tsx scripts/create-user.ts <username> <password> <email> <timezone>
 ```
 
 ### API Tokens
@@ -162,7 +162,7 @@ cp .env.example .env.local
 # Edit .env.local — at minimum, set AUTH_SECRET (openssl rand -base64 32)
 
 # Create your user
-npx tsx scripts/create-user.ts admin changeme
+npx tsx scripts/create-user.ts admin changeme admin@localhost America/New_York
 
 # Build and start
 npm run build
@@ -247,7 +247,7 @@ The header value must match an existing OpenTask username (case-insensitive). Us
 
 ### AI Features
 
-AI is entirely optional — disabled by default. See [AI-native task management](#ai-native-task-management-optional) above for what it provides. Configure with `OPENTASK_AI_ENABLED=true` and a provider key — see `.env.example` for setup with Claude, GPT-4.1-mini, Grok, DeepSeek, and Ollama.
+AI is entirely optional — disabled by default. See [AI-native task management](#ai-native-task-management-optional) above for what it provides. Add `OPENTASK_AI_ENABLED=true` and a provider key to your `.env` file — see `.env.example` for setup with Claude, GPT-4.1-mini, Grok, DeepSeek, and Ollama.
 
 ## 🔗 API
 
