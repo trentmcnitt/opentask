@@ -32,7 +32,6 @@ import {
   resolveFeatureProvider,
   type FeatureProviderConfig,
 } from './models'
-import { getUserQueryTimeout } from './user-context'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 let aiEnabled: boolean | null = null
@@ -208,14 +207,6 @@ export function resolveQueryTimeout(perCallTimeout: number | undefined): number 
  * - OpenAI: direct HTTP call to an OpenAI-compatible API
  */
 export async function aiQuery(options: AIQueryOptions): Promise<AIQueryResult> {
-  // Resolve per-user timeout: if no explicit per-call timeout, check user preference
-  if (options.timeoutMs == null && options.userId) {
-    const userTimeout = getUserQueryTimeout(options.userId)
-    if (userTimeout != null) {
-      options = { ...options, timeoutMs: userTimeout }
-    }
-  }
-
   const provider = options.provider ?? getServerDefaultProvider()
 
   if (provider === 'anthropic') {

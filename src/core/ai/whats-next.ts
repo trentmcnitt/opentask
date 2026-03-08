@@ -18,6 +18,7 @@ import { WhatsNextResultSchema } from './types'
 import type { WhatsNextResult, TaskSummary } from './types'
 import { logAIActivity, getAIActivity } from './activity'
 import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
+import { resolveFeatureTimeout } from './user-context'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 
@@ -116,6 +117,7 @@ export async function generateWhatsNext(
 
   const config = aiConfig ?? resolveFeatureAIConfig('whats_next', 'api')
   const { provider, providerConfig, model: whatsNextModel } = config
+  const timeoutMs = resolveFeatureTimeout(userId, 'whats_next', provider === 'sdk' ? 'sdk' : 'api')
   const result = await aiQuery({
     prompt,
     outputSchema: WHATS_NEXT_JSON_SCHEMA,
@@ -126,6 +128,7 @@ export async function generateWhatsNext(
     userId,
     action: 'whats_next',
     inputText: `${tasks.length} tasks`,
+    timeoutMs,
     provider,
     providerConfig,
   })

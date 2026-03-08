@@ -40,7 +40,7 @@ import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
 import { resolveFeatureAIConfig } from './models'
-import { getUserFeatureModes } from './user-context'
+import { getUserFeatureModes, resolveFeatureTimeout } from './user-context'
 import { DateTime } from 'luxon'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
@@ -471,7 +471,8 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     return []
   }
 
-  const queryOptions = { userId: row.user_id, taskId: row.id, inputText: textToEnrich }
+  const timeoutMs = resolveFeatureTimeout(row.user_id, 'enrichment', modes.enrichment)
+  const queryOptions = { userId: row.user_id, taskId: row.id, inputText: textToEnrich, timeoutMs }
   let result: {
     structuredOutput: Record<string, unknown> | null
     text: string | null
