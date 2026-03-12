@@ -126,7 +126,7 @@ npm test                 # Behavioral tests (vitest, no HTTP/UI)
 npm run test:integration # Integration tests (HTTP against built server)
 npm run test:e2e         # Playwright E2E tests (headless)
 npm run test:e2e:ui      # Playwright with UI
-npm run test:quality     # AI prompt quality tests (Layer 1 — requires OPENTASK_AI_ENABLED=true)
+npm run test:quality     # AI prompt quality tests (Layer 1 — see below for setup)
 npm run test:quality:retry  # Re-run failed scenarios from last quality run
 npm run test:quality:run # Run specific scenarios: npm run test:quality:run -- <id> [id ...]
 npm run dump-prompts     # Dump rendered AI prompts to .tmp/ (see docs/AI.md § Quality Testing for flags)
@@ -300,6 +300,14 @@ Run a single test: `npx vitest tests/behavioral/some-spec.test.ts --run`
 Run a single E2E test: `npx playwright test tests/e2e/some.spec.ts`
 
 ### AI quality testing
+
+**Running quality tests:** Quality tests require `OPENTASK_AI_ENABLED=true`. When running locally with Claude Code installed, SDK mode is the default — no API keys or model env vars are needed:
+
+```bash
+OPENTASK_AI_ENABLED=true npm run test:quality
+```
+
+For API providers (Anthropic, OpenAI, xAI), you also need `OPENTASK_AI_PROVIDER`, the provider's API key, and per-feature model vars (`OPENTASK_AI_ENRICHMENT_MODEL`, etc.). See `docs/AI.md` § Configuration for all options.
 
 AI quality testing has two layers:
 

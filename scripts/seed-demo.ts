@@ -173,8 +173,15 @@ function getDemoTasks(): DemoTaskDef[] {
       project: 'Inbox',
       noDue: true,
       createdDaysAgo: 0,
-      notes:
-        'OpenTask is an open-source, self-hosted task manager. Check out the README on GitHub for setup instructions and documentation.',
+      notes: [
+        'Things to try:',
+        '',
+        '1. Add a task in natural language — try "Buy groceries tomorrow at 5pm" or "Call dentist next Monday, it\'s important" — AI extracts the date, priority, and cleans up the title automatically',
+        '2. Tap the "What\'s Next" chip to let AI pick your most important task right now',
+        '3. Tap "Insights" to see AI-powered signals like Quick Win, Stale, and Act Soon',
+        '4. Check out the "Try It" project for tasks you can practice swiping, selecting, and filtering on',
+        "5. Install OpenTask as an app — on mobile use Add to Home Screen, on desktop use your browser's install option (Chrome/Edge)",
+      ].join('\n'),
     },
   ]
 
