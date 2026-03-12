@@ -225,11 +225,15 @@ struct WebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             refreshControl?.endRefreshing()
+            // Ignore cancelled navigations — happens when a quick action or deep link
+            // navigation replaces an in-flight load. Not a real connectivity error.
+            if (error as NSError).code == NSURLErrorCancelled { return }
             onNavigationError?(error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             refreshControl?.endRefreshing()
+            if (error as NSError).code == NSURLErrorCancelled { return }
             onNavigationError?(error)
         }
 

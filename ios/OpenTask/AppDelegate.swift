@@ -104,73 +104,35 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Home Screen Quick Actions
     //
-    // SwiftUI's WindowGroup uses the scene-based lifecycle, so the old
-    // application(_:performActionFor:) is never called. Instead:
-    // - Cold launch: configurationForConnecting saves the shortcut item,
-    //   and OpenTaskApp's scenePhase observer processes it when .active.
-    // - Warm launch: QuickActionSceneDelegate.windowScene(_:performActionFor:)
-    //   calls handleShortcutItem directly.
+    // Cold launch: configurationForConnecting captures the shortcut item.
+    // - add-task: sets a pending path on WebViewManager so makeUIView loads
+    //   the correct URL directly (avoids a race with the base URL load).
+    // - snooze: saves to savedShortcutItem for the scenePhase observer.
+    //
+    // Warm launch: SwiftUI replaces the scene delegate with its own internal
+    // delegate. SceneDelegateInterceptor wraps it and intercepts performActionFor.
+    //
+    // Both paths delegate to QuickActionHandler for the actual logic.
 
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        // Capture shortcut item from cold launch for deferred processing
         if let shortcutItem = options.shortcutItem {
-            savedShortcutItem = shortcutItem
+            if shortcutItem.type == QuickActionHandler.addTask {
+                WebViewManager.shared.navigate(path: "/?action=create")
+            } else {
+                savedShortcutItem = shortcutItem
+            }
         }
-        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-        config.delegateClass = QuickActionSceneDelegate.self
-        return config
+        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
     }
 
-    /// Process a home screen quick action. Called from QuickActionSceneDelegate (warm launch)
-    /// and from OpenTaskApp's scenePhase observer (cold launch).
+    /// Process a home screen quick action. Called from the scenePhase observer
+    /// (cold launch snooze actions only — add-task uses pending path instead).
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
-        print("[OpenTask] Quick action: \(shortcutItem.type)")
-
-        switch shortcutItem.type {
-        case "io.mcnitt.opentask.snooze-1hr":
-            Task {
-                do {
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
-                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks +1hr")
-                } catch {
-                    print("[OpenTask] Quick action snooze +1hr error: \(error)")
-                }
-                completionHandler(true)
-            }
-
-        case "io.mcnitt.opentask.snooze-2hr":
-            Task {
-                do {
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 120)
-                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks +2hr")
-                } catch {
-                    print("[OpenTask] Quick action snooze +2hr error: \(error)")
-                }
-                completionHandler(true)
-            }
-
-        case "io.mcnitt.opentask.snooze-tomorrow":
-            Task {
-                do {
-                    let result = try await APIClient.shared.snoozeOverdueDefault()
-                    print("[OpenTask] Quick action: snoozed \(result.tasksAffected) tasks to tomorrow")
-                } catch {
-                    print("[OpenTask] Quick action snooze tomorrow error: \(error)")
-                }
-                completionHandler(true)
-            }
-
-        case "io.mcnitt.opentask.add-task":
-            WebViewManager.shared.navigate(path: "/?action=create")
-            completionHandler(true)
-
-        default:
-            completionHandler(false)
-        }
+        QuickActionHandler.handle(shortcutItem, completionHandler: completionHandler)
     }
 
     /// Clear all delivered notifications when the app comes to foreground,
