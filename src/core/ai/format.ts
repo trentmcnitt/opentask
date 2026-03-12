@@ -40,7 +40,7 @@ export function formatAge(isoUtc: string, now: DateTime): string {
  * Used by both What's Next and Insights for consistent task representation.
  */
 export function formatTaskLine(t: TaskSummary, timezone: string, now: DateTime): string {
-  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'none'
+  const due = t.due_at ? formatLocalDate(t.due_at, timezone) : 'no due date'
   const originalDue =
     t.priority >= 3 && t.original_due_at && t.original_due_at !== t.due_at
       ? ` (originally due: ${formatLocalDate(t.original_due_at, timezone)})`

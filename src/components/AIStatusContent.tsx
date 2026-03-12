@@ -575,42 +575,44 @@ function SdkSlotsSection({
         </div>
       </div>
 
-      {/* Quick Take slot */}
-      <div className="border-border rounded-lg border p-4">
-        <h3 className="mb-3 text-sm font-semibold">Quick Take Slot</h3>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <span className="text-muted-foreground">State</span>
-            <div className="mt-0.5">
-              <SlotStateBadge state={data.quick_take_slot.state} />
-            </div>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Model</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.model}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Requests</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRequests}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Recycles</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRecycles}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Superseded</span>
-            <p className="mt-0.5 font-medium">{data.quick_take_slot.totalSuperseded}</p>
-          </div>
-          {data.quick_take_slot.activatedAt && (
+      {/* Quick Take slot — hidden when uninitialized (warm slot intentionally disabled, feature uses cold path) */}
+      {data.quick_take_slot.state !== 'uninitialized' && (
+        <div className="border-border rounded-lg border p-4">
+          <h3 className="mb-3 text-sm font-semibold">Quick Take Slot</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <span className="text-muted-foreground">Up since</span>
-              <p className="mt-0.5 text-xs">
-                {formatActivatedAt(data.quick_take_slot.activatedAt)}
-              </p>
+              <span className="text-muted-foreground">State</span>
+              <div className="mt-0.5">
+                <SlotStateBadge state={data.quick_take_slot.state} />
+              </div>
             </div>
-          )}
+            <div>
+              <span className="text-muted-foreground">Model</span>
+              <p className="mt-0.5 font-medium">{data.quick_take_slot.model}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Requests</span>
+              <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRequests}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Recycles</span>
+              <p className="mt-0.5 font-medium">{data.quick_take_slot.totalRecycles}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Superseded</span>
+              <p className="mt-0.5 font-medium">{data.quick_take_slot.totalSuperseded}</p>
+            </div>
+            {data.quick_take_slot.activatedAt && (
+              <div>
+                <span className="text-muted-foreground">Up since</span>
+                <p className="mt-0.5 text-xs">
+                  {formatActivatedAt(data.quick_take_slot.activatedAt)}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Queue */}
       <div className="border-border rounded-lg border p-4">

@@ -124,13 +124,17 @@ export function Header({
           })
           .then((json) => {
             if (!json?.data) return
-            // Use worst slot state across SDK-mode features
+            // Use worst slot state across SDK-mode features.
+            // Skip 'uninitialized' — it means the warm slot is intentionally disabled
+            // and the feature works via cold path (not an error condition).
             const states: string[] = []
             if (aiFeatureInfo?.enrichment?.mode === 'sdk' && json.data.enrichment_slot?.state) {
-              states.push(json.data.enrichment_slot.state)
+              if (json.data.enrichment_slot.state !== 'uninitialized')
+                states.push(json.data.enrichment_slot.state)
             }
             if (aiFeatureInfo?.quick_take?.mode === 'sdk' && json.data.quick_take_slot?.state) {
-              states.push(json.data.quick_take_slot.state)
+              if (json.data.quick_take_slot.state !== 'uninitialized')
+                states.push(json.data.quick_take_slot.state)
             }
             // Priority: dead > uninitialized > initializing > busy > available
             const worst =
