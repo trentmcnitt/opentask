@@ -317,6 +317,12 @@ npm run dev
 
 [CLAUDE.md](CLAUDE.md) has detailed development conventions for AI-assisted development.
 
+## 👤 Author
+
+Built by [Trent McNitt](https://mcnitt.io) — AI implementation consultant specializing in chatbots, workflow automation, and custom AI applications.
+
+[Available for contract work →](https://mcnitt.io)
+
 ## 📄 License
 
 [AGPL-3.0](LICENSE)
