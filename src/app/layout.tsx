@@ -20,6 +20,25 @@ export const metadata: Metadata = {
   title: 'OpenTask',
   description: 'AI-assisted task management',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/opentask-sun-logo.png',
+    apple: '/icon-192.png',
+  },
+  openGraph: {
+    title: 'OpenTask',
+    description: 'AI-assisted task management',
+    url: 'https://opentask.mcnitt.io',
+    siteName: 'OpenTask',
+    images: [
+      {
+        url: '/opentask-sun-logo.png',
+        width: 548,
+        height: 548,
+        type: 'image/png',
+      },
+    ],
+    type: 'website',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
