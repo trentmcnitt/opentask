@@ -65,6 +65,15 @@ export function Sidebar({ onAddClick }: SidebarProps) {
           <span className="text-muted-foreground/60 text-[11px]">
             v{VERSION} · {formatBuildDate(BUILD_ID)}
           </span>
+          <br />
+          <a
+            href="https://mcnitt.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground/40 hover:text-muted-foreground/70 text-[10px] transition-colors"
+          >
+            mcnitt.io
+          </a>
         </div>
       </nav>
 
