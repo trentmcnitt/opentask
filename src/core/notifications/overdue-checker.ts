@@ -155,9 +155,13 @@ async function sendIndividualApns(
     priority: task.priority,
     overdueCount,
     badge: badgeCount,
-    // P3+ get time-sensitive (breaks through Focus/scheduled summary).
-    // Critical alerts require Apple entitlement approval — use time-sensitive until approved.
-    interruptionLevel: task.priority >= HIGH_PRIORITY_THRESHOLD ? 'time-sensitive' : 'active',
+    interruptionLevel:
+      task.priority >= URGENT_PRIORITY
+        ? 'critical'
+        : task.priority >= HIGH_PRIORITY_THRESHOLD
+          ? 'time-sensitive'
+          : 'active',
+    criticalAlertVolume: task.priority >= URGENT_PRIORITY ? task.critical_alert_volume : undefined,
   })
 }
 
