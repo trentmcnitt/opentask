@@ -151,63 +151,24 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         print("[OpenTaskWatch] Credentials received from iPhone")
     }
 
-    // MARK: - Notification Categories
-
-    /// Register the same TASK_REMINDER category as the iOS app.
-    /// Action identifiers must match exactly: DONE, SNOOZE_1HR, SNOOZE_ALL_1HR.
-    private func registerNotificationCategories() {
-        let doneAction = UNNotificationAction(
-            identifier: "DONE",
-            title: "Done",
-            options: []
-        )
-        let snoozeAction = UNNotificationAction(
-            identifier: "SNOOZE_1HR",
-            title: "+1hr",
-            options: []
-        )
-        let snoozeAllAction = UNNotificationAction(
-            identifier: "SNOOZE_ALL_1HR",
-            title: "All +1hr",
-            options: []
-        )
-
-        let category = UNNotificationCategory(
-            identifier: "TASK_REMINDER",
-            actions: [doneAction, snoozeAction, snoozeAllAction],
-            intentIdentifiers: [],
-            options: []
-        )
-
-        UNUserNotificationCenter.current().setNotificationCategories([category])
-    }
+    // MARK: - Notification Categories (delegated to Shared/NotificationConstants.swift)
 
     // MARK: - Handle Notification Actions
 
     /// Called when the user taps a notification action button on the Watch.
     /// Makes API calls directly from the Watch — no forwarding to iPhone.
+    /// Branches on category: TASK_SUMMARY actions are bulk-only (no taskId),
+    /// while TASK_REMINDER actions target a specific task.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        let taskId = userInfo["taskId"] as? Int
-
-        // Clear this specific notification on any action
-        if taskId != nil {
-            center.removeDeliveredNotifications(
-                withIdentifiers: [response.notification.request.identifier]
-            )
-        }
+        let categoryId = response.notification.request.content.categoryIdentifier
 
         // Handle silent dismiss pushes (shouldn't reach here, but guard anyway)
         if let type = userInfo["type"] as? String, type == "dismiss" {
-            completionHandler()
-            return
-        }
-
-        guard let taskId = taskId else {
             completionHandler()
             return
         }
@@ -220,25 +181,79 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             return
         }
 
+        // Summary notifications: bulk-only actions, no taskId
+        if categoryId == NotificationCategory.taskSummary {
+            center.removeDeliveredNotifications(
+                withIdentifiers: [response.notification.request.identifier]
+            )
+
+            Task {
+                do {
+                    switch response.actionIdentifier {
+                    case NotificationAction.snoozeAll1hr:
+                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                        print("[OpenTaskWatch] Summary: snoozed all +1hr (\(result.tasksAffected) tasks)")
+                        if result.tasksAffected > 0 {
+                            await dismissNotifications(atOrBelowPriority: 3)
+                        }
+                        updateBadge(result.skippedUrgent)
+                        playHaptic(.success)
+
+                    case UNNotificationDefaultActionIdentifier:
+                        center.removeAllDeliveredNotifications()
+
+                    default:
+                        break
+                    }
+                } catch {
+                    print("[OpenTaskWatch] Summary action failed: \(error)")
+                    playHaptic(.failure)
+                    postLocalErrorNotification("Action failed: \(error.localizedDescription)")
+                }
+
+                completionHandler()
+            }
+            return
+        }
+
+        // Individual task notifications: require taskId
+        let taskId = userInfo["taskId"] as? Int
+        let overdueCount = userInfo["overdueCount"] as? Int
+
+        // Clear this specific notification on any action
+        if taskId != nil {
+            center.removeDeliveredNotifications(
+                withIdentifiers: [response.notification.request.identifier]
+            )
+        }
+
+        guard let taskId = taskId else {
+            completionHandler()
+            return
+        }
+
         Task {
             do {
                 switch response.actionIdentifier {
-                case "DONE":
+                case NotificationAction.done:
                     try await APIClient.shared.markDone(taskId: taskId)
+                    if let count = overdueCount { updateBadge(count - 1) }
                     print("[OpenTaskWatch] Done: task \(taskId)")
                     playHaptic(.success)
 
-                case "SNOOZE_1HR":
+                case NotificationAction.snooze1hr:
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
+                    if let count = overdueCount { updateBadge(count - 1) }
                     print("[OpenTaskWatch] Snoozed +1hr: task \(taskId)")
                     playHaptic(.success)
 
-                case "SNOOZE_ALL_1HR":
+                case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
                     if result.tasksAffected > 0 {
-                        await dismissSnoozedNotifications()
+                        await dismissNotifications(atOrBelowPriority: 3)
                     }
+                    updateBadge(result.skippedUrgent)
                     playHaptic(.success)
 
                 case UNNotificationDefaultActionIdentifier:
@@ -265,26 +280,6 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([])
-    }
-
-    // MARK: - Notification Dismissal
-
-    /// Remove delivered notifications for P0-P3 tasks after bulk snooze.
-    /// P4 (Urgent) is never bulk-snoozed, so those notifications remain.
-    private func dismissSnoozedNotifications() async {
-        let center = UNUserNotificationCenter.current()
-        let notifications = await center.deliveredNotifications()
-        let idsToRemove = notifications
-            .filter { notification in
-                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
-                return p <= 3
-            }
-            .map { $0.request.identifier }
-
-        if !idsToRemove.isEmpty {
-            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-            print("[OpenTaskWatch] Dismissed \(idsToRemove.count) notifications after bulk snooze")
-        }
     }
 
     // MARK: - Haptic Feedback

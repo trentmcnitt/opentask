@@ -317,25 +317,23 @@ describe('checkOverdueTasks', () => {
     expect(sendPushNotification).not.toHaveBeenCalled()
   })
 
-  test('P4 task gets both web push and APNs time-sensitive', async () => {
+  test('P4 task gets both web push and APNs critical alert', async () => {
     // Task due at 10:00, check at 10:05 → 5 min boundary (P4 urgent)
     insertTask(1, 'Urgent task', '2026-01-15T10:00:00.000Z', 4)
 
     await checkOverdueTasks(new Date('2026-01-15T10:05:00.000Z'))
 
-    // P4 gets individual web push AND APNs with time-sensitive interruption level
+    // P4 gets individual web push AND APNs with critical interruption level
     expect(sendPushNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
     expect(sendApnsNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
       expect.objectContaining({
         title: 'URGENT: Urgent task',
-        interruptionLevel: 'time-sensitive',
+        interruptionLevel: 'critical',
+        criticalAlertVolume: 1.0,
       }),
     )
-    // No criticalAlertVolume until Apple approves the entitlement
-    const payload = vi.mocked(sendApnsNotification).mock.calls[0][1]
-    expect(payload.criticalAlertVolume).toBeUndefined()
   })
 
   test('P3 task gets time-sensitive APNs', async () => {

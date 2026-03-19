@@ -157,7 +157,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     private func requestNotificationPermission(_ application: UIApplication) {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound]
+            options: [.alert, .badge, .sound, .criticalAlert]
         ) { granted, error in
             if let error = error {
                 print("[OpenTask] Notification permission error: \(error)")
@@ -209,36 +209,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         print("[OpenTask] APNs registration failed: \(error)")
     }
 
-    // MARK: - Notification Categories (Phase 3 defaults)
-
-    /// Register notification categories with default action buttons.
-    /// The content extension (Phase 4) dynamically replaces these when the grid is dirty.
-    private func registerNotificationCategories() {
-        let doneAction = UNNotificationAction(
-            identifier: "DONE",
-            title: "Done",
-            options: []
-        )
-        let snoozeAction = UNNotificationAction(
-            identifier: "SNOOZE_1HR",
-            title: "+1hr",
-            options: []
-        )
-        let snoozeAllAction = UNNotificationAction(
-            identifier: "SNOOZE_ALL_1HR",
-            title: "All +1hr",
-            options: []
-        )
-
-        let category = UNNotificationCategory(
-            identifier: "TASK_REMINDER",
-            actions: [doneAction, snoozeAction, snoozeAllAction],
-            intentIdentifiers: [],
-            options: []
-        )
-
-        UNUserNotificationCenter.current().setNotificationCategories([category])
-    }
+    // MARK: - Notification Categories (delegated to Shared/NotificationConstants.swift)
 
     // MARK: - Silent Push (Background Notification)
 
@@ -302,25 +273,67 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Handle Notification Actions
 
     /// Called when user taps a notification action button (from lock screen or notification center).
+    /// Branches on category: TASK_SUMMARY actions don't have a taskId (bulk operations only),
+    /// while TASK_REMINDER actions target a specific task.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+        let categoryId = response.notification.request.content.categoryIdentifier
+
+        // Handle silent dismiss pushes (shouldn't reach here, but guard anyway)
+        if let type = userInfo["type"] as? String, type == "dismiss" {
+            completionHandler()
+            return
+        }
+
+        // Summary notifications: bulk-only actions, no taskId
+        if categoryId == NotificationCategory.taskSummary {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(
+                withIdentifiers: [response.notification.request.identifier]
+            )
+
+            Task {
+                do {
+                    switch response.actionIdentifier {
+                    case NotificationAction.snoozeAll1hr:
+                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+                        if result.tasksAffected > 0 {
+                            await dismissNotifications(atOrBelowPriority: 3)
+                        }
+                        updateBadge(result.skippedUrgent)
+
+                    case NotificationAction.snoozeAllCustom:
+                        // Handled by the content extension directly via .dismiss completion.
+                        break
+
+                    case UNNotificationDefaultActionIdentifier:
+                        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+                        WebViewManager.shared.navigate(path: "/")
+
+                    default:
+                        break
+                    }
+                } catch {
+                    print("[OpenTask] Summary action handler error: \(error)")
+                }
+
+                completionHandler()
+            }
+            return
+        }
+
+        // Individual task notifications: require taskId
         let taskId = userInfo["taskId"] as? Int
+        let overdueCount = userInfo["overdueCount"] as? Int
 
         // Belt-and-suspenders: clear this specific notification on any action
         if taskId != nil {
             UNUserNotificationCenter.current().removeDeliveredNotifications(
                 withIdentifiers: [response.notification.request.identifier]
             )
-        }
-
-        // Handle silent dismiss pushes (shouldn't reach here, but guard anyway)
-        if let type = userInfo["type"] as? String, type == "dismiss" {
-            completionHandler()
-            return
         }
 
         guard let taskId = taskId else {
@@ -331,19 +344,22 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         Task {
             do {
                 switch response.actionIdentifier {
-                case "DONE":
+                case NotificationAction.done:
                     try await APIClient.shared.markDone(taskId: taskId)
+                    if let count = overdueCount { updateBadge(count - 1) }
 
-                case "SNOOZE_1HR":
+                case NotificationAction.snooze1hr:
                     try await APIClient.shared.snoozeNextHour(taskId: taskId)
+                    if let count = overdueCount { updateBadge(count - 1) }
 
-                case "SNOOZE_ALL_1HR":
+                case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     if result.tasksAffected > 0 {
-                        await dismissSnoozedNotifications()
+                        await dismissNotifications(atOrBelowPriority: 3)
                     }
+                    updateBadge(result.skippedUrgent)
 
-                case "SNOOZE_CUSTOM", "SNOOZE_ALL_CUSTOM":
+                case NotificationAction.snoozeCustom, NotificationAction.snoozeAllCustom:
                     // These actions are handled entirely by the content extension
                     // (NotificationViewController) which makes the API call directly.
                     // With .dismiss completion, this handler is not reached for these actions.
@@ -363,24 +379,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             }
 
             completionHandler()
-        }
-    }
-
-    /// Remove delivered notifications for P0-P3 tasks after bulk snooze.
-    /// P4 (Urgent) is never bulk-snoozed, so those notifications remain.
-    private func dismissSnoozedNotifications() async {
-        let center = UNUserNotificationCenter.current()
-        let notifications = await center.deliveredNotifications()
-        let idsToRemove = notifications
-            .filter { notification in
-                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
-                return p <= 3
-            }
-            .map { $0.request.identifier }
-
-        if !idsToRemove.isEmpty {
-            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-            print("[OpenTask] Dismissed \(idsToRemove.count) notifications after bulk snooze")
         }
     }
 

@@ -174,14 +174,18 @@ export async function sendApnsNotification(
 }
 
 /**
- * Send a summary notification (no interactive actions) to all APNs devices.
+ * Send a summary notification to all APNs devices.
  * Used when a consolidation bucket overflows its individual notification cap.
- * Tapping opens the app — no snooze grid.
+ *
+ * Uses the TASK_SUMMARY category so iOS shows bulk-snooze action buttons
+ * and the content extension can display the snooze grid in bulk mode.
  */
 export async function sendApnsSummaryNotification(
   userId: number,
   title: string,
   body: string,
+  overflowCount: number,
+  totalOverdueCount: number,
 ): Promise<void> {
   await sendToAllDevices(
     userId,
@@ -189,9 +193,14 @@ export async function sendApnsSummaryNotification(
       new Notification(device.device_token, {
         alert: { title, body },
         topic: device.bundle_id,
+        category: 'TASK_SUMMARY',
         threadId: 'opentask-overdue',
         sound: 'default',
         collapseId: 'overdue-summary',
+        data: {
+          overflowCount,
+          totalOverdueCount,
+        },
       }),
     'summary notifications',
   )

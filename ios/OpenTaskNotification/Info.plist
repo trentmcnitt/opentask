@@ -21,7 +21,10 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>UNNotificationExtensionCategory</key>
-			<string>TASK_REMINDER</string>
+			<array>
+				<string>TASK_REMINDER</string>
+				<string>TASK_SUMMARY</string>
+			</array>
 			<key>UNNotificationExtensionUserInteractionEnabled</key>
 			<true/>
 			<key>UNNotificationExtensionDefaultContentHidden</key>

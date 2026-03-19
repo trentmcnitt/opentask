@@ -10,7 +10,7 @@ export default defineConfig({
     // Run test files sequentially to avoid database conflicts
     // Each test file resets the database, so parallel execution causes conflicts
     fileParallelism: false,
-    reporters: ['default', 'json'],
+    reporters: ['default', 'github-actions', 'json'],
     outputFile: {
       json: 'test-results/behavioral.json',
     },

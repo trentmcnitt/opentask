@@ -51,6 +51,7 @@ targets:
       path: OpenTask/OpenTask.entitlements
       properties:
         aps-environment: development
+        com.apple.developer.usernotifications.critical-alerts: true
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
         com.apple.developer.associated-domains:

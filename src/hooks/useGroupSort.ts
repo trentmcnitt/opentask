@@ -12,8 +12,8 @@ export type SortOption =
   | 'ai_insights'
 
 /**
- * Dashboard-level sort state shared across all group headers.
- * Returns a single sort field and direction that applies to every group.
+ * Local sort state for contexts without persisted preferences (e.g., project pages).
+ * The dashboard uses PreferencesProvider for persisted sort instead.
  *
  * Default directions:
  *   - due_date: soonest first, no due date last (reversed = latest first)
@@ -23,7 +23,6 @@ export type SortOption =
  *   - modified: most recently modified first (reversed = least recently modified first)
  *
  * Selecting the same sort option again toggles the direction.
- * State resets on page refresh.
  */
 export function useGroupSort() {
   const [globalSort, setGlobalSort] = useState<{ sort: SortOption; reversed: boolean }>({

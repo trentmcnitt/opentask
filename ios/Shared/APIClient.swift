@@ -115,15 +115,18 @@ final class APIClient {
     private func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
-            return BulkSnoozeResult(tasksAffected: 0)
+            return BulkSnoozeResult(tasksAffected: 0, skippedUrgent: 0)
         }
         return BulkSnoozeResult(
-            tasksAffected: responseData["tasks_affected"] as? Int ?? 0
+            tasksAffected: responseData["tasks_affected"] as? Int ?? 0,
+            skippedUrgent: responseData["skipped_urgent"] as? Int ?? 0
         )
     }
 
     struct BulkSnoozeResult {
         let tasksAffected: Int
+        /// Number of P4 (Urgent) tasks that were skipped — these remain overdue.
+        let skippedUrgent: Int
     }
 
     // MARK: - Notification Dismiss
