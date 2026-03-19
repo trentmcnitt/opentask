@@ -10,7 +10,7 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 15_000,
     hookTimeout: 60_000,
-    reporters: ['default', 'json'],
+    reporters: ['default', 'github-actions', 'json'],
     outputFile: {
       json: 'test-results/integration.json',
     },
