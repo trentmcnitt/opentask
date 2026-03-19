@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		017812E3F6E013E37B5A85D2 /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		029411004C797D95E55FEF91 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214D7F74FAF79F1D94BCD4B8 /* WebView.swift */; };
 		10DC84D1FB60BBEA3F354C6E /* SnoozeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */; };
 		1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
@@ -19,6 +20,7 @@
 		5BC4E254AB252148F78EBF4F /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FD21B7CC5A3B1E775338E0 /* NotificationViewController.swift */; };
 		63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
+		67BBCD29E3F75D5609165FFA /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		7429BAC05E3C53F944D56312 /* WatchAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC3579E8F57FB1C23A5ADE1 /* WatchAppDelegate.swift */; };
 		7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B872742B2A8BD9EA4734A7 /* QuickActionHandler.swift */; };
 		904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
@@ -31,6 +33,7 @@
 		D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		D8470CA02AEDD6E450ABD66B /* OpenTaskWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = C36650F41A76D5F4FEA0ECE8 /* OpenTaskWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DAA2D5098DFE5AE7A714E0A3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
+		E4FE546C6EC6664FD2CEB3A7 /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		E51D8D6F02BEB9BEE1486257 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
 		F2F26F95B22A85BD7B3F34BD /* OpenTaskApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955351AED16FD834316AB1EA /* OpenTaskApp.swift */; };
 		F9D1F47F9930F04DA2B80E18 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B5F413C3A06EF7B3DEFE9AB1 /* Assets.xcassets */; };
@@ -84,6 +87,7 @@
 		186FCE9C574F0644BB68C310 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		214D7F74FAF79F1D94BCD4B8 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
 		29B9EAB91C2948947698CB10 /* OpenTask.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenTask.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationConstants.swift; sourceTree = "<group>"; };
 		3952E05AC781CACC6A68A620 /* OpenTaskNotification.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OpenTaskNotification.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		41FD21B7CC5A3B1E775338E0 /* NotificationViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationViewController.swift; sourceTree = "<group>"; };
 		4BBF203FAC515A5C83498F70 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -194,6 +198,7 @@
 				65AA422DED4654FD15D0C535 /* APIClient.swift */,
 				D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */,
 				BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */,
+				317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -333,6 +338,7 @@
 				94220B779E8200B698FED4D1 /* ContentView.swift in Sources */,
 				51E6296F83B4E9B84CA333C3 /* DateHelpers.swift in Sources */,
 				904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */,
+				E4FE546C6EC6664FD2CEB3A7 /* NotificationConstants.swift in Sources */,
 				F2F26F95B22A85BD7B3F34BD /* OpenTaskApp.swift in Sources */,
 				7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */,
 				3BC46CF112C1205BA7B75BD3 /* SceneDelegateInterceptor.swift in Sources */,
@@ -349,6 +355,7 @@
 				47A6D6459C1F8D895C6099D7 /* APIClient.swift in Sources */,
 				63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */,
 				E51D8D6F02BEB9BEE1486257 /* KeychainHelper.swift in Sources */,
+				017812E3F6E013E37B5A85D2 /* NotificationConstants.swift in Sources */,
 				BD1378E55FCFB7263904EEE6 /* OpenTaskWatchApp.swift in Sources */,
 				CF6960C7D35D368C65EAA274 /* StatusView.swift in Sources */,
 				7429BAC05E3C53F944D56312 /* WatchAppDelegate.swift in Sources */,
@@ -362,6 +369,7 @@
 				6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */,
 				D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */,
 				1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */,
+				67BBCD29E3F75D5609165FFA /* NotificationConstants.swift in Sources */,
 				5BC4E254AB252148F78EBF4F /* NotificationViewController.swift in Sources */,
 				10DC84D1FB60BBEA3F354C6E /* SnoozeGridView.swift in Sources */,
 			);

@@ -193,6 +193,8 @@ async function sendBucket(
           userId,
           `${bucket.overflow} more ${bucket.label}`,
           'Open app to see all overdue tasks',
+          bucket.overflow,
+          overdueCount,
         ),
       )
     }
