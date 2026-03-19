@@ -111,18 +111,6 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
-
-        <p className="text-muted-foreground mt-8 text-center text-xs">
-          Built by{' '}
-          <a
-            href="https://mcnitt.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground font-medium underline underline-offset-4 transition-colors"
-          >
-            Trent McNitt
-          </a>
-        </p>
       </div>
     </div>
   )

@@ -6,15 +6,17 @@ import UserNotificationsUI
 /// Notification Content Extension — displays the interactive snooze grid
 /// when the user long-presses a task notification.
 ///
-/// Reads task data from the APNs payload and embeds a SwiftUI SnoozeGridView.
-/// When the user taps a grid button, the action button labels are dynamically
-/// updated to show the resolved absolute time (e.g., "4:00 PM" instead of "+1hr").
+/// Handles two notification categories:
+/// - **TASK_REMINDER**: individual task — grid uses the task's dueAt as the base time,
+///   action buttons include Done, single-task snooze, and bulk snooze.
+/// - **TASK_SUMMARY**: overflow summary — grid uses "now" as the base time,
+///   action buttons are bulk-only (no Done or single-task snooze).
 ///
 /// Communication flow:
 /// 1. User long-presses notification → iOS calls didReceive(_:) with payload
 /// 2. User taps grid button → onGridSelection updates action buttons via extensionContext
 /// 3. User taps action button → didReceive(_:completionHandler:) fires API call
-/// 4. API call succeeds → notification dismissed, forwarded to main app
+/// 4. API call succeeds → notification dismissed
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
     private var hostingController: UIHostingController<SnoozeGridView>?
@@ -22,9 +24,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     // Task data from APNs payload
     private var taskId: Int = 0
     private var dueAt: String = ""
+    private var overdueCount: Int?
     private var selectedDueAt: String?
     private var selectedDeltaMinutes: Int?
     private var hasReceivedInitialNotification = false
+
+    /// True when displaying a TASK_SUMMARY notification (bulk-only actions, no taskId).
+    private var isBulkMode = false
 
     // MARK: - Lifecycle
 
@@ -39,9 +45,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // iOS reuses the extension instance for the same notification, so without this
         // the custom action buttons (e.g., "+3hr") persist even though the grid resets.
         hasReceivedInitialNotification = false
+        isBulkMode = false
         selectedDueAt = nil
         selectedDeltaMinutes = nil
-        restoreDefaultActions()
+        setDefaultTimeActions()
     }
 
     // MARK: - UNNotificationContentExtension
@@ -57,17 +64,30 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         let userInfo = notification.request.content.userInfo
         let title = notification.request.content.title
+        let categoryId = notification.request.content.categoryIdentifier
 
-        taskId = userInfo["taskId"] as? Int ?? 0
-        dueAt = userInfo["dueAt"] as? String ?? ""
+        isBulkMode = categoryId == NotificationCategory.taskSummary
 
         // Remove existing hosting controller if re-receiving
         hostingController?.view.removeFromSuperview()
         hostingController?.removeFromParent()
 
+        let mode: SnoozeMode
+        if isBulkMode {
+            let overflowCount = userInfo["overflowCount"] as? Int ?? 0
+            let totalOverdueCount = userInfo["totalOverdueCount"] as? Int ?? overflowCount
+            mode = .bulk(taskCount: totalOverdueCount)
+            // Use "now" as the base time for bulk mode (no single task's dueAt)
+            dueAt = DateHelpers.formatISO(Date())
+        } else {
+            taskId = userInfo["taskId"] as? Int ?? 0
+            dueAt = userInfo["dueAt"] as? String ?? ""
+            overdueCount = userInfo["overdueCount"] as? Int
+            mode = .individual(taskTitle: title, originalDueAt: dueAt)
+        }
+
         let gridView = SnoozeGridView(
-            taskTitle: title,
-            originalDueAt: dueAt,
+            mode: mode,
             onGridSelection: { [weak self] newDueAt in
                 self?.handleGridSelection(newDueAt)
             },
@@ -76,7 +96,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 if !isDirty {
                     self?.selectedDueAt = nil
                     self?.selectedDeltaMinutes = nil
-                    self?.restoreDefaultActions()
+                    self?.setDefaultTimeActions()
                 }
             }
         )
@@ -112,30 +132,56 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             var wasBulkSnooze = false
 
             do {
-                switch response.actionIdentifier {
-                case "DONE":
-                    try await APIClient.shared.markDone(taskId: taskId)
-
-                case "SNOOZE_1HR":
-                    try await APIClient.shared.snoozeNextHour(taskId: taskId)
-
-                case "SNOOZE_ALL_1HR":
-                    let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
-                    wasBulkSnooze = result.tasksAffected > 0
-
-                case "SNOOZE_CUSTOM":
-                    if let dueAt = selectedDueAt {
-                        try await APIClient.shared.snoozeTo(taskId: taskId, dueAt: dueAt)
-                    }
-
-                case "SNOOZE_ALL_CUSTOM":
-                    if let dueAt = selectedDueAt {
-                        let result = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
+                if isBulkMode {
+                    // Bulk mode: all actions are bulk snooze (no Done or single-task snooze)
+                    switch response.actionIdentifier {
+                    case NotificationAction.snoozeAll1hr:
+                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
                         wasBulkSnooze = result.tasksAffected > 0
-                    }
+                        updateBadge(result.skippedUrgent)
 
-                default:
-                    break
+                    case NotificationAction.snoozeAllCustom:
+                        if let dueAt = selectedDueAt {
+                            let result = try await APIClient.shared.snoozeOverdue(until: dueAt)
+                            wasBulkSnooze = result.tasksAffected > 0
+                            updateBadge(result.skippedUrgent)
+                        }
+
+                    default:
+                        break
+                    }
+                } else {
+                    // Individual mode: task-specific + bulk actions
+                    switch response.actionIdentifier {
+                    case NotificationAction.done:
+                        try await APIClient.shared.markDone(taskId: taskId)
+                        if let count = overdueCount { updateBadge(count - 1) }
+
+                    case NotificationAction.snooze1hr:
+                        try await APIClient.shared.snoozeNextHour(taskId: taskId)
+                        if let count = overdueCount { updateBadge(count - 1) }
+
+                    case NotificationAction.snoozeAll1hr:
+                        let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
+                        wasBulkSnooze = result.tasksAffected > 0
+                        updateBadge(result.skippedUrgent)
+
+                    case NotificationAction.snoozeCustom:
+                        if let dueAt = selectedDueAt {
+                            try await APIClient.shared.snoozeTo(taskId: taskId, dueAt: dueAt)
+                            if let count = overdueCount { updateBadge(count - 1) }
+                        }
+
+                    case NotificationAction.snoozeAllCustom:
+                        if let dueAt = selectedDueAt {
+                            let result = try await APIClient.shared.snoozeOverdue(until: dueAt, includeTaskId: taskId)
+                            wasBulkSnooze = result.tasksAffected > 0
+                            updateBadge(result.skippedUrgent)
+                        }
+
+                    default:
+                        break
+                    }
                 }
             } catch {
                 print("[OpenTask] Content extension action error: \(error)")
@@ -180,7 +226,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private func handleGridSelection(_ newDueAt: String) {
         selectedDueAt = newDueAt
 
-        // Compute delta from task's original dueAt to selected time
+        // Compute delta from base time to selected time
         guard let originalDate = DateHelpers.parseISO(dueAt),
               let targetDate = DateHelpers.parseISO(newDueAt)
         else { return }
@@ -193,38 +239,24 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         if deltaMinutes == 0 {
             selectedDueAt = nil
             selectedDeltaMinutes = nil
-            restoreDefaultActions()
+            setDefaultTimeActions()
             return
         }
 
         let timeLabel = DateHelpers.formatShortTime(targetDate)
 
-        // Dynamically replace the notification's action buttons with the absolute time
-        extensionContext?.notificationActions = [
-            UNNotificationAction(identifier: "DONE", title: "Done", options: []),
-            UNNotificationAction(identifier: "SNOOZE_CUSTOM", title: timeLabel, options: []),
-            UNNotificationAction(identifier: "SNOOZE_ALL_CUSTOM", title: "All \u{2192} \(timeLabel)", options: []),
-        ]
-    }
-
-    // MARK: - Notification Dismissal
-
-    /// Remove delivered notifications for tasks at or below the given priority.
-    /// Used after bulk snooze to clear notifications for tasks that were just snoozed.
-    /// Async so the caller can await completion before dismissing the extension.
-    private func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
-        let center = UNUserNotificationCenter.current()
-        let notifications = await center.deliveredNotifications()
-        let idsToRemove = notifications
-            .filter { notification in
-                let p = notification.request.content.userInfo["priority"] as? Int ?? 0
-                return p <= maxPriority
-            }
-            .map { $0.request.identifier }
-
-        if !idsToRemove.isEmpty {
-            center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-            print("[OpenTask] Dismissed \(idsToRemove.count) notifications after bulk snooze (tier priority <= \(maxPriority))")
+        if isBulkMode {
+            // Bulk mode: only bulk snooze action
+            extensionContext?.notificationActions = [
+                UNNotificationAction(identifier: NotificationAction.snoozeAllCustom, title: "All \u{2192} \(timeLabel)", options: []),
+            ]
+        } else {
+            // Individual mode: Done, single snooze, bulk snooze
+            extensionContext?.notificationActions = [
+                UNNotificationAction(identifier: NotificationAction.done, title: "Done", options: []),
+                UNNotificationAction(identifier: NotificationAction.snoozeCustom, title: timeLabel, options: []),
+                UNNotificationAction(identifier: NotificationAction.snoozeAllCustom, title: "All \u{2192} \(timeLabel)", options: []),
+            ]
         }
     }
 
@@ -236,16 +268,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let nextHour = DateHelpers.snapToNextHour()
         let timeLabel = DateHelpers.formatShortTime(nextHour)
 
-        extensionContext?.notificationActions = [
-            UNNotificationAction(identifier: "DONE", title: "Done", options: []),
-            UNNotificationAction(identifier: "SNOOZE_1HR", title: timeLabel, options: []),
-            UNNotificationAction(identifier: "SNOOZE_ALL_1HR", title: "All \u{2192} \(timeLabel)", options: []),
-        ]
-    }
-
-    /// Restore the default action buttons with current absolute times.
-    /// Called when the user resets the grid to the original time.
-    private func restoreDefaultActions() {
-        setDefaultTimeActions()
+        if isBulkMode {
+            extensionContext?.notificationActions = [
+                UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
+            ]
+        } else {
+            extensionContext?.notificationActions = [
+                UNNotificationAction(identifier: NotificationAction.done, title: "Done", options: []),
+                UNNotificationAction(identifier: NotificationAction.snooze1hr, title: timeLabel, options: []),
+                UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
+            ]
+        }
     }
 }

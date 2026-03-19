@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// Determines whether the snooze grid is for an individual task or a bulk summary.
+///
+/// - `.individual`: Shows the task title and relative time from the task's due date.
+///   Grid increments/decrements are relative to the task's `dueAt`.
+/// - `.bulk`: Shows "X overdue tasks" header. Grid increments/decrements are
+///   relative to "now" since there is no single task reference time.
+enum SnoozeMode {
+    case individual(taskTitle: String, originalDueAt: String)
+    case bulk(taskCount: Int)
+}
+
 /// Interactive snooze grid for the notification content extension.
 ///
 /// Row 1: Preset times (gray) — snap to next occurrence of that wall-clock time
@@ -11,8 +22,7 @@ import SwiftUI
 /// NotificationViewController can update the action button labels dynamically.
 struct SnoozeGridView: View {
 
-    let taskTitle: String
-    let originalDueAt: String
+    let mode: SnoozeMode
 
     /// Called when the user taps a grid button. Passes the new working ISO date string.
     var onGridSelection: (String) -> Void
@@ -24,17 +34,28 @@ struct SnoozeGridView: View {
     @State private var workingDueAt: String
     @State private var isDirty = false
 
+    /// The base time for delta calculations. For individual mode, this is the task's
+    /// original dueAt. For bulk mode, this is "now" (captured at init).
+    private let originalDueAt: String
+
     init(
-        taskTitle: String,
-        originalDueAt: String,
+        mode: SnoozeMode,
         onGridSelection: @escaping (String) -> Void,
         onDirtyStateChanged: ((Bool) -> Void)? = nil
     ) {
-        self.taskTitle = taskTitle
-        self.originalDueAt = originalDueAt
+        self.mode = mode
         self.onGridSelection = onGridSelection
         self.onDirtyStateChanged = onDirtyStateChanged
-        self._workingDueAt = State(initialValue: originalDueAt)
+
+        switch mode {
+        case .individual(_, let dueAt):
+            self.originalDueAt = dueAt
+            self._workingDueAt = State(initialValue: dueAt)
+        case .bulk:
+            let now = DateHelpers.formatISO(Date())
+            self.originalDueAt = now
+            self._workingDueAt = State(initialValue: now)
+        }
     }
 
     // MARK: - Grid Data
@@ -78,7 +99,7 @@ struct SnoozeGridView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Task header
+            // Header
             headerSection
 
             // Resolved time (shown when grid is dirty)
@@ -95,14 +116,27 @@ struct SnoozeGridView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(taskTitle)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
+        Group {
+            switch mode {
+            case .individual(let taskTitle, _):
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(taskTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
 
-            Text(DateHelpers.formatRelativeTime(originalDueAt))
-                .font(.caption)
-                .foregroundColor(.secondary)
+                    Text(DateHelpers.formatRelativeTime(originalDueAt))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            case .bulk(let taskCount):
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.full")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("\(taskCount) overdue tasks")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
         }
     }
 
@@ -196,7 +230,13 @@ struct SnoozeGridView: View {
     }
 
     private func handleReset() {
-        workingDueAt = originalDueAt
+        // In bulk mode, "reset" re-computes "now" since time has advanced.
+        // In individual mode, reset returns to the task's original dueAt.
+        if case .bulk = mode {
+            workingDueAt = DateHelpers.formatISO(Date())
+        } else {
+            workingDueAt = originalDueAt
+        }
         let wasDirty = isDirty
         isDirty = false
         onGridSelection(workingDueAt)

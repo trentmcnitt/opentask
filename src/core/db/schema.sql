@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
   pushover_user_key TEXT,       -- Vestigial (Pushover removed); kept for existing DB compat
   pushover_sound TEXT NOT NULL DEFAULT 'echo', -- Vestigial (Pushover removed); kept for existing DB compat
   default_grouping TEXT NOT NULL DEFAULT 'project',
+  default_sort TEXT NOT NULL DEFAULT 'due_date',
+  default_sort_reversed INTEGER NOT NULL DEFAULT 0,
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,

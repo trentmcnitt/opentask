@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
-import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
+import type { SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -36,6 +36,7 @@ const ProjectPickerSheet = dynamic(() =>
 import {
   useSnoozePreferences,
   useDefaultGrouping,
+  useDefaultSort,
   useAiAvailable,
   useAiPreferences,
 } from '@/components/PreferencesProvider'
@@ -503,8 +504,19 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   // Keyboard navigation state
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<number | null>(null)
 
-  // Sort state - lifted here so keyboard navigation can use the same order as display
-  const { sortOption, reversed, setSortOption } = useGroupSort()
+  // Sort state — persisted via PreferencesProvider (single source of truth)
+  const {
+    defaultSort: sortOption,
+    defaultSortReversed: reversed,
+    setSortPreference,
+  } = useDefaultSort()
+  const setSortOption = useCallback(
+    (option: SortOption) => {
+      const newReversed = sortOption === option ? !reversed : false
+      setSortPreference(option, newReversed)
+    },
+    [sortOption, reversed, setSortPreference],
+  )
   const { isCollapsed, toggleCollapse } = useCollapsedGroups()
 
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {

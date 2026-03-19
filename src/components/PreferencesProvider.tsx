@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
+import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo, AIFeature } from '@/core/ai/models'
@@ -40,6 +41,9 @@ interface PreferencesContextValue {
   setSleepTime: (time: string) => void
   defaultGrouping: 'time' | 'project' | 'unified'
   setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
+  defaultSort: SortOption
+  defaultSortReversed: boolean
+  setSortPreference: (sort: SortOption, reversed: boolean) => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
   criticalAlertVolume: number
@@ -103,6 +107,9 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSleepTime: () => {},
   defaultGrouping: 'project',
   setDefaultGrouping: () => {},
+  defaultSort: 'due_date',
+  defaultSortReversed: false,
+  setSortPreference: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
   criticalAlertVolume: 1.0,
@@ -153,6 +160,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
     'project',
   )
+  const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
+  const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
   const [criticalAlertVolume, setCriticalAlertVolumeState] = useState(1.0)
   const [aiContext, setAiContextState] = useState<string | null>(null)
@@ -265,6 +274,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.default_grouping) {
           setDefaultGroupingState(data.data.default_grouping)
         }
+        if (data?.data?.default_sort) {
+          setDefaultSortState(data.data.default_sort)
+        }
+        if (data?.data?.default_sort_reversed !== undefined) {
+          setDefaultSortReversedState(data.data.default_sort_reversed)
+        }
         if (data?.data?.notifications_enabled !== undefined) {
           setNotificationsEnabledState(data.data.notifications_enabled)
         }
@@ -371,6 +386,17 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             body: JSON.stringify({ default_grouping: grouping }),
           }).catch(() => {})
         },
+        defaultSort,
+        defaultSortReversed,
+        setSortPreference: (sort: SortOption, reversed: boolean) => {
+          setDefaultSortState(sort)
+          setDefaultSortReversedState(reversed)
+          fetch('/api/user/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ default_sort: sort, default_sort_reversed: reversed }),
+          }).catch(() => {})
+        },
         notificationsEnabled,
         setNotificationsEnabled: setNotificationsEnabledState,
         criticalAlertVolume,
@@ -453,6 +479,11 @@ export function useSchedulePreferences() {
 export function useDefaultGrouping() {
   const { defaultGrouping, setDefaultGrouping } = useContext(PreferencesContext)
   return { defaultGrouping, setDefaultGrouping }
+}
+
+export function useDefaultSort() {
+  const { defaultSort, defaultSortReversed, setSortPreference } = useContext(PreferencesContext)
+  return { defaultSort, defaultSortReversed, setSortPreference }
 }
 
 export function useAiContext() {
