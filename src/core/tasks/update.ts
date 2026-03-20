@@ -120,6 +120,17 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     return { task: updatedTask, fieldsChanged: data.fieldsChanged, description }
   })
 
+  // Cancel pending AI enrichment — user's manual edit takes precedence.
+  // Done outside the transaction: not a user-visible change, not part of undo snapshot.
+  // If the user undoes their edit, ai-to-process is restored and enrichment can resume.
+  if (result.task.labels.includes('ai-to-process')) {
+    const cleanedLabels = result.task.labels.filter((l) => l !== 'ai-to-process')
+    getDb()
+      .prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+      .run(JSON.stringify(cleanedLabels), taskId)
+    result.task.labels = cleanedLabels
+  }
+
   emitSyncEvent(userId)
 
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event

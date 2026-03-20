@@ -1,6 +1,6 @@
 {
   "name": "opentask",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
