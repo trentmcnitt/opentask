@@ -83,7 +83,7 @@ struct SnoozeGridView: View {
 
     private let increments: [IncrementButton] = [
         IncrementButton(id: "i-1", label: "+1 min", minutes: 1, days: nil),
-        IncrementButton(id: "i-30", label: "+30 min", minutes: 30, days: nil),
+        IncrementButton(id: "i-10", label: "+10 min", minutes: 10, days: nil),
         IncrementButton(id: "i-60", label: "+1 hr", minutes: 60, days: nil),
         IncrementButton(id: "i-1d", label: "+1 day", minutes: nil, days: 1),
     ]
