@@ -124,7 +124,7 @@ export function QuickActionPopover({
       )}
     >
       <QuickActionPanel
-        key={focusedTask.updated_at}
+        key={focusedTask.id}
         task={focusedTask}
         timezone={timezone}
         mode={isMobile ? 'sheet' : 'popover'}

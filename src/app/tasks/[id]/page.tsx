@@ -32,6 +32,7 @@ import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
 import { useInsightsData } from '@/hooks/useInsightsData'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
+import { useSyncStream, type EnrichmentCompleteData } from '@/hooks/useSyncStream'
 
 export default function TaskDetailPage() {
   const { status } = useSession()
@@ -54,12 +55,8 @@ export default function TaskDetailPage() {
     useNavigationGuard()
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
 
-  const handleDirtyChange = useCallback(
-    (dirty: boolean) => {
-      setDirty(dirty)
-    },
-    [setDirty],
-  )
+  const isDirtyRef = useRef(false)
+  const pendingRefreshRef = useRef(false)
 
   // Clean up guard registration on unmount
   useEffect(() => {
@@ -106,6 +103,9 @@ export default function TaskDetailPage() {
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
 
+  const numericTaskId = Number(taskId)
+
+  // Full fetch (task + projects) for initial load and explicit user actions
   const fetchTask = useCallback(async () => {
     try {
       const [taskRes, projRes] = await Promise.all([
@@ -138,6 +138,40 @@ export default function TaskDetailPage() {
     }
   }, [taskId, router])
 
+  // Task-only refresh for SSE sync events (projects rarely change)
+  const refreshTask = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setTask(data.data as Task)
+    } catch {
+      // Silently ignore sync refresh failures — next sync will retry
+    }
+  }, [taskId])
+
+  // Refresh or defer based on dirty state. When dirty, queues a refresh
+  // that fires when the panel becomes clean (save or cancel).
+  const refreshOrDefer = useCallback(() => {
+    if (!isDirtyRef.current) {
+      refreshTask()
+    } else {
+      pendingRefreshRef.current = true
+    }
+  }, [refreshTask])
+
+  const handleDirtyChange = useCallback(
+    (dirty: boolean) => {
+      isDirtyRef.current = dirty
+      setDirty(dirty)
+      if (!dirty && pendingRefreshRef.current) {
+        pendingRefreshRef.current = false
+        refreshTask()
+      }
+    },
+    [setDirty, refreshTask],
+  )
+
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
@@ -157,6 +191,24 @@ export default function TaskDetailPage() {
   }) as SingleTaskActionsReturn
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
+
+  // Real-time sync: refresh task data when changes arrive from other tabs/enrichment.
+  // Defers refresh while the user has unsaved edits to avoid losing their work.
+  const handleEnrichmentComplete = useCallback(
+    (data: EnrichmentCompleteData) => {
+      if (data.taskId !== numericTaskId) return
+      refreshOrDefer()
+      if (isDirtyRef.current) {
+        showToast({ message: `AI enriched: ${data.title}`, type: 'success' })
+      }
+    },
+    [refreshOrDefer, numericTaskId],
+  )
+
+  useSyncStream({
+    onSync: refreshOrDefer,
+    onEnrichmentComplete: handleEnrichmentComplete,
+  })
 
   // Keep handleSaveAndLeave's undo ref in sync with the shared handler
   handleUndoRef.current = actions.handleUndo

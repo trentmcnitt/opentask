@@ -80,7 +80,7 @@ export function TaskDetail({
             )}
           >
             <QuickActionPanel
-              key={task.updated_at}
+              key={task.id}
               task={task}
               timezone={timezone}
               mode="popover"
