@@ -29,7 +29,7 @@ export function SnoozeAllFab({
     onShortPress: () => onSnoozeOverdue(),
   })
 
-  if (overdueCount === 0 || isSelectionMode) return null
+  if (isSelectionMode) return null
 
   return (
     <SnoozeMenu
@@ -42,13 +42,19 @@ export function SnoozeAllFab({
         onPointerDown={press.onPointerDown}
         onPointerUp={press.onPointerUp}
         onPointerLeave={press.onPointerLeave}
-        aria-label={`Snooze ${overdueCount} overdue tasks (hold for options)`}
+        aria-label={
+          overdueCount > 0
+            ? `Snooze ${overdueCount} overdue tasks (hold for options)`
+            : 'Snooze overdue tasks (hold for options)'
+        }
         className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-40 flex size-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-600 active:bg-blue-700 md:hidden"
       >
         <Clock className="size-5" />
-        <span className="bg-badge-destructive text-destructive-foreground absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold">
-          {overdueCount > 999 ? '999+' : overdueCount}
-        </span>
+        {overdueCount > 0 && (
+          <span className="bg-badge-destructive text-destructive-foreground absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold">
+            {overdueCount > 999 ? '999+' : overdueCount}
+          </span>
+        )}
       </button>
     </SnoozeMenu>
   )
