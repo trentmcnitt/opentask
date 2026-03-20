@@ -32,7 +32,7 @@
 </p>
 
 > [!NOTE]
-> 🚧 **Early public release — looking for testers and contributors!** 🎉
+> **Early release** — Please bear with the rough edges. 👷 Expect occasional bugs and other issues as things get ironed out. Please [open an issue](https://github.com/trentmcnitt/opentask/issues) if you run into any problems.
 
 OpenTask is a self-hosted task manager I built for personal use. I've been using it daily, and it's reached a point where I'm excited to open it up.
 
