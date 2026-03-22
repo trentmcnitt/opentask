@@ -284,7 +284,7 @@ export function Header({
             {/* Snooze all overdue button - desktop only (mobile uses FAB).
                Single click: snooze using default duration.
                Long-press (400ms): opens SnoozeMenu with duration choices. */}
-            {onSnoozeOverdue && overdueCount > 0 && !isSelectionMode && (
+            {onSnoozeOverdue && !isSelectionMode && (
               <SnoozeMenu
                 open={snoozeMenuOpen}
                 onOpenChange={setSnoozeMenuOpen}
@@ -297,13 +297,19 @@ export function Header({
                   onPointerDown={snoozePress.onPointerDown}
                   onPointerUp={snoozePress.onPointerUp}
                   onPointerLeave={snoozePress.onPointerLeave}
-                  aria-label={`Snooze ${overdueCount} overdue tasks (hold for options)`}
+                  aria-label={
+                    overdueCount > 0
+                      ? `Snooze ${overdueCount} overdue tasks (hold for options)`
+                      : 'Snooze overdue tasks (hold for options)'
+                  }
                   className="relative hidden md:inline-flex"
                 >
                   <Clock className="size-5" />
-                  <span className="bg-badge-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
-                    {overdueCount > 999 ? '999+' : overdueCount}
-                  </span>
+                  {overdueCount > 0 && (
+                    <span className="bg-badge-destructive text-destructive-foreground absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold">
+                      {overdueCount > 999 ? '999+' : overdueCount}
+                    </span>
+                  )}
                   <span className="bg-muted text-muted-foreground absolute right-0 bottom-0 rounded px-0.5 text-[8px] leading-tight font-medium">
                     {formatCompactSnoozeLabel(defaultSnoozeOption)}
                   </span>
