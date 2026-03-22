@@ -25,7 +25,7 @@ export const PRESET_TIMES = [
 /** Increment buttons: positive = forward, negative = backward */
 export const INCREMENTS = [
   { label: '+1 min', minutes: 1 },
-  { label: '+30 min', minutes: 30 },
+  { label: '+10 min', minutes: 10 },
   { label: '+1 hr', minutes: 60 },
   { label: '+1 day', minutes: null, days: 1 },
 ] as const

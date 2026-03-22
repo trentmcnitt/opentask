@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Check, X, FileText } from 'lucide-react'
+import { Check, X, FileText, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -496,6 +496,15 @@ export function SelectionActionSheet({
 
           <Button size="sm" variant="secondary" onClick={openSheet}>
             More
+          </Button>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleDelete}
+            aria-label={`Delete ${selectedCount} ${taskWord(selectedCount)}`}
+          >
+            <Trash2 className="size-4" />
           </Button>
 
           <Button
