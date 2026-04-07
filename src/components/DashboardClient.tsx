@@ -43,6 +43,7 @@ import {
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { saveQuickPanelChanges } from '@/lib/save-quick-panel-changes'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
@@ -163,24 +164,25 @@ function useBulkActions(
   setSearchQuery: (q: string | null) => void,
   setSearchResults: React.Dispatch<React.SetStateAction<Task[]>>,
 ) {
-  const bulkAction = async (endpoint: string, body: Record<string, unknown>) => {
+  // Bulk "Done" from the floating selection action bar. This is the only
+  // remaining direct bulk endpoint call from the dashboard — all panel-driven
+  // mutations (date, priority, labels, project, recurrence) flow through
+  // `bulkSaveAll` → `saveQuickPanelChanges`, which keeps the mobile selection
+  // sheet and the desktop quick-action popover on exactly one save path.
+  const bulkDone = async () => {
     const count = selection.selectedIds.size
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/tasks/bulk/done', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ids: [...selection.selectedIds] }),
       })
       if (!res.ok) throw new Error('Bulk action failed')
-      const responseData = await res.json()
-      const tasksSkipped = responseData.data?.tasks_skipped ?? 0
-      const tasksAffected = responseData.data?.tasks_affected ?? count
       selection.clear()
       bumpUndoCount()
       fetchTasks()
-      const skippedMsg = tasksSkipped > 0 ? ` (skipped ${tasksSkipped} high/urgent)` : ''
       showToast({
-        message: `${tasksAffected} ${taskWord(tasksAffected)} updated${skippedMsg}`,
+        message: `${count} ${taskWord(count)} completed`,
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
@@ -189,35 +191,63 @@ function useBulkActions(
     }
   }
 
-  const bulkSnoozeRelative = async (deltaMinutes: number, taskIds?: number[]) => {
+  /**
+   * Unified save path for the SelectionActionSheet. Routes single-task saves
+   * through PATCH /api/tasks/:id and multi-task saves through the bulk
+   * endpoints (with `include_task_ids` so explicit selections bypass the
+   * server's P4/Urgent skip filter).
+   *
+   * `dateTaskIds` is forwarded as the effective task ID list for the save —
+   * used when the snooze confirmation dialog opts some tasks out of the date
+   * change. Non-date fields fall back to the full selection.
+   */
+  const bulkSaveAll = async (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => {
+    const allIds = [...selection.selectedIds]
+    if (allIds.length === 0) return
+    const hasDate = changes.due_at !== undefined || changes.delta_minutes !== undefined
     try {
-      const res = await fetch('/api/tasks/bulk/snooze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ids: taskIds ?? [...selection.selectedIds],
-          delta_minutes: deltaMinutes,
-        }),
-      })
-      if (!res.ok) throw new Error('Bulk snooze failed')
-      const responseData = await res.json()
-      const tasksAffected = responseData.data?.tasks_affected ?? 0
-      const urgentSkipped = responseData.data?.skipped_urgent ?? 0
-      const noDueDateSkipped = responseData.data?.skipped_no_due_date ?? 0
-      selection.clear()
+      if (hasDate && dateTaskIds && dateTaskIds.length !== allIds.length) {
+        // Date change targets a subset; split the save so non-date fields
+        // still apply to every selected task.
+        const { due_at: _du, delta_minutes: _dm, ...nonDateChanges } = changes
+        void _du
+        void _dm
+        const dateOnly: QuickActionPanelChanges = {}
+        if (changes.due_at !== undefined) dateOnly.due_at = changes.due_at
+        if (changes.delta_minutes !== undefined) dateOnly.delta_minutes = changes.delta_minutes
+        const calls: Promise<{ tasksAffected: number; description?: string }>[] = []
+        if (dateTaskIds.length > 0 && Object.keys(dateOnly).length > 0) {
+          calls.push(saveQuickPanelChanges(dateTaskIds, dateOnly))
+        }
+        if (Object.keys(nonDateChanges).length > 0) {
+          calls.push(saveQuickPanelChanges(allIds, nonDateChanges))
+        }
+        const results = await Promise.all(calls)
+        bumpUndoCount()
+        fetchTasks()
+        // Prefer the single-task description when available (most specific),
+        // otherwise show a generic success.
+        const desc = results.find((r) => r.description)?.description
+        showToast({
+          message: desc || `${allIds.length} ${taskWord(allIds.length)} updated`,
+          type: 'success',
+          action: { label: 'Undo', onClick: handleUndo },
+        })
+        return
+      }
+      const effectiveIds = hasDate && dateTaskIds ? dateTaskIds : allIds
+      if (effectiveIds.length === 0) return
+      const result = await saveQuickPanelChanges(effectiveIds, changes)
       bumpUndoCount()
       fetchTasks()
-      const skipParts: string[] = []
-      if (urgentSkipped > 0) skipParts.push(`${urgentSkipped} urgent`)
-      if (noDueDateSkipped > 0) skipParts.push(`${noDueDateSkipped} no due date`)
-      const skippedMsg = skipParts.length > 0 ? ` (skipped ${skipParts.join(', ')})` : ''
       showToast({
-        message: `${tasksAffected} ${taskWord(tasksAffected)} snoozed${skippedMsg}`,
+        message:
+          result.description || `${result.tasksAffected} ${taskWord(result.tasksAffected)} updated`,
         type: 'success',
         action: { label: 'Undo', onClick: handleUndo },
       })
     } catch {
-      showToast({ message: 'Snooze failed', type: 'error' })
+      showToast({ message: 'Save failed', type: 'error' })
     }
   }
 
@@ -284,7 +314,7 @@ function useBulkActions(
     }
   }
 
-  return { bulkAction, bulkSnoozeRelative, bulkDelete, handleBulkMoveToProject, handleSearch }
+  return { bulkDone, bulkSaveAll, bulkDelete, handleBulkMoveToProject, handleSearch }
 }
 
 function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
@@ -1110,8 +1140,8 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
         setSearchQuery(null)
         setSearchResults([])
       }}
-      onBulkAction={bulk.bulkAction}
-      onBulkSnoozeRelative={bulk.bulkSnoozeRelative}
+      onBulkDone={bulk.bulkDone}
+      onBulkSaveAll={bulk.bulkSaveAll}
       onBulkDelete={bulk.bulkDelete}
       onBulkMoveToProject={bulk.handleBulkMoveToProject}
       onShowProjectPicker={setShowProjectPicker}
@@ -1247,8 +1277,8 @@ function DashboardView({
   timezone,
   onSearch,
   onSearchClear,
-  onBulkAction,
-  onBulkSnoozeRelative,
+  onBulkDone,
+  onBulkSaveAll,
   onBulkDelete,
   onBulkMoveToProject,
   onShowProjectPicker,
@@ -1355,8 +1385,8 @@ function DashboardView({
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
-  onBulkAction: (endpoint: string, body: Record<string, unknown>) => Promise<void>
-  onBulkSnoozeRelative: (deltaMinutes: number, taskIds?: number[]) => Promise<void>
+  onBulkDone: () => Promise<void>
+  onBulkSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
   onBulkDelete: () => Promise<void>
   onBulkMoveToProject: (projectId: number) => Promise<void>
   onShowProjectPicker: (show: boolean) => void
@@ -1658,51 +1688,13 @@ function DashboardView({
         selectedCount={selection.selectedIds.size}
         selectedTasks={selectedTasks}
         sheetOpenRef={bulkSheetOpenRef}
-        onDone={() => onBulkAction('/api/tasks/bulk/done', { ids: [...selection.selectedIds] })}
-        onSnooze={(until, taskIds) =>
-          onBulkAction('/api/tasks/bulk/snooze', {
-            ids: taskIds ?? [...selection.selectedIds],
-            until,
-          })
-        }
-        onSnoozeRelative={onBulkSnoozeRelative}
+        onDone={onBulkDone}
+        onSaveAll={onBulkSaveAll}
         onDelete={onBulkDelete}
-        onPriorityChange={(priority) => {
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes: { priority },
-          })
-        }}
         onMoveToProject={() => onShowProjectPicker(true)}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
-        onRecurrenceChange={(rrule, recurrenceMode) => {
-          const changes: Record<string, unknown> = { rrule }
-          if (recurrenceMode) changes.recurrence_mode = recurrenceMode
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes,
-          })
-        }}
         projects={projects}
-        onLabelsAdd={(labels) => {
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes: { labels_add: labels },
-          })
-        }}
-        onLabelsRemove={(labels) => {
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes: { labels_remove: labels },
-          })
-        }}
-        onProjectChange={(projectId) => {
-          onBulkAction('/api/tasks/bulk/edit', {
-            ids: [...selection.selectedIds],
-            changes: { project_id: projectId },
-          })
-        }}
       />
 
       <SnoozeAllFab
