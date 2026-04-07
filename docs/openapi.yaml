@@ -429,21 +429,41 @@ paths:
       summary: Snooze multiple tasks
       operationId: bulkSnooze
       tags: [Bulk Operations]
+      description: |
+        Snoozes one or more tasks. Supports absolute mode (`until`) or relative
+        mode (`delta_minutes`) — exactly one must be provided.
+
+        By default, P4 (Urgent) tasks are excluded (skipped in the response as
+        `skipped_urgent`) so the "Snooze All Overdue" sweep can't accidentally
+        push an urgent task. Callers that represent an explicit user selection
+        (e.g., the mobile selection sheet's quick panel) should pass
+        `include_task_ids` so the listed urgent tasks are snoozed anyway.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [task_ids, until]
+              required: [ids]
               properties:
-                task_ids:
+                ids:
                   type: array
                   items:
                     type: integer
                 until:
                   type: string
                   format: date-time
+                  description: Absolute target time (mutually exclusive with delta_minutes)
+                delta_minutes:
+                  type: integer
+                  description: Relative snooze in minutes (mutually exclusive with until)
+                include_task_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: |
+                    Task IDs to snooze even if they are P4/Urgent. Used by
+                    explicit user selections to bypass the default urgent skip.
       responses:
         '200':
           description: Bulk operation result
