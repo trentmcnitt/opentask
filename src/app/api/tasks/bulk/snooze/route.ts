@@ -34,6 +34,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       taskIds: input.ids,
       until: input.until,
       deltaMinutes: input.delta_minutes,
+      includeTaskIds: input.include_task_ids,
     })
 
     dismissNotificationsForTasks(user.id, input.ids)

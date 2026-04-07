@@ -29,12 +29,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
-import { QuickActionPanel } from '@/components/QuickActionPanel'
+import { QuickActionPanel, type QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
-import { computeCommonLabels } from '@/lib/bulk-utils'
-import { URGENT_PRIORITY } from '@/lib/priority'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { cn, taskWord } from '@/lib/utils'
 import type { Task, Project } from '@/types'
@@ -49,7 +47,10 @@ interface SnoozeCategories {
 
 /**
  * Partition tasks into categories for snooze confirmation.
- * Pre-filters done tasks and P4/urgent (server skips these anyway).
+ * Pre-filters only done tasks. P4/Urgent tasks ARE included — the server
+ * respects explicit selections (via `include_task_ids`), and the user
+ * deliberately picked these tasks, so hiding urgent ones from the confirmation
+ * dialog would be misleading.
  *
  * For absolute snooze (targetTime provided), splits not-yet-due tasks into
  * "due before target" (auto-included — snooze pushes them later) and
@@ -66,7 +67,7 @@ function categorizeTasksForSnooze(tasks: Task[], targetTime?: string): SnoozeCat
   const noDueDate: Task[] = []
 
   for (const task of tasks) {
-    if (task.done || (task.priority ?? 0) >= URGENT_PRIORITY) continue
+    if (task.done) continue
     if (!task.due_at) {
       noDueDate.push(task)
     } else if (new Date(task.due_at) < now) {
@@ -87,31 +88,31 @@ interface SelectionActionSheetProps {
   selectedCount: number
   /** The actual selected tasks (for showing their due dates in QuickActionPanel) */
   selectedTasks: Task[]
+  /** Complete selection (bulk done via the floating action bar) */
   onDone: () => void
-  /** Called with absolute UTC time for preset operations. Optional taskIds filters which tasks are affected. */
-  onSnooze: (until: string, taskIds?: number[]) => void
-  /** Called with delta minutes for increment operations. Optional taskIds filters which tasks are affected. */
-  onSnoozeRelative: (deltaMinutes: number, taskIds?: number[]) => void
+  /** Delete the full selection (floating action bar + panel trash button) */
   onDelete: () => void
-  /** Called with absolute priority value (0-4) */
-  onPriorityChange: (priority: number) => void
+  /**
+   * Persist a batch of changes from the QuickActionPanel.
+   *
+   * The shape matches `QuickActionPanelChanges` from the panel. For multi-task
+   * selections, the panel emits additive label diffs and optional
+   * `delta_minutes` for relative snoozes; for single-task selections, it emits
+   * an absolute `due_at` and a full `labels` list. The parent is responsible
+   * for routing this through `saveQuickPanelChanges` (or an equivalent shared
+   * utility) and showing the success toast / bumping undo / refreshing tasks.
+   *
+   * `dateTaskIds`, when provided, scopes the date portion of the change to a
+   * subset of the selection (used when the confirmation dialog opts some tasks
+   * out of the snooze). Non-date fields always apply to every selected task.
+   */
+  onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void> | void
   onMoveToProject?: () => void
   onClear: () => void
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
-  /** Called when recurrence changes for selected tasks */
-  onRecurrenceChange?: (
-    rrule: string | null,
-    recurrenceMode?: 'from_due' | 'from_completion',
-  ) => void
   /** Available projects for project picker (enables inline project selection) */
   projects?: Project[]
-  /** Called when labels are added (bulk add) */
-  onLabelsAdd?: (labels: string[]) => void
-  /** Called when labels are removed (bulk remove) */
-  onLabelsRemove?: (labels: string[]) => void
-  /** Called when project is changed via inline picker */
-  onProjectChange?: (projectId: number) => void
   /** Ref populated with openSheet function for external triggering (e.g., Cmd+S shortcut) */
   sheetOpenRef?: React.MutableRefObject<(() => void) | null>
 }
@@ -120,38 +121,23 @@ export function SelectionActionSheet({
   selectedCount,
   selectedTasks,
   onDone,
-  onSnooze,
-  onSnoozeRelative,
   onDelete,
-  onPriorityChange,
+  onSaveAll,
   onMoveToProject,
   onClear,
   onNavigateToDetail,
-  onRecurrenceChange,
   projects,
-  onLabelsAdd,
-  onLabelsRemove,
-  onProjectChange,
   sheetOpenRef,
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
   const isMobile = useIsMobile()
 
-  // Pending state for priority, labels, project (staged until Save)
-  // These use refs instead of state because they're only read synchronously in handleSave.
-  // Using useState caused a bug: React batches state updates, so when QuickActionPanel's
-  // individual-callbacks path called setPendingX then onSave in sequence, handleSave
-  // would read the stale (pre-update) values and silently drop the changes.
-  const pendingPriorityRef = useRef<number | null>(null)
-  const pendingLabelsAddRef = useRef<string[]>([])
-  const pendingLabelsRemoveRef = useRef<string[]>([])
-  const pendingProjectRef = useRef<number | null>(null)
-
-  // Track pending date change
-  const pendingDateRef = useRef<
-    { type: 'absolute'; until: string } | { type: 'relative'; deltaMinutes: number } | null
-  >(null)
+  // Staged changes from the most recent QuickActionPanel.onSaveAll call. The
+  // panel collects and emits the full change set in a single callback; we hold
+  // onto it here only long enough to run the multi-task snooze confirmation
+  // dialog before forwarding to the parent.
+  const pendingChangesRef = useRef<QuickActionPanelChanges | null>(null)
 
   // Compute bulk recurrence summary for display
   const recurrenceSummary = useMemo(() => {
@@ -173,11 +159,7 @@ export function SelectionActionSheet({
   const [snoozeTargetTime, setSnoozeTargetTime] = useState<string | null>(null)
 
   const clearPendingState = useCallback(() => {
-    pendingDateRef.current = null
-    pendingPriorityRef.current = null
-    pendingLabelsAddRef.current = []
-    pendingLabelsRemoveRef.current = []
-    pendingProjectRef.current = null
+    pendingChangesRef.current = null
   }, [])
 
   const openSheet = useCallback(() => {
@@ -196,69 +178,59 @@ export function SelectionActionSheet({
     }
   }, [sheetOpenRef, openSheet])
 
-  // Track date changes but don't apply immediately
-  const handleDateChange = useCallback((isoUtc: string) => {
-    pendingDateRef.current = { type: 'absolute', until: isoUtc }
-  }, [])
-
-  const handleDateChangeRelative = useCallback((deltaMinutes: number) => {
-    pendingDateRef.current = { type: 'relative', deltaMinutes }
-  }, [])
-
-  // Execute save: apply pending changes, close, exit selection mode.
-  // snoozeTaskIds optionally filters which tasks the date operation affects.
-  // Non-date changes (priority, labels, project) always apply to ALL selected tasks.
+  // Execute save: forward the staged changes to the parent, close the sheet,
+  // exit selection mode.
+  //
+  // `dateTaskIds` scopes the date portion of the change to a subset of the
+  // selection — used when the confirmation dialog opts some tasks out of the
+  // snooze. Non-date changes always apply to the full selection.
   const executeSave = useCallback(
-    (snoozeTaskIds?: number[]) => {
-      if (pendingDateRef.current) {
-        // Skip the snooze call if filtering left no tasks
-        if (!snoozeTaskIds || snoozeTaskIds.length > 0) {
-          if (pendingDateRef.current.type === 'absolute') {
-            onSnooze(pendingDateRef.current.until, snoozeTaskIds)
-          } else {
-            onSnoozeRelative(pendingDateRef.current.deltaMinutes, snoozeTaskIds)
-          }
-        }
-      }
-      // Apply pending priority change
-      if (pendingPriorityRef.current !== null) {
-        onPriorityChange(pendingPriorityRef.current)
-      }
-      // Apply pending label changes (add/remove)
-      if (pendingLabelsAddRef.current.length > 0 && onLabelsAdd) {
-        onLabelsAdd(pendingLabelsAddRef.current)
-      }
-      if (pendingLabelsRemoveRef.current.length > 0 && onLabelsRemove) {
-        onLabelsRemove(pendingLabelsRemoveRef.current)
-      }
-      // Apply pending project change
-      if (pendingProjectRef.current !== null && onProjectChange) {
-        onProjectChange(pendingProjectRef.current)
-      }
+    async (dateTaskIds?: number[]) => {
+      const changes = pendingChangesRef.current
+      pendingChangesRef.current = null
       setSheetOpen(false)
       onClear() // Exit selection mode
+      if (!changes) return
+      // If the user opted all tasks out of a date-only change, strip the date
+      // fields and save the rest (if anything remains).
+      const hasDateField = 'due_at' in changes || 'delta_minutes' in changes
+      if (hasDateField && dateTaskIds && dateTaskIds.length === 0) {
+        const { due_at: _d, delta_minutes: _dm, ...rest } = changes
+        void _d
+        void _dm
+        if (Object.keys(rest).length > 0) {
+          await onSaveAll(rest)
+        }
+        return
+      }
+      await onSaveAll(changes, dateTaskIds)
     },
-    [
-      onSnooze,
-      onSnoozeRelative,
-      onClear,
-      onPriorityChange,
-      onLabelsAdd,
-      onLabelsRemove,
-      onProjectChange,
-    ],
+    [onSaveAll, onClear],
   )
 
-  // Save button: check for edge-case tasks before applying date changes.
-  // For absolute snooze, tasks due before the target are auto-included (snooze pushes
-  // them later). Tasks due after the target get a checkbox (snooze would pull them earlier).
-  // For relative snooze, all not-yet-due tasks get a single checkbox.
-  const handleSave = useCallback(() => {
-    if (pendingDateRef.current) {
-      const isAbsolute = pendingDateRef.current.type === 'absolute'
-      const targetTime =
-        pendingDateRef.current.type === 'absolute' ? pendingDateRef.current.until : undefined
-      const categories = categorizeTasksForSnooze(selectedTasks, targetTime)
+  // The QuickActionPanel collects and emits the full change set in a single
+  // `onSaveAll` callback. For multi-task selections with edge-case tasks
+  // (not-yet-due, no due date, due after target) we intercept and show a
+  // confirmation dialog before forwarding.
+  const handlePanelSaveAll = useCallback(
+    async (changes: QuickActionPanelChanges) => {
+      pendingChangesRef.current = changes
+
+      const hasAbsoluteDate = changes.due_at !== undefined && changes.due_at !== null
+      const hasRelativeDate = changes.delta_minutes !== undefined
+      const hasDateChange = hasAbsoluteDate || hasRelativeDate
+
+      // Single-task selections skip the dialog — there's no edge case to
+      // confirm when there's only one task. The user's explicit tap on "+1h"
+      // or a preset is unambiguous.
+      if (!hasDateChange || selectedCount <= 1) {
+        await executeSave()
+        return
+      }
+
+      const isAbsolute = hasAbsoluteDate
+      const targetTime = isAbsolute ? (changes.due_at ?? undefined) : undefined
+      const categories = categorizeTasksForSnooze(selectedTasks, targetTime ?? undefined)
 
       const hasEdgeCase = isAbsolute
         ? categories.dueAfterTarget.length > 0 || categories.noDueDate.length > 0
@@ -273,10 +245,11 @@ export function SelectionActionSheet({
         setIncludeDueAfterTarget(false)
         return
       }
-    }
 
-    executeSave()
-  }, [selectedTasks, executeSave])
+      await executeSave()
+    },
+    [selectedCount, selectedTasks, executeSave],
+  )
 
   // Cancel button: discard changes, close, keep selection
   const handleCancel = useCallback(() => {
@@ -317,10 +290,18 @@ export function SelectionActionSheet({
     // Keep selection mode active (matches Cancel behavior)
   }, [clearPendingState])
 
-  const handleSaveAndClose = useCallback(() => {
-    setShowCloseConfirm(false)
-    handleSave()
-  }, [handleSave])
+  // Ref to the panel's internal handleSave, populated via QuickActionPanel.saveRef.
+  // Used by the unsaved-changes "Save" button on the dismiss-confirmation dialog so
+  // we can trigger the panel's save without duplicating its change-collection logic.
+  const panelSaveRef = useRef<(() => Promise<void> | void) | null>(null)
+
+  const handleSaveAndClose = useCallback(async () => {
+    try {
+      await panelSaveRef.current?.()
+    } finally {
+      setShowCloseConfirm(false)
+    }
+  }, [])
 
   // Snooze confirmation: compute filtered IDs from checkbox state and proceed with save.
   // Absolute: overdue + dueBeforeTarget are auto-included; dueAfterTarget and noDueDate are opt-in.
@@ -357,59 +338,7 @@ export function SelectionActionSheet({
 
   const handleSnoozeCancelConfirm = useCallback(() => {
     setSnoozeCategories(null)
-  }, [])
-
-  // Handle priority change from QuickActionPanel (stages change until Save)
-  const handlePriorityChange = useCallback((priority: number) => {
-    pendingPriorityRef.current = priority
-  }, [])
-
-  // Compute bulk common labels (intersection of labels across all selected tasks)
-  // This is the baseline for computing add/remove operations
-  const bulkCommonLabels = useMemo(() => computeCommonLabels(selectedTasks), [selectedTasks])
-
-  /**
-   * Label diffing architecture for bulk operations:
-   *
-   * QuickActionPanel displays `bulkCommonLabels` (labels shared by ALL selected tasks).
-   * When the user adds/removes labels in the UI, QuickActionPanel passes the complete
-   * new label set to this handler. We then compute the diff:
-   *
-   *   - toAdd: labels in newLabels but not in bulkCommonLabels
-   *   - toRemove: labels in bulkCommonLabels but not in newLabels
-   *
-   * The bulk edit API uses ADDITIVE mode (labels_add/labels_remove), which preserves
-   * each task's existing labels while applying the add/remove operations. This means:
-   *
-   *   - Adding "Work" adds it to all selected tasks (even if some already have it)
-   *   - Removing "Work" removes it from all selected tasks (preserving other labels)
-   *
-   * Example: Tasks A has ["Work", "Personal"], Task B has ["Work"]
-   *   - bulkCommonLabels = ["Work"]
-   *   - User adds "Urgent": toAdd=["Urgent"], toRemove=[]
-   *     -> A becomes ["Work", "Personal", "Urgent"], B becomes ["Work", "Urgent"]
-   *   - User removes "Work": toAdd=[], toRemove=["Work"]
-   *     -> A becomes ["Personal"], B becomes []
-   *
-   * Note: Labels not in the intersection cannot be removed via this UI (they only
-   * appear on some tasks, not all). This is intentional - it prevents accidentally
-   * removing labels the user can't see in the bulk view.
-   */
-  const handleLabelsChange = useCallback(
-    (newLabels: string[]) => {
-      // Labels to add: in newLabels but not in bulkCommonLabels
-      const toAdd = newLabels.filter((l) => !bulkCommonLabels.includes(l))
-      // Labels to remove: in bulkCommonLabels but not in newLabels
-      const toRemove = bulkCommonLabels.filter((l) => !newLabels.includes(l))
-      pendingLabelsAddRef.current = toAdd
-      pendingLabelsRemoveRef.current = toRemove
-    },
-    [bulkCommonLabels],
-  )
-
-  // Handle project change from QuickActionPanel (stages change until Save)
-  const handleProjectChange = useCallback((projectId: number) => {
-    pendingProjectRef.current = projectId
+    pendingChangesRef.current = null
   }, [])
 
   // Navigate to task detail (single task only)
@@ -440,21 +369,20 @@ export function SelectionActionSheet({
         selectedCount={selectedCount}
         timezone={timezone}
         mode="sheet"
-        onDateChange={handleDateChange}
-        onDateChangeRelative={handleDateChangeRelative}
-        onSave={handleSave}
+        onSaveAll={handlePanelSaveAll}
+        onSave={() => {
+          /* handlePanelSaveAll already closed the sheet (or opened the
+             confirmation dialog); no further work needed here. */
+        }}
         onCancel={handleCancel}
+        saveRef={panelSaveRef}
         recurrenceSummary={recurrenceSummary}
-        onPriorityChange={handlePriorityChange}
-        onLabelsChange={handleLabelsChange}
-        onRruleChange={onRecurrenceChange}
         onDelete={handleDelete}
         onMoveToProject={onMoveToProject ? handleMoveToProject : undefined}
         onNavigateToDetail={
           selectedCount === 1 && onNavigateToDetail ? handleNavigateToDetail : undefined
         }
         projects={projects}
-        onProjectChange={handleProjectChange}
         onDirtyChange={setIsPanelDirty}
       />
     </div>

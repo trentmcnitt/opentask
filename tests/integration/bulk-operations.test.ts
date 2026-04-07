@@ -178,4 +178,68 @@ describe('Bulk snooze integration', () => {
     const after4 = (await (await apiFetch('/api/tasks/4')).json()).data
     expect(after4.due_at).toBe(before4.due_at)
   })
+
+  // Regression: the mobile selection sheet and desktop quick panel both route
+  // explicit user selections through `include_task_ids`, so P4 tasks the user
+  // deliberately picked are NOT filtered out. The "Snooze All Overdue" sweep
+  // keeps the default P4 skip because it never sets `include_task_ids`.
+  test('POST bulk/snooze with include_task_ids snoozes P4 tasks (absolute mode)', async () => {
+    // Make task 4 urgent so it would normally be filtered out
+    await apiFetch('/api/tasks/4', { method: 'PATCH', body: { priority: 4 } })
+
+    const targetTime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const res = await apiFetch('/api/tasks/bulk/snooze', {
+      method: 'POST',
+      body: { ids: [4], until: targetTime, include_task_ids: [4] },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+
+    expect(data.tasks_affected).toBe(1)
+    expect(data.skipped_urgent).toBe(0)
+
+    const after4 = (await (await apiFetch('/api/tasks/4')).json()).data
+    expect(after4.due_at).toBe(targetTime)
+  })
+
+  test('POST bulk/snooze with include_task_ids snoozes P4 tasks (delta_minutes mode)', async () => {
+    await apiFetch('/api/tasks/4', { method: 'PATCH', body: { priority: 4 } })
+    const before4 = (await (await apiFetch('/api/tasks/4')).json()).data
+
+    const res = await apiFetch('/api/tasks/bulk/snooze', {
+      method: 'POST',
+      body: { ids: [4], delta_minutes: 60, include_task_ids: [4] },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+
+    expect(data.tasks_affected).toBe(1)
+    expect(data.skipped_urgent).toBe(0)
+
+    const after4 = (await (await apiFetch('/api/tasks/4')).json()).data
+    const expected = new Date(new Date(before4.due_at).getTime() + 60 * 60 * 1000).toISOString()
+    expect(after4.due_at).toBe(expected)
+  })
+
+  test('POST bulk/snooze without include_task_ids still skips P4 (Snooze All Overdue behavior)', async () => {
+    await apiFetch('/api/tasks/4', { method: 'PATCH', body: { priority: 4 } })
+    const before4 = (await (await apiFetch('/api/tasks/4')).json()).data
+
+    const targetTime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const res = await apiFetch('/api/tasks/bulk/snooze', {
+      method: 'POST',
+      body: { ids: [4], until: targetTime },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+
+    expect(data.tasks_affected).toBe(0)
+    expect(data.skipped_urgent).toBe(1)
+
+    // Task 4 untouched — regression guard for the Snooze All Overdue sweep.
+    const after4 = (await (await apiFetch('/api/tasks/4')).json()).data
+    expect(after4.due_at).toBe(before4.due_at)
+  })
 })

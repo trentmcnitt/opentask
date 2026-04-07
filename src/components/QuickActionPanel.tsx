@@ -80,15 +80,25 @@ import type { Task, Project } from '@/types'
 /**
  * Changes object for batched save - all fields that can be changed in the panel.
  * Used by onSaveAll to send all changes in a single API call.
+ *
+ * Bulk-only fields (emitted when the panel is mounted in multi-select bulk mode):
+ * - `delta_minutes`: relative snooze in minutes, used with bulk snooze endpoint.
+ *   The panel converts relative deltas to an absolute `due_at` for single-task
+ *   saves, so `delta_minutes` is only ever produced when `selectedTasks.length > 1`.
+ * - `labels_add` / `labels_remove`: additive label diffs, used by bulk edit so
+ *   labels not in the common intersection are preserved on individual tasks.
  */
 export interface QuickActionPanelChanges {
   title?: string
   priority?: number
   labels?: string[]
+  labels_add?: string[]
+  labels_remove?: string[]
   rrule?: string | null
   recurrence_mode?: 'from_due' | 'from_completion'
   project_id?: number
   due_at?: string | null
+  delta_minutes?: number
   auto_snooze_minutes?: number | null
   reset_original_due_at?: boolean
   notes?: string | null
@@ -398,13 +408,14 @@ export function QuickActionPanel({
   }, [effectiveTask, timezone])
 
   // Use the appropriate hook based on mode
-  // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook
-  const hasDateChanges =
-    onSaveAll || isCreateMode
+  // When onSaveAll is provided, date changes can be staged via pendingDueAt OR tracked via hook.
+  // In bulk mode (multi-select OR single-task-via-selection-sheet), the bulk hook
+  // owns staging — we must read its dirty flag even when onSaveAll is provided.
+  const hasDateChanges = isBulkMode
+    ? bulkHook.isDirty
+    : onSaveAll || isCreateMode
       ? pendingDueAt !== null || singleHook.isDirty
-      : isBulkMode
-        ? bulkHook.isDirty
-        : singleHook.isDirty
+      : singleHook.isDirty
   // Title is dirty if staged (pendingTitle) OR if the user is mid-edit with changes.
   // Without the mid-edit check, clicking outside the dialog while typing in the title
   // field bypasses the unsaved-changes confirmation because pendingTitle is only set on blur.
@@ -612,6 +623,13 @@ export function QuickActionPanel({
 
   // Collect all pending changes into a single QuickActionPanelChanges object.
   // Used by both handleSave and handleSaveAndDone to avoid duplicating the collection logic.
+  //
+  // Bulk-mode note: for multi-task selections we emit `delta_minutes` for relative
+  // snoozes and additive `labels_add`/`labels_remove` for labels. For single-task
+  // selections (including the case where SelectionActionSheet mounts the panel in
+  // bulk mode with one task) we always emit an absolute `due_at` and a full
+  // `labels` list, so the single-task PATCH path never has to interpret deltas
+  // or diff labels.
   const collectPendingChanges = useCallback((): QuickActionPanelChanges => {
     const changes: QuickActionPanelChanges = {}
     // Include staged title OR in-progress title edit (user is still typing)
@@ -621,13 +639,44 @@ export function QuickActionPanel({
       changes.title = titleDraft.trim()
     }
     if (pendingPriority !== null) changes.priority = pendingPriority
-    if (pendingLabels !== null) changes.labels = pendingLabels
+    if (pendingLabels !== null) {
+      // Multi-task bulk: emit additive diff against the bulk common labels so
+      // tasks keep labels that only appear on some of them.
+      if (isBulkMode && (selectedTasks?.length ?? 0) > 1) {
+        const origSet = new Set(bulkCommonLabels.map((l) => l.toLowerCase()))
+        const newSet = new Set(pendingLabels.map((l) => l.toLowerCase()))
+        const toAdd = pendingLabels.filter((l) => !origSet.has(l.toLowerCase()))
+        const toRemove = bulkCommonLabels.filter((l) => !newSet.has(l.toLowerCase()))
+        if (toAdd.length > 0) changes.labels_add = toAdd
+        if (toRemove.length > 0) changes.labels_remove = toRemove
+      } else {
+        changes.labels = pendingLabels
+      }
+    }
     if (pendingDueAtCleared) {
       changes.due_at = null
       changes.rrule = null
     } else {
       if (pendingRrule !== undefined) changes.rrule = pendingRrule
-      if (pendingDueAt !== null) {
+      if (isBulkMode) {
+        // Bulk mode: read the staged date op from bulkHook and emit either an
+        // absolute `due_at` or a relative `delta_minutes`. For single-task bulk
+        // selections we convert relative deltas to absolute so the downstream
+        // single PATCH path can handle it with no delta awareness.
+        const result = bulkHook.getResult()
+        if (result?.type === 'absolute') {
+          changes.due_at = result.until
+        } else if (result?.type === 'relative') {
+          const singleBulkTask = selectedTasks?.length === 1 ? (selectedTasks[0] ?? null) : null
+          if (singleBulkTask?.due_at) {
+            const newTimeMs =
+              new Date(singleBulkTask.due_at).getTime() + result.deltaMinutes * 60_000
+            changes.due_at = new Date(newTimeMs).toISOString()
+          } else {
+            changes.delta_minutes = result.deltaMinutes
+          }
+        }
+      } else if (pendingDueAt !== null) {
         changes.due_at = pendingDueAt
       } else if (singleHook.isDirty) {
         changes.due_at = singleHook.workingDate
@@ -656,6 +705,10 @@ export function QuickActionPanel({
     pendingAutoSnooze,
     pendingResetOrigin,
     pendingNotes,
+    isBulkMode,
+    bulkHook,
+    selectedTasks,
+    bulkCommonLabels,
   ])
 
   // Reset all pending state back to initial values.
@@ -734,9 +787,12 @@ export function QuickActionPanel({
   const handleSave = useCallback(async () => {
     await applyAllPendingChanges()
     resetAllPending()
-    singleHook.reset()
+    // Reset whichever date hook is active (bulk or single) so the panel's
+    // staged state clears on save — otherwise a re-open of the same selection
+    // would show stale delta/absolute indicators.
+    reset()
     onSave?.()
-  }, [applyAllPendingChanges, resetAllPending, singleHook, onSave])
+  }, [applyAllPendingChanges, resetAllPending, reset, onSave])
 
   // Expose handleSave to parent via saveRef for external triggering (e.g., navigation dialog)
   const handleSaveRef = useRef(handleSave)

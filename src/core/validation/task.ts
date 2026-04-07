@@ -129,6 +129,12 @@ export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
  * Supports two modes:
  * - Absolute: { ids, until } - sets all tasks to the same time
  * - Relative: { ids, delta_minutes } - adds minutes to each task's current due_at
+ *
+ * `include_task_ids` bypasses the default P4/Urgent skip filter for the listed
+ * task IDs. Explicit user selections (e.g., the mobile selection sheet's quick
+ * panel) pass this so urgent tasks the user has deliberately picked are not
+ * silently dropped. The "Snooze All Overdue" sweep omits it, preserving the
+ * default behavior of leaving urgent tasks alone.
  */
 export const bulkSnoozeSchema = z
   .object({
@@ -140,6 +146,7 @@ export const bulkSnoozeSchema = z
       .min(-1440, 'Cannot go back more than 24 hours')
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
+    include_task_ids: z.array(z.number().int().positive()).max(500).optional(),
   })
   .refine((data) => data.until !== undefined || data.delta_minutes !== undefined, {
     message: 'Either until or delta_minutes must be provided',
