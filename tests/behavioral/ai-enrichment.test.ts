@@ -948,6 +948,58 @@ describe('local→UTC timezone conversion', () => {
     const after = getTaskById(task.id)!
     expect(after.due_at).toBeNull()
   })
+
+  test('snaps due_at forward to a BYDAY-valid weekday when AI picks a conflicting day', async () => {
+    // Repro of the demo-account bug: AI returned Fri Apr 17 with rrule BYDAY=TH.
+    // The snap should move the due_at forward to the next Thursday (Apr 23),
+    // preserving the 9:00 AM local time.
+    vi.setSystemTime(new Date('2026-04-15T19:16:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'weekly linkedin/x post thursdays 9am' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Weekly linkedin/x post',
+        due_at: '2026-04-17T09:00:00', // Friday — wrong weekday for BYDAY=TH
+        rrule: 'FREQ=WEEKLY;BYDAY=TH',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // Snapped forward to Thursday Apr 23 at 9 AM CDT = 14:00 UTC.
+    expect(after.due_at).toBe('2026-04-23T14:00:00.000Z')
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH')
+  })
+
+  test('does not snap due_at when weekday already matches BYDAY', async () => {
+    vi.setSystemTime(new Date('2026-04-15T19:16:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'weekly thursday task' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Weekly Thursday task',
+        due_at: '2026-04-16T09:00:00', // Thursday — correct
+        rrule: 'FREQ=WEEKLY;BYDAY=TH',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // 9 AM CDT = 14:00 UTC, unchanged.
+    expect(after.due_at).toBe('2026-04-16T14:00:00.000Z')
+  })
 })
 
 describe('original_title', () => {

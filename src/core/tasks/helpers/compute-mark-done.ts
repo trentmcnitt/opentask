@@ -63,6 +63,7 @@ export function computeMarkDone(
       anchorTime: task.anchor_time,
       timezone: userTimezone,
       completedAt,
+      prevDueAt: task.due_at ? new Date(task.due_at) : null,
     })
 
     return {
