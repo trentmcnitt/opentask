@@ -29,7 +29,13 @@
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { getTaskById } from '@/core/tasks'
-import { nowUtc, computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
+import {
+  nowUtc,
+  computeFirstOccurrence,
+  deriveAnchorFields,
+  parseRRule,
+  getDayOfWeek,
+} from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
@@ -527,8 +533,18 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     let dueAt = parsed.due_at
     // Defensive: strip Z suffix or offset if AI includes one despite instructions
     dueAt = dueAt.replace(/Z$/i, '').replace(/[+-]\d{2}:?\d{2}$/, '')
-    const local = DateTime.fromISO(dueAt, { zone: user.timezone })
+    let local = DateTime.fromISO(dueAt, { zone: user.timezone })
     if (local.isValid) {
+      if (parsed.rrule) {
+        const snapped = snapDueAtToByday(local, parsed.rrule)
+        if (snapped !== local) {
+          log.warn(
+            'ai',
+            `Enrichment[${row.id}]: AI due_at "${parsed.due_at}" conflicts with RRULE "${parsed.rrule}" — snapped ${local.toISO()} → ${snapped.toISO()}`,
+          )
+          local = snapped
+        }
+      }
       parsed = { ...parsed, due_at: local.toUTC().toISO()! }
     } else {
       log.warn('ai', `Enrichment[${row.id}]: invalid due_at "${parsed.due_at}", setting to null`)
@@ -537,6 +553,22 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
   }
 
   return applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+/**
+ * Post-parse guard: if the RRULE specifies BYDAY, ensure due_at's weekday matches.
+ * Models occasionally emit a weekday adjacent to the intended one (off-by-one on
+ * "next Thursday"). Snap forward to the nearest valid BYDAY, preserving the
+ * hour/minute/second. Returns the original DateTime when no snap is needed.
+ */
+function snapDueAtToByday(local: DateTime, rrule: string): DateTime {
+  const components = parseRRule(rrule)
+  if (!components.byday || components.byday.length === 0) return local
+  const dow = getDayOfWeek(local)
+  if (components.byday.includes(dow)) return local
+  const forwardDistances = components.byday.map((d) => (d - dow + 7) % 7 || 7)
+  const minDistance = Math.min(...forwardDistances)
+  return local.plus({ days: minDistance })
 }
 
 /**
