@@ -32,6 +32,17 @@ export const WARMUP_TIMEOUT_MS = 15_000
 export const RAPID_RECYCLE_WINDOW_MS = 5_000
 export const RAPID_RECYCLE_LIMIT = 5
 
+/**
+ * Exponential backoff for re-init attempts after the slot enters `dead`.
+ * Indexed by `consecutiveInitFailures - 1`; values past the end use the cap.
+ *
+ * After a circuit-breaker trip, callers seed `consecutiveInitFailures` to
+ * `CIRCUIT_BREAKER_INITIAL_FAILURES` so the first cooldown is meaningful
+ * (rapid recycles signal something genuinely broken).
+ */
+const REINIT_BACKOFF_SCHEDULE_MS = [30_000, 60_000, 120_000, 300_000, 600_000]
+export const CIRCUIT_BREAKER_INITIAL_FAILURES = 4
+
 // --- Shared functions ---
 
 export function validateWarmup(text: string | null): boolean {
@@ -43,6 +54,16 @@ export function validateWarmup(text: string | null): boolean {
 export function parseEnvInt(envVar: string | undefined, defaultValue: number): number {
   const parsed = parseInt(envVar || '', 10)
   return isNaN(parsed) ? defaultValue : parsed
+}
+
+/**
+ * Compute the cooldown duration before the slot may attempt re-init.
+ * Returns 0 when no failures have been recorded.
+ */
+export function computeReinitBackoff(consecutiveInitFailures: number): number {
+  if (consecutiveInitFailures <= 0) return 0
+  const idx = Math.min(consecutiveInitFailures - 1, REINIT_BACKOFF_SCHEDULE_MS.length - 1)
+  return REINIT_BACKOFF_SCHEDULE_MS[idx]
 }
 
 /**

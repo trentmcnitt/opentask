@@ -654,3 +654,195 @@ describe('recycle resilience', () => {
     vi.unstubAllEnvs()
   })
 })
+
+describe('dead-state recovery', () => {
+  test('query auto-reinits a dead slot and serves the request', async () => {
+    // Force the slot to dead via warmup failure
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // First failure → 30s cooldown. Advance past it.
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // Query triggers re-init; warmup succeeds this time
+    const queryPromise = enrichmentQuery('test prompt')
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(getEnrichmentSlotStats().state).toBe('busy')
+
+    currentStream.emit(makeSuccessResult('answer'))
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await queryPromise
+
+    expect(result.text).toBe('answer')
+    expect(getEnrichmentSlotStats().state).toBe('available')
+  })
+
+  test('query during cooldown rejects without spawning a new subprocess', async () => {
+    // Force the slot dead
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    const queryCallsBefore = mockQuery.mock.calls.length
+
+    // Don't advance timers — slot is still in cooldown
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+
+    // No new subprocess should have been spawned
+    expect(mockQuery.mock.calls.length).toBe(queryCallsBefore)
+  })
+
+  test('repeated failures grow cooldown exponentially', async () => {
+    // Failure 1 → 30s cooldown
+    const init1 = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await init1
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // During cooldown, re-init is suppressed
+    await vi.advanceTimersByTimeAsync(29_000)
+    const queryCallsAfterFirst = mockQuery.mock.calls.length
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+    expect(mockQuery.mock.calls.length).toBe(queryCallsAfterFirst)
+
+    // Past 30s, next attempt is allowed — fail again to test the second backoff
+    await vi.advanceTimersByTimeAsync(2_000)
+    const failPromise = enrichmentQuery('test').catch((e) => e)
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await failPromise
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // Now the 2nd-failure cooldown is 60s — at 30s it's still in cooldown
+    await vi.advanceTimersByTimeAsync(30_000)
+    const queryCallsAfterSecond = mockQuery.mock.calls.length
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+    expect(mockQuery.mock.calls.length).toBe(queryCallsAfterSecond)
+
+    // Past 60s, allowed again
+    await vi.advanceTimersByTimeAsync(31_000)
+    const recoverPromise = enrichmentQuery('test')
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getEnrichmentSlotStats().state).toBe('busy')
+    currentStream.emit(makeSuccessResult('ok'))
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await recoverPromise
+    expect(result.text).toBe('ok')
+  })
+
+  test('successful warmup resets the failure counter', async () => {
+    // Two failures grow the counter
+    for (let i = 0; i < 2; i++) {
+      const p = initEnrichmentSlot()
+      await waitForStream()
+      currentStream.emit(makeSuccessResult('NOPE'))
+      await vi.advanceTimersByTimeAsync(0)
+      await p
+      // Advance past current backoff (30s, then 60s)
+      await vi.advanceTimersByTimeAsync(60_000)
+    }
+
+    // Recovery succeeds → counter resets
+    const init = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+    await init
+    expect(getEnrichmentSlotStats().state).toBe('available')
+
+    // Force dead again — first failure should be 30s cooldown, not 120s
+    shutdownEnrichmentSlot()
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+    // shutdown blocks all re-init; reset the test fixture state minimally
+    // by unsetting shutdownInitiated through the reset helper isn't ideal,
+    // so instead verify via a fresh failure path:
+    _resetSlotForTesting()
+
+    const fail = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await fail
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // 29s in: still in cooldown (proves we're at 30s, not a longer one)
+    await vi.advanceTimersByTimeAsync(29_000)
+    const callsBefore = mockQuery.mock.calls.length
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+    expect(mockQuery.mock.calls.length).toBe(callsBefore)
+
+    // 31s total: cooldown elapsed, re-init allowed
+    await vi.advanceTimersByTimeAsync(2_000)
+    const recover = enrichmentQuery('test').catch((e) => e)
+    await waitForStream()
+    expect(mockQuery.mock.calls.length).toBe(callsBefore + 1)
+    // Cleanup the in-flight init
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await recover
+  })
+
+  test('shutdown blocks re-init even after cooldown', async () => {
+    await initWithWarmup()
+    shutdownEnrichmentSlot()
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // Advance way past any conceivable cooldown
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+
+    const callsBefore = mockQuery.mock.calls.length
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+
+    // No new subprocess should have been spawned post-shutdown
+    expect(mockQuery.mock.calls.length).toBe(callsBefore)
+  })
+
+  test('circuit-breaker trip seeds a long initial cooldown', async () => {
+    vi.stubEnv('OPENTASK_AI_MAX_REUSES', '1')
+
+    await initWithWarmup()
+
+    // Trip the circuit breaker via 5 rapid recycles
+    for (let i = 0; i < 5; i++) {
+      const q = enrichmentQuery(`p${i}`)
+      await vi.advanceTimersByTimeAsync(0)
+      currentStream.emit(makeSuccessResult(`r${i}`))
+      await vi.advanceTimersByTimeAsync(0)
+      await q
+      await vi.advanceTimersByTimeAsync(0)
+      // Don't complete warmup on the new stream — let it loop
+      if (i < 4) {
+        await waitForStream()
+        currentStream.emit(makeSuccessResult('READY'))
+        await vi.advanceTimersByTimeAsync(0)
+      }
+    }
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+
+    // CIRCUIT_BREAKER_INITIAL_FAILURES=4 → 5 min cooldown.
+    // At 4 min in, re-init still suppressed.
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000)
+    const callsBefore = mockQuery.mock.calls.length
+    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+    expect(mockQuery.mock.calls.length).toBe(callsBefore)
+
+    vi.unstubAllEnvs()
+  })
+})

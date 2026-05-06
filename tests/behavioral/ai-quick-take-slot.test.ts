@@ -652,3 +652,62 @@ describe('warmup edge cases', () => {
     expect(getQuickTakeSlotStats().state).toBe('dead')
   })
 })
+
+describe('dead-state recovery', () => {
+  test('query auto-reinits a dead slot and serves the request', async () => {
+    // Force the slot to dead via warmup failure
+    const initPromise = initQuickTakeSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+    expect(getQuickTakeSlotStats().state).toBe('dead')
+
+    // First failure → 30s cooldown. Advance past it.
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // Query triggers re-init; warmup succeeds this time
+    const queryPromise = quickTakeSlotQuery('test prompt')
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    // After warmup completes, query starts processing — state moves to busy.
+    expect(getQuickTakeSlotStats().state).toBe('busy')
+
+    currentStream.emit(makeSuccessResult('answer'))
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await queryPromise
+
+    expect(result?.text).toBe('answer')
+  })
+
+  test('query during cooldown returns null without spawning a new subprocess', async () => {
+    const initPromise = initQuickTakeSlot()
+    await waitForStream()
+    currentStream.emit(makeSuccessResult('NOPE'))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+    expect(getQuickTakeSlotStats().state).toBe('dead')
+
+    const callsBefore = mockQuery.mock.calls.length
+
+    // Don't advance — slot is still in cooldown. Quick-take returns null instead of throwing.
+    const result = await quickTakeSlotQuery('test')
+    expect(result).toBeNull()
+    expect(mockQuery.mock.calls.length).toBe(callsBefore)
+  })
+
+  test('shutdown blocks re-init even after cooldown', async () => {
+    await initWithWarmup()
+    shutdownQuickTakeSlot()
+    expect(getQuickTakeSlotStats().state).toBe('dead')
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+
+    const callsBefore = mockQuery.mock.calls.length
+    const result = await quickTakeSlotQuery('test')
+    expect(result).toBeNull()
+    expect(mockQuery.mock.calls.length).toBe(callsBefore)
+  })
+})
