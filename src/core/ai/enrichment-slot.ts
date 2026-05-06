@@ -22,6 +22,8 @@ import {
   validateWarmup,
   parseEnvInt,
   checkCircuitBreaker,
+  computeReinitBackoff,
+  CIRCUIT_BREAKER_INITIAL_FAILURES,
 } from './slot-shared'
 import { EnrichmentResultSchema } from './types'
 import { resolveSDKModel } from './models'
@@ -63,6 +65,10 @@ interface SlotInternals {
   // Circuit breaker
   lastRecycleTime: number
   rapidRecycleCount: number
+  // Re-init backoff: tracks consecutive failures so the slot can recover
+  // from `dead` without thrashing. Reset to 0 on successful warmup.
+  consecutiveInitFailures: number
+  nextReinitAllowedAt: number
 }
 
 interface SlotResult {
@@ -91,6 +97,14 @@ interface EnrichmentSlotGlobals {
   lastRequestAt: Date | null
   waitQueue: WaitEntry[]
   warmupResolver: ((ok: boolean) => void) | null
+  // Single-flight guard for initEnrichmentSlot(). The public `state` field
+  // can read 'initializing' from two paths (recycleSlot pre-set it, or init
+  // itself is running) — this flag distinguishes them so concurrent callers
+  // don't spawn duplicate subprocesses.
+  initInProgress: boolean
+  // Set by shutdownEnrichmentSlot() — blocks any further re-init attempts
+  // even after cooldown expires (the process is going away).
+  shutdownInitiated: boolean
   // Current operation tracking (for in-progress visibility)
   currentTaskId: number | null
   currentInputText: string | null
@@ -112,6 +126,8 @@ if (!globalForSlot.__enrichmentSlotState) {
       deliverResult: null,
       lastRecycleTime: 0,
       rapidRecycleCount: 0,
+      consecutiveInitFailures: 0,
+      nextReinitAllowedAt: 0,
     },
     activatedAt: null,
     totalRequests: 0,
@@ -119,6 +135,8 @@ if (!globalForSlot.__enrichmentSlotState) {
     lastRequestAt: null,
     waitQueue: [],
     warmupResolver: null,
+    initInProgress: false,
+    shutdownInitiated: false,
     currentTaskId: null,
     currentInputText: null,
     currentStartedAt: null,
@@ -130,18 +148,30 @@ const g = globalForSlot.__enrichmentSlotState!
 // --- Core functions ---
 
 /**
- * Initialize the enrichment slot. Called from instrumentation.ts on startup.
- * Loads the SDK, creates a MessageChannel, starts the subprocess, and
- * waits for warmup validation.
+ * Initialize the enrichment slot. Called from instrumentation.ts on startup,
+ * from recycleSlot(), and on-demand from enrichmentQuery() to recover from
+ * the `dead` state.
+ *
+ * Recovery from `dead` is gated by `nextReinitAllowedAt` — repeated failures
+ * back off exponentially (see computeReinitBackoff). After `shutdownInitiated`
+ * the slot will not re-init, regardless of cooldown.
  */
 export async function initEnrichmentSlot(): Promise<void> {
-  if (g.slot.state === 'available' || g.slot.state === 'busy' || g.slot.state === 'dead') {
-    if (g.slot.state !== 'dead') {
-      log.warn('ai', 'Enrichment slot already initialized')
-    }
-    return
-  }
+  // Single-flight: another caller is already running init. The state field
+  // alone can't tell us this — recycleSlot() pre-sets state='initializing'
+  // before scheduling init, so we use an explicit flag instead.
+  if (g.initInProgress) return
 
+  // Already healthy
+  if (g.slot.state === 'available' || g.slot.state === 'busy') return
+
+  // Process is shutting down — never spawn a new subprocess
+  if (g.shutdownInitiated) return
+
+  // Dead state: respect cooldown so failed inits don't thrash the SDK
+  if (g.slot.state === 'dead' && Date.now() < g.slot.nextReinitAllowedAt) return
+
+  g.initInProgress = true
   try {
     g.slot.state = 'initializing'
     g.slot.resultCount = 0
@@ -196,8 +226,7 @@ export async function initEnrichmentSlot(): Promise<void> {
     clearTimeout(warmupTimer)
 
     if (!warmupOk) {
-      log.error('ai', 'Enrichment slot: warmup validation failed')
-      g.slot.state = 'dead'
+      markInitFailure('warmup validation failed', null)
       return
     }
 
@@ -205,6 +234,8 @@ export async function initEnrichmentSlot(): Promise<void> {
     if ((g.slot.state as SlotState) === 'dead') return
 
     g.slot.state = 'available'
+    g.slot.consecutiveInitFailures = 0
+    g.slot.nextReinitAllowedAt = 0
     g.activatedAt = new Date()
     log.info('ai', `Enrichment slot warm (model: ${getModel()}, max reuses: ${getMaxReuses()})`)
 
@@ -213,13 +244,7 @@ export async function initEnrichmentSlot(): Promise<void> {
       releaseSlot()
     }
   } catch (err) {
-    g.slot.state = 'dead'
-    log.error('ai', 'Enrichment slot init failed:', err)
-    notifyError(
-      'slot-failure',
-      'Enrichment slot init failed',
-      err instanceof Error ? err.message : String(err),
-    )
+    markInitFailure('init failed', err)
 
     // Reject any waiters queued during initializing state
     const waitersToReject = [...g.waitQueue]
@@ -227,7 +252,30 @@ export async function initEnrichmentSlot(): Promise<void> {
     for (const entry of waitersToReject) {
       entry.reject(new Error('Enrichment slot init failed'))
     }
+  } finally {
+    g.initInProgress = false
   }
+}
+
+/**
+ * Record a failed init/warmup: increment failure count, schedule the next
+ * allowed re-init attempt, mark the slot dead, and notify.
+ */
+function markInitFailure(reason: string, err: unknown): void {
+  g.slot.consecutiveInitFailures++
+  const backoffMs = computeReinitBackoff(g.slot.consecutiveInitFailures)
+  g.slot.nextReinitAllowedAt = Date.now() + backoffMs
+  g.slot.state = 'dead'
+  log.error(
+    'ai',
+    `Enrichment slot ${reason} (attempt ${g.slot.consecutiveInitFailures}, next attempt in ${Math.round(backoffMs / 1000)}s):`,
+    err,
+  )
+  notifyError(
+    'slot-failure',
+    `Enrichment slot ${reason}`,
+    err instanceof Error ? err.message : String(err ?? reason),
+  )
 }
 
 /**
@@ -248,7 +296,12 @@ export async function enrichmentQuery(
   const startTime = Date.now()
   const timeoutMs = options?.timeoutMs ?? getQueryTimeout()
 
-  // If slot is dead or uninitialized, throw so the caller can decide what to do
+  // If the slot died at runtime, attempt one re-init before failing. The init
+  // function respects the cooldown internally — repeated failures back off so
+  // a permanently broken SDK won't be retried on every request.
+  if (g.slot.state === 'dead') {
+    await initEnrichmentSlot()
+  }
   if (g.slot.state === 'dead' || g.slot.state === 'uninitialized') {
     throw new Error(`Enrichment slot is ${g.slot.state} — cannot process query`)
   }
@@ -362,6 +415,7 @@ export function getEnrichmentSlotStats(): EnrichmentSlotStats {
 /** Graceful shutdown for SIGTERM. */
 export function shutdownEnrichmentSlot(): void {
   log.info('ai', 'Enrichment slot: shutting down')
+  g.shutdownInitiated = true
   g.slot.generation++
   g.slot.deliverResult?.(null)
   g.warmupResolver?.(false)
@@ -511,9 +565,20 @@ function recycleSlot(): void {
   g.slot.lastRecycleTime = cb.newTime
 
   if (cb.tripped) {
+    // Seed the failure counter so auto-recovery starts at a real cooldown.
+    // Rapid recycles mean something is genuinely broken; first attempt should
+    // wait at least computeReinitBackoff(CIRCUIT_BREAKER_INITIAL_FAILURES).
+    g.slot.consecutiveInitFailures = Math.max(
+      g.slot.consecutiveInitFailures,
+      CIRCUIT_BREAKER_INITIAL_FAILURES,
+    )
+    const backoffMs = computeReinitBackoff(g.slot.consecutiveInitFailures)
+    g.slot.nextReinitAllowedAt = Date.now() + backoffMs
+
     log.error(
       'ai',
-      `Enrichment slot recycled ${cb.newCount} times rapidly — marking dead (circuit breaker)`,
+      `Enrichment slot recycled ${cb.newCount} times rapidly — marking dead ` +
+        `(circuit breaker, next attempt in ${Math.round(backoffMs / 1000)}s)`,
     )
     notifyError(
       'slot-failure',
@@ -581,12 +646,16 @@ export function _resetSlotForTesting(): void {
   g.slot.deliverResult = null
   g.slot.lastRecycleTime = 0
   g.slot.rapidRecycleCount = 0
+  g.slot.consecutiveInitFailures = 0
+  g.slot.nextReinitAllowedAt = 0
   g.activatedAt = null
   g.totalRequests = 0
   g.totalRecycles = 0
   g.lastRequestAt = null
   g.waitQueue = []
   g.warmupResolver = null
+  g.initInProgress = false
+  g.shutdownInitiated = false
   g.currentTaskId = null
   g.currentInputText = null
   g.currentStartedAt = null
