@@ -12,6 +12,7 @@
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
+import { toCliJsonSchema } from './json-schema'
 import { createMessageChannel, type MessageChannel } from './message-channel'
 import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
 import {
@@ -185,7 +186,7 @@ export async function initEnrichmentSlot(): Promise<void> {
 
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
 
-    const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
+    const jsonSchema = toCliJsonSchema(z.toJSONSchema(EnrichmentResultSchema))
 
     const queryOptions: Options = {
       model: getModel(),

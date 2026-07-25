@@ -131,6 +131,30 @@ export const InsightsItemSchema = z.object({
 
 export const InsightsBatchResultSchema = z.array(InsightsItemSchema)
 
+/**
+ * Wire-format schema for insights structured output.
+ *
+ * Insights is conceptually a list, but a bare array cannot be used as the
+ * structured-output schema: the provider turns it into a tool's `input_schema`,
+ * which must be an object. A root-level array is rejected with
+ * `input_schema.type: Input should be 'object'`, and the Claude Code subprocess
+ * exits with code 1 before producing anything. So the array travels wrapped.
+ */
+export const InsightsBatchEnvelopeSchema = z.object({
+  tasks: InsightsBatchResultSchema.describe('One entry per reviewed task'),
+})
+
+/**
+ * Parsing schema for insights responses, normalizing to a plain array.
+ *
+ * Accepts the wrapped envelope (structured output) or a bare array (text
+ * responses, which are not bound by the object-root constraint).
+ */
+export const InsightsBatchResponseSchema = z.union([
+  InsightsBatchResultSchema,
+  InsightsBatchEnvelopeSchema.transform((envelope) => envelope.tasks),
+])
+
 export type InsightsItem = z.infer<typeof InsightsItemSchema>
 
 /**

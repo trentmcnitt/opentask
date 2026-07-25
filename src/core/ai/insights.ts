@@ -18,7 +18,11 @@ import { aiQuery } from './sdk'
 import { parseAIResponse, extractJsonFromText } from './parse-helpers'
 import { INSIGHTS_SYSTEM_PROMPT, INSIGHTS_REMINDERS } from './prompts'
 import { formatTaskLine, getScheduleBlock } from './format'
-import { InsightsBatchResultSchema } from './types'
+import {
+  InsightsBatchResultSchema,
+  InsightsBatchEnvelopeSchema,
+  InsightsBatchResponseSchema,
+} from './types'
 import type { InsightsItem, InsightsSignalKey, TaskSummary } from './types'
 import { resolveFeatureAIConfig, type FeatureAIConfig } from './models'
 import { resolveFeatureTimeout } from './user-context'
@@ -59,10 +63,12 @@ ${taskLines}
 
 ${INSIGHTS_REMINDERS}
 Current time: ${currentTime}
-Score every task above. Return a JSON array with one entry per task.`
+Score every task above. Return one entry per task in "tasks".`
 }
 
-const INSIGHTS_JSON_SCHEMA = z.toJSONSchema(InsightsBatchResultSchema) as Record<string, unknown>
+// Wrapped in an envelope — structured-output schemas must have an object root.
+// See InsightsBatchEnvelopeSchema for why.
+const INSIGHTS_JSON_SCHEMA = z.toJSONSchema(InsightsBatchEnvelopeSchema) as Record<string, unknown>
 
 // ---------------------------------------------------------------------------
 // Signal vocabulary — display properties for UI rendering
@@ -450,7 +456,7 @@ async function processInsightsChunks(
         providerConfig,
       })
 
-      const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
+      const parsed = parseAIResponse(result, InsightsBatchResponseSchema, 'Insights', (text) => {
         const json = extractJsonFromText(text)
         if (!json) return null
 

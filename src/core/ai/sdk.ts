@@ -16,6 +16,7 @@
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { logAIActivity } from './activity'
+import { toCliJsonSchema } from './json-schema'
 import { withSlot } from './queue'
 import {
   type AIProvider,
@@ -285,7 +286,7 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       if (outputSchema) {
         queryOptions.outputFormat = {
           type: 'json_schema',
-          schema: outputSchema,
+          schema: toCliJsonSchema(outputSchema),
         }
       }
 
