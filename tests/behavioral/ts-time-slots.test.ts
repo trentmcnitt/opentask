@@ -24,6 +24,12 @@ import {
 } from '@/core/time-slots'
 import { ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import { getDb } from '@/core/db'
+
+/** Mirrors the startup backfill: install defaults for any user lacking slots. */
+function backfillTimeSlotsForTest() {
+  seedDefaultTimeSlots(TEST_USER_ID)
+}
 
 /** UTC ISO for a local wall-clock time today. */
 function localUtc(hour: number, minute = 0): string {
@@ -166,6 +172,20 @@ describe('Time Slots', () => {
     expect(parseHHMM('24:00')).toBeNull()
     expect(parseHHMM('09:60')).toBeNull()
     expect(parseHHMM('09:30')).toBe(570)
+  })
+
+  /**
+   * TS-016: Users who existed before slots shipped get them via the startup
+   * backfill. Without it their dashboard would put every item in the un-slotted
+   * group, which reads as broken rather than empty.
+   */
+  test('TS-016: existing users are backfilled with default slots', () => {
+    // Simulate a pre-existing user: delete their slots, then re-run init.
+    getDb().prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
+    expect(listTimeSlots(TEST_USER_ID)).toHaveLength(0)
+
+    backfillTimeSlotsForTest()
+    expect(listTimeSlots(TEST_USER_ID)).toHaveLength(DEFAULT_TIME_SLOTS.length)
   })
 
   test('TS-013: deleting a slot removes it', () => {
