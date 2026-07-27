@@ -65,6 +65,18 @@ const createLabelFlag = z.boolean().optional()
 const provenanceFlag = z.boolean().optional()
 
 /**
+ * Track target (§5): how many times this should happen per period.
+ *
+ * 1 means "not tracked" — every task is already a quota with target 1, so
+ * tracking is opt-in simply by setting this above 1. Capped to keep a typo from
+ * creating a target nobody could ever meet.
+ */
+const progressTarget = z.number().int().min(1).max(1000)
+
+/** Track progress (§5): how many are logged this period. */
+const progressCurrent = z.number().int().min(0).max(10000)
+
+/**
  * Auto-snooze minutes: null = use user default, 0 = off, 1-360 = custom minutes
  */
 const autoSnoozeMinutes = z.number().int().min(0).max(360).nullable()
@@ -103,6 +115,7 @@ export const taskCreateSchema = z.object({
   create_label: createLabelFlag,
   ai_proposed: provenanceFlag,
   ai_added: provenanceFlag,
+  progress_target: progressTarget.optional(),
 })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
@@ -123,6 +136,8 @@ export const taskUpdateSchema = z.object({
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
   reset_original_due_at: z.boolean().optional(),
   create_label: createLabelFlag,
+  progress_target: progressTarget.optional(),
+  progress_current: progressCurrent.optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>

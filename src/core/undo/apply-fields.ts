@@ -44,6 +44,12 @@ const VALID_TASK_COLUMNS = new Set([
   'last_completed_at',
   'notes',
   'project_id',
+  // §5 / §7.5. These MUST be here before Track and skip ship — this is a
+  // static allowlist that throws on unknown fields, so the first undo of a
+  // tracked completion or a skip would 500 without them.
+  'progress_target',
+  'progress_current',
+  'skip_count',
 ])
 
 /**
