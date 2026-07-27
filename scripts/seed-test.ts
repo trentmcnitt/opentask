@@ -8,6 +8,8 @@
  */
 
 import bcrypt from 'bcrypt'
+import { seedSystemLabels, createLabel } from '../src/core/labels'
+import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { DateTime } from 'luxon'
@@ -58,6 +60,12 @@ export async function seedTestData(): Promise<void> {
     VALUES (?, ?, ?, ?, ?)
   `,
   ).run(2, TEST_USER_B.email, TEST_USER_B.name, hashB, TEST_USER_B.timezone)
+
+  // Register the system label vocabulary for both users (§7.2)
+  seedSystemLabels(1)
+  seedSystemLabels(2)
+  seedDefaultTimeSlots(1)
+  seedDefaultTimeSlots(2)
 
   // Insert projects for User A
   db.prepare(
@@ -190,4 +198,13 @@ export async function seedTestData(): Promise<void> {
     VALUES (?, ?, ?, ?, ?, ?)
   `,
   ).run(8, 1, 1, 'Call dentist', tomorrow, 1)
+
+  // Register the domain labels the integration and E2E suites use (§7.2).
+  // Task writes reject unknown labels, and the startup backfill runs at
+  // schema-init — before this seed inserts anything — so it cannot cover these.
+  // A seeded user with an established taxonomy is also the realistic state.
+  for (const name of ['test', 'work', 'dev', 'personal', 'urgent']) {
+    createLabel(1, name)
+    createLabel(2, name)
+  }
 }

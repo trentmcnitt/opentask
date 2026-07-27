@@ -71,6 +71,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, now)).toBe(true)
   })
@@ -89,6 +96,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, now)).toBe(true)
   })
@@ -107,6 +121,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, now)).toBe(false)
   })
@@ -124,6 +145,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     // 5 min → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:05:00.000Z'))).toBe(true)
@@ -146,6 +174,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:15:00.000Z'))).toBe(true)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:07:00.000Z'))).toBe(false)
@@ -165,6 +200,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     // 10 min → boundary (using override, not the 30 min default)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:10:00.000Z'))).toBe(true)
@@ -187,6 +229,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(false)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(false)
@@ -207,6 +256,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     // 1 minute overdue → should fire (first notification)
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(true)
@@ -227,6 +283,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     // 1440 minutes later (24h) — 1440 % 30 === 0 → boundary
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
@@ -250,6 +313,13 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
       critical_alert_volume: 1.0,
+      // §4.6: these fixtures are non-recurring, so the effective due time is
+      // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
+      rrule: null,
+      recurrence_mode: 'from_due' as const,
+      anchor_time: null,
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
     }
     expect(isNotificationBoundary(task, now)).toBe(false)
   })

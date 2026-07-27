@@ -15,7 +15,13 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
+import {
+  setupTestDb,
+  teardownTestDb,
+  seedTestLabels,
+  TEST_USER_ID,
+  TEST_TIMEZONE,
+} from '../helpers/setup'
 
 // Set provider and models so resolveFeatureAIConfig() works in tests (no real API calls are made)
 process.env.OPENTASK_AI_PROVIDER = 'anthropic'
@@ -98,6 +104,9 @@ function clearPendingEnrichment(): void {
 
 beforeAll(() => {
   setupTestDb()
+  // §7.2: these tests are about enrichment triggering, not label gating — the
+  // user already has these domain labels.
+  seedTestLabels(['shopping', 'work'])
   // Set enrichment mode to 'sdk' so tests use the mocked enrichmentQuery slot path
   const db = getDb()
   db.prepare("UPDATE users SET ai_enrichment_mode = 'sdk' WHERE id = ?").run(TEST_USER_ID)
@@ -947,6 +956,58 @@ describe('local→UTC timezone conversion', () => {
 
     const after = getTaskById(task.id)!
     expect(after.due_at).toBeNull()
+  })
+
+  test('snaps due_at forward to a BYDAY-valid weekday when AI picks a conflicting day', async () => {
+    // Repro of the demo-account bug: AI returned Fri Apr 17 with rrule BYDAY=TH.
+    // The snap should move the due_at forward to the next Thursday (Apr 23),
+    // preserving the 9:00 AM local time.
+    vi.setSystemTime(new Date('2026-04-15T19:16:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'weekly linkedin/x post thursdays 9am' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Weekly linkedin/x post',
+        due_at: '2026-04-17T09:00:00', // Friday — wrong weekday for BYDAY=TH
+        rrule: 'FREQ=WEEKLY;BYDAY=TH',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // Snapped forward to Thursday Apr 23 at 9 AM CDT = 14:00 UTC.
+    expect(after.due_at).toBe('2026-04-23T14:00:00.000Z')
+    expect(after.rrule).toBe('FREQ=WEEKLY;BYDAY=TH')
+  })
+
+  test('does not snap due_at when weekday already matches BYDAY', async () => {
+    vi.setSystemTime(new Date('2026-04-15T19:16:00Z'))
+
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'weekly thursday task' },
+    })
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Weekly Thursday task',
+        due_at: '2026-04-16T09:00:00', // Thursday — correct
+        rrule: 'FREQ=WEEKLY;BYDAY=TH',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(task.id)!
+    // 9 AM CDT = 14:00 UTC, unchanged.
+    expect(after.due_at).toBe('2026-04-16T14:00:00.000Z')
   })
 })
 

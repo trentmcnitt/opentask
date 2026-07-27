@@ -301,7 +301,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     case NotificationAction.snoozeAll1hr:
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
                         if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: 3)
+                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
                         updateBadge(result.skippedUrgent)
 
@@ -355,7 +355,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 case NotificationAction.snoozeAll1hr:
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: 3)
+                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                     }
                     updateBadge(result.skippedUrgent)
 

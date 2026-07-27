@@ -25,7 +25,7 @@ import {
   collectFieldChanges,
   type FieldChangesInput,
 } from './helpers'
-import { URGENT_PRIORITY } from '@/lib/priority'
+import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
 
 interface ValidateBulkTasksOptions {
   /** Skip tasks that are done AND non-recurring (used by bulkDone) */
@@ -191,12 +191,16 @@ interface BulkSnoozeFilterResult {
 /**
  * Priority filter for bulk snooze operations.
  *
- * P0-P3 (None through High) are eligible for bulk snooze.
- * P4 (Urgent) is excluded — urgent tasks must be snoozed individually.
+ * P0-P2 (None through Medium) are eligible for bulk snooze.
+ * P3-P4 (High/Urgent) are excluded — their due dates are real deadlines and
+ * must be snoozed individually.
+ *
+ * `urgentSkipped` counts all priority-excluded tasks (P3 and P4); the name is
+ * kept for API compatibility (`skipped_urgent` reaches the iOS client).
  */
 function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkSnoozeFilterResult {
   const eligible = tasks.filter(
-    (t) => (t.priority ?? 0) < URGENT_PRIORITY || includeTaskIds?.has(t.id),
+    (t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD || includeTaskIds?.has(t.id),
   )
   const urgentSkipped = tasks.length - eligible.length
   return { eligible, urgentSkipped }
@@ -210,7 +214,7 @@ export interface BulkSnoozeOptions {
   until?: string
   /** Relative snooze delta (minutes) - added to each task's current due_at */
   deltaMinutes?: number
-  /** Task IDs to include regardless of priority (bypasses P4 filter) */
+  /** Task IDs to include regardless of priority (bypasses the P3/P4 filter) */
   includeTaskIds?: number[]
 }
 
@@ -258,7 +262,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // P0-P3 eligible, P4 (Urgent) excluded — unless explicitly included
+  // P0-P2 eligible, P3/P4 (High/Urgent) excluded — unless explicitly included
   const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
   const { eligible, urgentSkipped } = filterForBulkSnooze(tasks, includeSet)
 
@@ -425,7 +429,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     }
   }
 
-  // Priority filter for snooze edits — same logic as bulkSnooze (P4 excluded).
+  // Priority filter for snooze edits — same logic as bulkSnooze (P3/P4 excluded).
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
   let snoozeSkippedCount = 0

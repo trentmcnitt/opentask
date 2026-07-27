@@ -4,7 +4,7 @@
  * Used by both the dashboard and project detail pages. Sends overdue task IDs
  * to the bulk snooze endpoint and shows a toast with results.
  *
- * P0-P3 tasks are eligible for bulk snooze. P4 (Urgent) is excluded.
+ * P0-P2 tasks are eligible for bulk snooze. P3 (High) and P4 (Urgent) are excluded.
  */
 
 import { useCallback } from 'react'
@@ -27,7 +27,7 @@ interface UseSnoozeOverdueOptions {
  * Returns a callback that snoozes all overdue tasks from `displayTasks`.
  *
  * Sends all overdue task IDs to the server — the server handles priority
- * filtering (P0-P3 eligible, P4 excluded). The optional `until` parameter
+ * filtering (P0-P2 eligible, P3/P4 excluded). The optional `until` parameter
  * allows SnoozeAllFab long-press menu to override the default duration.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
