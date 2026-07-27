@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
+import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -187,6 +188,86 @@ function runMigrations(database: Database.Database): void {
       update.run(hashed, preview, row.id)
     }
   }
+
+  backfillLabelRegistry(database)
+}
+
+/**
+ * Seed the label registry from labels already in use (REDESIGN-V03 §7.2).
+ *
+ * Enforcement rejects unknown labels, so the registry MUST be populated before
+ * validation turns on — otherwise every existing task fails the moment anyone
+ * edits it. This runs on startup, ahead of any request.
+ *
+ * Sources both `tasks.labels` (the labels actually on tasks) and each user's
+ * `label_config` (labels they styled but may have since removed from every
+ * task) so nothing already known to the app is treated as a typo.
+ *
+ * Idempotent: INSERT OR IGNORE against the unique (user_id, name) index, so
+ * re-running adds only genuinely new values. Labels created after this point
+ * come through the API's explicit create path, not from here.
+ */
+function backfillLabelRegistry(database: Database.Database): void {
+  const insert = database.prepare(
+    'INSERT OR IGNORE INTO labels (user_id, name, facet) VALUES (?, ?, ?)',
+  )
+
+  // Operational labels carry behavior rather than domain meaning. Recording the
+  // facet here keeps the chip bar's AND-across-facets grouping correct without
+  // a second pass to classify them later.
+  const OPERATIONAL = SYSTEM_LABELS
+
+  const backfill = database.transaction(() => {
+    // Seed the operational labels for every user regardless of current use.
+    // These are system vocabulary, not user taxonomy: `ai-added` in particular
+    // must already exist or the first `confirm` on a task would be rejected as
+    // an unknown label by the very validation this registry adds.
+    const allUsers = database.prepare('SELECT id FROM users').all() as { id: number }[]
+    for (const user of allUsers) {
+      for (const name of OPERATIONAL) {
+        insert.run(user.id, name, 'operational')
+      }
+    }
+
+    const taskRows = database.prepare('SELECT user_id, labels FROM tasks').all() as {
+      user_id: number
+      labels: string
+    }[]
+    for (const row of taskRows) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(row.labels || '[]')
+      } catch {
+        continue
+      }
+      if (!Array.isArray(parsed)) continue
+      for (const name of parsed) {
+        if (typeof name !== 'string' || name.length === 0) continue
+        insert.run(row.user_id, name, OPERATIONAL.has(name) ? 'operational' : 'domain')
+      }
+    }
+
+    const userRows = database.prepare('SELECT id, label_config FROM users').all() as {
+      id: number
+      label_config: string
+    }[]
+    for (const row of userRows) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(row.label_config || '[]')
+      } catch {
+        continue
+      }
+      if (!Array.isArray(parsed)) continue
+      for (const entry of parsed) {
+        const name = (entry as { name?: unknown })?.name
+        if (typeof name !== 'string' || name.length === 0) continue
+        insert.run(row.id, name, OPERATIONAL.has(name) ? 'operational' : 'domain')
+      }
+    }
+  })
+
+  backfill()
 }
 
 function initSchema(database: Database.Database): void {

@@ -17,6 +17,7 @@
 import bcrypt from 'bcrypt'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
+import { seedSystemLabels } from '../src/core/labels'
 import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
@@ -547,6 +548,9 @@ export async function seedDemoUser(
     .run(email, username, passwordHash, TIMEZONE, 0)
   const userId = Number(userResult.lastInsertRowid)
   console.log(`  User "${username}" created (ID: ${userId})`)
+
+  // Register the system label vocabulary (§7.2)
+  seedSystemLabels(userId)
 
   seedDemoData(db, userId, username)
 

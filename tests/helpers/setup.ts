@@ -3,6 +3,7 @@
  */
 
 import { getDb, resetDb } from '@/core/db'
+import { seedSystemLabels, createLabel } from '@/core/labels'
 import { DateTime } from 'luxon'
 
 export const TEST_TIMEZONE = 'America/Chicago'
@@ -37,6 +38,24 @@ export function seedTestUser(
     VALUES (?, ?, ?, ?, ?)
   `,
   ).run(userId, email, 'Test User', 'hash', timezone)
+
+  // Register the system label vocabulary (§7.2). The startup backfill runs at
+  // schema-init, before this user exists, so it can't cover them.
+  seedSystemLabels(userId)
+}
+
+/**
+ * Register domain labels for a test user.
+ *
+ * §7.2 makes creating a label a discrete act, so task writes reject unknown
+ * labels. Tests that exercise *other* behavior (bulk label ops, enrichment,
+ * data integrity) operate on a user who already has a taxonomy — that is the
+ * realistic state — and should not have to opt into label creation at every
+ * call site. Tests that exercise the gating itself deliberately use names that
+ * are NOT seeded here.
+ */
+export function seedTestLabels(names: string[], userId: number = TEST_USER_ID): void {
+  for (const name of names) createLabel(userId, name)
 }
 
 /**

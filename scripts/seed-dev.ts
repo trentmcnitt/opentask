@@ -11,6 +11,7 @@
 
 import bcrypt from 'bcrypt'
 import { DateTime } from 'luxon'
+import { seedSystemLabels } from '../src/core/labels'
 import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
@@ -349,6 +350,9 @@ async function main(): Promise<void> {
     .run('dev@opentask.local', 'dev', passwordHash, TIMEZONE)
   const userId = Number(userResult.lastInsertRowid)
   console.log(`  User "dev" created (ID: ${userId})`)
+
+  // Register the system label vocabulary (§7.2)
+  seedSystemLabels(userId)
 
   // Create projects
   const insertProject = db.prepare(
