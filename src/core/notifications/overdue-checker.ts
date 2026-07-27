@@ -265,6 +265,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           -- §5: tracked items are exempt from the cadence loop (see
           -- currently-due.ts for the rationale).
           AND t.progress_target <= 1
+          -- §6: reminders never fire individually — their time slot notifies.
+          AND t.is_reminder = 0
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))

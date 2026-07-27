@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- §7.5: occurrences declined without recording a completion, so
   -- completion_count stays honest.
   skip_count       INTEGER NOT NULL DEFAULT 0,
+  -- Reminders surface (REDESIGN-V03 §6). A boolean column, deliberately NOT a
+  -- label: §7.1 rules that kind is never stored as a name, and a
+  -- behavior-bearing value inside the JSON labels array would need json_each()
+  -- at every query site that wants an indexed boolean (overdue-checker,
+  -- dashboard, badge).
+  is_reminder      INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

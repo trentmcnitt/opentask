@@ -66,6 +66,15 @@ export interface Task {
   progress_target: number
   progress_current: number
 
+  /**
+   * §6: this item lives on the Reminders surface — a prompted thought rather
+   * than an action. Reminders have NO DEBT: they never count as overdue, never
+   * reach the badge, never fire individually, and can't be snoozed out of their
+   * time slot. Completion means "considered", which IS its completion.
+   * Mutually exclusive with Track (progress_target > 1).
+   */
+  is_reminder: boolean
+
   // Per-task stats (survive beyond completions retention)
   completion_count: number
   snooze_count: number

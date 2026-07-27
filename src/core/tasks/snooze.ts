@@ -55,6 +55,17 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // Note: We allow snoozing to past times - the task will just appear overdue immediately.
   // This lets users adjust due dates freely using the increment/decrement controls.
 
+  // §6: reminders cannot be snoozed out of their time slot. They stay visible
+  // in the slot until completed — completion means "considered", which is the
+  // whole interaction. Allowing a snooze would reintroduce exactly the
+  // defensive re-dating this redesign removes, on the one population that has
+  // no debt to defer.
+  if (task.is_reminder) {
+    throw new ValidationError(
+      'Reminders cannot be snoozed — they stay in their time slot until completed',
+    )
+  }
+
   // Only active tasks can be snoozed (SN-005)
   if (task.done) {
     throw new ValidationError('Cannot snooze done task')
