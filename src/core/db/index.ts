@@ -201,6 +201,52 @@ function runMigrations(database: Database.Database): void {
   }
 
   backfillLabelRegistry(database)
+  backfillTimeSlots(database)
+}
+
+/**
+ * Give every existing user the default time slots (REDESIGN-V03 §6.0).
+ *
+ * `seedDefaultTimeSlots` runs at user creation, but users who existed before
+ * this shipped would otherwise have none — and a user with no slots gets a
+ * dashboard where every item falls into the un-slotted group, which looks
+ * broken rather than empty.
+ *
+ * Only touches users who have zero slots, so customised boundaries are never
+ * clobbered.
+ */
+function backfillTimeSlots(database: Database.Database): void {
+  // Kept in sync with DEFAULT_TIME_SLOTS in src/core/time-slots. Duplicated
+  // rather than imported because that module imports getDb from here, and a
+  // cycle at module-init time is exactly where it would break.
+  const defaults: [string, string][] = [
+    ['Early morning', '07:00'],
+    ['Before work', '09:00'],
+    ['Midday', '12:00'],
+    ['Afternoon', '16:00'],
+    ['Evening', '20:30'],
+  ]
+
+  const insert = database.prepare(
+    'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
+  )
+
+  const run = database.transaction(() => {
+    const users = database
+      .prepare(
+        `SELECT u.id FROM users u
+          WHERE NOT EXISTS (SELECT 1 FROM time_slots s WHERE s.user_id = u.id)`,
+      )
+      .all() as { id: number }[]
+
+    for (const user of users) {
+      defaults.forEach(([label, startTime], index) => {
+        insert.run(user.id, label, startTime, index)
+      })
+    }
+  })
+
+  run()
 }
 
 /**
