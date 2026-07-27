@@ -554,12 +554,14 @@ These are absolute rules with zero exceptions, regardless of context or urgency.
 
 ## Output format
 
-Return a JSON array with one entry per task:
+Return a JSON object with a \`tasks\` array holding one entry per task:
 \`\`\`json
-[
-  { "task_id": 42, "score": 85, "commentary": "One line reason", "signals": ["stale"] },
-  { "task_id": 43, "score": 15, "commentary": "On track, nothing to do", "signals": [] }
-]
+{
+  "tasks": [
+    { "task_id": 42, "score": 85, "commentary": "One line reason", "signals": ["stale"] },
+    { "task_id": 43, "score": 15, "commentary": "On track, nothing to do", "signals": [] }
+  ]
+}
 \`\`\`
 
 Every task in the input MUST appear in the output. \`commentary\` is required for every task.
@@ -634,7 +636,7 @@ export const INSIGHTS_REMINDERS = `## Reminders
 - 60-70% of tasks should have ZERO signals — most tasks are fine
 - P0-3 overdue 0-2 days → score LOW (0-25), no signals (routine in OpenTask)
 - Every task in the input MUST appear in the output
-- Output valid JSON array only (no text outside the array)`
+- Output valid JSON only — a single object with a \`tasks\` array, no text outside it`
 
 export const ENRICHMENT_REMINDERS = `## Reminders
 - Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
