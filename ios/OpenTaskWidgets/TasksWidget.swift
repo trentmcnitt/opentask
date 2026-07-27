@@ -145,6 +145,16 @@ struct TasksProvider: TimelineProvider {
             )
         }
 
+        // Interaction fast path (§8 optimistic check-off) — see RemindersWidget.
+        if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadTasks() {
+            return makeEntry(
+                tasks: cached.value.tasks,
+                projects: cached.value.projects,
+                staleSince: nil,
+                now: now
+            )
+        }
+
         do {
             async let tasks = APIClient.shared.fetchOpenTasks()
             async let projects = APIClient.shared.fetchProjects()
@@ -169,11 +179,14 @@ struct TasksProvider: TimelineProvider {
     }
 
     private func makeEntry(
-        tasks: [TaskDTO],
+        tasks rawTasks: [TaskDTO],
         projects: [ProjectDTO],
         staleSince: Date?,
         now: Date
     ) -> TasksEntry {
+        // Single choke point for the §8 tombstone filter — both the fresh-fetch
+        // and cache-fallback paths flow through here.
+        let tasks = WidgetStore.filterPending(rawTasks, now: now)
         let ringProjects = TasksTimeline.scopedProjects(tasks: tasks, projects: projects, now: now)
 
         // A scope whose project has dropped out of today's set would strand the
