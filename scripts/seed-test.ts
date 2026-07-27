@@ -9,6 +9,7 @@
 
 import bcrypt from 'bcrypt'
 import { seedSystemLabels, createLabel } from '../src/core/labels'
+import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { DateTime } from 'luxon'
@@ -63,6 +64,8 @@ export async function seedTestData(): Promise<void> {
   // Register the system label vocabulary for both users (§7.2)
   seedSystemLabels(1)
   seedSystemLabels(2)
+  seedDefaultTimeSlots(1)
+  seedDefaultTimeSlots(2)
 
   // Insert projects for User A
   db.prepare(
