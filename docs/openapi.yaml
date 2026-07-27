@@ -302,6 +302,264 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/tasks/{id}/progress:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Log progress on a tracked task
+      operationId: incrementTaskProgress
+      tags: [Tasks]
+      description: |
+        Records progress on a task with `progress_target` > 1 (REDESIGN-V03 §5).
+
+        A sub-target increment is NOT a completion: it dispatches
+        `task.progressed`, never `task.completed`, and the task stays open until
+        its period boundary. Returns 400 if the task is not tracked.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                delta:
+                  type: integer
+                  default: 1
+                  description: >
+                    Defaults to +1. A negative value corrects a mis-log;
+                    progress never goes below zero.
+      responses:
+        '200':
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          met:
+                            type: boolean
+                            description: Whether progress has reached the target
+                          description:
+                            type: string
+                            example: '3/2'
+
+  /api/tasks/{id}/skip-occurrence:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Skip this occurrence without completing it
+      operationId: skipTaskOccurrence
+      tags: [Tasks]
+      description: |
+        "Not doing this occurrence - advance without recording a completion"
+        (REDESIGN-V03 §7.5).
+
+        Recurring tasks advance to the next occurrence with `completion_count`
+        untouched and `skip_count` incremented. One-off tasks are archived
+        without being marked done. Dispatches `task.skipped`, never
+        `task.completed`.
+
+        Named `skip-occurrence` rather than `skip` because the review API
+        already uses "skip" for a no-op review acknowledgment.
+      responses:
+        '200':
+          description: Skipped task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          was_recurring:
+                            type: boolean
+                          description:
+                            type: string
+
+  /api/tasks/{id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      summary: Confirm an assistant-proposed task
+      operationId: confirmTaskProvenance
+      tags: [Tasks]
+      description: |
+        Swaps the `ai-proposed` provenance label for `ai-added` (REDESIGN-V03
+        §7.2). Task-scoped and narrow: confirming is a statement about where a
+        task came from, so nothing else is modified. Idempotent.
+      responses:
+        '200':
+          description: Confirmed task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          confirmed:
+                            type: boolean
+
+  /api/labels:
+    get:
+      summary: List registered labels
+      operationId: listLabels
+      tags: [Labels]
+      description: |
+        The label registry (REDESIGN-V03 §7.2). Labels used to be bare
+        free-text, so a typo silently forked the taxonomy. Creating a label is
+        now a discrete act: a task write carrying an unknown label is rejected
+        unless it also carries `create_label`.
+      responses:
+        '200':
+          description: Registered labels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      labels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Label'
+                      count:
+                        type: integer
+    post:
+      summary: Register a label
+      operationId: createLabel
+      tags: [Labels]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                facet:
+                  type: string
+                  enum: [domain, operational]
+                  default: domain
+                  description: >
+                    Chip semantics are AND across facets, OR within a facet.
+                    `operational` labels carry behavior; `domain` labels carry
+                    meaning.
+                icon:
+                  type: string
+                  nullable: true
+                color:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: The registered label (idempotent - returns the existing row if present)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Label'
+
+  /api/labels/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Deregister a label
+      operationId: deleteLabel
+      tags: [Labels]
+      description: |
+        Removes the label from the registry. Does NOT strip it from tasks that
+        already carry it - §7.2 checks only NEWLY added labels, so those tasks
+        stay editable; the label simply can't be applied to anything new.
+      responses:
+        '200':
+          description: Deleted
+        '404':
+          description: Label not found
+
+  /api/time-slots:
+    get:
+      summary: List time slots
+      operationId: listTimeSlots
+      tags: [Time slots]
+      description: |
+        Life-moment containers - "Early morning", "Before work", "Evening"
+        (REDESIGN-V03 §6.0). The dashboard and the Reminders surface group by
+        this same table, so "morning" means one thing across the app.
+
+        An item belongs to the slot with the latest `start_time` <= its time of
+        day, where time of day is `anchor_time` if set, else `due_at` read in
+        the user's timezone.
+      responses:
+        '200':
+          description: Time slots, earliest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      time_slots:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TimeSlot'
+                      count:
+                        type: integer
+    post:
+      summary: Create a time slot
+      operationId: createTimeSlot
+      tags: [Time slots]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, start_time]
+              properties:
+                label:
+                  type: string
+                start_time:
+                  type: string
+                  pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$'
+                  description: HH:MM, 24-hour, local
+                sort_order:
+                  type: integer
+                  default: 0
+      responses:
+        '200':
+          description: The created slot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TimeSlot'
+
   /api/tasks/{id}/snooze:
     parameters:
       - $ref: '#/components/parameters/TaskId'
@@ -1292,10 +1550,27 @@ components:
         notes:
           type: string
           nullable: true
+        progress_target:
+          type: integer
+          description: >
+            Track / quota target (REDESIGN-V03 §5). 1 means the task is not
+            tracked - every task is already a quota with target 1, so tracking
+            is opt-in simply by setting this above 1.
+        progress_current:
+          type: integer
+          description: >
+            How many increments are logged this period. Reaching the target
+            marks the task "met" but does NOT complete it; the task stays open
+            until its period boundary, so overflow (3/2) remains observable.
         completion_count:
           type: integer
         snooze_count:
           type: integer
+        skip_count:
+          type: integer
+          description: >
+            Occurrences declined without a completion (§7.5). Exists so
+            completion_count stays honest - nothing may infer intent from it.
         first_completed_at:
           type: string
           format: date-time
@@ -1351,6 +1626,72 @@ components:
           type: integer
           minimum: 0
           maximum: 1440
+        progress_target:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+          description: >
+            Set above 1 to track this task as a quota (§5). That is the entire
+            opt-in gesture; there is no separate flag.
+        create_label:
+          type: boolean
+          description: >
+            Register any labels in this write that aren't already in the
+            registry (§7.2). Without it, an unknown label is a 400 - creating a
+            label is a discrete act, so a typo fails loudly.
+        ai_proposed:
+          type: boolean
+          description: >
+            Apply the `ai-proposed` provenance label. Exists so automated
+            callers never type a behavior-bearing label as free text.
+        ai_added:
+          type: boolean
+          description: Apply the `ai-added` provenance label.
+
+    Label:
+      type: object
+      description: A registered label (§7.2).
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        name:
+          type: string
+        facet:
+          type: string
+          enum: [domain, operational]
+        icon:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TimeSlot:
+      type: object
+      description: A life-moment container (§6.0).
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        label:
+          type: string
+          example: Early morning
+        start_time:
+          type: string
+          example: '07:00'
+          description: HH:MM, 24-hour, local
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
 
     TaskUpdate:
       type: object
@@ -1384,6 +1725,16 @@ components:
           type: integer
           minimum: 0
           maximum: 1440
+        progress_target:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        progress_current:
+          type: integer
+          minimum: 0
+        create_label:
+          type: boolean
+          description: Register unknown labels in this write instead of rejecting them (§7.2).
           nullable: true
 
     Project:
