@@ -48,13 +48,19 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // A failed call is deliberately swallowed: the reload that follows
-        // re-reads the server, so the row simply stays put rather than the
-        // widget throwing an alert the user cannot act on from the Home Screen.
+        // Optimistic (§8): tombstone the item and repaint from cache BEFORE the
+        // server call — the round trip takes seconds and a delayed disappearance
+        // reads as a dead button. The tombstone hides the item through the
+        // reconciling fetch; a FAILED call clears it so the item honestly
+        // reappears, never an alert the user can't act on from the Home Screen.
+        WidgetStore.stagePendingCompletion(taskId)
+        await reloadOpenTaskWidgets()
+
         do {
             try await APIClient.shared.markDone(taskId: taskId)
         } catch {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
+            WidgetStore.clearPendingCompletion(taskId)
         }
         await reloadOpenTaskWidgets()
         return .result()
@@ -82,11 +88,17 @@ struct IncrementProgressIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
+        // then let the server catch up.
+        WidgetStore.stagePendingProgress(taskId)
+        await reloadOpenTaskWidgets()
+
         do {
             try await APIClient.shared.incrementProgress(taskId: taskId)
         } catch {
             print("[OpenTaskWidgets] Progress \(taskId) failed: \(error)")
         }
+        WidgetStore.clearPendingProgress(taskId)
         await reloadOpenTaskWidgets()
         return .result()
     }

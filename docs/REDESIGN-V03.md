@@ -244,10 +244,16 @@ Plumbing: add `skip` / `bulk_skip` to the `UndoAction` union (`src/types/index.t
 
 ## 8. Widgets
 
-Two independent Home-Screen/Today-View widgets — separate widget _kinds_ (each gets its own refresh budget). **Size:** the user said "2×2, like a big one" pointing at his Weather widget, which is `systemLarge` (the 4×4-icon footprint; note the WidgetKit mapping — `systemSmall` ≈ 2×2 icons, `systemMedium` ≈ 4×2, `systemLarge` ≈ 4×4). The described content (check-off rows, progress bars, chevrons) needs `systemLarge`; ship `systemMedium` as a reduced variant if cheap. **No widget extension exists in the repo yet** — this is greenfield.
+Three independent Home-Screen/Today-View widgets — separate widget _kinds_ (each gets its own refresh budget). **Sizes:** primary layouts are `systemLarge` (the 4×4-icon footprint; WidgetKit mapping — `systemSmall` ≈ 2×2 icons, `systemMedium` ≈ 4×2, `systemLarge` ≈ 4×4) with `systemMedium` reduced variants, **plus a `systemSmall` (2×2) variant of every kind** (AMENDED per user 2026-07-27 — the original "2×2, like a big one" reading conflated the two; he wants both). The Track widget's 2×2 is the flagship small: a quota compresses to a ring + fraction perfectly, which lists don't.
 
-1. **Reminders widget** — current time slot's incomplete items, check-off via AppIntent buttons; chevron (AppIntent) to move between slots; defaults to the current slot.
-2. **Tasks widget** — today's tasks; chevron cycles whatever projects exist (do not hardcode a count — §7.1 leaves General's fate open); tracked items render as progress rows with +1.
+1. **Reminders widget** — current time slot's incomplete items, check-off via AppIntent buttons; chevron (AppIntent) to move between slots; defaults to the current slot. Small variant: current slot name + count + top item.
+2. **Tasks widget** — today's tasks; chevron cycles whatever projects exist (do not hardcode a count — §7.1 leaves General's fate open). **Tracked items are EXCLUDED** (AMENDED 2026-07-27 — they have their own widget now; a quota row in the task list buries the thing being glanced at). Small variant: overdue count + next task.
+3. **Track widget** (AMENDED 2026-07-27 — the user rates this the second-most-important widget; the original spec wrongly folded it into Tasks) — every `progress_target > 1` item as a progress row: title, n/target, thin bar, `+1` AppIntent button; §5 pace states render but never alarm. Small (2×2) variant is first-class: one quota as a progress ring + fraction, chevron-cycled; behind-pace item preferred by default.
+
+**Interaction affordances (AMENDED 2026-07-27, from first real use):**
+
+- **Chevrons must telegraph their edges**: render disabled/dimmed when there is nothing further in that direction, and where the layout affords it show the adjacent page's name next to the glyph (e.g. `‹ Midday … Evening ›`) so paging is a choice, not a gamble.
+- **Check-off must be optimistic**: the item leaves the widget the moment it is tapped (local cache tombstone), with the server call reconciling behind it — the round trip is seconds long and a visible multi-second delay reads as a dead button. On failure the item reappears (honest), it never silently stays gone.
 
 Watch app (`ios/OpenTaskWatch/`): **out of scope for v0.3** beyond continuing to compile — no watch widgets/complications this round.
 

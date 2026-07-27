@@ -164,20 +164,39 @@ struct RemindersProvider: TimelineProvider {
             )
         }
 
+        // Interaction fast path (§8 optimistic check-off): a tap just happened,
+        // so repaint from cache immediately — the tombstone filter is what makes
+        // the checked item vanish NOW instead of after a seconds-long fetch.
+        // No staleness note: this data is seconds old by construction.
+        if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadReminders() {
+            let groups = WidgetStore.filterPending(cached.value.groups, now: now)
+            return RemindersEntry(
+                date: now,
+                groups: groups,
+                slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
+                staleSince: nil,
+                isSignedOut: false
+            )
+        }
+
         do {
             let payload = try await APIClient.shared.fetchReminders()
             WidgetStore.saveReminders(payload.groups)
+            // Filter even the fresh fetch: a tombstoned completion may not have
+            // committed server-side yet, and resurrecting it for one refresh
+            // cycle would look like the check-off didn't take.
+            let groups = WidgetStore.filterPending(payload.groups, now: now)
             return RemindersEntry(
                 date: now,
-                groups: payload.groups,
-                slotIndex: RemindersTimeline.displayedSlotIndex(in: payload.groups, now: now),
+                groups: groups,
+                slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
                 staleSince: nil,
                 isSignedOut: false
             )
         } catch {
             print("[OpenTaskWidgets] Reminders fetch failed: \(error)")
             let cached = WidgetStore.loadReminders()
-            let groups = cached?.value.groups ?? []
+            let groups = WidgetStore.filterPending(cached?.value.groups ?? [], now: now)
             return RemindersEntry(
                 date: now,
                 groups: groups,
