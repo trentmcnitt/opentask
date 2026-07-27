@@ -194,6 +194,16 @@ function collectBasicFields(
   ) {
     trackField(data, 'auto_snooze_minutes', task.auto_snooze_minutes, input.auto_snooze_minutes)
   }
+
+  // §5 Track. Setting progress_target > 1 is the whole opt-in gesture — there is
+  // no separate "make this tracked" flag.
+  if (input.progress_target !== undefined && input.progress_target !== task.progress_target) {
+    trackField(data, 'progress_target', task.progress_target, input.progress_target)
+  }
+
+  if (input.progress_current !== undefined && input.progress_current !== task.progress_current) {
+    trackField(data, 'progress_current', task.progress_current, input.progress_current)
+  }
 }
 
 /**

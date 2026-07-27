@@ -18,6 +18,7 @@ import {
   localTime,
   TEST_USER_ID,
   TEST_TIMEZONE,
+  seedTestLabels,
 } from '../helpers/setup'
 
 describe('Bulk Operations Behavioral Tests', () => {
@@ -931,6 +932,9 @@ describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
   beforeEach(() => {
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     setupTestDb()
+    // §7.2: this suite exercises additive/subtractive label ops, not registry
+    // gating, so the user starts with an established taxonomy.
+    seedTestLabels(['Work', 'Personal', 'Urgent', 'work', 'Other', 'Low', 'New'])
   })
 
   afterEach(() => {

@@ -49,3 +49,11 @@ export {
 } from './webhook'
 
 export type { WebhookCreateInput, WebhookUpdateInput } from './webhook'
+
+export { labelCreateSchema, validateLabelCreate } from './label'
+
+export type { LabelCreateInput } from './label'
+
+export { timeSlotCreateSchema, validateTimeSlotCreate } from './time-slot'
+
+export type { TimeSlotCreateInput } from './time-slot'
