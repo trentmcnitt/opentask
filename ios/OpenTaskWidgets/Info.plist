@@ -5,7 +5,7 @@
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleDisplayName</key>
-	<string>OpenTask Notifications</string>
+	<string>OpenTask</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleName</key>
@@ -16,27 +16,17 @@
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>2</string>
+	<!-- Local-loopback exception only (http://localhost); simulator dev-tunnel
+	     support, does not weaken ATS for remote hosts. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSExtension</key>
 	<dict>
-		<key>NSExtensionAttributes</key>
-		<dict>
-			<key>UNNotificationExtensionCategory</key>
-			<array>
-				<string>TASK_REMINDER</string>
-				<string>TASK_SUMMARY</string>
-				<string>SLOT_REMINDER</string>
-			</array>
-			<key>UNNotificationExtensionUserInteractionEnabled</key>
-			<true/>
-			<key>UNNotificationExtensionDefaultContentHidden</key>
-			<true/>
-			<key>UNNotificationExtensionInitialContentSizeRatio</key>
-			<real>0.85</real>
-		</dict>
 		<key>NSExtensionPointIdentifier</key>
-		<string>com.apple.usernotifications.content-extension</string>
-		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).NotificationViewController</string>
+		<string>com.apple.widgetkit-extension</string>
 	</dict>
 </dict>
 </plist>

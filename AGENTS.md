@@ -458,7 +458,7 @@ The demo account showcases OpenTask with curated portfolio-style tasks. Each use
 
 ## iOS App (`ios/`)
 
-Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Three targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWatch` (watchOS companion). No automated tests — testing is manual. Build with `cd ios && xcodegen`.
+Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with APNs push notifications. Four targets: `OpenTask` (main app), `OpenTaskNotification` (content extension), `OpenTaskWidgets` (WidgetKit extension), `OpenTaskWatch` (watchOS companion). No automated tests — testing is manual. Build with `cd ios && xcodegen`.
 
 **Server API endpoints used by the iOS app** (changes to these require manual iOS testing):
 

@@ -6,20 +6,26 @@ import UserNotificationsUI
 /// Notification Content Extension — displays the interactive snooze grid
 /// when the user long-presses a task notification.
 ///
-/// Handles two notification categories:
+/// Handles three notification categories:
 /// - **TASK_REMINDER**: individual task — grid uses the task's dueAt as the base time,
 ///   action buttons include Done, single-task snooze, and bulk snooze.
 /// - **TASK_SUMMARY**: overflow summary — grid uses "now" as the base time,
 ///   action buttons are bulk-only (no Done or single-task snooze).
+/// - **SLOT_REMINDER**: a §6 time slot — shows the batch checklist instead of the
+///   grid (see `ReminderChecklistView`), committed with one bulk request.
 ///
 /// Communication flow:
 /// 1. User long-presses notification → iOS calls didReceive(_:) with payload
-/// 2. User taps grid button → onGridSelection updates action buttons via extensionContext
+/// 2. User taps grid button / checklist row → the staged state updates the action
+///    buttons via extensionContext (staging only — a SwiftUI button NEVER commits)
 /// 3. User taps action button → didReceive(_:completionHandler:) fires API call
-/// 4. API call succeeds → notification dismissed
+/// 4. API call succeeds → notification dismissed; on failure `.doNotDismiss`, so a
+///    failed action leaves the notification standing rather than pretending
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
-    private var hostingController: UIHostingController<SnoozeGridView>?
+    /// Typed as the base class because the root view differs by category
+    /// (snooze grid vs. reminder checklist); only `view` is used from here.
+    private var hostingController: UIViewController?
 
     // Task data from APNs payload
     private var taskId: Int = 0
@@ -31,6 +37,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     /// True when displaying a TASK_SUMMARY notification (bulk-only actions, no taskId).
     private var isBulkMode = false
+
+    // §6.1 batch checklist state
+    /// True when displaying a SLOT_REMINDER notification (checklist, not grid).
+    private var isSlotMode = false
+    /// `time_slots.id` from the payload; -1 is the un-slotted "Anytime" group.
+    private var slotId = -1
+    private var checklistModel: ReminderChecklistModel?
 
     // MARK: - Lifecycle
 
@@ -48,7 +61,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         isBulkMode = false
         selectedDueAt = nil
         selectedDeltaMinutes = nil
-        setDefaultTimeActions()
+
+        // Staged check-marks are discarded with the view: an unseen checklist
+        // must never commit rows the user staged in a previous expansion.
+        let wasSlotMode = isSlotMode
+        isSlotMode = false
+        slotId = -1
+        checklistModel = nil
+
+        if !wasSlotMode { setDefaultTimeActions() }
     }
 
     // MARK: - UNNotificationContentExtension
@@ -67,10 +88,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let categoryId = notification.request.content.categoryIdentifier
 
         isBulkMode = categoryId == NotificationCategory.taskSummary
+        isSlotMode = categoryId == NotificationCategory.slotReminder
 
         // Remove existing hosting controller if re-receiving
         hostingController?.view.removeFromSuperview()
         hostingController?.removeFromParent()
+
+        if isSlotMode {
+            presentSlotChecklist(userInfo: userInfo, fallbackTitle: title)
+            return
+        }
 
         let mode: SnoozeMode
         if isBulkMode {
@@ -101,7 +128,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             }
         )
 
-        let hosting = UIHostingController(rootView: gridView)
+        install(hosting: UIHostingController(rootView: gridView))
+
+        // Set initial action buttons with absolute time (e.g., "4:00 PM" instead of "+1hr")
+        setDefaultTimeActions()
+    }
+
+    /// Pin a SwiftUI hosting controller to the extension's full bounds.
+    private func install(hosting: UIViewController) {
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         hosting.view.backgroundColor = .clear
 
@@ -117,9 +151,78 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         ])
 
         hostingController = hosting
+    }
 
-        // Set initial action buttons with absolute time (e.g., "4:00 PM" instead of "+1hr")
-        setDefaultTimeActions()
+    // MARK: - Slot Checklist (§6.1)
+
+    /// Build the batch checklist for a SLOT_REMINDER notification.
+    ///
+    /// The push carries only the slot's identity and a count — the item list is
+    /// fetched live here, because between "slot opened" and "user long-pressed"
+    /// the set can change, and a checklist that completes a stale row is the
+    /// exact failure this surface exists to avoid.
+    private func presentSlotChecklist(userInfo: [AnyHashable: Any], fallbackTitle: String) {
+        slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
+        let label = userInfo[SlotReminderKey.slotLabel] as? String ?? fallbackTitle
+        let expected = userInfo[SlotReminderKey.reminderCount] as? Int ?? 0
+
+        let model = ReminderChecklistModel(slotLabel: label, expectedCount: expected)
+        model.onStagedChange = { [weak self] ids in
+            self?.setSlotActions(stagedCount: ids.count)
+            self?.updatePreferredContentSize()
+        }
+        checklistModel = model
+
+        install(hosting: UIHostingController(rootView: ReminderChecklistView(model: model)))
+        setSlotActions(stagedCount: 0)
+
+        Task {
+            do {
+                let items = try await APIClient.shared.fetchSlotReminders(slotId: slotId)
+                model.state = .loaded(items)
+                model.pruneStagedIds()
+            } catch {
+                print("[OpenTask] Slot checklist load error: \(error)")
+                model.state = .failed("Couldn\u{2019}t load this slot")
+            }
+            setSlotActions(stagedCount: model.checkedIds.count)
+            updatePreferredContentSize()
+        }
+    }
+
+    /// Action buttons for the checklist.
+    ///
+    /// "Complete checked" only appears once something is staged — an action
+    /// button that can only no-op is worse than no button. "Complete all"
+    /// always appears and acts on the whole slot, including rows past the
+    /// visible cap.
+    private func setSlotActions(stagedCount: Int) {
+        var actions: [UNNotificationAction] = []
+
+        if stagedCount > 0 {
+            actions.append(
+                UNNotificationAction(
+                    identifier: NotificationAction.completeChecked,
+                    title: "Complete \(stagedCount) checked",
+                    options: []
+                )
+            )
+        }
+
+        if case .loaded(let items) = checklistModel?.state, items.isEmpty {
+            // Nothing to act on — leave only whatever is staged (nothing).
+            extensionContext?.notificationActions = actions
+            return
+        }
+
+        actions.append(
+            UNNotificationAction(
+                identifier: NotificationAction.completeAll,
+                title: "Complete all",
+                options: []
+            )
+        )
+        extensionContext?.notificationActions = actions
     }
 
     /// Called when the user taps an action button while the extension is visible.
@@ -128,6 +231,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         _ response: UNNotificationResponse,
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) {
+        if isSlotMode {
+            commitSlotChecklist(response, completion: completion)
+            return
+        }
+
         Task {
             var wasBulkSnooze = false
 
@@ -199,6 +307,60 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             // Dismiss only — the extension already handled the action via API call.
             // Using .dismissAndForwardAction would cause AppDelegate's didReceive to
             // fire the same API call again (double action).
+            completion(.dismiss)
+        }
+    }
+
+    /// Commit the staged checklist in ONE request (§6.1).
+    ///
+    /// Anything short of "the server completed something" keeps the
+    /// notification on screen (`.doNotDismiss`) — dismissing on a failed or
+    /// empty commit would tell the user their reminders were handled when they
+    /// were not, which is the one lie this app cannot tell.
+    private func commitSlotChecklist(
+        _ response: UNNotificationResponse,
+        completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
+    ) {
+        Task {
+            do {
+                let affected: Int
+
+                switch response.actionIdentifier {
+                case NotificationAction.completeChecked:
+                    let ids = checklistModel?.checkedIds ?? []
+                    guard !ids.isEmpty else {
+                        completion(.doNotDismiss)
+                        return
+                    }
+                    affected = try await APIClient.shared.completeTasks(ids: ids)
+
+                case NotificationAction.completeAll:
+                    affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
+
+                case UNNotificationDefaultActionIdentifier:
+                    // Body tap: nothing was committed here, so hand off to the
+                    // app (AppDelegate opens the dashboard). Forwarding is safe
+                    // precisely because this branch performed no API call.
+                    completion(.dismissAndForwardAction)
+                    return
+
+                default:
+                    completion(.dismiss)
+                    return
+                }
+
+                guard affected > 0 else {
+                    completion(.doNotDismiss)
+                    return
+                }
+            } catch {
+                print("[OpenTask] Slot checklist commit error: \(error)")
+                completion(.doNotDismiss)
+                return
+            }
+
+            // The extension already performed the action; forwarding it would
+            // make AppDelegate run the same completion a second time.
             completion(.dismiss)
         }
     }

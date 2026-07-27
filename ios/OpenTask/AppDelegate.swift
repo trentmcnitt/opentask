@@ -325,6 +325,44 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
+        // §6 slot reminders: the slot is the unit, so there is no taskId. From
+        // the lock screen only "Complete all" is offered — "Complete checked"
+        // is meaningless without the expanded checklist, and the content
+        // extension handles that one itself (it never forwards here).
+        if categoryId == NotificationCategory.slotReminder {
+            let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
+
+            Task {
+                do {
+                    switch response.actionIdentifier {
+                    case NotificationAction.completeAll:
+                        let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
+                        if affected > 0 {
+                            UNUserNotificationCenter.current().removeDeliveredNotifications(
+                                withIdentifiers: [response.notification.request.identifier]
+                            )
+                        }
+
+                    case UNNotificationDefaultActionIdentifier:
+                        UNUserNotificationCenter.current().removeDeliveredNotifications(
+                            withIdentifiers: [response.notification.request.identifier]
+                        )
+                        // The Reminders surface has no dedicated web route yet
+                        // (same reason `opentask://reminders` lands here).
+                        WebViewManager.shared.navigate(path: "/")
+
+                    default:
+                        break
+                    }
+                } catch {
+                    print("[OpenTask] Slot reminder action error: \(error)")
+                }
+
+                completionHandler()
+            }
+            return
+        }
+
         // Individual task notifications: require taskId
         let taskId = userInfo["taskId"] as? Int
         let overdueCount = userInfo["overdueCount"] as? Int
