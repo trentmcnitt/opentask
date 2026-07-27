@@ -1,8 +1,22 @@
 /**
  * Anchor field derivation from RRULE
  *
- * Anchor fields are derived automatically from the RRULE and serve as a display/sort cache.
- * They are NOT used for recurrence computation - the RRULE is the source of truth.
+ * Anchor fields are derived automatically from the RRULE and from `due_at`.
+ *
+ * `anchor_dow` and `anchor_dom` are a display/sort cache — the RRULE remains the
+ * source of truth for which *days* an occurrence lands on.
+ *
+ * `anchor_time` is NOT merely a cache. `compute-next.ts` prefers it over BYHOUR
+ * when setting an occurrence's time-of-day (see `computeFromDue` and
+ * `computeFromCompletion`), because rrule.js evaluates BYHOUR in UTC, which
+ * breaks local-time recurrence across DST. Many stored rrules carry no BYHOUR at
+ * all, and for those `anchor_time` is the *only* carrier of time-of-day —
+ * derived here from the initial `due_at`. Clearing or mis-deriving it silently
+ * moves when a recurring task fires.
+ *
+ * (An earlier version of this comment claimed anchor fields are "NOT used for
+ * recurrence computation." That was false for `anchor_time`, and the read-time
+ * occurrence derivation in docs/REDESIGN-V03.md §4.6 depends on it being right.)
  */
 
 import { parseRRule } from './rrule-builder'

@@ -262,7 +262,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // P0-P3 eligible, P4 (Urgent) excluded — unless explicitly included
+  // P0-P2 eligible, P3/P4 (High/Urgent) excluded — unless explicitly included
   const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
   const { eligible, urgentSkipped } = filterForBulkSnooze(tasks, includeSet)
 

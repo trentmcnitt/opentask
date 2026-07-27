@@ -1136,8 +1136,8 @@ describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
 /**
  * Bulk Snooze Priority Filter Tests (SP-001 through SP-008)
  *
- * Only P4 (Urgent) tasks are excluded from bulk snooze. P0-P3 are all eligible.
- * Urgent tasks must be snoozed individually.
+ * P3 (High) and P4 (Urgent) tasks are excluded from bulk snooze. P0-P2 are
+ * eligible. High and urgent tasks must be snoozed individually.
  */
 describe('Bulk Snooze Priority Filter', () => {
   beforeEach(() => {
@@ -1151,7 +1151,7 @@ describe('Bulk Snooze Priority Filter', () => {
   })
 
   /**
-   * SP-001: Mixed P0-P4 selection — P0-P3 snoozed, P4 skipped
+   * SP-001: Mixed P0-P4 selection — P0-P2 snoozed, P3/P4 skipped
    */
   test('SP-001: Mixed selection — P0-P2 snoozed, P3/P4 skipped', () => {
     const lowTask = createTask({
@@ -1425,12 +1425,12 @@ describe('Bulk Snooze Priority Filter', () => {
 })
 
 /**
- * Bulk Snooze Urgent Exclusion Tests (BS-001 through BS-005)
+ * Bulk Snooze High/Urgent Exclusion Tests (BS-001 through BS-005)
  *
- * Only P4 (Urgent) is excluded from bulk snooze. P0-P3 are all eligible
- * in a single pass — no tiers.
+ * P3 (High) and P4 (Urgent) are excluded from bulk snooze. P0-P2 are all
+ * snoozed in a single pass — no tiers.
  */
-describe('Bulk Snooze Urgent Exclusion', () => {
+describe('Bulk Snooze High/Urgent Exclusion', () => {
   beforeEach(() => {
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     setupTestDb()
@@ -1442,7 +1442,7 @@ describe('Bulk Snooze Urgent Exclusion', () => {
   })
 
   /**
-   * BS-001: Full priority mix — P0-P3 all snoozed, P4 excluded
+   * BS-001: Full priority mix — P0-P2 all snoozed, P3/P4 excluded
    */
   test('BS-001: P0-P2 snoozed in single pass, P3/P4 excluded', () => {
     const p0 = createTask({
@@ -1699,5 +1699,47 @@ describe('Bulk Snooze Urgent Exclusion', () => {
 
     expect(getTaskById(p1.id)!.due_at).toBe(localTime(8, 0))
     expect(getTaskById(p4.id)!.due_at).toBe(localTime(9, 0))
+  })
+
+  /**
+   * BS-008: includeTaskIds bypasses the filter for P3 (High), not just P4
+   *
+   * P3 joined the exclusion in v0.3. The bypass is what lets an explicit user
+   * selection — the mobile selection sheet, or "All" pressed from a High
+   * task's own notification — still snooze a task the sweep would skip. Left
+   * untested, a bypass that silently dropped High tasks would look identical
+   * to working code from the caller's side.
+   */
+  test('BS-008: includeTaskIds allows specific P3 task through filter', () => {
+    const p2 = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Medium', due_at: localTime(8, 0), priority: 2 },
+    })
+    const p3included = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High (included)', due_at: localTime(9, 0), priority: 3 },
+    })
+    const p3excluded = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High (excluded)', due_at: localTime(10, 0), priority: 3 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [p2.id, p3included.id, p3excluded.id],
+      until: localTime(18, 0),
+      includeTaskIds: [p3included.id],
+    })
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.urgentSkipped).toBe(1)
+
+    expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p3included.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p3excluded.id)!.due_at).toBe(localTime(10, 0))
   })
 })

@@ -433,11 +433,15 @@ paths:
         Snoozes one or more tasks. Supports absolute mode (`until`) or relative
         mode (`delta_minutes`) — exactly one must be provided.
 
-        By default, P4 (Urgent) tasks are excluded (skipped in the response as
-        `skipped_urgent`) so the "Snooze All Overdue" sweep can't accidentally
-        push an urgent task. Callers that represent an explicit user selection
-        (e.g., the mobile selection sheet's quick panel) should pass
-        `include_task_ids` so the listed urgent tasks are snoozed anyway.
+        By default, P3 (High) and P4 (Urgent) tasks are excluded (counted in the
+        response as `skipped_urgent`) so the "Snooze All Overdue" sweep can't
+        accidentally push a task whose due date is a real deadline. Callers that
+        represent an explicit user selection (e.g., the mobile selection sheet's
+        quick panel) should pass `include_task_ids` so the listed high/urgent
+        tasks are snoozed anyway.
+
+        `skipped_urgent` keeps its name for client compatibility but counts both
+        P3 and P4 skips.
       requestBody:
         required: true
         content:
@@ -480,7 +484,8 @@ paths:
       operationId: bulkSnoozeOverdue
       tags: [Bulk Operations]
       description: |
-        Snoozes all overdue P0-P3 tasks. P4 (Urgent) tasks are always excluded.
+        Snoozes all overdue P0-P2 tasks. P3 (High) and P4 (Urgent) tasks are
+        always excluded — their due dates are real deadlines.
       requestBody:
         required: true
         content:

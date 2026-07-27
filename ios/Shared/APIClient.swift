@@ -77,7 +77,7 @@ final class APIClient {
     }
 
     /// Bulk snooze all overdue tasks by delta minutes.
-    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
+    /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
     func snoozeOverdue(deltaMinutes: Int, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["delta_minutes": deltaMinutes]
@@ -89,7 +89,7 @@ final class APIClient {
     }
 
     /// Bulk snooze all overdue tasks to an absolute time.
-    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
+    /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
     func snoozeOverdue(until: String, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = ["until": until]
@@ -101,7 +101,7 @@ final class APIClient {
     }
 
     /// Bulk snooze all overdue tasks using user's default preference.
-    /// P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
+    /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
     @discardableResult
     func snoozeOverdueDefault(includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
         var body: [String: Any] = [:]
