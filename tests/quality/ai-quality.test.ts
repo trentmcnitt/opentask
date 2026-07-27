@@ -549,7 +549,8 @@ async function runInsights(
 ): Promise<{ output: Record<string, unknown>; durationMs: number }> {
   const { INSIGHTS_SYSTEM_PROMPT, INSIGHTS_REMINDERS } = await import('@/core/ai/prompts')
   const { aiQuery } = await import('@/core/ai/sdk')
-  const { InsightsBatchResultSchema } = await import('@/core/ai/types')
+  const { InsightsBatchResultSchema, InsightsBatchEnvelopeSchema, InsightsBatchResponseSchema } =
+    await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { formatTaskLine } = await import('@/core/ai/format')
   const { sanitizeSignals } = await import('@/core/ai/insights')
@@ -575,9 +576,11 @@ ${taskLines}
 
 ${INSIGHTS_REMINDERS}
 Current time: ${currentTime}
-Score every task above. Return a JSON array with one entry per task.`
+Score every task above. Return one entry per task in "tasks".`
 
-  const jsonSchema = z.toJSONSchema(InsightsBatchResultSchema)
+  // Must match production: the schema root has to be an object, so the array
+  // travels wrapped. See InsightsBatchEnvelopeSchema.
+  const jsonSchema = z.toJSONSchema(InsightsBatchEnvelopeSchema)
 
   const insightsProvider = getTestProvider()
   const maxTurns = insightsProvider === 'sdk' ? 3 : 1
@@ -597,7 +600,7 @@ Score every task above. Return a JSON array with one entry per task.`
     provider: insightsProvider,
   })
 
-  const parsed = parseAIResponse(result, InsightsBatchResultSchema, 'Insights', (text) => {
+  const parsed = parseAIResponse(result, InsightsBatchResponseSchema, 'Insights', (text) => {
     const json = extractJsonFromText(text)
     if (!json) return null
     const arr = Array.isArray(json) ? json : json.tasks
