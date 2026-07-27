@@ -112,14 +112,25 @@ test.describe('Snooze guards', () => {
   test('an ordinary snooze is not interrupted by any prompt', async ({
     authenticatedPage: page,
   }) => {
-    // Regression guard: the common case must stay frictionless. "Reply to
-    // email" is a seeded overdue one-off with a due date and no recurrence, so
-    // neither §4.3 condition applies.
-    await expect(page.getByText('Reply to email')).toBeVisible({ timeout: 10_000 })
+    // Regression guard: the common case must stay frictionless. An overdue
+    // one-off with a due date and no recurrence meets neither §4.3 condition.
+    //
+    // This creates its own task rather than reusing a seeded one. Specs share a
+    // database and Playwright orders files alphabetically, so snoozing a seeded
+    // task here would clear its overdue state before snooze.spec.ts runs and
+    // break that suite from a distance.
+    const title = 'Plain snooze'
+    const dueAt = DateTime.now().minus({ hours: 2 })
+    await createTask(page, { title, due_at: dueAt.toUTC().toISO(), priority: 1 })
+    await page.reload()
 
-    await page.getByRole('button', { name: /snooze "Reply to email"/i }).click({ force: true })
+    await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 })
 
-    await expect(page.getByText(/Snoozed to .+ — "Reply to email"/)).toBeVisible({
+    await page
+      .getByRole('button', { name: new RegExp(`snooze "${title}"`, 'i') })
+      .click({ force: true })
+
+    await expect(page.getByText(new RegExp(`Snoozed to .+ — "${title}"`))).toBeVisible({
       timeout: 5000,
     })
     await expect(page.getByRole('alertdialog')).toBeHidden()
