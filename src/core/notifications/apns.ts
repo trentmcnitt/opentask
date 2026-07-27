@@ -130,6 +130,31 @@ export interface ApnsPushPayload {
 }
 
 /**
+ * Per-class notification threads (REDESIGN-V03 §4.2).
+ *
+ * A single thread ID meant every notification piled into one visible stack, so
+ * an urgent item and a routine one were indistinguishable at a glance. Separate
+ * threads make iOS group them as separate stacks.
+ *
+ * Splitting urgent from ordinary tasks is the point: the whole redesign is
+ * about the interruption surface staying constant as volume grows, and a
+ * stack you can triage by looking at it is the visual half of that.
+ */
+export const NOTIFICATION_THREADS = {
+  /** §6 Reminders — the time slot notifies, not the item. */
+  reminders: 'ot-reminders',
+  /** Ordinary overdue tasks (P0–P3). */
+  tasks: 'ot-tasks',
+  /** P4 — breaks through everything, so it gets its own stack. */
+  urgent: 'ot-urgent',
+} as const
+
+/** Which thread a task notification belongs to, by priority. */
+export function threadIdForPriority(priority: number): string {
+  return priority >= 4 ? NOTIFICATION_THREADS.urgent : NOTIFICATION_THREADS.tasks
+}
+
+/**
  * Send a push notification to all APNs devices for a user.
  * Cleans up stale device tokens automatically.
  */
@@ -146,7 +171,9 @@ export async function sendApnsNotification(
         alert: { title: payload.title, body: payload.body },
         topic: device.bundle_id,
         category: 'TASK_REMINDER',
-        threadId: 'opentask-overdue',
+        // §4.2: urgent gets its own visible stack so it can't be lost among
+        // routine items.
+        threadId: threadIdForPriority(payload.priority),
         badge: payload.badge,
         sound: isCritical
           ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
@@ -194,7 +221,7 @@ export async function sendApnsSummaryNotification(
         alert: { title, body },
         topic: device.bundle_id,
         category: 'TASK_SUMMARY',
-        threadId: 'opentask-overdue',
+        threadId: NOTIFICATION_THREADS.tasks,
         sound: 'default',
         collapseId: 'overdue-summary',
         data: {

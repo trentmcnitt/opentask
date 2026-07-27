@@ -20,6 +20,15 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   auto_snooze_urgent_minutes INTEGER NOT NULL DEFAULT 5,
   auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15,
+  -- §4.1: the cadence ladder. auto_snooze_minutes above is now P0-ONLY.
+  -- P1 is rare-but-present rather than silent, and P2 is NOT notify-once:
+  -- one missed glance (phone face-down, in a meeting) would lose it
+  -- permanently, which fails dangerous for something rated moderately
+  -- important. Nothing goes fully silent by default (L2) — the bottom rungs
+  -- get slower cadence plus replacement (§4.2), so persistence never becomes
+  -- pile-up.
+  auto_snooze_low_minutes INTEGER NOT NULL DEFAULT 240,
+  auto_snooze_medium_minutes INTEGER NOT NULL DEFAULT 60,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
   wake_time     TEXT NOT NULL DEFAULT '07:00',

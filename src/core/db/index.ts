@@ -199,6 +199,18 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'skip_count')) {
     database.exec('ALTER TABLE tasks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0')
   }
+  // §4.1 cadence ladder: P1 and P2 get their own intervals
+  if (!hasColumn(database, 'users', 'auto_snooze_low_minutes')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN auto_snooze_low_minutes INTEGER NOT NULL DEFAULT 240',
+    )
+  }
+  if (!hasColumn(database, 'users', 'auto_snooze_medium_minutes')) {
+    database.exec(
+      'ALTER TABLE users ADD COLUMN auto_snooze_medium_minutes INTEGER NOT NULL DEFAULT 60',
+    )
+  }
+
   // Reminders surface (§6)
   if (!hasColumn(database, 'tasks', 'is_reminder')) {
     database.exec('ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0')
