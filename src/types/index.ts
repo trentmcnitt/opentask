@@ -191,7 +191,11 @@ export interface AuthUser {
   email: string
   name: string
   timezone: string
-  /** §7.3 adds 'slot' — today grouped by time slot, the new front door. */
-  default_grouping: 'time' | 'project' | 'unified' | 'slot'
+  /**
+   * §7.3 adds 'slot' — today grouped by time slot, the new front door.
+   * §6 adds 'reminders' — not a grouping at all, but the Reminders surface,
+   * which persists through the same preference so it behaves like a tab.
+   */
+  default_grouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders'
   is_demo: boolean
 }

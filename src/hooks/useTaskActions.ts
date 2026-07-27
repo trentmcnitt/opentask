@@ -51,6 +51,20 @@ interface UseTaskActionsSingleConfig {
 
 type UseTaskActionsConfig = UseTaskActionsListConfig | UseTaskActionsSingleConfig
 
+/**
+ * Report a failed save.
+ *
+ * `saveTaskChanges` rethrows the server's own message, so a rule-based refusal
+ * (e.g. §5/§6's tracked-vs-reminder exclusivity) reaches the user as the reason
+ * it was refused. Unexpected failures fall back to a generic message.
+ */
+function showSaveError(err: unknown): void {
+  showToast({
+    message: err instanceof Error && err.message ? err.message : 'Save failed',
+    type: 'error',
+  })
+}
+
 /** Update both counts from an API response that includes undoable_count/redoable_count */
 function extractCounts(data: { data?: { undoable_count?: number; redoable_count?: number } }): {
   undoable: number | null
@@ -258,8 +272,9 @@ export function useTaskActions(config: UseTaskActionsConfig) {
           type: 'success',
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
-      } catch {
+      } catch (err) {
         cfg.onRefresh()
+        showSaveError(err)
       }
     },
     [],
@@ -279,8 +294,9 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         type: 'success',
         action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
       })
-    } catch {
+    } catch (err) {
       cfg.onRefresh()
+      showSaveError(err)
     }
   }, [])
 

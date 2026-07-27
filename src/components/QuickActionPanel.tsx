@@ -18,6 +18,7 @@ import {
   CalendarDays,
   Pencil,
   Mic,
+  Lightbulb,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -102,6 +104,8 @@ export interface QuickActionPanelChanges {
   auto_snooze_minutes?: number | null
   reset_original_due_at?: boolean
   notes?: string | null
+  /** §6: move this item on/off the Reminders surface. Single-task only. */
+  is_reminder?: boolean
 }
 
 export interface QuickActionPanelProps {
@@ -324,6 +328,8 @@ export function QuickActionPanel({
   const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
   // pendingResetOrigin: when true, reset_original_due_at will be sent on save
   const [pendingResetOrigin, setPendingResetOrigin] = useState(false)
+  // pendingIsReminder: null = no change, boolean = staged flag (§6 Reminders surface)
+  const [pendingIsReminder, setPendingIsReminder] = useState<boolean | null>(null)
   // pendingNotes: undefined = no change, null = clear, string = new value
   const [pendingNotes, setPendingNotes] = useState<string | null | undefined>(undefined)
   const [notesExpanded, setNotesExpanded] = useState(false)
@@ -384,6 +390,8 @@ export function QuickActionPanel({
   )
   const displayRrule = pendingRrule !== undefined ? pendingRrule : effectiveTask?.rrule
   const displayProject = pendingProject ?? effectiveTask?.project_id
+  // §6 Reminders flag — staged value wins, otherwise the task's stored flag.
+  const displayIsReminder = pendingIsReminder ?? effectiveTask?.is_reminder ?? false
 
   // Preview of new due_at when changing recurrence for non-overdue tasks
   // This helps users understand what date the task will move to with the new schedule
@@ -431,6 +439,7 @@ export function QuickActionPanel({
     pendingDueAtCleared ||
     pendingAutoSnooze !== undefined ||
     pendingResetOrigin ||
+    pendingIsReminder !== null ||
     pendingNotes !== undefined
   // In create mode, dirty means the user has changed something from the initial defaults:
   // typed a title (different from initialTitle), changed any field, or picked a date.
@@ -481,7 +490,11 @@ export function QuickActionPanel({
 
   const headerText = isBulkMode ? bulkHook.headerText : singleHook.headerText
   const relativeText = isBulkMode ? bulkHook.relativeText : singleHook.relativeText
-  const isPast = isBulkMode ? bulkHook.isPast : singleHook.isPast
+  // §6: a reminder is never late. Its time of day says where the thought
+  // belongs, not a deadline it can miss — so the editor never paints one in the
+  // overdue red that the Reminders surface itself refuses to use. The time is
+  // still shown; only the alarm is dropped.
+  const isPast = (isBulkMode ? bulkHook.isPast : singleHook.isPast) && !displayIsReminder
   const deltaDisplay = isBulkMode ? bulkHook.deltaDisplay : singleHook.deltaDisplay
 
   // Whether the date specifically has changed — used for blue styling on the due date line.
@@ -507,6 +520,7 @@ export function QuickActionPanel({
   }, [isLabelsDirty, effectiveTask?.labels, isBulkMode, bulkCommonLabels, displayLabels])
   const isRruleDirty = pendingRrule !== undefined
   const isProjectDirty = pendingProject !== null
+  const isReminderDirty = pendingIsReminder !== null
 
   // Whether ALL tasks genuinely have no due date — used for the "No due date" display.
   // In bulk mode, only show "No due date" when every task lacks a date.
@@ -686,6 +700,7 @@ export function QuickActionPanel({
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     if (pendingResetOrigin) changes.reset_original_due_at = true
+    if (pendingIsReminder !== null) changes.is_reminder = pendingIsReminder
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     return changes
   }, [
@@ -704,6 +719,7 @@ export function QuickActionPanel({
     pendingProject,
     pendingAutoSnooze,
     pendingResetOrigin,
+    pendingIsReminder,
     pendingNotes,
     isBulkMode,
     bulkHook,
@@ -724,6 +740,7 @@ export function QuickActionPanel({
     setPendingDueAtCleared(false)
     setPendingAutoSnooze(undefined)
     setPendingResetOrigin(false)
+    setPendingIsReminder(null)
     setPendingNotes(undefined)
     setNotesExpanded(false)
   }, [])
@@ -1429,6 +1446,26 @@ export function QuickActionPanel({
                   {isMixedPriority ? '—' : getPriorityOption(displayPriority).label}
                 </span>
               )}
+              {/*
+                §6: a reminder behaves differently from a task (no debt, no
+                badge, cannot be snoozed), so the panel says so where the other
+                kind-of-thing metadata lives, rather than leaving the state
+                visible only inside the More menu.
+              */}
+              {displayIsReminder && (
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs',
+                    isReminderDirty
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                  title="On the Reminders surface — never overdue, never notified individually"
+                >
+                  <Lightbulb className="size-3" />
+                  Reminder
+                </span>
+              )}
             </div>
           )}
           {/* Labels + action icons row */}
@@ -1673,6 +1710,34 @@ export function QuickActionPanel({
                             Clear due date{effectiveTask?.rrule ? ' & recurrence' : ''}
                           </DropdownMenuItem>
                         )}
+                      {/*
+                        §6: flag this item onto the Reminders surface.
+                        A checkbox item rather than a button because the flag is
+                        a state of the task, not an action on it — and because
+                        the surface it moves the item to is elsewhere, so the
+                        check is the only feedback the user gets here until
+                        Save.
+
+                        Single-task only: the flag changes what KIND of thing an
+                        item is, and applying that to a mixed selection in one
+                        tap is the sort of bulk mistake §6 exists to avoid.
+                      */}
+                      {isSingleTask && (
+                        <DropdownMenuCheckboxItem
+                          checked={displayIsReminder}
+                          onCheckedChange={(checked) =>
+                            setPendingIsReminder(
+                              checked === (effectiveTask?.is_reminder ?? false) ? null : checked,
+                            )
+                          }
+                          onSelect={(e) => e.preventDefault()}
+                        >
+                          <Lightbulb
+                            className={cn('mr-2 size-4', isReminderDirty && 'text-blue-500')}
+                          />
+                          Reminder
+                        </DropdownMenuCheckboxItem>
+                      )}
                       {isSingleTask && onNavigateToDetail && (
                         <DropdownMenuItem onClick={onNavigateToDetail}>
                           <Info className="mr-2 size-4" />
