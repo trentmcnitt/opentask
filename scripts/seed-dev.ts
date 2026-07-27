@@ -12,6 +12,7 @@
 import bcrypt from 'bcrypt'
 import { DateTime } from 'luxon'
 import { seedSystemLabels } from '../src/core/labels'
+import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
@@ -353,6 +354,7 @@ async function main(): Promise<void> {
 
   // Register the system label vocabulary (§7.2)
   seedSystemLabels(userId)
+  seedDefaultTimeSlots(userId)
 
   // Create projects
   const insertProject = db.prepare(

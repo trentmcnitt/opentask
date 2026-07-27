@@ -4,6 +4,7 @@
 
 import { getDb, resetDb } from '@/core/db'
 import { seedSystemLabels, createLabel } from '@/core/labels'
+import { seedDefaultTimeSlots } from '@/core/time-slots'
 import { DateTime } from 'luxon'
 
 export const TEST_TIMEZONE = 'America/Chicago'
@@ -42,6 +43,7 @@ export function seedTestUser(
   // Register the system label vocabulary (§7.2). The startup backfill runs at
   // schema-init, before this user exists, so it can't cover them.
   seedSystemLabels(userId)
+  seedDefaultTimeSlots(userId)
 }
 
 /**

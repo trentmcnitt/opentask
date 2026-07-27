@@ -14,6 +14,7 @@
 import bcrypt from 'bcrypt'
 import { getDb, closeDb } from '../src/core/db'
 import { seedSystemLabels } from '../src/core/labels'
+import { seedDefaultTimeSlots } from '../src/core/time-slots'
 
 const SALT_ROUNDS = 10
 
@@ -76,6 +77,7 @@ async function createUser() {
   // Register the system label vocabulary (§7.2). The startup backfill only
   // covers users that existed when it ran.
   seedSystemLabels(userId)
+  seedDefaultTimeSlots(userId)
 
   // Create default projects
   const insertProject = db.prepare(
