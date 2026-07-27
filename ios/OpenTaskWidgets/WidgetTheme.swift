@@ -114,17 +114,20 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
     let next: Next
 
     var body: some View {
-        HStack(spacing: 2) {
+        // 40pt hit targets (HIG minimum is 44, but widget headers can't spare
+        // that height) — the glyph stays small, the tappable area doesn't.
+        // At 22pt these were nearly impossible to hit with a casual tap.
+        HStack(spacing: 0) {
             Button(intent: previous) {
                 Image(systemName: "chevron.left")
                     .font(.caption.weight(.semibold))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }
             Button(intent: next) {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }
         }

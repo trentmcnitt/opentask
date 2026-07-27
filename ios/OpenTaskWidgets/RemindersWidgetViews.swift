@@ -121,7 +121,9 @@ private struct ReminderRow: View {
                 Image(systemName: "circle")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(WidgetTheme.priorityColor(reminder.priority))
-                    .frame(width: 26, height: 26)
+                    // Rows are ~44pt in the large family, so a 36pt hit target
+                    // fits without inflating the layout; 26pt missed too often.
+                    .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
