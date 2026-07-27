@@ -4,8 +4,8 @@
  * POST /api/tasks/bulk/snooze-overdue - Snooze all overdue tasks for the user
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed from client.
- * Queries overdue tasks, applies priority filtering via bulkSnooze() (P0-P3 eligible,
- * P4 Urgent excluded).
+ * Queries overdue tasks, applies priority filtering via bulkSnooze() (P0-P2 eligible,
+ * P3 High and P4 Urgent excluded).
  *
  * Computes an absolute snooze target from now (not relative to each task's due_at):
  * - { delta_minutes: 30 }  → 30 min from now (exact, < 60 min)

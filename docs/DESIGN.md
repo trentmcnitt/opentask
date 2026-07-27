@@ -16,7 +16,7 @@ Due dates in OpenTask serve two different purposes depending on task priority. T
 
 For most tasks, `due_at` means "when to next remind me about this." It's aspirational — the time the user intends to do it — but it's not a commitment. These tasks are bulk-snoozed routinely, often many times per day.
 
-**The bulk snooze button** is the primary driver of this behavior. It sits in the app's top bar — the only action button visible at all times — and snoozes every overdue P0-3 task by one hour (or a user-configured interval) with a single tap. Only P4 (Urgent) tasks are excluded from bulk snooze; they must be snoozed individually.
+**The bulk snooze button** is the primary driver of this behavior. It sits in the app's top bar — the only action button visible at all times — and snoozes every overdue P0-2 task by one hour (or a user-configured interval) with a single tap. P3 (High) and P4 (Urgent) tasks are excluded from bulk snooze; they must be snoozed individually, because their due dates are real deadlines rather than reminders.
 
 A typical daily pattern:
 

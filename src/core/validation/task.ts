@@ -219,7 +219,7 @@ export function validateBulkDelete(input: unknown): BulkDeleteInput {
  * Bulk snooze-overdue input schema
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed.
- * Server queries overdue P0-P3 tasks for the user (P4 Urgent excluded).
+ * Server queries overdue P0-P2 tasks for the user (P3 High and P4 Urgent excluded).
  *
  * All fields are optional:
  * - `delta_minutes`: Minutes from now (with rounding: snapToHour for >= 60 min)

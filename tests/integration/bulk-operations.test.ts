@@ -146,7 +146,7 @@ describe('Bulk snooze integration', () => {
 
   test('POST bulk/snooze skips urgent tasks in mixed-priority selection', async () => {
     // Seed data: task 7 (priority 0), task 8 (priority 1), task 4 (priority 3)
-    // Set task 4 to P4 (Urgent) — only P4 is excluded from bulk snooze
+    // Set task 4 to P4 (Urgent) — P3 and P4 are both excluded from bulk snooze
     await apiFetch('/api/tasks/4', {
       method: 'PATCH',
       body: { priority: 4 },
@@ -180,9 +180,10 @@ describe('Bulk snooze integration', () => {
   })
 
   // Regression: the mobile selection sheet and desktop quick panel both route
-  // explicit user selections through `include_task_ids`, so P4 tasks the user
-  // deliberately picked are NOT filtered out. The "Snooze All Overdue" sweep
-  // keeps the default P4 skip because it never sets `include_task_ids`.
+  // explicit user selections through `include_task_ids`, so P3/P4 tasks the
+  // user deliberately picked are NOT filtered out. The "Snooze All Overdue"
+  // sweep keeps the default high/urgent skip because it never sets
+  // `include_task_ids`.
   test('POST bulk/snooze with include_task_ids snoozes P4 tasks (absolute mode)', async () => {
     // Make task 4 urgent so it would normally be filtered out
     await apiFetch('/api/tasks/4', { method: 'PATCH', body: { priority: 4 } })
