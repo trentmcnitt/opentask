@@ -1,12 +1,24 @@
 'use client'
 
-import { CalendarClock, FolderTree, List } from 'lucide-react'
+import { CalendarClock, FolderTree, Lightbulb, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { GroupingMode } from '@/components/TaskList'
 
+/**
+ * What the dashboard is currently showing.
+ *
+ * Three of the four are groupings of the task list. "reminders" is not — it
+ * swaps in the §6 surface entirely. §6 blesses exactly this: the Reminders
+ * surface "may be implemented as a persistent filter state that LOOKS like a
+ * tab". Keeping it in the same control (and the same persisted preference) is
+ * what makes it look like one; keeping it out of `GroupingMode` is what stops
+ * TaskList from ever being asked to group by it.
+ */
+export type ViewMode = GroupingMode | 'reminders'
+
 interface ViewModeToggleProps {
-  grouping: GroupingMode
-  onChange: (grouping: GroupingMode) => void
+  grouping: ViewMode
+  onChange: (grouping: ViewMode) => void
 }
 
 /**
@@ -18,17 +30,28 @@ interface ViewModeToggleProps {
  * greets you. Without a visible control the old views would be unreachable,
  * which would trade one kind of stuck for another.
  *
- * Deliberately three options, not a dropdown of every permutation: the point of
+ * Deliberately few options, not a dropdown of every permutation: the point of
  * the redesign is fewer decisions at the front door, and a picker with six
  * entries would just be the 20-filter-chip problem in miniature.
+ *
+ * "Reminders" is the odd one out — it isn't a grouping of the task list but a
+ * separate surface (§6). It rides in this control because the user is
+ * explicitly fine with "a chip that looks like a tab", and because a second
+ * navigation control for one destination would cost more than it explains.
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
-  // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as a
-  // fourth option would let the two controls disagree about what's active.
-  const options: { value: GroupingMode; label: string; icon: typeof List; hint: string }[] = [
+  // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
+  // extra option would let the two controls disagree about what's active.
+  const options: { value: ViewMode; label: string; icon: typeof List; hint: string }[] = [
     { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
     { value: 'project', label: 'Projects', icon: FolderTree, hint: 'Group by project' },
     { value: 'time', label: 'All', icon: List, hint: 'Everything by due date' },
+    {
+      value: 'reminders',
+      label: 'Reminders',
+      icon: Lightbulb,
+      hint: 'Thoughts to consider today, by time of day',
+    },
   ]
 
   return (

@@ -44,11 +44,14 @@ interface PreferencesContextValue {
   setWakeTime: (time: string) => void
   sleepTime: string
   setSleepTime: (time: string) => void
-  defaultGrouping: 'time' | 'project' | 'unified' | 'slot'
-  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => void
+  defaultGrouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders'
+  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders') => void
   defaultSort: SortOption
   defaultSortReversed: boolean
   setSortPreference: (sort: SortOption, reversed: boolean) => void
+  /** §7.3 — dashboard filter-chip section pinned open by the user. */
+  filtersExpanded: boolean
+  setFiltersExpanded: (expanded: boolean) => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
   criticalAlertVolume: number
@@ -119,6 +122,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   defaultSort: 'due_date',
   defaultSortReversed: false,
   setSortPreference: () => {},
+  filtersExpanded: false,
+  setFiltersExpanded: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
   criticalAlertVolume: 1.0,
@@ -169,10 +174,11 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
   const [defaultGrouping, setDefaultGroupingState] = useState<
-    'time' | 'project' | 'unified' | 'slot'
+    'time' | 'project' | 'unified' | 'slot' | 'reminders'
   >('project')
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
+  const [filtersExpanded, setFiltersExpandedState] = useState(false)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
   const [criticalAlertVolume, setCriticalAlertVolumeState] = useState(1.0)
   const [aiContext, setAiContextState] = useState<string | null>(null)
@@ -297,6 +303,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.default_sort_reversed !== undefined) {
           setDefaultSortReversedState(data.data.default_sort_reversed)
         }
+        if (data?.data?.filters_expanded !== undefined) {
+          setFiltersExpandedState(data.data.filters_expanded)
+        }
         if (data?.data?.notifications_enabled !== undefined) {
           setNotificationsEnabledState(data.data.notifications_enabled)
         }
@@ -399,7 +408,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         sleepTime,
         setSleepTime: setSleepTimeState,
         defaultGrouping,
-        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => {
+        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders') => {
           setDefaultGroupingState(grouping)
           fetch('/api/user/preferences', {
             method: 'PATCH',
@@ -416,6 +425,16 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ default_sort: sort, default_sort_reversed: reversed }),
+          }).catch(() => {})
+        },
+        filtersExpanded,
+        setFiltersExpanded: (expanded: boolean) => {
+          if (expanded === filtersExpanded) return
+          setFiltersExpandedState(expanded)
+          fetch('/api/user/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filters_expanded: expanded }),
           }).catch(() => {})
         },
         notificationsEnabled,
@@ -513,6 +532,17 @@ export function useDefaultGrouping() {
 export function useDefaultSort() {
   const { defaultSort, defaultSortReversed, setSortPreference } = useContext(PreferencesContext)
   return { defaultSort, defaultSortReversed, setSortPreference }
+}
+
+/**
+ * §7.3 — whether the user has pinned the dashboard's filter-chip section open.
+ * Server-persisted like the other dashboard view preferences (grouping, sort),
+ * so the choice follows the user across devices. See `useFilterSection`, which
+ * layers the filter-driven auto-expand on top of this.
+ */
+export function useFilterSectionPreference() {
+  const { filtersExpanded, setFiltersExpanded } = useContext(PreferencesContext)
+  return { filtersExpanded, setFiltersExpanded }
 }
 
 export function useAiContext() {

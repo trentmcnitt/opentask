@@ -836,6 +836,99 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/tasks/bulk/complete:
+    post:
+      summary: Complete multiple tasks in one request
+      operationId: bulkComplete
+      tags: [Bulk Operations]
+      description: |
+        Built for the §6.1 notification batch checklist: the iOS content
+        extension commits N staged check-marks with one request. Delegates to
+        the same core bulk-done path — one transaction, ONE undo entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Completion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tasks_affected:
+                        type: integer
+                      recurring_count:
+                        type: integer
+                      one_off_count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Reminders (§6) ---
+
+  /api/reminders:
+    get:
+      summary: Today's incomplete reminders grouped by time slot
+      operationId: listReminders
+      tags: [Reminders]
+      description: |
+        The Reminders surface (prompted thoughts, not actions). Items carry no
+        debt: never counted in overdue, never in the badge, never notified
+        individually — the time slot notifies. A reminder completed today
+        drops out of its group and returns with its next occurrence.
+      responses:
+        '200':
+          description: Reminder groups in slot order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            slot:
+                              nullable: true
+                              type: object
+                              properties:
+                                id:
+                                  type: integer
+                                label:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  example: '07:00'
+                                sort_order:
+                                  type: integer
+                            count:
+                              type: integer
+                            reminders:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # --- Projects ---
 
   /api/projects:

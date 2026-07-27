@@ -15,6 +15,7 @@
  * "overdue by N days" state, ever. That absence of debt is the whole point.
  */
 
+import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { todaysOccurrence } from '@/core/recurrence/occurrence'
 import { groupBySlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
@@ -39,11 +40,31 @@ export function getTodaysReminders(
   now: Date = new Date(),
 ): Task[] {
   const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const localToday = DateTime.fromJSDate(now).setZone(timezone)
 
   return all.filter((task) => {
     // Non-recurring reminders show whenever they're undone — they have no
     // schedule to fall outside of.
     if (!task.rrule) return true
+
+    // Already considered today: completing a recurring reminder advances its
+    // schedule but leaves it "scheduled today" by the rrule's lights, so
+    // without this check a checked-off reminder would sit in its slot all day.
+    // §6: completed ones drop out; the next occurrence resurrects it.
+    if (task.last_completed_at) {
+      const completed = DateTime.fromISO(task.last_completed_at, { zone: 'utc' }).setZone(timezone)
+      if (completed.isValid && completed.hasSame(localToday, 'day')) return false
+    }
+
+    // from_completion reminders have no derivable occurrence until they are
+    // completed (§4.6) — their due_at IS the schedule, so show them once it
+    // arrives (still no debt: nothing here renders overdue styling).
+    if (task.recurrence_mode === 'from_completion') {
+      if (!task.due_at) return false
+      const due = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
+      return due.isValid && due.startOf('day') <= localToday.startOf('day')
+    }
+
     return todaysOccurrence(task, timezone, now) !== null
   })
 }

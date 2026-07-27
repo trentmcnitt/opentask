@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS users (
   default_grouping TEXT NOT NULL DEFAULT 'project',
   default_sort TEXT NOT NULL DEFAULT 'due_date',
   default_sort_reversed INTEGER NOT NULL DEFAULT 0,
+  -- §7.3: dashboard filter-chip section starts collapsed; this remembers the
+  -- user's explicit choice to keep it open.
+  filters_expanded INTEGER NOT NULL DEFAULT 0,
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
