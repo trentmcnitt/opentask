@@ -25,18 +25,15 @@ import {
 } from '@/core/notifications/apns'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { countCurrentlyDue } from '@/core/tasks/currently-due'
 
 /** Count overdue tasks for a user — shared by badge updates and notification logic. */
 export function getOverdueCount(userId: number): number {
-  return (
-    getDb()
-      .prepare(
-        `SELECT COUNT(*) as count FROM tasks
-         WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
-           AND due_at IS NOT NULL AND datetime(due_at) < datetime('now')`,
-      )
-      .get(userId) as { count: number }
-  ).count
+  // §4.6: the badge cannot be a pure COUNT(*) any more. A recurring task's
+  // due_at freezes once the daily sweep stops, so counting `due_at < now` would
+  // inflate the badge with items that aren't actually scheduled today — the
+  // number the user glances at would stop meaning anything.
+  return countCurrentlyDue(userId)
 }
 
 /**

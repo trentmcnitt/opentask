@@ -63,11 +63,18 @@ function executeRecurringMarkDone(
   const completionId = Number(completionResult.lastInsertRowid)
 
   // Update task: advance due_at, set original_due_at to new occurrence origin, update completion stats
+  //
+  // §5: advancing to the next occurrence IS the period rolling over, so this is
+  // where a tracked task's progress resets to 0. That is what makes at-target
+  // behavior period-anchored rather than auto-completing: reaching the target
+  // only marks the row "met", and it stays open — accumulating observable
+  // overflow like 3/2 — until this boundary.
   tx.prepare(
     `
     UPDATE tasks
     SET due_at = ?, original_due_at = ?,
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+        progress_current = 0,
         updated_at = ?
     WHERE id = ?
   `,
@@ -86,6 +93,7 @@ function executeRecurringMarkDone(
     id: task.id,
     due_at: nextDueAt,
     original_due_at: nextDueAt,
+    progress_current: 0,
     completion_count: stats.completionCount,
     first_completed_at: stats.firstCompletedAt,
     last_completed_at: stats.lastCompletedAt,
@@ -104,6 +112,7 @@ function executeRecurringMarkDone(
       title: task.title,
       due_at: task.due_at,
       original_due_at: task.original_due_at,
+      progress_current: task.progress_current,
       completion_count: task.completion_count,
       first_completed_at: task.first_completed_at,
       last_completed_at: task.last_completed_at,

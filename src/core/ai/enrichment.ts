@@ -52,6 +52,7 @@ import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
+import { validateLabelsExist, filterAutoCreatableLabels } from '@/core/labels'
 
 /** Simple lock to prevent concurrent queue processing */
 let processing = false
@@ -644,8 +645,24 @@ function collectEnrichmentChanges(
   {
     const filteredLabels = filterExplicitLabels(enrichment.labels, inputText)
     const existingLabels = new Set(task.labels)
-    const newAiLabels = filteredLabels.filter((l) => !existingLabels.has(l))
-    const merged = [...task.labels, ...newAiLabels].filter((l) => l !== 'ai-to-process')
+
+    // §7.2: this path used to write labels straight to SQL, bypassing the
+    // registry entirely. It now registers what it adds — but only domain
+    // labels. A label in the reserved `ai-` namespace is dropped unless it is
+    // already registered, because those carry behavior: a typo'd `ai-monitored`
+    // yields a task nobody watches that looks flagged.
+    //
+    // Auto-registering the rest is deliberate rather than a loophole. Anything
+    // reaching here has already survived filterExplicitLabels, so it is a label
+    // the *user* stated out loud, not one the AI inferred — rejecting it would
+    // silently discard something they explicitly asked for.
+    const creatable = filterAutoCreatableLabels(
+      user.id,
+      filteredLabels.filter((l) => !existingLabels.has(l)),
+    )
+    validateLabelsExist(user.id, creatable, [], true)
+
+    const merged = [...task.labels, ...creatable].filter((l) => l !== 'ai-to-process')
     const labelsJson = JSON.stringify(merged)
     const currentLabelsJson = JSON.stringify(task.labels)
     if (labelsJson !== currentLabelsJson) {

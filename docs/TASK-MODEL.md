@@ -27,7 +27,7 @@ OpenTask is not a traditional task manager. Due dates for most tasks are **remin
 - `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
 - The gap between `original_due_at` and `due_at` shows how much total time the due date has shifted, but not how many snoozes occurred or why. Don't infer snooze counts or user intent from dates alone.
 - `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
-- For P0-3 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
+- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted due date reflects a sweep the user never read, not a decision.
 
 ## Priority Values
 

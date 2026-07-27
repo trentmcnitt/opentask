@@ -10,6 +10,12 @@ const webhookEvents = z.enum([
   'task.completed',
   'task.deleted',
   'task.snoozed',
+  // §7.5: skipping is NOT completing. Anything downstream that counts
+  // completions must not see a skip.
+  'task.skipped',
+  // §5: a tracked task reaching its target. Distinct from task.completed,
+  // which fires only at the period boundary.
+  'task.progressed',
 ])
 
 export const webhookCreateSchema = z.object({

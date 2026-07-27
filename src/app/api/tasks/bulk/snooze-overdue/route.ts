@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
+import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { computeSnoozeTime } from '@/lib/snooze'
@@ -49,22 +50,11 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       until = computeSnoozeTime(option, user.timezone, prefs.morning_time)
     }
 
-    // Query all overdue, active tasks for this user
-    const db = getDb()
-    const overdueTasks = db
-      .prepare(
-        `SELECT id FROM tasks
-         WHERE user_id = ?
-           AND done = 0
-           AND deleted_at IS NULL
-           AND archived_at IS NULL
-           AND due_at IS NOT NULL
-           AND datetime(due_at) < datetime('now')
-         ORDER BY due_at ASC`,
-      )
-      .all(user.id) as { id: number }[]
-
-    const taskIds = overdueTasks.map((t) => t.id)
+    // Which tasks are actually due now (§4.6). A recurring task's due_at
+    // freezes once the daily sweep stops, so the old `due_at < now` SQL would
+    // sweep items that aren't scheduled today — re-dating them and deepening
+    // exactly the mess this redesign is unwinding.
+    const taskIds = getCurrentlyDueTaskIds(user.id)
 
     // Merge in explicitly included task IDs (e.g., the P4 task the user is acting on)
     const includeTaskIds = input.include_task_ids
@@ -98,18 +88,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     // Dismiss only the tasks that were actually snoozed, not tasks that were
     // skipped by priority filtering (P4 Urgent may still be overdue).
     if (result.tasksAffected > 0) {
-      const stillOverdue = db
-        .prepare(
-          `SELECT id FROM tasks
-           WHERE user_id = ?
-             AND done = 0
-             AND deleted_at IS NULL
-             AND archived_at IS NULL
-             AND due_at IS NOT NULL
-             AND datetime(due_at) < datetime('now')`,
-        )
-        .all(user.id) as { id: number }[]
-      const stillOverdueIds = new Set(stillOverdue.map((t) => t.id))
+      const stillOverdueIds = new Set(getCurrentlyDueTaskIds(user.id))
       const snoozedIds = taskIds.filter((id) => !stillOverdueIds.has(id))
       dismissNotificationsForTasks(user.id, snoozedIds)
     }
