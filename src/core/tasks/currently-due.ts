@@ -42,6 +42,11 @@ function fetchDueCandidates(userId: number): DueCandidate[] {
           AND t.done = 0
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
+          -- §5: tracked items are EXEMPT from the §4.1 cadence loop. Their
+          -- only notification is the pace nudge; without this exclusion a
+          -- tracked task with a due date would get the standard nag PLUS the
+          -- nudge, which is the pile-up this redesign exists to remove.
+          AND t.progress_target <= 1
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) < datetime('now'))

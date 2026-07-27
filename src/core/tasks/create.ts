@@ -111,8 +111,8 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        auto_snooze_minutes, labels, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_snooze_minutes, labels, notes, progress_target, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -131,6 +131,8 @@ export function createTask(options: CreateTaskOptions): Task {
         input.auto_snooze_minutes ?? null,
         labelsJson,
         input.notes ?? null,
+        // §5: setting a target above 1 at creation is the whole opt-in gesture.
+        input.progress_target ?? 1,
         now,
         now,
       )
@@ -189,7 +191,8 @@ export function getTaskById(taskId: number): Task | null {
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
-           completion_count, snooze_count, first_completed_at, last_completed_at,
+           progress_target, progress_current,
+           completion_count, snooze_count, skip_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
     FROM tasks WHERE id = ?
   `,
@@ -306,7 +309,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
            tasks.last_notified_at, tasks.last_critical_alert_at, tasks.auto_snooze_minutes,
            tasks.deleted_at, tasks.archived_at,
-           tasks.labels, tasks.completion_count, tasks.snooze_count,
+           tasks.labels, tasks.progress_target, tasks.progress_current,
+           tasks.completion_count, tasks.snooze_count, tasks.skip_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.notes, tasks.created_at, tasks.updated_at
     FROM tasks
@@ -343,8 +347,11 @@ interface TaskRow {
   deleted_at: string | null
   archived_at: string | null
   labels: string
+  progress_target: number
+  progress_current: number
   completion_count: number
   snooze_count: number
+  skip_count: number
   first_completed_at: string | null
   last_completed_at: string | null
   notes: string | null
@@ -375,8 +382,14 @@ function rowToTask(row: TaskRow): Task {
     deleted_at: row.deleted_at,
     archived_at: row.archived_at,
     labels: JSON.parse(row.labels),
+    // §5/§7.5: defaulted rather than asserted — a row read before the
+    // migration applied (or from a hand-written fixture) would otherwise
+    // produce NaN in pace math.
+    progress_target: row.progress_target ?? 1,
+    progress_current: row.progress_current ?? 0,
     completion_count: row.completion_count,
     snooze_count: row.snooze_count,
+    skip_count: row.skip_count ?? 0,
     first_completed_at: row.first_completed_at,
     last_completed_at: row.last_completed_at,
     notes: row.notes,

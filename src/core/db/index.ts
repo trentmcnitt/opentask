@@ -189,6 +189,17 @@ function runMigrations(database: Database.Database): void {
     }
   }
 
+  // Track / quotas + skip (REDESIGN-V03 §5, §7.5)
+  if (!hasColumn(database, 'tasks', 'progress_target')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_target INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn(database, 'tasks', 'progress_current')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_current INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn(database, 'tasks', 'skip_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0')
+  }
+
   backfillLabelRegistry(database)
 }
 

@@ -262,6 +262,9 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
           AND u.notifications_enabled = 1
+          -- §5: tracked items are exempt from the cadence loop (see
+          -- currently-due.ts for the rationale).
+          AND t.progress_target <= 1
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))

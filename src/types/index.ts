@@ -60,9 +60,17 @@ export interface Task {
   // Labels
   labels: string[]
 
+  // Track / quotas (§5). progress_target > 1 marks a tracked task; at target it
+  // is "met" but stays open until the period boundary, so overflow (3/2) stays
+  // observable.
+  progress_target: number
+  progress_current: number
+
   // Per-task stats (survive beyond completions retention)
   completion_count: number
   snooze_count: number
+  /** §7.5: occurrences declined without a completion, so completion_count stays honest. */
+  skip_count: number
   first_completed_at: string | null
   last_completed_at: string | null
   notes: string | null
@@ -122,6 +130,12 @@ export type UndoAction =
   | 'bulk_snooze'
   | 'bulk_edit'
   | 'bulk_delete'
+  // §5: a +1 on a tracked task is its own action, distinct from 'done' —
+  // undoing an increment must not look like undoing a completion.
+  | 'progress'
+  // §7.5: declining an occurrence without recording a completion.
+  | 'skip'
+  | 'bulk_skip'
 
 export interface UndoSnapshot {
   task_id: number
