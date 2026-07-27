@@ -316,7 +316,7 @@ FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;BYHOUR=10           -- Every other Monday at 10 
 
 ### Anchor Fields — Derivation Rules
 
-Anchor fields are **derived automatically** and serve as a display/sort cache:
+Anchor fields are **derived automatically**. `anchor_dow` and `anchor_dom` serve as a display/sort cache, but `anchor_time` is load-bearing: recurrence computation prefers it over BYHOUR when setting an occurrence's time-of-day, and for rrules with no BYHOUR it is the only carrier of that information. See `src/core/recurrence/anchor-derivation.ts`.
 
 | Source                    | anchor_time                | anchor_dow | anchor_dom |
 | ------------------------- | -------------------------- | ---------- | ---------- |

@@ -47,10 +47,10 @@ interface SnoozeCategories {
 
 /**
  * Partition tasks into categories for snooze confirmation.
- * Pre-filters only done tasks. P4/Urgent tasks ARE included — the server
- * respects explicit selections (via `include_task_ids`), and the user
- * deliberately picked these tasks, so hiding urgent ones from the confirmation
- * dialog would be misleading.
+ * Pre-filters only done tasks. P3/P4 (High/Urgent) tasks ARE included — the
+ * server respects explicit selections (via `include_task_ids`), and the user
+ * deliberately picked these tasks, so hiding high/urgent ones from the
+ * confirmation dialog would be misleading.
  *
  * For absolute snooze (targetTime provided), splits not-yet-due tasks into
  * "due before target" (auto-included — snooze pushes them later) and

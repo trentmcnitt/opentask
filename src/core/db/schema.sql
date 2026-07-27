@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   -- Labels (JSON array of strings)
   labels        TEXT NOT NULL DEFAULT '[]',
+  -- Track / quotas (REDESIGN-V03 §5). Every task is already a quota with
+  -- target 1; these generalise completion. progress_target > 1 marks a tracked
+  -- task, which is exempt from the §4.1 notification cadence.
+  progress_target  INTEGER NOT NULL DEFAULT 1,
+  progress_current INTEGER NOT NULL DEFAULT 0,
+  -- §7.5: occurrences declined without recording a completion, so
+  -- completion_count stays honest.
+  skip_count       INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -295,3 +303,63 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
 
+
+-- Label registry (REDESIGN-V03 §7.2)
+--
+-- Labels used to be bare free-text inside tasks.labels, with no registry: a typo
+-- silently forked the taxonomy into a new tag. Once labels can carry behavior
+-- (ai-proposed / ai-added / ai-monitored are provenance, not decoration),
+-- minting one by accident stops being cosmetic. Creation is therefore a discrete
+-- act — see validateLabelsExist() in src/core/labels.
+--
+-- `facet` groups labels for the chip bar: AND across facets, OR within a facet.
+CREATE TABLE IF NOT EXISTS labels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  name        TEXT NOT NULL,
+  facet       TEXT NOT NULL DEFAULT 'domain',
+  icon        TEXT,
+  color       TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_user_name ON labels(user_id, name);
+
+-- Time slots (REDESIGN-V03 §6.0)
+--
+-- Life-moment containers ("Early morning", "Before work", "Evening") that both
+-- the dashboard (§7.3) and the Reminders surface (§6) group by, so there is one
+-- definition of "morning" rather than two that drift.
+--
+-- NAMING: this is a "time slot", never a "bucket". `bucket` already means the
+-- due-date classifier in useFilterState.ts / DueDateFilterBar.tsx (overdue /
+-- today / this-week), which is an unrelated concept.
+--
+-- Boundaries are seeded from the production clusters (07:00 / 09:00 / 12:00 /
+-- 16:00 / 20:30) rather than invented — the slots emerge from how the corpus is
+-- already scheduled. Labels and boundaries are user-editable.
+CREATE TABLE IF NOT EXISTS time_slots (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  label       TEXT NOT NULL,
+  start_time  TEXT NOT NULL,   -- HH:MM local
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_time_slots_user ON time_slots(user_id, start_time);
+
+-- Progress events (REDESIGN-V03 §5)
+--
+-- One row per +1 increment on a tracked task.
+--
+-- IMPORTANT: `logged_at` records WHEN THE USER LOGGED IT, not when they did it.
+-- The user logs loosely, within roughly a day. That is fine for pace math
+-- (which only needs counts within a period) but NOTHING may build timing
+-- analysis on these timestamps — per L1, the looseness carries no signal.
+CREATE TABLE IF NOT EXISTS progress_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  delta      INTEGER NOT NULL DEFAULT 1,
+  logged_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_progress_events_task ON progress_events(task_id, logged_at);

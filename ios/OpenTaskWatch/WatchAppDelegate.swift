@@ -194,7 +194,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                         let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
                         print("[OpenTaskWatch] Summary: snoozed all +1hr (\(result.tasksAffected) tasks)")
                         if result.tasksAffected > 0 {
-                            await dismissNotifications(atOrBelowPriority: 3)
+                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                         }
                         updateBadge(result.skippedUrgent)
                         playHaptic(.success)
@@ -251,7 +251,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     let result = try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, includeTaskId: taskId)
                     print("[OpenTaskWatch] Snoozed all +1hr (\(result.tasksAffected) tasks)")
                     if result.tasksAffected > 0 {
-                        await dismissNotifications(atOrBelowPriority: 3)
+                        await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
                     }
                     updateBadge(result.skippedUrgent)
                     playHaptic(.success)

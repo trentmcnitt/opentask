@@ -195,7 +195,7 @@ function useBulkActions(
    * Unified save path for the SelectionActionSheet. Routes single-task saves
    * through PATCH /api/tasks/:id and multi-task saves through the bulk
    * endpoints (with `include_task_ids` so explicit selections bypass the
-   * server's P4/Urgent skip filter).
+   * server's P3/P4 (High/Urgent) skip filter).
    *
    * `dateTaskIds` is forwarded as the effective task ID list for the save —
    * used when the snooze confirmation dialog opts some tasks out of the date

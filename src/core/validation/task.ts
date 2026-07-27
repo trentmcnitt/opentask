@@ -47,6 +47,36 @@ const labels = z
   .max(50, 'Too many labels (max 50)')
 
 /**
+ * Opt-in to registering labels this write doesn't recognize (§7.2).
+ *
+ * Absent or false, an unknown label is a hard error. That is the point:
+ * creating a label is a discrete act, so a typo fails loudly instead of
+ * silently forking the taxonomy into a new tag.
+ */
+const createLabelFlag = z.boolean().optional()
+
+/**
+ * Provenance conveniences for automated callers (§7.2).
+ *
+ * These exist so the assistant never has to type a behavior-bearing label as
+ * free text — a typo'd `ai-monitored` yields a task nobody is watching that
+ * looks flagged. The flags map to `PROVENANCE_LABELS` server-side.
+ */
+const provenanceFlag = z.boolean().optional()
+
+/**
+ * Track target (§5): how many times this should happen per period.
+ *
+ * 1 means "not tracked" — every task is already a quota with target 1, so
+ * tracking is opt-in simply by setting this above 1. Capped to keep a typo from
+ * creating a target nobody could ever meet.
+ */
+const progressTarget = z.number().int().min(1).max(1000)
+
+/** Track progress (§5): how many are logged this period. */
+const progressCurrent = z.number().int().min(0).max(10000)
+
+/**
  * Auto-snooze minutes: null = use user default, 0 = off, 1-360 = custom minutes
  */
 const autoSnoozeMinutes = z.number().int().min(0).max(360).nullable()
@@ -82,6 +112,10 @@ export const taskCreateSchema = z.object({
   labels: labels.default([]).optional(),
   notes: z.string().max(10000, 'Notes too long').nullable().optional(),
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
+  create_label: createLabelFlag,
+  ai_proposed: provenanceFlag,
+  ai_added: provenanceFlag,
+  progress_target: progressTarget.optional(),
 })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
@@ -101,6 +135,9 @@ export const taskUpdateSchema = z.object({
   notes: z.string().max(10000, 'Notes too long').nullable().optional(),
   auto_snooze_minutes: autoSnoozeMinutes.optional(),
   reset_original_due_at: z.boolean().optional(),
+  create_label: createLabelFlag,
+  progress_target: progressTarget.optional(),
+  progress_current: progressCurrent.optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
@@ -130,11 +167,11 @@ export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
  * - Absolute: { ids, until } - sets all tasks to the same time
  * - Relative: { ids, delta_minutes } - adds minutes to each task's current due_at
  *
- * `include_task_ids` bypasses the default P4/Urgent skip filter for the listed
- * task IDs. Explicit user selections (e.g., the mobile selection sheet's quick
- * panel) pass this so urgent tasks the user has deliberately picked are not
- * silently dropped. The "Snooze All Overdue" sweep omits it, preserving the
- * default behavior of leaving urgent tasks alone.
+ * `include_task_ids` bypasses the default P3/P4 (High/Urgent) skip filter for
+ * the listed task IDs. Explicit user selections (e.g., the mobile selection
+ * sheet's quick panel) pass this so high/urgent tasks the user has deliberately
+ * picked are not silently dropped. The "Snooze All Overdue" sweep omits it,
+ * preserving the default behavior of leaving high/urgent tasks alone.
  */
 export const bulkSnoozeSchema = z
   .object({
@@ -219,7 +256,7 @@ export function validateBulkDelete(input: unknown): BulkDeleteInput {
  * Bulk snooze-overdue input schema
  *
  * Server-side convenience for the iOS "All" button — no task IDs needed.
- * Server queries overdue P0-P3 tasks for the user (P4 Urgent excluded).
+ * Server queries overdue P0-P2 tasks for the user (P3 High and P4 Urgent excluded).
  *
  * All fields are optional:
  * - `delta_minutes`: Minutes from now (with rounding: snapToHour for >= 60 min)

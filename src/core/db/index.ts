@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
+import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -187,6 +188,143 @@ function runMigrations(database: Database.Database): void {
       update.run(hashed, preview, row.id)
     }
   }
+
+  // Track / quotas + skip (REDESIGN-V03 §5, §7.5)
+  if (!hasColumn(database, 'tasks', 'progress_target')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_target INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!hasColumn(database, 'tasks', 'progress_current')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_current INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn(database, 'tasks', 'skip_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0')
+  }
+
+  backfillLabelRegistry(database)
+  backfillTimeSlots(database)
+}
+
+/**
+ * Give every existing user the default time slots (REDESIGN-V03 §6.0).
+ *
+ * `seedDefaultTimeSlots` runs at user creation, but users who existed before
+ * this shipped would otherwise have none — and a user with no slots gets a
+ * dashboard where every item falls into the un-slotted group, which looks
+ * broken rather than empty.
+ *
+ * Only touches users who have zero slots, so customised boundaries are never
+ * clobbered.
+ */
+function backfillTimeSlots(database: Database.Database): void {
+  // Kept in sync with DEFAULT_TIME_SLOTS in src/core/time-slots. Duplicated
+  // rather than imported because that module imports getDb from here, and a
+  // cycle at module-init time is exactly where it would break.
+  const defaults: [string, string][] = [
+    ['Early morning', '07:00'],
+    ['Before work', '09:00'],
+    ['Midday', '12:00'],
+    ['Afternoon', '16:00'],
+    ['Evening', '20:30'],
+  ]
+
+  const insert = database.prepare(
+    'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
+  )
+
+  const run = database.transaction(() => {
+    const users = database
+      .prepare(
+        `SELECT u.id FROM users u
+          WHERE NOT EXISTS (SELECT 1 FROM time_slots s WHERE s.user_id = u.id)`,
+      )
+      .all() as { id: number }[]
+
+    for (const user of users) {
+      defaults.forEach(([label, startTime], index) => {
+        insert.run(user.id, label, startTime, index)
+      })
+    }
+  })
+
+  run()
+}
+
+/**
+ * Seed the label registry from labels already in use (REDESIGN-V03 §7.2).
+ *
+ * Enforcement rejects unknown labels, so the registry MUST be populated before
+ * validation turns on — otherwise every existing task fails the moment anyone
+ * edits it. This runs on startup, ahead of any request.
+ *
+ * Sources both `tasks.labels` (the labels actually on tasks) and each user's
+ * `label_config` (labels they styled but may have since removed from every
+ * task) so nothing already known to the app is treated as a typo.
+ *
+ * Idempotent: INSERT OR IGNORE against the unique (user_id, name) index, so
+ * re-running adds only genuinely new values. Labels created after this point
+ * come through the API's explicit create path, not from here.
+ */
+function backfillLabelRegistry(database: Database.Database): void {
+  const insert = database.prepare(
+    'INSERT OR IGNORE INTO labels (user_id, name, facet) VALUES (?, ?, ?)',
+  )
+
+  // Operational labels carry behavior rather than domain meaning. Recording the
+  // facet here keeps the chip bar's AND-across-facets grouping correct without
+  // a second pass to classify them later.
+  const OPERATIONAL = SYSTEM_LABELS
+
+  const backfill = database.transaction(() => {
+    // Seed the operational labels for every user regardless of current use.
+    // These are system vocabulary, not user taxonomy: `ai-added` in particular
+    // must already exist or the first `confirm` on a task would be rejected as
+    // an unknown label by the very validation this registry adds.
+    const allUsers = database.prepare('SELECT id FROM users').all() as { id: number }[]
+    for (const user of allUsers) {
+      for (const name of OPERATIONAL) {
+        insert.run(user.id, name, 'operational')
+      }
+    }
+
+    const taskRows = database.prepare('SELECT user_id, labels FROM tasks').all() as {
+      user_id: number
+      labels: string
+    }[]
+    for (const row of taskRows) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(row.labels || '[]')
+      } catch {
+        continue
+      }
+      if (!Array.isArray(parsed)) continue
+      for (const name of parsed) {
+        if (typeof name !== 'string' || name.length === 0) continue
+        insert.run(row.user_id, name, OPERATIONAL.has(name) ? 'operational' : 'domain')
+      }
+    }
+
+    const userRows = database.prepare('SELECT id, label_config FROM users').all() as {
+      id: number
+      label_config: string
+    }[]
+    for (const row of userRows) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(row.label_config || '[]')
+      } catch {
+        continue
+      }
+      if (!Array.isArray(parsed)) continue
+      for (const entry of parsed) {
+        const name = (entry as { name?: unknown })?.name
+        if (typeof name !== 'string' || name.length === 0) continue
+        insert.run(row.id, name, OPERATIONAL.has(name) ? 'operational' : 'domain')
+      }
+    }
+  })
+
+  backfill()
 }
 
 function initSchema(database: Database.Database): void {
