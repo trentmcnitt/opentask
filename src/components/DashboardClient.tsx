@@ -5,6 +5,9 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
 import type { GroupingMode } from '@/components/TaskList'
+import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { ViewModeToggle } from '@/components/ViewModeToggle'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
@@ -323,6 +326,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   const searchParams = useSearchParams()
   const selection = useSelection()
   const timezone = useTimezone()
+  const { timeSlots } = useTimeSlots()
   const data = useFetchData(router, initialTasks)
   const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
   const { projects, refreshProjects } = useProjects()
@@ -823,8 +827,8 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   // Build task groups for keyboard navigation
   const taskGroups = useMemo(
-    () => buildTaskGroups(tasks_, projects, grouping, timezone),
-    [tasks_, projects, grouping, timezone],
+    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
+    [tasks_, projects, grouping, timezone, timeSlots],
   )
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
@@ -1098,6 +1102,13 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       allTasks={baseTasks}
       projects={projects}
       grouping={grouping}
+      onGroupingChange={(next) => {
+        // Selecting a view explicitly turns off AI-sort's unified override —
+        // otherwise the toggle would show a selection that isn't in effect.
+        setAiSortUnified(false)
+        setDefaultGrouping(next as 'time' | 'project' | 'unified' | 'slot')
+      }}
+      timeSlots={timeSlots}
       searchQuery={searchQuery}
       searchResultCount={searchResults.length}
       overdueCount={overdueCount}
@@ -1239,6 +1250,8 @@ function DashboardView({
   allTasks,
   projects,
   grouping,
+  onGroupingChange,
+  timeSlots,
   searchQuery,
   searchResultCount,
   overdueCount,
@@ -1347,6 +1360,9 @@ function DashboardView({
   allTasks: Task[]
   projects: Project[]
   grouping: GroupingMode
+  onGroupingChange: (grouping: GroupingMode) => void
+  /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
+  timeSlots: TimeSlot[]
   searchQuery: string | null
   searchResultCount: number
   overdueCount: number
@@ -1549,6 +1565,11 @@ function DashboardView({
           />
         )}
 
+        {/* §7.3: the front door is "Today", but the corpus stays reachable. */}
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+        </div>
+
         <FilterBar
           tasks={allTasks}
           selectedPriorities={selectedPriorities}
@@ -1628,6 +1649,7 @@ function DashboardView({
           tasks={tasks}
           projects={projects}
           grouping={grouping}
+          timeSlots={timeSlots}
           onDone={actions.handleDone}
           onSnooze={actions.handleSnooze}
           onLabelClick={onToggleLabel}

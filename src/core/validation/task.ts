@@ -77,6 +77,30 @@ const progressTarget = z.number().int().min(1).max(1000)
 const progressCurrent = z.number().int().min(0).max(10000)
 
 /**
+ * §6: put this item on the Reminders surface.
+ *
+ * A boolean rather than a label because §7.1 rules that kind is never stored as
+ * a name, and the notifier and dashboard both want an indexed column rather
+ * than json_each() over the labels array.
+ */
+const isReminderFlag = z.boolean()
+
+/**
+ * §5/§6 are mutually exclusive: an item is tracked or it is a reminder, never
+ * both. They pull in opposite directions — Track counts occurrences toward a
+ * quota, while a reminder has no debt at all and completing it just means
+ * "considered". A row claiming both has no coherent behavior.
+ */
+function refuseTrackedReminder<T extends { progress_target?: number; is_reminder?: boolean }>(
+  data: T,
+): boolean {
+  return !(data.is_reminder === true && (data.progress_target ?? 1) > 1)
+}
+
+const TRACKED_REMINDER_MESSAGE =
+  'A task cannot be both tracked (progress_target > 1) and a reminder'
+
+/**
  * Auto-snooze minutes: null = use user default, 0 = off, 1-360 = custom minutes
  */
 const autoSnoozeMinutes = z.number().int().min(0).max(360).nullable()
@@ -102,21 +126,24 @@ const bulkIds = z
 /**
  * Task creation input schema
  */
-export const taskCreateSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long'),
-  due_at: dateTimeString.nullable().optional(),
-  rrule: rruleString,
-  recurrence_mode: recurrenceMode.default('from_due').optional(),
-  project_id: z.number().int().positive().optional(),
-  priority: priority.default(0).optional(),
-  labels: labels.default([]).optional(),
-  notes: z.string().max(10000, 'Notes too long').nullable().optional(),
-  auto_snooze_minutes: autoSnoozeMinutes.optional(),
-  create_label: createLabelFlag,
-  ai_proposed: provenanceFlag,
-  ai_added: provenanceFlag,
-  progress_target: progressTarget.optional(),
-})
+export const taskCreateSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long'),
+    due_at: dateTimeString.nullable().optional(),
+    rrule: rruleString,
+    recurrence_mode: recurrenceMode.default('from_due').optional(),
+    project_id: z.number().int().positive().optional(),
+    priority: priority.default(0).optional(),
+    labels: labels.default([]).optional(),
+    notes: z.string().max(10000, 'Notes too long').nullable().optional(),
+    auto_snooze_minutes: autoSnoozeMinutes.optional(),
+    create_label: createLabelFlag,
+    ai_proposed: provenanceFlag,
+    ai_added: provenanceFlag,
+    progress_target: progressTarget.optional(),
+    is_reminder: isReminderFlag.optional(),
+  })
+  .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
 
@@ -138,6 +165,7 @@ export const taskUpdateSchema = z.object({
   create_label: createLabelFlag,
   progress_target: progressTarget.optional(),
   progress_current: progressCurrent.optional(),
+  is_reminder: isReminderFlag.optional(),
 })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>

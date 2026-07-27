@@ -46,9 +46,16 @@ function trackField<K extends keyof Task>(
   oldVal: Task[K],
   newVal: Task[K],
   clause: string = `${field} = ?`,
+  /**
+   * What to bind for this column, when it differs from the domain value.
+   * SQLite has no boolean type and better-sqlite3 refuses to bind one, so
+   * boolean fields keep their JS type in the undo snapshot (where readers
+   * expect a boolean) while binding 0/1 here.
+   */
+  dbValue: unknown = newVal,
 ): void {
   data.setClauses.push(clause)
-  data.values.push(newVal)
+  data.values.push(dbValue)
   data.fieldsChanged.push(field)
   data.beforeState[field] = oldVal
   data.afterState[field] = newVal
@@ -203,6 +210,19 @@ function collectBasicFields(
 
   if (input.progress_current !== undefined && input.progress_current !== task.progress_current) {
     trackField(data, 'progress_current', task.progress_current, input.progress_current)
+  }
+
+  // §6: moving an item onto (or off) the Reminders surface. Stored as 0/1 —
+  // the DB column is an integer, and writing a JS boolean would bind as such.
+  if (input.is_reminder !== undefined && input.is_reminder !== task.is_reminder) {
+    trackField(
+      data,
+      'is_reminder',
+      task.is_reminder,
+      input.is_reminder,
+      'is_reminder = ?',
+      input.is_reminder ? 1 : 0,
+    )
   }
 }
 

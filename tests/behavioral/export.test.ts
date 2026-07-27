@@ -274,6 +274,7 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     title: 'Test task',
     original_title: null,
     progress_target: 1,
+    is_reminder: false,
     progress_current: 0,
     skip_count: 0,
     done: false,
