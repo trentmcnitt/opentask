@@ -599,3 +599,122 @@ describe('Recurrence Changes via Task Update', () => {
     expect(updatedTask.anchor_time).toBe('09:00')
   })
 })
+
+describe('RD-014: prevDueAt advances past early completion', () => {
+  test('completing a weekly-Thursday task on Wednesday advances to the FOLLOWING Thursday', () => {
+    // rrule: weekly Thursday 9 AM
+    const rrule = RRulePatterns.weekly([3], 9, 0) // 3 = Thursday
+    // Task is due Thursday Apr 16, 2026 9 AM; user completes Wed Apr 15 3 PM (early).
+    const prevDueAt = localDate(2026, 4, 16, 9, 0)
+    const completedAt = localDate(2026, 4, 15, 15, 0)
+
+    const next = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt,
+      prevDueAt,
+    })
+
+    const nextLocal = getLocalTime(next)
+    const nextDow = getLocalDow(next)
+
+    // Should advance to Thursday Apr 23 (the NEXT Thursday after the previous due),
+    // NOT stay on Thursday Apr 16.
+    expect(nextDow).toBe(3) // Thursday
+    expect(nextLocal.hour).toBe(9)
+    expect(nextLocal.day).toBe(23)
+    expect(nextLocal.month).toBe(4)
+  })
+
+  test('completing the same task twice in quick succession advances by two cycles', () => {
+    const rrule = RRulePatterns.weekly([3], 9, 0)
+    // After 1st completion, due_at became Thu Apr 23 (per previous test).
+    // User completes again immediately on Wed Apr 15 3 PM.
+    const prevDueAt = localDate(2026, 4, 23, 9, 0)
+    const completedAt = localDate(2026, 4, 15, 15, 0)
+
+    const next = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt,
+      prevDueAt,
+    })
+
+    const nextLocal = getLocalTime(next)
+    const nextDow = getLocalDow(next)
+
+    // Should advance to Thursday Apr 30.
+    expect(nextDow).toBe(3)
+    expect(nextLocal.hour).toBe(9)
+    expect(nextLocal.day).toBe(30)
+    expect(nextLocal.month).toBe(4)
+  })
+
+  test('late completion (prevDueAt in the past) still uses completedAt as reference', () => {
+    // Previous due was last week; user completes today late. Reference = now.
+    const rrule = RRulePatterns.weekly([3], 9, 0)
+    const prevDueAt = localDate(2026, 4, 9, 9, 0) // Thu Apr 9 (past)
+    const completedAt = localDate(2026, 4, 15, 15, 0) // Wed Apr 15
+
+    const next = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt,
+      prevDueAt,
+    })
+
+    const nextLocal = getLocalTime(next)
+    // max(prev, completed) = completedAt → next Thursday = Apr 16.
+    expect(nextLocal.day).toBe(16)
+    expect(nextLocal.month).toBe(4)
+    expect(nextLocal.hour).toBe(9)
+  })
+
+  test('from_completion mode ignores prevDueAt', () => {
+    // Weekly from_completion, completed Wed; even with a future prevDueAt,
+    // the reference is still the completion moment (semantics: interval from completion).
+    const rrule = RRulePatterns.weekly([3], 9, 0)
+    const prevDueAt = localDate(2026, 4, 30, 9, 0) // far in the future
+    const completedAt = localDate(2026, 4, 15, 15, 0) // Wed
+
+    const next = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_completion',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt,
+      prevDueAt,
+    })
+
+    const nextLocal = getLocalTime(next)
+    // from_completion adds 1 week to completion, then snaps to anchor time (9 AM).
+    // Wed Apr 15 + 1 week = Wed Apr 22 at 9 AM.
+    expect(nextLocal.day).toBe(22)
+    expect(nextLocal.month).toBe(4)
+    expect(nextLocal.hour).toBe(9)
+  })
+
+  test('backwards compatibility: omitting prevDueAt falls back to completedAt only', () => {
+    const rrule = RRulePatterns.weekly([3], 9, 0)
+    const completedAt = localDate(2026, 4, 15, 15, 0)
+
+    const next = computeNextOccurrence({
+      rrule,
+      recurrenceMode: 'from_due',
+      anchorTime: '09:00',
+      timezone: TIMEZONE,
+      completedAt,
+      // prevDueAt omitted
+    })
+
+    const nextLocal = getLocalTime(next)
+    expect(nextLocal.day).toBe(16) // Thu Apr 16
+    expect(nextLocal.hour).toBe(9)
+  })
+})

@@ -211,4 +211,30 @@ export const enrichmentRecurrenceScenarios: AITestScenario[] = [
         'due_at should be noon local (e.g., T12:00:00, no Z suffix).',
     },
   },
+  {
+    id: 'enrich-recurrence-byday-matches-due-at',
+    feature: 'enrichment',
+    description:
+      'Weekly recurrence — due_at weekday must match BYDAY (regression: model sometimes picks an adjacent day)',
+    input: {
+      text: 'weekly linkedin/x post thursdays 9am',
+      timezone: 'America/Chicago',
+      projects: [
+        { id: 1, name: 'Inbox', shared: false },
+        { id: 5, name: 'Work', shared: false },
+      ],
+    },
+    requirements: {
+      must_include: {
+        labels: [],
+      },
+      quality_notes:
+        'Title: "Weekly linkedin/x post" or similar (recurrence phrase removed). ' +
+        'rrule must be FREQ=WEEKLY;BYDAY=TH. ' +
+        "CRITICAL: due_at's weekday MUST be Thursday — not Friday, not Wednesday. " +
+        'The model must correctly count forward from the Current local time to the NEXT Thursday ' +
+        '(which is today if today is Thursday before 9am, else the following Thursday). ' +
+        'Time must be 09:00 local (T09:00:00, no Z suffix).',
+    },
+  },
 ]

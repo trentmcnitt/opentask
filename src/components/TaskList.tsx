@@ -22,6 +22,8 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
+import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
+import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
 export type GroupingMode = 'time' | 'project' | 'unified'
 
@@ -257,16 +259,23 @@ export function TaskList({
   // - Overdue: snooze with default option (push forward from now)
   // - Future or no due date: open QuickActionPanel (nothing to "snooze")
   const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
+
+  // Every snooze originating from this list is a single-task interactive
+  // snooze, so all of them route through the §4.3 guard. Bulk sweeps do not
+  // come through here — they go via the Header / SnoozeAllFab bulk endpoints,
+  // which must never modal-block.
+  const { requestSnooze, dialogProps } = useSnoozeGuard(timezone, onSnooze)
+
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isTaskOverdue(task)) {
         const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
-        onSnooze(task.id, until)
+        requestSnooze(task, until)
       } else {
         onDoubleClick?.(task)
       }
     },
-    [defaultSnoozeOption, timezone, morningTime, onSnooze, onDoubleClick],
+    [defaultSnoozeOption, timezone, morningTime, requestSnooze, onDoubleClick],
   )
 
   if (tasks.length === 0) {
@@ -426,7 +435,7 @@ export function TaskList({
                         <TaskRow
                           task={task}
                           onDone={() => onDone(task.id)}
-                          onSnooze={onSnooze}
+                          onSnooze={(_taskId, until) => requestSnooze(task, until)}
                           isOverdue={isTaskOverdue(task)}
                           isSelected={selection.selectedIds.has(task.id)}
                           isSelectionMode={selection.isSelectionMode}
@@ -461,6 +470,7 @@ export function TaskList({
           )
         })}
       </div>
+      <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
 }

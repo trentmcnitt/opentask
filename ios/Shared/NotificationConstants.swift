@@ -56,9 +56,21 @@ func registerNotificationCategories() {
     UNUserNotificationCenter.current().setNotificationCategories([taskReminderCategory, taskSummaryCategory])
 }
 
+/// Highest priority the server will include in a bulk snooze.
+///
+/// Mirrors `HIGH_PRIORITY_THRESHOLD` in `src/lib/priority.ts`: the server
+/// snoozes P0-P2 and leaves P3 (High) and P4 (Urgent) alone, because their due
+/// dates are real deadlines. Dismissing above this value would clear the banner
+/// for a task that was never actually snoozed — it would stay overdue while
+/// looking handled, which is the failure this app exists to prevent.
+///
+/// Keep in sync with the server constant; there is no shared source of truth
+/// across the Swift/TypeScript boundary.
+let bulkSnoozeMaxPriority = 2
+
 /// Remove delivered notifications for tasks at or below the given priority.
 /// Used after bulk snooze to clear notifications for tasks that were just snoozed.
-/// P4 (Urgent) is never bulk-snoozed, so those notifications remain.
+/// P3 (High) and P4 (Urgent) are never bulk-snoozed, so those notifications remain.
 func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
     let center = UNUserNotificationCenter.current()
     let notifications = await center.deliveredNotifications()

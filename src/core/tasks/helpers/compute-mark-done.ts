@@ -63,6 +63,7 @@ export function computeMarkDone(
       anchorTime: task.anchor_time,
       timezone: userTimezone,
       completedAt,
+      prevDueAt: task.due_at ? new Date(task.due_at) : null,
     })
 
     return {
@@ -73,6 +74,10 @@ export function computeMarkDone(
       fieldsChanged: [
         'due_at',
         'original_due_at',
+        // §5: the period boundary resets tracked progress, so it must be in
+        // fieldsChanged or undo would restore due_at without restoring the
+        // count that went with it.
+        'progress_current',
         'completion_count',
         'first_completed_at',
         'last_completed_at',

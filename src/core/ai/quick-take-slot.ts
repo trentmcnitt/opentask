@@ -24,6 +24,8 @@ import {
   validateWarmup,
   parseEnvInt,
   checkCircuitBreaker,
+  computeReinitBackoff,
+  CIRCUIT_BREAKER_INITIAL_FAILURES,
 } from './slot-shared'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
@@ -61,6 +63,10 @@ interface SlotInternals {
   // Circuit breaker
   lastRecycleTime: number
   rapidRecycleCount: number
+  // Re-init backoff: tracks consecutive failures so the slot can recover
+  // from `dead` without thrashing. Reset to 0 on successful warmup.
+  consecutiveInitFailures: number
+  nextReinitAllowedAt: number
 }
 
 export interface QuickTakeSlotStats extends BaseSlotStats {
@@ -79,6 +85,14 @@ interface QuickTakeSlotGlobals {
   totalSuperseded: number
   lastRequestAt: Date | null
   warmupResolver: ((ok: boolean) => void) | null
+  // Single-flight guard for initQuickTakeSlot(). The public `state` field
+  // can read 'initializing' from two paths (recycleSlot pre-set it, or init
+  // itself is running) — this flag distinguishes them so concurrent callers
+  // don't spawn duplicate subprocesses.
+  initInProgress: boolean
+  // Set by shutdownQuickTakeSlot() — blocks any further re-init attempts
+  // even after cooldown expires (the process is going away).
+  shutdownInitiated: boolean
   // Current operation tracking (for in-progress visibility)
   currentInputText: string | null
   currentStartedAt: Date | null
@@ -100,6 +114,8 @@ if (!globalForSlot.__quickTakeSlotState) {
       skipCount: 0,
       lastRecycleTime: 0,
       rapidRecycleCount: 0,
+      consecutiveInitFailures: 0,
+      nextReinitAllowedAt: 0,
     },
     activatedAt: null,
     totalRequests: 0,
@@ -107,6 +123,8 @@ if (!globalForSlot.__quickTakeSlotState) {
     totalSuperseded: 0,
     lastRequestAt: null,
     warmupResolver: null,
+    initInProgress: false,
+    shutdownInitiated: false,
     currentInputText: null,
     currentStartedAt: null,
   }
@@ -117,16 +135,30 @@ const g = globalForSlot.__quickTakeSlotState!
 // --- Core functions ---
 
 /**
- * Initialize the quick take slot. Called from instrumentation.ts on startup.
+ * Initialize the quick take slot. Called from instrumentation.ts on startup,
+ * from recycleSlot(), and on-demand from quickTakeSlotQuery() to recover from
+ * the `dead` state.
+ *
+ * Recovery from `dead` is gated by `nextReinitAllowedAt` — repeated failures
+ * back off exponentially (see computeReinitBackoff). After `shutdownInitiated`
+ * the slot will not re-init, regardless of cooldown.
  */
 export async function initQuickTakeSlot(): Promise<void> {
-  if (g.slot.state === 'available' || g.slot.state === 'busy' || g.slot.state === 'dead') {
-    if (g.slot.state !== 'dead') {
-      log.warn('ai', 'Quick Take slot already initialized')
-    }
-    return
-  }
+  // Single-flight: another caller is already running init. The state field
+  // alone can't tell us this — recycleSlot() pre-sets state='initializing'
+  // before scheduling init, so we use an explicit flag instead.
+  if (g.initInProgress) return
 
+  // Already healthy
+  if (g.slot.state === 'available' || g.slot.state === 'busy') return
+
+  // Process is shutting down — never spawn a new subprocess
+  if (g.shutdownInitiated) return
+
+  // Dead state: respect cooldown so failed inits don't thrash the SDK
+  if (g.slot.state === 'dead' && Date.now() < g.slot.nextReinitAllowedAt) return
+
+  g.initInProgress = true
   try {
     g.slot.state = 'initializing'
     g.slot.resultCount = 0
@@ -172,8 +204,7 @@ export async function initQuickTakeSlot(): Promise<void> {
     clearTimeout(warmupTimer)
 
     if (!warmupOk) {
-      log.error('ai', 'Quick Take slot: warmup validation failed')
-      g.slot.state = 'dead'
+      markInitFailure('warmup validation failed', null)
       return
     }
 
@@ -181,12 +212,31 @@ export async function initQuickTakeSlot(): Promise<void> {
     if ((g.slot.state as SlotState) === 'dead') return
 
     g.slot.state = 'available'
+    g.slot.consecutiveInitFailures = 0
+    g.slot.nextReinitAllowedAt = 0
     g.activatedAt = new Date()
     log.info('ai', `Quick Take slot warm (model: ${getModel()}, max reuses: ${getMaxReuses()})`)
   } catch (err) {
-    g.slot.state = 'dead'
-    log.error('ai', 'Quick Take slot init failed:', err)
+    markInitFailure('init failed', err)
+  } finally {
+    g.initInProgress = false
   }
+}
+
+/**
+ * Record a failed init/warmup: increment failure count, schedule the next
+ * allowed re-init attempt, mark the slot dead.
+ */
+function markInitFailure(reason: string, err: unknown): void {
+  g.slot.consecutiveInitFailures++
+  const backoffMs = computeReinitBackoff(g.slot.consecutiveInitFailures)
+  g.slot.nextReinitAllowedAt = Date.now() + backoffMs
+  g.slot.state = 'dead'
+  log.error(
+    'ai',
+    `Quick Take slot ${reason} (attempt ${g.slot.consecutiveInitFailures}, next attempt in ${Math.round(backoffMs / 1000)}s):`,
+    err,
+  )
 }
 
 /**
@@ -201,7 +251,14 @@ export async function quickTakeSlotQuery(
   prompt: string,
   options?: { userId?: number; inputText?: string; timeoutMs?: number },
 ): Promise<{ text: string | null; durationMs: number } | null> {
-  // If slot is not usable, signal caller to fall back to cold path
+  // If the slot died at runtime, attempt one re-init before giving up. The
+  // init function respects the cooldown internally — repeated failures back
+  // off so a permanently broken SDK won't be retried on every request.
+  if (g.slot.state === 'dead') {
+    await initQuickTakeSlot()
+  }
+
+  // If slot is still not usable, signal caller to fall back to cold path
   if (
     g.slot.state === 'dead' ||
     g.slot.state === 'uninitialized' ||
@@ -333,6 +390,7 @@ export function getQuickTakeSlotStats(): QuickTakeSlotStats {
 /** Graceful shutdown for SIGTERM. */
 export function shutdownQuickTakeSlot(): void {
   log.info('ai', 'Quick Take slot: shutting down')
+  g.shutdownInitiated = true
   g.slot.generation++
   g.slot.deliverResult?.(null)
   g.warmupResolver?.(false)
@@ -459,9 +517,20 @@ function recycleSlot(): void {
   g.slot.lastRecycleTime = cb.newTime
 
   if (cb.tripped) {
+    // Seed the failure counter so auto-recovery starts at a real cooldown.
+    // Rapid recycles mean something is genuinely broken; first attempt should
+    // wait at least computeReinitBackoff(CIRCUIT_BREAKER_INITIAL_FAILURES).
+    g.slot.consecutiveInitFailures = Math.max(
+      g.slot.consecutiveInitFailures,
+      CIRCUIT_BREAKER_INITIAL_FAILURES,
+    )
+    const backoffMs = computeReinitBackoff(g.slot.consecutiveInitFailures)
+    g.slot.nextReinitAllowedAt = Date.now() + backoffMs
+
     log.error(
       'ai',
-      `Quick Take slot recycled ${cb.newCount} times rapidly — marking dead (circuit breaker)`,
+      `Quick Take slot recycled ${cb.newCount} times rapidly — marking dead ` +
+        `(circuit breaker, next attempt in ${Math.round(backoffMs / 1000)}s)`,
     )
     g.slot.generation++
     g.slot.deliverResult?.(null)
@@ -518,12 +587,16 @@ export function _resetSlotForTesting(): void {
   g.slot.skipCount = 0
   g.slot.lastRecycleTime = 0
   g.slot.rapidRecycleCount = 0
+  g.slot.consecutiveInitFailures = 0
+  g.slot.nextReinitAllowedAt = 0
   g.activatedAt = null
   g.totalRequests = 0
   g.totalRecycles = 0
   g.totalSuperseded = 0
   g.lastRequestAt = null
   g.warmupResolver = null
+  g.initInProgress = false
+  g.shutdownInitiated = false
   g.currentInputText = null
   g.currentStartedAt = null
 }

@@ -46,13 +46,20 @@ export interface ComputeNextOptions {
   anchorTime: string | null
   timezone: string
   completedAt: Date
+  /**
+   * The task's current due_at (prior to this completion). Used by 'from_due' mode
+   * to guarantee the next occurrence is strictly after the previous due — otherwise
+   * completing a recurring task before its due date (or twice in quick succession)
+   * can return the same occurrence and leave the task stuck.
+   */
+  prevDueAt?: Date | null
 }
 
 /**
  * Compute the next occurrence of a recurring task.
  *
  * For 'from_due' mode:
- * - Uses rrule.after(completedAt) to find the next occurrence in the pattern
+ * - Uses rrule.after(max(prevDueAt, completedAt)) to find the next occurrence
  * - The pattern time comes from DTSTART (set via anchor_time)
  *
  * For 'from_completion' mode:
@@ -60,13 +67,13 @@ export interface ComputeNextOptions {
  * - Snaps to anchor_time
  */
 export function computeNextOccurrence(options: ComputeNextOptions): Date {
-  const { rrule, recurrenceMode, anchorTime, timezone, completedAt } = options
+  const { rrule, recurrenceMode, anchorTime, timezone, completedAt, prevDueAt } = options
 
   if (recurrenceMode === 'from_completion') {
     return computeFromCompletion(rrule, anchorTime, timezone, completedAt)
   }
 
-  return computeFromDue(rrule, anchorTime, timezone, completedAt)
+  return computeFromDue(rrule, anchorTime, timezone, completedAt, prevDueAt ?? null)
 }
 
 /**
@@ -74,12 +81,18 @@ export function computeNextOccurrence(options: ComputeNextOptions): Date {
  *
  * This is the standard recurrence: "Every Monday at 9 AM" means the next Monday
  * at 9 AM, regardless of when the task was completed.
+ *
+ * Reference point for "next" is max(prevDueAt, completedAt): if the user completes
+ * before the current due (or re-completes the new occurrence immediately), we
+ * advance from the previous due — not from "now" — so each completion moves the
+ * task forward by one cycle.
  */
 function computeFromDue(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
   completedAt: Date,
+  prevDueAt: Date | null,
 ): Date {
   const components = parseRRule(rruleStr)
 
@@ -95,9 +108,11 @@ function computeFromDue(
     minute = components.byminute ?? 0
   }
 
-  // Create DTSTART in "naive local" format with the anchor time
-  // We use a date far in the past as the epoch of this pattern
-  const dtstart = new Date(2020, 0, 1, hour, minute, 0, 0)
+  // Create DTSTART in "naive" format (UTC slot) with the anchor time. Using
+  // Date.UTC keeps the pattern independent of the server's local timezone —
+  // critical on DST-observing hosts where new Date(2020,0,1,h,m) would carry
+  // the winter UTC offset and drift from summer target dates.
+  const dtstart = new Date(Date.UTC(2020, 0, 1, hour, minute, 0, 0))
 
   // Build RRule options - NO BYHOUR/BYMINUTE, time comes from dtstart
   const ruleOptions: Partial<InstanceType<typeof RRule>['options']> = {
@@ -130,17 +145,21 @@ function computeFromDue(
 
   const rule = new RRule(ruleOptions)
 
-  // Convert completedAt to "naive local" in the user's timezone
+  // Reference point: the later of prevDueAt and completedAt. This ensures the next
+  // occurrence is strictly after the previous due, so completing early (or completing
+  // the same recurring task twice in a row) always advances by one cycle.
   const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
-  const completedNaive = toNaiveLocal(completedDt)
+  const prevDueDt = prevDueAt ? DateTime.fromJSDate(prevDueAt).setZone(timezone) : null
+  const refDt = prevDueDt && prevDueDt > completedDt ? prevDueDt : completedDt
+  const refNaive = toNaiveLocal(refDt)
 
   // Get the next occurrence (in "naive local")
-  const nextNaive = rule.after(completedNaive, false)
+  const nextNaive = rule.after(refNaive, false)
 
   if (!nextNaive) {
     // Fallback: shouldn't happen for infinite rules
-    // Return tomorrow at anchor time
-    const tomorrow = completedDt.plus({ days: 1 }).set({ hour, minute, second: 0, millisecond: 0 })
+    // Return tomorrow at anchor time (relative to the reference, not completion)
+    const tomorrow = refDt.plus({ days: 1 }).set({ hour, minute, second: 0, millisecond: 0 })
     return tomorrow.toJSDate()
   }
 
@@ -228,5 +247,5 @@ export function computeFirstOccurrence(
   anchorTime: string | null,
   timezone: string,
 ): Date {
-  return computeFromDue(rruleStr, anchorTime, timezone, new Date())
+  return computeFromDue(rruleStr, anchorTime, timezone, new Date(), null)
 }
