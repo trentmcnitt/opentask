@@ -53,6 +53,8 @@ interface OverdueTask {
   user_auto_snooze_minutes: number
   user_auto_snooze_urgent_minutes: number
   user_auto_snooze_high_minutes: number
+  user_auto_snooze_low_minutes: number
+  user_auto_snooze_medium_minutes: number
   critical_alert_volume: number
   // §4.6 inputs — a recurring task's due-today-ness comes from its schedule,
   // not from due_at, which freezes as soon as the daily sweep stops.
@@ -79,11 +81,28 @@ interface NotificationBucket {
 /**
  * Get the effective notification repeat interval for a task in minutes.
  * Per-task override > priority-based user default.
+ *
+ * §4.1 cadence ladder. Every rung branches EXPLICITLY — previously P0, P1 and
+ * P2 all fell through to one shared value, which is why priority behaved as a
+ * binary "matters" flag rather than a ladder.
+ *
+ *   P0 unset  → 30 min   (unchanged; L2 failure-safe — an urgent-but-
+ *                         unclassified item must still reach the user)
+ *   P1 low    → 240 min  (rare, but never silent)
+ *   P2 medium → 60 min   (NOT notify-once: one missed glance would lose it
+ *                         permanently, which fails dangerous)
+ *   P3 high   → 15 min   (unchanged)
+ *   P4 urgent → 5 min    (unchanged)
+ *
+ * P0 keeps its own column rather than sharing with P1: unset means nobody
+ * stated a priority (L1), not "lowest", so the two must be tunable apart.
  */
 function getEffectiveInterval(task: OverdueTask): number {
   if (task.auto_snooze_minutes !== null) return task.auto_snooze_minutes
-  if (task.priority >= 4) return task.user_auto_snooze_urgent_minutes
+  if (task.priority >= URGENT_PRIORITY) return task.user_auto_snooze_urgent_minutes
   if (task.priority >= HIGH_PRIORITY_THRESHOLD) return task.user_auto_snooze_high_minutes
+  if (task.priority === 2) return task.user_auto_snooze_medium_minutes
+  if (task.priority === 1) return task.user_auto_snooze_low_minutes
   return task.user_auto_snooze_minutes
 }
 
@@ -255,6 +274,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
                u.auto_snooze_high_minutes as user_auto_snooze_high_minutes,
+               u.auto_snooze_low_minutes as user_auto_snooze_low_minutes,
+               u.auto_snooze_medium_minutes as user_auto_snooze_medium_minutes,
                u.critical_alert_volume
         FROM tasks t
         INNER JOIN users u ON t.user_id = u.id
@@ -265,6 +286,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
           -- §5: tracked items are exempt from the cadence loop (see
           -- currently-due.ts for the rationale).
           AND t.progress_target <= 1
+          -- §6: reminders never fire individually — their time slot notifies.
+          AND t.is_reminder = 0
           AND (
             t.rrule IS NOT NULL
             OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))

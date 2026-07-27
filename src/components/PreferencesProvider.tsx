@@ -30,7 +30,12 @@ interface PreferencesContextValue {
   autoSnoozeUrgent: number
   setAutoSnoozeUrgent: (minutes: number) => void
   autoSnoozeHigh: number
+  /** §4.1 cadence ladder — P1 and P2 get their own intervals. */
+  autoSnoozeLow: number
+  autoSnoozeMedium: number
   setAutoSnoozeHigh: (minutes: number) => void
+  setAutoSnoozeLow: (minutes: number) => void
+  setAutoSnoozeMedium: (minutes: number) => void
   defaultSnoozeOption: string
   setDefaultSnoozeOption: (option: string) => void
   morningTime: string
@@ -39,8 +44,8 @@ interface PreferencesContextValue {
   setWakeTime: (time: string) => void
   sleepTime: string
   setSleepTime: (time: string) => void
-  defaultGrouping: 'time' | 'project' | 'unified'
-  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
+  defaultGrouping: 'time' | 'project' | 'unified' | 'slot'
+  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => void
   defaultSort: SortOption
   defaultSortReversed: boolean
   setSortPreference: (sort: SortOption, reversed: boolean) => void
@@ -96,7 +101,11 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   autoSnoozeUrgent: 5,
   setAutoSnoozeUrgent: () => {},
   autoSnoozeHigh: 15,
+  autoSnoozeLow: 240,
+  autoSnoozeMedium: 60,
   setAutoSnoozeHigh: () => {},
+  setAutoSnoozeLow: () => {},
+  setAutoSnoozeMedium: () => {},
   defaultSnoozeOption: '60',
   setDefaultSnoozeOption: () => {},
   morningTime: '09:00',
@@ -153,13 +162,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
   const [autoSnoozeUrgent, setAutoSnoozeUrgentState] = useState(5)
   const [autoSnoozeHigh, setAutoSnoozeHighState] = useState(15)
+  const [autoSnoozeLow, setAutoSnoozeLowState] = useState(240)
+  const [autoSnoozeMedium, setAutoSnoozeMediumState] = useState(60)
   const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
-  const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
-    'project',
-  )
+  const [defaultGrouping, setDefaultGroupingState] = useState<
+    'time' | 'project' | 'unified' | 'slot'
+  >('project')
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
@@ -255,6 +266,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         }
         if (data?.data?.auto_snooze_urgent_minutes) {
           setAutoSnoozeUrgentState(data.data.auto_snooze_urgent_minutes)
+        }
+        if (data?.data?.auto_snooze_low_minutes) {
+          setAutoSnoozeLowState(data.data.auto_snooze_low_minutes)
+        }
+        if (data?.data?.auto_snooze_medium_minutes) {
+          setAutoSnoozeMediumState(data.data.auto_snooze_medium_minutes)
         }
         if (data?.data?.auto_snooze_high_minutes) {
           setAutoSnoozeHighState(data.data.auto_snooze_high_minutes)
@@ -369,6 +386,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAutoSnoozeUrgent: setAutoSnoozeUrgentState,
         autoSnoozeHigh,
         setAutoSnoozeHigh: setAutoSnoozeHighState,
+        autoSnoozeLow,
+        setAutoSnoozeLow: setAutoSnoozeLowState,
+        autoSnoozeMedium,
+        setAutoSnoozeMedium: setAutoSnoozeMediumState,
         defaultSnoozeOption,
         setDefaultSnoozeOption: setDefaultSnoozeOptionState,
         morningTime,
@@ -378,7 +399,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         sleepTime,
         setSleepTime: setSleepTimeState,
         defaultGrouping,
-        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => {
+        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => {
           setDefaultGroupingState(grouping)
           fetch('/api/user/preferences', {
             method: 'PATCH',
@@ -454,6 +475,10 @@ export function useAutoSnoozeDefault() {
     setAutoSnoozeUrgent,
     autoSnoozeHigh,
     setAutoSnoozeHigh,
+    autoSnoozeLow,
+    setAutoSnoozeLow,
+    autoSnoozeMedium,
+    setAutoSnoozeMedium,
   } = useContext(PreferencesContext)
   return {
     autoSnoozeDefault,
@@ -462,6 +487,10 @@ export function useAutoSnoozeDefault() {
     setAutoSnoozeUrgent,
     autoSnoozeHigh,
     setAutoSnoozeHigh,
+    autoSnoozeLow,
+    setAutoSnoozeLow,
+    autoSnoozeMedium,
+    setAutoSnoozeMedium,
   }
 }
 

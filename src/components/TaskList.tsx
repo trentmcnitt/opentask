@@ -22,10 +22,33 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
+import { groupBySlot, type TimeSlot } from '@/lib/time-slot-assign'
+import { effectiveDueAt } from '@/core/recurrence/occurrence'
+import { DateTime } from 'luxon'
+
+/**
+ * §7.3: items with no time of day (most Track items) get their own group after
+ * the timed slots rather than being dropped from the front door.
+ */
+const UNSLOTTED_LABEL = 'Anytime today'
+
+/**
+ * How many tasks a group shows before "show all" (§7.3).
+ *
+ * The point is that the view scales to ANY group size without truncating
+ * content — §1.1's founding constraint is that the harness adapts to the scale,
+ * so nothing is ever hidden permanently, just collapsed behind one tap.
+ */
+const GROUP_PREVIEW_COUNT = 5
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
-export type GroupingMode = 'time' | 'project' | 'unified'
+/**
+ * `slot` is the §7.3 front door: today's tasks grouped by time slot. The other
+ * modes remain reachable — the corpus stays fully accessible, it just isn't
+ * what greets you.
+ */
+export type GroupingMode = 'time' | 'project' | 'unified' | 'slot'
 
 import { useSelectionOptional, type SelectionContextType } from './SelectionProvider'
 
@@ -46,6 +69,8 @@ interface TaskListProps {
   tasks: Task[]
   projects?: Project[]
   grouping?: GroupingMode
+  /** Time slots for `grouping === 'slot'` (§6.0). */
+  timeSlots?: TimeSlot[]
   onDone: (taskId: number) => void
   /** Called with (taskId, until) for immediate snooze (single-click, swipe, or menu) */
   onSnooze: (taskId: number, until: string) => void
@@ -204,6 +229,7 @@ export function TaskList({
   tasks,
   projects = [],
   grouping = 'time',
+  timeSlots = [],
   onDone,
   onSnooze,
   onLabelClick,
@@ -266,6 +292,19 @@ export function TaskList({
   // which must never modal-block.
   const { requestSnooze, dialogProps } = useSnoozeGuard(timezone, onSnooze)
 
+  // Which slot groups have been expanded past their preview (§7.3). Local
+  // state, not persisted: expansion is a momentary "show me the rest", not a
+  // preference worth remembering across sessions.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const toggleGroupExpanded = useCallback((label: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }, [])
+
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isTaskOverdue(task)) {
@@ -283,7 +322,13 @@ export function TaskList({
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="mb-4 text-4xl">&#x2705;</div>
         <h2 className="text-foreground text-xl font-medium">All caught up!</h2>
-        <p className="text-muted-foreground mt-1">No tasks due right now.</p>
+        <p className="text-muted-foreground mt-1">
+          {grouping === 'slot'
+            ? // §7.3 explicitly wants the inbox-zero feeling for TODAY, while
+              // being honest that later-today items still pend.
+              'Nothing left for today.'
+            : 'No tasks due right now.'}
+        </p>
       </div>
     )
   }
@@ -298,7 +343,9 @@ export function TaskList({
     ? [{ label: '_unified', tasks }]
     : grouping === 'project'
       ? groupByProject(tasks, projects)
-      : groupByTime(tasks, timezone)
+      : grouping === 'slot'
+        ? groupByTimeSlot(tasks, timeSlots, timezone)
+        : groupByTime(tasks, timezone)
 
   // Compute sorted groups once, reuse for both orderedIds and rendering
   const sortedGroups = groups.map((g) => ({
@@ -361,6 +408,17 @@ export function TaskList({
           const { sortedTasks } = group
           const collapsed = !isUnified && isCollapsed(group.label)
 
+          // §7.3: show the first N, with everything else one tap away. Nothing
+          // is ever truncated permanently — §1.1's constraint is that the
+          // harness adapts to the scale, so a 40-item slot stays fully
+          // reachable while the day still reads at a glance. Only applies to
+          // slot grouping; the other views keep their existing behaviour.
+          const previewed = grouping === 'slot' && !isUnified
+          const isExpanded = expandedGroups.has(group.label)
+          const visibleTasks =
+            previewed && !isExpanded ? sortedTasks.slice(0, GROUP_PREVIEW_COUNT) : sortedTasks
+          const hiddenCount = sortedTasks.length - visibleTasks.length
+
           return (
             <section key={group.label}>
               {/* "Now" separator between Overdue and the next group */}
@@ -421,7 +479,7 @@ export function TaskList({
               )}
               {!collapsed && (
                 <div className="space-y-1">
-                  {sortedTasks.map((task) => {
+                  {visibleTasks.map((task) => {
                     const cancelRef = { current: null as (() => void) | null }
                     return (
                       <SwipeableRow
@@ -464,6 +522,25 @@ export function TaskList({
                       </SwipeableRow>
                     )
                   })}
+                  {hiddenCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupExpanded(group.label)}
+                      className="text-muted-foreground hover:text-foreground w-full rounded-lg py-2 text-xs font-medium transition-colors"
+                    >
+                      Show all {sortedTasks.length}
+                      <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
+                    </button>
+                  )}
+                  {isExpanded && sortedTasks.length > GROUP_PREVIEW_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupExpanded(group.label)}
+                      className="text-muted-foreground hover:text-foreground w-full rounded-lg py-2 text-xs font-medium transition-colors"
+                    >
+                      Show less
+                    </button>
+                  )}
                 </div>
               )}
             </section>
@@ -534,6 +611,59 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
   }
 
   return groups
+}
+
+/**
+ * Group today's tasks into time slots (§7.3).
+ *
+ * Two things this must not do:
+ *
+ * 1. Drop the un-slotted items. Anything with no time of day — which is most
+ *    Track items — goes into an explicit "Anytime today" group rendered AFTER
+ *    the timed slots. §7.3 is explicit that they must not become invisible
+ *    from the front door.
+ * 2. Hide empty slots... except when the whole day is empty. A slot the user
+ *    defined is part of how they read their day, so an empty "Midday" still
+ *    renders as a container. But rendering five empty containers when there is
+ *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
+ *    so a fully-empty day collapses to no groups and the caught-up state shows.
+ */
+function groupByTimeSlot(tasks: Task[], slots: TimeSlot[], timezone: string): TaskGroup[] {
+  if (tasks.length === 0) return []
+
+  // §7.3: the front door is TODAY, not the whole corpus. Due-ness comes from
+  // §4.6's derivation rather than raw due_at, so a recurring item whose date
+  // froze months ago doesn't wrongly appear, and one that genuinely recurs
+  // today does — even if its stored due_at disagrees.
+  //
+  // Undated items are kept: they can't be "not today", and dropping them would
+  // hide most Track items from the front door, which §7.3 forbids.
+  const now = new Date()
+  const endOfToday = DateTime.fromJSDate(now).setZone(timezone).endOf('day').toJSDate()
+
+  const todays = tasks.filter((task) => {
+    if (!task.due_at && !task.rrule) return true
+    const effective = effectiveDueAt(task, timezone, now)
+    if (!effective) return false
+    return effective.getTime() <= endOfToday.getTime()
+  })
+
+  if (todays.length === 0) return []
+
+  const grouped = groupBySlot(todays, slots, timezone)
+  const out: TaskGroup[] = []
+
+  for (const group of grouped) {
+    if (group.slot === null) {
+      if (group.items.length > 0) {
+        out.push({ label: UNSLOTTED_LABEL, tasks: group.items })
+      }
+      continue
+    }
+    out.push({ label: group.slot.label, tasks: group.items })
+  }
+
+  return out
 }
 
 function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
@@ -727,7 +857,10 @@ export function buildTaskGroups(
   projects: Project[],
   grouping: GroupingMode,
   timezone: string,
+  timeSlots: TimeSlot[] = [],
 ): TaskGroup[] {
   if (grouping === 'unified') return [{ label: '_unified', tasks }]
-  return grouping === 'project' ? groupByProject(tasks, projects) : groupByTime(tasks, timezone)
+  if (grouping === 'project') return groupByProject(tasks, projects)
+  if (grouping === 'slot') return groupByTimeSlot(tasks, timeSlots, timezone)
+  return groupByTime(tasks, timezone)
 }

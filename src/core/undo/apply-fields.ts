@@ -50,6 +50,8 @@ const VALID_TASK_COLUMNS = new Set([
   'progress_target',
   'progress_current',
   'skip_count',
+  // §6
+  'is_reminder',
 ])
 
 /**
@@ -92,6 +94,10 @@ export function applyFieldsToTask(
       } else if (dbColumn === 'done') {
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { done?: boolean }).done ? 1 : 0)
+      } else if (dbColumn === 'is_reminder') {
+        // Same reason as `done`: SQLite has no boolean type (§6).
+        setClauses.push(`${dbColumn} = ?`)
+        values.push((state as { is_reminder?: boolean }).is_reminder ? 1 : 0)
       } else {
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as Record<string, unknown>)[stateKey])

@@ -44,6 +44,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_urgent: result.urgentSkipped,
+      // §6: reminders are bucket-locked, so a sweep reports them rather than
+      // prompting about them.
+      skipped_reminders: result.reminderSkipped,
       skipped_no_due_date: result.noDueDateSkipped,
     })
   } catch (err) {

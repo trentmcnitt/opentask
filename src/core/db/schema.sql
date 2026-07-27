@@ -20,6 +20,15 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   auto_snooze_urgent_minutes INTEGER NOT NULL DEFAULT 5,
   auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15,
+  -- §4.1: the cadence ladder. auto_snooze_minutes above is now P0-ONLY.
+  -- P1 is rare-but-present rather than silent, and P2 is NOT notify-once:
+  -- one missed glance (phone face-down, in a meeting) would lose it
+  -- permanently, which fails dangerous for something rated moderately
+  -- important. Nothing goes fully silent by default (L2) — the bottom rungs
+  -- get slower cadence plus replacement (§4.2), so persistence never becomes
+  -- pile-up.
+  auto_snooze_low_minutes INTEGER NOT NULL DEFAULT 240,
+  auto_snooze_medium_minutes INTEGER NOT NULL DEFAULT 60,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
   wake_time     TEXT NOT NULL DEFAULT '07:00',
@@ -100,6 +109,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- §7.5: occurrences declined without recording a completion, so
   -- completion_count stays honest.
   skip_count       INTEGER NOT NULL DEFAULT 0,
+  -- Reminders surface (REDESIGN-V03 §6). A boolean column, deliberately NOT a
+  -- label: §7.1 rules that kind is never stored as a name, and a
+  -- behavior-bearing value inside the JSON labels array would need json_each()
+  -- at every query site that wants an indexed boolean (overdue-checker,
+  -- dashboard, badge).
+  is_reminder      INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
