@@ -1153,7 +1153,7 @@ describe('Bulk Snooze Priority Filter', () => {
   /**
    * SP-001: Mixed P0-P4 selection — P0-P3 snoozed, P4 skipped
    */
-  test('SP-001: Mixed selection — P0-P3 snoozed, P4 skipped', () => {
+  test('SP-001: Mixed selection — P0-P2 snoozed, P3/P4 skipped', () => {
     const lowTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1182,16 +1182,16 @@ describe('Bulk Snooze Priority Filter', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(3)
-    expect(result.tasksSkipped).toBe(1)
-    expect(result.urgentSkipped).toBe(1)
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(2)
+    expect(result.urgentSkipped).toBe(2)
 
-    // P1, P2, P3 were all snoozed
+    // P1 and P2 were snoozed
     expect(getTaskById(lowTask.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(medTask.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(18, 0))
 
-    // P4 was NOT snoozed
+    // P3 and P4 were NOT snoozed
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(10, 0))
     expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(11, 0))
   })
 
@@ -1227,9 +1227,9 @@ describe('Bulk Snooze Priority Filter', () => {
   })
 
   /**
-   * SP-003: P0/P1/P2/P3 mix — all snoozed (no P4 present)
+   * SP-003: P0/P1/P2 snoozed; P3 skipped even with no P4 present
    */
-  test('SP-003: P0-P3 mix with no P4 — all snoozed', () => {
+  test('SP-003: P0-P2 mix snoozed — P3 skipped', () => {
     const unsetTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1258,14 +1258,16 @@ describe('Bulk Snooze Priority Filter', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(4)
-    expect(result.tasksSkipped).toBe(0)
-    expect(result.urgentSkipped).toBe(0)
+    expect(result.tasksAffected).toBe(3)
+    expect(result.tasksSkipped).toBe(1)
+    expect(result.urgentSkipped).toBe(1)
 
     expect(getTaskById(unsetTask.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(lowTask.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(medTask.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(18, 0))
+
+    // P3 was NOT snoozed
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(10, 30))
   })
 
   /**
@@ -1293,9 +1295,14 @@ describe('Bulk Snooze Priority Filter', () => {
   })
 
   /**
-   * SP-005: bulkEdit with due_at — P0-P3 snoozed, P4 skipped
+   * SP-005: bulkEdit with due_at — P0-P2 snoozed, P3/P4 skipped
    */
-  test('SP-005: bulkEdit with due_at applies priority filter — P3 snoozed, P4 skipped', () => {
+  test('SP-005: bulkEdit with due_at applies priority filter — P2 snoozed, P3/P4 skipped', () => {
+    const medTask = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Med task', due_at: localTime(7, 0), priority: 2 },
+    })
     const highTask = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1311,17 +1318,18 @@ describe('Bulk Snooze Priority Filter', () => {
     const result = bulkEdit({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      taskIds: [highTask.id, urgentTask.id],
+      taskIds: [medTask.id, highTask.id, urgentTask.id],
       changes: { due_at: newDueAt },
     })
 
     expect(result.tasksAffected).toBe(1)
-    expect(result.tasksSkipped).toBe(1)
+    expect(result.tasksSkipped).toBe(2)
 
-    // High task was updated (P3 is eligible now)
-    expect(getTaskById(highTask.id)!.due_at).toBe(newDueAt)
+    // Med task was updated (P0-P2 eligible)
+    expect(getTaskById(medTask.id)!.due_at).toBe(newDueAt)
 
-    // Urgent task was NOT updated
+    // High and Urgent tasks were NOT updated
+    expect(getTaskById(highTask.id)!.due_at).toBe(localTime(8, 0))
     expect(getTaskById(urgentTask.id)!.due_at).toBe(localTime(9, 0))
   })
 
@@ -1436,7 +1444,7 @@ describe('Bulk Snooze Urgent Exclusion', () => {
   /**
    * BS-001: Full priority mix — P0-P3 all snoozed, P4 excluded
    */
-  test('BS-001: P0-P3 snoozed in single pass, P4 excluded', () => {
+  test('BS-001: P0-P2 snoozed in single pass, P3/P4 excluded', () => {
     const p0 = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -1470,17 +1478,17 @@ describe('Bulk Snooze Urgent Exclusion', () => {
       until: localTime(18, 0),
     })
 
-    expect(result.tasksAffected).toBe(4)
-    expect(result.tasksSkipped).toBe(1)
-    expect(result.urgentSkipped).toBe(1)
+    expect(result.tasksAffected).toBe(3)
+    expect(result.tasksSkipped).toBe(2)
+    expect(result.urgentSkipped).toBe(2)
 
-    // P0-P3 all snoozed
+    // P0-P2 all snoozed
     expect(getTaskById(p0.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(p1.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(p3.id)!.due_at).toBe(localTime(18, 0))
 
-    // P4 untouched
+    // P3 and P4 untouched
+    expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 30))
     expect(getTaskById(p4.id)!.due_at).toBe(localTime(10, 0))
   })
 
@@ -1511,24 +1519,24 @@ describe('Bulk Snooze Urgent Exclusion', () => {
   })
 
   /**
-   * BS-003: P0-P3 only — all snoozed, zero skipped
+   * BS-003: P0-P2 only — all snoozed, zero skipped
    */
-  test('BS-003: P0-P3 only batch — all snoozed', () => {
+  test('BS-003: P0-P2 only batch — all snoozed', () => {
     const p0 = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       input: { title: 'P0', due_at: localTime(8, 0), priority: 0 },
     })
-    const p3 = createTask({
+    const p2 = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      input: { title: 'P3', due_at: localTime(9, 0), priority: 3 },
+      input: { title: 'P2', due_at: localTime(9, 0), priority: 2 },
     })
 
     const result = bulkSnooze({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      taskIds: [p0.id, p3.id],
+      taskIds: [p0.id, p2.id],
       until: localTime(18, 0),
     })
 
@@ -1537,7 +1545,7 @@ describe('Bulk Snooze Urgent Exclusion', () => {
     expect(result.urgentSkipped).toBe(0)
 
     expect(getTaskById(p0.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(p3.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
   })
 
   /**
@@ -1603,16 +1611,16 @@ describe('Bulk Snooze Urgent Exclusion', () => {
       until: localTime(18, 0),
     })
 
-    // P0 and P3 snoozed, P4 untouched
+    // P0 snoozed, P3 and P4 untouched
     expect(getTaskById(p0.id)!.due_at).toBe(localTime(18, 0))
-    expect(getTaskById(p3.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 0))
     expect(getTaskById(p4.id)!.due_at).toBe(localTime(10, 0))
 
     // Undo
     expect(canUndo(TEST_USER_ID)).toBe(true)
     executeUndo(TEST_USER_ID)
 
-    // P0 and P3 restored, P4 unchanged
+    // P0 restored, P3 and P4 unchanged
     expect(getTaskById(p0.id)!.due_at).toBe(localTime(8, 0))
     expect(getTaskById(p3.id)!.due_at).toBe(localTime(9, 0))
     expect(getTaskById(p4.id)!.due_at).toBe(localTime(10, 0))

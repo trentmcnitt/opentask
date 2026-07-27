@@ -130,11 +130,11 @@ export type BulkDoneInput = z.infer<typeof bulkDoneSchema>
  * - Absolute: { ids, until } - sets all tasks to the same time
  * - Relative: { ids, delta_minutes } - adds minutes to each task's current due_at
  *
- * `include_task_ids` bypasses the default P4/Urgent skip filter for the listed
- * task IDs. Explicit user selections (e.g., the mobile selection sheet's quick
- * panel) pass this so urgent tasks the user has deliberately picked are not
- * silently dropped. The "Snooze All Overdue" sweep omits it, preserving the
- * default behavior of leaving urgent tasks alone.
+ * `include_task_ids` bypasses the default P3/P4 (High/Urgent) skip filter for
+ * the listed task IDs. Explicit user selections (e.g., the mobile selection
+ * sheet's quick panel) pass this so high/urgent tasks the user has deliberately
+ * picked are not silently dropped. The "Snooze All Overdue" sweep omits it,
+ * preserving the default behavior of leaving high/urgent tasks alone.
  */
 export const bulkSnoozeSchema = z
   .object({

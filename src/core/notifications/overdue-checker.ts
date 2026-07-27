@@ -256,8 +256,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
     for (const [userId, tasks] of tasksByUser) {
       const { regular, high, urgent } = splitIntoBuckets(tasks)
 
-      // overdueCount for the iOS "All" button — count of bulk-snoozable tasks (P0-P3, excludes P4)
-      const overdueCount = tasks.filter((t) => t.priority < URGENT_PRIORITY).length
+      // overdueCount for the iOS "All" button — count of bulk-snoozable tasks (P0-P2, excludes P3/P4)
+      const overdueCount = tasks.filter((t) => t.priority < HIGH_PRIORITY_THRESHOLD).length
 
       // Badge count: total overdue tasks for this user (all priorities).
       // Uses all overdue tasks, not just those eligible for notification this tick.

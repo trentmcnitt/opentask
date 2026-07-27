@@ -85,7 +85,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       })
     }
 
-    // bulkSnooze handles priority filtering internally (P0-P3 eligible, P4 excluded
+    // bulkSnooze handles priority filtering internally (P0-P2 eligible, P3/P4 excluded
     // unless explicitly included via includeTaskIds)
     const result = bulkSnooze({
       userId: user.id,
