@@ -186,6 +186,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 interface BulkSnoozeFilterResult {
   eligible: Task[]
   urgentSkipped: number
+  reminderSkipped: number
 }
 
 /**
@@ -199,11 +200,22 @@ interface BulkSnoozeFilterResult {
  * kept for API compatibility (`skipped_urgent` reaches the iOS client).
  */
 function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkSnoozeFilterResult {
-  const eligible = tasks.filter(
+  // §6: reminders are bucket-locked and can never be snoozed, not even by an
+  // explicit selection — `include_task_ids` deliberately does NOT rescue them,
+  // because the constraint is about what a reminder IS, not about how carefully
+  // the user picked it.
+  //
+  // Skipped silently and reported as a count, never prompted: §4.3 is explicit
+  // that bulk paths must not modal-block, and per L1 sweep participation
+  // carries no per-item intent to confirm.
+  const snoozable = tasks.filter((t) => !t.is_reminder)
+  const reminderSkipped = tasks.length - snoozable.length
+
+  const eligible = snoozable.filter(
     (t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD || includeTaskIds?.has(t.id),
   )
-  const urgentSkipped = tasks.length - eligible.length
-  return { eligible, urgentSkipped }
+  const urgentSkipped = snoozable.length - eligible.length
+  return { eligible, urgentSkipped, reminderSkipped }
 }
 
 export interface BulkSnoozeOptions {
@@ -222,6 +234,8 @@ export interface BulkSnoozeResult {
   tasksAffected: number
   tasksSkipped: number
   urgentSkipped: number
+  /** §6: reminders excluded because they are bucket-locked. */
+  reminderSkipped: number
   noDueDateSkipped: number
 }
 
@@ -238,7 +252,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: 0, urgentSkipped: 0, noDueDateSkipped: 0 }
+    return {
+      tasksAffected: 0,
+      tasksSkipped: 0,
+      urgentSkipped: 0,
+      reminderSkipped: 0,
+      noDueDateSkipped: 0,
+    }
   }
 
   // Validate that exactly one mode is specified
@@ -264,7 +284,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   // P0-P2 eligible, P3/P4 (High/Urgent) excluded — unless explicitly included
   const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
-  const { eligible, urgentSkipped } = filterForBulkSnooze(tasks, includeSet)
+  const { eligible, urgentSkipped, reminderSkipped } = filterForBulkSnooze(tasks, includeSet)
 
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0
@@ -281,7 +301,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const skippedCount = tasks.length - snoozeable.length
   if (snoozeable.length === 0) {
-    return { tasksAffected: 0, tasksSkipped: skippedCount, urgentSkipped, noDueDateSkipped }
+    return {
+      tasksAffected: 0,
+      tasksSkipped: skippedCount,
+      urgentSkipped,
+      reminderSkipped,
+      noDueDateSkipped,
+    }
   }
 
   const snapshots: UndoSnapshot[] = []
@@ -369,6 +395,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksAffected: snoozeable.length,
       tasksSkipped: skippedCount,
       urgentSkipped,
+      reminderSkipped,
       noDueDateSkipped,
     }
   })

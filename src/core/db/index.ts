@@ -199,6 +199,10 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'skip_count')) {
     database.exec('ALTER TABLE tasks ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0')
   }
+  // Reminders surface (§6)
+  if (!hasColumn(database, 'tasks', 'is_reminder')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0')
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
