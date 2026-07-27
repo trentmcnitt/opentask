@@ -40,10 +40,16 @@ enum TasksTimeline {
 
     /// Due or overdue as of the end of the local day.
     ///
-    /// Undated tasks are excluded: §7.1 treats a task without a real due date
-    /// as backlog, and putting backlog on a today surface is exactly the noise
-    /// the redesign is removing. Reminders are excluded too — they have their
-    /// own widget and their own no-debt semantics (§6).
+    /// Three exclusions, each of which has its own home:
+    ///
+    /// - **Undated** tasks: §7.1 treats a task without a real due date as
+    ///   backlog, and putting backlog on a today surface is exactly the noise
+    ///   the redesign is removing.
+    /// - **Reminders** (§6): their own widget, their own no-debt semantics.
+    /// - **Tracked** items, `progress_target > 1` (§8 as amended 2026-07-27):
+    ///   their own widget too. A quota row inside a task list buries the thing
+    ///   being glanced at — it is twice the height of a task row and answers a
+    ///   different question ("how far in", not "is it done").
     static func todaysTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
         let calendar = Calendar.current
         guard let endOfDay = calendar.date(
@@ -53,7 +59,7 @@ enum TasksTimeline {
         }
 
         return tasks
-            .filter { !$0.isReminder }
+            .filter { !$0.isReminder && !$0.isTracked }
             .filter { task in
                 guard let due = task.dueDate else { return false }
                 return due < endOfDay
@@ -135,59 +141,27 @@ struct TasksProvider: TimelineProvider {
         }
     }
 
+    /// Fetch/cache/fallback and the §8 optimistic staging all live in
+    /// `TaskFeed`, shared with the Track widget — the two kinds render
+    /// different slices of one payload.
     private func currentEntry() async -> TasksEntry {
         let now = Date()
+        let snapshot = await TaskFeed.snapshot(now: now)
 
-        guard APIClient.shared.isConfigured else {
+        guard !snapshot.isSignedOut else {
             return TasksEntry(
                 date: now, tasks: [], projects: [], scope: WidgetStore.allProjects,
                 staleSince: nil, isSignedOut: true
             )
         }
-
-        // Interaction fast path (§8 optimistic check-off) — see RemindersWidget.
-        if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadTasks() {
-            return makeEntry(
-                tasks: cached.value.tasks,
-                projects: cached.value.projects,
-                staleSince: nil,
-                now: now
-            )
-        }
-
-        do {
-            async let tasks = APIClient.shared.fetchOpenTasks()
-            async let projects = APIClient.shared.fetchProjects()
-            let (fetchedTasks, fetchedProjects) = try await (tasks, projects)
-            WidgetStore.saveTasks(fetchedTasks, projects: fetchedProjects)
-            return makeEntry(tasks: fetchedTasks, projects: fetchedProjects, staleSince: nil, now: now)
-        } catch {
-            print("[OpenTaskWidgets] Tasks fetch failed: \(error)")
-            guard let cached = WidgetStore.loadTasks() else {
-                return TasksEntry(
-                    date: now, tasks: [], projects: [], scope: WidgetStore.allProjects,
-                    staleSince: nil, isSignedOut: false
-                )
-            }
-            return makeEntry(
-                tasks: cached.value.tasks,
-                projects: cached.value.projects,
-                staleSince: cached.fetchedAt,
-                now: now
-            )
-        }
+        return makeEntry(snapshot, now: now)
     }
 
-    private func makeEntry(
-        tasks rawTasks: [TaskDTO],
-        projects: [ProjectDTO],
-        staleSince: Date?,
-        now: Date
-    ) -> TasksEntry {
-        // Single choke point for the §8 tombstone filter — both the fresh-fetch
-        // and cache-fallback paths flow through here.
-        let tasks = WidgetStore.filterPending(rawTasks, now: now)
-        let ringProjects = TasksTimeline.scopedProjects(tasks: tasks, projects: projects, now: now)
+    private func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date) -> TasksEntry {
+        let tasks = snapshot.tasks
+        let ringProjects = TasksTimeline.scopedProjects(
+            tasks: tasks, projects: snapshot.projects, now: now
+        )
 
         // A scope whose project has dropped out of today's set would strand the
         // widget on an empty view it can only escape by chevroning, so fall
@@ -204,7 +178,7 @@ struct TasksProvider: TimelineProvider {
             tasks: TasksTimeline.apply(scope: scope, to: todays),
             projects: ringProjects,
             scope: scope,
-            staleSince: staleSince,
+            staleSince: snapshot.staleSince,
             isSignedOut: false
         )
     }
@@ -220,12 +194,13 @@ struct TasksWidget: Widget {
             TasksWidgetView(entry: entry)
         }
         .configurationDisplayName("Today's Tasks")
-        .description("What's due today, by project, with +1 on anything you're tracking.")
+        .description("What's due today, with chevrons to page through your projects.")
         // systemLarge first: it is the primary layout (§8 — the user pointed
         // at a 4x4 Weather widget), and the gallery leads with the first entry.
         .supportedFamilies([
             .systemLarge,
             .systemMedium,
+            .systemSmall,
             .accessoryRectangular,
             .accessoryCircular,
         ])

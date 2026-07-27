@@ -57,6 +57,19 @@ enum WidgetTheme {
         }
     }
 
+    // MARK: - Track (§5)
+
+    /// Track's palette sits deliberately OUTSIDE the priority scale above.
+    ///
+    /// §5: pace "renders but never alarms" — a quota that has slipped behind
+    /// must never turn orange or red, because being 1/3 into a weekly quota on
+    /// Tuesday is information, not an emergency, and per L1 a low count late in
+    /// the period may only mean *unlogged*. So there is exactly one calm tint
+    /// for in-progress and green for met, and the only thing pace is allowed to
+    /// move is the position of a small neutral tick.
+    static let trackTint = Color.teal
+    static let trackMetTint = Color.green
+
     // MARK: - Metrics
 
     static let rowSpacing: CGFloat = 10
@@ -104,35 +117,107 @@ enum WidgetLink {
 
 // MARK: - Shared chrome
 
-/// The `‹ ›` pair used by both widgets to page through slots / projects.
+/// One half of a `ChevronPager`, also usable alone where the two glyphs have to
+/// sit at opposite edges (the Track widget's 2×2).
 ///
 /// §8: widgets get no swipe gestures, so paging has to be an explicit tap
-/// target. The buttons are `.plain` so WidgetKit doesn't draw its default
-/// capsule around a glyph that is already a control.
-struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
-    let previous: Previous
-    let next: Next
+/// target. The button is `.plain` so WidgetKit doesn't draw its default capsule
+/// around a glyph that is already a control.
+struct ChevronButton<I: AppIntent>: View {
+    enum Direction {
+        case previous, next
+
+        var symbol: String { self == .previous ? "chevron.left" : "chevron.right" }
+    }
+
+    let intent: I
+    let direction: Direction
+    /// Name of the page this chevron lands on. Rendered only where the layout
+    /// affords it (see `ChevronPager.showsLabels`).
+    var label: String?
+    /// False when there is nothing further this way — §8: "chevrons must
+    /// telegraph their edges", so a dead chevron dims and stops responding
+    /// rather than looking live and doing nothing.
+    var enabled = true
+
+    /// ~10 chars: a slot or project name still reads ("Early morn…"), and two
+    /// of them plus the glyphs still fit a systemLarge header beside the title.
+    private var shortLabel: String? {
+        guard let label, !label.isEmpty else { return nil }
+        return label.count > 10 ? String(label.prefix(9)) + "…" : label
+    }
 
     var body: some View {
-        // 40pt hit targets (HIG minimum is 44, but widget headers can't spare
-        // that height) — the glyph stays small, the tappable area doesn't.
-        // At 22pt these were nearly impossible to hit with a casual tap.
-        HStack(spacing: 0) {
-            Button(intent: previous) {
-                Image(systemName: "chevron.left")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
+        Button(intent: intent) {
+            HStack(spacing: 2) {
+                if direction == .previous { glyph }
+                if let shortLabel {
+                    Text(shortLabel)
+                        .font(.caption2)
+                        .lineLimit(1)
+                }
+                if direction == .next { glyph }
             }
-            Button(intent: next) {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
+            // 40pt MINIMUM hit target (HIG says 44, but widget headers can't
+            // spare that height) — the glyph stays small, the tappable area
+            // doesn't. At 22pt these were nearly impossible to hit with a
+            // casual tap. `minWidth` rather than a fixed width so a label can
+            // widen the target; it never shrinks it.
+            .frame(minWidth: 40, minHeight: 40)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+    }
+
+    private var glyph: some View {
+        Image(systemName: direction.symbol)
+            .font(.caption.weight(.semibold))
+    }
+}
+
+/// The `‹ ›` pair used by all three widgets to page through slots / projects /
+/// quotas.
+///
+/// It is told about its *ring*, not just its intents (§8, amended 2026-07-27):
+///
+/// - `hasPrevious`/`hasNext` are false when the ring has nowhere to go (one
+///   project, one quota), and the chevron dims out. All three rings currently
+///   wrap, so a live ring keeps both chevrons live — wrapping is unambiguous
+///   with a handful of pages and beats a dead end the user can't explain.
+/// - `previousLabel`/`nextLabel` name the *adjacent* page, so paging is a
+///   choice rather than a gamble. They render only when `showsLabels` — pass it
+///   in `systemLarge`, where the header has the width, and not in
+///   `systemMedium`, where it would crowd out the title.
+struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
+    let previous: Previous
+    let next: Next
+    var hasPrevious = true
+    var hasNext = true
+    var previousLabel: String?
+    var nextLabel: String?
+    var showsLabels = false
+
+    var body: some View {
+        // Zero spacing with bare glyphs (the 40pt targets already separate
+        // them); a gap once labels are on, or the two page names read as one
+        // run-on word — "RemindersOne-offs".
+        HStack(spacing: showsLabels ? 10 : 0) {
+            ChevronButton(
+                intent: previous,
+                direction: .previous,
+                label: showsLabels ? previousLabel : nil,
+                enabled: hasPrevious
+            )
+            ChevronButton(
+                intent: next,
+                direction: .next,
+                label: showsLabels ? nextLabel : nil,
+                enabled: hasNext
+            )
+        }
     }
 }
 

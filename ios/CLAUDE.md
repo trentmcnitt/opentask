@@ -11,12 +11,24 @@ Detailed development reference for the OpenTask iOS companion app. See the main 
 
 ## Widgets (`OpenTaskWidgets`)
 
-WidgetKit extension (`io.mcnitt.opentask.widgets`, iOS 17, App Group `group.io.mcnitt.opentask`) with two independent widget kinds — `OpenTaskReminders` and `OpenTaskTasks`. Separate kinds, not one configurable widget, so each gets its own refresh budget (REDESIGN-V03 §8).
+WidgetKit extension (`io.mcnitt.opentask.widgets`, iOS 17, App Group `group.io.mcnitt.opentask`) with three independent widget kinds — `OpenTaskReminders`, `OpenTaskTasks`, `OpenTaskTrack`. Separate kinds, not one configurable widget, so each gets its own refresh budget (REDESIGN-V03 §8).
 
-- **Data**: timeline providers call `APIClient` (`GET /api/reminders`, `/api/tasks?done=false`, `/api/projects`) with the Keychain credentials shared through the App Group. Every successful payload is cached in App Group `UserDefaults` (`WidgetStore`); a failed fetch renders the cache with an "as of HH:MM" note rather than blanking.
+| Kind                | Shows                                                                 | Primary size                                       |
+| ------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
+| `OpenTaskReminders` | Current time slot's reminders, check-off buttons (§6)                 | `systemLarge`                                      |
+| `OpenTaskTasks`     | Today's dated tasks by project — reminders AND tracked items excluded | `systemLarge`                                      |
+| `OpenTaskTrack`     | Every `progress_target > 1` quota, `+1` buttons (§5)                  | `systemSmall` (ring + fraction, §8's flagship 2×2) |
+
+All three support `systemSmall` / `systemMedium` / `systemLarge` / `accessoryRectangular` / `accessoryCircular`. The Reminders and Tasks 2×2s are glanceable-only (a headline number, one item, whole-card deep link) — at ~126pt across, per-item buttons would be mis-tap machines.
+
+- **Data**: timeline providers call `APIClient` (`GET /api/reminders`, `/api/tasks?done=false`, `/api/projects`) with the Keychain credentials shared through the App Group. Tasks and Track are two slices of ONE payload and share `TaskFeed` (fetch + cache + fallback + optimistic staging) — never add a second fetch of `/api/tasks`. Every successful payload is cached in App Group `UserDefaults` (`WidgetStore`); a failed fetch renders the cache with an "as of HH:MM" note rather than blanking.
 - **Interaction**: `AppIntent` buttons only — check-off, `+1` progress, and the `‹ ›` pagers. Widgets get no swipe gestures (§8), and Lock Screen accessory families are glanceable-only because interactive widgets are inert on a locked device.
+- **Optimistic (§8)**: intents stage their effect in `WidgetStore` and repaint from cache before the server call — a completion tombstones (row vanishes, reappears on failure), a `+1` renders as `progress_current + 1` while in flight.
+- **Chevrons**: `ChevronPager` is told about its ring — it dims when there is nowhere to page, and in `systemLarge` names the adjacent page beside the glyph (`‹ Midday   Evening ›`, truncated ~10 chars). 40pt hit targets are a floor, not a suggestion.
 - **Budget**: reloads triggered by a widget's own intent, and by the app foregrounding, are free. Unprompted refreshes are budgeted, so the timeline policy is `.after(+30 min)` plus zero-cost entries pre-scheduled at each time-slot boundary and upcoming due time.
 - **Deep links**: `opentask://today`, `opentask://reminders`, `opentask://task/<id>` — resolved to web paths in `OpenTaskApp.handleWidgetLink`.
+
+**Adding a widget source file requires regenerating the projects** (`xcodegen` bakes the file list): `cd ios && xcodegen generate --spec project-sim.yml && xcodegen generate`.
 
 ### The two project specs
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// The Reminders widget's rendering, across all four supported families.
+/// The Reminders widget's rendering, across all five supported families.
 ///
 /// §6 shapes the whole surface: reminders are *prompted thoughts*, not actions.
 /// They carry no debt — nothing here shows an overdue count, a red badge, or a
@@ -16,9 +16,10 @@ struct RemindersWidgetView: View {
     var body: some View {
         content
             .containerBackground(for: .widget) {
-                if family == .systemMedium || family == .systemLarge {
+                switch family {
+                case .systemSmall, .systemMedium, .systemLarge:
                     Rectangle().fill(.fill.tertiary)
-                } else {
+                default:
                     Color.clear
                 }
             }
@@ -31,10 +32,74 @@ struct RemindersWidgetView: View {
             RemindersCircularView(entry: entry)
         case .accessoryRectangular:
             RemindersRectangularView(entry: entry)
+        case .systemSmall:
+            RemindersSmallView(entry: entry)
         case .systemMedium:
-            RemindersListView(entry: entry, maxRows: 3)
+            RemindersListView(entry: entry, maxRows: 3, showsChevronLabels: false)
         default:
-            RemindersListView(entry: entry, maxRows: 6)
+            RemindersListView(entry: entry, maxRows: 6, showsChevronLabels: true)
+        }
+    }
+}
+
+// MARK: - systemSmall
+
+/// The 2×2: glanceable only, by design.
+///
+/// §8 (amended 2026-07-27) wants a small variant of every kind, but a 2×2 is
+/// ~126pt across — a check-off circle, a title and a pager in that width would
+/// give three cramped targets where the large layout gives comfortable ones,
+/// and a mis-tap here *completes the wrong reminder*. So this one states the
+/// slot, how many are left and what the first one is, and the whole card is a
+/// single tap into the Reminders surface.
+private struct RemindersSmallView: View {
+    let entry: RemindersEntry
+
+    private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
+
+    var body: some View {
+        if entry.isSignedOut {
+            WidgetSignedOutView(compact: true)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.group?.label ?? "Reminders")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if reminders.isEmpty {
+                    Spacer(minLength: 0)
+                    WidgetEmptyView(
+                        symbol: "checkmark.circle",
+                        message: entry.groups.isEmpty ? "No reminders today" : "Nothing left here",
+                        compact: true
+                    )
+                    Spacer(minLength: 0)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(reminders.count)")
+                            .font(.system(size: 40, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                        Text("left")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(reminders[0].title)
+                        .font(.caption2)
+                        .fontWeight(WidgetTheme.priorityWeight(reminders[0].priority))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .widgetURL(WidgetLink.reminders)
         }
     }
 }
@@ -44,8 +109,20 @@ struct RemindersWidgetView: View {
 private struct RemindersListView: View {
     let entry: RemindersEntry
     let maxRows: Int
+    /// systemLarge only — see `ChevronPager`.
+    let showsChevronLabels: Bool
 
     private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
+
+    /// The slot ring wraps (`ShiftReminderSlotIntent`), so both chevrons stay
+    /// live whenever there is more than one slot to move between.
+    private var canPage: Bool { entry.groups.count > 1 }
+
+    private func neighborLabel(offset: Int) -> String? {
+        guard canPage, entry.groups.indices.contains(entry.slotIndex) else { return nil }
+        let count = entry.groups.count
+        return entry.groups[((entry.slotIndex + offset) % count + count) % count].label
+    }
 
     var body: some View {
         if entry.isSignedOut {
@@ -97,7 +174,12 @@ private struct RemindersListView: View {
             Spacer(minLength: 0)
             ChevronPager(
                 previous: ShiftReminderSlotIntent(offset: -1),
-                next: ShiftReminderSlotIntent(offset: 1)
+                next: ShiftReminderSlotIntent(offset: 1),
+                hasPrevious: canPage,
+                hasNext: canPage,
+                previousLabel: neighborLabel(offset: -1),
+                nextLabel: neighborLabel(offset: 1),
+                showsLabels: showsChevronLabels
             )
         }
     }

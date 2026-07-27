@@ -224,6 +224,7 @@ struct RemindersWidget: Widget {
         .supportedFamilies([
             .systemLarge,
             .systemMedium,
+            .systemSmall,
             .accessoryRectangular,
             .accessoryCircular,
         ])

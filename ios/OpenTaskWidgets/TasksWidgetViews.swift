@@ -1,14 +1,13 @@
 import SwiftUI
 import WidgetKit
 
-/// The Tasks widget's rendering, across all four supported families.
+/// The Tasks widget's rendering, across all five supported families.
 ///
-/// Two row shapes share the list. An ordinary task is a dot, a title and a due
-/// time. A *tracked* task (§5, `progress_target > 1`) is a quota, so it renders
-/// its count and a bar instead of a check-off — and its button is `+1`, which
-/// hits `/api/tasks/:id/progress` rather than a completion endpoint. That
-/// distinction is the whole point of Track: at 2/2 the task is met but still
-/// open, so a third log shows 3/2 rather than being swallowed.
+/// One row shape only: a dot to check off, a title, a due time. Tracked items
+/// (§5, `progress_target > 1`) used to render here as quota rows and no longer
+/// do — §8 as amended 2026-07-27 gave them their own widget, because a
+/// double-height row answering "how far in" buried the ordinary rows answering
+/// "what's left".
 struct TasksWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
@@ -17,9 +16,10 @@ struct TasksWidgetView: View {
     var body: some View {
         content
             .containerBackground(for: .widget) {
-                if family == .systemMedium || family == .systemLarge {
+                switch family {
+                case .systemSmall, .systemMedium, .systemLarge:
                     Rectangle().fill(.fill.tertiary)
-                } else {
+                default:
                     Color.clear
                 }
             }
@@ -32,10 +32,85 @@ struct TasksWidgetView: View {
             TasksCircularView(entry: entry)
         case .accessoryRectangular:
             TasksRectangularView(entry: entry)
+        case .systemSmall:
+            TasksSmallView(entry: entry)
         case .systemMedium:
-            TasksListView(entry: entry, maxRows: 3)
+            TasksListView(entry: entry, maxRows: 3, showsChevronLabels: false)
         default:
-            TasksListView(entry: entry, maxRows: 6)
+            TasksListView(entry: entry, maxRows: 6, showsChevronLabels: true)
+        }
+    }
+}
+
+// MARK: - systemSmall
+
+/// The 2×2: glanceable only, by design.
+///
+/// The overdue count is the number worth a 2×2 (§4.5 — the stale-first burial
+/// is what makes "how many are late" the honest headline), then the next thing
+/// due and when. No check-off circle and no pager: at ~126pt across those
+/// targets would be cramped enough to complete the wrong task, so the whole
+/// card is one tap into the dashboard instead.
+private struct TasksSmallView: View {
+    let entry: TasksEntry
+
+    var body: some View {
+        if entry.isSignedOut {
+            WidgetSignedOutView(compact: true)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    if entry.scope != WidgetStore.allProjects {
+                        Circle()
+                            .fill(entry.scopeColor)
+                            .frame(width: 6, height: 6)
+                    }
+                    Text(entry.scopeLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                if let next = entry.tasks.first {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(entry.overdueCount(now: entry.date))")
+                            .font(.system(size: 40, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                        Text("overdue")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(next.title)
+                        .font(.caption2)
+                        .fontWeight(WidgetTheme.priorityWeight(next.priority))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+
+                    if let due = next.dueDate {
+                        Text(WidgetTheme.shortTime(due))
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(
+                                next.isOverdue(now: entry.date)
+                                    ? Color.red.opacity(0.9) : Color.secondary
+                            )
+                    }
+                    Spacer(minLength: 0)
+                } else {
+                    Spacer(minLength: 0)
+                    WidgetEmptyView(
+                        symbol: "checkmark.circle", message: "Nothing due today", compact: true
+                    )
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .widgetURL(WidgetLink.dashboard)
         }
     }
 }
@@ -45,6 +120,28 @@ struct TasksWidgetView: View {
 private struct TasksListView: View {
     let entry: TasksEntry
     let maxRows: Int
+    /// systemLarge only — see `ChevronPager`.
+    let showsChevronLabels: Bool
+
+    /// The scope ring is All + every project with something due, and it wraps
+    /// (`ShiftProjectScopeIntent`), so both chevrons stay live as long as there
+    /// is somewhere else to be. One project and nothing pages.
+    private var canPage: Bool { ringLabels.count > 1 }
+
+    /// Ring labels in scope order: "All" first, then the projects.
+    private var ringLabels: [(id: Int, name: String)] {
+        [(WidgetStore.allProjects, "All")] + entry.projects.map { ($0.id, $0.name) }
+    }
+
+    private func neighborLabel(offset: Int) -> String? {
+        let ring = ringLabels
+        guard ring.count > 1, let index = ring.firstIndex(where: { $0.id == entry.scope })
+        else {
+            return nil
+        }
+        let count = ring.count
+        return ring[((index + offset) % count + count) % count].name
+    }
 
     var body: some View {
         if entry.isSignedOut {
@@ -58,11 +155,7 @@ private struct TasksListView: View {
                 } else {
                     VStack(alignment: .leading, spacing: WidgetTheme.rowSpacing) {
                         ForEach(entry.tasks.prefix(maxRows)) { task in
-                            if task.isTracked {
-                                TrackedTaskRow(task: task)
-                            } else {
-                                TaskRow(task: task, now: entry.date)
-                            }
+                            TaskRow(task: task, now: entry.date)
                         }
                     }
                     if entry.tasks.count > maxRows {
@@ -105,7 +198,12 @@ private struct TasksListView: View {
             Spacer(minLength: 0)
             ChevronPager(
                 previous: ShiftProjectScopeIntent(offset: -1),
-                next: ShiftProjectScopeIntent(offset: 1)
+                next: ShiftProjectScopeIntent(offset: 1),
+                hasPrevious: canPage,
+                hasNext: canPage,
+                previousLabel: neighborLabel(offset: -1),
+                nextLabel: neighborLabel(offset: 1),
+                showsLabels: showsChevronLabels
             )
         }
     }
@@ -158,62 +256,6 @@ private struct TaskRow: View {
                 }
                 .contentShape(Rectangle())
             }
-        }
-    }
-}
-
-/// A tracked task (§5): count, bar, and a `+1` that logs progress.
-private struct TrackedTaskRow: View {
-    let task: TaskDTO
-
-    private var fraction: Double {
-        guard task.progressTarget > 0 else { return 0 }
-        return min(Double(task.progressCurrent) / Double(task.progressTarget), 1)
-    }
-
-    private var barColor: Color {
-        task.isProgressMet ? .green : WidgetTheme.priorityColor(max(task.priority, 2))
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Link(destination: WidgetLink.task(task.id)) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(task.title)
-                            .font(.subheadline)
-                            .fontWeight(WidgetTheme.priorityWeight(task.priority))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        // Overflow (3/2) stays visible — the count is the fact,
-                        // the bar only tracks the first `target`.
-                        Text("\(task.progressCurrent)/\(task.progressTarget)")
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .foregroundStyle(task.isProgressMet ? Color.green : Color.secondary)
-                    }
-
-                    ProgressView(value: fraction)
-                        .progressViewStyle(.linear)
-                        .tint(barColor)
-                        .scaleEffect(x: 1, y: 0.7, anchor: .center)
-                }
-                .contentShape(Rectangle())
-            }
-
-            Button(intent: IncrementProgressIntent(taskId: task.id)) {
-                Text("+1")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(.fill.secondary, in: Capsule())
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
         }
     }
 }

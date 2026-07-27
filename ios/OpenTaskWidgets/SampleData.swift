@@ -20,6 +20,17 @@ enum SampleData {
         return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
     }
 
+    /// A period boundary `days` out. Quota samples need a real `due_at` *and*
+    /// rrule or `TrackTimeline` has no period to measure pace against, and the
+    /// gallery card would show quotas with no pace tick at all.
+    private static func inDays(_ days: Int, hour: Int = 21) -> String {
+        let calendar = Calendar.current
+        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        var comps = calendar.dateComponents([.year, .month, .day], from: day)
+        comps.hour = hour
+        return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
+    }
+
     // MARK: - Reminders
 
     static var reminderGroups: [ReminderGroupDTO] {
@@ -73,11 +84,7 @@ enum SampleData {
         [
             TaskDTO(id: 201, projectId: 2, title: "Send the quarterly summary", priority: 4, dueAt: todayAt(hour: 9)),
             TaskDTO(id: 202, projectId: 2, title: "Review pull requests", priority: 3, dueAt: todayAt(hour: 11)),
-            TaskDTO(id: 203, projectId: 3, title: "Workout", priority: 2, dueAt: todayAt(hour: 17),
-                    progressTarget: 4, progressCurrent: 2),
             TaskDTO(id: 204, projectId: 1, title: "Book the dentist", priority: 1, dueAt: todayAt(hour: 15)),
-            TaskDTO(id: 205, projectId: 3, title: "Read", priority: 0, dueAt: todayAt(hour: 21),
-                    progressTarget: 3, progressCurrent: 3),
             TaskDTO(id: 206, projectId: 2, title: "Draft the release notes", priority: 2, dueAt: todayAt(hour: 22)),
         ]
     }
@@ -88,6 +95,39 @@ enum SampleData {
             tasks: TasksTimeline.todaysTasks(from: tasks),
             projects: projects,
             scope: WidgetStore.allProjects,
+            staleSince: nil,
+            isSignedOut: false
+        )
+    }
+
+    // MARK: - Track (§5)
+
+    /// Quotas, kept separate from `tasks` now that §8 excludes tracked items
+    /// from the Tasks widget — mixing them back in would only mean the Tasks
+    /// gallery card silently filtering half its sample away.
+    ///
+    /// Spread across the pace range on purpose: one behind, one comfortably
+    /// ahead, one met, one overflowing, so the gallery card shows every state
+    /// the widget can be in.
+    static var trackedTasks: [TaskDTO] {
+        [
+            TaskDTO(id: 301, projectId: 3, title: "Workout", priority: 2, dueAt: inDays(3),
+                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 4, progressCurrent: 1),
+            TaskDTO(id: 302, projectId: 3, title: "Read", priority: 0, dueAt: inDays(3),
+                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 3, progressCurrent: 2),
+            TaskDTO(id: 303, projectId: 1, title: "Walk the long way home", priority: 1, dueAt: inDays(1),
+                    rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2),
+            TaskDTO(id: 304, projectId: 2, title: "Deep work block", priority: 3, dueAt: inDays(5),
+                    rrule: "FREQ=WEEKLY;BYDAY=FR", progressTarget: 3, progressCurrent: 4),
+        ]
+    }
+
+    static var trackEntry: TrackEntry {
+        let items = TrackTimeline.trackedItems(from: trackedTasks)
+        return TrackEntry(
+            date: Date(),
+            items: items,
+            selectedId: items.first?.id ?? WidgetStore.noTrackSelection,
             staleSince: nil,
             isSignedOut: false
         )
