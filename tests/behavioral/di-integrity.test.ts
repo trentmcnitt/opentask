@@ -22,11 +22,14 @@ import {
   seedTestProject,
   TEST_USER_ID,
   TEST_TIMEZONE,
+  seedTestLabels,
 } from '../helpers/setup'
 
 describe('Data Integrity Behavioral Tests', () => {
   beforeEach(() => {
     setupTestDb()
+    // §7.2: these suites are about field integrity, not label gating.
+    seedTestLabels(['original', 'important', 'work', 'new-label'])
   })
 
   afterEach(() => {
@@ -143,6 +146,8 @@ describe('Data Integrity Behavioral Tests', () => {
 describe('Data Safety & Concurrent Write Tests', () => {
   beforeEach(() => {
     setupTestDb()
+    // §7.2: these suites are about field integrity, not label gating.
+    seedTestLabels(['original', 'important', 'work', 'new-label'])
   })
 
   afterEach(() => {
@@ -262,6 +267,8 @@ describe('Data Safety & Concurrent Write Tests', () => {
 describe('Delete/Restore Operations', () => {
   beforeEach(() => {
     setupTestDb()
+    // §7.2: these suites are about field integrity, not label gating.
+    seedTestLabels(['original', 'important', 'work', 'new-label'])
   })
 
   afterEach(() => {

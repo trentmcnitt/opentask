@@ -14,6 +14,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError } from '@/core/errors'
 import { isAIEnabled } from '@/core/ai'
+import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
 export interface CreateTaskOptions {
   userId: number
@@ -77,7 +78,23 @@ export function createTask(options: CreateTaskOptions): Task {
   // If AI is enabled and the task is title-only, add the ai-to-process trigger label
   const isTitleOnly =
     !input.due_at && (input.priority ?? 0) === 0 && !input.labels?.length && !input.rrule
-  const taskLabels = input.labels ?? []
+  const taskLabels = [...(input.labels ?? [])]
+
+  // §7.2: the registry gates labels the caller supplied. Check before the
+  // machine-added labels below are appended — `ai-to-process` and the
+  // provenance flags are ours, not the caller's, and holding them to the
+  // "did you mean to create this?" rule would be nonsense.
+  validateLabelsExist(userId, taskLabels, [], input.create_label === true)
+
+  // Provenance flags spare automated callers from typing behavior-bearing
+  // labels as free text (§7.2).
+  if (input.ai_proposed && !taskLabels.includes(PROVENANCE_LABELS.proposed)) {
+    taskLabels.push(PROVENANCE_LABELS.proposed)
+  }
+  if (input.ai_added && !taskLabels.includes(PROVENANCE_LABELS.added)) {
+    taskLabels.push(PROVENANCE_LABELS.added)
+  }
+
   if (isAIEnabled() && isTitleOnly) {
     taskLabels.push('ai-to-process')
   }

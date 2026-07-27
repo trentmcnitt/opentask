@@ -295,3 +295,23 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
 
+
+-- Label registry (REDESIGN-V03 §7.2)
+--
+-- Labels used to be bare free-text inside tasks.labels, with no registry: a typo
+-- silently forked the taxonomy into a new tag. Once labels can carry behavior
+-- (ai-proposed / ai-added / ai-monitored are provenance, not decoration),
+-- minting one by accident stops being cosmetic. Creation is therefore a discrete
+-- act — see validateLabelsExist() in src/core/labels.
+--
+-- `facet` groups labels for the chip bar: AND across facets, OR within a facet.
+CREATE TABLE IF NOT EXISTS labels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  name        TEXT NOT NULL,
+  facet       TEXT NOT NULL DEFAULT 'domain',
+  icon        TEXT,
+  color       TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_user_name ON labels(user_id, name);

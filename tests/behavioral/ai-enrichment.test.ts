@@ -15,7 +15,13 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
+import {
+  setupTestDb,
+  teardownTestDb,
+  seedTestLabels,
+  TEST_USER_ID,
+  TEST_TIMEZONE,
+} from '../helpers/setup'
 
 // Set provider and models so resolveFeatureAIConfig() works in tests (no real API calls are made)
 process.env.OPENTASK_AI_PROVIDER = 'anthropic'
@@ -98,6 +104,9 @@ function clearPendingEnrichment(): void {
 
 beforeAll(() => {
   setupTestDb()
+  // §7.2: these tests are about enrichment triggering, not label gating — the
+  // user already has these domain labels.
+  seedTestLabels(['shopping', 'work'])
   // Set enrichment mode to 'sdk' so tests use the mocked enrichmentQuery slot path
   const db = getDb()
   db.prepare("UPDATE users SET ai_enrichment_mode = 'sdk' WHERE id = ?").run(TEST_USER_ID)

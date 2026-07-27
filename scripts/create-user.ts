@@ -13,6 +13,7 @@
 
 import bcrypt from 'bcrypt'
 import { getDb, closeDb } from '../src/core/db'
+import { seedSystemLabels } from '../src/core/labels'
 
 const SALT_ROUNDS = 10
 
@@ -71,6 +72,10 @@ async function createUser() {
 
   const userId = result.lastInsertRowid as number
   console.log(`Created user "${username}" (ID: ${userId})`)
+
+  // Register the system label vocabulary (§7.2). The startup backfill only
+  // covers users that existed when it ran.
+  seedSystemLabels(userId)
 
   // Create default projects
   const insertProject = db.prepare(
