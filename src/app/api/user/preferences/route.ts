@@ -202,6 +202,25 @@ function validateGeneralFields(
     params.push(val)
   }
 
+  // §4.1 cadence ladder
+  if (body.auto_snooze_low_minutes !== undefined) {
+    const val = body.auto_snooze_low_minutes
+    // Ceiling is 1440 (24h), not 360 like the upper tiers: P1 is deliberately
+    // rare, so "a few times a day" must be expressible.
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440)
+      return 'auto_snooze_low_minutes must be an integer between 1 and 1440'
+    updates.push('auto_snooze_low_minutes = ?')
+    params.push(val)
+  }
+
+  if (body.auto_snooze_medium_minutes !== undefined) {
+    const val = body.auto_snooze_medium_minutes
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 1440)
+      return 'auto_snooze_medium_minutes must be an integer between 1 and 1440'
+    updates.push('auto_snooze_medium_minutes = ?')
+    params.push(val)
+  }
+
   if (body.auto_snooze_high_minutes !== undefined) {
     const val = body.auto_snooze_high_minutes
     if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 360)
@@ -411,7 +430,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
+  'SELECT default_grouping, default_sort, default_sort_reversed, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -422,6 +441,8 @@ interface PreferencesRow {
   auto_snooze_minutes: number
   auto_snooze_urgent_minutes: number
   auto_snooze_high_minutes: number
+  auto_snooze_low_minutes: number
+  auto_snooze_medium_minutes: number
   default_snooze_option: string
   morning_time: string
   wake_time: string
@@ -456,6 +477,8 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   auto_snooze_minutes: 30,
   auto_snooze_urgent_minutes: 5,
   auto_snooze_high_minutes: 15,
+  auto_snooze_low_minutes: 240,
+  auto_snooze_medium_minutes: 60,
   default_snooze_option: '60',
   morning_time: '09:00',
   wake_time: '07:00',

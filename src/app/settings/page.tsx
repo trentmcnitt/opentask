@@ -60,6 +60,10 @@ export default function SettingsPage() {
     setAutoSnoozeUrgent,
     autoSnoozeHigh,
     setAutoSnoozeHigh,
+    autoSnoozeLow,
+    setAutoSnoozeLow,
+    autoSnoozeMedium,
+    setAutoSnoozeMedium,
   } = useAutoSnoozeDefault()
   const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
     useSnoozePreferences()
@@ -95,6 +99,10 @@ export default function SettingsPage() {
   const [showCustomAutoSnoozeUrgent, setShowCustomAutoSnoozeUrgent] = useState(false)
   const [customAutoSnoozeHighMinutes, setCustomAutoSnoozeHighMinutes] = useState('')
   const [showCustomAutoSnoozeHigh, setShowCustomAutoSnoozeHigh] = useState(false)
+  const [customAutoSnoozeLowMinutes, setCustomAutoSnoozeLowMinutes] = useState('')
+  const [showCustomAutoSnoozeLow, setShowCustomAutoSnoozeLow] = useState(false)
+  const [customAutoSnoozeMediumMinutes, setCustomAutoSnoozeMediumMinutes] = useState('')
+  const [showCustomAutoSnoozeMedium, setShowCustomAutoSnoozeMedium] = useState(false)
   const [testingSending, setTestingSending] = useState<string | null>(null)
   const [isNativeApp, setIsNativeApp] = useState(false)
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
@@ -198,6 +206,40 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setAutoSnoozeUrgent(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleAutoSnoozeLowChange = async (value: number) => {
+    const prev = autoSnoozeLow
+    setAutoSnoozeLow(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_snooze_low_minutes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setAutoSnoozeLow(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleAutoSnoozeMediumChange = async (value: number) => {
+    const prev = autoSnoozeMedium
+    setAutoSnoozeMedium(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_snooze_medium_minutes: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setAutoSnoozeMedium(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -641,13 +683,36 @@ export default function SettingsPage() {
             {/* Default auto-snooze */}
             <AutoSnoozeRow
               label="Default auto-snooze"
-              description="Repeat interval for other overdue tasks"
+              description="Repeat interval for unset-priority (P0) overdue tasks"
               value={autoSnoozeDefault}
               customValue={customAutoSnoozeMinutes}
               setCustomValue={setCustomAutoSnoozeMinutes}
               showCustom={showCustomAutoSnooze}
               setShowCustom={setShowCustomAutoSnooze}
               onChange={handleAutoSnoozeChange}
+            />
+            {/* §4.1: Low is rare but never silent */}
+            <AutoSnoozeRow
+              label="Low auto-snooze"
+              description="Repeat interval for low (P1) overdue tasks"
+              value={autoSnoozeLow}
+              customValue={customAutoSnoozeLowMinutes}
+              setCustomValue={setCustomAutoSnoozeLowMinutes}
+              showCustom={showCustomAutoSnoozeLow}
+              setShowCustom={setShowCustomAutoSnoozeLow}
+              onChange={handleAutoSnoozeLowChange}
+            />
+            {/* §4.1: Medium is NOT notify-once — one missed glance would lose it */}
+            <AutoSnoozeRow
+              label="Medium auto-snooze"
+              description="Repeat interval for medium (P2) overdue tasks"
+              value={autoSnoozeMedium}
+              customValue={customAutoSnoozeMediumMinutes}
+              setCustomValue={setCustomAutoSnoozeMediumMinutes}
+              showCustom={showCustomAutoSnoozeMedium}
+              setShowCustom={setShowCustomAutoSnoozeMedium}
+              onChange={handleAutoSnoozeMediumChange}
+              labelColor="text-yellow-600"
             />
             {/* High auto-snooze */}
             <AutoSnoozeRow

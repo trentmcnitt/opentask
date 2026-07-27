@@ -70,6 +70,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -95,6 +97,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -120,6 +124,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -144,6 +150,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -173,6 +181,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -199,6 +209,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -228,6 +240,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -255,6 +269,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -282,6 +298,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -312,6 +330,8 @@ describe('isNotificationBoundary', () => {
       user_auto_snooze_minutes: 30,
       user_auto_snooze_urgent_minutes: 5,
       user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
       critical_alert_volume: 1.0,
       // §4.6: these fixtures are non-recurring, so the effective due time is
       // just due_at. Recurring derivation is covered in oc-occurrence.test.ts.
@@ -452,7 +472,11 @@ describe('checkOverdueTasks', () => {
     insertTask(1, 'Task A', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'Task B', '2026-01-15T10:00:00.000Z', 1)
 
-    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
+    // Evaluated 240 min out, not 30: under the §4.1 ladder P0 (30), P1 (240)
+    // and P2 (60) have different cadences, and 240 is the first tick where all
+    // three coincide. This test is about the consolidation CAP, so it needs a
+    // moment when every tier actually fires.
+    await checkOverdueTasks(new Date('2026-01-15T14:00:00.000Z'))
 
     // Under the cap of 4, so both get individual web push + APNs
     expect(sendPushNotification).toHaveBeenCalledTimes(2)
@@ -513,7 +537,8 @@ describe('consolidation caps', () => {
     insertTask(5, 'P2-A', '2026-01-15T10:00:00.000Z', 2)
     insertTask(6, 'P2-B', '2026-01-15T10:00:00.000Z', 2)
 
-    await checkOverdueTasks(new Date('2026-01-15T10:30:00.000Z'))
+    // 240 min: the first tick where P0/P1/P2 cadences coincide (§4.1).
+    await checkOverdueTasks(new Date('2026-01-15T14:00:00.000Z'))
 
     // 4 individual + 1 summary = 5 web push
     expect(sendPushNotification).toHaveBeenCalledTimes(5)
