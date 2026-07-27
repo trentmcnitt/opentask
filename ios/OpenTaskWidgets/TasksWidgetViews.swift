@@ -134,7 +134,8 @@ private struct TaskRow: View {
                 Circle()
                     .fill(WidgetTheme.priorityColor(task.priority))
                     .frame(width: 9, height: 9)
-                    .frame(width: 26, height: 26)
+                    // 36pt hit target around the 9pt dot — 26pt missed too often.
+                    .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
