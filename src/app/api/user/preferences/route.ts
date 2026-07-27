@@ -18,7 +18,8 @@ import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
-const VALID_GROUPINGS = ['time', 'project', 'unified'] as const
+// §7.3 adds 'slot' — today grouped by time slot, the new front door.
+const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
 const VALID_SORT_OPTIONS = [
   'due_date',
   'priority',
@@ -152,7 +153,7 @@ function validateGeneralFields(
 ): string | null {
   if (body.default_grouping !== undefined) {
     if (!VALID_GROUPINGS.includes(body.default_grouping as (typeof VALID_GROUPINGS)[number]))
-      return 'default_grouping must be "time", "project", or "unified"'
+      return 'default_grouping must be "time", "project", "unified", or "slot"'
     updates.push('default_grouping = ?')
     params.push(body.default_grouping)
   }

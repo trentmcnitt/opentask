@@ -39,8 +39,8 @@ interface PreferencesContextValue {
   setWakeTime: (time: string) => void
   sleepTime: string
   setSleepTime: (time: string) => void
-  defaultGrouping: 'time' | 'project' | 'unified'
-  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => void
+  defaultGrouping: 'time' | 'project' | 'unified' | 'slot'
+  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => void
   defaultSort: SortOption
   defaultSortReversed: boolean
   setSortPreference: (sort: SortOption, reversed: boolean) => void
@@ -157,9 +157,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
-  const [defaultGrouping, setDefaultGroupingState] = useState<'time' | 'project' | 'unified'>(
-    'project',
-  )
+  const [defaultGrouping, setDefaultGroupingState] = useState<
+    'time' | 'project' | 'unified' | 'slot'
+  >('project')
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
@@ -378,7 +378,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         sleepTime,
         setSleepTime: setSleepTimeState,
         defaultGrouping,
-        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified') => {
+        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot') => {
           setDefaultGroupingState(grouping)
           fetch('/api/user/preferences', {
             method: 'PATCH',

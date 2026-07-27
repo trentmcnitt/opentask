@@ -191,6 +191,7 @@ export interface AuthUser {
   email: string
   name: string
   timezone: string
-  default_grouping: 'time' | 'project' | 'unified'
+  /** §7.3 adds 'slot' — today grouped by time slot, the new front door. */
+  default_grouping: 'time' | 'project' | 'unified' | 'slot'
   is_demo: boolean
 }
