@@ -6,6 +6,9 @@ import UserNotifications
 enum NotificationCategory {
     static let taskReminder = "TASK_REMINDER"
     static let taskSummary = "TASK_SUMMARY"
+    /// REDESIGN-V03 §6: the time SLOT notifies, not the reminder. Long-pressing
+    /// one of these expands into the batch checklist (§6.1).
+    static let slotReminder = "SLOT_REMINDER"
 }
 
 enum NotificationAction {
@@ -14,14 +17,34 @@ enum NotificationAction {
     static let snoozeAll1hr = "SNOOZE_ALL_1HR"
     static let snoozeCustom = "SNOOZE_CUSTOM"
     static let snoozeAllCustom = "SNOOZE_ALL_CUSTOM"
+    /// §6.1 batch checklist: commit the rows the user checked in the extension.
+    /// Only ever offered by the content extension — from the lock screen there
+    /// is nothing to check, so the registered category omits it.
+    static let completeChecked = "COMPLETE_CHECKED"
+    /// Complete every pending reminder in the slot. Meaningful with or without
+    /// the expanded UI, so this one IS registered on the category.
+    static let completeAll = "COMPLETE_ALL"
+}
+
+/// userInfo keys carried by a SLOT_REMINDER push (see `sendApnsSlotReminder`
+/// in `src/core/notifications/apns.ts` — this is the whole contract).
+enum SlotReminderKey {
+    /// `time_slots.id`, or -1 for the un-slotted ("Anytime") group.
+    static let slotId = "slot_id"
+    static let slotLabel = "slot_label"
+    /// Pending count at SEND time — a header fallback only. The expanded
+    /// checklist always re-fetches, because by long-press time this is stale.
+    static let reminderCount = "reminder_count"
 }
 
 /// Register notification categories for the app.
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
-/// Two categories:
+/// Three categories:
 /// - TASK_REMINDER: individual task (Done, +1hr, All +1hr)
 /// - TASK_SUMMARY: overflow summary (All +1hr only — no single-task actions)
+/// - SLOT_REMINDER: §6 time slot (Complete all; long-press expands to the
+///   batch checklist, which supplies its own "Complete checked" button)
 func registerNotificationCategories() {
     let doneAction = UNNotificationAction(
         identifier: NotificationAction.done,
@@ -53,7 +76,24 @@ func registerNotificationCategories() {
         options: []
     )
 
-    UNUserNotificationCenter.current().setNotificationCategories([taskReminderCategory, taskSummaryCategory])
+    let completeAllAction = UNNotificationAction(
+        identifier: NotificationAction.completeAll,
+        title: "Complete all",
+        options: []
+    )
+
+    let slotReminderCategory = UNNotificationCategory(
+        identifier: NotificationCategory.slotReminder,
+        actions: [completeAllAction],
+        intentIdentifiers: [],
+        options: []
+    )
+
+    UNUserNotificationCenter.current().setNotificationCategories([
+        taskReminderCategory,
+        taskSummaryCategory,
+        slotReminderCategory,
+    ])
 }
 
 /// Highest priority the server will include in a bulk snooze.
