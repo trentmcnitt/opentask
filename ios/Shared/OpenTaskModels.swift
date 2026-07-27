@@ -32,7 +32,9 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// Local HH:MM — the *intended* time of day for a recurring item.
     let anchorTime: String?
     let progressTarget: Int
-    let progressCurrent: Int
+    /// `var` alone among the fields: `withOptimisticIncrement()` below needs to
+    /// bump it on a value-type copy. Nothing mutates the decoded instance.
+    var progressCurrent: Int
     let isReminder: Bool
     let labels: [String]
 
@@ -104,6 +106,18 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// At or past target. The task deliberately stays open past this point so
     /// overflow (3/2) remains observable, so this is styling, not filtering.
     var isProgressMet: Bool { isTracked && progressCurrent >= progressTarget }
+
+    /// A copy with one more increment logged.
+    ///
+    /// The widget's optimistic render of a `+1` whose server round trip is
+    /// still in flight (§8). A method rather than a struct literal at the call
+    /// site so a new field on `TaskDTO` cannot silently get dropped from the
+    /// copy.
+    func withOptimisticIncrement() -> TaskDTO {
+        var copy = self
+        copy.progressCurrent += 1
+        return copy
+    }
 
     func isOverdue(now: Date = Date()) -> Bool {
         guard let dueDate else { return false }

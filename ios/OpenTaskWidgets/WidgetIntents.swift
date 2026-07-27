@@ -9,9 +9,10 @@ import WidgetKit
 ///   inert until authentication, which is why the Lock Screen accessory
 ///   families below are glanceable-only and carry no buttons at all.
 /// - Timeline reloads *triggered by a widget's own intent* are budget-free.
-///   So every intent below ends by reloading BOTH kinds: a completion changes
-///   the count on one widget and can change the list on the other, and paying
-///   nothing for the second reload is strictly better than letting it drift.
+///   So every intent below ends by reloading ALL THREE kinds: a completion
+///   changes the count on one widget and can change the list on another, and
+///   paying nothing for the extra reloads is strictly better than letting them
+///   drift.
 /// - There are no swipe gestures in widgets, so paging between slots/projects
 ///   is done with explicit chevron intents rather than a gesture.
 ///
@@ -19,12 +20,14 @@ import WidgetKit
 /// a user should find in Shortcuts. Exposing "Move to next time slot" as a
 /// user-facing shortcut would promise app state it does not have.
 
-/// Reload both widget kinds. They read overlapping data (a reminder is a task
-/// row server-side), so they are always refreshed as a pair.
+/// Reload all three widget kinds. They read overlapping data — a reminder is a
+/// task row server-side, and Tasks and Track are two slices of one payload — so
+/// they are always refreshed together.
 @MainActor
 func reloadOpenTaskWidgets() {
     WidgetCenter.shared.reloadTimelines(ofKind: RemindersWidget.kind)
     WidgetCenter.shared.reloadTimelines(ofKind: TasksWidget.kind)
+    WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
 }
 
 // MARK: - Completion
@@ -88,6 +91,13 @@ struct IncrementProgressIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // Pin the Track selection to the item being incremented. The default
+        // selection is "most behind-pace", and logging progress changes pace —
+        // without the pin, tapping +1 could swap the card to a DIFFERENT quota
+        // before the user sees their own count tick up (observed live: +1 on
+        // Beef 0/4 flipped the widget to Broccoli).
+        WidgetStore.trackSelection = taskId
+
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
         // then let the server catch up.
         WidgetStore.stagePendingProgress(taskId)
@@ -172,6 +182,44 @@ struct ShiftProjectScopeIntent: AppIntent {
         let current = ring.firstIndex(of: WidgetStore.projectScope) ?? 0
         let count = ring.count
         WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
+        await reloadOpenTaskWidgets()
+        return .result()
+    }
+}
+
+// MARK: - Track item paging
+
+/// Move the Track widget's selection one quota earlier or later.
+///
+/// Paging wraps, like the other two rings. The selection is what the 2×2 and
+/// the Lock Screen families render, and — once there are more quotas than rows
+/// — where the systemMedium/Large list window starts, so one intent drives
+/// every family's notion of "which quota".
+///
+/// The ordering it steps through is `TrackTimeline.trackedItems`' pace order,
+/// recomputed here from the same cache the provider used, so a chevron always
+/// lands on the item the user can see is next.
+struct ShiftTrackItemIntent: AppIntent {
+    static var title: LocalizedStringResource = "Change Tracked Item"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Offset")
+    var offset: Int
+
+    init() {}
+
+    init(offset: Int) {
+        self.offset = offset
+    }
+
+    func perform() async throws -> some IntentResult {
+        let tasks = WidgetStore.loadTasks()?.value.tasks ?? []
+        let items = TrackTimeline.trackedItems(from: tasks)
+        guard items.count > 1 else { return .result() }
+
+        let current = items.firstIndex { $0.id == TrackTimeline.selectedId(in: items) } ?? 0
+        let count = items.count
+        WidgetStore.trackSelection = items[((current + offset) % count + count) % count].id
         await reloadOpenTaskWidgets()
         return .result()
     }

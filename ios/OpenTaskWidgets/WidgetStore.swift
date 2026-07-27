@@ -112,17 +112,21 @@ enum WidgetStore {
 
     /// Live (un-expired) tombstones, pruning expired ones as a side effect.
     static func pendingCompletions(now: Date = Date()) -> Set<Int> {
-        var map = pendingMap(pendingCompletionsKey)
+        liveIds(pendingCompletionsKey, now: now)
+    }
+
+    private static func liveIds(_ key: String, now: Date) -> Set<Int> {
+        var map = pendingMap(key)
         let cutoff = now.timeIntervalSince1970 - pendingTTL
         var live = Set<Int>()
-        for (key, stamp) in map {
-            if stamp >= cutoff, let id = Int(key) {
+        for (mapKey, stamp) in map {
+            if stamp >= cutoff, let id = Int(mapKey) {
                 live.insert(id)
             } else {
-                map.removeValue(forKey: key)
+                map.removeValue(forKey: mapKey)
             }
         }
-        defaults?.set(map, forKey: pendingCompletionsKey)
+        defaults?.set(map, forKey: key)
         return live
     }
 
@@ -142,6 +146,14 @@ enum WidgetStore {
         defaults?.set(map, forKey: pendingProgressKey)
     }
 
+    /// Live (un-expired) `+1` stamps. Same pruning semantics as
+    /// `pendingCompletions()`, exposed because a staged `+1` has to be *drawn*
+    /// (the ring moves, the count reads one higher) rather than merely hiding a
+    /// row the way a completion tombstone does.
+    static func pendingProgressIds(now: Date = Date()) -> Set<Int> {
+        liveIds(pendingProgressKey, now: now)
+    }
+
     private static func pendingMap(_ key: String) -> [String: Double] {
         (defaults?.dictionary(forKey: key) as? [String: Double]) ?? [:]
     }
@@ -151,6 +163,20 @@ enum WidgetStore {
         let pending = pendingCompletions(now: now)
         guard !pending.isEmpty else { return tasks }
         return tasks.filter { !pending.contains($0.id) }
+    }
+
+    /// Draw staged `+1`s: while a stamp is live the item reads
+    /// `progress_current + 1`.
+    ///
+    /// Exactly ONE increment is added however many taps landed, because the map
+    /// stores a time and not a count (see `stagePendingProgress`). A rapid
+    /// double-tap therefore under-reports for the couple of seconds until the
+    /// fetch lands — the honest direction to be wrong in: showing 5/4 for a
+    /// fifth log the server never received is a number the user would act on.
+    static func applyPendingProgress(_ tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
+        let pending = pendingProgressIds(now: now)
+        guard !pending.isEmpty else { return tasks }
+        return tasks.map { pending.contains($0.id) ? $0.withOptimisticIncrement() : $0 }
     }
 
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
@@ -221,5 +247,31 @@ enum WidgetStore {
             return defaults.integer(forKey: projectScopeKey)
         }
         set { defaults?.set(newValue, forKey: projectScopeKey) }
+    }
+
+    // MARK: - Track selection
+
+    private static let trackSelectionKey = "widget.track.taskId"
+
+    /// "The user has not chosen a quota" — the provider then shows the most
+    /// behind-pace one, which is the useful default (§8).
+    static let noTrackSelection = -1
+
+    /// Which quota the Track widget's small and accessory families render,
+    /// stored as a task id.
+    ///
+    /// An id rather than an index, for a sharper version of `projectScope`'s
+    /// reason: the Track list is re-sorted by pace on every refresh, so an
+    /// index would silently slide the user onto a *different* quota the moment
+    /// something else fell behind — the one navigation bug a chevron user
+    /// could never explain to themselves.
+    static var trackSelection: Int {
+        get {
+            guard let defaults, defaults.object(forKey: trackSelectionKey) != nil else {
+                return noTrackSelection
+            }
+            return defaults.integer(forKey: trackSelectionKey)
+        }
+        set { defaults?.set(newValue, forKey: trackSelectionKey) }
     }
 }
