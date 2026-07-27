@@ -1,7 +1,7 @@
-/** Priority value at which tasks are considered high/urgent (3=High, 4=Urgent) */
+/** Priority value at which tasks are considered high/urgent (3=High, 4=Urgent). P3+ tasks are excluded from bulk snooze — their due dates are real deadlines. */
 export const HIGH_PRIORITY_THRESHOLD = 3
 
-/** Priority value for Urgent (4). Only P4 tasks are excluded from bulk snooze. */
+/** Priority value for Urgent (4). P4 gets critical-level notifications. */
 export const URGENT_PRIORITY = 4
 
 /**

@@ -21,6 +21,9 @@ export type ActivityAction =
   | 'delete'
   | 'restore'
   | 'reprocess'
+  // §7.5: declining an occurrence. Deliberately distinct from 'complete' —
+  // the whole purpose of skip is that it is NOT a completion.
+  | 'skip'
 
 export interface ActivityEntry {
   userId: number

@@ -34,6 +34,7 @@ import {
   isApnsConfigured,
 } from '@/core/notifications/apns'
 import { getOverdueCount } from '@/core/notifications/dismiss'
+import { effectiveDueAt } from '@/core/recurrence/occurrence'
 
 const APP_URL = process.env.AUTH_URL || 'http://localhost:3000'
 
@@ -53,6 +54,20 @@ interface OverdueTask {
   user_auto_snooze_urgent_minutes: number
   user_auto_snooze_high_minutes: number
   critical_alert_volume: number
+  // §4.6 inputs — a recurring task's due-today-ness comes from its schedule,
+  // not from due_at, which freezes as soon as the daily sweep stops.
+  rrule: string | null
+  recurrence_mode: 'from_due' | 'from_completion' | null
+  anchor_time: string | null
+  timezone: string
+  /**
+   * The due time this task is actually being notified about, derived at read
+   * time (§4.6). For a one-off this equals due_at; for a recurring task it is
+   * today's occurrence. All interval math uses this — using the frozen due_at
+   * would put minutesSinceDue in the tens of thousands and scramble the
+   * repeat cadence.
+   */
+  effective_due_at: string
 }
 
 interface NotificationBucket {
@@ -76,7 +91,9 @@ function getEffectiveInterval(task: OverdueTask): number {
 export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
   const interval = getEffectiveInterval(task)
   if (interval === 0) return false
-  const minutesSinceDue = Math.floor((now.getTime() - new Date(task.due_at).getTime()) / 60000)
+  const minutesSinceDue = Math.floor(
+    (now.getTime() - new Date(task.effective_due_at).getTime()) / 60000,
+  )
   if (minutesSinceDue < 0) return false
   // First overdue minute: tasks due at exact minute boundaries (the common case
   // from UI pickers) are first seen at minutesSinceDue = 1 because the SQL query
@@ -151,7 +168,10 @@ async function sendIndividualApns(
     title: `${priorityLabel}${task.title}`,
     body: 'Overdue task',
     taskId: task.id,
-    dueAt: task.due_at,
+    // The occurrence being notified about, not the stored due_at (§4.6) — for
+    // a recurring task those differ, and the client would otherwise show a
+    // months-old date on a notification about today.
+    dueAt: task.effective_due_at,
     priority: task.priority,
     overdueCount,
     badge: badgeCount,
@@ -212,15 +232,26 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
     const db = getDb()
     const now = nowOverride ?? new Date()
 
-    // Fetch all overdue tasks across all priorities. Boundary filtering
-    // is done in JS because the repeat interval varies per task/priority.
-    // Uses a parameterized timestamp (not datetime('now')) so the SQL filter
-    // and JS boundary check use the same clock — important for testability.
-    const overdueTasks = db
+    // Fetch CANDIDATES, then decide due-ness in JS (§4.6).
+    //
+    // The SQL can no longer answer "is this overdue" on its own. A recurring
+    // task's due_at freezes the moment the daily sweep stops, so `due_at <= now`
+    // would both keep nagging about items that aren't scheduled today and time
+    // their repeat intervals from a date months in the past. Recurring rows are
+    // therefore admitted regardless of due_at (including NULL) and filtered by
+    // effectiveDueAt() below; one-offs keep the cheap SQL predicate, since for
+    // them due_at is still the whole truth.
+    //
+    // Boundary filtering was already done in JS because the repeat interval
+    // varies per task/priority. Uses a parameterized timestamp (not
+    // datetime('now')) so the SQL filter and JS checks share one clock.
+    const candidates = db
       .prepare(
         `
         SELECT t.id, t.title, t.due_at, t.priority, t.user_id,
                t.auto_snooze_minutes,
+               t.rrule, t.recurrence_mode, t.anchor_time,
+               u.timezone,
                u.auto_snooze_minutes as user_auto_snooze_minutes,
                u.auto_snooze_urgent_minutes as user_auto_snooze_urgent_minutes,
                u.auto_snooze_high_minutes as user_auto_snooze_high_minutes,
@@ -230,13 +261,24 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         WHERE t.done = 0
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
-          AND t.due_at IS NOT NULL
-          AND datetime(t.due_at) <= datetime(?)
           AND u.notifications_enabled = 1
+          -- §5: tracked items are exempt from the cadence loop (see
+          -- currently-due.ts for the rationale).
+          AND t.progress_target <= 1
+          AND (
+            t.rrule IS NOT NULL
+            OR (t.due_at IS NOT NULL AND datetime(t.due_at) <= datetime(?))
+          )
         ORDER BY t.priority DESC, t.due_at ASC
       `,
       )
       .all(now.toISOString()) as OverdueTask[]
+
+    const overdueTasks = candidates.flatMap((task) => {
+      const effective = effectiveDueAt(task, task.timezone, now)
+      if (!effective || effective.getTime() > now.getTime()) return []
+      return [{ ...task, effective_due_at: effective.toISOString() }]
+    })
 
     // Collect unique user IDs with overdue tasks for badge updates
     const usersWithOverdue = new Set(overdueTasks.map((t) => t.user_id))
@@ -256,8 +298,8 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
     for (const [userId, tasks] of tasksByUser) {
       const { regular, high, urgent } = splitIntoBuckets(tasks)
 
-      // overdueCount for the iOS "All" button — count of bulk-snoozable tasks (P0-P3, excludes P4)
-      const overdueCount = tasks.filter((t) => t.priority < URGENT_PRIORITY).length
+      // overdueCount for the iOS "All" button — count of bulk-snoozable tasks (P0-P2, excludes P3/P4)
+      const overdueCount = tasks.filter((t) => t.priority < HIGH_PRIORITY_THRESHOLD).length
 
       // Badge count: total overdue tasks for this user (all priorities).
       // Uses all overdue tasks, not just those eligible for notification this tick.

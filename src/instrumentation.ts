@@ -13,6 +13,8 @@
  * - 4:30 AM UTC Sunday: stats purge
  * - 5:00 AM UTC daily: AI activity purge
  * - 5:30 AM UTC daily: webhook delivery purge
+ * - 3:00 AM UTC daily: What's Next generation (§7.4)
+ * - 3:30 AM UTC daily: Insights generation (§7.4)
  */
 
 import { log } from '@/lib/logger'
@@ -136,6 +138,42 @@ export async function register() {
 
     await initAI()
     if (isAIEnabled()) {
+      // §7.4: What's Next and Insights generate on a daily schedule plus
+      // on-demand refresh — never eagerly on page load. The read routes serve
+      // cache only, so without these jobs the features would simply show "no
+      // data yet" until the user pressed refresh.
+      //
+      // Staggered and run sequentially per user inside each job: Insights
+      // scores the whole corpus in chunks, and overlapping it with What's Next
+      // would put two heavy AI runs on the box at once.
+      const { runScheduledWhatsNext, runScheduledInsights } = await import('@/core/ai/scheduled')
+
+      /** Run an async cron job with error logging and ntfy alerting. */
+      async function safeAsyncCronRun(label: string, fn: () => Promise<void>): Promise<void> {
+        log.info('cron', `Running ${label}`)
+        try {
+          await fn()
+        } catch (err) {
+          log.error('cron', `${label} error:`, err)
+          notifyError(
+            'cron-failure',
+            `${label} failed`,
+            err instanceof Error ? err.message : String(err),
+          )
+        }
+      }
+
+      cron.schedule('0 3 * * *', () => {
+        void safeAsyncCronRun("What's Next generation", runScheduledWhatsNext)
+      })
+      cron.schedule('30 3 * * *', () => {
+        void safeAsyncCronRun('Insights generation', runScheduledInsights)
+      })
+      log.info(
+        'cron',
+        "Scheduled AI generation: What's Next (3:00 AM daily), Insights (3:30 AM daily)",
+      )
+
       // Warm slots use Claude Agent SDK subprocesses. Init them whenever SDK is
       // available, regardless of server default provider — any user with mode='sdk'
       // for a feature needs the slot, even if most users are on API mode.

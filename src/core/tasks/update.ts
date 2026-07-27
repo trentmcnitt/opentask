@@ -18,6 +18,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
+import { validateLabelsExist } from '@/core/labels'
 
 export interface UpdateTaskOptions {
   userId: number
@@ -54,6 +55,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // Always check deleted_at, even for prefetched tasks — prevents future callers
   // from accidentally bypassing this guard by passing prefetchedTask
   if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
+
+  // §7.2: only labels being NEWLY added are held to the registry. Passing the
+  // task's current labels as `existing` is what lets an unrelated edit (a title
+  // fix, a priority bump) succeed on a task that happens to carry a legacy
+  // unregistered label — otherwise one stray tag would make that task
+  // permanently uneditable.
+  if (input.labels !== undefined) {
+    validateLabelsExist(userId, input.labels, task.labels, input.create_label === true)
+  }
 
   const data = collectFieldChanges({
     task,

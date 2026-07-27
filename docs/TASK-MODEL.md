@@ -10,24 +10,24 @@ OpenTask is not a traditional task manager. Due dates for most tasks are **remin
 
 - **Priority 0-1 (Unset/Low):** `due_at` means "remind me at this time." These tasks are eligible for bulk snooze. Being "overdue" just means `due_at` has passed — for low-priority tasks it's the normal state, not a problem.
 - **Priority 2 (Medium):** `due_at` is a reminder. Eligible for bulk snooze. Being overdue has low significance.
-- **Priority 3 (High):** `due_at` is a deadline, but these tasks are still eligible for bulk snooze. Being overdue is significant.
-- **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks are never bulk-snoozed — they must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
+- **Priority 3 (High):** `due_at` is a deadline. High tasks are never bulk-snoozed — they resist sweeps so a defensive bulk snooze can't silently re-date a real deadline. Being overdue is significant. `HIGH_PRIORITY_THRESHOLD = 3` in `src/lib/priority.ts` is the filter boundary.
+- **Priority 4 (Urgent):** `due_at` is a hard deadline. Urgent tasks resist sweeps _and_ break through everything (critical-level notifications). They must be snoozed individually, so every due date change is a deliberate decision. Being overdue is always significant. `URGENT_PRIORITY = 4` in `src/lib/priority.ts`.
 
 | Priority        | Due date means | Bulk snooze | "Overdue" significance |
 | --------------- | -------------- | ----------- | ---------------------- |
 | 0-1 (Unset/Low) | Reminder       | Eligible    | Normal — not a problem |
 | 2 (Medium)      | Reminder       | Eligible    | Low                    |
-| 3 (High)        | Deadline       | Eligible    | Significant            |
+| 3 (High)        | Deadline       | Never       | Significant            |
 | 4 (Urgent)      | Hard deadline  | Never       | Critical               |
 
-**Bulk snooze:** One pass — all overdue P0-P3 tasks are snoozed, P4 (Urgent) is always excluded. No tiers, no multi-click flow.
+**Bulk snooze:** One pass — all overdue P0-P2 tasks are snoozed; P3 (High) and P4 (Urgent) are always excluded, because their due dates are real deadlines rather than reminders. No tiers, no multi-click flow.
 
 **Implications for code and AI:**
 
 - `created_at` is the most reliable age signal — it never changes. Use it over `due_at` for understanding how long a task has existed.
 - The gap between `original_due_at` and `due_at` shows how much total time the due date has shifted, but not how many snoozes occurred or why. Don't infer snooze counts or user intent from dates alone.
 - `snooze_count` is a lifetime stat incremented on every snooze (including bulk). High counts are normal, not a sign of avoidance.
-- For P0-3 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks."
+- For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted due date reflects a sweep the user never read, not a decision.
 
 ## Priority Values
 

@@ -190,10 +190,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 return
             }
 
-            // After bulk snooze, dismiss notifications for P0-P3 tasks that were snoozed.
-            // P4 (Urgent) is never bulk-snoozed, so those notifications remain.
+            // After bulk snooze, dismiss notifications for the tasks that were snoozed.
+            // P3 (High) and P4 (Urgent) are never bulk-snoozed, so those remain.
             if wasBulkSnooze {
-                await dismissNotifications(atOrBelowPriority: 3)
+                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
             }
 
             // Dismiss only — the extension already handled the action via API call.
