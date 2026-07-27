@@ -29,12 +29,17 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const refresh = searchParams.get('refresh') === 'true'
 
-    // Return cached result if available and not requesting refresh
+    // §7.4: generation happens on the daily schedule or on an explicit refresh —
+    // NEVER as a side effect of a page load. This route is hit on every mount of
+    // the dashboard, so generating on a cache miss meant the first visit of each
+    // day silently burned a full AI run. On a miss we return no data and let the
+    // UI offer a refresh; the user asks for it, or the 3 AM job supplies it.
     if (!refresh) {
       const cached = getCachedWhatsNext(user.id)
       if (cached) {
         return success({ ...cached.result, duration_ms: cached.durationMs })
       }
+      return success(null)
     }
 
     // Generate fresh recommendations
