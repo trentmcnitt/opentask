@@ -116,6 +116,12 @@ struct WebView: UIViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.startObservingContentSize()
 
+        // Every fresh navigation intent (widget tap, notification, quick
+        // action) re-arms the /login rescue — see Coordinator.newNavigationIntent.
+        WebViewManager.shared.onNewNavigationIntent = { [weak coordinator = context.coordinator] in
+            coordinator?.newNavigationIntent()
+        }
+
         // Check for pending deep link (cold launch from notification tap or quick action)
         let initialURL = WebViewManager.shared.consumePendingPath()
             .flatMap { URL(string: AppConfig.shared.serverURL + $0) } ?? url
@@ -179,9 +185,17 @@ struct WebView: UIViewRepresentable {
         private var loadingCover: UIView?
 
         /// Loop guard for the /login rescue: at most one bootstrap attempt per
-        /// landing on the login page. Reset when any non-login page finishes,
-        /// which is the only evidence that the rescue (or a manual login) took.
+        /// navigation intent. Re-armed two ways — when any non-login page
+        /// finishes (evidence the session is good), and by every new
+        /// externally-initiated navigation (`WebViewManager.onNewNavigationIntent`),
+        /// so a widget tap after a failed rescue gets a fresh attempt instead
+        /// of dead-ending on the login page.
         private var loginRescueAttempted = false
+
+        /// Re-arm the /login rescue. Wired to `WebViewManager.onNewNavigationIntent`.
+        func newNavigationIntent() {
+            loginRescueAttempted = false
+        }
 
         init(onNavigationError: ((Error) -> Void)?) {
             self.onNavigationError = onNavigationError
@@ -278,6 +292,61 @@ struct WebView: UIViewRepresentable {
 
         // MARK: - Navigation
 
+        /// Intercept navigations HEADED to /login before the page renders.
+        ///
+        /// An expired session turns a widget/notification tap into a server
+        /// redirect to /login. The didFinish rescue below can recover, but by
+        /// then the user has SEEN the login page — which reads as "logged out
+        /// again". Cancelling the navigation here and bootstrapping first means
+        /// the only thing visible is the loading cover, and the resumed load
+        /// carries the exact destination from the login URL's callbackUrl.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard navigationAction.targetFrame?.isMainFrame != false,
+                  let url = navigationAction.request.url,
+                  url.host == URL(string: AppConfig.shared.serverURL)?.host,
+                  isLoginPage(url),
+                  SessionBootstrapper.hasCredentials,
+                  !loginRescueAttempted
+            else {
+                decisionHandler(.allow)
+                return
+            }
+            loginRescueAttempted = true
+            decisionHandler(.cancel)
+            showLoadingCover(over: webView)
+            let resume = Self.resumePath(fromLoginURL: url)
+            Task { @MainActor in
+                if await SessionBootstrapper.bootstrap() {
+                    print("[OpenTask] /login intercepted — session re-minted, resuming \(resume)")
+                    // rearmRescue: false — replaying the destination must not
+                    // reset the guard, or a server that keeps bouncing would
+                    // loop bootstrap attempts forever.
+                    WebViewManager.shared.navigate(path: resume, rearmRescue: false)
+                } else {
+                    print("[OpenTask] /login intercept: bootstrap failed — showing login page")
+                    hideLoadingCover()
+                    webView.load(URLRequest(url: url))
+                }
+            }
+        }
+
+        /// Destination to resume after a rescued /login bounce: the login URL's
+        /// own callbackUrl when present (the server records exactly where the
+        /// user was headed), falling back to the last path the app requested.
+        /// Same-origin relative paths only — anything else falls through.
+        static func resumePath(fromLoginURL url: URL) -> String {
+            if let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "callbackUrl" })?.value,
+                cb.hasPrefix("/"), !cb.hasPrefix("//") {
+                return cb
+            }
+            return WebViewManager.shared.lastRequestedPath
+        }
+
         @objc func handleRefresh(_ sender: UIRefreshControl) {
             guard let webView = sender.superview?.superview as? WKWebView else {
                 sender.endRefreshing()
@@ -325,7 +394,7 @@ struct WebView: UIViewRepresentable {
                 }
                 let path = WebViewManager.shared.lastRequestedPath
                 print("[OpenTask] /login rescue succeeded — resuming \(path)")
-                WebViewManager.shared.navigate(path: path)
+                WebViewManager.shared.navigate(path: path, rearmRescue: false)
             }
         }
 
