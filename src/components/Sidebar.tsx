@@ -2,7 +2,7 @@
 
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, History, Archive, Trash2, Settings, Plus } from 'lucide-react'
+import { LayoutDashboard, History, Archive, Trash2, Settings, Plus, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
@@ -14,8 +14,13 @@ interface SidebarProps {
 export function Sidebar({ onAddClick }: SidebarProps) {
   const pathname = usePathname()
 
+  // Desktop has room for every destination, so nothing hides behind a menu here —
+  // the split is "where you work" on top, "where things end up" pinned at the
+  // bottom. Reminders (§6) belongs to the first group: it is a daily surface, not
+  // an archive of anything.
   const navItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '/history', label: 'History', icon: History },
   ]
 

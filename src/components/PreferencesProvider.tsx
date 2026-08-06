@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import type { LabelConfig, PriorityDisplayConfig } from '@/types'
+import type { GroupingMode } from '@/components/TaskList'
 import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
@@ -44,8 +45,8 @@ interface PreferencesContextValue {
   setWakeTime: (time: string) => void
   sleepTime: string
   setSleepTime: (time: string) => void
-  defaultGrouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders'
-  setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders') => void
+  defaultGrouping: GroupingMode
+  setDefaultGrouping: (grouping: GroupingMode) => void
   defaultSort: SortOption
   defaultSortReversed: boolean
   setSortPreference: (sort: SortOption, reversed: boolean) => void
@@ -84,6 +85,22 @@ interface PreferencesContextValue {
   aiApiAvailable: boolean
   aiFeatureInfo: FeatureInfoMap | null
   setAiFeatureInfo: (info: FeatureInfoMap) => void
+}
+
+/** The dashboard's three chips plus 'unified', which the AI-sort toggle drives. */
+const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot']
+
+/**
+ * Coerce a stored `default_grouping` to a grouping the dashboard can actually render.
+ *
+ * The Reminders surface used to persist through this same preference (it rode in
+ * the view toggle as a chip-that-looked-like-a-tab). It is now its own route, so
+ * accounts that were left on 'reminders' hold a value no view corresponds to.
+ * Rather than migrate the column, those users land on 'slot' — the §7.3 front door
+ * — and the stored value is corrected the next time they pick a view.
+ */
+function coerceGrouping(stored: unknown): GroupingMode {
+  return VALID_GROUPINGS.includes(stored as GroupingMode) ? (stored as GroupingMode) : 'slot'
 }
 
 /** Apply a feature mode value from the API response to a state setter, with validation. */
@@ -173,9 +190,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
-  const [defaultGrouping, setDefaultGroupingState] = useState<
-    'time' | 'project' | 'unified' | 'slot' | 'reminders'
-  >('project')
+  const [defaultGrouping, setDefaultGroupingState] = useState<GroupingMode>('project')
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [filtersExpanded, setFiltersExpandedState] = useState(false)
@@ -230,10 +245,24 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     const hasLocalToken =
       (window as unknown as Record<string, unknown>).__OPENTASK_HAS_TOKEN === true
 
+    // Last 8 chars of the keychain token (matches api_tokens.token_preview). Lets the
+    // server detect a token belonging to a *different* user — e.g. after an account switch
+    // in the webview — instead of assuming any local token is this user's. Older app builds
+    // don't inject it, so the field is omitted when unavailable.
+    const localTokenPreview = (window as unknown as Record<string, unknown>)
+      .__OPENTASK_TOKEN_PREVIEW
+
+    const payload: { has_local_token: boolean; local_token_preview?: string } = {
+      has_local_token: hasLocalToken,
+    }
+    if (typeof localTokenPreview === 'string' && localTokenPreview.length > 0) {
+      payload.local_token_preview = localTokenPreview
+    }
+
     fetch('/api/tokens/provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ has_local_token: hasLocalToken }),
+      body: JSON.stringify(payload),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -295,7 +324,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setSleepTimeState(data.data.sleep_time)
         }
         if (data?.data?.default_grouping) {
-          setDefaultGroupingState(data.data.default_grouping)
+          setDefaultGroupingState(coerceGrouping(data.data.default_grouping))
         }
         if (data?.data?.default_sort) {
           setDefaultSortState(data.data.default_sort)
@@ -408,7 +437,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         sleepTime,
         setSleepTime: setSleepTimeState,
         defaultGrouping,
-        setDefaultGrouping: (grouping: 'time' | 'project' | 'unified' | 'slot' | 'reminders') => {
+        setDefaultGrouping: (grouping: GroupingMode) => {
           setDefaultGroupingState(grouping)
           fetch('/api/user/preferences', {
             method: 'PATCH',

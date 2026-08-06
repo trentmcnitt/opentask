@@ -104,6 +104,24 @@ export function countRemindersBySlot(
   }))
 }
 
+/**
+ * Does this user have any reminders at all (done or not, excluding trash)?
+ *
+ * Only the empty state depends on it: someone who has never made a reminder needs
+ * the surface explained, while someone who has simply finished today's needs to be
+ * told they are done, not taught what reminders are. Kept separate from
+ * `getRemindersBySlot` because that query answers "today", and today being empty is
+ * exactly when this distinction matters.
+ */
+export function hasAnyReminders(userId: number): boolean {
+  const row = getDb()
+    .prepare(
+      'SELECT 1 AS found FROM tasks WHERE user_id = ? AND is_reminder = 1 AND deleted_at IS NULL LIMIT 1',
+    )
+    .get(userId) as { found: number } | undefined
+  return row !== undefined
+}
+
 /** Is this task on the Reminders surface? Cheap check without loading the row. */
 export function isReminderTask(taskId: number): boolean {
   const row = getDb().prepare('SELECT is_reminder FROM tasks WHERE id = ?').get(taskId) as

@@ -3,10 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
+import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
-import { ViewModeToggle, type ViewMode } from '@/components/ViewModeToggle'
-import { RemindersView } from '@/components/RemindersView'
+import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
@@ -56,13 +55,14 @@ import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
-import { cn, taskWord } from '@/lib/utils'
+import { taskWord } from '@/lib/utils'
 import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
 import { useAiMode, type AiMode } from '@/hooks/useAiMode'
 import { useInsightsData, type UseInsightsDataReturn } from '@/hooks/useInsightsData'
 import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
@@ -88,7 +88,7 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
     try {
       const res = await fetch('/api/tasks?limit=500')
       if (res.status === 401) {
-        router.push('/login')
+        router.push(loginUrlFromLocation())
         return
       }
       if (!res.ok) throw new Error('Failed to fetch tasks')
@@ -335,15 +335,9 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     setFocusedTask(task)
     setQuickActionOpen(true)
   }, [])
-  // Registered by RemindersView while it is mounted (§6). The Reminders surface
-  // fetches its own data, so it has to be pulled into the same refresh chain as
-  // the task list — otherwise an undone completion, or a change arriving over
-  // the sync stream, would leave it stale until a reload.
-  const remindersRefreshRef = useRef<(() => void) | null>(null)
   const refreshAll = useCallback(async () => {
     await fetchTasks()
     refreshProjects()
-    remindersRefreshRef.current?.()
   }, [fetchTasks, refreshProjects])
   // Banner state: combines quick take text, loading, title, and enrichment data
   interface QuickTakeBannerState {
@@ -570,12 +564,10 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   // AI sort auto-switches to unified as a local override (not persisted to DB).
   // This preserves the user's real grouping preference for when AI sort is disabled.
   const [aiSortUnified, setAiSortUnified] = useState(false)
-  const grouping: ViewMode = aiSortUnified ? 'unified' : defaultGrouping
-  // The Reminders surface replaces the task list rather than regrouping it (§6).
-  const isRemindersView = grouping === 'reminders'
+  const grouping: GroupingMode = aiSortUnified ? 'unified' : defaultGrouping
 
   // Track the non-unified grouping so we can restore it when leaving manual unified toggle.
-  const prevNonUnifiedGrouping = useRef<ViewMode | null>(null)
+  const prevNonUnifiedGrouping = useRef<GroupingMode | null>(null)
   const prevSortOption = useRef(sortOption)
 
   useEffect(() => {
@@ -594,7 +586,8 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
   /**
-   * §6/§7.3: the dashboard is tasks; reminders live on their own surface.
+   * §6/§7.3: the dashboard is tasks; reminders live on their own surface
+   * (`/reminders`, its own route and tab).
    *
    * Reminders are filtered out here rather than server-side so `/api/tasks`
    * keeps returning the whole corpus for every other caller. Doing it at this
@@ -608,7 +601,6 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     () => searchResults.filter((t) => !t.is_reminder),
     [searchResults],
   )
-  const hasReminderTasks = useMemo(() => tasks.some((t) => t.is_reminder), [tasks])
 
   const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
@@ -628,16 +620,30 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     }
   }, [searchParams, router])
 
-  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task
+  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task.
+  //
+  // The param is consumed (and stripped from the URL) only once resolution is
+  // DEFINITIVE: the task was found, or the list is non-empty and provably
+  // doesn't contain it. `loading === false` alone is not proof the list is
+  // ready — on WebKit (iOS webview, Safari) the initial fetch can fail
+  // transiently during hydration, flipping `loading` false with zero tasks;
+  // consuming the param then means a notification tap opens the app but never
+  // the task. With an empty list we leave the param in place and let the
+  // effect re-run when a retry/sync populates tasks.
   const taskParamProcessed = useRef(false)
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
     const taskIdParam = searchParams.get('task')
     if (!taskIdParam) return
-    taskParamProcessed.current = true
     const taskId = parseInt(taskIdParam, 10)
-    if (isNaN(taskId)) return
+    if (isNaN(taskId)) {
+      taskParamProcessed.current = true
+      router.replace('/', { scroll: false })
+      return
+    }
     const task = tasks.find((t) => t.id === taskId)
+    if (!task && tasks.length === 0) return
+    taskParamProcessed.current = true
     if (task) {
       handleViewTask(task)
     }
@@ -851,14 +857,9 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [selection, clearAllFilters])
 
-  // Build task groups for keyboard navigation. The Reminders surface has no
-  // task groups — it isn't the task list — so keyboard navigation has nothing
-  // to walk while it is showing.
+  // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
-    () =>
-      grouping === 'reminders'
-        ? []
-        : buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
+    () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
     [tasks_, projects, grouping, timezone, timeSlots],
   )
   // Apply per-group sorting to match the visual order in TaskList.
@@ -922,11 +923,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
 
   // Keyboard navigation hook - disabled when sheets/dialogs are open
   const keyboardNavEnabled =
-    !showProjectPicker &&
-    !quickActionOpen &&
-    !showShortcutsDialog &&
-    !createPanelOpen &&
-    !isRemindersView
+    !showProjectPicker && !quickActionOpen && !showShortcutsDialog && !createPanelOpen
   const keyboard = useKeyboardNavigation({
     orderedIds,
     groups: taskGroups,
@@ -1068,7 +1065,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
     if (!hasInitialData) {
@@ -1144,8 +1141,6 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
         setDefaultGrouping(next)
       }}
       timeSlots={timeSlots}
-      hasReminderTasks={hasReminderTasks}
-      remindersRefreshRef={remindersRefreshRef}
       searchQuery={searchQuery}
       searchResultCount={visibleSearchResults.length}
       overdueCount={overdueCount}
@@ -1289,8 +1284,6 @@ function DashboardView({
   grouping,
   onGroupingChange,
   timeSlots,
-  hasReminderTasks,
-  remindersRefreshRef,
   searchQuery,
   searchResultCount,
   overdueCount,
@@ -1398,14 +1391,10 @@ function DashboardView({
   tasks: Task[]
   allTasks: Task[]
   projects: Project[]
-  grouping: ViewMode
-  onGroupingChange: (grouping: ViewMode) => void
+  grouping: GroupingMode
+  onGroupingChange: (grouping: GroupingMode) => void
   /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
   timeSlots: TimeSlot[]
-  /** Whether any open task is a reminder — only shapes the §6 empty state. */
-  hasReminderTasks: boolean
-  /** Lets the Reminders surface join the dashboard's refresh chain (§6). */
-  remindersRefreshRef: React.MutableRefObject<(() => void) | null>
   searchQuery: string | null
   searchResultCount: number
   overdueCount: number
@@ -1542,15 +1531,6 @@ function DashboardView({
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
-  /**
-   * §6: "Reminders" is a surface, not a grouping. When it is showing, the
-   * task-list apparatus — quick add, AI controls, filter chips, the snooze FAB
-   * — is hidden rather than disabled. All of it acts on tasks, and a row of
-   * inert controls above a deliberately quiet surface would be worse than no
-   * controls at all. Everything stays one tap away in the same toggle.
-   */
-  const isRemindersView = grouping === 'reminders'
-
   return (
     <div className="flex flex-1 flex-col">
       <Header
@@ -1572,7 +1552,7 @@ function DashboardView({
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
         {/* Quick add + AI chip row */}
-        <div className={cn('mb-4 flex items-center gap-3', isRemindersView && 'hidden')}>
+        <div className="mb-4 flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <QuickAdd
               onAdd={async (title) => {
@@ -1617,7 +1597,7 @@ function DashboardView({
           )}
         </div>
 
-        {aiAvailable && bannerState && !isRemindersView && (
+        {aiAvailable && bannerState && (
           <QuickTakeBanner
             title={bannerState.title}
             quickTakeText={bannerState.quickTakeText}
@@ -1634,155 +1614,143 @@ function DashboardView({
           <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
         </div>
 
-        {isRemindersView ? (
-          <RemindersView
-            onUndo={actions.handleUndo}
-            onCompleted={actions.bumpUndoCount}
-            refreshRef={remindersRefreshRef}
-            hasReminderTasks={hasReminderTasks}
-          />
-        ) : (
-          <>
-            <FilterBar
-              tasks={allTasks}
-              expanded={filtersExpanded}
-              onToggleExpanded={onToggleFilters}
-              activeFilterCount={activeFilterCount}
-              selectedPriorities={selectedPriorities}
-              selectedLabels={selectedLabels}
-              selectedDateFilters={selectedDateFilters}
-              onTogglePriority={onTogglePriority}
-              onExclusivePriority={onExclusivePriority}
-              onToggleLabel={onToggleLabel}
-              onExclusiveLabel={onExclusiveLabel}
-              onToggleDateFilter={onToggleDateFilter}
-              onExclusiveDateFilter={onExclusiveDateFilter}
-              attributeFilters={attributeFilters}
-              onToggleAttribute={onToggleAttribute}
-              onExclusiveAttribute={onExclusiveAttribute}
-              projects={projects}
-              selectedProjects={selectedProjects}
-              onToggleProject={onToggleProject}
-              onExclusiveProject={onExclusiveProject}
-              excludedPriorities={excludedPriorities}
-              excludedLabels={excludedLabels}
-              excludedDateFilters={excludedDateFilters}
-              excludedAttributes={excludedAttributes}
-              excludedProjects={excludedProjects}
-              onExcludePriority={onExcludePriority}
-              onExcludeLabel={onExcludeLabel}
-              onExcludeDateFilter={onExcludeDateFilter}
-              onExcludeAttribute={onExcludeAttribute}
-              onExcludeProject={onExcludeProject}
-              todayCounts={todayCounts}
-              timezone={timezone}
-              aiAvailable={aiAvailable}
-              aiMode={aiMode}
-              aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
-              aiFilterActive={aiFilterActive}
-              aiFilterLoading={aiInsights.loading}
-              onToggleAiFilter={onToggleAiFilter}
-              insightsActive={showInsights}
-              onToggleInsights={onToggleInsights}
-              hasInsightsData={insightsData.hasResults}
-              insightsGenerating={insightsData.generating}
-              insightsSignalChipsVisible={insightsSignalChips}
-              signalChips={
-                aiMode !== 'off' && insightsData.hasResults
-                  ? insightsData.activeSignals.map((s) => ({
-                      key: s.key,
-                      label: s.label,
-                      count: insightsData.signalCounts[s.key] || 0,
-                      description: s.description,
-                    }))
-                  : undefined
-              }
-              selectedSignals={selectedSignals}
-              onSignalClick={onSignalClick}
-              onSignalLongPress={onSignalLongPress}
-            />
+        <FilterBar
+          tasks={allTasks}
+          expanded={filtersExpanded}
+          onToggleExpanded={onToggleFilters}
+          activeFilterCount={activeFilterCount}
+          selectedPriorities={selectedPriorities}
+          selectedLabels={selectedLabels}
+          selectedDateFilters={selectedDateFilters}
+          onTogglePriority={onTogglePriority}
+          onExclusivePriority={onExclusivePriority}
+          onToggleLabel={onToggleLabel}
+          onExclusiveLabel={onExclusiveLabel}
+          onToggleDateFilter={onToggleDateFilter}
+          onExclusiveDateFilter={onExclusiveDateFilter}
+          attributeFilters={attributeFilters}
+          onToggleAttribute={onToggleAttribute}
+          onExclusiveAttribute={onExclusiveAttribute}
+          projects={projects}
+          selectedProjects={selectedProjects}
+          onToggleProject={onToggleProject}
+          onExclusiveProject={onExclusiveProject}
+          excludedPriorities={excludedPriorities}
+          excludedLabels={excludedLabels}
+          excludedDateFilters={excludedDateFilters}
+          excludedAttributes={excludedAttributes}
+          excludedProjects={excludedProjects}
+          onExcludePriority={onExcludePriority}
+          onExcludeLabel={onExcludeLabel}
+          onExcludeDateFilter={onExcludeDateFilter}
+          onExcludeAttribute={onExcludeAttribute}
+          onExcludeProject={onExcludeProject}
+          todayCounts={todayCounts}
+          timezone={timezone}
+          aiAvailable={aiAvailable}
+          aiMode={aiMode}
+          aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
+          aiFilterActive={aiFilterActive}
+          aiFilterLoading={aiInsights.loading}
+          onToggleAiFilter={onToggleAiFilter}
+          insightsActive={showInsights}
+          onToggleInsights={onToggleInsights}
+          hasInsightsData={insightsData.hasResults}
+          insightsGenerating={insightsData.generating}
+          insightsSignalChipsVisible={insightsSignalChips}
+          signalChips={
+            aiMode !== 'off' && insightsData.hasResults
+              ? insightsData.activeSignals.map((s) => ({
+                  key: s.key,
+                  label: s.label,
+                  count: insightsData.signalCounts[s.key] || 0,
+                  description: s.description,
+                }))
+              : undefined
+          }
+          selectedSignals={selectedSignals}
+          onSignalClick={onSignalClick}
+          onSignalLongPress={onSignalLongPress}
+        />
 
-            {searchQuery && (
-              <div className="mb-4 text-sm text-zinc-500">
-                {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
-                {searchQuery}&rdquo;
-              </div>
-            )}
-
-            {anyFilterActive && (
-              <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
-                Showing {tasks.length} of {allTasks.length} tasks{' '}
-                <span className="mx-1">&middot;</span>
-                <button
-                  onClick={onClearFilters}
-                  className="text-foreground font-medium hover:underline"
-                >
-                  Clear filter
-                </button>
-              </div>
-            )}
-
-            <TaskList
-              tasks={tasks}
-              projects={projects}
-              grouping={grouping}
-              timeSlots={timeSlots}
-              onDone={actions.handleDone}
-              onSnooze={actions.handleSnooze}
-              onLabelClick={onToggleLabel}
-              onTaskFocus={onTaskFocus}
-              keyboardFocusedId={keyboardFocusedId}
-              isKeyboardActive={isKeyboardActive}
-              onKeyDown={onKeyDown}
-              onListFocus={onListFocus}
-              onListBlur={onListBlur}
-              sortOption={sortOption}
-              reversed={reversed}
-              setSortOption={setSortOption}
-              isCollapsed={isCollapsed}
-              toggleCollapse={toggleCollapse}
-              onActivate={onActivate}
-              onDoubleClick={onDoubleClick}
-              annotationMap={effectiveAnnotationMap}
-              showAnnotations={showAnnotations}
-              wnTaskIds={aiInsights.aiTaskIds}
-              showWnHighlight={showWnHighlight}
-              onReprocess={onReprocess}
-              insightsScoreMap={
-                showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-              }
-              insightsSignalMap={
-                showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
-              }
-              insightsCommentaryMap={
-                effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
-              }
-              showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
-              aiScoreDisabled={!showInsights || aiMode === 'off'}
-              headerLeft={
-                tasks.length > 0 ? (
-                  <button
-                    onClick={() => {
-                      const allSelected =
-                        tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                      if (allSelected) {
-                        selection.clear()
-                      } else {
-                        selection.selectAll(tasks.map((t) => t.id))
-                      }
-                    }}
-                    className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-                  >
-                    {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                      ? 'Select None'
-                      : 'Select All'}
-                  </button>
-                ) : undefined
-              }
-              onUnifiedChange={onUnifiedChange}
-            />
-          </>
+        {searchQuery && (
+          <div className="mb-4 text-sm text-zinc-500">
+            {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
+            {searchQuery}&rdquo;
+          </div>
         )}
+
+        {anyFilterActive && (
+          <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
+            Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
+            <button
+              onClick={onClearFilters}
+              className="text-foreground font-medium hover:underline"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
+
+        <TaskList
+          tasks={tasks}
+          projects={projects}
+          grouping={grouping}
+          timeSlots={timeSlots}
+          onDone={actions.handleDone}
+          onSnooze={actions.handleSnooze}
+          onLabelClick={onToggleLabel}
+          onTaskFocus={onTaskFocus}
+          keyboardFocusedId={keyboardFocusedId}
+          isKeyboardActive={isKeyboardActive}
+          onKeyDown={onKeyDown}
+          onListFocus={onListFocus}
+          onListBlur={onListBlur}
+          sortOption={sortOption}
+          reversed={reversed}
+          setSortOption={setSortOption}
+          isCollapsed={isCollapsed}
+          toggleCollapse={toggleCollapse}
+          onActivate={onActivate}
+          onDoubleClick={onDoubleClick}
+          annotationMap={effectiveAnnotationMap}
+          showAnnotations={showAnnotations}
+          wnTaskIds={aiInsights.aiTaskIds}
+          showWnHighlight={showWnHighlight}
+          onReprocess={onReprocess}
+          insightsScoreMap={
+            showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+          }
+          insightsSignalMap={
+            showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
+          }
+          insightsCommentaryMap={
+            effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
+          }
+          showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
+          aiScoreDisabled={!showInsights || aiMode === 'off'}
+          headerLeft={
+            tasks.length > 0 ? (
+              <button
+                onClick={() => {
+                  const allSelected =
+                    tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                  if (allSelected) {
+                    selection.clear()
+                  } else {
+                    selection.selectAll(tasks.map((t) => t.id))
+                  }
+                }}
+                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+              >
+                {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                  ? 'Select None'
+                  : 'Select All'}
+              </button>
+            ) : undefined
+          }
+          onUnifiedChange={onUnifiedChange}
+        />
       </main>
 
       <SelectionActionSheet
@@ -1798,13 +1766,11 @@ function DashboardView({
         projects={projects}
       />
 
-      {!isRemindersView && (
-        <SnoozeAllFab
-          overdueCount={overdueCount}
-          isSelectionMode={selection.isSelectionMode}
-          onSnoozeOverdue={onSnoozeOverdue}
-        />
-      )}
+      <SnoozeAllFab
+        overdueCount={overdueCount}
+        isSelectionMode={selection.isSelectionMode}
+        onSnoozeOverdue={onSnoozeOverdue}
+      />
 
       {showProjectPicker && (
         <ProjectPickerSheet

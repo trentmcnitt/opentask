@@ -28,6 +28,7 @@
 		4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */; };
 		4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
 		4EC4D907C7BE20C0D8B661A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E351757DF79BFD8A5FA11A08 /* Assets.xcassets */; };
+		502237179EBAA7C9DC2E05AF /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05985361163237D67D8A8462 /* SessionBootstrapper.swift */; };
 		51E6296F83B4E9B84CA333C3 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		532750219041769490D1EFD2 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */; };
 		5BC4E254AB252148F78EBF4F /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FD21B7CC5A3B1E775338E0 /* NotificationViewController.swift */; };
@@ -116,6 +117,7 @@
 
 /* Begin PBXFileReference section */
 		01EF2F2D55539C4136F5B174 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		05985361163237D67D8A8462 /* SessionBootstrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrapper.swift; sourceTree = "<group>"; };
 		156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskModels.swift; sourceTree = "<group>"; };
 		186FCE9C574F0644BB68C310 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		214D7F74FAF79F1D94BCD4B8 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 				955351AED16FD834316AB1EA /* OpenTaskApp.swift */,
 				D0B872742B2A8BD9EA4734A7 /* QuickActionHandler.swift */,
 				570745DE3A41547C7099E563 /* SceneDelegateInterceptor.swift */,
+				05985361163237D67D8A8462 /* SessionBootstrapper.swift */,
 				01EF2F2D55539C4136F5B174 /* SetupView.swift */,
 				214D7F74FAF79F1D94BCD4B8 /* WebView.swift */,
 				56DAD630482D315A1F294B8F /* WebViewManager.swift */,
@@ -450,6 +453,7 @@
 				974157330A78DECF998EEA63 /* OpenTaskModels.swift in Sources */,
 				7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */,
 				3BC46CF112C1205BA7B75BD3 /* SceneDelegateInterceptor.swift in Sources */,
+				502237179EBAA7C9DC2E05AF /* SessionBootstrapper.swift in Sources */,
 				2F49A9CD5F5F742FB83C7CAE /* SetupView.swift in Sources */,
 				029411004C797D95E55FEF91 /* WebView.swift in Sources */,
 				FBB91BA91EEE6C115AF05C05 /* WebViewManager.swift in Sources */,

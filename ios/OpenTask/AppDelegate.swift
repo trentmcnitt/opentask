@@ -347,8 +347,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                         UNUserNotificationCenter.current().removeDeliveredNotifications(
                             withIdentifiers: [response.notification.request.identifier]
                         )
-                        // The Reminders surface has no dedicated web route yet
-                        // (same reason `opentask://reminders` lands here).
+                        // Still the dashboard, not /reminders: a slot push can
+                        // arrive on a build older than the web /reminders route,
+                        // and the dashboard is never a 404. (`opentask://reminders`
+                        // from a widget does go to /reminders — the widget and
+                        // the app ship together, a push does not.)
                         WebViewManager.shared.navigate(path: "/")
 
                     default:

@@ -133,6 +133,10 @@ Related source-truth correction: **`anchor_time` IS used in recurrence computati
 - _Call sites that must move off raw `due_at`_ (all three confirmed `due_at`-only today): `overdue-checker.ts` (the base overdue query), `dismiss.ts:getOverdueCount` (badge), `bulk/snooze-overdue/route.ts` (both queries). True one-offs (no rrule) keep raw `due_at` as sole truth.
 - _A cached/materialized `next_occurrence_at` column is PERMITTED_ as an implementation detail (recomputed on write + on recurrence advance) — what §10 rejects is a scheduled job that _mutates user-visible due dates_, not a derived cache. If cached, it must be recomputed synchronously on every rrule/anchor/snooze write, never by cron alone.
 
+### 4.7 OPEN CONSIDERATION — "wants to happen at" vs "expires at" (noted by the user, 2026-08-06)
+
+Not a decision; a distinction the user flagged (verbatim from a task he filed to himself: _"Want vs expires? (Ie report due date, coupon, etc. — missing un-make-up-able)"_). Most timed tasks **want** to happen at a time: a morning walk wants the morning, but nothing is lost when it slips — it doesn't expire just because the notification fired. A minority **expire**: a report deadline, a coupon — miss it and the opportunity is un-make-up-able, no amount of later action recovers it. The current model approximates this through priority (P0–2 due dates are reminders; P3/P4 are deadlines — see TASK-MODEL) but priority is _importance_, and expiry is orthogonal to importance (L3: a low-importance coupon still hard-expires). If this is ever built, the likely shape is an explicit expiry attribute — affecting what happens _after_ the time passes (does it stay current, roll forward, or lapse) — rather than a new priority rung. To consider; nothing in v0.3 depends on it.
+
 ---
 
 ## 5. Track (quotas)

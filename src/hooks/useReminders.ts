@@ -23,9 +23,9 @@ interface UseRemindersOptions {
   /** Undo the last action — wired to the completion toast. */
   onUndo: () => void
   /**
-   * Called after a reminder is completed. The dashboard uses this to keep its
-   * own undo counter and task list in step; completion here goes through the
-   * ordinary /done endpoint, so it produces an ordinary undo entry.
+   * Called after a reminder is completed. The page uses this to keep its own
+   * undo counter in step; completion here goes through the ordinary /done
+   * endpoint, so it produces an ordinary undo entry.
    */
   onCompleted?: () => void
 }
@@ -33,6 +33,11 @@ interface UseRemindersOptions {
 export interface UseRemindersReturn {
   groups: ReminderGroup[]
   total: number
+  /**
+   * Whether the user has any reminders at all, today or otherwise. Only the empty
+   * state uses it — see `hasAnyReminders` in `@/core/tasks/reminders`.
+   */
+  hasAny: boolean
   loading: boolean
   error: string | null
   /** IDs mid-completion — the row is animating out while the request is in flight. */
@@ -45,6 +50,7 @@ export interface UseRemindersReturn {
 
 export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseRemindersReturn {
   const [groups, setGroups] = useState<ReminderGroup[]>([])
+  const [hasAny, setHasAny] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number>>(new Set())
@@ -63,6 +69,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
       setGroups((json?.data?.groups ?? []) as ReminderGroup[])
+      setHasAny(json?.data?.has_any === true)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reminders')
@@ -120,5 +127,5 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
 
   const total = groups.reduce((sum, group) => sum + group.reminders.length, 0)
 
-  return { groups, total, loading, error, completingIds, consideredAny, complete, refresh }
+  return { groups, total, hasAny, loading, error, completingIds, consideredAny, complete, refresh }
 }
