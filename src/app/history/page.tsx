@@ -12,6 +12,7 @@ import {
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { getPriorityOption } from '@/lib/priority'
 import { useTimezone } from '@/hooks/useTimezone'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -97,7 +98,7 @@ export default function HistoryPage() {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
 

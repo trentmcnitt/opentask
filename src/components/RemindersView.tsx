@@ -37,30 +37,18 @@ const UNSLOTTED_LABEL = 'Anytime'
 interface RemindersViewProps {
   /** Undo the last action — wired to the completion toast. */
   onUndo: () => void
-  /** Called after a completion so the dashboard can resync its own state. */
+  /** Called after a completion, so the page can keep its own undo counter in step. */
   onCompleted?: () => void
   /**
-   * Registers this surface's refetch with the parent, so the dashboard's
-   * refresh chain (SSE sync, undo, redo) also refreshes reminders. Without it
-   * an undone completion would stay invisible until a reload.
+   * Registers this surface's refetch with the page, so an event that changes
+   * reminders elsewhere (the sync stream, an undo) can refresh it. Without it an
+   * undone completion would stay invisible until a reload.
    */
   refreshRef?: React.MutableRefObject<(() => void) | null>
-  /**
-   * Whether the user has any reminders at all among their open tasks. Only the
-   * empty-state wording depends on it: an account with no reminders needs the
-   * surface explained, while a user who has simply finished today's needs to be
-   * told they are done, not taught what reminders are.
-   */
-  hasReminderTasks?: boolean
 }
 
-export function RemindersView({
-  onUndo,
-  onCompleted,
-  refreshRef,
-  hasReminderTasks = false,
-}: RemindersViewProps) {
-  const { groups, total, loading, error, completingIds, consideredAny, complete, refresh } =
+export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersViewProps) {
+  const { groups, total, hasAny, loading, error, completingIds, consideredAny, complete, refresh } =
     useReminders({ onUndo, onCompleted })
 
   useEffect(() => {
@@ -80,7 +68,7 @@ export function RemindersView({
       ) : error ? (
         <p className="text-muted-foreground py-16 text-center text-sm">{error}</p>
       ) : visibleGroups.length === 0 ? (
-        <RemindersEmptyState allClear={consideredAny || hasReminderTasks} />
+        <RemindersEmptyState allClear={consideredAny || hasAny} />
       ) : (
         <>
           <p className="text-muted-foreground/80 mb-5 px-2 text-xs">{total} to consider today</p>

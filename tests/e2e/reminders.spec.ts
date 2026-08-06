@@ -3,15 +3,15 @@
  *
  * The behavioral suite (rm-reminders.test.ts) pins what a reminder IS — no
  * debt, no badge, slot-locked. These tests cover what only a browser can show:
- * that the surface is reachable as a tab, that it groups by time slot, that
- * completing an item drops it out of its slot without touching the overdue
- * count, and that both empty states read as deliberate rather than broken.
+ * that `/reminders` is a real page reachable from the nav, that it groups by
+ * time slot, that completing an item drops it out of its slot without touching
+ * the overdue count, and that both empty states read as deliberate rather than
+ * broken. The last test guards the other direction — the dashboard's view
+ * toggle went back to three groupings when this became a route.
  *
  * Reminders are created through the API rather than added to the shared seed,
  * and removed again afterwards, so these tests cannot perturb the counts other
- * specs assert on. The view preference is restored after every test for the
- * same reason: it persists per user, and leaving it on "Reminders" would open
- * every later spec on the wrong surface.
+ * specs assert on.
  */
 
 import { test, expect } from './fixtures'
@@ -43,20 +43,25 @@ async function deleteTasks(page: Page, ids: number[]): Promise<void> {
   }
 }
 
-/** Switch the dashboard to a view via the toggle that looks like a tab (§6). */
-async function switchView(page: Page, name: string): Promise<void> {
-  await page.getByRole('group', { name: 'View mode' }).getByRole('button', { name }).click()
+/** Open the surface and wait for its first fetch to resolve into a rendered state. */
+async function openReminders(page: Page): Promise<void> {
+  await page.goto('/reminders')
+  await expect(page.getByRole('heading', { name: 'Reminders', level: 1 })).toBeVisible()
 }
 
 test.describe('Reminders surface', () => {
-  test.afterEach(async ({ authenticatedPage: page }) => {
-    // default_grouping is a persisted user preference — put it back so the next
-    // spec opens on the task list.
-    await page.request.patch('/api/user/preferences', { data: { default_grouping: 'project' } })
+  test('is a top-level page reachable from the nav', async ({ authenticatedPage: page }) => {
+    // Desktop sidebar carries every destination; the mobile tab bar is checked
+    // implicitly by sharing the same href.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.getByRole('link', { name: 'Reminders' }).click()
+
+    await page.waitForURL('/reminders')
+    await expect(page.getByRole('heading', { name: 'Reminders', level: 1 })).toBeVisible()
   })
 
   test('explains itself when the user has no reminders', async ({ authenticatedPage: page }) => {
-    await switchView(page, 'Reminders')
+    await openReminders(page)
 
     await expect(
       page.getByRole('heading', { name: 'Reminders are thoughts, not tasks' }),
@@ -82,7 +87,7 @@ test.describe('Reminders surface', () => {
     ]
 
     try {
-      await switchView(page, 'Reminders')
+      await openReminders(page)
 
       // Slot headers carry the label and the boundary time.
       await expect(page.getByText('Early morning', { exact: true })).toBeVisible()
@@ -105,18 +110,25 @@ test.describe('Reminders surface', () => {
         page.getByRole('button', { name: 'Mark "Morning supplements" as considered' }),
       ).toBeVisible()
 
-      // §7.3: the dashboard is tasks. Reminders live only on their own surface.
-      await switchView(page, 'All')
+      // §7.3: the dashboard is tasks. Reminders live only on their own page.
+      await page.goto('/')
       await expect(page.getByText('Morning supplements')).toHaveCount(0)
     } finally {
       await deleteTasks(page, ids)
     }
   })
 
-  test('completing an item drops it out without touching the overdue count', async ({
+  test('completing an item drops it out, undoes, and never enters the counts', async ({
     authenticatedPage: page,
   }) => {
-    // Due earlier today: an ordinary task with this date would be overdue and
+    // The header's count badges are rendered from the same data as the overdue
+    // badge, and only after the task list has loaded — so reading them is a
+    // settled measurement, not a race against an effect.
+    const counts = page.getByRole('group', { name: 'Task counts' })
+    await expect(counts).toBeVisible()
+    const countsBefore = (await counts.textContent()) ?? ''
+
+    // Due earlier today: ordinary tasks with this date would be overdue and
     // counted. A reminder never is — that is the §6 carve-out.
     const ids = [
       await createReminder(page, { title: 'Breathe before replying', due_at: todayAt(7) }),
@@ -124,29 +136,34 @@ test.describe('Reminders surface', () => {
     ]
 
     try {
-      // The tab title carries the overdue count; capture it after the reminders
-      // exist so the assertion covers "they never counted in the first place".
+      // Two reminders now exist and are past due; the dashboard must not notice.
       await page.reload()
-      await switchView(page, 'Reminders')
+      await expect(counts).toHaveText(countsBefore)
+
+      await openReminders(page)
       await expect(
         page.getByRole('button', { name: 'Mark "Breathe before replying" as considered' }),
       ).toBeVisible()
-      const titleBefore = await page.title()
 
       await page
         .getByRole('button', { name: 'Mark "Breathe before replying" as considered' })
         .click()
 
-      // Completed items leave the slot rather than burying the rest.
-      await expect(page.getByText('Breathe before replying')).toHaveCount(0)
-      await expect(page.getByText('Stand up and stretch')).toBeVisible()
+      // Completed items leave the slot rather than burying the rest. Matched by
+      // the row's own link rather than by page text: undo toasts quote the title
+      // back, so bare text would match the toast as well as the row.
+      const consideredRow = page.getByRole('link', { name: 'Breathe before replying' })
+      await expect(consideredRow).toHaveCount(0)
+      await expect(page.getByRole('link', { name: 'Stand up and stretch' })).toBeVisible()
 
-      // Completion is the ordinary complete/undo pipeline, so undo is offered.
+      // Completion is the ordinary complete/undo pipeline, so undo is offered —
+      // and the page has to carry that pipeline itself now that it is standalone.
       await expect(page.getByText('Considered')).toBeVisible()
-      await expect(page.getByText('Undo')).toBeVisible()
 
-      // The badge is untouched — no reminder ever entered it.
-      await expect(page).toHaveTitle(titleBefore)
+      // Undo puts the item back on the surface, which proves the page's refresh
+      // chain reaches the reminders list and not just the toast.
+      await page.getByRole('button', { name: 'Undo' }).click()
+      await expect(consideredRow).toBeVisible()
     } finally {
       await deleteTasks(page, ids)
     }
@@ -156,7 +173,7 @@ test.describe('Reminders surface', () => {
     const id = await createReminder(page, { title: 'The only thought left', due_at: todayAt(12) })
 
     try {
-      await switchView(page, 'Reminders')
+      await openReminders(page)
       await page.getByRole('button', { name: 'Mark "The only thought left" as considered' }).click()
 
       // Calm, not an error state — and distinctly not the "what is this?"
@@ -168,5 +185,11 @@ test.describe('Reminders surface', () => {
     } finally {
       await deleteTasks(page, [id])
     }
+  })
+
+  test('is no longer a chip in the dashboard view toggle', async ({ authenticatedPage: page }) => {
+    const toggle = page.getByRole('group', { name: 'View mode' })
+
+    await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
   })
 })

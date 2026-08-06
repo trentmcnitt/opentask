@@ -19,9 +19,10 @@ import { withLogging } from '@/lib/with-logging'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 // §7.3 adds 'slot' — today grouped by time slot, the new front door.
-// §6 adds 'reminders' — the Reminders surface, persisted like a grouping so
-// the chip that looks like a tab keeps its selection across sessions.
-const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot', 'reminders'] as const
+// 'reminders' was briefly valid here, back when the §6 Reminders surface rode in
+// the dashboard's view toggle. It is now its own route (`/reminders`), so it is no
+// longer a grouping — clients coerce any lingering stored value to 'slot'.
+const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
 const VALID_SORT_OPTIONS = [
   'due_date',
   'priority',

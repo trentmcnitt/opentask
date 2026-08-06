@@ -27,6 +27,7 @@ import type { Task, Project } from '@/types'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { showToast } from '@/lib/toast'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { useTaskActions } from '@/hooks/useTaskActions'
 import type { SingleTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useAiInsights } from '@/hooks/useAiInsights'
@@ -114,7 +115,7 @@ export default function TaskDetailPage() {
       ])
 
       if (taskRes.status === 401) {
-        router.push('/login')
+        router.push(loginUrlFromLocation())
         return
       }
       if (taskRes.status === 404) {
@@ -175,7 +176,7 @@ export default function TaskDetailPage() {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
     fetchTask()

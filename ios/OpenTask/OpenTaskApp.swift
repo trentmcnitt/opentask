@@ -55,10 +55,8 @@ struct OpenTaskApp: App {
     /// Resolve an `opentask://` deep link from the widget extension to a web path.
     ///
     /// The app is a WKWebView over the PWA and has no native routes, so every
-    /// link becomes a path on the configured server. `reminders` currently
-    /// lands on the dashboard — the Reminders surface has no dedicated web
-    /// route yet, and sending the user to a 404 would be worse than sending
-    /// them one level up.
+    /// link becomes a path on the configured server. `today` and anything
+    /// unrecognized fall through to the dashboard.
     private func handleWidgetLink(_ url: URL) {
         guard url.scheme == "opentask" else { return }
 
@@ -70,6 +68,8 @@ struct OpenTaskApp: App {
             } else {
                 WebViewManager.shared.navigate(path: "/")
             }
+        case "reminders":
+            WebViewManager.shared.navigate(path: "/reminders")
         default:
             WebViewManager.shared.navigate(path: "/")
         }

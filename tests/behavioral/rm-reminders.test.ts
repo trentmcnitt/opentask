@@ -11,7 +11,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask, bulkSnooze, markDone } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
-import { getTodaysReminders, getRemindersBySlot } from '@/core/tasks/reminders'
+import { getTodaysReminders, getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { validateTaskCreate } from '@/core/validation'
@@ -351,5 +351,27 @@ describe('Reminders surface', () => {
     // Two days later its day has come.
     vi.setSystemTime(new Date('2026-01-17T16:00:00Z'))
     expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toContain(future.id)
+  })
+
+  /**
+   * RM-018: "has any reminders" is independent of "has reminders today".
+   *
+   * The Reminders page picks its empty state with it: a user who owns reminders
+   * but has none scheduled today is done for the day, not new to the feature, and
+   * showing them the explainer would be wrong.
+   */
+  test('RM-018: hasAnyReminders is true even when today is empty', () => {
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
+
+    // 2026-01-15 is a Thursday, so a Monday-only reminder is not today's.
+    const mondayOnly = makeReminder({ rrule: 'FREQ=WEEKLY;BYDAY=MO', title: 'Monday thought' })
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE)).toHaveLength(0)
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(true)
+
+    // Trashing it takes the user back to knowing nothing about reminders.
+    getDb()
+      .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), mondayOnly.id)
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
   })
 })
