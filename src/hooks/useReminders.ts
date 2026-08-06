@@ -48,10 +48,19 @@ export interface UseRemindersReturn {
   refresh: () => Promise<void>
 }
 
+/**
+ * Last successful payload, module-scoped so a revisit to the Reminders surface
+ * paints instantly from memory while a background refresh reconciles
+ * (stale-while-revalidate). Survives client-side navigation only — sign-out
+ * goes through a full page load, which resets module state, so one user's
+ * cache cannot leak into another's session.
+ */
+let remindersCache: { groups: ReminderGroup[]; hasAny: boolean } | null = null
+
 export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseRemindersReturn {
-  const [groups, setGroups] = useState<ReminderGroup[]>([])
-  const [hasAny, setHasAny] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [groups, setGroups] = useState<ReminderGroup[]>(remindersCache?.groups ?? [])
+  const [hasAny, setHasAny] = useState(remindersCache?.hasAny ?? false)
+  const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number>>(new Set())
   const [consideredAny, setConsideredAny] = useState(false)
@@ -68,11 +77,19 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       const res = await fetch('/api/reminders')
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
-      setGroups((json?.data?.groups ?? []) as ReminderGroup[])
-      setHasAny(json?.data?.has_any === true)
+      const nextGroups = (json?.data?.groups ?? []) as ReminderGroup[]
+      const nextHasAny = json?.data?.has_any === true
+      remindersCache = { groups: nextGroups, hasAny: nextHasAny }
+      setGroups(nextGroups)
+      setHasAny(nextHasAny)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load reminders')
+      // A failed background refresh over cached data is not an error state —
+      // the stale render plus the next successful refresh beats an error
+      // banner replacing content the user can already see.
+      if (remindersCache === null) {
+        setError(err instanceof Error ? err.message : 'Failed to load reminders')
+      }
     } finally {
       setLoading(false)
     }
@@ -89,25 +106,34 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
    * webhooks and recurrence advance behave exactly as they do for a task —
    * §6 changes what a reminder LOOKS like, not how completion works.
    *
-   * The row is marked completing first so it fades before the round trip
-   * finishes, and is dropped from local state on success rather than waiting
-   * for a refetch: §6 wants completed items out of the slot immediately so they
-   * stop burying the ones still worth considering.
+   * OPTIMISTIC: the row leaves local state (and the toast fires) BEFORE the
+   * server round trip — over a real network the round trip is what made
+   * check-off feel frozen. A FAILED call restores the snapshot taken before
+   * removal, so the item honestly reappears; same failure semantics as the
+   * widget's tombstones (§8).
    */
   const complete = useCallback(async (task: Task) => {
     setCompletingIds((prev) => new Set(prev).add(task.id))
+    let snapshot: ReminderGroup[] | null = null
+    setGroups((prev) => {
+      snapshot = prev
+      const next = prev.map((group) => {
+        const remaining = group.reminders.filter((r) => r.id !== task.id)
+        return remaining.length === group.reminders.length
+          ? group
+          : { ...group, reminders: remaining, count: remaining.length }
+      })
+      if (remindersCache) remindersCache = { ...remindersCache, groups: next }
+      return next
+    })
+    setConsideredAny(true)
     try {
       const res = await fetch(`/api/tasks/${task.id}/done`, { method: 'POST' })
       if (!res.ok) throw new Error('Failed to complete reminder')
-      setGroups((prev) =>
-        prev.map((group) => {
-          const remaining = group.reminders.filter((r) => r.id !== task.id)
-          return remaining.length === group.reminders.length
-            ? group
-            : { ...group, reminders: remaining, count: remaining.length }
-        }),
-      )
-      setConsideredAny(true)
+      // Toast (and the undo counter) only after the server has recorded the
+      // completion: an Undo offered before that would undo whatever action
+      // preceded this one. The row vanishing above is the instant feedback;
+      // the toast trailing it by the round trip is imperceptible.
       callbacksRef.current.onCompleted?.()
       showToast({
         message: 'Considered',
@@ -115,6 +141,11 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
         action: { label: 'Undo', onClick: () => callbacksRef.current.onUndo() },
       })
     } catch {
+      if (snapshot) {
+        const restored = snapshot
+        if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
+        setGroups(restored)
+      }
       showToast({ message: 'Could not complete reminder', type: 'error' })
     } finally {
       setCompletingIds((prev) => {

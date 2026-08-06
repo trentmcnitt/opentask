@@ -10,6 +10,13 @@ class WebViewManager {
     weak var webView: WKWebView?
     private var pendingPath: String?
 
+    /// Called at the start of every externally-initiated `navigate(path:)`.
+    /// The Coordinator hooks this to RE-ARM its /login rescue: each fresh user
+    /// intent (widget tap, notification, quick action) deserves a fresh rescue
+    /// attempt. Without it, one failed rescue left the guard spent and every
+    /// later tap dead-ended on the login page until a page happened to load.
+    var onNewNavigationIntent: (() -> Void)?
+
     /// The path the app last asked the web view to show, regardless of whether
     /// the load succeeded, was deferred, or was bounced to `/login` by an
     /// expired session. The `/login` rescue in `WebView.Coordinator` replays
@@ -28,7 +35,14 @@ class WebViewManager {
     /// session bootstrap (see `WebView.makeUIView`), so a deep link that
     /// arrives mid-bootstrap parks itself here instead of firing a request
     /// that would beat the session cookie into the store.
-    func navigate(path: String) {
+    ///
+    /// `rearmRescue: false` is used by the /login rescue itself when replaying
+    /// the intended path — the replay must NOT re-arm the rescue, or a server
+    /// that keeps bouncing to /login would loop bootstrap attempts forever.
+    func navigate(path: String, rearmRescue: Bool = true) {
+        if rearmRescue {
+            onNewNavigationIntent?()
+        }
         lastRequestedPath = path
         let serverURL = AppConfig.shared.serverURL
         print("[OpenTask] navigate(path: \(path)) — webView: \(webView != nil), serverURL: \(serverURL)")
