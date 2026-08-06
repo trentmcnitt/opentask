@@ -638,7 +638,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     const taskId = parseInt(taskIdParam, 10)
     if (isNaN(taskId)) {
       taskParamProcessed.current = true
-      router.replace('/', { scroll: false })
+      window.history.replaceState(window.history.state, '', window.location.pathname)
       return
     }
     const task = tasks.find((t) => t.id === taskId)
@@ -647,7 +647,12 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     if (task) {
       handleViewTask(task)
     }
-    router.replace('/', { scroll: false })
+    // Strip the param with a raw history rewrite, NOT router.replace: a router
+    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
+    // this under flaky transport) Next falls back to a full page navigation
+    // that remounts this component and closes the just-opened panel. Same
+    // pattern as AppLayout's ?action=create handling.
+    window.history.replaceState(window.history.state, '', window.location.pathname)
   }, [searchParams, loading, tasks, handleViewTask, router])
 
   const {
