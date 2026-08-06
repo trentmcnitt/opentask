@@ -107,15 +107,19 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// overflow (3/2) remains observable, so this is styling, not filtering.
     var isProgressMet: Bool { isTracked && progressCurrent >= progressTarget }
 
-    /// A copy with one more increment logged.
+    /// A copy with `delta` more increments logged (negative corrects a mis-log).
     ///
-    /// The widget's optimistic render of a `+1` whose server round trip is
-    /// still in flight (§8). A method rather than a struct literal at the call
-    /// site so a new field on `TaskDTO` cannot silently get dropped from the
-    /// copy.
-    func withOptimisticIncrement() -> TaskDTO {
+    /// The widget's optimistic render of taps whose server round trip is still
+    /// in flight (§8) — the count is a NET delta, so four quick taps draw +4.
+    /// A method rather than a struct literal at the call site so a new field on
+    /// `TaskDTO` cannot silently get dropped from the copy.
+    ///
+    /// Floored at 0 to match `POST /api/tasks/:id/progress`, which clamps there
+    /// too: a widget that drew -1/3 for a second would be showing a number the
+    /// server will never agree with.
+    func withOptimisticIncrement(_ delta: Int = 1) -> TaskDTO {
         var copy = self
-        copy.progressCurrent += 1
+        copy.progressCurrent = max(copy.progressCurrent + delta, 0)
         return copy
     }
 
