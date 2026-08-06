@@ -123,7 +123,12 @@ enum SampleData {
     }
 
     static var trackEntry: TrackEntry {
-        let items = TrackTimeline.trackedItems(from: trackedTasks)
+        // `pacedItems`, never `orderedItems`: the ordered variant PERSISTS the
+        // id order it renders, and `placeholder(in:)` runs against real widgets
+        // (redaction) as well as the gallery — sample ids would overwrite the
+        // user's stored row order and make the next real pass re-sort, which is
+        // exactly the shuffle that order is stored to prevent.
+        let items = TrackTimeline.pacedItems(from: trackedTasks)
         return TrackEntry(
             date: Date(),
             items: items,

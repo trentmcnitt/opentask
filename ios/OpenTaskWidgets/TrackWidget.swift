@@ -80,22 +80,58 @@ enum TrackTimeline {
     /// moving marker on a bar where it means nothing.
     ///
     /// This is the whole of "behind pace" — arithmetic, deliberately not AI
-    /// (§5) — and all it may do is set the default selection, the row order,
-    /// and one small tick's position. It never colors anything (§5: pace
+    /// (§5) — and all it may do is set the default selection, the *initial* row
+    /// order, and one small tick's position. It never colors anything (§5: pace
     /// renders, never alarms).
-    static func trackedItems(from tasks: [TaskDTO], now: Date = Date()) -> [TrackItem] {
+    ///
+    /// Pure: no stored order, no side effects. `orderedItems` is what the list
+    /// families render; this is the raw ranking they and the 2×2's default
+    /// selection are both derived from, and what sample data uses so a gallery
+    /// render can never touch the user's persisted order.
+    static func pacedItems(from tasks: [TaskDTO], now: Date = Date()) -> [TrackItem] {
         tasks
             .filter(\.isTracked)
             .map { TrackItem(task: $0, elapsedFraction: elapsedFraction(for: $0, now: now)) }
-            .sorted { lhs, rhs in
-                // No pace sorts last; `.infinity` reads as "infinitely ahead",
-                // which is exactly how a periodless item should be ranked by a
-                // "most behind first" comparator.
-                let l = lhs.pace ?? .infinity
-                let r = rhs.pace ?? .infinity
-                if l != r { return l < r }
-                return lhs.id < rhs.id
-            }
+            .sorted(by: isMoreBehind)
+    }
+
+    /// The one "most behind pace first" comparator, so the row order and the
+    /// default 2×2 selection can never disagree about who is furthest behind.
+    ///
+    /// No pace sorts last; `.infinity` reads as "infinitely ahead", which is
+    /// exactly how a periodless item should be ranked here.
+    static func isMoreBehind(_ lhs: TrackItem, _ rhs: TrackItem) -> Bool {
+        let l = lhs.pace ?? .infinity
+        let r = rhs.pace ?? .infinity
+        if l != r { return l < r }
+        return lhs.id < rhs.id
+    }
+
+    /// The rows as the list families draw them: a STABLE order that is re-sorted
+    /// by pace only when the set of quotas changes.
+    ///
+    /// Pace order is live, and `+1` moves an item's pace — so sorting by it on
+    /// every reload meant the list rearranged itself the instant the user used
+    /// it, sliding the row out from under the finger that had just tapped it.
+    /// The order is therefore frozen at the last membership change: add or stop
+    /// tracking a quota and the list re-ranks (there is a genuinely new list to
+    /// present), tap `+1` a hundred times and nothing moves. Nothing is lost —
+    /// pace is still fully expressed by each row's bar and tick, which is where
+    /// §5 says it belongs.
+    static func orderedItems(from tasks: [TaskDTO], now: Date = Date()) -> [TrackItem] {
+        let paced = pacedItems(from: tasks, now: now)
+        let stored = WidgetStore.trackOrder
+
+        guard !stored.isEmpty, Set(stored) == Set(paced.map(\.id)) else {
+            WidgetStore.trackOrder = paced.map(\.id)
+            return paced
+        }
+
+        var rank: [Int: Int] = [:]
+        for (index, id) in stored.enumerated() { rank[id] = index }
+        // The sets match on this branch, so an unranked id cannot occur;
+        // `.max` appends rather than crashes if that ever stops being true.
+        return paced.sorted { (rank[$0.id] ?? .max, $0.id) < (rank[$1.id] ?? .max, $1.id) }
     }
 
     /// Fraction of the current period already gone, 0...1.
@@ -154,7 +190,11 @@ enum TrackTimeline {
         if stored != WidgetStore.noTrackSelection, items.contains(where: { $0.id == stored }) {
             return stored
         }
-        return items.first?.id ?? WidgetStore.noTrackSelection
+        // Live pace, deliberately not `items.first`: the list order is frozen
+        // between membership changes (see `orderedItems`), but the 2×2 is a
+        // single card with nothing to shuffle under a finger, so its default is
+        // free to track pace exactly the way §8 defines it.
+        return items.min(by: isMoreBehind)?.id ?? WidgetStore.noTrackSelection
     }
 }
 
@@ -202,7 +242,7 @@ struct TrackProvider: TimelineProvider {
             )
         }
 
-        let items = TrackTimeline.trackedItems(from: snapshot.tasks, now: now)
+        let items = TrackTimeline.orderedItems(from: snapshot.tasks, now: now)
         return TrackEntry(
             date: now,
             items: items,

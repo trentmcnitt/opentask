@@ -83,11 +83,15 @@ struct CompleteTaskIntent: AppIntent {
 
 // MARK: - Track progress
 
-/// Log +1 on a tracked task (§5).
+/// Log a signed progress step on a tracked task (§5).
 ///
 /// Hits `/api/tasks/:id/progress`, NOT a completion endpoint: a sub-target
 /// increment dispatches `task.progressed` and leaves the task open until its
 /// period boundary, so overflow like 3/2 stays visible.
+///
+/// One intent for both directions rather than a separate decrement intent — the
+/// only difference is the sign, and two intents would mean two copies of the
+/// pin/stage/reconcile sequence below.
 struct IncrementProgressIntent: AppIntent {
     static var title: LocalizedStringResource = "Log Progress"
     static var isDiscoverable: Bool { false }
@@ -95,31 +99,49 @@ struct IncrementProgressIntent: AppIntent {
     @Parameter(title: "Task ID")
     var taskId: Int
 
+    /// `+1` logs, `−1` corrects a mis-log.
+    ///
+    /// Defaulted at the PARAMETER, not merely in the convenience init: `+1`
+    /// buttons already sitting on a Home Screen were archived by a build that
+    /// had no `delta` at all, and a parameter with no default would decode
+    /// those archives as 0 — every existing button silently becoming a no-op
+    /// after the update.
+    @Parameter(title: "Delta", default: 1)
+    var delta: Int
+
     init() {}
 
-    init(taskId: Int) {
+    init(taskId: Int, delta: Int = 1) {
         self.taskId = taskId
+        self.delta = delta
     }
 
     func perform() async throws -> some IntentResult {
-        // Pin the Track selection to the item being incremented. The default
+        // Pin the Track selection to the item being logged. The default
         // selection is "most behind-pace", and logging progress changes pace —
-        // without the pin, tapping +1 could swap the card to a DIFFERENT quota
+        // without the pin, tapping +1 could swap the 2×2 to a DIFFERENT quota
         // before the user sees their own count tick up (observed live: +1 on
         // Beef 0/4 flipped the widget to Broccoli).
         WidgetStore.trackSelection = taskId
 
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
-        // then let the server catch up.
-        WidgetStore.stagePendingProgress(taskId)
+        // then let the server catch up. The staged value is a NET count, so
+        // three taps in a row draw +3 instead of the single +1 a stamp-only
+        // map could express.
+        WidgetStore.stagePendingProgress(taskId, delta: delta)
         await reloadOpenTaskWidgets()
 
         do {
-            try await APIClient.shared.incrementProgress(taskId: taskId)
+            try await APIClient.shared.logProgress(taskId: taskId, delta: delta)
         } catch {
-            print("[OpenTaskWidgets] Progress \(taskId) failed: \(error)")
+            print("[OpenTaskWidgets] Progress \(taskId) \(delta > 0 ? "+" : "")\(delta) failed: \(error)")
         }
-        WidgetStore.clearPendingProgress(taskId)
+        // Unconditional, and deliberately a SUBTRACTION of this call's own
+        // delta rather than a wipe: on success the server now carries it, on
+        // failure the optimistic draw reverts, and either way a sibling tap
+        // still in flight keeps its own staged delta (see
+        // `WidgetStore.clearPendingProgress`).
+        WidgetStore.clearPendingProgress(taskId, delta: delta)
         await reloadOpenTaskWidgets()
         return .result()
     }
@@ -212,9 +234,10 @@ struct ShiftProjectScopeIntent: AppIntent {
 /// — where the systemMedium/Large list window starts, so one intent drives
 /// every family's notion of "which quota".
 ///
-/// The ordering it steps through is `TrackTimeline.trackedItems`' pace order,
-/// recomputed here from the same cache the provider used, so a chevron always
-/// lands on the item the user can see is next.
+/// The ordering it steps through is `TrackTimeline.orderedItems`' — the same
+/// stored, membership-stable order the provider rendered, recomputed here from
+/// the same cache, so a chevron always lands on the item the user can see is
+/// next rather than on whatever pace happens to rank there now.
 struct ShiftTrackItemIntent: AppIntent {
     static var title: LocalizedStringResource = "Change Tracked Item"
     static var isDiscoverable: Bool { false }
@@ -230,7 +253,14 @@ struct ShiftTrackItemIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let tasks = WidgetStore.loadTasks()?.value.tasks ?? []
-        let items = TrackTimeline.trackedItems(from: tasks)
+        // Tombstoned completions filtered out, exactly as the provider does
+        // (`TaskFeed.snapshot`): a tracked reminder checked off elsewhere is
+        // still in this raw cache for 90s, and `orderedItems` PERSISTS the
+        // order for whatever membership it is handed — so an unfiltered set
+        // here would rewrite the stored order behind the provider's back and
+        // shuffle the list on the next pass. Staged progress deltas need no
+        // such care: they move counts, never membership.
+        let items = TrackTimeline.orderedItems(from: WidgetStore.filterPending(tasks))
         guard items.count > 1 else { return .result() }
 
         let current = items.firstIndex { $0.id == TrackTimeline.selectedId(in: items) } ?? 0

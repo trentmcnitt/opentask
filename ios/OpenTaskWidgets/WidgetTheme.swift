@@ -76,6 +76,21 @@ enum WidgetTheme {
     static let headerSpacing: CGFloat = 12
     static let cornerRadius: CGFloat = 8
 
+    /// Track's list rows are spaced tighter than everything else.
+    ///
+    /// A quota row is only as tall as its 36pt buttons, and a typical corpus is
+    /// eight or so quotas — all of which must fit a 4×4 at once, because paging
+    /// a list that could have been shown whole is the least intuitive thing a
+    /// widget can ask of a user. Eight rows plus a header spend the card's whole
+    /// height, so the gaps are hairlines. The row's own 36pt frame supplies the
+    /// visual breathing room; this is only the gap between those frames.
+    /// Reminders and Tasks keep `rowSpacing` — their rows are taller and fewer.
+    static let trackRowSpacing: CGFloat = 1
+
+    /// Floor for the `+1` / `−` targets, matching the check-off circles. Chrome
+    /// gets compacted to fit more rows; touch targets never do.
+    static let progressButtonSize: CGFloat = 36
+
     // MARK: - Formatting
 
     private static let timeFormatter: DateFormatter = {

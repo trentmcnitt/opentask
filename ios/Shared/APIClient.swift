@@ -166,7 +166,11 @@ final class APIClient {
 
     /// Log progress on a tracked task (§5). Deliberately NOT a completion —
     /// the task stays open past its target so overflow (3/2) stays observable.
-    func incrementProgress(taskId: Int, delta: Int = 1) async throws {
+    ///
+    /// Signed: `+1` logs, `−1` corrects a mis-log (the server floors the result
+    /// at 0). Named `logProgress` rather than `incrementProgress` because a
+    /// method that can subtract should not be called an increment.
+    func logProgress(taskId: Int, delta: Int = 1) async throws {
         try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
     }
 

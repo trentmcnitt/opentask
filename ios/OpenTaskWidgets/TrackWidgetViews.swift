@@ -41,9 +41,14 @@ struct TrackWidgetView: View {
         case .systemSmall:
             TrackSmallView(entry: entry)
         case .systemMedium:
-            TrackListView(entry: entry, maxRows: 3, isLarge: false)
+            TrackListView(entry: entry, capacity: 3, isLarge: false)
         default:
-            TrackListView(entry: entry, maxRows: 6, isLarge: true)
+            // Eight, not six: a real quota corpus is around eight items, and at
+            // six the 4×4 was paging a list that would have fit — the user read
+            // the chevrons as "the way to scroll", which is the one thing a
+            // Home Screen list should never need. See `TrackRow` for what got
+            // compacted to buy the two extra rows.
+            TrackListView(entry: entry, capacity: 8, isLarge: true)
         }
     }
 }
@@ -63,6 +68,12 @@ private let emptyTrackMessage = "Nothing tracked — set a target on a task to s
 /// own row — `‹`, `+1`, `›` — because at ~126pt of usable height a 2×2 cannot
 /// afford a ring, a title, a pager AND a button as four stacked bands. No
 /// staleness note here for the same reason; the larger families carry it.
+///
+/// And no `−` here, unlike the list families: a fourth control on that bottom
+/// row would put four 36pt+ targets across ~126pt, which is a mis-tap machine —
+/// and mis-tapping a correction while trying to log is the worst possible place
+/// for it. Corrections belong to the 4×4, the 4×2, or the app; a mis-logged 2×2
+/// is one tap away from either.
 private struct TrackSmallView: View {
     let entry: TrackEntry
 
@@ -115,7 +126,8 @@ private struct TrackSmallView: View {
 
 private struct TrackListView: View {
     let entry: TrackEntry
-    let maxRows: Int
+    /// Rows that fit when the card carries no pager chrome.
+    let capacity: Int
     /// Drives the two things systemMedium has no room for: the adjacent-quota
     /// chevron labels (see `ChevronPager`) and the "+N more" line. A quota row
     /// is two lines tall, so three of them plus a header already fill a 4×2 —
@@ -125,32 +137,48 @@ private struct TrackListView: View {
 
     /// The rows on screen.
     ///
-    /// When everything fits, the list is simply the list. When it doesn't, the
-    /// window starts at the selected item and wraps, so the chevrons scroll it
-    /// one row at a time and every quota is reachable — the same selection the
-    /// 2×2 pages through, just shown with its neighbours.
+    /// When everything fits, the list is simply the list — no window, no wrap,
+    /// no arithmetic. When it doesn't, the window starts at the selected item
+    /// and wraps, so the chevrons scroll it one row at a time and every quota is
+    /// reachable — the same selection the 2×2 pages through, just shown with its
+    /// neighbours.
     private var window: [TrackItem] {
         guard canPage else { return entry.items }
         let start = entry.selectedIndex ?? 0
         return (0..<maxRows).map { entry.items[(start + $0) % entry.items.count] }
     }
 
-    /// §8: a chevron with nowhere to go dims out rather than looking live and
-    /// doing nothing. With every quota already on screen, paging is exactly
-    /// that — a no-op the user would read as a broken button.
-    private var canPage: Bool { entry.items.count > maxRows }
+    /// Paging costs a row. The pager's 40pt hit targets deepen the header and
+    /// the "+N more" line takes another band, which together is about one row of
+    /// height — so the window shrinks by one the moment there is anything to
+    /// page to, rather than letting the last row clip off the bottom edge.
+    private var maxRows: Int { canPage ? capacity - 1 : capacity }
+
+    /// True only when the corpus genuinely overflows the card.
+    ///
+    /// Below that there are no chevrons AT ALL — not dimmed ones (§8's usual
+    /// treatment for a ring with nowhere to go), none. A pager over a list that
+    /// is already entirely on screen is chrome that has to be interpreted before
+    /// it can be dismissed, and the interpretation users reach for is "this is
+    /// how I scroll", which turns a complete list into a puzzle. With eight rows
+    /// of capacity the ordinary corpus simply fits, and the ordinary card is
+    /// then a list and nothing else.
+    private var canPage: Bool { entry.items.count > capacity }
 
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
         } else {
-            VStack(alignment: .leading, spacing: WidgetTheme.rowSpacing) {
+            // 4pt between the bands (header / rows / footnotes), not
+            // `rowSpacing`'s 10: at eight rows the card has no 10pt gaps to
+            // spare. See `WidgetTheme.trackRowSpacing`.
+            VStack(alignment: .leading, spacing: 4) {
                 header
 
                 if entry.items.isEmpty {
                     WidgetEmptyView(symbol: "target", message: emptyTrackMessage)
                 } else {
-                    VStack(alignment: .leading, spacing: WidgetTheme.rowSpacing) {
+                    VStack(alignment: .leading, spacing: WidgetTheme.trackRowSpacing) {
                         ForEach(window) { item in
                             TrackRow(item: item)
                         }
@@ -174,26 +202,27 @@ private struct TrackListView: View {
         }
     }
 
+    /// One line, not two: the title and the count sat stacked, and that second
+    /// band cost a row of quotas the card would rather spend on content.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Track")
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(countLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("Track")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Text(countLabel)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             Spacer(minLength: 0)
-            ChevronPager(
-                previous: ShiftTrackItemIntent(offset: -1),
-                next: ShiftTrackItemIntent(offset: 1),
-                hasPrevious: canPage,
-                hasNext: canPage,
-                previousLabel: entry.neighborTitle(offset: -1),
-                nextLabel: entry.neighborTitle(offset: 1),
-                showsLabels: isLarge && canPage
-            )
+            if canPage {
+                ChevronPager(
+                    previous: ShiftTrackItemIntent(offset: -1),
+                    next: ShiftTrackItemIntent(offset: 1),
+                    previousLabel: entry.neighborTitle(offset: -1),
+                    nextLabel: entry.neighborTitle(offset: 1),
+                    showsLabels: isLarge
+                )
+            }
         }
     }
 
@@ -208,17 +237,27 @@ private struct TrackListView: View {
     }
 }
 
-/// One quota row: title, count, bar with its pace tick, and `+1`.
+/// One quota row: title, count, bar with its pace tick, `−`, and `+1`.
+///
+/// Deliberately compact — `.footnote` rather than `.subheadline`, a 3pt bar,
+/// 2pt between the two lines — so the row is no taller than the 36pt buttons it
+/// carries and eight of them fit a 4×4 whole. The chrome shrank; the touch
+/// targets did not.
 private struct TrackRow: View {
     let item: TrackItem
 
+    /// The count as DRAWN, staged deltas included (`TaskFeed` applies them
+    /// before the view ever sees the task), which is what decides whether `−`
+    /// has anything to undo.
+    private var canDecrement: Bool { item.task.progressCurrent > 0 }
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 2) {
             Link(destination: WidgetLink.task(item.task.id)) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.task.title)
-                            .font(.subheadline)
+                            .font(.footnote)
                             .fontWeight(WidgetTheme.priorityWeight(item.task.priority))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
@@ -227,11 +266,12 @@ private struct TrackRow: View {
                         QuotaCount(item: item, font: .caption2)
                     }
 
-                    QuotaBar(item: item)
+                    QuotaBar(item: item, height: 3)
                 }
                 .contentShape(Rectangle())
             }
 
+            MinusOneButton(taskId: item.task.id, enabled: canDecrement)
             PlusOneButton(taskId: item.task.id)
         }
     }
@@ -240,7 +280,7 @@ private struct TrackRow: View {
 // MARK: - Lock Screen
 
 /// Glanceable only — §8: interactive widgets are inert on a locked device, so a
-/// `+1` button here would be a control that silently does nothing.
+/// `+1` (or `−`) button here would be a control that silently does nothing.
 private struct TrackRectangularView: View {
     let entry: TrackEntry
 
@@ -401,23 +441,60 @@ private struct QuotaBar: View {
     }
 }
 
-/// The one control a quota needs. `+1`, never a check-off: §5 says a sub-target
+/// The quota's primary control. `+1`, never a check-off: §5 says a sub-target
 /// increment must not fire the completion path, and at target the item stays
 /// open to its period boundary anyway.
 private struct PlusOneButton: View {
     let taskId: Int
 
     var body: some View {
-        Button(intent: IncrementProgressIntent(taskId: taskId)) {
+        Button(intent: IncrementProgressIntent(taskId: taskId, delta: 1)) {
             Text("+1")
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(.fill.secondary, in: Capsule())
-                .contentShape(Capsule())
+                // The visible capsule is ~24pt; the TARGET is 36, matching the
+                // check-off circles. The row is sized by this frame, so shrink
+                // the capsule to fit more rows and never this.
+                .frame(minWidth: WidgetTheme.progressButtonSize, minHeight: WidgetTheme.progressButtonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The correction. A mis-log used to be un-fixable anywhere but the app — the
+/// widget could only ever count up — so a fat-fingered `+1` left a number the
+/// user knew was wrong sitting on their Home Screen all period.
+///
+/// Quieter than `+1` on purpose: same 36pt target, but a bare glyph on the
+/// faintest fill, because logging is the everyday act and correcting is the rare
+/// one. It DIMS and disables at 0 rather than disappearing (the `ChevronButton`
+/// treatment): hiding it would slide `+1` sideways every time a count crossed
+/// 0/1, moving the one control the user is aiming at.
+private struct MinusOneButton: View {
+    let taskId: Int
+    var enabled = true
+
+    var body: some View {
+        Button(intent: IncrementProgressIntent(taskId: taskId, delta: -1)) {
+            Text("−")
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.fill.quaternary, in: Capsule())
+                .frame(minWidth: WidgetTheme.progressButtonSize, minHeight: WidgetTheme.progressButtonSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        // "−" alone reads as a hyphen to VoiceOver.
+        .accessibilityLabel(Text("Remove one"))
     }
 }
