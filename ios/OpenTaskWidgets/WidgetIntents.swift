@@ -30,6 +30,17 @@ func reloadOpenTaskWidgets() {
     WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
 }
 
+/// Reload ONE kind after a pure view-state change (a chevron page flip).
+///
+/// Data-mutating intents reload everything — a completion changes counts on
+/// every kind. But a page flip is local to the widget being paged, and
+/// reloading the other two kinds made every chevron tap pay for two unrelated
+/// provider passes.
+@MainActor
+func reloadOpenTaskWidget(kind: String) {
+    WidgetCenter.shared.reloadTimelines(ofKind: kind)
+}
+
 // MARK: - Completion
 
 /// Check off a single item (reminder or task).
@@ -146,7 +157,10 @@ struct ShiftReminderSlotIntent: AppIntent {
             slotKey: groups[target].slotKey,
             naturalSlotKey: groups[natural].slotKey
         )
-        await reloadOpenTaskWidgets()
+        // View-state only: fast path + single-kind reload, so the flip paints
+        // from cache instead of waiting out a network fetch.
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
         return .result()
     }
 }
@@ -182,7 +196,9 @@ struct ShiftProjectScopeIntent: AppIntent {
         let current = ring.firstIndex(of: WidgetStore.projectScope) ?? 0
         let count = ring.count
         WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
-        await reloadOpenTaskWidgets()
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
         return .result()
     }
 }
@@ -220,7 +236,9 @@ struct ShiftTrackItemIntent: AppIntent {
         let current = items.firstIndex { $0.id == TrackTimeline.selectedId(in: items) } ?? 0
         let count = items.count
         WidgetStore.trackSelection = items[((current + offset) % count + count) % count].id
-        await reloadOpenTaskWidgets()
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
         return .result()
     }
 }

@@ -88,14 +88,30 @@ enum WidgetStore {
     private static let pendingProgressKey = "widget.pendingProgress"
     private static let pendingTTL: TimeInterval = 90
 
+    private static let lastInteractionKey = "widget.lastInteraction"
+
     /// "An interaction happened seconds ago" — providers use this to skip the
     /// network fetch and repaint straight from cache, which is what makes the
     /// tap feel instant. Scheduled reloads fall outside the window and fetch.
+    ///
+    /// Three sources: completion tombstones, +1 stamps, and the plain
+    /// interaction stamp below. The last exists for CHEVRONS — pure view-state
+    /// changes that stage no data at all, but still must not pay a network
+    /// round trip to flip to a page that is already in the cache.
     static func hasRecentInteraction(within seconds: TimeInterval = 10, now: Date = Date()) -> Bool {
         let cutoff = now.timeIntervalSince1970 - seconds
+        if let stamp = defaults?.object(forKey: lastInteractionKey) as? Double, stamp >= cutoff {
+            return true
+        }
         let stamps = Array(pendingMap(pendingCompletionsKey).values)
             + Array(pendingMap(pendingProgressKey).values)
         return stamps.contains { $0 >= cutoff }
+    }
+
+    /// Record that a non-mutating interaction (a chevron) just happened, so the
+    /// next provider pass takes the cache-only fast path.
+    static func markInteraction(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: lastInteractionKey)
     }
 
     static func stagePendingCompletion(_ id: Int, now: Date = Date()) {
