@@ -103,6 +103,8 @@ const PREFIX_RE = /^\s*\[(M|A|E|N|EM|LM|EE|W|Weekly|Weekend|Monthly|Tri-Monthly)
 
 /**
  * Quota annotation inside the title: "Eggs (2x/week)", "Beef For Kids 4x/week",
+ * "Kids eat hard cereal (2x/week+)" — a trailing "+" ("at least") is swallowed
+ * with the annotation so the close-paren does not survive as a stray "+)".
  * "(4 times this week, yet?)". Only stripped for the quota population — the
  * number moves into progress_target, so leaving it in the title would
  * double-state it.
@@ -114,7 +116,7 @@ const PREFIX_RE = /^\s*\[(M|A|E|N|EM|LM|EE|W|Weekly|Weekend|Monthly|Tri-Monthly)
  * human call, not a regex's.
  */
 const QUOTA_ANNOTATION_RE =
-  /\s*\(?\s*(\d+)\s*(?:x|times?)\s*(?:\/\s*|\s+(?:per\s+|this\s+)?)?(day|daily|week|weekly|month|monthly)(\s*,?\s*yet\s*\??)?\s*\)?/gi
+  /\s*\(?\s*(\d+)\s*(?:x|times?)\s*(?:\/\s*|\s+(?:per\s+|this\s+)?)?(day|daily|week|weekly|month|monthly)(\s*,?\s*yet\s*\??)?\s*\+?\s*\)?/gi
 
 function quotaAnnotations(title: string): number[] {
   return [...title.matchAll(QUOTA_ANNOTATION_RE)].map((m) => parseInt(m[1], 10))
