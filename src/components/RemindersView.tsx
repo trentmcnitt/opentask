@@ -11,6 +11,7 @@ import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimezone } from '@/hooks/useTimezone'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
+import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
 import type { Task } from '@/types'
 
 /**
@@ -150,6 +151,9 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     completeMany,
     completeGroup,
   })
+  // Both sweep buttons confirm first (Trent, 2026-09-05); single and selected
+  // considerations do not.
+  const considerAll = useConsiderAll(actions, UNSLOTTED_LABEL)
 
   return (
     <section aria-label="Reminders" className="w-full">
@@ -164,7 +168,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
           <RemindersHeadline
             summary={summary}
             allWaitingDone={total === 0}
-            onConsiderSoFar={actions.considerSoFar}
+            onConsiderSoFar={() => considerAll.askSoFar(summary)}
           />
           {total === 0 ? (
             <RemindersEmptyState allClear />
@@ -185,7 +189,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     selectedIds={selectedIds}
                     onRowClick={actions.rowClick}
                     onComplete={actions.complete}
-                    onCompleteGroup={actions.completeGroup}
+                    onCompleteGroup={considerAll.askSlot}
                   />
                 )
               })}
@@ -203,6 +207,11 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
             : undefined
         }
         onClear={clear}
+      />
+      <ConsiderAllDialog
+        request={considerAll.request}
+        onConfirm={considerAll.confirm}
+        onCancel={considerAll.cancel}
       />
     </section>
   )
