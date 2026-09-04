@@ -166,27 +166,31 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
             allWaitingDone={total === 0}
             onConsiderSoFar={actions.considerSoFar}
           />
-          <div className="space-y-3">
-            {[...summary.started, ...summary.later].map((group) => {
-              const key = groupKey(group)
-              return (
-                <ReminderSlotGroup
-                  key={key}
-                  group={group}
-                  started={summary.started.includes(group)}
-                  open={isOpen(key) && group.reminders.length > 0}
-                  expanded={expandedKeys.has(key)}
-                  onToggle={() => toggleOpen(key)}
-                  onExpand={(expanded) => setExpanded(key, expanded)}
-                  completingIds={completingIds}
-                  selectedIds={selectedIds}
-                  onRowClick={actions.rowClick}
-                  onComplete={actions.complete}
-                  onCompleteGroup={actions.completeGroup}
-                />
-              )
-            })}
-          </div>
+          {total === 0 ? (
+            <RemindersEmptyState allClear />
+          ) : (
+            <div className="space-y-3">
+              {[...summary.started, ...summary.later].map((group) => {
+                const key = groupKey(group)
+                return (
+                  <ReminderSlotGroup
+                    key={key}
+                    group={group}
+                    started={summary.started.includes(group)}
+                    open={isOpen(key) && group.reminders.length > 0}
+                    expanded={expandedKeys.has(key)}
+                    onToggle={() => toggleOpen(key)}
+                    onExpand={(expanded) => setExpanded(key, expanded)}
+                    completingIds={completingIds}
+                    selectedIds={selectedIds}
+                    onRowClick={actions.rowClick}
+                    onComplete={actions.complete}
+                    onCompleteGroup={actions.completeGroup}
+                  />
+                )
+              })}
+            </div>
+          )}
         </>
       )}
 
@@ -280,8 +284,16 @@ function useReminderActions({
 }
 
 /**
- * The headline: one line that answers "what now" and changes with the day,
- * the day's progress bar, and the one-tap "Considered all so far".
+ * The headline: one short line for "what now" (never a breakdown — the slot
+ * headers below ARE the breakdown, one per line), the one-tap "Considered all
+ * so far", and the day's bar.
+ *
+ * The bar is segmented, one segment per slot in the same order as the groups
+ * below and sized by how much each slot held today, so the shape of the day
+ * is readable at a glance and every considered thought visibly moves it.
+ * Slots that haven't started yet are drawn fainter: "not yet" must not read
+ * as "not done". A segment turns green when its slot is finished — a small
+ * win each time — and the number goes green when the day is.
  */
 function RemindersHeadline({
   summary,
@@ -292,11 +304,6 @@ function RemindersHeadline({
   allWaitingDone: boolean
   onConsiderSoFar: () => void
 }) {
-  const laterText = summary.later
-    .filter((g) => g.slot && g.reminders.length > 0)
-    .map((g) => `${g.slot!.label} ${g.reminders.length}`)
-    .join(', ')
-
   let line: React.ReactNode
   if (allWaitingDone) {
     line = <span className="text-foreground font-medium">All clear for today</span>
@@ -304,35 +311,29 @@ function RemindersHeadline({
     line = (
       <>
         <span className="text-foreground font-medium">
-          All caught up until {formatSlotTime(summary.nextUp.slot.start_time)}
+          Caught up until {summary.nextUp.slot.label}
         </span>
-        {laterText && <span className="text-muted-foreground"> &middot; {laterText} later</span>}
+        <span className="text-muted-foreground">
+          {' '}
+          &middot; {formatSlotTime(summary.nextUp.slot.start_time)}
+        </span>
       </>
     )
   } else {
-    const soFar = summary.started
-      .filter((g) => g.reminders.length > 0)
-      .map((g) => `${g.slot?.label ?? UNSLOTTED_LABEL} ${g.reminders.length}`)
-      .join(', ')
     line = (
-      <>
-        <span className="text-foreground font-medium" data-waiting-so-far={summary.waitingSoFar}>
-          {summary.waitingSoFar} waiting so far
-        </span>
-        {soFar && <span className="text-muted-foreground"> &middot; {soFar}</span>}
-        {laterText && (
-          <span className="text-muted-foreground/70"> &middot; later: {laterText}</span>
-        )}
-      </>
+      <span className="text-foreground font-medium" data-waiting-so-far={summary.waitingSoFar}>
+        {summary.waitingSoFar} waiting so far
+      </span>
     )
   }
 
-  const fraction = summary.dayTotal > 0 ? summary.consideredTotal / summary.dayTotal : 0
+  const segments = [...summary.started, ...summary.later]
+  const dayDone = summary.dayTotal > 0 && summary.consideredTotal >= summary.dayTotal
 
   return (
-    <div className="mb-5 px-2" data-reminders-headline>
-      <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-sm leading-relaxed">{line}</p>
+    <div className="mb-4 px-2" data-reminders-headline>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-sm">{line}</p>
         {summary.waitingSoFar > 0 && (
           <button
             type="button"
@@ -346,26 +347,58 @@ function RemindersHeadline({
           </button>
         )}
       </div>
-      {/* The day's bar: considered so far over everything the day holds. */}
-      <div className="mt-2 flex items-center gap-2">
+
+      <div className="mt-3 flex items-center">
         <div
-          className="bg-muted relative h-1.5 flex-1 overflow-hidden rounded-full"
+          className="flex h-2 w-full items-stretch gap-[3px]"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={summary.dayTotal}
           aria-valuenow={summary.consideredTotal}
           aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
         >
-          <div
-            className={cn(
-              'h-full rounded-full transition-[width] duration-500 ease-out',
-              fraction >= 1 ? 'bg-green-600' : 'bg-foreground/50',
-            )}
-            style={{ width: `${Math.min(1, fraction) * 100}%` }}
-          />
+          {segments.map((g) => {
+            const slotTotal = g.reminders.length + g.considered
+            const done = slotTotal > 0 && g.considered >= slotTotal
+            const label = g.slot?.label ?? UNSLOTTED_LABEL
+            const started = summary.started.includes(g)
+            return (
+              <div
+                key={groupKey(g)}
+                aria-hidden="true"
+                title={`${label} · ${g.considered} of ${slotTotal} considered`}
+                style={{ flexGrow: slotTotal }}
+                className={cn(
+                  'relative min-w-[6px] overflow-hidden rounded-full',
+                  started ? 'bg-muted' : 'bg-muted/50',
+                )}
+              >
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
+                    done ? 'bg-green-600' : 'bg-foreground/50',
+                  )}
+                  style={{ width: `${slotTotal > 0 ? (g.considered / slotTotal) * 100 : 0}%` }}
+                />
+              </div>
+            )
+          })}
         </div>
-        <span className="text-muted-foreground/70 shrink-0 text-xs tabular-nums">
-          {summary.consideredTotal} / {summary.dayTotal} today
+        <span className="ml-3 shrink-0 text-xs tabular-nums">
+          {dayDone ? (
+            <span className="text-green-700 dark:text-green-400">
+              All {summary.dayTotal} considered today
+            </span>
+          ) : (
+            <>
+              <span className="text-foreground font-medium">{summary.consideredTotal}</span>
+              <span className="text-muted-foreground hidden sm:inline">
+                {' '}
+                of {summary.dayTotal} considered
+              </span>
+              <span className="text-muted-foreground sm:hidden"> / {summary.dayTotal}</span>
+            </>
+          )}
         </span>
       </div>
     </div>
@@ -442,63 +475,44 @@ function ReminderSlotGroup({
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
   const count = group.reminders.length
   const slotTotal = count + group.considered
-  const fraction = slotTotal > 0 ? group.considered / slotTotal : 0
+  const finished = count === 0 && group.considered > 0
   const visible = expanded ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = count - visible.length
 
+  const headerRow = (
+    <SlotHeaderRow
+      label={label}
+      time={time}
+      count={count}
+      considered={group.considered}
+      open={open}
+      started={started}
+    />
+  )
+
   return (
     <div
-      className={cn('rounded-2xl transition-colors', open && 'bg-muted/30 pb-2')}
+      className={cn(
+        'bg-muted/30 rounded-2xl transition-colors',
+        open && 'pb-2',
+        !started && 'opacity-70',
+      )}
       data-slot-group={label}
       data-slot-started={started}
     >
-      {/* Same header language as the dashboard's slot groups — one visual
-          vocabulary for "morning", wherever it appears. The badge says whether
-          this slot is part of "so far": accent once it has started and holds
-          something, muted with "later" before its time, a full bar once done. */}
-      <div className="flex min-h-11 items-center gap-2 px-2">
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={count === 0}
-          aria-expanded={open}
-          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors disabled:cursor-default"
-        >
-          <ChevronDown
-            aria-hidden="true"
-            className={cn(
-              'text-muted-foreground/60 size-3.5 shrink-0 transition-transform duration-200',
-              !open && '-rotate-90',
-              count === 0 && 'invisible',
-            )}
-          />
-          <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-            {label}
-          </span>
-          {time && (
-            <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
-              &middot; {time}
-            </span>
-          )}
-          {/* Per-slot progress: considered over what the slot held today. */}
-          <span
-            className="bg-muted relative ml-1 h-1 w-10 shrink-0 overflow-hidden rounded-full"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={slotTotal}
-            aria-valuenow={group.considered}
-            aria-label={`${group.considered} of ${slotTotal} considered in ${label}`}
+      <div className="flex min-h-11 items-center gap-2 px-3">
+        {finished ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2 py-2">{headerRow}</div>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors"
           >
-            <span
-              className={cn(
-                'block h-full rounded-full transition-[width] duration-500 ease-out',
-                fraction >= 1 ? 'bg-green-600' : 'bg-foreground/40',
-              )}
-              style={{ width: `${Math.min(1, fraction) * 100}%` }}
-            />
-          </span>
-          <SlotCount count={count} considered={group.considered} open={open} started={started} />
-        </button>
+            {headerRow}
+          </button>
+        )}
         {open && (
           <button
             type="button"
@@ -511,6 +525,8 @@ function ReminderSlotGroup({
           </button>
         )}
       </div>
+
+      <SlotHairline label={label} considered={group.considered} total={slotTotal} />
 
       {open && (
         <>
@@ -535,7 +551,7 @@ function ReminderSlotGroup({
             <button
               type="button"
               onClick={() => onExpand(true)}
-              className="text-muted-foreground hover:text-foreground w-full rounded-lg py-2 text-xs font-medium transition-colors"
+              className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
             >
               Show all {count}
               <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
@@ -545,7 +561,7 @@ function ReminderSlotGroup({
             <button
               type="button"
               onClick={() => onExpand(false)}
-              className="text-muted-foreground hover:text-foreground w-full rounded-lg py-2 text-xs font-medium transition-colors"
+              className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
             >
               Show less
             </button>
@@ -556,40 +572,93 @@ function ReminderSlotGroup({
   )
 }
 
-/** The slot header's right-hand word: a full bar's "all N considered", the open count, the started badge, or "N later". */
-function SlotCount({
+/**
+ * The slot header's row: one shape whether the slot is open, folded, finished,
+ * or not yet started — chevron box (so the label lands on the rows' x), label,
+ * time, spacer, count. The count reads the same open or folded; a later slot
+ * says "later"; a finished slot says so in green. Never a pill that changes
+ * colour when the section folds.
+ */
+function SlotHeaderRow({
+  label,
+  time,
   count,
   considered,
   open,
   started,
 }: {
+  label: string
+  time: string | null
   count: number
   considered: number
   open: boolean
   started: boolean
 }) {
-  if (count === 0 && considered > 0) {
-    return (
-      <span className="text-xs whitespace-nowrap text-green-700 dark:text-green-400">
-        all {considered} considered
-      </span>
-    )
-  }
-  if (open) return <span className="text-muted-foreground/60 text-xs tabular-nums">{count}</span>
-  if (started) {
-    return (
-      <span
-        className="bg-foreground/10 text-foreground/80 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-        aria-label={`${count} waiting`}
-      >
-        {count}
-      </span>
-    )
-  }
+  const finished = count === 0 && considered > 0
   return (
-    <span className="text-muted-foreground/60 text-xs whitespace-nowrap tabular-nums">
-      {count} later
-    </span>
+    <>
+      <span className="flex size-6 shrink-0 items-center justify-center">
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'text-muted-foreground/60 size-3.5 transition-transform duration-200',
+            !open && '-rotate-90',
+            count === 0 && 'invisible',
+          )}
+        />
+      </span>
+      <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+        {label}
+      </span>
+      {time && (
+        <span className="text-muted-foreground/50 text-xs whitespace-nowrap">&middot; {time}</span>
+      )}
+      <span className="flex-1" />
+      {finished ? (
+        <span className="text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
+          all {considered} considered
+        </span>
+      ) : (
+        <span
+          className="text-muted-foreground text-xs whitespace-nowrap tabular-nums"
+          aria-label={started ? `${count} waiting` : `${count} later`}
+        >
+          {count}
+          {!started && ' later'}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** Full-width hairline under a slot header: considered over what the slot held today. Long enough that one thought visibly moves it. */
+function SlotHairline({
+  label,
+  considered,
+  total,
+}: {
+  label: string
+  considered: number
+  total: number
+}) {
+  const fraction = total > 0 ? considered / total : 0
+  return (
+    <div
+      className="bg-muted mx-3 mb-2 h-1 overflow-hidden rounded-full"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={considered}
+      aria-label={`${considered} of ${total} considered in ${label}`}
+    >
+      <div
+        className={cn(
+          'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
+          fraction >= 1 ? 'bg-green-600' : 'bg-foreground/50',
+        )}
+        style={{ width: `${Math.min(1, fraction) * 100}%` }}
+      />
+    </div>
   )
 }
 
@@ -615,8 +684,8 @@ function ReminderRow({
       aria-selected={selected}
       onClick={(e) => onClick(reminder, e)}
       className={cn(
-        'group flex cursor-pointer items-start gap-3 rounded-xl px-2 py-3 transition-all duration-200 ease-out select-none',
-        selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-background',
+        'group flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-all duration-200 ease-out select-none',
+        selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
         completing && 'pointer-events-none translate-x-2 opacity-0',
       )}
     >
@@ -630,7 +699,7 @@ function ReminderRow({
         }}
         aria-label={`Mark "${reminder.title}" as considered`}
         title="Considered"
-        className="border-muted-foreground/30 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors"
+        className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
       >
         <Check
           className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
@@ -640,7 +709,7 @@ function ReminderRow({
       {/* The notes marker sits inline after the title rather than pinned to
           the right edge: on a wide screen a lone icon across the row reads as
           an unrelated control, and this one is only ever a footnote. */}
-      <p className="min-w-0 flex-1 text-[16px] leading-relaxed">
+      <p className="min-w-0 flex-1 text-[16px] leading-6">
         <span className={cn('text-pretty', prominenceClasses(reminder.priority))}>
           {reminder.title}
         </span>
