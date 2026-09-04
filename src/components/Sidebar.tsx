@@ -19,7 +19,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   // bottom. Reminders (§6) belongs to the first group: it is a daily surface, not
   // an archive of anything.
   const navItems = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/', label: 'Tasks', icon: LayoutDashboard },
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '/history', label: 'History', icon: History },
   ]
