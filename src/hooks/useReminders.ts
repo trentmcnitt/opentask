@@ -20,6 +20,8 @@ export interface ReminderGroup {
   count: number
   /** Considered today in this slot (progress, §6). */
   considered: number
+  /** The considered ones, most recent first — shown behind the counter, each with a way back. */
+  consideredItems: Task[]
 }
 
 interface UseRemindersOptions {
@@ -58,6 +60,8 @@ export interface UseRemindersReturn {
    * gesture the design record calls "my task is to do my reminders".
    */
   completeGroup: (group: ReminderGroup) => Promise<void>
+  /** Reverse a consideration: the thought returns to waiting. */
+  putBack: (task: Task) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -76,6 +80,49 @@ const cacheListeners = new Set<() => void>()
 function setRemindersCache(next: typeof remindersCache) {
   remindersCache = next
   for (const listener of cacheListeners) listener()
+}
+
+/** The API speaks snake_case; the one place its reminder groups become ours. */
+function parseGroups(json: unknown): ReminderGroup[] {
+  const groups = (json as { data?: { groups?: unknown[] } })?.data?.groups ?? []
+  return groups.map((raw) => {
+    const g = raw as Omit<ReminderGroup, 'consideredItems'> & { considered_items?: Task[] }
+    return {
+      slot: g.slot,
+      reminders: g.reminders ?? [],
+      count: g.count ?? g.reminders?.length ?? 0,
+      considered: g.considered ?? 0,
+      consideredItems: g.considered_items ?? [],
+    }
+  })
+}
+
+/**
+ * Apply what is still in flight to a payload the server just sent: ids being
+ * considered leave `reminders` for `consideredItems`, ids being put back go
+ * the other way. Without this a refresh landing mid-request re-inserted the
+ * row in its old place (a visible gap, or a thought that flickered back).
+ */
+function reconcileInFlight(
+  incoming: ReminderGroup[],
+  pending: Set<number>,
+  restoring: Set<number>,
+): ReminderGroup[] {
+  if (pending.size === 0 && restoring.size === 0) return incoming
+  return incoming.map((g) => {
+    const leaving = g.reminders.filter((r) => pending.has(r.id))
+    const returning = g.consideredItems.filter((r) => restoring.has(r.id))
+    if (leaving.length === 0 && returning.length === 0) return g
+    const reminders = [...g.reminders.filter((r) => !pending.has(r.id)), ...returning]
+    const consideredItems = [...leaving, ...g.consideredItems.filter((r) => !restoring.has(r.id))]
+    return {
+      ...g,
+      reminders,
+      count: reminders.length,
+      consideredItems,
+      considered: consideredItems.length,
+    }
+  })
 }
 
 export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseRemindersReturn {
@@ -98,24 +145,18 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
   // server recording the completion; the payload it brings still contains the
   // row, and re-inserting it produced an invisible gap (the row re-rendered in
   // its "completing" state and stayed). Any refresh strips these first.
+  // The same in the other direction: a put-back whose request is still out.
   const pendingIdsRef = useRef<Set<number>>(new Set())
-  const stripPending = (incoming: ReminderGroup[]): ReminderGroup[] => {
-    const pending = pendingIdsRef.current
-    if (pending.size === 0) return incoming
-    return incoming.map((g) => {
-      const remaining = g.reminders.filter((r) => !pending.has(r.id))
-      return remaining.length === g.reminders.length
-        ? g
-        : { ...g, reminders: remaining, count: remaining.length }
-    })
-  }
+  const restoringIdsRef = useRef<Set<number>>(new Set())
+  const stripPending = (incoming: ReminderGroup[]) =>
+    reconcileInFlight(incoming, pendingIdsRef.current, restoringIdsRef.current)
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch('/api/reminders')
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
-      const nextGroups = stripPending((json?.data?.groups ?? []) as ReminderGroup[])
+      const nextGroups = stripPending(parseGroups(json))
       const nextHasAny = json?.data?.has_any === true
       setRemindersCache({ groups: nextGroups, hasAny: nextHasAny })
       setGroups(nextGroups)
@@ -175,9 +216,18 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
         snapshot = prev
         const next = prev.map((g) => {
           const remaining = g.reminders.filter((r) => !idSet.has(r.id))
-          return remaining.length === g.reminders.length
-            ? g
-            : { ...g, reminders: remaining, count: remaining.length }
+          if (remaining.length === g.reminders.length) return g
+          const considered = g.reminders.filter((r) => idSet.has(r.id))
+          // The considered ones move behind the counter at once, so the
+          // progress and the "put back" list agree with the row that just left.
+          const consideredItems = [...considered, ...g.consideredItems]
+          return {
+            ...g,
+            reminders: remaining,
+            count: remaining.length,
+            consideredItems,
+            considered: consideredItems.length,
+          }
         })
         if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
         return next
@@ -241,6 +291,8 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     [completeIds],
   )
 
+  const putBack = usePutBack({ setGroups, refresh, restoringIdsRef, callbacksRef })
+
   const complete = useCallback(
     (task: Task) => completeIds([task], `Considered \u201c${task.title}\u201d`),
     [completeIds],
@@ -264,8 +316,86 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     complete,
     completeMany,
     completeGroup,
+    putBack,
     refresh,
   }
+}
+
+/**
+ * Put a considered thought back (POST /api/tasks/:id/undone — for a
+ * recurring reminder that reverses the latest completion). Optimistic the
+ * same way as considering: the row returns at once, the toast's Undo waits
+ * for the request, a failure restores the snapshot.
+ */
+function usePutBack({
+  setGroups,
+  refresh,
+  restoringIdsRef,
+  callbacksRef,
+}: {
+  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
+  refresh: () => Promise<void>
+  restoringIdsRef: React.MutableRefObject<Set<number>>
+  callbacksRef: React.MutableRefObject<UseRemindersOptions>
+}) {
+  return useCallback(
+    async (task: Task) => {
+      const id = task.id
+      restoringIdsRef.current.add(id)
+      let snapshot: ReminderGroup[] | null = null
+      setGroups((prev) => {
+        snapshot = prev
+        const next = prev.map((g) => {
+          if (!g.consideredItems.some((r) => r.id === id)) return g
+          const consideredItems = g.consideredItems.filter((r) => r.id !== id)
+          const reminders = [...g.reminders, task]
+          return {
+            ...g,
+            reminders,
+            count: reminders.length,
+            consideredItems,
+            considered: consideredItems.length,
+          }
+        })
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+        return next
+      })
+
+      const request = (async () => {
+        const res = await fetch(`/api/tasks/${id}/undone`, { method: 'POST' })
+        if (!res.ok) throw new Error('Failed to put back')
+        callbacksRef.current.onCompleted?.()
+      })()
+
+      let settledOk = false
+      showToast({
+        message: `Put back \u201c${task.title}\u201d`,
+        type: 'success',
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+          },
+        },
+      })
+
+      try {
+        await request
+        settledOk = true
+      } catch {
+        if (snapshot) {
+          const restored = snapshot
+          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
+          setGroups(restored)
+        }
+        showToast({ message: 'Could not put it back', type: 'error' })
+      } finally {
+        restoringIdsRef.current.delete(id)
+        if (settledOk) void refresh()
+      }
+    },
+    [refresh, setGroups, restoringIdsRef, callbacksRef],
+  )
 }
 
 /**
@@ -283,7 +413,7 @@ function loadRemindersCache(): Promise<void> {
       if (!res.ok) return
       const json = await res.json()
       setRemindersCache({
-        groups: (json?.data?.groups ?? []) as ReminderGroup[],
+        groups: parseGroups(json),
         hasAny: json?.data?.has_any === true,
       })
     } catch {

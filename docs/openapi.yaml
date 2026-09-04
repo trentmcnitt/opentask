@@ -283,10 +283,15 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskId'
     post:
-      summary: Mark task undone (reopen)
+      summary: Mark task undone (reopen / put back)
       operationId: markTaskUndone
       tags: [Tasks]
-      description: Only works for one-off tasks. For recurring tasks, use undo.
+      description: |
+        One-off task: reopens it. Recurring task: puts back its most recent
+        completion — the occurrence returns to the due date it had and the
+        completion counts roll back one. Refuses (400) when the task's due date
+        has changed since that completion, or when there is nothing to put back.
+        Logged as an undoable action either way.
       responses:
         '200':
           description: Reopened task
@@ -902,6 +907,9 @@ paths:
                     properties:
                       total:
                         type: integer
+                      considered_total:
+                        type: integer
+                        description: Reminders considered today, all slots.
                       has_any:
                         type: boolean
                         description: |
@@ -930,6 +938,16 @@ paths:
                               type: integer
                             reminders:
                               type: array
+                              items:
+                                $ref: '#/components/schemas/Task'
+                            considered:
+                              type: integer
+                              description: Considered today in this slot.
+                            considered_items:
+                              type: array
+                              description: |
+                                The considered ones, most recent first. Put one
+                                back with `POST /api/tasks/{id}/undone`.
                               items:
                                 $ref: '#/components/schemas/Task'
         '401':

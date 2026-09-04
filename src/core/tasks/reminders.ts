@@ -33,6 +33,11 @@ export interface ReminderGroup {
    * would be reading intent from what he didn't do).
    */
   considered: number
+  /**
+   * The considered ones, most recent first, so a slip is at the top. The
+   * surface shows them behind the slot's counter with a way to put one back.
+   */
+  consideredItems: Task[]
 }
 
 /**
@@ -97,15 +102,23 @@ export function getRemindersBySlot(
   // last_completed_at behind) is waiting, not considered — never both.
   const waitingIds = new Set(reminders.map((t) => t.id))
   const considered = getConsideredToday(userId, timezone, now).filter((t) => !waitingIds.has(t.id))
+  const consideredAt = (t: Task) => t.last_completed_at ?? t.done_at ?? ''
   const consideredBySlot = new Map(
-    groupBySlot(considered, slots, timezone).map((g) => [g.slot?.id ?? null, g.items.length]),
+    groupBySlot(considered, slots, timezone).map((g) => [
+      g.slot?.id ?? null,
+      [...g.items].sort((a, b) => consideredAt(b).localeCompare(consideredAt(a))),
+    ]),
   )
 
-  return groupBySlot(reminders, slots, timezone).map((group) => ({
-    slot: group.slot,
-    reminders: [...group.items].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)),
-    considered: consideredBySlot.get(group.slot?.id ?? null) ?? 0,
-  }))
+  return groupBySlot(reminders, slots, timezone).map((group) => {
+    const consideredItems = consideredBySlot.get(group.slot?.id ?? null) ?? []
+    return {
+      slot: group.slot,
+      reminders: [...group.items].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)),
+      considered: consideredItems.length,
+      consideredItems,
+    }
+  })
 }
 
 /**

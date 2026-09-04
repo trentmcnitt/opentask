@@ -86,6 +86,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     complete,
     completeMany,
     completeGroup,
+    putBack,
     refresh,
   } = useReminders({ onUndo, onCompleted })
   const timezone = useTimezone()
@@ -171,7 +172,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
             onConsiderSoFar={() => considerAll.askSoFar(summary)}
           />
           {total === 0 ? (
-            <RemindersEmptyState allClear />
+            <RemindersEmptyState allClear headingLevel="none" />
           ) : (
             <div className="space-y-3">
               {[...summary.started, ...summary.later].map((group) => {
@@ -181,7 +182,10 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     key={key}
                     group={group}
                     started={summary.started.includes(group)}
-                    open={isOpen(key) && group.reminders.length > 0}
+                    open={
+                      isOpen(key) &&
+                      (group.reminders.length > 0 || group.consideredItems.length > 0)
+                    }
                     expanded={expandedKeys.has(key)}
                     onToggle={() => toggleOpen(key)}
                     onExpand={(expanded) => setExpanded(key, expanded)}
@@ -190,6 +194,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     onRowClick={actions.rowClick}
                     onComplete={actions.complete}
                     onCompleteGroup={considerAll.askSlot}
+                    onPutBack={putBack}
                   />
                 )
               })}
@@ -467,6 +472,7 @@ function ReminderSlotGroup({
   onRowClick,
   onComplete,
   onCompleteGroup,
+  onPutBack,
 }: {
   group: ReminderGroup
   started: boolean
@@ -479,12 +485,15 @@ function ReminderSlotGroup({
   onRowClick: (task: Task, e: React.MouseEvent) => void
   onComplete: (task: Task) => void
   onCompleteGroup: (group: ReminderGroup) => void
+  onPutBack: (task: Task) => void
 }) {
   const label = group.slot?.label ?? UNSLOTTED_LABEL
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
   const count = group.reminders.length
   const slotTotal = count + group.considered
-  const finished = count === 0 && group.considered > 0
+  // A slot with nothing waiting can still open: its considered items live
+  // behind the counter, and one of them may need putting back.
+  const canOpen = count > 0 || group.consideredItems.length > 0
   const visible = expanded ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = count - visible.length
 
@@ -512,7 +521,7 @@ function ReminderSlotGroup({
       data-slot-started={started}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
-        {finished ? (
+        {!canOpen ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 py-2">{headerRow}</div>
         ) : (
           <button
@@ -524,7 +533,7 @@ function ReminderSlotGroup({
             {headerRow}
           </button>
         )}
-        {open && (
+        {open && count > 0 && (
           <button
             type="button"
             onClick={() => onCompleteGroup(group)}
@@ -541,23 +550,25 @@ function ReminderSlotGroup({
 
       {open && (
         <>
-          <ul
-            className="space-y-0.5 px-1"
-            role="listbox"
-            aria-multiselectable="true"
-            aria-label={label}
-          >
-            {visible.map((reminder) => (
-              <ReminderRow
-                key={reminder.id}
-                reminder={reminder}
-                completing={completingIds.has(reminder.id)}
-                selected={selectedIds.has(reminder.id)}
-                onClick={onRowClick}
-                onComplete={onComplete}
-              />
-            ))}
-          </ul>
+          {visible.length > 0 && (
+            <ul
+              className="space-y-0.5 px-1"
+              role="listbox"
+              aria-multiselectable="true"
+              aria-label={label}
+            >
+              {visible.map((reminder) => (
+                <ReminderRow
+                  key={reminder.id}
+                  reminder={reminder}
+                  completing={completingIds.has(reminder.id)}
+                  selected={selectedIds.has(reminder.id)}
+                  onClick={onRowClick}
+                  onComplete={onComplete}
+                />
+              ))}
+            </ul>
+          )}
           {hiddenCount > 0 && (
             <button
               type="button"
@@ -576,6 +587,13 @@ function ReminderSlotGroup({
             >
               Show less
             </button>
+          )}
+          {group.consideredItems.length > 0 && (
+            <ConsideredDisclosure
+              items={group.consideredItems}
+              label={label}
+              onPutBack={onPutBack}
+            />
           )}
         </>
       )}
@@ -635,7 +653,7 @@ function SlotHeaderRow({
           className={cn(
             'text-muted-foreground/60 size-3.5 transition-transform duration-200',
             !open && '-rotate-90',
-            count === 0 && 'invisible',
+            count === 0 && considered === 0 && 'invisible',
           )}
         />
       </span>
@@ -687,6 +705,61 @@ function SlotHairline({
         style={{ width: `${Math.min(1, fraction) * 100}%` }}
       />
     </div>
+  )
+}
+
+/**
+ * The slot's considered items, folded behind one line so the list of what is
+ * still waiting stays short. Each row is checked and dim; its circle puts the
+ * thought back (Trent, 2026-09-05: "if I accidentally press it, undo is not
+ * quite enough"). Rows here are not selectable — there is one thing to do
+ * with them, and it is on the circle.
+ */
+function ConsideredDisclosure({
+  items,
+  label,
+  onPutBack,
+}: {
+  items: Task[]
+  label: string
+  onPutBack: (task: Task) => void
+}) {
+  const [shown, setShown] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setShown((s) => !s)}
+        aria-expanded={shown}
+        className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
+      >
+        {shown ? 'Hide' : 'Show'} {items.length} considered
+      </button>
+      {shown && (
+        <ul className="space-y-0.5 px-1" aria-label={`Considered in ${label}`}>
+          {items.map((reminder) => (
+            <li
+              key={reminder.id}
+              data-considered-id={reminder.id}
+              className="flex items-start gap-3 rounded-xl px-2 py-2.5"
+            >
+              <button
+                type="button"
+                onClick={() => onPutBack(reminder)}
+                aria-label={`Put back "${reminder.title}"`}
+                title="Put back"
+                className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+              >
+                <Check className="size-3.5" strokeWidth={3} />
+              </button>
+              <p className="text-muted-foreground min-w-0 flex-1 text-[16px] leading-6">
+                <span className="text-pretty">{reminder.title}</span>
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }
 
@@ -772,16 +845,18 @@ function formatSlotTime(startTime: string): string {
 /**
  * The page's h1 is the headline ("34 waiting so far") when there is one. When
  * the empty state stands alone it takes the h1 itself, so the page always has
- * exactly one — the top bar shows the logo, not a title.
+ * exactly one — the top bar shows the logo, not a title. Under a headline
+ * that already says "All clear for today" the card's title is not a heading
+ * at all (`'none'`): same look, no second "All clear" in the outline.
  */
 function RemindersEmptyState({
   allClear,
   headingLevel = 2,
 }: {
   allClear: boolean
-  headingLevel?: 1 | 2
+  headingLevel?: 1 | 2 | 'none'
 }) {
-  const Heading = headingLevel === 1 ? 'h1' : 'h2'
+  const Heading = headingLevel === 1 ? 'h1' : headingLevel === 2 ? 'h2' : 'p'
   if (allClear) {
     return (
       <div className="flex flex-col items-center gap-2 py-20 text-center">
