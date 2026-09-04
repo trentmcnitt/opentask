@@ -242,6 +242,47 @@ test.describe('Reminders surface', () => {
     }
   })
 
+  test('headline, nav badge, and "Considered all so far" agree on waiting-so-far', async ({
+    authenticatedPage: page,
+  }) => {
+    // Two reminders whose time has already passed today — in a started slot
+    // (or Anytime, before the first slot), so they count "so far".
+    const passed = DateTime.now().minus({ hours: 1 })
+    const soFar = passed.hasSame(DateTime.now(), 'day')
+      ? passed
+      : DateTime.now().startOf('day').plus({ minutes: 1 })
+    const ids = [
+      await createReminder(page, { title: 'Earlier thought one', due_at: soFar.toUTC().toISO() }),
+      await createReminder(page, { title: 'Earlier thought two', due_at: soFar.toUTC().toISO() }),
+    ]
+
+    try {
+      await openReminders(page)
+      const headline = page.locator('[data-reminders-headline]')
+      await expect(headline).toContainText('2 waiting so far')
+      // The sidebar badge (desktop nav) shows the same number.
+      await expect(page.locator('[data-reminders-badge]').first()).toHaveText('2')
+      // The day's bar starts empty: 0 of 2.
+      await expect(headline.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+
+      // One tap clears exactly the waiting-so-far set.
+      await page.getByRole('button', { name: /Mark all 2 waiting so far as considered/ }).click()
+      await expect(page.getByText('Considered 2')).toBeVisible()
+      await expect(page.locator('li[data-reminder-id]')).toHaveCount(0)
+      await expect(page.locator('[data-reminders-badge]')).toHaveCount(0)
+      // The bar filled with what was done.
+      await expect(headline.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
+      await expect(headline).toContainText('All clear for today')
+
+      // Undo restores both, and the numbers follow.
+      await page.getByRole('button', { name: 'Undo' }).click()
+      await expect(page.locator('li[data-reminder-id]')).toHaveCount(2)
+      await expect(headline).toContainText('2 waiting so far')
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('says "all clear" once today is done', async ({ authenticatedPage: page }) => {
     const id = await createReminder(page, { title: 'The only thought left', due_at: todayAt(12) })
 

@@ -6,6 +6,7 @@ import { Check, CheckCheck, ChevronDown, Lightbulb, StickyNote } from 'lucide-re
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { currentSlot } from '@/lib/time-slot-assign'
+import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -23,29 +24,29 @@ import type { Task } from '@/types'
  * How the screen stays "a handful" at any corpus size (the founding constraint:
  * the harness adapts to the scale, the user does not prune):
  *
- * 1. **Each time slot is a container.** Its header carries the count and a
- *    single "Considered all" action — the user's own framing was "my task is to
- *    do my reminders": one slot, one tap, one Undo.
- * 2. **Only the current slot opens by default.** The slot whose window contains
- *    the present moment is the one whose thoughts are timely; earlier and later
- *    slots fold to a header with a count badge, one tap to open. Nothing is
- *    hidden, nothing is late — a reminder carries no debt, so a morning slot
- *    seen at 4pm is simply still waiting, not overdue.
- * 3. **Inside an open slot: the first five, then "Show all N".** Same constant
- *    and same affordance as the dashboard's slot groups (§7.3).
+ * 1. **The headline is "waiting so far", not the pile.** Trent's definition
+ *    (2026-09-04): everything still waiting in a slot that has already
+ *    started today, plus Anytime. The same number sits on the nav badge, and
+ *    one tap — "Considered all so far" — clears exactly it. Later slots are
+ *    named, not counted against him.
+ * 2. **Each time slot is a container** with its own "Considered all"; only the
+ *    current slot opens by default, the rest fold to a header with a badge:
+ *    accent while the slot has started and holds something, muted "later"
+ *    before its time.
+ * 3. **Inside an open slot: the first five, then "Show all N".**
+ * 4. **Progress fills, it never scolds.** A bar per slot and one for the day
+ *    show what has been considered so far today (his add: "satisfying to get
+ *    through all the reminders"). It only ever counts what he did — a bar that
+ *    filled with misses would read intent from absence (L1).
  *
- * Selection works exactly as it does on the dashboard, on purpose: a plain
- * click selects the row (and only it), shift-click selects the range from the
- * anchor, cmd/ctrl-click adds one, Escape clears. A selection raises the same
- * floating bar the dashboard uses, with the verbs that apply to reminders. A
- * row click never navigates — opening an item is an explicit "Details" from
- * the bar, so a stray tap on a sentence cannot yank the user off the screen.
- * The circle still considers one item directly.
+ * Selection works exactly as it does on the dashboard, on purpose: plain click
+ * selects, shift-click a range, cmd/ctrl-click adds, Escape clears; the same
+ * floating bar appears with the verbs that apply. A row click never navigates.
  *
- * Two deliberate departures from the task list stay as before: completed items
- * leave immediately (leaving them greyed out would bury the rest), and empty
- * slots are hidden here (there is no day to read on this surface, only
- * thoughts still waiting).
+ * Completed items leave immediately, and a slot that never had anything today
+ * is not shown (on this surface there is no day to read, only thoughts still
+ * waiting) — but a slot that has been fully considered stays as a full bar,
+ * because that is the satisfying part.
  */
 
 /** Un-slotted reminders (no anchor_time and no due time) group under this label. */
@@ -88,8 +89,8 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   } = useReminders({ onUndo, onCompleted })
   const timezone = useTimezone()
   const router = useRouter()
-  const { selectedIds, isSelectionMode, toggle, rangeSelect, selectOnly, removeAll, clear } =
-    useSelectionMode()
+  const selection = useSelectionMode()
+  const { selectedIds, clear } = selection
 
   useEffect(() => {
     if (!refreshRef) return
@@ -99,16 +100,25 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     }
   }, [refreshRef, refresh])
 
-  const visibleGroups = groups.filter((group) => group.reminders.length > 0)
+  // A slot shows while it has something waiting OR something considered today
+  // (a full bar is worth seeing); a slot with neither is noise.
+  const visibleGroups = useMemo(
+    () => groups.filter((g) => g.reminders.length > 0 || g.considered > 0),
+    [groups],
+  )
+  const summary = useMemo(
+    () => summarizeReminders(visibleGroups, timezone),
+    [visibleGroups, timezone],
+  )
 
   // Which slot opens by default: the current one if it has anything waiting,
-  // otherwise the first with content (before the day's first slot, or when
-  // the current slot is already clear, there is still something to read).
+  // otherwise the first with something waiting.
   const defaultOpenKey = useMemo(() => {
-    const slots = visibleGroups.flatMap((g) => (g.slot ? [g.slot] : []))
+    const withWaiting = visibleGroups.filter((g) => g.reminders.length > 0)
+    const slots = withWaiting.flatMap((g) => (g.slot ? [g.slot] : []))
     const now = currentSlot(slots, timezone)
     if (now) return String(now.id)
-    return visibleGroups.length > 0 ? groupKey(visibleGroups[0]) : null
+    return withWaiting.length > 0 ? groupKey(withWaiting[0]) : null
   }, [visibleGroups, timezone])
 
   const { isOpen, toggleOpen, expandedKeys, setExpanded } = useSlotDisclosure(defaultOpenKey)
@@ -131,45 +141,15 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     [renderedRows, selectedIds],
   )
 
-  // Escape clears a selection, as it does on the dashboard.
-  useEffect(() => {
-    if (!isSelectionMode) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') clear()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isSelectionMode, clear])
-
-  const handleRowClick = useCallback(
-    (task: Task, e: React.MouseEvent) => {
-      if (e.shiftKey) rangeSelect(task.id, orderedIds)
-      else if (e.metaKey || e.ctrlKey) toggle(task.id)
-      else selectOnly(task.id)
-    },
-    [rangeSelect, toggle, selectOnly, orderedIds],
-  )
-
-  // A row leaving the surface leaves the selection too, whichever path took it.
-  const handleComplete = useCallback(
-    (task: Task) => {
-      removeAll([task.id])
-      void complete(task)
-    },
-    [removeAll, complete],
-  )
-  const handleCompleteGroup = useCallback(
-    (group: ReminderGroup) => {
-      removeAll(group.reminders.map((r) => r.id))
-      void completeGroup(group)
-    },
-    [removeAll, completeGroup],
-  )
-  const handleConsiderSelection = useCallback(() => {
-    const tasks = selectedTasks
-    clear()
-    void completeMany(tasks)
-  }, [selectedTasks, clear, completeMany])
+  const actions = useReminderActions({
+    selection,
+    orderedIds,
+    selectedTasks,
+    startedGroups: summary.started,
+    complete,
+    completeMany,
+    completeGroup,
+  })
 
   return (
     <section aria-label="Reminders" className="w-full">
@@ -181,23 +161,28 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         <RemindersEmptyState allClear={consideredAny || hasAny} />
       ) : (
         <>
-          <p className="text-muted-foreground/80 mb-4 px-2 text-xs">{total} to consider today</p>
+          <RemindersHeadline
+            summary={summary}
+            allWaitingDone={total === 0}
+            onConsiderSoFar={actions.considerSoFar}
+          />
           <div className="space-y-3">
-            {visibleGroups.map((group) => {
+            {[...summary.started, ...summary.later].map((group) => {
               const key = groupKey(group)
               return (
                 <ReminderSlotGroup
                   key={key}
                   group={group}
-                  open={isOpen(key)}
+                  started={summary.started.includes(group)}
+                  open={isOpen(key) && group.reminders.length > 0}
                   expanded={expandedKeys.has(key)}
                   onToggle={() => toggleOpen(key)}
                   onExpand={(expanded) => setExpanded(key, expanded)}
                   completingIds={completingIds}
                   selectedIds={selectedIds}
-                  onRowClick={handleRowClick}
-                  onComplete={handleComplete}
-                  onCompleteGroup={handleCompleteGroup}
+                  onRowClick={actions.rowClick}
+                  onComplete={actions.complete}
+                  onCompleteGroup={actions.completeGroup}
                 />
               )
             })}
@@ -207,7 +192,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
 
       <ReminderSelectionBar
         selectedCount={selectedIds.size}
-        onConsidered={handleConsiderSelection}
+        onConsidered={actions.considerSelection}
         onDetails={
           selectedTasks.length === 1
             ? () => router.push(`/tasks/${selectedTasks[0].id}`)
@@ -216,6 +201,174 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         onClear={clear}
       />
     </section>
+  )
+}
+
+/**
+ * The surface's verbs, wired to the selection so a row that leaves the screen
+ * leaves the selection too, whichever path took it. Escape clears a selection,
+ * as it does on the dashboard.
+ */
+function useReminderActions({
+  selection,
+  orderedIds,
+  selectedTasks,
+  startedGroups,
+  complete,
+  completeMany,
+  completeGroup,
+}: {
+  selection: ReturnType<typeof useSelectionMode>
+  orderedIds: number[]
+  selectedTasks: Task[]
+  startedGroups: ReminderGroup[]
+  complete: (task: Task) => Promise<void>
+  completeMany: (tasks: Task[]) => Promise<void>
+  completeGroup: (group: ReminderGroup) => Promise<void>
+}) {
+  const { isSelectionMode, toggle, rangeSelect, selectOnly, removeAll, clear } = selection
+
+  useEffect(() => {
+    if (!isSelectionMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clear()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isSelectionMode, clear])
+
+  const rowClick = useCallback(
+    (task: Task, e: React.MouseEvent) => {
+      if (e.shiftKey) rangeSelect(task.id, orderedIds)
+      else if (e.metaKey || e.ctrlKey) toggle(task.id)
+      else selectOnly(task.id)
+    },
+    [rangeSelect, toggle, selectOnly, orderedIds],
+  )
+  const completeOne = useCallback(
+    (task: Task) => {
+      removeAll([task.id])
+      void complete(task)
+    },
+    [removeAll, complete],
+  )
+  const completeSlot = useCallback(
+    (group: ReminderGroup) => {
+      removeAll(group.reminders.map((r) => r.id))
+      void completeGroup(group)
+    },
+    [removeAll, completeGroup],
+  )
+  const considerSelection = useCallback(() => {
+    const tasks = selectedTasks
+    clear()
+    void completeMany(tasks)
+  }, [selectedTasks, clear, completeMany])
+  const considerSoFar = useCallback(() => {
+    const tasks = startedGroups.flatMap((g) => g.reminders)
+    clear()
+    void completeMany(tasks)
+  }, [startedGroups, clear, completeMany])
+
+  return {
+    rowClick,
+    complete: completeOne,
+    completeGroup: completeSlot,
+    considerSelection,
+    considerSoFar,
+  }
+}
+
+/**
+ * The headline: one line that answers "what now" and changes with the day,
+ * the day's progress bar, and the one-tap "Considered all so far".
+ */
+function RemindersHeadline({
+  summary,
+  allWaitingDone,
+  onConsiderSoFar,
+}: {
+  summary: RemindersSummary<ReminderGroup>
+  allWaitingDone: boolean
+  onConsiderSoFar: () => void
+}) {
+  const laterText = summary.later
+    .filter((g) => g.slot && g.reminders.length > 0)
+    .map((g) => `${g.slot!.label} ${g.reminders.length}`)
+    .join(', ')
+
+  let line: React.ReactNode
+  if (allWaitingDone) {
+    line = <span className="text-foreground font-medium">All clear for today</span>
+  } else if (summary.waitingSoFar === 0 && summary.nextUp) {
+    line = (
+      <>
+        <span className="text-foreground font-medium">
+          All caught up until {formatSlotTime(summary.nextUp.slot.start_time)}
+        </span>
+        {laterText && <span className="text-muted-foreground"> &middot; {laterText} later</span>}
+      </>
+    )
+  } else {
+    const soFar = summary.started
+      .filter((g) => g.reminders.length > 0)
+      .map((g) => `${g.slot?.label ?? UNSLOTTED_LABEL} ${g.reminders.length}`)
+      .join(', ')
+    line = (
+      <>
+        <span className="text-foreground font-medium" data-waiting-so-far={summary.waitingSoFar}>
+          {summary.waitingSoFar} waiting so far
+        </span>
+        {soFar && <span className="text-muted-foreground"> &middot; {soFar}</span>}
+        {laterText && (
+          <span className="text-muted-foreground/70"> &middot; later: {laterText}</span>
+        )}
+      </>
+    )
+  }
+
+  const fraction = summary.dayTotal > 0 ? summary.consideredTotal / summary.dayTotal : 0
+
+  return (
+    <div className="mb-5 px-2" data-reminders-headline>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm leading-relaxed">{line}</p>
+        {summary.waitingSoFar > 0 && (
+          <button
+            type="button"
+            onClick={onConsiderSoFar}
+            aria-label={`Mark all ${summary.waitingSoFar} waiting so far as considered`}
+            className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+          >
+            <CheckCheck className="size-3.5" strokeWidth={2.5} />
+            <span className="hidden sm:inline">Considered all so far</span>
+            <span className="sm:hidden">All so far</span>
+          </button>
+        )}
+      </div>
+      {/* The day's bar: considered so far over everything the day holds. */}
+      <div className="mt-2 flex items-center gap-2">
+        <div
+          className="bg-muted relative h-1.5 flex-1 overflow-hidden rounded-full"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={summary.dayTotal}
+          aria-valuenow={summary.consideredTotal}
+          aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
+        >
+          <div
+            className={cn(
+              'h-full rounded-full transition-[width] duration-500 ease-out',
+              fraction >= 1 ? 'bg-green-600' : 'bg-foreground/50',
+            )}
+            style={{ width: `${Math.min(1, fraction) * 100}%` }}
+          />
+        </div>
+        <span className="text-muted-foreground/70 shrink-0 text-xs tabular-nums">
+          {summary.consideredTotal} / {summary.dayTotal} today
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -262,6 +415,7 @@ function useSlotDisclosure(defaultOpenKey: string | null) {
 
 function ReminderSlotGroup({
   group,
+  started,
   open,
   expanded,
   onToggle,
@@ -273,6 +427,7 @@ function ReminderSlotGroup({
   onCompleteGroup,
 }: {
   group: ReminderGroup
+  started: boolean
   open: boolean
   expanded: boolean
   onToggle: () => void
@@ -286,26 +441,35 @@ function ReminderSlotGroup({
   const label = group.slot?.label ?? UNSLOTTED_LABEL
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
   const count = group.reminders.length
+  const slotTotal = count + group.considered
+  const fraction = slotTotal > 0 ? group.considered / slotTotal : 0
   const visible = expanded ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = count - visible.length
 
   return (
-    <div className={cn('rounded-2xl transition-colors', open && 'bg-muted/30 pb-2')}>
+    <div
+      className={cn('rounded-2xl transition-colors', open && 'bg-muted/30 pb-2')}
+      data-slot-group={label}
+      data-slot-started={started}
+    >
       {/* Same header language as the dashboard's slot groups — one visual
-          vocabulary for "morning", wherever it appears. A folded slot carries
-          its count as a badge so "still waiting" is obvious at a glance. */}
+          vocabulary for "morning", wherever it appears. The badge says whether
+          this slot is part of "so far": accent once it has started and holds
+          something, muted with "later" before its time, a full bar once done. */}
       <div className="flex min-h-11 items-center gap-2 px-2">
         <button
           type="button"
           onClick={onToggle}
+          disabled={count === 0}
           aria-expanded={open}
-          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors"
+          className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left transition-colors disabled:cursor-default"
         >
           <ChevronDown
             aria-hidden="true"
             className={cn(
               'text-muted-foreground/60 size-3.5 shrink-0 transition-transform duration-200',
               !open && '-rotate-90',
+              count === 0 && 'invisible',
             )}
           />
           <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
@@ -316,16 +480,24 @@ function ReminderSlotGroup({
               &middot; {time}
             </span>
           )}
-          {open ? (
-            <span className="text-muted-foreground/60 text-xs tabular-nums">{count}</span>
-          ) : (
+          {/* Per-slot progress: considered over what the slot held today. */}
+          <span
+            className="bg-muted relative ml-1 h-1 w-10 shrink-0 overflow-hidden rounded-full"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={slotTotal}
+            aria-valuenow={group.considered}
+            aria-label={`${group.considered} of ${slotTotal} considered in ${label}`}
+          >
             <span
-              className="bg-foreground/10 text-foreground/80 ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-              aria-label={`${count} waiting`}
-            >
-              {count}
-            </span>
-          )}
+              className={cn(
+                'block h-full rounded-full transition-[width] duration-500 ease-out',
+                fraction >= 1 ? 'bg-green-600' : 'bg-foreground/40',
+              )}
+              style={{ width: `${Math.min(1, fraction) * 100}%` }}
+            />
+          </span>
+          <SlotCount count={count} considered={group.considered} open={open} started={started} />
         </button>
         {open && (
           <button
@@ -335,8 +507,6 @@ function ReminderSlotGroup({
             className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
-            {/* The label folds to the icon on narrow screens so the slot header
-                never wraps; the aria-label carries the full verb regardless. */}
             <span className="hidden sm:inline">Considered all</span>
           </button>
         )}
@@ -383,6 +553,43 @@ function ReminderSlotGroup({
         </>
       )}
     </div>
+  )
+}
+
+/** The slot header's right-hand word: a full bar's "all N considered", the open count, the started badge, or "N later". */
+function SlotCount({
+  count,
+  considered,
+  open,
+  started,
+}: {
+  count: number
+  considered: number
+  open: boolean
+  started: boolean
+}) {
+  if (count === 0 && considered > 0) {
+    return (
+      <span className="text-xs whitespace-nowrap text-green-700 dark:text-green-400">
+        all {considered} considered
+      </span>
+    )
+  }
+  if (open) return <span className="text-muted-foreground/60 text-xs tabular-nums">{count}</span>
+  if (started) {
+    return (
+      <span
+        className="bg-foreground/10 text-foreground/80 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+        aria-label={`${count} waiting`}
+      >
+        {count}
+      </span>
+    )
+  }
+  return (
+    <span className="text-muted-foreground/60 text-xs whitespace-nowrap tabular-nums">
+      {count} later
+    </span>
   )
 }
 

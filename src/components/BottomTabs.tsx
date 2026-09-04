@@ -3,6 +3,8 @@
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Archive, Plus, Clock, Lightbulb } from 'lucide-react'
+import { useRemindersBadge } from '@/hooks/useReminders'
+import { useTimezone } from '@/hooks/useTimezone'
 
 interface BottomTabsProps {
   onAddClick?: () => void
@@ -18,6 +20,8 @@ interface BottomTabsProps {
  */
 export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const pathname = usePathname()
+  // §6: reminders waiting so far today — never overdue, never red.
+  const remindersWaiting = useRemindersBadge(useTimezone())
 
   const tabs = [
     { href: '/', label: 'Tasks', icon: LayoutGrid },
@@ -70,7 +74,18 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
                 isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}
             >
-              <Icon className="h-5 w-5" />
+              <span className="relative">
+                <Icon className="h-5 w-5" />
+                {tab.href === '/reminders' && remindersWaiting > 0 && (
+                  <span
+                    data-reminders-badge
+                    className="bg-foreground/10 text-foreground/80 absolute -top-1.5 -right-3 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums"
+                    aria-label={`${remindersWaiting} reminders waiting so far today`}
+                  >
+                    {remindersWaiting}
+                  </span>
+                )}
+              </span>
               <span className="mt-0.5 text-[10px]">{tab.label}</span>
             </GuardedLink>
           )
