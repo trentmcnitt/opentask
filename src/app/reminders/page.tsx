@@ -89,6 +89,7 @@ export default function RemindersPage() {
   return (
     <div className="flex-1">
       <Header
+        section="Reminders"
         badges={<RemindersCountBadges timezone={timezone} />}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}

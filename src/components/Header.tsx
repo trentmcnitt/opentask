@@ -61,6 +61,12 @@ interface HeaderProps {
    * logo, undo, menu — instead of a bare page title.
    */
   badges?: React.ReactNode
+  /**
+   * Where you are, set beside the logo (“OpenTask | Reminders”). The Tasks
+   * page is home and goes without; a peer surface names itself here so the
+   * bar reads as the same app in a different mode rather than a bare title.
+   */
+  section?: string
   taskCount?: number
   overdueCount?: number
   todayCount?: number
@@ -82,6 +88,7 @@ export function Header({
   title,
   headerAction,
   badges,
+  section,
   taskCount = 0,
   overdueCount = 0,
   todayCount = 0,
@@ -196,7 +203,11 @@ export function Header({
                   width={120}
                   height={36}
                   className={cn(
-                    'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
+                    'w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
+                    // With a section label beside it the bar is tight on a phone
+                    // (logo + label + pill + two buttons in 375px), so the logo
+                    // drops a step there.
+                    section ? 'h-6' : 'h-7',
                     searchExpanded ? 'opacity-0 md:opacity-100' : '',
                   )}
                   unoptimized
@@ -207,6 +218,21 @@ export function Header({
                 v{VERSION} · {formatBuildDate(BUILD_ID)}
               </PopoverContent>
             </Popover>
+          )}
+
+          {section && !title && (
+            <>
+              <span
+                aria-hidden="true"
+                className="bg-border mx-0.5 h-5 w-px flex-shrink-0 md:mx-1"
+              />
+              <span
+                data-header-section
+                className="text-foreground flex-shrink-0 text-sm font-semibold tracking-tight md:text-base"
+              >
+                {section}
+              </span>
+            </>
           )}
 
           {headerAction}

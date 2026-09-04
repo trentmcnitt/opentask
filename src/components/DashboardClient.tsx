@@ -69,13 +69,15 @@ import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
   initialTasks?: FormattedTask[]
+  /** Server-loaded with the tasks, so the first paint groups by slot (no "Anytime today" flash). */
+  initialTimeSlots?: TimeSlot[]
 }
 
-export default function DashboardClient({ initialTasks }: DashboardClientProps) {
+export default function DashboardClient({ initialTasks, initialTimeSlots }: DashboardClientProps) {
   return (
     <Suspense>
       <SelectionProvider>
-        <HomeContent initialTasks={initialTasks} />
+        <HomeContent initialTasks={initialTasks} initialTimeSlots={initialTimeSlots} />
       </SelectionProvider>
     </Suspense>
   )
@@ -323,13 +325,19 @@ function useBulkActions(
   return { bulkDone, bulkSaveAll, bulkDelete, handleBulkMoveToProject, handleSearch }
 }
 
-function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
+function HomeContent({
+  initialTasks,
+  initialTimeSlots,
+}: {
+  initialTasks?: FormattedTask[]
+  initialTimeSlots?: TimeSlot[]
+}) {
   const { status } = useSession()
   const router = useRouter()
   const searchParams = useSearchParams()
   const selection = useSelection()
   const timezone = useTimezone()
-  const { timeSlots } = useTimeSlots()
+  const { timeSlots } = useTimeSlots(initialTimeSlots)
   const data = useFetchData(router, initialTasks)
   const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
   const { projects, refreshProjects } = useProjects()
