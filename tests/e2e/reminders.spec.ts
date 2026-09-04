@@ -169,11 +169,15 @@ test.describe('Reminders surface', () => {
         .click()
 
       // Completed items leave the slot rather than burying the rest. Matched by
-      // the row's own link rather than by page text: undo toasts quote the title
+      // the row element rather than by page text: undo toasts quote the title
       // back, so bare text would match the toast as well as the row.
-      const consideredRow = page.getByRole('link', { name: 'Breathe before replying' })
+      const consideredRow = page.locator('li[data-reminder-id]', {
+        hasText: 'Breathe before replying',
+      })
       await expect(consideredRow).toHaveCount(0)
-      await expect(page.getByRole('link', { name: 'Stand up and stretch' })).toBeVisible()
+      await expect(
+        page.locator('li[data-reminder-id]', { hasText: 'Stand up and stretch' }),
+      ).toBeVisible()
 
       // Completion is the ordinary complete/undo pipeline, so undo is offered —
       // and the page has to carry that pipeline itself now that it is standalone.
@@ -183,6 +187,54 @@ test.describe('Reminders surface', () => {
       // chain reaches the reminders list and not just the toast.
       await page.getByRole('button', { name: 'Undo' }).click()
       await expect(consideredRow).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('selects like the dashboard: click, shift-click a range, act from the bar', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createReminder(page, { title: 'First thought of the range', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'Second thought of the range', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'Third thought of the range', due_at: todayAt(7) }),
+    ]
+
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+
+      // A plain click selects the row and raises the bar — it does NOT navigate.
+      await row('First thought of the range').click()
+      await expect(page).toHaveURL(/\/reminders/)
+      await expect(row('First thought of the range')).toHaveAttribute('aria-selected', 'true')
+      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      // Single selection offers Details; that is the deliberate way to open one.
+      await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
+
+      // Shift-click extends to a range, and the bar reports the count.
+      await row('Third thought of the range').click({ modifiers: ['Shift'] })
+      await expect(row('Second thought of the range')).toHaveAttribute('aria-selected', 'true')
+      await expect(page.getByText('3 selected')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveCount(0)
+
+      // One action considers the whole selection, and one Undo brings it all back.
+      await page.getByRole('button', { name: 'Considered', exact: true }).click()
+      await expect(row('First thought of the range')).toHaveCount(0)
+      await expect(row('Third thought of the range')).toHaveCount(0)
+      await expect(page.getByText('Considered 3')).toBeVisible()
+      await page.getByRole('button', { name: 'Undo' }).click()
+      await expect(row('First thought of the range')).toBeVisible()
+      await expect(row('Second thought of the range')).toBeVisible()
+      await expect(row('Third thought of the range')).toBeVisible()
+
+      // Escape clears a selection.
+      await row('Second thought of the range').click()
+      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toHaveCount(0)
     } finally {
       await deleteTasks(page, ids)
     }

@@ -46,9 +46,13 @@ export interface UseRemindersReturn {
   consideredAny: boolean
   complete: (task: Task) => Promise<void>
   /**
-   * Complete ("consider") every reminder in one slot with a single tap — the
-   * container-level gesture the design record calls "my task is to do my
-   * reminders": one slot, one action, one Undo.
+   * Complete ("consider") a set of reminders at once — a selection made on the
+   * surface, or a whole slot. One bulk call, one undo entry.
+   */
+  completeMany: (tasks: Task[]) => Promise<void>
+  /**
+   * Complete every reminder in one slot with a single tap — the container-level
+   * gesture the design record calls "my task is to do my reminders".
    */
   completeGroup: (group: ReminderGroup) => Promise<void>
   refresh: () => Promise<void>
@@ -163,26 +167,29 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
   }, [])
 
   /**
-   * Consider a whole slot at once via POST /api/tasks/bulk/done, which logs ONE
-   * `bulk_done` undo entry — so the toast's Undo restores every row together,
-   * not one at a time. Same optimistic contract as `complete`: the group empties
-   * immediately, and a failed call restores the snapshot.
+   * Consider several reminders at once via POST /api/tasks/bulk/done, which
+   * logs ONE `bulk_done` undo entry — so the toast's Undo restores every row
+   * together, not one at a time. Same optimistic contract as `complete`: the
+   * rows leave immediately, and a failed call restores the snapshot.
    */
-  const completeGroup = useCallback(async (group: ReminderGroup) => {
-    const ids = group.reminders.map((r) => r.id)
+  const completeMany = useCallback(async (tasks: Task[]) => {
+    const ids = tasks.map((t) => t.id)
     if (ids.length === 0) return
+    const idSet = new Set(ids)
     setCompletingIds((prev) => {
       const next = new Set(prev)
       for (const id of ids) next.add(id)
       return next
     })
     let snapshot: ReminderGroup[] | null = null
-    const key = group.slot?.id ?? null
     setGroups((prev) => {
       snapshot = prev
-      const next = prev.map((g) =>
-        (g.slot?.id ?? null) === key ? { ...g, reminders: [], count: 0 } : g,
-      )
+      const next = prev.map((g) => {
+        const remaining = g.reminders.filter((r) => !idSet.has(r.id))
+        return remaining.length === g.reminders.length
+          ? g
+          : { ...g, reminders: remaining, count: remaining.length }
+      })
       if (remindersCache) remindersCache = { ...remindersCache, groups: next }
       return next
     })
@@ -196,7 +203,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       if (!res.ok) throw new Error('Failed to complete reminders')
       callbacksRef.current.onCompleted?.()
       showToast({
-        message: `Considered ${ids.length}`,
+        message: ids.length === 1 ? 'Considered' : `Considered ${ids.length}`,
         type: 'success',
         action: { label: 'Undo', onClick: () => callbacksRef.current.onUndo() },
       })
@@ -216,6 +223,11 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     }
   }, [])
 
+  const completeGroup = useCallback(
+    (group: ReminderGroup) => completeMany(group.reminders),
+    [completeMany],
+  )
+
   const total = groups.reduce((sum, group) => sum + group.reminders.length, 0)
 
   return {
@@ -227,6 +239,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     completingIds,
     consideredAny,
     complete,
+    completeMany,
     completeGroup,
     refresh,
   }
