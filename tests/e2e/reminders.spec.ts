@@ -180,9 +180,16 @@ test.describe('Reminders surface', () => {
         page.getByRole('button', { name: 'Mark "Breathe before replying" as considered' }),
       ).toBeVisible()
 
+      // The slot's counter counts up ("1 of 2"), never down: the slot's size
+      // stays put and the considered count climbs, like the bar beside it.
+      const slot = page.locator('[data-slot-group]', { hasText: 'Stand up and stretch' })
+      const counter = slot.locator('span[aria-label*="considered"]')
+      await expect(counter).toHaveText('0 of 2')
+
       await page
         .getByRole('button', { name: 'Mark "Breathe before replying" as considered' })
         .click()
+      await expect(counter).toHaveText('1 of 2')
 
       // Completed items leave the slot rather than burying the rest. Matched by
       // the row element rather than by page text: undo toasts quote the title
@@ -205,6 +212,7 @@ test.describe('Reminders surface', () => {
       // chain reaches the reminders list and not just the toast.
       await toastUndo(page).click()
       await expect(consideredRow).toBeVisible()
+      await expect(counter).toHaveText('0 of 2')
     } finally {
       await deleteTasks(page, ids)
     }

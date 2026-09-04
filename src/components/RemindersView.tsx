@@ -596,7 +596,28 @@ function SlotHeaderRow({
   open: boolean
   started: boolean
 }) {
+  const total = count + considered
   const finished = count === 0 && considered > 0
+  // Trent (2026-09-05): the number must not count down as thoughts are
+  // considered ("26, 25, 24" felt wrong under a progress bar). It reads
+  // "1 of 26, 2 of 26" — the slot's size stays put and the considered
+  // count climbs, the same framing as the day number by the bar. A slot
+  // that hasn't started and has nothing considered yet just says how many
+  // are ahead.
+  const counter = finished ? (
+    <span className="text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
+      {considered} of {total}
+    </span>
+  ) : !started && considered === 0 ? (
+    <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+      {count} later
+    </span>
+  ) : (
+    <span className="text-xs whitespace-nowrap tabular-nums">
+      <span className="text-foreground font-medium">{considered}</span>
+      <span className="text-muted-foreground"> of {total}</span>
+    </span>
+  )
   return (
     <>
       <span className="flex size-6 shrink-0 items-center justify-center">
@@ -616,19 +637,15 @@ function SlotHeaderRow({
         <span className="text-muted-foreground/50 text-xs whitespace-nowrap">&middot; {time}</span>
       )}
       <span className="flex-1" />
-      {finished ? (
-        <span className="text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
-          all {considered} considered
-        </span>
-      ) : (
-        <span
-          className="text-muted-foreground text-xs whitespace-nowrap tabular-nums"
-          aria-label={started ? `${count} waiting` : `${count} later`}
-        >
-          {count}
-          {!started && ' later'}
-        </span>
-      )}
+      <span
+        aria-label={
+          !started && considered === 0
+            ? `${count} later`
+            : `${considered} of ${total} considered, ${count} waiting`
+        }
+      >
+        {counter}
+      </span>
     </>
   )
 }
