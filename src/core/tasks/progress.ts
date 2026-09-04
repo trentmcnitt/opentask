@@ -38,6 +38,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import type { Task } from '@/types'
+import { emitSyncEvent } from '@/lib/sync-events'
 
 export interface IncrementProgressOptions {
   userId: number
@@ -103,6 +104,10 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     )
     return after
   })
+
+  // Other tabs and the widgets learn about the new count the same way they
+  // learn about every other mutation.
+  emitSyncEvent(userId)
 
   // §5: progress is NOT completion. Firing task.completed here would make every
   // downstream counter over-count by the target.

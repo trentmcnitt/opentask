@@ -17,20 +17,19 @@ import type { Task, Project } from '@/types'
 import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
+import { isTracked } from '@/lib/track'
+import { groupByTimeSlot, UNSLOTTED_LABEL } from '@/lib/slot-view'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
-import { groupBySlot, type TimeSlot } from '@/lib/time-slot-assign'
-import { effectiveDueAt } from '@/core/recurrence/occurrence'
-import { DateTime } from 'luxon'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
  * the timed slots rather than being dropped from the front door.
  */
-const UNSLOTTED_LABEL = 'Anytime today'
 
 /**
  * How many tasks a group shows before "show all" (§7.3).
@@ -347,11 +346,22 @@ export function TaskList({
         ? groupByTimeSlot(tasks, timeSlots, timezone)
         : groupByTime(tasks, timezone)
 
-  // Compute sorted groups once, reuse for both orderedIds and rendering
-  const sortedGroups = groups.map((g) => ({
-    ...g,
-    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
-  }))
+  // Compute sorted groups once, reuse for both orderedIds and rendering.
+  // §7.3: the un-slotted "Anytime today" group is where tracked items live, and
+  // they "must not become invisible from the front door" — but that group is
+  // also the largest, and previews five rows. Tracked items therefore lead it
+  // (stable, so the chosen sort still orders each half), which keeps every
+  // quota inside the preview instead of behind "Show all 150".
+  const sortedGroups = groups.map((g) => {
+    const sorted = sortTasks(g.tasks, sortOption, reversed, insightsScoreMap)
+    const leadWithTracked = grouping === 'slot' && g.label === UNSLOTTED_LABEL
+    return {
+      ...g,
+      sortedTasks: leadWithTracked
+        ? [...sorted.filter((t) => isTracked(t)), ...sorted.filter((t) => !isTracked(t))]
+        : sorted,
+    }
+  })
   const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
 
   // Determine if we should show the "now" separator
@@ -415,8 +425,14 @@ export function TaskList({
           // slot grouping; the other views keep their existing behaviour.
           const previewed = grouping === 'slot' && !isUnified
           const isExpanded = expandedGroups.has(group.label)
+          // The preview never hides a quota: tracked items lead the un-slotted
+          // group (see sortedGroups) and count on top of the five, so every
+          // progress row is on the front door without a tap (§7.3).
+          const previewCount =
+            GROUP_PREVIEW_COUNT +
+            (group.label === UNSLOTTED_LABEL ? sortedTasks.filter((t) => isTracked(t)).length : 0)
           const visibleTasks =
-            previewed && !isExpanded ? sortedTasks.slice(0, GROUP_PREVIEW_COUNT) : sortedTasks
+            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
           const hiddenCount = sortedTasks.length - visibleTasks.length
 
           return (
@@ -494,7 +510,10 @@ export function TaskList({
                           task={task}
                           onDone={() => onDone(task.id)}
                           onSnooze={(_taskId, until) => requestSnooze(task, until)}
-                          isOverdue={isTaskOverdue(task)}
+                          // §5: a quota is exempt from the overdue cadence and
+                          // must never wear the red stripe — its period is what
+                          // is "due", and the bar already says how it stands.
+                          isOverdue={!isTracked(task) && isTaskOverdue(task)}
                           isSelected={selection.selectedIds.has(task.id)}
                           isSelectionMode={selection.isSelectionMode}
                           onSelect={() => selection.toggle(task.id)}
@@ -532,7 +551,7 @@ export function TaskList({
                       <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
                     </button>
                   )}
-                  {isExpanded && sortedTasks.length > GROUP_PREVIEW_COUNT && (
+                  {isExpanded && sortedTasks.length > previewCount && (
                     <button
                       type="button"
                       onClick={() => toggleGroupExpanded(group.label)}
@@ -628,44 +647,6 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
  *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
  *    so a fully-empty day collapses to no groups and the caught-up state shows.
  */
-function groupByTimeSlot(tasks: Task[], slots: TimeSlot[], timezone: string): TaskGroup[] {
-  if (tasks.length === 0) return []
-
-  // §7.3: the front door is TODAY, not the whole corpus. Due-ness comes from
-  // §4.6's derivation rather than raw due_at, so a recurring item whose date
-  // froze months ago doesn't wrongly appear, and one that genuinely recurs
-  // today does — even if its stored due_at disagrees.
-  //
-  // Undated items are kept: they can't be "not today", and dropping them would
-  // hide most Track items from the front door, which §7.3 forbids.
-  const now = new Date()
-  const endOfToday = DateTime.fromJSDate(now).setZone(timezone).endOf('day').toJSDate()
-
-  const todays = tasks.filter((task) => {
-    if (!task.due_at && !task.rrule) return true
-    const effective = effectiveDueAt(task, timezone, now)
-    if (!effective) return false
-    return effective.getTime() <= endOfToday.getTime()
-  })
-
-  if (todays.length === 0) return []
-
-  const grouped = groupBySlot(todays, slots, timezone)
-  const out: TaskGroup[] = []
-
-  for (const group of grouped) {
-    if (group.slot === null) {
-      if (group.items.length > 0) {
-        out.push({ label: UNSLOTTED_LABEL, tasks: group.items })
-      }
-      continue
-    }
-    out.push({ label: group.slot.label, tasks: group.items })
-  }
-
-  return out
-}
-
 function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
   const projectMap = new Map<number, Project>()
   for (const p of projects) {
