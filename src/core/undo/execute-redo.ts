@@ -5,9 +5,10 @@
  */
 
 import Database from 'better-sqlite3'
+import { reinsertCompletion } from './completion-row'
 import { getDb, withTransaction } from '@/core/db'
 import { emitSyncEvent } from '@/lib/sync-events'
-import type { UndoSnapshot, RedoResult, Task } from '@/types'
+import type { UndoSnapshot, RedoResult } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
@@ -40,32 +41,12 @@ export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
     for (const snapshot of entry.snapshots) {
       applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
 
-      // If this was a task completion, recreate the completion record
+      // A completion's row comes back; a put-back's row goes again.
       if (snapshot.completion_id) {
-        const afterState = snapshot.after_state as Partial<Task> & {
-          _completion?: {
-            user_id: number
-            completed_at: string
-            due_at_was: string | null
-            due_at_next: string | null
-          }
-        }
-
-        if (afterState._completion) {
-          const comp = afterState._completion
-          tx.prepare(
-            `
-            INSERT INTO completions (id, task_id, user_id, completed_at, due_at_was, due_at_next)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `,
-          ).run(
-            snapshot.completion_id,
-            snapshot.task_id,
-            comp.user_id,
-            comp.completed_at,
-            comp.due_at_was,
-            comp.due_at_next,
-          )
+        if (entry.action === 'undone') {
+          tx.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
+        } else {
+          reinsertCompletion(tx, snapshot.completion_id, snapshot.task_id, snapshot.after_state)
         }
       }
     }

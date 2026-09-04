@@ -208,11 +208,20 @@ test.describe('Reminders surface', () => {
       // the slot header's "Considered all".
       await expect(page.getByText('Considered “Breathe before replying”')).toBeVisible()
 
-      // Undo puts the item back on the surface, which proves the page's refresh
-      // chain reaches the reminders list and not just the toast.
-      await toastUndo(page).click()
+      // The considered one sits behind the slot's counter, checked, and its
+      // circle puts it back — the direct route when a tap was a slip and the
+      // undo stack has moved on.
+      await slot.getByRole('button', { name: 'Show 1 considered' }).click()
+      await expect(
+        slot.locator('li[data-considered-id]', { hasText: 'Breathe before replying' }),
+      ).toBeVisible()
+      await slot.getByRole('button', { name: 'Put back "Breathe before replying"' }).click()
       await expect(consideredRow).toBeVisible()
       await expect(counter).toHaveText('0 of 2')
+      await expect(page.getByText('Put back “Breathe before replying”')).toBeVisible()
+      await expect(slot.getByRole('button', { name: /^(Show|Hide) \d+ considered$/ })).toHaveCount(
+        0,
+      )
     } finally {
       await deleteTasks(page, ids)
     }

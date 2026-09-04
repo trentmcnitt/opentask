@@ -26,8 +26,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         slot: g.slot,
         reminders: g.reminders.map(formatTaskResponse),
         count: g.reminders.length,
-        // Considered today in this slot — feeds the progress bars (§6).
+        // Considered today in this slot — feeds the progress bars (§6) — and
+        // the items themselves, so one can be put back (POST /tasks/:id/undone).
         considered: g.considered,
+        considered_items: g.consideredItems.map(formatTaskResponse),
       })),
       total: groups.reduce((sum, g) => sum + g.reminders.length, 0),
       considered_total: groups.reduce((sum, g) => sum + g.considered, 0),
