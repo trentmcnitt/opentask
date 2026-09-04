@@ -1,7 +1,8 @@
 /**
- * DV-010 / DV-011: tracked items (Track, §5) are always on the Today front
- * door, in the un-slotted group, regardless of what their rrule says about
- * today (§7.3: "they must not become invisible from the front door").
+ * DV-010..012: tracked items (Track, §5) never enter the day's slot groups,
+ * and always come back from `trackedItems` for the Track panel — regardless of
+ * what their rrule says about today. That panel is how §7.3's "they must not
+ * become invisible from the front door" is met.
  *
  * Why this needs pinning: the §9 migration rewrote quota rules to the bare
  * period ("FREQ=WEEKLY"), which rrule.js places on one weekday. Read as an
@@ -9,7 +10,7 @@
  * counter over the week, so the week containing today is its day, every day.
  */
 import { describe, expect, test } from 'vitest'
-import { groupByTimeSlot, UNSLOTTED_LABEL } from '@/lib/slot-view'
+import { groupByTimeSlot, trackedItems, UNSLOTTED_LABEL } from '@/lib/slot-view'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
@@ -57,8 +58,8 @@ function task(overrides: Partial<Task>): Task {
   } as Task
 }
 
-describe('Tracked items on the Today front door', () => {
-  test('DV-010: a weekly quota not "occurring" today still lands in Anytime today', () => {
+describe('Tracked items and the Today front door', () => {
+  test('DV-010: a weekly quota is never day-grouped, and is always in the panel set', () => {
     // FREQ=WEEKLY with no BYDAY occurs on the epoch weekday (a Wednesday);
     // today is Thursday. The stale due_at is last week's 1:00 PM.
     const eggs = task({
@@ -72,13 +73,11 @@ describe('Tracked items on the Today front door', () => {
     const routine = task({ title: 'Wednesday thing', rrule: 'FREQ=WEEKLY', due_at: eggs.due_at })
 
     const groups = groupByTimeSlot([routine, eggs], SLOTS, TZ, NOW)
-    const anytime = groups.find((g) => g.label === UNSLOTTED_LABEL)
-    expect(anytime?.tasks.map((t) => t.title)).toEqual(['Eggs'])
-    expect(groups.flatMap((g) => g.tasks).some((t) => t.title === 'Wednesday thing')).toBe(false)
+    expect(groups.flatMap((g) => g.tasks)).toHaveLength(0)
+    expect(trackedItems([routine, eggs]).map((t) => t.title)).toEqual(['Eggs'])
   })
 
-  test('DV-011: a quota with a due time of day is still un-slotted, and leads the group', () => {
-    // Its due_at names 1:00 PM today; that is the period boundary, not a slot.
+  test('DV-011: a quota with a due time today still stays out of the slots', () => {
     const eggs = task({
       title: 'Eggs',
       rrule: 'FREQ=WEEKLY',
@@ -98,15 +97,29 @@ describe('Tracked items on the Today front door', () => {
       'Lunch walk',
     ])
     expect(groups.find((g) => g.label === UNSLOTTED_LABEL)?.tasks.map((t) => t.title)).toEqual([
-      'Eggs',
       'Undated one-off',
     ])
   })
 
-  test('DV-012: a day with only quotas is not an empty day', () => {
-    const eggs = task({ title: 'Eggs', rrule: 'FREQ=WEEKLY', progress_target: 3 })
-    const groups = groupByTimeSlot([eggs], SLOTS, TZ, NOW)
-    expect(groups.length).toBeGreaterThan(0)
-    expect(groups.find((g) => g.label === UNSLOTTED_LABEL)?.tasks).toHaveLength(1)
+  test('DV-012: the panel set is alphabetical, skips done quotas, and never reorders on a tap', () => {
+    const swim = task({ title: 'Owen Swim', rrule: 'FREQ=WEEKLY', progress_target: 2 })
+    const beef = task({ title: 'beef for kids', rrule: 'FREQ=WEEKLY', progress_target: 4 })
+    const eggs = task({
+      title: 'Eggs',
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 3,
+      progress_current: 3,
+    })
+    const finished = task({ title: 'Archived quota', progress_target: 2, done: true })
+    const plain = task({ title: 'Not a quota' })
+    const before = trackedItems([swim, beef, eggs, finished, plain]).map((t) => t.title)
+    expect(before).toEqual(['beef for kids', 'Eggs', 'Owen Swim'])
+    // Logging changes counts, never position.
+    const after = trackedItems([
+      swim,
+      { ...beef, progress_current: 4 },
+      { ...eggs, progress_current: 0 },
+    ]).map((t) => t.title)
+    expect(after).toEqual(before)
   })
 })

@@ -32,17 +32,14 @@ export function groupByTimeSlot(
   //
   // Undated items are kept: they can't be "not today".
   //
-  // Tracked items (§5) are kept unconditionally and land in the un-slotted
-  // group. A quota is a counter over a period — "eggs, 2x this week" — so its
-  // period contains today by definition; asking its rrule whether it "occurs"
-  // today is the wrong question (the §9 migration rewrote quota rules to the
-  // bare period, e.g. FREQ=WEEKLY, which rrule.js would place on one arbitrary
-  // weekday and hide the row the other six days). Nor does its stale due_at
-  // name a time of day. §7.3: tracked items must not become invisible from
-  // the front door, and belong in "Anytime today" as progress rows.
+  // Tracked items (§5) are not day-grouped at all: a quota is a counter over a
+  // period, so asking its rrule whether it "occurs" today is the wrong question
+  // (the §9 migration rewrote quota rules to the bare period, e.g. FREQ=WEEKLY,
+  // which rrule.js would place on one arbitrary weekday). They have their own
+  // instrument panel above the day — see `trackedItems` and TrackPanel — which
+  // is how §7.3's "must not become invisible from the front door" is met.
   const endOfToday = DateTime.fromJSDate(now).setZone(timezone).endOf('day').toJSDate()
 
-  const tracked = tasks.filter((task) => isTracked(task))
   const todays = tasks.filter((task) => {
     if (isTracked(task)) return false
     if (!task.due_at && !task.rrule) return true
@@ -51,16 +48,15 @@ export function groupByTimeSlot(
     return effective.getTime() <= endOfToday.getTime()
   })
 
-  if (todays.length === 0 && tracked.length === 0) return []
+  if (todays.length === 0) return []
 
   const grouped = groupBySlot(todays, slots, timezone)
   const out: SlotViewGroup[] = []
 
   for (const group of grouped) {
     if (group.slot === null) {
-      const items = [...tracked, ...group.items]
-      if (items.length > 0) {
-        out.push({ label: UNSLOTTED_LABEL, tasks: items })
+      if (group.items.length > 0) {
+        out.push({ label: UNSLOTTED_LABEL, tasks: group.items })
       }
       continue
     }
@@ -68,4 +64,14 @@ export function groupByTimeSlot(
   }
 
   return out
+}
+
+/**
+ * The quotas, for the Track panel: every tracked task, in a fixed alphabetical
+ * order so logging on one never reorders the others under the user's finger.
+ */
+export function trackedItems(tasks: Task[]): Task[] {
+  return tasks
+    .filter((task) => isTracked(task) && !task.done)
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
 }

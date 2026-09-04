@@ -23,8 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { isTracked } from '@/lib/track'
-import { TrackProgress } from '@/components/TrackProgress'
+import { isTracked, periodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -348,8 +347,12 @@ export function TaskRow({
   const isSnoozed =
     !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
   const isAiProcessing = task.labels.includes('ai-to-process')
-  const metaSegments = buildMetaSegments(task, timezone, isOverdue)
   const tracked = isTracked(task)
+  // §5: a quota's row states its count where a task states its due time; the
+  // controls live in the Track panel on the Tasks page, not on every row.
+  const metaSegments = tracked
+    ? trackedMetaSegments(task)
+    : buildMetaSegments(task, timezone, isOverdue)
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
@@ -469,24 +472,15 @@ export function TaskRow({
           )}
         </div>
 
-        {/* §5: a tracked task is a quota, so its row carries the count and the
-            +1/−1 controls where an ordinary task shows its due line. The period
-            boundary that line would show is noise here — the count says it. */}
-        {tracked ? (
-          <TrackProgress task={task} />
-        ) : (
-          metaSegments.length > 0 && (
-            <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
-              {metaSegments.map((seg, i) => (
-                <span key={i} className="contents">
-                  <span className={cn('whitespace-nowrap', seg.className)}>{seg.text}</span>
-                  {i < metaSegments.length - 1 && (
-                    <span className="text-muted-foreground/50">·</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )
+        {metaSegments.length > 0 && (
+          <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
+            {metaSegments.map((seg, i) => (
+              <span key={i} className="contents">
+                <span className={cn('whitespace-nowrap', seg.className)}>{seg.text}</span>
+                {i < metaSegments.length - 1 && <span className="text-muted-foreground/50">·</span>}
+              </span>
+            ))}
+          </div>
         )}
 
         {hasIndicators && (
@@ -720,6 +714,18 @@ function LabelBadges({
 interface MetaSegment {
   text: string
   className?: string
+}
+
+/** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
+function trackedMetaSegments(task: Task): MetaSegment[] {
+  const { current, target, met } = trackState(task)
+  const period = periodLabel(task.rrule)
+  return [
+    {
+      text: `${current} / ${target}${period ? ` ${period}` : ''}${met ? ' · met' : ''}`,
+      className: met ? 'text-green-700 dark:text-green-400' : undefined,
+    },
+  ]
 }
 
 function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {

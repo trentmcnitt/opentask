@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { isTracked } from '@/lib/track'
-import { groupByTimeSlot, UNSLOTTED_LABEL } from '@/lib/slot-view'
+import { groupByTimeSlot } from '@/lib/slot-view'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -346,22 +346,11 @@ export function TaskList({
         ? groupByTimeSlot(tasks, timeSlots, timezone)
         : groupByTime(tasks, timezone)
 
-  // Compute sorted groups once, reuse for both orderedIds and rendering.
-  // §7.3: the un-slotted "Anytime today" group is where tracked items live, and
-  // they "must not become invisible from the front door" — but that group is
-  // also the largest, and previews five rows. Tracked items therefore lead it
-  // (stable, so the chosen sort still orders each half), which keeps every
-  // quota inside the preview instead of behind "Show all 150".
-  const sortedGroups = groups.map((g) => {
-    const sorted = sortTasks(g.tasks, sortOption, reversed, insightsScoreMap)
-    const leadWithTracked = grouping === 'slot' && g.label === UNSLOTTED_LABEL
-    return {
-      ...g,
-      sortedTasks: leadWithTracked
-        ? [...sorted.filter((t) => isTracked(t)), ...sorted.filter((t) => !isTracked(t))]
-        : sorted,
-    }
-  })
+  // Compute sorted groups once, reuse for both orderedIds and rendering
+  const sortedGroups = groups.map((g) => ({
+    ...g,
+    sortedTasks: sortTasks(g.tasks, sortOption, reversed, insightsScoreMap),
+  }))
   const orderedIds = sortedGroups.flatMap((g) => g.sortedTasks.map((t) => t.id))
 
   // Determine if we should show the "now" separator
@@ -425,14 +414,8 @@ export function TaskList({
           // slot grouping; the other views keep their existing behaviour.
           const previewed = grouping === 'slot' && !isUnified
           const isExpanded = expandedGroups.has(group.label)
-          // The preview never hides a quota: tracked items lead the un-slotted
-          // group (see sortedGroups) and count on top of the five, so every
-          // progress row is on the front door without a tap (§7.3).
-          const previewCount =
-            GROUP_PREVIEW_COUNT +
-            (group.label === UNSLOTTED_LABEL ? sortedTasks.filter((t) => isTracked(t)).length : 0)
           const visibleTasks =
-            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
+            previewed && !isExpanded ? sortedTasks.slice(0, GROUP_PREVIEW_COUNT) : sortedTasks
           const hiddenCount = sortedTasks.length - visibleTasks.length
 
           return (
@@ -551,7 +534,7 @@ export function TaskList({
                       <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
                     </button>
                   )}
-                  {isExpanded && sortedTasks.length > previewCount && (
+                  {isExpanded && sortedTasks.length > GROUP_PREVIEW_COUNT && (
                     <button
                       type="button"
                       onClick={() => toggleGroupExpanded(group.label)}
