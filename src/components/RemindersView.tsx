@@ -493,7 +493,9 @@ function ReminderSlotGroup({
   return (
     <div
       className={cn(
-        'bg-muted/30 rounded-2xl transition-colors',
+        // Bottom padding in every state, so the hairline sits inside the card
+        // rather than flush with its edge when folded.
+        'bg-muted/30 rounded-2xl pb-1 transition-colors',
         open && 'pb-2',
         !started && 'opacity-70',
       )}
