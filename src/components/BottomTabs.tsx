@@ -20,7 +20,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const pathname = usePathname()
 
   const tabs = [
-    { href: '/', label: 'Dashboard', icon: LayoutGrid },
+    { href: '/', label: 'Tasks', icon: LayoutGrid },
     // Lightbulb is the Reminders surface's own icon (see RemindersView's empty state).
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '#add', label: 'Add', icon: Plus, isAction: true },

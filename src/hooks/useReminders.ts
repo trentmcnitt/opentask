@@ -82,12 +82,29 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
   const callbacksRef = useRef({ onUndo, onCompleted })
   callbacksRef.current = { onUndo, onCompleted }
 
+  // IDs whose completion request is still in flight. A background refresh
+  // (sync stream, undo chain) can land BETWEEN the optimistic removal and the
+  // server recording the completion; the payload it brings still contains the
+  // row, and re-inserting it produced an invisible gap (the row re-rendered in
+  // its "completing" state and stayed). Any refresh strips these first.
+  const pendingIdsRef = useRef<Set<number>>(new Set())
+  const stripPending = (incoming: ReminderGroup[]): ReminderGroup[] => {
+    const pending = pendingIdsRef.current
+    if (pending.size === 0) return incoming
+    return incoming.map((g) => {
+      const remaining = g.reminders.filter((r) => !pending.has(r.id))
+      return remaining.length === g.reminders.length
+        ? g
+        : { ...g, reminders: remaining, count: remaining.length }
+    })
+  }
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch('/api/reminders')
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
-      const nextGroups = (json?.data?.groups ?? []) as ReminderGroup[]
+      const nextGroups = stripPending((json?.data?.groups ?? []) as ReminderGroup[])
       const nextHasAny = json?.data?.has_any === true
       remindersCache = { groups: nextGroups, hasAny: nextHasAny }
       setGroups(nextGroups)
@@ -122,106 +139,101 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
    * removal, so the item honestly reappears; same failure semantics as the
    * widget's tombstones (§8).
    */
-  const complete = useCallback(async (task: Task) => {
-    setCompletingIds((prev) => new Set(prev).add(task.id))
-    let snapshot: ReminderGroup[] | null = null
-    setGroups((prev) => {
-      snapshot = prev
-      const next = prev.map((group) => {
-        const remaining = group.reminders.filter((r) => r.id !== task.id)
-        return remaining.length === group.reminders.length
-          ? group
-          : { ...group, reminders: remaining, count: remaining.length }
-      })
-      if (remindersCache) remindersCache = { ...remindersCache, groups: next }
-      return next
-    })
-    setConsideredAny(true)
-    try {
-      const res = await fetch(`/api/tasks/${task.id}/done`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to complete reminder')
-      // Toast (and the undo counter) only after the server has recorded the
-      // completion: an Undo offered before that would undo whatever action
-      // preceded this one. The row vanishing above is the instant feedback;
-      // the toast trailing it by the round trip is imperceptible.
-      callbacksRef.current.onCompleted?.()
-      showToast({
-        message: 'Considered',
-        type: 'success',
-        action: { label: 'Undo', onClick: () => callbacksRef.current.onUndo() },
-      })
-    } catch {
-      if (snapshot) {
-        const restored = snapshot
-        if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
-        setGroups(restored)
-      }
-      showToast({ message: 'Could not complete reminder', type: 'error' })
-    } finally {
-      setCompletingIds((prev) => {
-        const next = new Set(prev)
-        next.delete(task.id)
-        return next
-      })
-    }
-  }, [])
-
   /**
-   * Consider several reminders at once via POST /api/tasks/bulk/done, which
-   * logs ONE `bulk_done` undo entry — so the toast's Undo restores every row
-   * together, not one at a time. Same optimistic contract as `complete`: the
-   * rows leave immediately, and a failed call restores the snapshot.
+   * Consider one or more reminders. One call, one undo entry — POST /done for
+   * a single item, POST /bulk/done for several — so the toast's Undo restores
+   * everything it removed.
+   *
+   * OPTIMISTIC, in both directions: the rows leave and the toast appears at
+   * once. The toast's Undo is safe to press before the server has answered:
+   * it waits for this request to settle first, so it can never undo whatever
+   * action came before. (Offering Undo only after the round trip was the old
+   * rule; over a real network that read as a frozen half-second between the
+   * tap and any acknowledgement.) A failed call restores the snapshot and
+   * turns the toast's promise into a no-op.
    */
-  const completeMany = useCallback(async (tasks: Task[]) => {
-    const ids = tasks.map((t) => t.id)
-    if (ids.length === 0) return
-    const idSet = new Set(ids)
-    setCompletingIds((prev) => {
-      const next = new Set(prev)
-      for (const id of ids) next.add(id)
-      return next
-    })
-    let snapshot: ReminderGroup[] | null = null
-    setGroups((prev) => {
-      snapshot = prev
-      const next = prev.map((g) => {
-        const remaining = g.reminders.filter((r) => !idSet.has(r.id))
-        return remaining.length === g.reminders.length
-          ? g
-          : { ...g, reminders: remaining, count: remaining.length }
-      })
-      if (remindersCache) remindersCache = { ...remindersCache, groups: next }
-      return next
-    })
-    setConsideredAny(true)
-    try {
-      const res = await fetch('/api/tasks/bulk/done', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      })
-      if (!res.ok) throw new Error('Failed to complete reminders')
-      callbacksRef.current.onCompleted?.()
-      showToast({
-        message: ids.length === 1 ? 'Considered' : `Considered ${ids.length}`,
-        type: 'success',
-        action: { label: 'Undo', onClick: () => callbacksRef.current.onUndo() },
-      })
-    } catch {
-      if (snapshot) {
-        const restored = snapshot
-        if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
-        setGroups(restored)
-      }
-      showToast({ message: 'Could not complete reminders', type: 'error' })
-    } finally {
-      setCompletingIds((prev) => {
-        const next = new Set(prev)
-        for (const id of ids) next.delete(id)
+  const completeIds = useCallback(
+    async (tasks: Task[], message: string) => {
+      const ids = tasks.map((t) => t.id)
+      if (ids.length === 0) return
+      const idSet = new Set(ids)
+      for (const id of ids) pendingIdsRef.current.add(id)
+      setCompletingIds((prev) => new Set([...prev, ...ids]))
+      let snapshot: ReminderGroup[] | null = null
+      setGroups((prev) => {
+        snapshot = prev
+        const next = prev.map((g) => {
+          const remaining = g.reminders.filter((r) => !idSet.has(r.id))
+          return remaining.length === g.reminders.length
+            ? g
+            : { ...g, reminders: remaining, count: remaining.length }
+        })
+        if (remindersCache) remindersCache = { ...remindersCache, groups: next }
         return next
       })
-    }
-  }, [])
+      setConsideredAny(true)
+
+      const request = (async () => {
+        const res =
+          ids.length === 1
+            ? await fetch(`/api/tasks/${ids[0]}/done`, { method: 'POST' })
+            : await fetch('/api/tasks/bulk/done', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids }),
+              })
+        if (!res.ok) throw new Error('Failed to complete reminders')
+        callbacksRef.current.onCompleted?.()
+      })()
+
+      // Undo waits for the completion to be recorded, then undoes exactly it.
+      let settledOk = false
+      showToast({
+        message,
+        type: 'success',
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+          },
+        },
+      })
+
+      try {
+        await request
+        settledOk = true
+      } catch {
+        if (snapshot) {
+          const restored = snapshot
+          if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
+          setGroups(restored)
+        }
+        showToast({ message: 'Could not complete reminders', type: 'error' })
+      } finally {
+        for (const id of ids) pendingIdsRef.current.delete(id)
+        setCompletingIds((prev) => {
+          const next = new Set(prev)
+          for (const id of ids) next.delete(id)
+          return next
+        })
+        // A refresh after a confirmed completion converges the cache with the
+        // server (the recurring case: a considered reminder is gone until its next
+        // occurrence, which only the server knows).
+        if (settledOk) void refresh()
+      }
+    },
+    [refresh],
+  )
+
+  const completeMany = useCallback(
+    (tasks: Task[]) => completeIds(tasks, `Considered ${tasks.length}`),
+    [completeIds],
+  )
+
+  const complete = useCallback(
+    (task: Task) => completeIds([task], `Considered \u201c${task.title}\u201d`),
+    [completeIds],
+  )
 
   const completeGroup = useCallback(
     (group: ReminderGroup) => completeMany(group.reminders),

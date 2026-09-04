@@ -109,6 +109,10 @@
   }
   html {
     @apply bg-background;
+    /* Reserve the vertical scrollbar's width even when the page is short, so
+       content that grows past the viewport (opening a slot, expanding a
+       group) does not shove the whole centered layout sideways. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground;
