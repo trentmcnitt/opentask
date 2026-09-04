@@ -158,7 +158,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
       ) : error ? (
         <p className="text-muted-foreground py-16 text-center text-sm">{error}</p>
       ) : visibleGroups.length === 0 ? (
-        <RemindersEmptyState allClear={consideredAny || hasAny} />
+        <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
       ) : (
         <>
           <RemindersHeadline
@@ -333,7 +333,7 @@ function RemindersHeadline({
   return (
     <div className="mb-4 px-2" data-reminders-headline>
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 text-sm">{line}</p>
+        <h1 className="min-w-0 text-sm">{line}</h1>
         {summary.waitingSoFar > 0 && (
           <button
             type="button"
@@ -743,14 +743,26 @@ function formatSlotTime(startTime: string): string {
   return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
 }
 
-function RemindersEmptyState({ allClear }: { allClear: boolean }) {
+/**
+ * The page's h1 is the headline ("34 waiting so far") when there is one. When
+ * the empty state stands alone it takes the h1 itself, so the page always has
+ * exactly one — the top bar shows the logo, not a title.
+ */
+function RemindersEmptyState({
+  allClear,
+  headingLevel = 2,
+}: {
+  allClear: boolean
+  headingLevel?: 1 | 2
+}) {
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
   if (allClear) {
     return (
       <div className="flex flex-col items-center gap-2 py-20 text-center">
         <div className="bg-muted text-muted-foreground flex size-11 items-center justify-center rounded-full">
           <Check className="size-5" strokeWidth={2.5} />
         </div>
-        <h2 className="text-foreground text-base font-medium">All clear</h2>
+        <Heading className="text-foreground text-base font-medium">All clear</Heading>
         <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
           Nothing left to consider today. Anything that recurs comes back at its own time.
         </p>
@@ -763,7 +775,9 @@ function RemindersEmptyState({ allClear }: { allClear: boolean }) {
       <div className="bg-muted text-muted-foreground flex size-11 items-center justify-center rounded-full">
         <Lightbulb className="size-5" />
       </div>
-      <h2 className="text-foreground text-base font-medium">Reminders are thoughts, not tasks</h2>
+      <Heading className="text-foreground text-base font-medium">
+        Reminders are thoughts, not tasks
+      </Heading>
       <p className="text-muted-foreground max-w-sm text-sm leading-relaxed">
         Principles and considerations you want in mind at a certain time of day. They never go
         overdue, never reach the badge, and completing one only means you considered it.

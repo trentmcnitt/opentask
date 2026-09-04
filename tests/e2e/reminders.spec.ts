@@ -43,10 +43,23 @@ async function deleteTasks(page: Page, ids: number[]): Promise<void> {
   }
 }
 
-/** Open the surface and wait for its first fetch to resolve into a rendered state. */
+/**
+ * The toast's Undo, as opposed to the top bar's. Both are buttons named
+ * "Undo"; the toast's lives inside sonner's toast element.
+ */
+function toastUndo(page: Page) {
+  return page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' })
+}
+
+/**
+ * Open the surface and wait for its first fetch to resolve into a rendered state:
+ * the headline or an empty-state heading. The loading skeleton has neither.
+ */
 async function openReminders(page: Page): Promise<void> {
   await page.goto('/reminders')
-  await expect(page.getByRole('heading', { name: 'Reminders', level: 1 })).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Reminders' }).getByRole('heading').first(),
+  ).toBeVisible()
 }
 
 /**
@@ -73,7 +86,10 @@ test.describe('Reminders surface', () => {
     await page.getByRole('link', { name: 'Reminders' }).click()
 
     await page.waitForURL('/reminders')
-    await expect(page.getByRole('heading', { name: 'Reminders', level: 1 })).toBeVisible()
+    // The same top bar as Tasks — logo, undo, menu — with this surface's own pills.
+    await expect(page.getByRole('img', { name: 'OpenTask' })).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('button', { name: /^Undo/ })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Reminders' })).toBeVisible()
   })
 
   test('explains itself when the user has no reminders', async ({ authenticatedPage: page }) => {
@@ -187,7 +203,7 @@ test.describe('Reminders surface', () => {
 
       // Undo puts the item back on the surface, which proves the page's refresh
       // chain reaches the reminders list and not just the toast.
-      await page.getByRole('button', { name: 'Undo' }).click()
+      await toastUndo(page).click()
       await expect(consideredRow).toBeVisible()
     } finally {
       await deleteTasks(page, ids)
@@ -227,7 +243,7 @@ test.describe('Reminders surface', () => {
       await expect(row('First thought of the range')).toHaveCount(0)
       await expect(row('Third thought of the range')).toHaveCount(0)
       await expect(page.getByText('Considered 3')).toBeVisible()
-      await page.getByRole('button', { name: 'Undo' }).click()
+      await toastUndo(page).click()
       await expect(row('First thought of the range')).toBeVisible()
       await expect(row('Second thought of the range')).toBeVisible()
       await expect(row('Third thought of the range')).toBeVisible()
@@ -275,7 +291,7 @@ test.describe('Reminders surface', () => {
       await expect(headline).toContainText('All clear for today')
 
       // Undo restores both, and the numbers follow.
-      await page.getByRole('button', { name: 'Undo' }).click()
+      await toastUndo(page).click()
       await expect(page.locator('li[data-reminder-id]')).toHaveCount(2)
       await expect(headline).toContainText('2 waiting so far')
     } finally {
@@ -306,5 +322,53 @@ test.describe('Reminders surface', () => {
     const toggle = page.getByRole('group', { name: 'View mode' })
 
     await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
+  })
+})
+
+/**
+ * The Reminders page shares the Tasks page's top bar (logo, undo with its
+ * count, menu) rather than a bare title. The header Undo is a second route to
+ * the same undo pipeline the toast uses; this drives that route end to end.
+ */
+test.describe('Reminders top bar', () => {
+  test('shows this surface\u2019s pills and undoes a consideration from the header', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, {
+      title: 'A thought for the top bar',
+      due_at: todayAt(7),
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = page.getByRole('option', { name: 'A thought for the top bar' })
+      await expect(row).toBeVisible()
+      // The banner's Undo, not the toast's: once a consideration toasts, both exist.
+      const undo = page.getByRole('banner').getByRole('button', { name: /^Undo/ })
+      await expect(undo).toHaveAccessibleName('Undo')
+
+      // The waiting pill is neutral and carries the same number as the nav badge.
+      const counts = page.getByRole('group', { name: 'Reminder counts' })
+      await expect(counts).toBeVisible()
+      const waiting = await counts.locator('span').first().innerText()
+      await expect(page.locator('[data-reminders-badge]:visible').first()).toHaveText(waiting)
+
+      await row
+        .getByRole('button', { name: 'Mark "A thought for the top bar" as considered' })
+        .click()
+      await expect(row).toHaveCount(0)
+      await expect(undo).toHaveAccessibleName('Undo (1 available)')
+      // The green pill is the day's score, and the popover spells it out.
+      await counts.click()
+      await expect(page.getByRole('dialog')).toContainText('1 considered today')
+      await page.keyboard.press('Escape')
+
+      await undo.click()
+      await expect(row).toBeVisible()
+      await expect(undo).toHaveAccessibleName('Undo')
+    } finally {
+      await deleteTasks(page, [id])
+    }
   })
 })
