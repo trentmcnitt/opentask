@@ -181,7 +181,9 @@ test.describe('Reminders surface', () => {
 
       // Completion is the ordinary complete/undo pipeline, so undo is offered —
       // and the page has to carry that pipeline itself now that it is standalone.
-      await expect(page.getByText('Considered')).toBeVisible()
+      // The toast names what was considered; a bare "Considered" would also match
+      // the slot header's "Considered all".
+      await expect(page.getByText('Considered “Breathe before replying”')).toBeVisible()
 
       // Undo puts the item back on the surface, which proves the page's refresh
       // chain reaches the reminders list and not just the toast.
