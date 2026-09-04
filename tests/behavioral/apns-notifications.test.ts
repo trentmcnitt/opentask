@@ -5,9 +5,18 @@
  * Does NOT test actual APNs delivery (requires real Apple credentials).
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb, resetDb } from '@/core/db'
-import { setupTestDb, TEST_USER_ID } from '../helpers/setup'
+import { createTask, markDone } from '@/core/tasks'
+import { listTimeSlots } from '@/core/time-slots'
+import { pendingSlotNotifications, slotsDueNow } from '@/core/notifications/slot-reminders'
+import {
+  setupTestDb,
+  teardownTestDb,
+  localTime,
+  TEST_TIMEZONE,
+  TEST_USER_ID,
+} from '../helpers/setup'
 
 describe('APNs Device Registration', () => {
   beforeEach(() => {
@@ -103,5 +112,92 @@ describe('APNs Device Registration', () => {
 
     const indexNames = indexes.map((i) => i.name)
     expect(indexNames).toContain('idx_apns_devices_user_id')
+  })
+})
+
+/**
+ * Time-slot reminder pushes (REDESIGN-V03 §6 / §6.1)
+ *
+ * The SLOT notifies, not the item — so the whole decision is "which slot is
+ * opening this minute, and does it have anything pending". These tests cover
+ * that decision; delivery itself needs real APNs credentials and a device.
+ */
+describe('Slot reminder notifications', () => {
+  beforeEach(() => {
+    // 2026-01-15 07:00 Chicago (13:00 UTC) — the "Early morning" boundary.
+    vi.setSystemTime(new Date('2026-01-15T13:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  function makeReminder(hour: number, minute = 0) {
+    return createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Consider the day ahead',
+        is_reminder: true,
+        due_at: localTime(hour, minute),
+      },
+    })
+  }
+
+  test('a slot is due only on the minute its start_time matches local time', () => {
+    const slots = listTimeSlots(TEST_USER_ID)
+
+    const due = slotsDueNow(slots, TEST_TIMEZONE, new Date('2026-01-15T13:00:00Z'))
+    expect(due.map((s) => s.label)).toEqual(['Early morning'])
+
+    // One minute later is not the boundary — no catch-up, by design.
+    const late = slotsDueNow(slots, TEST_TIMEZONE, new Date('2026-01-15T13:01:00Z'))
+    expect(late).toHaveLength(0)
+  })
+
+  test('slot boundaries are local, not UTC', () => {
+    const slots = listTimeSlots(TEST_USER_ID)
+    // 07:00 UTC is 01:00 in Chicago — before every slot boundary.
+    expect(slotsDueNow(slots, TEST_TIMEZONE, new Date('2026-01-15T07:00:00Z'))).toHaveLength(0)
+  })
+
+  test('an opening slot with pending reminders produces one notification with its count', () => {
+    makeReminder(7)
+    makeReminder(7, 30)
+    makeReminder(20, 30) // different slot — must not inflate the count
+
+    const pending = pendingSlotNotifications()
+
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      userId: TEST_USER_ID,
+      slotLabel: 'Early morning',
+      count: 2,
+    })
+    expect(pending[0].slotId).toBeGreaterThan(0)
+  })
+
+  test('an empty slot stays silent', () => {
+    expect(pendingSlotNotifications()).toHaveLength(0)
+  })
+
+  test('completed reminders drop out of the count', () => {
+    const first = makeReminder(7)
+    makeReminder(7, 30)
+
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: first.id })
+
+    const pending = pendingSlotNotifications()
+    expect(pending).toHaveLength(1)
+    expect(pending[0].count).toBe(1)
+  })
+
+  test('users with notifications disabled are skipped', () => {
+    makeReminder(7)
+    getDb().prepare('UPDATE users SET notifications_enabled = 0 WHERE id = ?').run(TEST_USER_ID)
+
+    expect(pendingSlotNotifications()).toHaveLength(0)
   })
 })

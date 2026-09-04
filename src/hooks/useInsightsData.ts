@@ -261,17 +261,18 @@ export function useInsightsData(tasks: Task[], enabled = true): UseInsightsDataR
             active.total_tasks || 0,
             active.started_at,
           )
-        } else if (json.data.stale && (json.data.results?.length ?? 0) > 0) {
-          // Results are stale and no generation in progress — auto-refresh
-          generate()
         }
+        // Stale results render as-is with the staleness indicator. Deliberately
+        // NO auto-regeneration here: §7.4 — insights run once daily on schedule
+        // plus on-demand refresh only, never eagerly on page load (single-user
+        // install; eager regeneration burns tokens on every dashboard visit).
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-    // generate is stable (useCallback with stable deps); hasFetched guards against re-execution
-  }, [tasks.length, resumeSession, enabled, generate])
+    // hasFetched guards against re-execution
+  }, [tasks.length, resumeSession, enabled])
 
   return {
     results,

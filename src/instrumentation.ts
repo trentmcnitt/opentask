@@ -6,6 +6,7 @@
  *
  * Cron schedule:
  * - Every 1 min: notification check (overdue tasks, all priorities)
+ * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - 3:00 AM UTC daily: undo purge
  * - 3:30 AM UTC daily: trash purge
@@ -25,6 +26,7 @@ export async function register() {
     const cron = (await import('node-cron')).default
     const { notifyError } = await import('@/lib/error-notify')
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
+    const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
@@ -70,6 +72,9 @@ export async function register() {
       notificationStartedAt = Date.now()
       try {
         await checkOverdueTasks()
+        // §6: the time slot notifies, not the reminder. Same tick as the
+        // overdue check because both are minute-boundary derived.
+        await checkSlotReminders()
       } catch (err) {
         log.error('notifications', 'Notification check error:', err)
         notifyError(

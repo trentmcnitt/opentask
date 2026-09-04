@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { TaskList, buildTaskGroups, sortTasks } from '@/components/TaskList'
-import type { GroupingMode } from '@/components/TaskList'
+import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -14,6 +13,7 @@ import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
 import { Header } from '@/components/Header'
 import { QuickAdd } from '@/components/QuickAdd'
+import { DemoTour } from '@/components/DemoTour'
 import { QuickTakeBanner } from '@/components/QuickTakeBanner'
 import { FilterBar } from '@/components/FilterBar'
 import { AiControlArea } from '@/components/AiControlArea'
@@ -51,6 +51,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
+import { useFilterSection } from '@/hooks/useFilterSection'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
@@ -62,6 +63,7 @@ import { useInsightsData, type UseInsightsDataReturn } from '@/hooks/useInsights
 import { useDashboardKeyboard } from '@/hooks/useDashboardKeyboard'
 import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
@@ -87,7 +89,7 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
     try {
       const res = await fetch('/api/tasks?limit=500')
       if (res.status === 401) {
-        router.push('/login')
+        router.push(loginUrlFromLocation())
         return
       }
       if (!res.ok) throw new Error('Failed to fetch tasks')
@@ -563,7 +565,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   // AI sort auto-switches to unified as a local override (not persisted to DB).
   // This preserves the user's real grouping preference for when AI sort is disabled.
   const [aiSortUnified, setAiSortUnified] = useState(false)
-  const grouping = aiSortUnified ? 'unified' : defaultGrouping
+  const grouping: GroupingMode = aiSortUnified ? 'unified' : defaultGrouping
 
   // Track the non-unified grouping so we can restore it when leaving manual unified toggle.
   const prevNonUnifiedGrouping = useRef<GroupingMode | null>(null)
@@ -584,7 +586,24 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
-  const baseTasks = searchQuery ? searchResults : tasks
+  /**
+   * §6/§7.3: the dashboard is tasks; reminders live on their own surface
+   * (`/reminders`, its own route and tab).
+   *
+   * Reminders are filtered out here rather than server-side so `/api/tasks`
+   * keeps returning the whole corpus for every other caller. Doing it at this
+   * one point also keeps them out of everything derived from the list —
+   * counts, the overdue badge, filters, keyboard order — which is exactly the
+   * §6 carve-out ("never counted in overdue, never in the badge") expressed in
+   * the client.
+   */
+  const visibleTasks = useMemo(() => tasks.filter((t) => !t.is_reminder), [tasks])
+  const visibleSearchResults = useMemo(
+    () => searchResults.filter((t) => !t.is_reminder),
+    [searchResults],
+  )
+
+  const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
   // Support ?filter=overdue from notification links — read once, then clear from URL
@@ -602,20 +621,39 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     }
   }, [searchParams, router])
 
-  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task
+  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task.
+  //
+  // The param is consumed (and stripped from the URL) only once resolution is
+  // DEFINITIVE: the task was found, or the list is non-empty and provably
+  // doesn't contain it. `loading === false` alone is not proof the list is
+  // ready — on WebKit (iOS webview, Safari) the initial fetch can fail
+  // transiently during hydration, flipping `loading` false with zero tasks;
+  // consuming the param then means a notification tap opens the app but never
+  // the task. With an empty list we leave the param in place and let the
+  // effect re-run when a retry/sync populates tasks.
   const taskParamProcessed = useRef(false)
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
     const taskIdParam = searchParams.get('task')
     if (!taskIdParam) return
-    taskParamProcessed.current = true
     const taskId = parseInt(taskIdParam, 10)
-    if (isNaN(taskId)) return
+    if (isNaN(taskId)) {
+      taskParamProcessed.current = true
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      return
+    }
     const task = tasks.find((t) => t.id === taskId)
+    if (!task && tasks.length === 0) return
+    taskParamProcessed.current = true
     if (task) {
       handleViewTask(task)
     }
-    router.replace('/', { scroll: false })
+    // Strip the param with a raw history rewrite, NOT router.replace: a router
+    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
+    // this under flaky transport) Next falls back to a full page navigation
+    // that remounts this component and closes the just-opened panel. Same
+    // pattern as AppLayout's ?action=create handling.
+    window.history.replaceState(window.history.state, '', window.location.pathname)
   }, [searchParams, loading, tasks, handleViewTask, router])
 
   const {
@@ -825,7 +863,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [selection, clearAllFilters])
 
-  // Build task groups for keyboard navigation
+  // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
     [tasks_, projects, grouping, timezone, timeSlots],
@@ -1033,7 +1071,7 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
     if (!hasInitialData) {
@@ -1097,151 +1135,154 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   }
 
   return (
-    <DashboardView
-      tasks={tasks_}
-      allTasks={baseTasks}
-      projects={projects}
-      grouping={grouping}
-      onGroupingChange={(next) => {
-        // Selecting a view explicitly turns off AI-sort's unified override —
-        // otherwise the toggle would show a selection that isn't in effect.
-        setAiSortUnified(false)
-        setDefaultGrouping(next as 'time' | 'project' | 'unified' | 'slot')
-      }}
-      timeSlots={timeSlots}
-      searchQuery={searchQuery}
-      searchResultCount={searchResults.length}
-      overdueCount={overdueCount}
-      todayCount={todayCount}
-      selection={selection}
-      selectedTasks={selectedTasks}
-      showProjectPicker={showProjectPicker}
-      actions={actions}
-      selectedLabels={selectedLabels}
-      onToggleLabel={toggleLabel}
-      onClearFilters={handleClearFilters}
-      selectedPriorities={selectedPriorities}
-      onTogglePriority={togglePriority}
-      onExclusivePriority={exclusivePriority}
-      selectedDateFilters={selectedDateFilters}
-      onToggleDateFilter={toggleDateFilter}
-      onExclusiveDateFilter={exclusiveDateFilter}
-      onExclusiveLabel={exclusiveLabel}
-      attributeFilters={attributeFilters}
-      onToggleAttribute={toggleAttribute}
-      onExclusiveAttribute={exclusiveAttribute}
-      selectedProjects={selectedProjects}
-      onToggleProject={toggleProject}
-      onExclusiveProject={exclusiveProject}
-      excludedLabels={excludedLabels}
-      excludedPriorities={excludedPriorities}
-      excludedDateFilters={excludedDateFilters}
-      excludedAttributes={excludedAttributes}
-      excludedProjects={excludedProjects}
-      onExcludeLabel={excludeLabel}
-      onExcludePriority={excludePriority}
-      onExcludeDateFilter={excludeDateFilter}
-      onExcludeAttribute={excludeAttribute}
-      onExcludeProject={excludeProject}
-      todayCounts={todayCounts}
-      timezone={timezone}
-      onSearch={bulk.handleSearch}
-      onSearchClear={() => {
-        selection.clear()
-        setSearchQuery(null)
-        setSearchResults([])
-      }}
-      onBulkDone={bulk.bulkDone}
-      onBulkSaveAll={bulk.bulkSaveAll}
-      onBulkDelete={bulk.bulkDelete}
-      onBulkMoveToProject={bulk.handleBulkMoveToProject}
-      onShowProjectPicker={setShowProjectPicker}
-      onSnoozeOverdue={handleSnoozeAllOverdue}
-      focusedTask={focusedTask}
-      quickActionOpen={quickActionOpen}
-      onTaskFocus={setFocusedTask}
-      onQuickActionClose={() => setQuickActionOpen(false)}
-      onQuickActionSaveAll={actions.handleSaveAllChanges}
-      onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
-      onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
-      keyboardFocusedId={keyboardFocusedId}
-      isKeyboardActive={keyboard.isKeyboardActive}
-      onKeyDown={keyboard.handleKeyDown}
-      onListFocus={keyboard.handleFocus}
-      onListBlur={keyboard.handleBlur}
-      sortOption={sortOption}
-      reversed={reversed}
-      setSortOption={setSortOption}
-      isCollapsed={isCollapsed}
-      toggleCollapse={handleToggleCollapse}
-      onActivate={handleActivate}
-      onDoubleClick={handleDoubleClick}
-      showShortcutsDialog={showShortcutsDialog}
-      onShortcutsDialogChange={setShowShortcutsDialog}
-      onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
-      bulkSheetOpenRef={bulkSheetOpenRef}
-      aiAvailable={aiAvailable}
-      aiMode={aiMode}
-      onAiModeChange={handleModeChange}
-      showInsights={showInsights}
-      onToggleInsights={handleInsightsChipToggle}
-      wnCommentaryUnfiltered={wnCommentaryUnfiltered}
-      onWnCommentaryUnfilteredChange={setWnCommentaryUnfiltered}
-      wnHighlight={wnHighlight}
-      onWnHighlightChange={setWnHighlight}
-      insightsSignalChips={insightsSignalChips}
-      onInsightsSignalChipsChange={setInsightsSignalChips}
-      insightsScoreChips={insightsScoreChips}
-      onInsightsScoreChipsChange={setInsightsScoreChips}
-      enrichmentActive={enrichmentActive}
-      onRefreshAnnotations={handleRefreshAnnotations}
-      onRefreshInsights={handleRefreshInsights}
-      aiInsights={aiInsights}
-      insightsData={insightsData}
-      aiFilterActive={aiFilterActive}
-      onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
-      effectiveAnnotationMap={effectiveAnnotationMap}
-      effectiveCommentaryMap={effectiveCommentaryMap}
-      showAnnotations={showAnnotations}
-      showWnHighlight={showWnHighlight}
-      selectedSignals={selectedSignals}
-      onSignalClick={handleSignalClick}
-      onSignalLongPress={handleSignalLongPress}
-      onQuickActionDone={actions.handleDone}
-      onQuickActionDelete={handleQuickActionDelete}
-      onReprocess={handleReprocess}
-      onQuickAdd={
-        aiAvailable && aiQuickTakeMode !== 'off'
-          ? handleQuickAddWithQuickTake
-          : actions.handleQuickAdd
-      }
-      bannerState={bannerState}
-      onQuickTakeDismiss={handleQuickTakeDismiss}
-      onQuickTakeViewTask={
-        bannerState?.taskId
-          ? () => {
-              const task = tasks.find((t) => t.id === bannerState.taskId)
-              if (task) handleViewTask(task)
-              else router.push(`/tasks/${bannerState.taskId}`)
-            }
-          : undefined
-      }
-      onUnifiedChange={(unified) => {
-        if (sortOption === 'ai_insights') {
-          // During AI sort: only toggle local override, don't persist to DB
-          setAiSortUnified(unified)
-        } else if (unified) {
-          // Manual unified on: save current grouping and persist
-          if (defaultGrouping !== 'unified') prevNonUnifiedGrouping.current = defaultGrouping
-          setDefaultGrouping('unified')
-        } else {
-          // Manual unified off: restore previous grouping
-          setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
-          prevNonUnifiedGrouping.current = null
+    <>
+      <DemoTour />
+      <DashboardView
+        tasks={tasks_}
+        allTasks={baseTasks}
+        projects={projects}
+        grouping={grouping}
+        onGroupingChange={(next) => {
+          // Selecting a view explicitly turns off AI-sort's unified override —
+          // otherwise the toggle would show a selection that isn't in effect.
+          setAiSortUnified(false)
+          setDefaultGrouping(next)
+        }}
+        timeSlots={timeSlots}
+        searchQuery={searchQuery}
+        searchResultCount={visibleSearchResults.length}
+        overdueCount={overdueCount}
+        todayCount={todayCount}
+        selection={selection}
+        selectedTasks={selectedTasks}
+        showProjectPicker={showProjectPicker}
+        actions={actions}
+        selectedLabels={selectedLabels}
+        onToggleLabel={toggleLabel}
+        onClearFilters={handleClearFilters}
+        selectedPriorities={selectedPriorities}
+        onTogglePriority={togglePriority}
+        onExclusivePriority={exclusivePriority}
+        selectedDateFilters={selectedDateFilters}
+        onToggleDateFilter={toggleDateFilter}
+        onExclusiveDateFilter={exclusiveDateFilter}
+        onExclusiveLabel={exclusiveLabel}
+        attributeFilters={attributeFilters}
+        onToggleAttribute={toggleAttribute}
+        onExclusiveAttribute={exclusiveAttribute}
+        selectedProjects={selectedProjects}
+        onToggleProject={toggleProject}
+        onExclusiveProject={exclusiveProject}
+        excludedLabels={excludedLabels}
+        excludedPriorities={excludedPriorities}
+        excludedDateFilters={excludedDateFilters}
+        excludedAttributes={excludedAttributes}
+        excludedProjects={excludedProjects}
+        onExcludeLabel={excludeLabel}
+        onExcludePriority={excludePriority}
+        onExcludeDateFilter={excludeDateFilter}
+        onExcludeAttribute={excludeAttribute}
+        onExcludeProject={excludeProject}
+        todayCounts={todayCounts}
+        timezone={timezone}
+        onSearch={bulk.handleSearch}
+        onSearchClear={() => {
+          selection.clear()
+          setSearchQuery(null)
+          setSearchResults([])
+        }}
+        onBulkDone={bulk.bulkDone}
+        onBulkSaveAll={bulk.bulkSaveAll}
+        onBulkDelete={bulk.bulkDelete}
+        onBulkMoveToProject={bulk.handleBulkMoveToProject}
+        onShowProjectPicker={setShowProjectPicker}
+        onSnoozeOverdue={handleSnoozeAllOverdue}
+        focusedTask={focusedTask}
+        quickActionOpen={quickActionOpen}
+        onTaskFocus={setFocusedTask}
+        onQuickActionClose={() => setQuickActionOpen(false)}
+        onQuickActionSaveAll={actions.handleSaveAllChanges}
+        onQuickActionNavigate={(taskId) => router.push(`/tasks/${taskId}`)}
+        onNavigateToDetail={(taskId) => router.push(`/tasks/${taskId}`)}
+        keyboardFocusedId={keyboardFocusedId}
+        isKeyboardActive={keyboard.isKeyboardActive}
+        onKeyDown={keyboard.handleKeyDown}
+        onListFocus={keyboard.handleFocus}
+        onListBlur={keyboard.handleBlur}
+        sortOption={sortOption}
+        reversed={reversed}
+        setSortOption={setSortOption}
+        isCollapsed={isCollapsed}
+        toggleCollapse={handleToggleCollapse}
+        onActivate={handleActivate}
+        onDoubleClick={handleDoubleClick}
+        showShortcutsDialog={showShortcutsDialog}
+        onShortcutsDialogChange={setShowShortcutsDialog}
+        onShortcutsDialogCloseAutoFocus={handleShortcutsDialogCloseAutoFocus}
+        bulkSheetOpenRef={bulkSheetOpenRef}
+        aiAvailable={aiAvailable}
+        aiMode={aiMode}
+        onAiModeChange={handleModeChange}
+        showInsights={showInsights}
+        onToggleInsights={handleInsightsChipToggle}
+        wnCommentaryUnfiltered={wnCommentaryUnfiltered}
+        onWnCommentaryUnfilteredChange={setWnCommentaryUnfiltered}
+        wnHighlight={wnHighlight}
+        onWnHighlightChange={setWnHighlight}
+        insightsSignalChips={insightsSignalChips}
+        onInsightsSignalChipsChange={setInsightsSignalChips}
+        insightsScoreChips={insightsScoreChips}
+        onInsightsScoreChipsChange={setInsightsScoreChips}
+        enrichmentActive={enrichmentActive}
+        onRefreshAnnotations={handleRefreshAnnotations}
+        onRefreshInsights={handleRefreshInsights}
+        aiInsights={aiInsights}
+        insightsData={insightsData}
+        aiFilterActive={aiFilterActive}
+        onToggleAiFilter={() => setAiFilterActive((prev) => !prev)}
+        effectiveAnnotationMap={effectiveAnnotationMap}
+        effectiveCommentaryMap={effectiveCommentaryMap}
+        showAnnotations={showAnnotations}
+        showWnHighlight={showWnHighlight}
+        selectedSignals={selectedSignals}
+        onSignalClick={handleSignalClick}
+        onSignalLongPress={handleSignalLongPress}
+        onQuickActionDone={actions.handleDone}
+        onQuickActionDelete={handleQuickActionDelete}
+        onReprocess={handleReprocess}
+        onQuickAdd={
+          aiAvailable && aiQuickTakeMode !== 'off'
+            ? handleQuickAddWithQuickTake
+            : actions.handleQuickAdd
         }
-      }}
-      searchFocusRef={searchFocusRef}
-    />
+        bannerState={bannerState}
+        onQuickTakeDismiss={handleQuickTakeDismiss}
+        onQuickTakeViewTask={
+          bannerState?.taskId
+            ? () => {
+                const task = tasks.find((t) => t.id === bannerState.taskId)
+                if (task) handleViewTask(task)
+                else router.push(`/tasks/${bannerState.taskId}`)
+              }
+            : undefined
+        }
+        onUnifiedChange={(unified) => {
+          if (sortOption === 'ai_insights') {
+            // During AI sort: only toggle local override, don't persist to DB
+            setAiSortUnified(unified)
+          } else if (unified) {
+            // Manual unified on: save current grouping and persist
+            if (defaultGrouping !== 'unified') prevNonUnifiedGrouping.current = defaultGrouping
+            setDefaultGrouping('unified')
+          } else {
+            // Manual unified off: restore previous grouping
+            setDefaultGrouping(prevNonUnifiedGrouping.current || 'project')
+            prevNonUnifiedGrouping.current = null
+          }
+        }}
+        searchFocusRef={searchFocusRef}
+      />
+    </>
   )
 }
 
@@ -1473,17 +1514,29 @@ function DashboardView({
   onQuickTakeViewTask?: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
 }) {
+  // Filters that live inside the collapsible block (§7.3). Counted rather than
+  // just flagged: the count is what the collapsed "Filters · 2" badge shows,
+  // and what decides whether the block auto-expands.
+  const activeFilterCount =
+    selectedLabels.length +
+    selectedPriorities.length +
+    selectedDateFilters.length +
+    attributeFilters.size +
+    selectedProjects.length +
+    excludedLabels.length +
+    excludedPriorities.length +
+    excludedDateFilters.length +
+    excludedAttributes.size +
+    excludedProjects.length
+
+  const { expanded: filtersExpanded, toggleExpanded: onToggleFilters } =
+    useFilterSection(activeFilterCount)
+
+  // The AI chips stay visible in the collapsed control row, so they are not
+  // part of the count — but they still narrow the list, so they still count
+  // toward "is anything filtered".
   const anyFilterActive =
-    selectedLabels.length > 0 ||
-    selectedPriorities.length > 0 ||
-    selectedDateFilters.length > 0 ||
-    attributeFilters.size > 0 ||
-    selectedProjects.length > 0 ||
-    excludedLabels.length > 0 ||
-    excludedPriorities.length > 0 ||
-    excludedDateFilters.length > 0 ||
-    excludedAttributes.size > 0 ||
-    excludedProjects.length > 0 ||
+    activeFilterCount > 0 ||
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
@@ -1572,6 +1625,9 @@ function DashboardView({
 
         <FilterBar
           tasks={allTasks}
+          expanded={filtersExpanded}
+          onToggleExpanded={onToggleFilters}
+          activeFilterCount={activeFilterCount}
           selectedPriorities={selectedPriorities}
           selectedLabels={selectedLabels}
           selectedDateFilters={selectedDateFilters}

@@ -234,6 +234,68 @@ export async function sendApnsSummaryNotification(
 }
 
 /**
+ * The §6 time-slot reminder push — one notification per slot, never per item.
+ *
+ * Carries the slot identity (not the items) because the content extension
+ * fetches the live list from `GET /api/reminders` when the user long-presses:
+ * a payload snapshot taken at slot time would already be stale by the time the
+ * checklist is read, and completing a stale row is exactly the kind of quiet
+ * wrongness this surface cannot afford.
+ *
+ * userInfo contract with `OpenTaskNotification` (snake_case, matching the API
+ * fields the extension filters on):
+ * - `slot_id` — time_slots.id, or -1 for the un-slotted group
+ * - `slot_label` — display label, used as the checklist header
+ * - `reminder_count` — pending count at send time (header fallback only)
+ *
+ * `collapseId` is per-slot, so a later push for the same slot REPLACES the
+ * earlier one rather than stacking: the slot's banner always shows the current
+ * count (§4.2 class-level collapse).
+ */
+export interface ApnsSlotReminderPayload {
+  slotId: number
+  slotLabel: string
+  count: number
+}
+
+export async function sendApnsSlotReminder(
+  userId: number,
+  payload: ApnsSlotReminderPayload,
+): Promise<void> {
+  const body = payload.count === 1 ? '1 reminder waiting' : `${payload.count} reminders waiting`
+
+  await sendToAllDevices(
+    userId,
+    (device) =>
+      new Notification(device.device_token, {
+        alert: { title: payload.slotLabel, body },
+        topic: device.bundle_id,
+        category: 'SLOT_REMINDER',
+        threadId: NOTIFICATION_THREADS.reminders,
+        sound: 'default',
+        collapseId: `slot-${payload.slotId}`,
+        data: {
+          slot_id: payload.slotId,
+          slot_label: payload.slotLabel,
+          reminder_count: payload.count,
+        },
+        aps: {
+          // Reminders carry no debt (§6) — they must never interrupt like an
+          // overdue task does.
+          'interruption-level': 'active',
+        },
+      }),
+    'slot reminders',
+    (devices) => {
+      log.info(
+        'apns',
+        `Sending slot reminder "${payload.slotLabel}" (${payload.count}) to ${devices.length} device(s)`,
+      )
+    },
+  )
+}
+
+/**
  * Send a silent push that updates the app icon badge number.
  * Called after mutations that change the overdue count (via dismiss module)
  * and by the cron for users who have overdue tasks but didn't get visible

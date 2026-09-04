@@ -129,6 +129,71 @@ final class APIClient {
         let skippedUrgent: Int
     }
 
+    /// Complete N tasks in ONE request (§6.1 batch checklist).
+    ///
+    /// One request, not N: the notification content extension can be suspended
+    /// the instant the user's finger leaves the screen, and a half-applied
+    /// checklist is worse than none. The server runs this as a single
+    /// transaction with a single undo entry.
+    ///
+    /// Returns how many tasks the server actually completed.
+    @discardableResult
+    func completeTasks(ids: [Int]) async throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let data = try await post(path: "/api/tasks/bulk/complete", body: ["ids": ids])
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let responseData = json["data"] as? [String: Any] else {
+            return 0
+        }
+        return responseData["tasks_affected"] as? Int ?? 0
+    }
+
+    /// Pending reminders for one time slot (§6), newest server truth.
+    ///
+    /// `slotId` is the `slot_id` from the SLOT_REMINDER push; -1 means the
+    /// un-slotted "Anytime" group, matching `ReminderGroupDTO.slotKey`.
+    func fetchSlotReminders(slotId: Int) async throws -> [TaskDTO] {
+        let payload = try await fetchReminders()
+        return payload.groups.first(where: { $0.slotKey == slotId })?.reminders ?? []
+    }
+
+    /// Complete every pending reminder in a slot. Used by the "Complete all"
+    /// action, which is available even without the expanded checklist.
+    @discardableResult
+    func completeSlotReminders(slotId: Int) async throws -> Int {
+        try await completeTasks(ids: fetchSlotReminders(slotId: slotId).map(\.id))
+    }
+
+    /// Log progress on a tracked task (§5). Deliberately NOT a completion —
+    /// the task stays open past its target so overflow (3/2) stays observable.
+    ///
+    /// Signed: `+1` logs, `−1` corrects a mis-log (the server floors the result
+    /// at 0). Named `logProgress` rather than `incrementProgress` because a
+    /// method that can subtract should not be called an increment.
+    func logProgress(taskId: Int, delta: Int = 1) async throws {
+        try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
+    }
+
+    // MARK: - Widget Data
+
+    /// Today's incomplete reminders grouped by time slot (§6).
+    func fetchReminders() async throws -> RemindersPayload {
+        try await get(path: "/api/reminders", as: RemindersPayload.self)
+    }
+
+    /// Open (not-done) tasks. The server has no "today" filter — the dashboard
+    /// fetches the open set and buckets client-side, and the widget does the
+    /// same rather than inventing an endpoint.
+    func fetchOpenTasks(limit: Int = 300) async throws -> [TaskDTO] {
+        try await get(path: "/api/tasks?done=false&limit=\(limit)", as: TasksPage.self).tasks
+    }
+
+    /// Projects, used for the Tasks widget's scope chevrons. Names are never
+    /// hardcoded on the client — whatever the server returns is what cycles.
+    func fetchProjects() async throws -> [ProjectDTO] {
+        try await get(path: "/api/projects", as: ProjectsPage.self).projects
+    }
+
     // MARK: - Notification Dismiss
 
     /// Tell the server to dismiss all notifications on all other devices.
@@ -167,6 +232,35 @@ final class APIClient {
     @discardableResult
     private func post(path: String, body: [String: Any]) async throws -> Data {
         try await request(method: "POST", path: path, body: body)
+    }
+
+    /// GET with Bearer auth, unwrapping the `{ "data": ... }` envelope.
+    private func get<T: Decodable>(path: String, as type: T.Type) async throws -> T {
+        guard let urlString = serverURL,
+              let url = URL(string: "\(urlString)\(path)"),
+              let token = bearerToken
+        else {
+            throw APIError.notConfigured
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Widget timelines are built under a tight system budget — fail fast and
+        // fall back to the cached payload rather than stalling the reload.
+        request.timeoutInterval = 12
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(APIEnvelope<T>.self, from: data).data
     }
 
     @discardableResult

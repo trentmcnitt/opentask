@@ -11,7 +11,7 @@
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
-import { getRemindersBySlot } from '@/core/tasks/reminders'
+import { getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -28,6 +28,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         count: g.reminders.length,
       })),
       total: groups.reduce((sum, g) => sum + g.reminders.length, 0),
+      // Whether the user has any reminders at all. Nothing renders it directly —
+      // it only picks which empty state the surface shows when today is clear.
+      has_any: hasAnyReminders(user.id),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

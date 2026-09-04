@@ -216,6 +216,42 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             return
         }
 
+        // §6 slot reminders: no taskId — the slot is the unit. The Watch has no
+        // content extension, so only "Complete all" is reachable here; without
+        // this branch the registered button would silently do nothing.
+        if categoryId == NotificationCategory.slotReminder {
+            let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
+
+            Task {
+                do {
+                    switch response.actionIdentifier {
+                    case NotificationAction.completeAll:
+                        let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
+                        print("[OpenTaskWatch] Slot \(slotId): completed \(affected) reminders")
+                        center.removeDeliveredNotifications(
+                            withIdentifiers: [response.notification.request.identifier]
+                        )
+                        playHaptic(affected > 0 ? .success : .failure)
+
+                    case UNNotificationDefaultActionIdentifier:
+                        center.removeDeliveredNotifications(
+                            withIdentifiers: [response.notification.request.identifier]
+                        )
+
+                    default:
+                        break
+                    }
+                } catch {
+                    print("[OpenTaskWatch] Slot reminder action failed: \(error)")
+                    playHaptic(.failure)
+                    postLocalErrorNotification("Action failed: \(error.localizedDescription)")
+                }
+
+                completionHandler()
+            }
+            return
+        }
+
         // Individual task notifications: require taskId
         let taskId = userInfo["taskId"] as? Int
         let overdueCount = userInfo["overdueCount"] as? Int

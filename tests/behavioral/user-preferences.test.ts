@@ -88,6 +88,16 @@ describe('database defaults for preference columns', () => {
     expect(row.ai_insights_mode).toBe('api')
   })
 
+  // §7.3: the dashboard filter chips start collapsed for every user — the
+  // default is the feature, not a cosmetic choice.
+  test('new user gets filters_expanded = 0 (filter chips collapsed)', () => {
+    const db = getDb()
+    const row = db.prepare('SELECT filters_expanded FROM users WHERE id = ?').get(TEST_USER_ID) as {
+      filters_expanded: number
+    }
+    expect(row.filters_expanded).toBe(0)
+  })
+
   test('wake_time and sleep_time are stored as HH:MM strings', () => {
     const db = getDb()
     db.prepare('UPDATE users SET wake_time = ?, sleep_time = ? WHERE id = ?').run(

@@ -19,6 +19,12 @@ import WebKit
 /// content. We read the preferred content size category, map it to a CSS
 /// font-size scale factor, and inject it as a root font-size override.
 /// Tailwind's rem-based sizing scales the entire layout proportionally.
+///
+/// Session bootstrap: the web session cookie expires after 7 days but the
+/// Keychain Bearer token does not, so a cold launch with a token in hand first
+/// trades that token for a fresh session cookie (`SessionBootstrapper`) and
+/// only then issues the initial load. See `makeUIView` for the sequencing and
+/// `Coordinator.rescueFromLogin` for the mid-session equivalent.
 struct WebView: UIViewRepresentable {
     let url: URL
 
@@ -72,11 +78,14 @@ struct WebView: UIViewRepresentable {
             config.userContentController.addUserScript(tokenScript)
         }
 
-        // Tell the web app whether native has a Bearer token in Keychain.
-        // Used by the auto-provisioning flow to decide whether to create a new token.
-        let hasToken = KeychainHelper.read(key: "bearerToken") != nil
+        // Tell the web app whether native has a Bearer token in Keychain, and
+        // which token it is. Used by the auto-provisioning flow to decide
+        // whether to create a new token, and by the web side to notice that
+        // the stored token belongs to a *different* user than the one logged
+        // in — the preview is the token's last 8 characters, matching the
+        // `token_preview` column the server exposes for API tokens.
         let hasTokenScript = WKUserScript(
-            source: "window.__OPENTASK_HAS_TOKEN = \(hasToken);",
+            source: Coordinator.tokenFlagsJS(),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )
@@ -103,23 +112,63 @@ struct WebView: UIViewRepresentable {
         // Observe cookie changes to flush to disk immediately (survives force-quit)
         config.websiteDataStore.httpCookieStore.add(context.coordinator)
 
-        // Store references for live Dynamic Type updates and deep linking
+        // Store references for live Dynamic Type updates
         context.coordinator.webView = webView
-        WebViewManager.shared.webView = webView
         context.coordinator.startObservingContentSize()
 
-        // Check for pending deep link (cold launch from notification tap or quick action)
-        var loadURL = url
-        if let path = WebViewManager.shared.consumePendingPath() {
-            loadURL = URL(string: AppConfig.shared.serverURL + path) ?? url
+        // Every fresh navigation intent (widget tap, notification, quick
+        // action) re-arms the /login rescue — see Coordinator.newNavigationIntent.
+        WebViewManager.shared.onNewNavigationIntent = { [weak coordinator = context.coordinator] in
+            coordinator?.newNavigationIntent()
         }
-        webView.load(URLRequest(url: loadURL))
+
+        // Check for pending deep link (cold launch from notification tap or quick action)
+        let initialURL = WebViewManager.shared.consumePendingPath()
+            .flatMap { URL(string: AppConfig.shared.serverURL + $0) } ?? url
+
+        // Cold-launch gate. With a Bearer token in the Keychain, the session
+        // bootstrap runs to completion BEFORE the first request leaves the app.
+        // Two things depend on that ordering:
+        //
+        //   1. A session cookie that expired while the app sat unused is
+        //      replaced silently, so a widget or notification tap opens the
+        //      page it promised instead of /login.
+        //   2. It closes a pre-existing race: WKWebsiteDataStore hydrates its
+        //      cookies from disk asynchronously, and a load issued in the same
+        //      turn as the web view's creation could go out unauthenticated.
+        //
+        // makeUIView cannot await, so the load is issued from a Task. Until it
+        // fires, `WebViewManager.shared.webView` is deliberately left nil —
+        // that is what makes a deep link arriving mid-bootstrap park itself in
+        // pendingPath (the existing cold-launch path) rather than sneak out a
+        // request ahead of the cookie. A native cover hides the unpainted web
+        // view for the duration.
+        guard SessionBootstrapper.hasCredentials else {
+            WebViewManager.shared.webView = webView
+            webView.load(URLRequest(url: initialURL))
+            return webView
+        }
+
+        context.coordinator.showLoadingCover(over: webView)
+        Task { @MainActor in
+            await SessionBootstrapper.bootstrap()
+
+            WebViewManager.shared.webView = webView
+
+            // A deep link that landed during the bootstrap window wins over the
+            // URL captured above — it is the newer intent.
+            let loadURL = WebViewManager.shared.consumePendingPath()
+                .flatMap { URL(string: AppConfig.shared.serverURL + $0) } ?? initialURL
+            webView.load(URLRequest(url: loadURL))
+        }
 
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        // No updates needed — URL doesn't change during the view's lifecycle
+        // No updates needed — URL doesn't change during the view's lifecycle.
+        // Deliberately does not load: a load here would race ahead of the
+        // cold-launch session bootstrap kicked off in makeUIView.
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver {
@@ -127,6 +176,26 @@ struct WebView: UIViewRepresentable {
         var onNavigationError: ((Error) -> Void)?
         weak var webView: WKWebView?
         private var contentSizeObserver: NSObjectProtocol?
+
+        /// Native cover shown while the cold-launch session bootstrap runs.
+        /// Without it the user stares at an unpainted WKWebView — white even in
+        /// dark mode — for the length of a network round-trip. Torn down on the
+        /// first navigation outcome, success or failure, so it can never strand
+        /// the UI behind a spinner.
+        private var loadingCover: UIView?
+
+        /// Loop guard for the /login rescue: at most one bootstrap attempt per
+        /// navigation intent. Re-armed two ways — when any non-login page
+        /// finishes (evidence the session is good), and by every new
+        /// externally-initiated navigation (`WebViewManager.onNewNavigationIntent`),
+        /// so a widget tap after a failed rescue gets a fresh attempt instead
+        /// of dead-ending on the login page.
+        private var loginRescueAttempted = false
+
+        /// Re-arm the /login rescue. Wired to `WebViewManager.onNewNavigationIntent`.
+        func newNavigationIntent() {
+            loginRescueAttempted = false
+        }
 
         init(onNavigationError: ((Error) -> Void)?) {
             self.onNavigationError = onNavigationError
@@ -185,7 +254,98 @@ struct WebView: UIViewRepresentable {
             webView?.evaluateJavaScript(js)
         }
 
+        // MARK: - Loading Cover
+
+        /// Cover the web view with a native background + spinner. Pinned with
+        /// constraints rather than a frame because `makeUIView` builds the web
+        /// view at `.zero` and SwiftUI sizes it a layout pass later.
+        func showLoadingCover(over webView: WKWebView) {
+            guard loadingCover == nil else { return }
+
+            let cover = UIView()
+            cover.backgroundColor = .systemBackground
+            cover.translatesAutoresizingMaskIntoConstraints = false
+
+            let spinner = UIActivityIndicatorView(style: .large)
+            spinner.color = .secondaryLabel
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            spinner.startAnimating()
+            cover.addSubview(spinner)
+
+            webView.addSubview(cover)
+            NSLayoutConstraint.activate([
+                cover.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+                cover.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
+                cover.topAnchor.constraint(equalTo: webView.topAnchor),
+                cover.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+                spinner.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
+            ])
+
+            loadingCover = cover
+        }
+
+        private func hideLoadingCover() {
+            loadingCover?.removeFromSuperview()
+            loadingCover = nil
+        }
+
         // MARK: - Navigation
+
+        /// Intercept navigations HEADED to /login before the page renders.
+        ///
+        /// An expired session turns a widget/notification tap into a server
+        /// redirect to /login. The didFinish rescue below can recover, but by
+        /// then the user has SEEN the login page — which reads as "logged out
+        /// again". Cancelling the navigation here and bootstrapping first means
+        /// the only thing visible is the loading cover, and the resumed load
+        /// carries the exact destination from the login URL's callbackUrl.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard navigationAction.targetFrame?.isMainFrame != false,
+                  let url = navigationAction.request.url,
+                  url.host == URL(string: AppConfig.shared.serverURL)?.host,
+                  isLoginPage(url),
+                  SessionBootstrapper.hasCredentials,
+                  !loginRescueAttempted
+            else {
+                decisionHandler(.allow)
+                return
+            }
+            loginRescueAttempted = true
+            decisionHandler(.cancel)
+            showLoadingCover(over: webView)
+            let resume = Self.resumePath(fromLoginURL: url)
+            Task { @MainActor in
+                if await SessionBootstrapper.bootstrap() {
+                    print("[OpenTask] /login intercepted — session re-minted, resuming \(resume)")
+                    // rearmRescue: false — replaying the destination must not
+                    // reset the guard, or a server that keeps bouncing would
+                    // loop bootstrap attempts forever.
+                    WebViewManager.shared.navigate(path: resume, rearmRescue: false)
+                } else {
+                    print("[OpenTask] /login intercept: bootstrap failed — showing login page")
+                    hideLoadingCover()
+                    webView.load(URLRequest(url: url))
+                }
+            }
+        }
+
+        /// Destination to resume after a rescued /login bounce: the login URL's
+        /// own callbackUrl when present (the server records exactly where the
+        /// user was headed), falling back to the last path the app requested.
+        /// Same-origin relative paths only — anything else falls through.
+        static func resumePath(fromLoginURL url: URL) -> String {
+            if let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "callbackUrl" })?.value,
+                cb.hasPrefix("/"), !cb.hasPrefix("//") {
+                return cb
+            }
+            return WebViewManager.shared.lastRequestedPath
+        }
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
             guard let webView = sender.superview?.superview as? WKWebView else {
@@ -197,11 +357,53 @@ struct WebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             refreshControl?.endRefreshing()
+            hideLoadingCover()
             injectDeviceInfo(into: webView)
+            injectTokenFlags(into: webView)
 
             // Force WKWebView to flush cookies to disk so session survives force-quit.
             // WKWebView doesn't guarantee immediate persistence — getAllCookies triggers a sync.
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { _ in }
+
+            if isLoginPage(webView.url) {
+                rescueFromLogin(webView)
+            } else {
+                // Any page that isn't /login is proof the session is good again;
+                // arm the rescue for the next time one expires.
+                loginRescueAttempted = false
+            }
+        }
+
+        /// The web session cookie outlives its usefulness after 7 days while the
+        /// Keychain Bearer token does not, so landing on /login with a token in
+        /// hand is a recoverable state, not a dead end: mint a new session and
+        /// replay the path the user actually asked for.
+        ///
+        /// Exactly one attempt per landing. If the bootstrap fails — bad token,
+        /// server down — the login page is left exactly as it is and the user
+        /// signs in by hand. If it succeeds but the server bounces us back to
+        /// /login anyway, the guard is still set, so there is no redirect loop.
+        private func rescueFromLogin(_ webView: WKWebView) {
+            guard !loginRescueAttempted, SessionBootstrapper.hasCredentials else { return }
+            loginRescueAttempted = true
+
+            Task { @MainActor in
+                guard await SessionBootstrapper.bootstrap() else {
+                    print("[OpenTask] /login rescue declined — leaving login page")
+                    return
+                }
+                let path = WebViewManager.shared.lastRequestedPath
+                print("[OpenTask] /login rescue succeeded — resuming \(path)")
+                WebViewManager.shared.navigate(path: path, rearmRescue: false)
+            }
+        }
+
+        /// NextAuth's login route, whether or not it carries a `callbackUrl`
+        /// query or a trailing slash.
+        private func isLoginPage(_ url: URL?) -> Bool {
+            guard var path = url?.path else { return false }
+            if path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+            return path == "/login"
         }
 
         /// Inject device token info into the page after every navigation.
@@ -215,12 +417,55 @@ struct WebView: UIViewRepresentable {
             #else
             let env = "production"
             #endif
-            let hasToken = KeychainHelper.read(key: "bearerToken") != nil
-            let js = """
-                window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };
-                window.__OPENTASK_HAS_TOKEN = \(hasToken);
-                """
+            let js = "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', bundleId: '\(bundleId)', environment: '\(env)' };"
             webView.evaluateJavaScript(js)
+        }
+
+        /// Re-inject the Keychain token flags after every navigation.
+        ///
+        /// Separate from `injectDeviceInfo` because that one returns early when
+        /// APNs hasn't answered yet, and these flags have nothing to do with
+        /// push: the document-start user script is a snapshot from web view
+        /// creation, so without this a token provisioned mid-session (or wiped
+        /// by a disconnect) would never be reflected in the page.
+        private func injectTokenFlags(into webView: WKWebView) {
+            webView.evaluateJavaScript(Self.tokenFlagsJS())
+        }
+
+        /// `window.__OPENTASK_HAS_TOKEN` / `window.__OPENTASK_TOKEN_PREVIEW`.
+        ///
+        /// The preview is the last 8 characters of the stored Bearer token —
+        /// the same suffix the server keeps in `api_tokens.token_preview` — so
+        /// the web app can tell that the native token belongs to a different
+        /// user than the one whose session is loaded. `null` when there is no
+        /// token; never the token itself.
+        static func tokenFlagsJS() -> String {
+            let token = KeychainHelper.read(key: "bearerToken")
+            let preview = token.map { String($0.suffix(8)) }
+            return """
+                window.__OPENTASK_HAS_TOKEN = \(token != nil);
+                window.__OPENTASK_TOKEN_PREVIEW = \(jsStringLiteral(preview));
+                """
+        }
+
+        /// Render a Swift string as a JS single-quoted literal (or `null`).
+        /// Token previews are opaque server-generated strings — escape rather
+        /// than assume they are alphanumeric.
+        static func jsStringLiteral(_ value: String?) -> String {
+            guard let value else { return "null" }
+            var escaped = ""
+            for character in value.unicodeScalars {
+                switch character {
+                case "\\": escaped += "\\\\"
+                case "'": escaped += "\\'"
+                case "\n": escaped += "\\n"
+                case "\r": escaped += "\\r"
+                case "\u{2028}": escaped += "\\u2028"
+                case "\u{2029}": escaped += "\\u2029"
+                default: escaped.unicodeScalars.append(character)
+                }
+            }
+            return "'\(escaped)'"
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -228,12 +473,14 @@ struct WebView: UIViewRepresentable {
             // Ignore cancelled navigations — happens when a quick action or deep link
             // navigation replaces an in-flight load. Not a real connectivity error.
             if (error as NSError).code == NSURLErrorCancelled { return }
+            hideLoadingCover()
             onNavigationError?(error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             refreshControl?.endRefreshing()
             if (error as NSError).code == NSURLErrorCancelled { return }
+            hideLoadingCover()
             onNavigationError?(error)
         }
 

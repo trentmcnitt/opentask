@@ -16,6 +16,20 @@ final class AppConfig {
     }
 
     private init() {
+        #if DEBUG
+        // Simulator/UI-test hook: seed credentials from the launch environment so
+        // automated runs can configure the app without driving the setup UI.
+        // Debug builds only — release builds always go through SetupView.
+        let env = ProcessInfo.processInfo.environment
+        if let seedURL = env["OPENTASK_SEED_SERVER_URL"], !seedURL.isEmpty {
+            KeychainHelper.save(key: "serverURL", value: seedURL)
+            if let seedToken = env["OPENTASK_SEED_BEARER_TOKEN"], !seedToken.isEmpty {
+                KeychainHelper.save(key: "bearerToken", value: seedToken)
+            }
+            print("[OpenTask] Seeded server config from launch environment")
+        }
+        #endif
+
         let url = KeychainHelper.read(key: "serverURL")
         self.serverURL = url ?? ""
         self.isConfigured = url != nil && !url!.isEmpty

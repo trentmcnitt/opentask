@@ -133,6 +133,10 @@ Related source-truth correction: **`anchor_time` IS used in recurrence computati
 - _Call sites that must move off raw `due_at`_ (all three confirmed `due_at`-only today): `overdue-checker.ts` (the base overdue query), `dismiss.ts:getOverdueCount` (badge), `bulk/snooze-overdue/route.ts` (both queries). True one-offs (no rrule) keep raw `due_at` as sole truth.
 - _A cached/materialized `next_occurrence_at` column is PERMITTED_ as an implementation detail (recomputed on write + on recurrence advance) — what §10 rejects is a scheduled job that _mutates user-visible due dates_, not a derived cache. If cached, it must be recomputed synchronously on every rrule/anchor/snooze write, never by cron alone.
 
+### 4.7 OPEN CONSIDERATION — "wants to happen at" vs "expires at" (noted by the user, 2026-08-06)
+
+Not a decision; a distinction the user flagged (verbatim from a task he filed to himself: _"Want vs expires? (Ie report due date, coupon, etc. — missing un-make-up-able)"_). Most timed tasks **want** to happen at a time: a morning walk wants the morning, but nothing is lost when it slips — it doesn't expire just because the notification fired. A minority **expire**: a report deadline, a coupon — miss it and the opportunity is un-make-up-able, no amount of later action recovers it. The current model approximates this through priority (P0–2 due dates are reminders; P3/P4 are deadlines — see TASK-MODEL) but priority is _importance_, and expiry is orthogonal to importance (L3: a low-importance coupon still hard-expires). If this is ever built, the likely shape is an explicit expiry attribute — affecting what happens _after_ the time passes (does it stay current, roll forward, or lapse) — rather than a new priority rung. To consider; nothing in v0.3 depends on it.
+
 ---
 
 ## 5. Track (quotas)
@@ -244,10 +248,16 @@ Plumbing: add `skip` / `bulk_skip` to the `UndoAction` union (`src/types/index.t
 
 ## 8. Widgets
 
-Two independent Home-Screen/Today-View widgets — separate widget _kinds_ (each gets its own refresh budget). **Size:** the user said "2×2, like a big one" pointing at his Weather widget, which is `systemLarge` (the 4×4-icon footprint; note the WidgetKit mapping — `systemSmall` ≈ 2×2 icons, `systemMedium` ≈ 4×2, `systemLarge` ≈ 4×4). The described content (check-off rows, progress bars, chevrons) needs `systemLarge`; ship `systemMedium` as a reduced variant if cheap. **No widget extension exists in the repo yet** — this is greenfield.
+Three independent Home-Screen/Today-View widgets — separate widget _kinds_ (each gets its own refresh budget). **Sizes:** primary layouts are `systemLarge` (the 4×4-icon footprint; WidgetKit mapping — `systemSmall` ≈ 2×2 icons, `systemMedium` ≈ 4×2, `systemLarge` ≈ 4×4) with `systemMedium` reduced variants, **plus a `systemSmall` (2×2) variant of every kind** (AMENDED per user 2026-07-27 — the original "2×2, like a big one" reading conflated the two; he wants both). The Track widget's 2×2 is the flagship small: a quota compresses to a ring + fraction perfectly, which lists don't.
 
-1. **Reminders widget** — current time slot's incomplete items, check-off via AppIntent buttons; chevron (AppIntent) to move between slots; defaults to the current slot.
-2. **Tasks widget** — today's tasks; chevron cycles whatever projects exist (do not hardcode a count — §7.1 leaves General's fate open); tracked items render as progress rows with +1.
+1. **Reminders widget** — current time slot's incomplete items, check-off via AppIntent buttons; chevron (AppIntent) to move between slots; defaults to the current slot. Small variant: current slot name + count + top item.
+2. **Tasks widget** — today's tasks; chevron cycles whatever projects exist (do not hardcode a count — §7.1 leaves General's fate open). **Tracked items are EXCLUDED** (AMENDED 2026-07-27 — they have their own widget now; a quota row in the task list buries the thing being glanced at). Small variant: overdue count + next task.
+3. **Track widget** (AMENDED 2026-07-27 — the user rates this the second-most-important widget; the original spec wrongly folded it into Tasks) — every `progress_target > 1` item as a progress row: title, n/target, thin bar, `+1` AppIntent button; §5 pace states render but never alarm. Small (2×2) variant is first-class: one quota as a progress ring + fraction, chevron-cycled; behind-pace item preferred by default.
+
+**Interaction affordances (AMENDED 2026-07-27, from first real use):**
+
+- **Chevrons must telegraph their edges**: render disabled/dimmed when there is nothing further in that direction, and where the layout affords it show the adjacent page's name next to the glyph (e.g. `‹ Midday … Evening ›`) so paging is a choice, not a gamble.
+- **Check-off must be optimistic**: the item leaves the widget the moment it is tapped (local cache tombstone), with the server call reconciling behind it — the round trip is seconds long and a visible multi-second delay reads as a dead button. On failure the item reappears (honest), it never silently stays gone.
 
 Watch app (`ios/OpenTaskWatch/`): **out of scope for v0.3** beyond continuing to compile — no watch widgets/complications this round.
 

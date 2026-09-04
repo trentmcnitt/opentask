@@ -6,4 +6,5 @@
  */
 
 export { checkOverdueTasks } from './overdue-checker'
+export { checkSlotReminders, pendingSlotNotifications, slotsDueNow } from './slot-reminders'
 export { dismissNotificationsForTasks } from './dismiss'

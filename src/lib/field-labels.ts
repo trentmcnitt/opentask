@@ -29,6 +29,10 @@ export const FIELD_LABELS: Record<string, string> = {
   notes: 'notes',
   recurrence_mode: 'recurrence mode',
   auto_snooze_minutes: 'auto-snooze',
+  // §6: moving an item on/off the Reminders surface changes what KIND of thing
+  // it is, so it belongs in the user-facing summary rather than being filtered
+  // out as internal bookkeeping.
+  is_reminder: 'reminder',
 }
 
 /**
@@ -218,6 +222,8 @@ function buildFieldFragment(
       return 'Notes updated'
     case 'auto_snooze_minutes':
       return buildAutoSnoozeFragment(beforeState, afterState)
+    case 'is_reminder':
+      return afterState.is_reminder ? 'Moved to Reminders' : 'Removed from Reminders'
     default:
       return null
   }

@@ -12,13 +12,45 @@ interface QuickAddProps {
   onOpenAddForm?: (title: string) => void
 }
 
+// Rotating placeholder text for the quick-add input. The first-time experience gives no hint
+// that this field understands natural language ("every day except Saturday", "high priority",
+// due dates, etc.) — it just looks like a plain text box. Cycling through worked examples here
+// (instead of a static "Add a task...") surfaces the AI enrichment capability without needing
+// a dedicated tour or extra UI. Rotation pauses as soon as the user has typed anything, and the
+// index resets to 0 ("Add a task...") whenever the field goes back to empty, so returning users
+// always see the plain prompt first rather than landing mid-cycle on a random example.
+const PLACEHOLDER_EXAMPLES = [
+  'Add a task...',
+  'Try: walk the dog every day except Saturday at 9am',
+  'Try: call mom this weekend',
+  'Try: pay rent on the 1st of every month',
+  'Try: follow up with client tomorrow — high priority',
+  'Try: dentist appointment next Tuesday at 2pm',
+]
+const PLACEHOLDER_ROTATE_MS = 3200
+
 export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const { isSupported, isListening, startListening, stopListening, transcript, error } =
     useSpeechRecognition()
   const titleBeforeListeningRef = useRef('')
+
+  // Rotate through example placeholders while the field is empty and idle. Pausing on non-empty
+  // title avoids re-rendering while the user is actively typing (the placeholder is invisible
+  // then anyway), and resetting to index 0 keeps "Add a task..." as the first thing anyone sees.
+  useEffect(() => {
+    if (title) {
+      setPlaceholderIndex(0)
+      return
+    }
+    const interval = setInterval(() => {
+      setPlaceholderIndex((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length)
+    }, PLACEHOLDER_ROTATE_MS)
+    return () => clearInterval(interval)
+  }, [title])
 
   // Surface speech recognition errors as toasts
   useEffect(() => {
@@ -62,6 +94,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   return (
     <div>
       <div
+        data-tour="quick-add"
         className={cn(
           'bg-card flex items-center gap-2 rounded-lg border p-3',
           'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
@@ -90,7 +123,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
               handleSubmit()
             }
           }}
-          placeholder="Add a task..."
+          placeholder={PLACEHOLDER_EXAMPLES[placeholderIndex]}
           className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
           aria-label="Quick add task"
           disabled={submitting}
