@@ -97,7 +97,7 @@ function refuseTrackedReminder<T extends { progress_target?: number; is_reminder
   return !(data.is_reminder === true && (data.progress_target ?? 1) > 1)
 }
 
-const TRACKED_REMINDER_MESSAGE =
+export const TRACKED_REMINDER_MESSAGE =
   'A task cannot be both tracked (progress_target > 1) and a reminder'
 
 /**

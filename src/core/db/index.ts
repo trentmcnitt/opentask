@@ -216,6 +216,13 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0')
   }
 
+  // Collapsible dashboard filter chips (§7.3) — default collapsed for everyone,
+  // including existing users: the whole point is that the front door stops
+  // opening onto a wall of chips.
+  if (!hasColumn(database, 'users', 'filters_expanded')) {
+    database.exec('ALTER TABLE users ADD COLUMN filters_expanded INTEGER NOT NULL DEFAULT 0')
+  }
+
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
 }

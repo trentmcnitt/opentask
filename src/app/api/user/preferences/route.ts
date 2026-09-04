@@ -19,6 +19,9 @@ import { withLogging } from '@/lib/with-logging'
 import type { LabelConfig, LabelColor, PriorityDisplayConfig } from '@/types'
 
 // §7.3 adds 'slot' — today grouped by time slot, the new front door.
+// 'reminders' was briefly valid here, back when the §6 Reminders surface rode in
+// the dashboard's view toggle. It is now its own route (`/reminders`), so it is no
+// longer a grouping — clients coerce any lingering stored value to 'slot'.
 const VALID_GROUPINGS = ['time', 'project', 'unified', 'slot'] as const
 const VALID_SORT_OPTIONS = [
   'due_date',
@@ -153,7 +156,7 @@ function validateGeneralFields(
 ): string | null {
   if (body.default_grouping !== undefined) {
     if (!VALID_GROUPINGS.includes(body.default_grouping as (typeof VALID_GROUPINGS)[number]))
-      return 'default_grouping must be "time", "project", "unified", or "slot"'
+      return `default_grouping must be one of: ${VALID_GROUPINGS.join(', ')}`
     updates.push('default_grouping = ?')
     params.push(body.default_grouping)
   }
@@ -170,6 +173,13 @@ function validateGeneralFields(
       return 'default_sort_reversed must be a boolean'
     updates.push('default_sort_reversed = ?')
     params.push(body.default_sort_reversed ? 1 : 0)
+  }
+
+  // §7.3: whether the dashboard's filter-chip section is pinned open.
+  if (body.filters_expanded !== undefined) {
+    if (typeof body.filters_expanded !== 'boolean') return 'filters_expanded must be a boolean'
+    updates.push('filters_expanded = ?')
+    params.push(body.filters_expanded ? 1 : 0)
   }
 
   if (body.label_config !== undefined) {
@@ -430,12 +440,13 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
+  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
   default_sort: string
   default_sort_reversed: number
+  filters_expanded: number
   label_config: string
   priority_display: string
   auto_snooze_minutes: number
@@ -472,6 +483,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   default_grouping: 'project',
   default_sort: 'due_date',
   default_sort_reversed: 0,
+  filters_expanded: 0,
   label_config: '[]',
   priority_display: JSON.stringify(DEFAULT_PRIORITY_DISPLAY),
   auto_snooze_minutes: 30,
@@ -510,6 +522,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     default_grouping: row.default_grouping,
     default_sort: row.default_sort,
     default_sort_reversed: row.default_sort_reversed !== 0,
+    filters_expanded: row.filters_expanded !== 0,
     label_config: labelConfig,
     priority_display: priorityDisplay,
     auto_snooze_minutes: row.auto_snooze_minutes,

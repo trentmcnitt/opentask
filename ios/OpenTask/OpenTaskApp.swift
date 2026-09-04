@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 @main
 struct OpenTaskApp: App {
@@ -7,14 +8,26 @@ struct OpenTaskApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if AppConfig.shared.isConfigured {
-                ContentView()
-            } else {
-                SetupView()
+            Group {
+                if AppConfig.shared.isConfigured {
+                    ContentView()
+                } else {
+                    SetupView()
+                }
+            }
+            // `onOpenURL` is a View modifier, not a Scene modifier — it has to
+            // sit inside WindowGroup's content or it doesn't resolve.
+            .onOpenURL { url in
+                handleWidgetLink(url)
             }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                // Reloads triggered by the foregrounded app don't count against
+                // the widget refresh budget, so the widgets are always current
+                // by the time the user returns to the Home Screen.
+                WidgetCenter.shared.reloadAllTimelines()
+
                 // Install interceptor for warm-launch quick actions.
                 // SwiftUI replaces the scene delegate set in configurationForConnecting
                 // with its own internal delegate, so performActionFor never fires.
@@ -36,6 +49,29 @@ struct OpenTaskApp: App {
                     appDelegate.handleShortcutItem(item, completionHandler: { _ in })
                 }
             }
+        }
+    }
+
+    /// Resolve an `opentask://` deep link from the widget extension to a web path.
+    ///
+    /// The app is a WKWebView over the PWA and has no native routes, so every
+    /// link becomes a path on the configured server. `today` and anything
+    /// unrecognized fall through to the dashboard.
+    private func handleWidgetLink(_ url: URL) {
+        guard url.scheme == "opentask" else { return }
+
+        switch url.host {
+        case "task":
+            let id = url.pathComponents.last.flatMap(Int.init)
+            if let id {
+                WebViewManager.shared.navigateToTask(id)
+            } else {
+                WebViewManager.shared.navigate(path: "/")
+            }
+        case "reminders":
+            WebViewManager.shared.navigate(path: "/reminders")
+        default:
+            WebViewManager.shared.navigate(path: "/")
         }
     }
 }

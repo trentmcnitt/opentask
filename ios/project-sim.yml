@@ -1,0 +1,118 @@
+name: OpenTaskSim
+options:
+  bundleIdPrefix: io.mcnitt
+  deploymentTarget:
+    iOS: '17.0'
+  xcodeVersion: '16.2'
+settings:
+  base:
+    DEVELOPMENT_TEAM: GEL3VGTUJX
+    CODE_SIGN_STYLE: Automatic
+targets:
+  OpenTask:
+    type: application
+    platform: iOS
+    sources:
+    - path: OpenTask
+      excludes:
+      - '*.entitlements'
+    - path: Shared
+    info:
+      path: OpenTask/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIBackgroundModes:
+        - remote-notification
+        UILaunchScreen:
+          UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+        - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+        - UIInterfaceOrientationPortrait
+        - UIInterfaceOrientationPortraitUpsideDown
+        - UIInterfaceOrientationLandscapeLeft
+        - UIInterfaceOrientationLandscapeRight
+        UIApplicationShortcutItems:
+        - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-1hr
+          UIApplicationShortcutItemTitle: Snooze All +1hr
+          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeClock
+        - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-2hr
+          UIApplicationShortcutItemTitle: Snooze All +2hr
+          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeTime
+        - UIApplicationShortcutItemType: io.mcnitt.opentask.snooze-tomorrow
+          UIApplicationShortcutItemTitle: Snooze All to Tomorrow
+          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAlarm
+        - UIApplicationShortcutItemType: io.mcnitt.opentask.add-task
+          UIApplicationShortcutItemTitle: Add Task
+          UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAdd
+        CFBundleURLTypes:
+        - CFBundleURLName: io.mcnitt.opentask
+          CFBundleTypeRole: Editor
+          CFBundleURLSchemes:
+          - opentask
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: OpenTask/OpenTask.entitlements
+      properties:
+        aps-environment: development
+        com.apple.developer.usernotifications.critical-alerts: true
+        com.apple.security.application-groups:
+        - group.io.mcnitt.opentask
+        com.apple.developer.associated-domains:
+        - webcredentials:opentask.mcnitt.io
+    dependencies:
+    - target: OpenTaskNotification
+    - target: OpenTaskWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: '2'
+        SWIFT_VERSION: '5.9'
+  OpenTaskNotification:
+    type: app-extension
+    platform: iOS
+    sources:
+    - path: OpenTaskNotification
+      excludes:
+      - '*.entitlements'
+      - Info.plist
+    - path: Shared
+    dependencies:
+    - sdk: UserNotificationsUI.framework
+    entitlements:
+      path: OpenTaskNotification/OpenTaskNotification.entitlements
+      properties:
+        com.apple.security.application-groups:
+        - group.io.mcnitt.opentask
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskNotification/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+  OpenTaskWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+    - path: OpenTaskWidgets
+      excludes:
+      - '*.entitlements'
+      - Info.plist
+    - path: Shared
+    dependencies:
+    - sdk: WidgetKit.framework
+    - sdk: SwiftUI.framework
+    entitlements:
+      path: OpenTaskWidgets/OpenTaskWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+        - group.io.mcnitt.opentask
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskWidgets/Info.plist
+        GENERATE_INFOPLIST_FILE: false

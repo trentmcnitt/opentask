@@ -58,6 +58,30 @@ export function apiAnon(path: string, opts: FetchOptions = {}): Promise<Response
   return fetch(`${baseUrl()}${path}`, buildInit(null, opts))
 }
 
+/** All `name=value` pairs from a response's Set-Cookie headers */
+export function setCookiePairs(res: Response): string[] {
+  return res.headers.getSetCookie().map((c) => c.split(';')[0])
+}
+
+/**
+ * Mint a NextAuth session cookie from a Bearer token.
+ * Returns a `Cookie:` header value usable for session-authenticated requests.
+ */
+export async function sessionCookieFromToken(token: string): Promise<string> {
+  const res = await fetch(`${baseUrl()}/api/auth/session-from-token`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(`session-from-token failed: ${res.status} ${await res.text()}`)
+  }
+  const pairs = setCookiePairs(res)
+  if (pairs.length === 0) {
+    throw new Error('session-from-token returned no Set-Cookie header')
+  }
+  return pairs.join('; ')
+}
+
 /** Reset test data to deterministic state */
 export async function resetTestData(): Promise<void> {
   const res = await fetch(`${baseUrl()}/api/test/reset`, { method: 'POST' })

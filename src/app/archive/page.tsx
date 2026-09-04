@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import type { Project } from '@/types'
 
 interface ArchivedTask {
@@ -52,7 +53,7 @@ export default function ArchivePage() {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
 

@@ -19,6 +19,7 @@ import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
+import { TRACKED_REMINDER_MESSAGE } from '@/core/validation'
 
 export interface UpdateTaskOptions {
   userId: number
@@ -55,6 +56,17 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // Always check deleted_at, even for prefetched tasks — prevents future callers
   // from accidentally bypassing this guard by passing prefetchedTask
   if (task.deleted_at) throw new ValidationError('Cannot edit trashed task')
+
+  // §5/§6 mutual exclusivity, checked against the RESULTING row rather than the
+  // payload. The schema-level refusal only sees fields sent together, so it
+  // cannot catch "flag this already-tracked task as a reminder" — the single
+  // most likely way to reach the incoherent state from the task editor, where
+  // the toggle sends `is_reminder` alone.
+  const resultingIsReminder = input.is_reminder ?? task.is_reminder
+  const resultingTarget = input.progress_target ?? task.progress_target
+  if (resultingIsReminder && resultingTarget > 1) {
+    throw new ValidationError(TRACKED_REMINDER_MESSAGE)
+  }
 
   // §7.2: only labels being NEWLY added are held to the registry. Passing the
   // task's current labels as `existing` is what lets an unrelated edit (a title

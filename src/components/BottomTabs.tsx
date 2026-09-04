@@ -2,21 +2,30 @@
 
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Archive, Plus, Clock, Settings } from 'lucide-react'
+import { LayoutGrid, Archive, Plus, Clock, Lightbulb } from 'lucide-react'
 
 interface BottomTabsProps {
   onAddClick?: () => void
 }
 
+/**
+ * Mobile tab bar.
+ *
+ * Reminders (§6) is a destination, not a setting, so it takes a tab; Settings and
+ * Trash moved into the dashboard header's menu, which is the only overflow surface
+ * mobile has. Five slots is the ceiling — the centre one is the Add action, so four
+ * destinations is all there is to allocate.
+ */
 export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const pathname = usePathname()
 
   const tabs = [
     { href: '/', label: 'Dashboard', icon: LayoutGrid },
-    { href: '/archive', label: 'Archive', icon: Archive },
+    // Lightbulb is the Reminders surface's own icon (see RemindersView's empty state).
+    { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '#add', label: 'Add', icon: Plus, isAction: true },
     { href: '/history', label: 'History', icon: Clock },
-    { href: '/settings', label: 'Settings', icon: Settings },
+    { href: '/archive', label: 'Archive', icon: Archive },
   ]
 
   return (

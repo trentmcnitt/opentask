@@ -8,6 +8,7 @@ import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { validateCredentials, getUserById } from '@/core/auth/session'
 import { checkRateLimit, recordFailedAttempt, clearAttempts } from '@/core/auth/rate-limit'
+import { SESSION_MAX_AGE_SECONDS } from '@/core/auth/session-cookie'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -97,7 +98,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   session: {
     strategy: 'jwt',
-    maxAge: 7 * 24 * 60 * 60, // 7 days (default is 30 days)
+    // Shared with the session-minting path (POST /api/auth/session-from-token)
+    maxAge: SESSION_MAX_AGE_SECONDS, // 7 days (default is 30 days)
   },
   trustHost: true,
 })

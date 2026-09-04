@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useTimezone } from '@/hooks/useTimezone'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { showToast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import type { Project } from '@/types'
@@ -94,7 +95,7 @@ export default function TrashPage() {
   useEffect(() => {
     if (status === 'loading') return
     if (status === 'unauthenticated') {
-      router.push('/login')
+      router.push(loginUrlFromLocation())
       return
     }
     fetchData()

@@ -836,6 +836,105 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/tasks/bulk/complete:
+    post:
+      summary: Complete multiple tasks in one request
+      operationId: bulkComplete
+      tags: [Bulk Operations]
+      description: |
+        Built for the §6.1 notification batch checklist: the iOS content
+        extension commits N staged check-marks with one request. Delegates to
+        the same core bulk-done path — one transaction, ONE undo entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Completion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      tasks_affected:
+                        type: integer
+                      recurring_count:
+                        type: integer
+                      one_off_count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --- Reminders (§6) ---
+
+  /api/reminders:
+    get:
+      summary: Today's incomplete reminders grouped by time slot
+      operationId: listReminders
+      tags: [Reminders]
+      description: |
+        The Reminders surface (prompted thoughts, not actions). Items carry no
+        debt: never counted in overdue, never in the badge, never notified
+        individually — the time slot notifies. A reminder completed today
+        drops out of its group and returns with its next occurrence.
+      responses:
+        '200':
+          description: Reminder groups in slot order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      has_any:
+                        type: boolean
+                        description: |
+                          Whether the user has any reminders at all, today or
+                          otherwise. Lets a client tell "finished for today" apart
+                          from "has never made a reminder" when `groups` is empty.
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            slot:
+                              nullable: true
+                              type: object
+                              properties:
+                                id:
+                                  type: integer
+                                label:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  example: '07:00'
+                                sort_order:
+                                  type: integer
+                            count:
+                              type: integer
+                            reminders:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # --- Projects ---
 
   /api/projects:
@@ -1359,6 +1458,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # --- Auth ---
+
+  /api/auth/session-from-token:
+    post:
+      summary: Exchange a Bearer token for a web session cookie
+      operationId: createSessionFromToken
+      tags: [Auth]
+      description: |
+        Mints a NextAuth session cookie for the owner of the supplied Bearer token and
+        returns it in a `Set-Cookie` header. Used by the iOS app to log its WKWebView back
+        in when the 7-day session JWT expires, using the long-lived token in its keychain.
+
+        Bearer authentication only — a missing, malformed, or invalid `Authorization`
+        header returns 401. This endpoint never falls back to session cookie or proxy
+        header auth.
+
+        The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, expires in 7 days, and is named
+        `__Secure-authjs.session-token` over HTTPS (`authjs.session-token` otherwise).
+      responses:
+        '200':
+          description: Session cookie issued
+          headers:
+            Set-Cookie:
+              description: NextAuth session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ok:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # --- Stats ---
 

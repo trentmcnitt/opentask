@@ -24,6 +24,7 @@
 			<array>
 				<string>TASK_REMINDER</string>
 				<string>TASK_SUMMARY</string>
+				<string>SLOT_REMINDER</string>
 			</array>
 			<key>UNNotificationExtensionUserInteractionEnabled</key>
 			<true/>

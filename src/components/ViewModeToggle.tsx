@@ -18,13 +18,17 @@ interface ViewModeToggleProps {
  * greets you. Without a visible control the old views would be unreachable,
  * which would trade one kind of stuck for another.
  *
- * Deliberately three options, not a dropdown of every permutation: the point of
+ * Deliberately few options, not a dropdown of every permutation: the point of
  * the redesign is fewer decisions at the front door, and a picker with six
  * entries would just be the 20-filter-chip problem in miniature.
+ *
+ * Every option here is a grouping of the same task list. The Reminders surface
+ * (§6) used to ride along as a fourth chip — it is now a real route (`/reminders`)
+ * with its own tab, so this control is back to doing exactly one job.
  */
 export function ViewModeToggle({ grouping, onChange }: ViewModeToggleProps) {
-  // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as a
-  // fourth option would let the two controls disagree about what's active.
+  // 'unified' is driven by the AI-sort toggle elsewhere; showing it here as an
+  // extra option would let the two controls disagree about what's active.
   const options: { value: GroupingMode; label: string; icon: typeof List; hint: string }[] = [
     { value: 'slot', label: 'Today', icon: CalendarClock, hint: "Today's tasks by time of day" },
     { value: 'project', label: 'Projects', icon: FolderTree, hint: 'Group by project' },

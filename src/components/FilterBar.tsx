@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react'
-import { Loader2, Sparkles } from 'lucide-react'
+import { ChevronDown, Filter, Loader2, Sparkles } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { LabelFilterBar } from '@/components/LabelFilterBar'
 import { PriorityFilterBar } from '@/components/PriorityFilterBar'
@@ -29,24 +30,33 @@ function getSignalSelectedClass(key: string): string {
 }
 
 /**
- * Filter bar layout adapts based on AI mode:
+ * Filter bar layout. One always-visible control row, and a collapsible block of
+ * filter chips beneath it (REDESIGN-V03 §7.3).
  *
- * Off mode:
- *   Projects: [●Work 42] [●Personal 18] [●Side 6]             ← wrapping (if 2+ projects)
- *   Row 1: date filter chips — horizontal scroll
- *   Row 2: Priority chips | label chips — wraps
+ * Collapsed (the default — see `useFilterSection` for the full collapse rules):
+ *   Control: [⌄ Filters] │ [What's Next 6] [Insights] [Stale 4] [Quick Win 1]
  *
- * On mode:
- *   AI Row:  [What's Next 6] [Stale 4] [Quick Win 1]           ← scrollable
- *            ─────────────────────────────────────────────      ← subtle border
- *   Projects: [●Work 42] [●Personal 18] [●Side 6]             ← wrapping (if 2+ projects)
- *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                   ← scrollable
- *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...         ← wrapping
+ * Expanded:
+ *   Control: [⌃ Filters · 2] │ [What's Next 6] [Insights] [Stale 4]  ← scrollable
+ *            ─────────────────────────────────────────────────────    ← subtle border
+ *   Projects: [●Work 42] [●Personal 18] [●Side 6]                    ← wrapping (if 2+ projects)
+ *   Row 1:  [Overdue 61] [Soon 3] [Today 6]                          ← scrollable
+ *   Row 2:  [None 68] [Low 6] [Medium 6] [High 3] ...                ← wrapping
+ *
+ * The AI chips stay in the control row rather than moving inside the collapse:
+ * "What's Next" and the signal chips are the answer to "what now", which is the
+ * question §7.3 says the front door must answer, and Insights is a display
+ * toggle rather than a filter at all. Only the corpus-slicing chips — project,
+ * due date, priority, label, attribute — collapse, and those are exactly the
+ * ones `activeFilterCount` counts.
  *
  * Users clear filters by clicking active chips to deselect them.
  */
 export function FilterBar({
   tasks,
+  expanded,
+  onToggleExpanded,
+  activeFilterCount = 0,
   selectedPriorities,
   selectedLabels,
   selectedDateFilters = [],
@@ -97,6 +107,11 @@ export function FilterBar({
   onSignalLongPress,
 }: {
   tasks: Task[]
+  /** Whether the collapsible filter-chip block is showing (§7.3). */
+  expanded: boolean
+  onToggleExpanded: () => void
+  /** Number of active filters inside the collapsible block — drives the badge. */
+  activeFilterCount?: number
   selectedPriorities: number[]
   selectedLabels: string[]
   selectedDateFilters?: DueDateFilter[]
@@ -195,115 +210,175 @@ export function FilterBar({
   return (
     <div className="relative mb-4">
       <div className="flex flex-col gap-2">
-        {/* AI Row: What's Next chip + signal chips — scrollable, visually separated from standard filters */}
-        {aiRowVisible && (
-          <div className="border-border/40 border-b pb-2">
-            <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
-              {aiChipVisible && (
-                <AiChip
-                  active={aiFilterActive}
-                  loading={aiFilterLoading}
-                  count={aiInsightsCount!}
-                  onToggleFilter={onToggleAiFilter!}
+        {/* Control row: Filters toggle + AI chips — always visible, scrollable */}
+        <div
+          className={cn(
+            'scrollbar-hide flex items-center gap-2 overflow-x-auto',
+            expanded && 'border-border/40 border-b pb-2',
+          )}
+        >
+          <FiltersToggleChip
+            expanded={expanded}
+            activeCount={activeFilterCount}
+            onToggle={onToggleExpanded}
+          />
+
+          {aiRowVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+
+          {aiChipVisible && (
+            <AiChip
+              active={aiFilterActive}
+              loading={aiFilterLoading}
+              count={aiInsightsCount!}
+              onToggleFilter={onToggleAiFilter!}
+            />
+          )}
+
+          {insightsChipVisible && (
+            <>
+              {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
+              <InsightsChip
+                active={insightsActive}
+                loading={insightsGenerating}
+                onToggle={onToggleInsights!}
+              />
+            </>
+          )}
+
+          {(aiChipVisible || insightsChipVisible) && signalRowVisible && (
+            <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+          )}
+
+          {signalRowVisible && (
+            <SignalChipRow
+              chips={signalChips!}
+              selectedSignals={selectedSignals}
+              onClick={onSignalClick!}
+              onLongPress={onSignalLongPress}
+            />
+          )}
+        </div>
+
+        {expanded && (
+          <div id="dashboard-filter-chips" className="flex flex-col gap-2">
+            {/* Project row: colored dot chips — wrapping */}
+            {projects && onToggleProject && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ProjectFilterBar
+                  projects={projects}
+                  tasks={tasks}
+                  selectedProjects={selectedProjects}
+                  excludedProjects={excludedProjects}
+                  onToggleProject={onToggleProject}
+                  onExclusiveProject={onExclusiveProject}
+                  onExcludeProject={onExcludeProject}
+                  todayCounts={todayCounts}
+                />
+              </div>
+            )}
+
+            {/* Row 1: date filter chips — horizontal scroll */}
+            {dateFilterVisible && (
+              <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
+                <DueDateFilterBar
+                  tasks={tasks}
+                  selectedDateFilters={selectedDateFilters}
+                  excludedDateFilters={excludedDateFilters}
+                  onToggleDateFilter={onToggleDateFilter!}
+                  timezone={timezone!}
+                  onExclusiveDateFilter={onExclusiveDateFilter}
+                  onExcludeDateFilter={onExcludeDateFilter}
+                />
+              </div>
+            )}
+
+            {/* Row 2: Priority + label filters — wraps to fit */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <PriorityFilterBar
+                tasks={tasks}
+                selectedPriorities={selectedPriorities}
+                excludedPriorities={excludedPriorities}
+                onTogglePriority={onTogglePriority}
+                onExclusivePriority={onExclusivePriority}
+                onExcludePriority={onExcludePriority}
+              />
+
+              {hasLabels && (
+                <LabelFilterBar
+                  tasks={tasks}
+                  selectedLabels={selectedLabels}
+                  excludedLabels={excludedLabels}
+                  onToggleLabel={onToggleLabel}
+                  onExclusiveLabel={onExclusiveLabel}
+                  onExcludeLabel={onExcludeLabel}
                 />
               )}
 
-              {insightsChipVisible && (
+              {hasAttributes && onToggleAttribute && (
                 <>
-                  {aiChipVisible && <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />}
-                  <InsightsChip
-                    active={insightsActive}
-                    loading={insightsGenerating}
-                    onToggle={onToggleInsights!}
+                  <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
+                  <AttributeFilterBar
+                    tasks={tasks}
+                    attributeFilters={attributeFilters ?? new Set()}
+                    excludedAttributes={excludedAttributes ?? new Set()}
+                    onToggleAttribute={onToggleAttribute}
+                    onExclusiveAttribute={onExclusiveAttribute}
+                    onExcludeAttribute={onExcludeAttribute}
                   />
                 </>
-              )}
-
-              {(aiChipVisible || insightsChipVisible) && signalRowVisible && (
-                <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
-              )}
-
-              {signalRowVisible && (
-                <SignalChipRow
-                  chips={signalChips!}
-                  selectedSignals={selectedSignals}
-                  onClick={onSignalClick!}
-                  onLongPress={onSignalLongPress}
-                />
               )}
             </div>
           </div>
         )}
-
-        {/* Project row: colored dot chips — wrapping, positioned right under AI row */}
-        {projects && onToggleProject && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ProjectFilterBar
-              projects={projects}
-              tasks={tasks}
-              selectedProjects={selectedProjects}
-              excludedProjects={excludedProjects}
-              onToggleProject={onToggleProject}
-              onExclusiveProject={onExclusiveProject}
-              onExcludeProject={onExcludeProject}
-              todayCounts={todayCounts}
-            />
-          </div>
-        )}
-
-        {/* Row 1: date filter chips — horizontal scroll */}
-        {dateFilterVisible && (
-          <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
-            <DueDateFilterBar
-              tasks={tasks}
-              selectedDateFilters={selectedDateFilters}
-              excludedDateFilters={excludedDateFilters}
-              onToggleDateFilter={onToggleDateFilter!}
-              timezone={timezone!}
-              onExclusiveDateFilter={onExclusiveDateFilter}
-              onExcludeDateFilter={onExcludeDateFilter}
-            />
-          </div>
-        )}
-
-        {/* Row 2: Priority + label filters — wraps to fit */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PriorityFilterBar
-            tasks={tasks}
-            selectedPriorities={selectedPriorities}
-            excludedPriorities={excludedPriorities}
-            onTogglePriority={onTogglePriority}
-            onExclusivePriority={onExclusivePriority}
-            onExcludePriority={onExcludePriority}
-          />
-
-          {hasLabels && (
-            <LabelFilterBar
-              tasks={tasks}
-              selectedLabels={selectedLabels}
-              excludedLabels={excludedLabels}
-              onToggleLabel={onToggleLabel}
-              onExclusiveLabel={onExclusiveLabel}
-              onExcludeLabel={onExcludeLabel}
-            />
-          )}
-
-          {hasAttributes && onToggleAttribute && (
-            <>
-              <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
-              <AttributeFilterBar
-                tasks={tasks}
-                attributeFilters={attributeFilters ?? new Set()}
-                excludedAttributes={excludedAttributes ?? new Set()}
-                onToggleAttribute={onToggleAttribute}
-                onExclusiveAttribute={onExclusiveAttribute}
-                onExcludeAttribute={onExcludeAttribute}
-              />
-            </>
-          )}
-        </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Toggle for the collapsible filter block (§7.3).
+ *
+ * Wears the same outline-badge dialect as the due-date chips it reveals, and
+ * takes their "included" fill whenever filters are active — an active filter
+ * must read as active from the collapsed row alone, so the count badge is not
+ * optional decoration. See `useFilterSection` for when it can be collapsed.
+ */
+function FiltersToggleChip({
+  expanded,
+  activeCount,
+  onToggle,
+}: {
+  expanded: boolean
+  activeCount: number
+  onToggle: () => void
+}) {
+  const hasActive = activeCount > 0
+  return (
+    <Badge
+      asChild
+      variant="outline"
+      className={cn(
+        'flex-shrink-0 cursor-pointer rounded-sm transition-colors select-none',
+        hasActive
+          ? 'bg-foreground text-background border-foreground hover:bg-foreground/90'
+          : 'hover:bg-muted',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls="dashboard-filter-chips"
+        title={expanded ? 'Hide filters' : 'Show filters'}
+      >
+        <Filter className="size-3" />
+        <span className="leading-none">Filters</span>
+        {hasActive && <span className="leading-none">&middot; {activeCount}</span>}
+        <ChevronDown
+          className={cn('size-3 opacity-60 transition-transform', expanded && 'rotate-180')}
+        />
+      </button>
+    </Badge>
   )
 }
 

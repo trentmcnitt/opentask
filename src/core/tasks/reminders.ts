@@ -15,6 +15,7 @@
  * "overdue by N days" state, ever. That absence of debt is the whole point.
  */
 
+import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { todaysOccurrence } from '@/core/recurrence/occurrence'
 import { groupBySlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
@@ -39,11 +40,31 @@ export function getTodaysReminders(
   now: Date = new Date(),
 ): Task[] {
   const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const localToday = DateTime.fromJSDate(now).setZone(timezone)
 
   return all.filter((task) => {
     // Non-recurring reminders show whenever they're undone — they have no
     // schedule to fall outside of.
     if (!task.rrule) return true
+
+    // Already considered today: completing a recurring reminder advances its
+    // schedule but leaves it "scheduled today" by the rrule's lights, so
+    // without this check a checked-off reminder would sit in its slot all day.
+    // §6: completed ones drop out; the next occurrence resurrects it.
+    if (task.last_completed_at) {
+      const completed = DateTime.fromISO(task.last_completed_at, { zone: 'utc' }).setZone(timezone)
+      if (completed.isValid && completed.hasSame(localToday, 'day')) return false
+    }
+
+    // from_completion reminders have no derivable occurrence until they are
+    // completed (§4.6) — their due_at IS the schedule, so show them once it
+    // arrives (still no debt: nothing here renders overdue styling).
+    if (task.recurrence_mode === 'from_completion') {
+      if (!task.due_at) return false
+      const due = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
+      return due.isValid && due.startOf('day') <= localToday.startOf('day')
+    }
+
     return todaysOccurrence(task, timezone, now) !== null
   })
 }
@@ -81,6 +102,24 @@ export function countRemindersBySlot(
     slot: g.slot,
     count: g.reminders.length,
   }))
+}
+
+/**
+ * Does this user have any reminders at all (done or not, excluding trash)?
+ *
+ * Only the empty state depends on it: someone who has never made a reminder needs
+ * the surface explained, while someone who has simply finished today's needs to be
+ * told they are done, not taught what reminders are. Kept separate from
+ * `getRemindersBySlot` because that query answers "today", and today being empty is
+ * exactly when this distinction matters.
+ */
+export function hasAnyReminders(userId: number): boolean {
+  const row = getDb()
+    .prepare(
+      'SELECT 1 AS found FROM tasks WHERE user_id = ? AND is_reminder = 1 AND deleted_at IS NULL LIMIT 1',
+    )
+    .get(userId) as { found: number } | undefined
+  return row !== undefined
 }
 
 /** Is this task on the Reminders surface? Cheap check without loading the row. */

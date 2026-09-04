@@ -350,3 +350,39 @@ describe('combined preference updates', () => {
     expect(body.data.wake_time).toBe('07:00')
   })
 })
+
+/**
+ * `default_grouping` used to accept 'reminders' — the §6 surface rode in the
+ * dashboard's view toggle and persisted through this preference. It is now its own
+ * route (`/reminders`), so the value is no longer a grouping the dashboard can
+ * render and the API must stop accepting it.
+ */
+describe('default_grouping preference', () => {
+  test.each(['time', 'project', 'unified', 'slot'])('PATCH accepts %s', async (grouping) => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: grouping },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.default_grouping).toBe(grouping)
+  })
+
+  test('PATCH with the retired "reminders" value returns 400', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: 'reminders' },
+    })
+    expect(res.status).toBe(400)
+
+    // The last accepted value stands — a rejected update changes nothing.
+    const getRes = await apiFetch('/api/user/preferences')
+    const body = await getRes.json()
+    expect(body.data.default_grouping).toBe('slot')
+
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_grouping: 'project' },
+    })
+  })
+})

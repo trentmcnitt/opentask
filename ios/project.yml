@@ -23,6 +23,11 @@ targets:
     info:
       path: OpenTask/Info.plist
       properties:
+        # Without these the generated plist falls back to 1.0/1 while the build
+        # settings below say 1.0.0/2, and every embedded extension then trips
+        # "CFBundleVersion of an app extension must match its parent app".
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIBackgroundModes:
           - remote-notification
         UILaunchScreen:
@@ -47,6 +52,19 @@ targets:
           - UIApplicationShortcutItemType: io.mcnitt.opentask.add-task
             UIApplicationShortcutItemTitle: Add Task
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAdd
+        # Deep links from the widget extension (opentask://today, ://reminders,
+        # ://task/<id>). Resolved to web paths in OpenTaskApp.onOpenURL — the
+        # app has no native routes, it is a WKWebView over the PWA.
+        CFBundleURLTypes:
+          - CFBundleURLName: io.mcnitt.opentask
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - opentask
+        # Local-loopback exception only (http://localhost). Needed for simulator
+        # runs that reach a dev server through an SSH tunnel on localhost; does
+        # NOT weaken ATS for any remote host.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     entitlements:
       path: OpenTask/OpenTask.entitlements
       properties:
@@ -58,6 +76,7 @@ targets:
           - webcredentials:opentask.mcnitt.io
     dependencies:
       - target: OpenTaskNotification
+      - target: OpenTaskWidgets
       - target: OpenTaskWatch
     settings:
       base:
@@ -87,6 +106,30 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskNotification/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+
+  OpenTaskWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OpenTaskWidgets
+        excludes:
+          - '*.entitlements'
+          - Info.plist
+      - path: Shared
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: OpenTaskWidgets/OpenTaskWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.io.mcnitt.opentask
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskWidgets/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
   OpenTaskWatch:

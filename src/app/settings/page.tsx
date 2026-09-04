@@ -41,6 +41,7 @@ import { Switch } from '@/components/ui/switch'
 import { LABEL_COLORS, LABEL_COLOR_NAMES } from '@/lib/label-colors'
 import { usePushSubscription } from '@/hooks/usePushSubscription'
 import { showToast } from '@/lib/toast'
+import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { formatSnoozeOptionLabel, formatMorningTime } from '@/lib/snooze'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
@@ -128,7 +129,7 @@ export default function SettingsPage() {
   }, [aiContext, aiContextSynced])
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.push('/login')
+    if (status === 'unauthenticated') router.push(loginUrlFromLocation())
   }, [status, router])
 
   // Detect if running inside the native iOS app wrapper (injected by WKWebView)

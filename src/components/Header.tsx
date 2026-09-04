@@ -14,6 +14,7 @@ import {
   Menu,
   Keyboard,
   Settings,
+  Trash2,
   Bot,
   Sun,
   Moon,
@@ -406,6 +407,16 @@ export function Header({
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
+                {/* Trash and Settings live here because the mobile tab bar has
+                    five slots and spends them on daily destinations. This menu is
+                    the only overflow surface on mobile, so it is also the only
+                    route to Trash there — the desktop sidebar still lists both. */}
+                <DropdownMenuItem asChild>
+                  <GuardedLink href="/trash">
+                    <Trash2 className="size-4" />
+                    Trash
+                  </GuardedLink>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <GuardedLink href="/settings">
                     <Settings className="size-4" />

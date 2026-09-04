@@ -9,9 +9,9 @@
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
-import { createTask, getTaskById, updateTask, bulkSnooze } from '@/core/tasks'
+import { createTask, getTaskById, updateTask, bulkSnooze, markDone } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
-import { getTodaysReminders, getRemindersBySlot } from '@/core/tasks/reminders'
+import { getTodaysReminders, getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { validateTaskCreate } from '@/core/validation'
@@ -271,5 +271,107 @@ describe('Reminders surface', () => {
 
     executeUndo(TEST_USER_ID)
     expect(getTaskById(task.id)!.is_reminder).toBe(false)
+  })
+
+  /**
+   * RM-015: §5/§6 exclusivity survives the UPDATE path.
+   *
+   * The schema-level refusal (RM-002) only sees fields sent together, so it
+   * cannot catch flagging an already-tracked task as a reminder — which is
+   * exactly what the task editor's Reminder toggle sends: `is_reminder` alone.
+   * The check therefore runs against the resulting row, in both directions.
+   */
+  test('RM-015: an existing tracked task cannot be flagged as a reminder', () => {
+    const tracked = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Eggs', progress_target: 3 },
+    })
+
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: tracked.id,
+        input: { is_reminder: true },
+      }),
+    ).toThrow(ValidationError)
+    expect(getTaskById(tracked.id)!.is_reminder).toBe(false)
+
+    // ...and the same refusal from the other side.
+    const reminder = makeReminder()
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: reminder.id,
+        input: { progress_target: 4 },
+      }),
+    ).toThrow(ValidationError)
+    expect(getTaskById(reminder.id)!.progress_target).toBe(1)
+  })
+
+  /**
+   * RM-016: The recurring drop-out trap. Completing a RECURRING reminder
+   * advances its due_at but the rrule still says "scheduled today", so without
+   * the considered-today check the checked-off reminder sits in its slot all
+   * day. It must drop out for the rest of today and come back with tomorrow's
+   * occurrence — the §6 no-debt reset, in the completing direction.
+   */
+  test('RM-016: a completed recurring reminder drops out until its next occurrence', () => {
+    const reminder = makeReminder()
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toContain(reminder.id)
+
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id })
+
+    // Gone for the rest of today, even though FREQ=DAILY says "today".
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).not.toContain(
+      reminder.id,
+    )
+
+    // Tomorrow the schedule resurrects it.
+    vi.setSystemTime(new Date('2026-01-16T16:00:00Z'))
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toContain(reminder.id)
+  })
+
+  /**
+   * RM-017: from_completion reminders have no derivable occurrence until
+   * completed (§4.6), so due_at IS their schedule — hidden while it is in the
+   * future, shown once its day arrives.
+   */
+  test('RM-017: a from_completion reminder follows its due_at', () => {
+    const future = makeReminder({
+      recurrence_mode: 'from_completion',
+      due_at: '2026-01-17T13:00:00.000Z', // Saturday — two days out
+    })
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).not.toContain(
+      future.id,
+    )
+
+    // Two days later its day has come.
+    vi.setSystemTime(new Date('2026-01-17T16:00:00Z'))
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toContain(future.id)
+  })
+
+  /**
+   * RM-018: "has any reminders" is independent of "has reminders today".
+   *
+   * The Reminders page picks its empty state with it: a user who owns reminders
+   * but has none scheduled today is done for the day, not new to the feature, and
+   * showing them the explainer would be wrong.
+   */
+  test('RM-018: hasAnyReminders is true even when today is empty', () => {
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
+
+    // 2026-01-15 is a Thursday, so a Monday-only reminder is not today's.
+    const mondayOnly = makeReminder({ rrule: 'FREQ=WEEKLY;BYDAY=MO', title: 'Monday thought' })
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE)).toHaveLength(0)
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(true)
+
+    // Trashing it takes the user back to knowing nothing about reminders.
+    getDb()
+      .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), mondayOnly.id)
+    expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
   })
 })
