@@ -93,11 +93,12 @@ export function getRemindersBySlot(
 ): ReminderGroup[] {
   const reminders = getTodaysReminders(userId, timezone, now)
   const slots = listTimeSlots(userId)
+  // A reminder that is waiting again (an undone completion leaves
+  // last_completed_at behind) is waiting, not considered — never both.
+  const waitingIds = new Set(reminders.map((t) => t.id))
+  const considered = getConsideredToday(userId, timezone, now).filter((t) => !waitingIds.has(t.id))
   const consideredBySlot = new Map(
-    groupBySlot(getConsideredToday(userId, timezone, now), slots, timezone).map((g) => [
-      g.slot?.id ?? null,
-      g.items.length,
-    ]),
+    groupBySlot(considered, slots, timezone).map((g) => [g.slot?.id ?? null, g.items.length]),
   )
 
   return groupBySlot(reminders, slots, timezone).map((group) => ({

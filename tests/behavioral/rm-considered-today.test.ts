@@ -10,6 +10,7 @@
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, markDone } from '@/core/tasks'
+import { executeUndo } from '@/core/undo'
 import { getRemindersBySlot, getConsideredToday } from '@/core/tasks/reminders'
 import { summarizeReminders } from '@/lib/reminders-summary'
 import {
@@ -79,6 +80,16 @@ describe('Reminders considered today', () => {
     const groups = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
     expect(groups.find((g) => g.slot?.label === 'Early morning')!.considered).toBe(1)
     expect(groups.flatMap((g) => g.reminders)).toHaveLength(0)
+  })
+
+  test('RM-024: an undone consideration is waiting again, not counted twice', () => {
+    const a = makeReminder({ title: 'A' })
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: a.id })
+    executeUndo(TEST_USER_ID)
+    const groups = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
+    const early = groups.find((g) => g.slot?.label === 'Early morning')!
+    expect(early.reminders.map((t) => t.id)).toEqual([a.id])
+    expect(early.considered).toBe(0)
   })
 
   test("RM-022: yesterday's considerations do not count today", () => {
