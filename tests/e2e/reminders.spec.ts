@@ -289,8 +289,18 @@ test.describe('Reminders surface', () => {
       // The day's bar starts empty: 0 of 2.
       await expect(headline.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
 
-      // One tap clears exactly the waiting-so-far set.
-      await page.getByRole('button', { name: /Mark all 2 waiting so far as considered/ }).click()
+      // The sweep asks first. Cancel changes nothing; confirm clears exactly
+      // the waiting-so-far set.
+      const sweep = page.getByRole('button', { name: /Mark all 2 waiting so far as considered/ })
+      await sweep.click()
+      const dialog = page.getByRole('alertdialog')
+      await expect(dialog).toContainText('Consider all 2 waiting so far?')
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect(page.locator('li[data-reminder-id]')).toHaveCount(2)
+
+      await sweep.click()
+      await dialog.getByRole('button', { name: 'Consider all 2' }).click()
       await expect(page.getByText('Considered 2')).toBeVisible()
       await expect(page.locator('li[data-reminder-id]')).toHaveCount(0)
       await expect(page.locator('[data-reminders-badge]')).toHaveCount(0)
@@ -377,6 +387,39 @@ test.describe('Reminders top bar', () => {
       await expect(undo).toHaveAccessibleName('Undo')
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+})
+
+/**
+ * A slot's "Considered all" is the other sweep, and it confirms the same way.
+ * The dialog names the slot and the number so the scope is in the sentence.
+ */
+test.describe('Considered all confirms', () => {
+  test('a slot sweep asks first, names the slot, and honours cancel', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createReminder(page, { title: 'Sweep thought one', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'Sweep thought two', due_at: todayAt(7) }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const sweep = page.getByRole('button', { name: /^Mark all 2 in .+ as considered$/ })
+      await sweep.click()
+      const dialog = page.getByRole('alertdialog')
+      await expect(dialog).toContainText(/Consider all 2 in .+\?/)
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect(page.locator('li[data-reminder-id]')).toHaveCount(2)
+
+      await sweep.click()
+      await dialog.getByRole('button', { name: 'Consider all 2' }).click()
+      await expect(page.getByText('Considered 2')).toBeVisible()
+      await expect(page.locator('li[data-reminder-id]')).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 })
