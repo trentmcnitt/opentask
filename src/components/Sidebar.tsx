@@ -4,6 +4,8 @@ import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Plus, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useRemindersBadge } from '@/hooks/useReminders'
+import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
 
@@ -18,6 +20,10 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   // the split is "where you work" on top, "where things end up" pinned at the
   // bottom. Reminders (§6) belongs to the first group: it is a daily surface, not
   // an archive of anything.
+  // §6: the reminders badge is "waiting so far today" — never overdue, never
+  // red. Same number the Reminders headline shows.
+  const remindersWaiting = useRemindersBadge(useTimezone())
+
   const navItems = [
     { href: '/', label: 'Tasks', icon: LayoutDashboard },
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
@@ -60,6 +66,15 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               >
                 <Icon className="size-4" />
                 {item.label}
+                {item.href === '/reminders' && remindersWaiting > 0 && (
+                  <span
+                    data-reminders-badge
+                    className="bg-foreground/10 text-foreground/80 ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                    aria-label={`${remindersWaiting} reminders waiting so far today`}
+                  >
+                    {remindersWaiting}
+                  </span>
+                )}
               </GuardedLink>
             )
           })}

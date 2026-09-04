@@ -26,8 +26,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         slot: g.slot,
         reminders: g.reminders.map(formatTaskResponse),
         count: g.reminders.length,
+        // Considered today in this slot — feeds the progress bars (§6).
+        considered: g.considered,
       })),
       total: groups.reduce((sum, g) => sum + g.reminders.length, 0),
+      considered_total: groups.reduce((sum, g) => sum + g.considered, 0),
       // Whether the user has any reminders at all. Nothing renders it directly —
       // it only picks which empty state the surface shows when today is clear.
       has_any: hasAnyReminders(user.id),

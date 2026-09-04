@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Task } from '@/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { showToast } from '@/lib/toast'
+import { summarizeReminders } from '@/lib/reminders-summary'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -17,6 +18,8 @@ export interface ReminderGroup {
   slot: TimeSlot | null
   reminders: Task[]
   count: number
+  /** Considered today in this slot (progress, §6). */
+  considered: number
 }
 
 interface UseRemindersOptions {
@@ -67,6 +70,14 @@ export interface UseRemindersReturn {
  */
 let remindersCache: { groups: ReminderGroup[]; hasAny: boolean } | null = null
 
+// Anyone showing a number derived from the cache (the nav badge) subscribes
+// here and re-renders whenever the surface refreshes or completes something.
+const cacheListeners = new Set<() => void>()
+function setRemindersCache(next: typeof remindersCache) {
+  remindersCache = next
+  for (const listener of cacheListeners) listener()
+}
+
 export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseRemindersReturn {
   const [groups, setGroups] = useState<ReminderGroup[]>(remindersCache?.groups ?? [])
   const [hasAny, setHasAny] = useState(remindersCache?.hasAny ?? false)
@@ -106,7 +117,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       const json = await res.json()
       const nextGroups = stripPending((json?.data?.groups ?? []) as ReminderGroup[])
       const nextHasAny = json?.data?.has_any === true
-      remindersCache = { groups: nextGroups, hasAny: nextHasAny }
+      setRemindersCache({ groups: nextGroups, hasAny: nextHasAny })
       setGroups(nextGroups)
       setHasAny(nextHasAny)
       setError(null)
@@ -168,7 +179,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
             ? g
             : { ...g, reminders: remaining, count: remaining.length }
         })
-        if (remindersCache) remindersCache = { ...remindersCache, groups: next }
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
         return next
       })
       setConsideredAny(true)
@@ -205,7 +216,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       } catch {
         if (snapshot) {
           const restored = snapshot
-          if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
+          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
           setGroups(restored)
         }
         showToast({ message: 'Could not complete reminders', type: 'error' })
@@ -255,4 +266,44 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     completeGroup,
     refresh,
   }
+}
+
+/**
+ * The nav badge: reminders waiting so far today, read from the shared cache.
+ *
+ * Fetches once when nothing is cached, then re-derives whenever the Reminders
+ * surface refreshes or completes something (same cache), and re-fetches when
+ * the tab regains focus so a stale count never survives a trip away from the
+ * app. Deliberately does NOT open its own sync stream — the navs are mounted
+ * everywhere, and one EventSource per hook instance would multiply
+ * connections; the surface's own stream keeps the cache honest while it is
+ * open, and focus covers the rest.
+ */
+export function useRemindersBadge(timezone: string): number {
+  const [, force] = useState(0)
+  useEffect(() => {
+    const bump = () => force((n) => n + 1)
+    cacheListeners.add(bump)
+    const load = async () => {
+      try {
+        const res = await fetch('/api/reminders')
+        if (!res.ok) return
+        const json = await res.json()
+        setRemindersCache({
+          groups: (json?.data?.groups ?? []) as ReminderGroup[],
+          hasAny: json?.data?.has_any === true,
+        })
+      } catch {
+        // A badge that stays at its last value beats one that flickers.
+      }
+    }
+    if (remindersCache === null) void load()
+    const onFocus = () => void load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cacheListeners.delete(bump)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+  return remindersCache ? summarizeReminders(remindersCache.groups, timezone).waitingSoFar : 0
 }

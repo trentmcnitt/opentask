@@ -20,11 +20,19 @@ import { getDb } from '@/core/db'
 import { todaysOccurrence } from '@/core/recurrence/occurrence'
 import { groupBySlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
 import type { Task } from '@/types'
-import { getTasks } from './create'
+import { getTasks, getTaskById } from './create'
 
 export interface ReminderGroup {
   slot: TimeSlot | null
+  /** Still waiting to be considered today, highest priority first. */
   reminders: Task[]
+  /**
+   * Considered today in this slot. Feeds the per-slot and per-day progress —
+   * the one score this surface keeps, because it only ever counts what the
+   * user DID (L1: absence is never a signal; a bar that filled with misses
+   * would be reading intent from what he didn't do).
+   */
+  considered: number
 }
 
 /**
@@ -85,11 +93,47 @@ export function getRemindersBySlot(
 ): ReminderGroup[] {
   const reminders = getTodaysReminders(userId, timezone, now)
   const slots = listTimeSlots(userId)
+  const consideredBySlot = new Map(
+    groupBySlot(getConsideredToday(userId, timezone, now), slots, timezone).map((g) => [
+      g.slot?.id ?? null,
+      g.items.length,
+    ]),
+  )
 
   return groupBySlot(reminders, slots, timezone).map((group) => ({
     slot: group.slot,
     reminders: [...group.items].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)),
+    considered: consideredBySlot.get(group.slot?.id ?? null) ?? 0,
   }))
+}
+
+/**
+ * Reminders the user considered today: a recurring one whose last completion
+ * fell on today's local date, or a one-off completed today. Read straight
+ * from the table rather than through `getTasks`, which excludes done rows.
+ */
+export function getConsideredToday(
+  userId: number,
+  timezone: string,
+  now: Date = new Date(),
+): Task[] {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const start = local.startOf('day').toUTC().toISO()
+  const end = local.endOf('day').toUTC().toISO()
+  const rows = getDb()
+    .prepare(
+      `SELECT id FROM tasks
+        WHERE user_id = ? AND is_reminder = 1 AND deleted_at IS NULL
+          AND ((last_completed_at >= ? AND last_completed_at <= ?)
+            OR (done = 1 AND done_at >= ? AND done_at <= ?))`,
+    )
+    .all(userId, start, end, start, end) as { id: number }[]
+  // Load through the ordinary row loader so labels etc. are parsed the same
+  // way as everywhere else; a day's considered set is a few dozen rows at most.
+  return rows.flatMap((r) => {
+    const task = getTaskById(r.id)
+    return task ? [task] : []
+  })
 }
 
 /** How many reminders are pending in each slot — used by the slot notifications (§4.2). */
