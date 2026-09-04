@@ -1,10 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Task } from '@/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { showToast } from '@/lib/toast'
-import { summarizeReminders } from '@/lib/reminders-summary'
+import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -269,7 +269,35 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
 }
 
 /**
- * The nav badge: reminders waiting so far today, read from the shared cache.
+ * One fetch for everyone. The sidebar, the tab bar and the Reminders top bar
+ * all read the cache and all mount at once, so without this each would fire
+ * its own `/api/reminders` on the same tick. Concurrent callers share the
+ * in-flight request; the next call after it settles starts a fresh one.
+ */
+let cacheLoad: Promise<void> | null = null
+function loadRemindersCache(): Promise<void> {
+  if (cacheLoad) return cacheLoad
+  cacheLoad = (async () => {
+    try {
+      const res = await fetch('/api/reminders')
+      if (!res.ok) return
+      const json = await res.json()
+      setRemindersCache({
+        groups: (json?.data?.groups ?? []) as ReminderGroup[],
+        hasAny: json?.data?.has_any === true,
+      })
+    } catch {
+      // A badge that stays at its last value beats one that flickers.
+    } finally {
+      cacheLoad = null
+    }
+  })()
+  return cacheLoad
+}
+
+/**
+ * The day's numbers (waiting so far, later, considered) for the nav badge and
+ * the Reminders top bar, read from the shared cache.
  *
  * Fetches once when nothing is cached, then re-derives whenever the Reminders
  * surface refreshes or completes something (same cache), and re-fetches when
@@ -279,31 +307,33 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
  * connections; the surface's own stream keeps the cache honest while it is
  * open, and focus covers the rest.
  */
-export function useRemindersBadge(timezone: string): number {
-  const [, force] = useState(0)
+function subscribeToCache(listener: () => void) {
+  cacheListeners.add(listener)
+  return () => {
+    cacheListeners.delete(listener)
+  }
+}
+const readCache = () => remindersCache
+const readServerCache = () => null
+
+export function useRemindersSummary(timezone: string): RemindersSummary<ReminderGroup> | null {
+  // useSyncExternalStore rather than a force-render counter: the cache is
+  // module state, and a render that reads it directly is invisible to the
+  // React Compiler, which memoises the derived summary on `timezone` alone and
+  // leaves every subscriber stuck at its first (empty) value. As a store
+  // snapshot it is a real render input, so the summary recomputes when it
+  // changes and only then.
+  const cache = useSyncExternalStore(subscribeToCache, readCache, readServerCache)
   useEffect(() => {
-    const bump = () => force((n) => n + 1)
-    cacheListeners.add(bump)
-    const load = async () => {
-      try {
-        const res = await fetch('/api/reminders')
-        if (!res.ok) return
-        const json = await res.json()
-        setRemindersCache({
-          groups: (json?.data?.groups ?? []) as ReminderGroup[],
-          hasAny: json?.data?.has_any === true,
-        })
-      } catch {
-        // A badge that stays at its last value beats one that flickers.
-      }
-    }
-    if (remindersCache === null) void load()
-    const onFocus = () => void load()
+    if (remindersCache === null) void loadRemindersCache()
+    const onFocus = () => void loadRemindersCache()
     window.addEventListener('focus', onFocus)
-    return () => {
-      cacheListeners.delete(bump)
-      window.removeEventListener('focus', onFocus)
-    }
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
-  return remindersCache ? summarizeReminders(remindersCache.groups, timezone).waitingSoFar : 0
+  return cache ? summarizeReminders(cache.groups, timezone) : null
+}
+
+/** The nav badge number: reminders waiting in slots that have started, plus Anytime. */
+export function useRemindersBadge(timezone: string): number {
+  return useRemindersSummary(timezone)?.waitingSoFar ?? 0
 }
