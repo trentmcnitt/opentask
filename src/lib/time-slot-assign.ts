@@ -129,3 +129,32 @@ export function groupBySlot<T extends SlottableItem>(
   result.push({ slot: null, items: groups.get(null)! })
   return result
 }
+
+/**
+ * The slot the day is "in" right now: the slot with the latest `start_time`
+ * at or before the current local time. Before the first slot starts there is
+ * no current slot (null) — the day hasn't reached its first moment yet.
+ *
+ * Used by the Reminders surface to decide which slot opens by default: the
+ * user asked for the screen to read as "a handful", and the current slot is
+ * the only one whose thoughts are timely. Everything else stays one tap away.
+ */
+export function currentSlot(
+  slots: TimeSlot[],
+  timezone: string,
+  now: Date = new Date(),
+): TimeSlot | null {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const minutes = local.hour * 60 + local.minute
+  let best: TimeSlot | null = null
+  let bestStart = -1
+  for (const slot of slots) {
+    const start = parseHHMM(slot.start_time)
+    if (start === null || start > minutes) continue
+    if (start > bestStart) {
+      bestStart = start
+      best = slot
+    }
+  }
+  return best
+}

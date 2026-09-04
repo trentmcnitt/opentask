@@ -49,6 +49,22 @@ async function openReminders(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Reminders', level: 1 })).toBeVisible()
 }
 
+/**
+ * Only the current time slot is open by default; the rest fold behind their
+ * header with a count. Tests assert on rows regardless of the wall clock, so
+ * they open every folded slot first — without toggling one that is already
+ * open, which would hide the rows they are about to look for.
+ */
+async function openAllSlots(page: Page) {
+  // Scoped to the surface itself so a folded nav menu elsewhere is never clicked.
+  const surface = page.getByRole('region', { name: 'Reminders' })
+  const n = await surface.getByRole('button', { expanded: false }).count()
+  for (let i = 0; i < n; i++) {
+    // Re-query each time: opening a slot re-renders the list.
+    await surface.getByRole('button', { expanded: false }).first().click()
+  }
+}
+
 test.describe('Reminders surface', () => {
   test('is a top-level page reachable from the nav', async ({ authenticatedPage: page }) => {
     // Desktop sidebar carries every destination; the mobile tab bar is checked
@@ -89,7 +105,8 @@ test.describe('Reminders surface', () => {
     try {
       await openReminders(page)
 
-      // Slot headers carry the label and the boundary time.
+      // Slot headers carry the label and the boundary time — visible whether the
+      // slot is open or folded.
       await expect(page.getByText('Early morning', { exact: true })).toBeVisible()
       await expect(page.getByText('7:00 AM')).toBeVisible()
       await expect(page.getByText('Evening', { exact: true })).toBeVisible()
@@ -98,6 +115,7 @@ test.describe('Reminders surface', () => {
 
       // Priority is prominence: the higher-priority thought sits first inside
       // its slot. Nothing else about it shouts.
+      await openAllSlots(page)
       const rows = page.locator('li[data-reminder-id]')
       await expect(rows.first()).toContainText('Morning supplements')
 
@@ -141,6 +159,7 @@ test.describe('Reminders surface', () => {
       await expect(counts).toHaveText(countsBefore)
 
       await openReminders(page)
+      await openAllSlots(page)
       await expect(
         page.getByRole('button', { name: 'Mark "Breathe before replying" as considered' }),
       ).toBeVisible()
@@ -174,6 +193,7 @@ test.describe('Reminders surface', () => {
 
     try {
       await openReminders(page)
+      await openAllSlots(page)
       await page.getByRole('button', { name: 'Mark "The only thought left" as considered' }).click()
 
       // Calm, not an error state — and distinctly not the "what is this?"

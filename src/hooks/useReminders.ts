@@ -45,6 +45,12 @@ export interface UseRemindersReturn {
   /** True once anything has been completed on this surface in this session. */
   consideredAny: boolean
   complete: (task: Task) => Promise<void>
+  /**
+   * Complete ("consider") every reminder in one slot with a single tap — the
+   * container-level gesture the design record calls "my task is to do my
+   * reminders": one slot, one action, one Undo.
+   */
+  completeGroup: (group: ReminderGroup) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -156,7 +162,72 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     }
   }, [])
 
+  /**
+   * Consider a whole slot at once via POST /api/tasks/bulk/done, which logs ONE
+   * `bulk_done` undo entry — so the toast's Undo restores every row together,
+   * not one at a time. Same optimistic contract as `complete`: the group empties
+   * immediately, and a failed call restores the snapshot.
+   */
+  const completeGroup = useCallback(async (group: ReminderGroup) => {
+    const ids = group.reminders.map((r) => r.id)
+    if (ids.length === 0) return
+    setCompletingIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.add(id)
+      return next
+    })
+    let snapshot: ReminderGroup[] | null = null
+    const key = group.slot?.id ?? null
+    setGroups((prev) => {
+      snapshot = prev
+      const next = prev.map((g) =>
+        (g.slot?.id ?? null) === key ? { ...g, reminders: [], count: 0 } : g,
+      )
+      if (remindersCache) remindersCache = { ...remindersCache, groups: next }
+      return next
+    })
+    setConsideredAny(true)
+    try {
+      const res = await fetch('/api/tasks/bulk/done', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) throw new Error('Failed to complete reminders')
+      callbacksRef.current.onCompleted?.()
+      showToast({
+        message: `Considered ${ids.length}`,
+        type: 'success',
+        action: { label: 'Undo', onClick: () => callbacksRef.current.onUndo() },
+      })
+    } catch {
+      if (snapshot) {
+        const restored = snapshot
+        if (remindersCache) remindersCache = { ...remindersCache, groups: restored }
+        setGroups(restored)
+      }
+      showToast({ message: 'Could not complete reminders', type: 'error' })
+    } finally {
+      setCompletingIds((prev) => {
+        const next = new Set(prev)
+        for (const id of ids) next.delete(id)
+        return next
+      })
+    }
+  }, [])
+
   const total = groups.reduce((sum, group) => sum + group.reminders.length, 0)
 
-  return { groups, total, hasAny, loading, error, completingIds, consideredAny, complete, refresh }
+  return {
+    groups,
+    total,
+    hasAny,
+    loading,
+    error,
+    completingIds,
+    consideredAny,
+    complete,
+    completeGroup,
+    refresh,
+  }
 }
