@@ -561,7 +561,10 @@ export function TaskRow({
         )}
 
         {insightsCommentary && !annotation && (
-          <p className="mt-0.5 text-xs text-indigo-600/80 dark:text-indigo-400/80">
+          <p
+            data-tour="task-insight"
+            className="mt-0.5 text-xs text-indigo-600/80 dark:text-indigo-400/80"
+          >
             <Sparkles className="mr-1 inline-block size-3 align-text-bottom" />
             {insightsCommentary}
           </p>
@@ -595,6 +598,7 @@ export function TaskRow({
       {/* Insights score badge */}
       {insightsScore !== undefined && (
         <span
+          data-tour="task-score"
           className={cn(
             'flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
             getScoreColor(insightsScore),
