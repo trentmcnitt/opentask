@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { TrackPanel } from '@/components/TrackPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { SortOption } from '@/hooks/useGroupSort'
@@ -1700,6 +1701,11 @@ function DashboardView({
             </button>
           </div>
         )}
+
+        {/* §5: the quotas' instrument panel — above the list on every view of
+            the Tasks page ("wherever they go, it can't be buried"), unaffected
+            by list filters. Hidden while searching so results stay results. */}
+        {!searchQuery && <TrackPanel tasks={allTasks} />}
 
         <TaskList
           tasks={tasks}

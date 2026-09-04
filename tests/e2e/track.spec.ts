@@ -18,21 +18,35 @@ async function deleteTasks(page: Page, ids: number[]): Promise<void> {
 }
 
 test.describe('Track', () => {
-  test('a tracked task shows its count, logs +1 and −1, and reads "met" at target', async ({
+  test('the Track panel shows a quota, logs +1 and −1, and reads "met" at target', async ({
     authenticatedPage: page,
   }) => {
-    // Undated so it sits on the Today front door regardless of the wall clock.
-    const id = await createTask(page, { title: 'Eggs for the kids', progress_target: 2 })
+    // A weekly quota whose rule "occurs" on some other weekday: the panel must
+    // show it every day regardless.
+    const id = await createTask(page, {
+      title: 'Eggs for the kids',
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY;BYDAY=WE',
+    })
 
     try {
       await page.goto('/')
-      const row = page.locator(`#task-row-${id}`)
+      const panel = page.getByRole('region', { name: 'Track' })
+      await expect(panel).toBeVisible()
+      const row = panel.locator(`[data-track-row="${id}"]`)
+      await expect(row).toBeVisible()
+      // On the Today view it is not also a row in the day's groups: the panel
+      // is its only home there (other views list it as a plain row).
+      const todayToggle = page.getByRole('button', { name: 'Today', exact: true })
+      await todayToggle.click()
+      await expect(todayToggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
       await expect(row).toBeVisible()
       const count = row.locator('[data-track-count]')
       const plus = row.getByRole('button', { name: 'Log one more for "Eggs for the kids"' })
       const minus = row.getByRole('button', { name: 'Remove one from "Eggs for the kids"' })
 
-      // A quota renders as a progress row, not a due line.
+      // One aligned line: title, bar, count, −, +1.
       await expect(count).toContainText('0 / 2')
       await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
       await expect(minus).toBeDisabled()
@@ -52,11 +66,11 @@ test.describe('Track', () => {
       await expect(count).toContainText('0 / 2')
       await expect(minus).toBeDisabled()
 
-      // Reaching the target is "met": a state, not an exit — the row stays.
+      // Reaching the target is "met": a state, not an exit — the line stays.
       await plus.click()
       await plus.click()
       await expect(count).toContainText('2 / 2')
-      await expect(count).toContainText('met')
+      await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
       await expect(row).toBeVisible()
 
       // Overflow stays observable (Trent, Jul 26): the third egg shows as 3/2.
@@ -73,7 +87,7 @@ test.describe('Track', () => {
     }
   })
 
-  test('an ordinary task keeps its due line and has no progress controls', async ({
+  test('an ordinary task is a row in the day, not a line in the panel', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, { title: 'Plain one-off task' })
@@ -81,7 +95,30 @@ test.describe('Track', () => {
       await page.goto('/')
       const row = page.locator(`#task-row-${id}`)
       await expect(row).toBeVisible()
-      await expect(row.locator('[data-track-progress]')).toHaveCount(0)
+      await expect(page.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
+  test('in the All list a quota is a plain row with its count as a chip', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Chip quota',
+      progress_target: 3,
+      rrule: 'FREQ=WEEKLY;BYDAY=WE',
+    })
+    try {
+      // Log one through the API so the chip has a non-zero count to show.
+      const logged = await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })
+      expect(logged.ok()).toBeTruthy()
+      await page.goto('/')
+      await page.getByRole('button', { name: 'All', exact: true }).click()
+      const row = page.locator(`#task-row-${id}`)
+      await expect(row).toBeVisible()
+      await expect(row).toContainText('1 / 3 this week')
+      await expect(row.getByRole('button', { name: /Log one more/ })).toHaveCount(0)
     } finally {
       await deleteTasks(page, [id])
     }
