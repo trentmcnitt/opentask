@@ -9,8 +9,24 @@ import { effectiveDueAt } from '@/core/recurrence/occurrence'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 
-/** Where items with no time of day land, after the timed slots. */
-export const UNSLOTTED_LABEL = 'Anytime today'
+/**
+ * Where one-offs with no due date land: last, folded by default, and named
+ * for what they are. They used to sit under "Anytime today", which was a
+ * claim about the day that none of them made (Trent, 2026-09-04: a one-off
+ * that never had a date "is a very different thing than anytime today").
+ */
+export const UNDATED_LABEL = 'Undated'
+
+/**
+ * Items timed before the first slot's boundary (a 6:30 walk when the day's
+ * first slot starts at 7:00) get a group named by that boundary, first.
+ */
+export function earlySlotLabel(slots: TimeSlot[]): string {
+  const first = [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time))[0]
+  if (!first) return 'Timed'
+  const parsed = DateTime.fromFormat(first.start_time, 'HH:mm')
+  return `Before ${parsed.isValid ? parsed.toFormat('h:mm a') : first.start_time}`
+}
 
 export interface SlotViewGroup {
   label: string
@@ -52,17 +68,22 @@ export function groupByTimeSlot(
 
   const grouped = groupBySlot(todays, slots, timezone)
   const out: SlotViewGroup[] = []
+  let early: Task[] = []
+  let undated: Task[] = []
 
   for (const group of grouped) {
     if (group.slot === null) {
-      if (group.items.length > 0) {
-        out.push({ label: UNSLOTTED_LABEL, tasks: group.items })
-      }
+      // The un-slotted set is two different things: timed items earlier than
+      // every boundary, and items with no date at all.
+      early = group.items.filter((t) => !!t.due_at)
+      undated = group.items.filter((t) => !t.due_at)
       continue
     }
     out.push({ label: group.slot.label, tasks: group.items })
   }
 
+  if (early.length > 0) out.unshift({ label: earlySlotLabel(slots), tasks: early })
+  if (undated.length > 0) out.push({ label: UNDATED_LABEL, tasks: undated })
   return out
 }
 

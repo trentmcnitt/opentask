@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { UNDATED_LABEL } from '@/lib/slot-view'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
 import { TrackPanel } from '@/components/TrackPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
@@ -70,7 +71,7 @@ import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
   initialTasks?: FormattedTask[]
-  /** Server-loaded with the tasks, so the first paint groups by slot (no "Anytime today" flash). */
+  /** Server-loaded with the tasks, so the first paint groups by slot (no un-slotted flash). */
   initialTimeSlots?: TimeSlot[]
 }
 
@@ -127,6 +128,7 @@ function useDashboardActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
+  onCreated?: (task: Task) => void,
 ): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<number | null> } {
   const actions = useTaskActions({
     mode: 'list',
@@ -145,6 +147,7 @@ function useDashboardActions(
         })
         if (!res.ok) throw new Error('Failed to create task')
         const { data: task } = await res.json()
+        onCreated?.(task)
         fetchTasks()
         showToast({
           message: 'Task added',
@@ -158,7 +161,7 @@ function useDashboardActions(
         return null
       }
     },
-    [fetchTasks, onViewTask],
+    [fetchTasks, onViewTask, onCreated],
   )
 
   return { ...actions, handleQuickAdd }
@@ -414,7 +417,16 @@ function HomeContent({
       )
     },
   })
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
+  // The "Undated" pile starts folded so Today reads as a day. A task added
+  // with no date would land inside it unseen, so adding one opens it.
+  const { isCollapsed, toggleCollapse, expand } = useCollapsedGroups([UNDATED_LABEL])
+  const onCreated = useCallback(
+    (task: Task) => {
+      if (!task.due_at) expand(UNDATED_LABEL)
+    },
+    [expand],
+  )
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, onCreated)
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {
@@ -563,8 +575,6 @@ function HomeContent({
     },
     [sortOption, reversed, setSortPreference],
   )
-  const { isCollapsed, toggleCollapse } = useCollapsedGroups()
-
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
     isSelectionMode: selection.isSelectionMode,
     selectedCount: selection.selectedIds.size,

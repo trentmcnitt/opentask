@@ -13,7 +13,7 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * and no revalidation on focus.
  *
  * Failure returns an empty array rather than throwing. An empty slot list makes
- * `groupByTimeSlot` put everything in "Anytime today", which is a degraded but
+ * `groupByTimeSlot` put everything in one un-slotted group, which is a degraded but
  * honest view; a thrown error would take down the whole dashboard over what is
  * effectively presentation metadata.
  */

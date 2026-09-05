@@ -30,6 +30,65 @@ test.describe('Dashboard', () => {
 })
 
 /**
+ * §7.3 — one-offs that never had a date are not "today". They sit last under
+ * "Undated", folded, so the day reads as a day; adding one from the quick-add
+ * opens the group so the new task doesn't vanish under the user's finger.
+ */
+test.describe('Undated pile', () => {
+  test('sits last, folded, and a newly added undated task opens it', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const res = await page.request.post('/api/tasks', {
+      data: { title: 'A thought with no date yet' },
+    })
+    expect(res.ok()).toBeTruthy()
+    const ids = [(await res.json()).data.id as number]
+    // The view toggle persists server-side for the shared test user, so the
+    // view this test finds is put back at the end for the specs that follow.
+    const views = ['Today', 'Projects', 'All'] as const
+    const pressedView = async () => {
+      for (const v of views) {
+        const b = page.getByRole('button', { name: v, exact: true })
+        if ((await b.getAttribute('aria-pressed')) === 'true') return v
+      }
+      return null
+    }
+    const switchTo = async (v: (typeof views)[number]) => {
+      const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+      await page.getByRole('button', { name: v, exact: true }).click()
+      await saved
+    }
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible()
+    const before = await pressedView()
+    try {
+      if (before !== 'Today') await switchTo('Today')
+
+      const fold = page.getByRole('button', { name: 'Expand Undated' })
+      await expect(fold).toBeVisible()
+      await expect(page.getByText('A thought with no date yet')).toHaveCount(0)
+      await fold.click()
+      await expect(page.getByText('A thought with no date yet')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Collapse Undated' }).click()
+      await expect(page.getByText('A thought with no date yet')).toHaveCount(0)
+      await page.getByRole('textbox', { name: 'Quick add task' }).fill('Another dateless thought')
+      await page.keyboard.press('Enter')
+      await expect(page.getByText('Another dateless thought')).toBeVisible()
+      await expect(page.getByText('A thought with no date yet')).toBeVisible()
+
+      const list = (await (await page.request.get('/api/tasks?limit=500')).json()).data.tasks
+      const other = list.find((t: { title: string }) => t.title === 'Another dateless thought')
+      if (other) ids.push(other.id)
+    } finally {
+      if (before && before !== 'Today') await switchTo(before)
+      for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+})
+
+/**
  * REDESIGN-V03 §7.3 — the filter chips collapse behind one control so the front
  * door shows tasks, not a wall of chips. The collapse rules themselves are
  * documented in src/hooks/useFilterSection.ts.
