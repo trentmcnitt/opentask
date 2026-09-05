@@ -33,7 +33,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Sea
   const tasks = formatTasksResponse(getTasks({ userId, limit: 500 }))
   // Slots ride along with the tasks. Fetched client-side they arrived a beat
   // after the first paint, and for that beat the whole day sat under
-  // "Anytime today" before regrouping — the load flash Trent noticed.
+  // one un-slotted group before regrouping — the load flash Trent noticed.
   const timeSlots = listTimeSlots(userId)
 
   return <DashboardClient initialTasks={tasks} initialTimeSlots={timeSlots} />

@@ -10,7 +10,7 @@
  * counter over the week, so the week containing today is its day, every day.
  */
 import { describe, expect, test } from 'vitest'
-import { groupByTimeSlot, trackedItems, UNSLOTTED_LABEL } from '@/lib/slot-view'
+import { groupByTimeSlot, trackedItems, UNDATED_LABEL, earlySlotLabel } from '@/lib/slot-view'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
@@ -92,13 +92,32 @@ describe('Tracked items and the Today front door', () => {
     })
 
     const groups = groupByTimeSlot([undated, midday, eggs], SLOTS, TZ, NOW)
-    expect(groups.map((g) => g.label)).toEqual(['Early morning', 'Midday', UNSLOTTED_LABEL])
+    expect(groups.map((g) => g.label)).toEqual(['Early morning', 'Midday', UNDATED_LABEL])
     expect(groups.find((g) => g.label === 'Midday')?.tasks.map((t) => t.title)).toEqual([
       'Lunch walk',
     ])
-    expect(groups.find((g) => g.label === UNSLOTTED_LABEL)?.tasks.map((t) => t.title)).toEqual([
+    expect(groups.find((g) => g.label === UNDATED_LABEL)?.tasks.map((t) => t.title)).toEqual([
       'Undated one-off',
     ])
+  })
+
+  test('DV-013: undated one-offs are "Undated", last; pre-dawn timed items are "Before 7:00 AM", first', () => {
+    const undated = task({ title: 'Someday' })
+    const dawn = task({ title: 'Dawn walk', due_at: '2026-09-03T11:15:00.000Z' }) // 06:15 Chicago
+    const noon = task({ title: 'Lunch', due_at: '2026-09-03T17:30:00.000Z' })
+
+    const groups = groupByTimeSlot([undated, noon, dawn], SLOTS, TZ, NOW)
+    expect(earlySlotLabel(SLOTS)).toBe('Before 7:00 AM')
+    // Every slot is emitted (empty ones included); the two synthetic groups
+    // bracket them: earliest first, undated last.
+    expect(groups.map((g) => g.label)).toEqual([
+      'Before 7:00 AM',
+      'Early morning',
+      'Midday',
+      UNDATED_LABEL,
+    ])
+    expect(groups[0].tasks.map((t) => t.title)).toEqual(['Dawn walk'])
+    expect(groups.at(-1)?.tasks.map((t) => t.title)).toEqual(['Someday'])
   })
 
   test('DV-012: the panel set is alphabetical, skips done quotas, and never reorders on a tap', () => {

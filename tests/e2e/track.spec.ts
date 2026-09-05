@@ -93,6 +93,13 @@ test.describe('Track', () => {
     const id = await createTask(page, { title: 'Plain one-off task' })
     try {
       await page.goto('/')
+      // Undated one-offs sit in the day's folded "Undated" group (§7.3). The
+      // panel renders with the groups, so it is the "page is up" signal;
+      // `isVisible` itself never waits.
+      const fold = page.getByRole('button', { name: 'Expand Undated' })
+      await expect(fold).toBeVisible()
+      await fold.click()
+      await expect(page.getByRole('button', { name: 'Collapse Undated' })).toBeVisible()
       const row = page.locator(`#task-row-${id}`)
       await expect(row).toBeVisible()
       await expect(page.locator(`[data-track-row="${id}"]`)).toHaveCount(0)

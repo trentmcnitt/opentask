@@ -621,7 +621,7 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
  * Two things this must not do:
  *
  * 1. Drop the un-slotted items. Anything with no time of day — which is most
- *    Track items — goes into an explicit "Anytime today" group rendered AFTER
+ *    Track items — goes into an explicit "Undated" group rendered AFTER
  *    the timed slots. §7.3 is explicit that they must not become invisible
  *    from the front door.
  * 2. Hide empty slots... except when the whole day is empty. A slot the user
