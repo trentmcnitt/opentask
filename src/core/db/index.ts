@@ -244,7 +244,9 @@ function backfillTimeSlots(database: Database.Database): void {
   // cycle at module-init time is exactly where it would break.
   const defaults: [string, string][] = [
     ['Early morning', '07:00'],
-    ['Before work', '09:00'],
+    // Was "Before work" — the spec's guess at the 09:00 cluster. Trent
+    // (2026-09-05): "10 am is not before work… it's just morning."
+    ['Morning', '09:00'],
     ['Midday', '12:00'],
     ['Afternoon', '16:00'],
     ['Evening', '20:30'],

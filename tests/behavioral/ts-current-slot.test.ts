@@ -12,7 +12,7 @@ function slot(id: number, label: string, start_time: string): TimeSlot {
 
 const SLOTS = [
   slot(1, 'Early morning', '07:00'),
-  slot(2, 'Before work', '09:00'),
+  slot(2, 'Morning', '09:00'),
   slot(3, 'Midday', '12:00'),
   slot(4, 'Afternoon', '16:00'),
   slot(5, 'Evening', '20:30'),
@@ -24,7 +24,7 @@ const CHICAGO = 'America/Chicago'
 describe('currentSlot', () => {
   test('CS-001: mid-window picks the slot that started most recently', () => {
     // 10:15 AM Chicago (CDT, UTC-5)
-    expect(currentSlot(SLOTS, CHICAGO, new Date('2026-09-04T15:15:00Z'))?.label).toBe('Before work')
+    expect(currentSlot(SLOTS, CHICAGO, new Date('2026-09-04T15:15:00Z'))?.label).toBe('Morning')
   })
 
   test('CS-002: exactly at a boundary belongs to the slot that starts then', () => {
@@ -46,7 +46,7 @@ describe('currentSlot', () => {
     // 15:15 UTC is 10:15 in Chicago but 4:15 PM in London.
     const at = new Date('2026-09-04T15:15:00Z')
     expect(currentSlot(SLOTS, 'Europe/London', at)?.label).toBe('Afternoon')
-    expect(currentSlot(SLOTS, CHICAGO, at)?.label).toBe('Before work')
+    expect(currentSlot(SLOTS, CHICAGO, at)?.label).toBe('Morning')
   })
 
   test('CS-006: unordered input and a malformed start_time are tolerated', () => {
