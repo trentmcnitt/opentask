@@ -4,6 +4,7 @@ import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Archive, Plus, Clock, Lightbulb } from 'lucide-react'
 import { useRemindersBadge } from '@/hooks/useReminders'
+import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
 import { useTimezone } from '@/hooks/useTimezone'
 
 interface BottomTabsProps {
@@ -22,6 +23,14 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const pathname = usePathname()
   // §6: reminders waiting so far today — never overdue, never red.
   const remindersWaiting = useRemindersBadge(useTimezone())
+  // One badge fits a tab: overdue (red) when there is any, else due today (blue).
+  const taskCounts = useTaskNavCounts()
+  const tasksBadge =
+    taskCounts && taskCounts.overdue > 0
+      ? { n: taskCounts.overdue, label: `${taskCounts.overdue} overdue`, tone: 'overdue' }
+      : taskCounts && taskCounts.today > 0
+        ? { n: taskCounts.today, label: `${taskCounts.today} due today`, tone: 'today' }
+        : null
 
   const tabs = [
     { href: '/', label: 'Tasks', icon: LayoutGrid },
@@ -76,6 +85,19 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
             >
               <span className="relative">
                 <Icon className="h-5 w-5" />
+                {tab.href === '/' && tasksBadge && (
+                  <span
+                    data-tasks-badge
+                    className={`absolute -top-1.5 -right-3 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums ${
+                      tasksBadge.tone === 'overdue'
+                        ? 'bg-destructive/15 text-destructive'
+                        : 'bg-primary/15 text-primary'
+                    }`}
+                    aria-label={tasksBadge.label}
+                  >
+                    {tasksBadge.n}
+                  </span>
+                )}
                 {tab.href === '/reminders' && remindersWaiting > 0 && (
                   <span
                     data-reminders-badge

@@ -167,6 +167,36 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/tasks/counts:
+    get:
+      summary: Counts for the nav badges
+      operationId: getTaskCounts
+      tags: [Tasks]
+      description: |
+        `{ total, overdue, today }` over the user's active tasks — the same
+        numbers the Tasks page shows in its top bar, computed with the same
+        function, for pages that do not load the list.
+      responses:
+        '200':
+          description: Task counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      overdue:
+                        type: integer
+                        description: due_at in the past.
+                      today:
+                        type: integer
+                        description: due_at inside the user's local day.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskId'

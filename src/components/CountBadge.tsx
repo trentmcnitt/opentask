@@ -2,7 +2,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 interface CountBadgeProps {
-  count: number
+  count: number | string
   variant?: 'default' | 'overdue' | 'today' | 'done'
   tooltip?: string
   className?: string
