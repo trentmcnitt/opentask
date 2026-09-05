@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { periodLabel, trackState, type TrackState } from '@/lib/track'
 import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
@@ -18,11 +18,16 @@ import type { Task } from '@/types'
  * dipping to an older value for a beat between a response and the refetch it
  * triggers. A failed request reverts its own delta and says so. Progress never
  * goes below zero — a correction can undo a mis-log, not manufacture history.
+ *
+ * Every log shows a toast with Undo (Trent, 2026-09-05): a slip on a chip is
+ * one tap to take back, no gesture to learn. Undo is simply the opposite
+ * delta, and is itself quiet — it does not spawn another toast. One toast per
+ * task (keyed by id), so rapid taps update a line instead of stacking.
  */
 export function useTrackProgress(task: Task): {
   state: TrackState
   period: string | null
-  log: (delta: 1 | -1) => Promise<void>
+  log: (delta: 1 | -1, options?: { quiet?: boolean }) => Promise<void>
 } {
   const serverCurrent = task.progress_current ?? 0
   const [inFlight, setInFlight] = useState(0)
@@ -33,12 +38,26 @@ export function useTrackProgress(task: Task): {
     inFlight > 0 ? local : pinned && pinned.base === serverCurrent ? pinned.value : serverCurrent
   const state = trackState(task, displayed)
   const period = periodLabel(task.rrule)
+  // The toast's Undo runs from an older render's `log`; through the ref it
+  // still sees the count as it is now, not as it was when the toast was made.
+  const displayedRef = useRef(displayed)
+  displayedRef.current = displayed
 
-  const log = async (delta: 1 | -1) => {
-    const next = Math.max(0, displayed + delta)
-    if (next === displayed) return
+  const log = async (delta: 1 | -1, options?: { quiet?: boolean }) => {
+    const shown = displayedRef.current
+    const next = Math.max(0, shown + delta)
+    if (next === shown) return
     setLocal(next)
     setInFlight((n) => n + 1)
+    if (!options?.quiet) {
+      const target = Math.max(1, task.progress_target ?? 1)
+      showToast({
+        id: `track-${task.id}`,
+        type: 'success',
+        message: `${delta > 0 ? 'Logged one for' : 'Removed one from'} \u201c${task.title}\u201d \u00b7 ${next}/${target}`,
+        action: { label: 'Undo', onClick: () => void log(delta > 0 ? -1 : 1, { quiet: true }) },
+      })
+    }
     try {
       const res = await fetch(`/api/tasks/${task.id}/progress`, {
         method: 'POST',
