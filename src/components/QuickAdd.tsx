@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, Mic } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -12,13 +13,13 @@ interface QuickAddProps {
   onOpenAddForm?: (title: string) => void
 }
 
-// Rotating placeholder text for the quick-add input. The first-time experience gives no hint
-// that this field understands natural language ("every day except Saturday", "high priority",
-// due dates, etc.) — it just looks like a plain text box. Cycling through worked examples here
-// (instead of a static "Add a task...") surfaces the AI enrichment capability without needing
-// a dedicated tour or extra UI. Rotation pauses as soon as the user has typed anything, and the
-// index resets to 0 ("Add a task...") whenever the field goes back to empty, so returning users
-// always see the plain prompt first rather than landing mid-cycle on a random example.
+// Rotating placeholder text for the quick-add input — for the DEMO account only. The
+// first-time experience gives no hint that this field understands natural language ("every
+// day except Saturday", "high priority", due dates, etc.), and cycling through worked examples
+// surfaces that without a tour. For a signed-in user it is just churn (Trent, 2026-09-05: "it
+// feels like it's in demo mode… I don't want it cycling"), so they get the plain prompt.
+// Rotation pauses as soon as the user has typed anything, and the index resets to 0 ("Add a
+// task...") whenever the field goes back to empty.
 const PLACEHOLDER_EXAMPLES = [
   'Add a task...',
   'Try: walk the dog every day except Saturday at 9am',
@@ -33,6 +34,8 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
+  const { data: session } = useSession()
+  const rotate = session?.user?.is_demo === true
   const inputRef = useRef<HTMLInputElement>(null)
   const { isSupported, isListening, startListening, stopListening, transcript, error } =
     useSpeechRecognition()
@@ -42,7 +45,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
   // title avoids re-rendering while the user is actively typing (the placeholder is invisible
   // then anyway), and resetting to index 0 keeps "Add a task..." as the first thing anyone sees.
   useEffect(() => {
-    if (title) {
+    if (title || !rotate) {
       setPlaceholderIndex(0)
       return
     }
@@ -50,7 +53,7 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
       setPlaceholderIndex((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length)
     }, PLACEHOLDER_ROTATE_MS)
     return () => clearInterval(interval)
-  }, [title])
+  }, [title, rotate])
 
   // Surface speech recognition errors as toasts
   useEffect(() => {

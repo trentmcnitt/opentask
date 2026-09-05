@@ -194,7 +194,9 @@ function TrackChip({ task }: { task: Task }) {
         aria-label={`Log one more for "${task.title}"`}
         title="Tap: +1 · Hold or shift-click: −1"
         className={cn(
-          'relative flex h-7 max-w-full touch-manipulation items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-none transition-colors select-none',
+          // leading-5, not leading-none: with the chip clipping its fill, a tight line
+          // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
+          'relative flex h-7 max-w-full touch-manipulation items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-5 transition-colors select-none',
           'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
           state.met && 'border-green-600/30',
         )}
