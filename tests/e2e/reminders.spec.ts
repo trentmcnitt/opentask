@@ -548,16 +548,84 @@ test.describe('Reminder details', () => {
       await dialog.getByRole('button', { name: 'Save', exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await expect.poll(() => taskField(page, id, 'anchor_time')).toBe('20:30')
+      // The surface re-groups when its own refresh lands, after the save's
+      // response — wait for the row to leave its old slot before opening the
+      // folded ones, or the new slot may not exist yet to be opened.
+      await expect(row('Early morning')).toHaveCount(0)
       await openAllSlots(page)
       await expect(row('Evening')).toBeVisible()
-      await expect(row('Early morning')).toHaveCount(0)
 
       await toastUndo(page).click()
       await expect.poll(() => taskField(page, id, 'anchor_time')).toBe('07:00')
+      await expect(row('Evening')).toHaveCount(0)
       await openAllSlots(page)
       await expect(row('Early morning')).toBeVisible()
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+
+  test('double-click opens the editor, and a row says when it is not every day', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    // Today and the day after, so the weekly one is on today's list whatever
+    // day the suite runs; the mark shows both codes.
+    const CODES = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su']
+    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+    const today = DateTime.now().setZone(TEST_TZ).weekday - 1
+    const other = (today + 2) % 7
+    const days = [today, other].sort((a, b) => a - b)
+    const ids = [
+      await createReminder(page, {
+        title: 'A thought for some days',
+        rrule: `FREQ=WEEKLY;BYDAY=${days.map((d) => RRULE_DAYS[d]).join(',')};BYHOUR=7;BYMINUTE=0`,
+        due_at: todayAt(7),
+      }),
+      await createReminder(page, {
+        title: 'A thought for every day',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+      await expect(row('A thought for some days').locator('[data-cadence-mark]')).toHaveText(
+        days.map((d) => CODES[d]).join(', '),
+      )
+      await expect(row('A thought for every day').locator('[data-cadence-mark]')).toHaveCount(0)
+
+      await row('A thought for every day').dblclick()
+      const dialog = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toContainText('A thought for every day')
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      // The two clicks selected and then deselected the row: nothing is left
+      // selected, as after the dashboard's double-click.
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+
+      // The hazard: a row sitting where the selection bar appears. The first
+      // click selects it and the bar slides over it, so the second click of
+      // the double-click lands on the bar — it must open the editor, not
+      // press whatever button it fell on (on dev it landed on "Considered").
+      await page.setViewportSize({ width: 1280, height: 480 })
+      const target = row('A thought for some days')
+      await target.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        window.scrollTo(0, window.scrollY + r.bottom - (window.innerHeight - 40))
+      })
+      await target.dblclick()
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toContainText('A thought for some days')
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect(target).toBeVisible()
+      expect(await taskField(page, ids[0], 'completion_count')).toBe(0)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 

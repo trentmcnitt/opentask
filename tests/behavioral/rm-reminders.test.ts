@@ -431,4 +431,35 @@ describe('Reminders surface', () => {
     expect(getTaskById(reminder.id)!.due_at).toBe(localTime(20, 30))
     expect(getTaskById(plain.id)!.due_at).toBe(localTime(7, 0, -3))
   })
+
+  /**
+   * RM-021: Order within a slot is priority, then creation order — never
+   * due_at. Trent (2026-09-05) changed one reminder's schedule and it fell to
+   * the bottom of its slot, because the edit had recomputed its due_at.
+   */
+  test('RM-021: a schedule edit does not move a reminder within its slot', () => {
+    const first = makeReminder({ title: 'First thought', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const second = makeReminder({
+      title: 'Second thought',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+    })
+    const third = makeReminder({ title: 'Third thought', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const order = () =>
+      getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
+        .find((g) => g.slot?.label === 'Early morning')!
+        .reminders.map((t) => t.id)
+    expect(order()).toEqual([first.id, second.id, third.id])
+
+    // Every day but Monday — still today (a Thursday), with a fresh due_at.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: first.id,
+      input: { rrule: 'FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=0' },
+    })
+    // Its due_at now sits after the others' — the very thing that used to
+    // drop it to the bottom — and it stays where it was.
+    expect(getTaskById(first.id)!.due_at! > getTaskById(second.id)!.due_at!).toBe(true)
+    expect(order()).toEqual([first.id, second.id, third.id])
+  })
 })

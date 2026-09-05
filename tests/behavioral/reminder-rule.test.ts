@@ -11,6 +11,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   buildSchedule,
+  cadenceMark,
   describeCadence,
   describeTimeOfDay,
   isCompleteSchedule,
@@ -205,6 +206,29 @@ describe('describing a schedule', () => {
     expect(describeTimeOfDay(19 * 60, SLOTS)).toBe('Afternoon, 7:00 PM')
     expect(describeTimeOfDay(6 * 60, SLOTS)).toBe('6:00 AM')
     expect(describeTimeOfDay(null, SLOTS)).toBeNull()
+  })
+
+  test('a row wears a mark only when it is not every day', () => {
+    expect(cadenceMark('FREQ=DAILY;BYHOUR=7;BYMINUTE=0')).toBeNull()
+    expect(cadenceMark('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=0')).toBeNull()
+    expect(cadenceMark('FREQ=WEEKLY;BYDAY=TH,TU;BYHOUR=7;BYMINUTE=0')).toEqual({
+      short: 'Tu, Th',
+      full: 'Tue, Thu',
+    })
+    expect(cadenceMark('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=7;BYMINUTE=0')?.short).toBe(
+      'Weekdays',
+    )
+    expect(cadenceMark('FREQ=WEEKLY;BYDAY=SA,SU;BYHOUR=7;BYMINUTE=0')?.short).toBe('Weekends')
+    expect(cadenceMark('FREQ=WEEKLY;BYDAY=FR;BYHOUR=7;BYMINUTE=0')).toEqual({
+      short: 'F',
+      full: 'Fridays',
+    })
+    expect(cadenceMark('FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=9;BYMINUTE=0')).toEqual({
+      short: 'Monthly',
+      full: 'Monthly on the 15th',
+    })
+    expect(cadenceMark(null)).toEqual({ short: 'Once', full: 'Once' })
+    expect(cadenceMark('FREQ=DAILY;INTERVAL=2;BYHOUR=9;BYMINUTE=0')?.short).toBe('Every 2 days')
   })
 
   test('slotAtMinutes is the latest boundary at or before the time', () => {

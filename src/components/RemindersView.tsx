@@ -7,6 +7,7 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { currentSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { cadenceMark } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
@@ -193,7 +194,9 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   )
 
   return (
-    <section aria-label="Reminders" className="w-full">
+    // Clearance below the last row for the floating selection bar, so the
+    // end of the list can always be scrolled out from under it.
+    <section aria-label="Reminders" className="w-full pb-24">
       {loading ? (
         <RemindersSkeleton />
       ) : error ? (
@@ -231,6 +234,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     completingIds={completingIds}
                     selectedIds={selectedIds}
                     onRowClick={actions.rowClick}
+                    onRowOpen={setDetailTask}
                     onComplete={actions.complete}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
@@ -532,6 +536,7 @@ function ReminderSlotGroup({
   completingIds,
   selectedIds,
   onRowClick,
+  onRowOpen,
   onComplete,
   onCompleteGroup,
   onPutBack,
@@ -545,6 +550,7 @@ function ReminderSlotGroup({
   completingIds: Set<number>
   selectedIds: Set<number>
   onRowClick: (task: Task, e: React.MouseEvent) => void
+  onRowOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onCompleteGroup: (group: ReminderGroup) => void
   onPutBack: (task: Task) => void
@@ -626,6 +632,7 @@ function ReminderSlotGroup({
                   completing={completingIds.has(reminder.id)}
                   selected={selectedIds.has(reminder.id)}
                   onClick={onRowClick}
+                  onOpen={onRowOpen}
                   onComplete={onComplete}
                 />
               ))}
@@ -830,15 +837,18 @@ function ReminderRow({
   completing,
   selected,
   onClick,
+  onOpen,
   onComplete,
 }: {
   reminder: Task
   completing: boolean
   selected: boolean
   onClick: (task: Task, e: React.MouseEvent) => void
+  onOpen: (task: Task) => void
   onComplete: (task: Task) => void
 }) {
   const hasNotes = !!reminder.notes?.trim()
+  const mark = cadenceMark(reminder.rrule)
 
   return (
     <li
@@ -846,6 +856,12 @@ function ReminderRow({
       role="option"
       aria-selected={selected}
       onClick={(e) => onClick(reminder, e)}
+      // Double-click opens the reminder's details, as it opens a task's quick
+      // panel on the dashboard (Trent, 2026-09-05: "why doesn't double-clicking
+      // bring up the modal"). Its two clicks select and then deselect the row
+      // (a lone selection toggles), so afterwards nothing is selected — the
+      // dashboard's double-click leaves the same state.
+      onDoubleClick={() => onOpen(reminder)}
       className={cn(
         'group flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-all duration-200 ease-out select-none',
         selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
@@ -876,6 +892,16 @@ function ReminderRow({
         <span className={cn('text-pretty', prominenceClasses(reminder.priority))}>
           {reminder.title}
         </span>
+        {/* Not every day: the day codes, "Monthly", "Once". Daily wears nothing. */}
+        {mark && (
+          <span
+            className="text-muted-foreground/60 ml-2 text-xs whitespace-nowrap"
+            title={mark.full}
+            data-cadence-mark
+          >
+            {mark.short}
+          </span>
+        )}
         {hasNotes && (
           <span className="text-muted-foreground/50 ml-1.5 inline-flex align-[-2px]">
             <StickyNote className="size-3.5" aria-label="Has notes" />

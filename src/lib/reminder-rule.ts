@@ -74,11 +74,20 @@ export function timeOfDay(task: ScheduledTask, timezone: string): number | null 
 }
 
 export function readSchedule(task: ScheduledTask, timezone: string): ReminderSchedule {
-  const time = timeOfDay(task, timezone)
-  const base: ReminderSchedule = { cadence: 'once', days: [], monthDay: 1, time, custom: null }
-  if (!task.rrule) return base
+  return { ...parseCadence(task.rrule), time: timeOfDay(task, timezone) }
+}
 
-  const parts = parseRRuleParts(task.rrule)
+/** The which-days half of a schedule, read from the rule alone. */
+export function parseCadence(rrule: string | null): Omit<ReminderSchedule, 'time'> {
+  const base: Omit<ReminderSchedule, 'time'> = {
+    cadence: 'once',
+    days: [],
+    monthDay: 1,
+    custom: null,
+  }
+  if (!rrule) return base
+
+  const parts = parseRRuleParts(rrule)
   const interval = parts.INTERVAL !== undefined ? parseInt(parts.INTERVAL, 10) : 1
   const plain =
     interval === 1 &&
@@ -104,7 +113,7 @@ export function readSchedule(task: ScheduledTask, timezone: string): ReminderSch
       if (day >= 1 && day <= 31) return { ...base, cadence: 'monthly', monthDay: day }
     }
   }
-  return { ...base, cadence: 'custom', custom: task.rrule }
+  return { ...base, cadence: 'custom', custom: rrule }
 }
 
 /**
@@ -194,7 +203,7 @@ function ordinal(n: number): string {
 }
 
 /** "Every day", "Weekdays", "Mon, Wed, Fri", "Monthly on the 1st", "Once". */
-export function describeCadence(schedule: ReminderSchedule): string {
+export function describeCadence(schedule: Omit<ReminderSchedule, 'time'>): string {
   switch (schedule.cadence) {
     case 'once':
       return 'Once'
@@ -220,6 +229,41 @@ export function describeCadence(schedule: ReminderSchedule): string {
         .join(';')
       return withoutTime ? formatRRule(withoutTime) : 'Custom'
     }
+  }
+}
+
+const MARK_DAYS = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su']
+
+/**
+ * The mark a row wears for its cadence, or null when there is nothing worth
+ * marking. Daily is the norm on this surface (37 of Trent's 38), so a daily
+ * reminder wears nothing and a mark means "not every day": the day codes for
+ * a weekly one ("Tu, Th"; Tuesday and Thursday get two letters so they can't
+ * be confused), "Monthly", "Once", or the rule's own words for a custom one.
+ */
+export function cadenceMark(rrule: string | null): { short: string; full: string } | null {
+  const cadence = parseCadence(rrule)
+  const full = describeCadence(cadence)
+  switch (cadence.cadence) {
+    case 'daily':
+      return null
+    case 'weekly': {
+      const days = [...cadence.days].sort((a, b) => a - b)
+      if (days.length === 7) return null
+      if (days.length === 5 && !days.includes(5) && !days.includes(6)) {
+        return { short: 'Weekdays', full }
+      }
+      if (days.length === 2 && days.includes(5) && days.includes(6)) {
+        return { short: 'Weekends', full }
+      }
+      return { short: days.map((d) => MARK_DAYS[d]).join(', '), full }
+    }
+    case 'monthly':
+      return { short: 'Monthly', full }
+    case 'once':
+      return { short: 'Once', full }
+    case 'custom':
+      return { short: full, full }
   }
 }
 

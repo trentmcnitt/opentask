@@ -40,6 +40,18 @@ export function ReminderSelectionBar({
     <div
       data-selection-sheet
       className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6"
+      // A double-click on a row near the bottom of the screen: the first
+      // click selects the row and summons this bar over it, so the second
+      // click lands here instead. The browser still counts it as the second
+      // click of one gesture (`detail`), so it must not press whichever
+      // button it fell on — the green one would consider the thought — and
+      // it finishes what the user meant: open the selected reminder.
+      onClickCapture={(e) => {
+        if (e.detail < 2) return
+        e.preventDefault()
+        e.stopPropagation()
+        if (selectedCount === 1) onDetails?.()
+      }}
     >
       <div
         className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
