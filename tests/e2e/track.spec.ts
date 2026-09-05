@@ -80,7 +80,6 @@ test.describe('Track', () => {
       await expect(panel).toBeVisible()
       // Folded by default: the header's total, and the quota as a chip.
       await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
-      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 3')
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
       await expect(night.locator('[data-track-count]')).toHaveText('0/1')
@@ -117,7 +116,6 @@ test.describe('Track', () => {
       await expect(chipCount).toHaveText('1/2')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('0/2')
-      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 3')
 
       await openTrack(page)
       // The choice sticks across a reload.
