@@ -374,4 +374,61 @@ describe('Reminders surface', () => {
       .run(new Date().toISOString(), mondayOnly.id)
     expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
   })
+
+  /**
+   * RM-019: The reminder editor's one real move — "this thought belongs in
+   * the evening, not the morning" — on a reminder already considered today.
+   * It must stay considered, and appear under the slot it now belongs to,
+   * rather than resurfacing as waiting because its schedule changed.
+   */
+  test('RM-019: moving a considered reminder to another slot keeps it considered there', () => {
+    const reminder = makeReminder({ rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id })
+
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: reminder.id,
+      input: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' },
+    })
+
+    expect(getTaskById(reminder.id)!.anchor_time).toBe('20:30')
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).not.toContain(
+      reminder.id,
+    )
+    const groups = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
+    const evening = groups.find((g) => g.slot?.label === 'Evening')
+    expect(evening?.consideredItems.map((t) => t.id)).toEqual([reminder.id])
+    expect(groups.find((g) => g.slot?.label === 'Early morning')?.considered ?? 0).toBe(0)
+  })
+
+  /**
+   * RM-020: A missed reminder's due_at is frozen at its last occurrence. A
+   * task in that state keeps its overdue date across a schedule edit (the
+   * user still has to sweep it); a reminder carries no debt, so its due_at
+   * follows the new schedule instead of claiming a morning that has passed.
+   */
+  test('RM-020: a past-due reminder gets a fresh due_at when its schedule changes', () => {
+    const reminder = makeReminder({
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+      due_at: localTime(7, 0, -3),
+    })
+    const plain = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Real task',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: localTime(7, 0, -3),
+      },
+    })
+    const input = { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' }
+
+    updateTask({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id, input })
+    updateTask({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: plain.id, input })
+
+    // The reminder moves to tonight; the task keeps its three-day-old date.
+    expect(getTaskById(reminder.id)!.due_at).toBe(localTime(20, 30))
+    expect(getTaskById(plain.id)!.due_at).toBe(localTime(7, 0, -3))
+  })
 })

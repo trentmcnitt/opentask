@@ -496,11 +496,137 @@ test.describe('Reminders trash', () => {
 })
 
 /**
- * Details is a round trip: the page's back arrow returns to the Reminders
- * surface, not to Tasks (Trent, 2026-09-05).
+ * A reminder's own details (Trent, 2026-09-05): "there should be a reminder
+ * detail page but then we also need an accompanying modal that kind of works
+ * the same way… based on the same component". The bar's Details opens the
+ * editor in a dialog; the same editor is the page at /tasks/:id. It speaks a
+ * reminder's vocabulary — which days, which slot — not a task's.
  */
 test.describe('Reminder details', () => {
-  test('back from a reminder\u2019s details lands on Reminders', async ({
+  const taskField = async (page: Page, id: number, field: string) =>
+    (await (await page.request.get(`/api/tasks/${id}`)).json()).data[field]
+
+  test('Details opens the editor; moving it to another slot moves the row, and Undo moves it back', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, {
+      title: 'A thought for the evening',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+      due_at: todayAt(7),
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (slot: string) =>
+        page.locator(`[data-slot-group="${slot}"] li[data-reminder-id]`, {
+          hasText: 'A thought for the evening',
+        })
+      await row('Early morning').click()
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+
+      const dialog = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(dialog).toBeVisible()
+      // The editor reads the stored rule back in its own terms, and offers
+      // nothing that treats the thought as an obligation.
+      await expect(dialog.locator('[data-cadence="daily"]')).toHaveAttribute('aria-pressed', 'true')
+      await expect(dialog.locator('[data-slot-label="Early morning"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(dialog.getByRole('button', { name: /snooze/i })).toHaveCount(0)
+
+      // A slot pick is staged, not saved; dismissing with it pending asks first.
+      await dialog.locator('[data-slot-label="Evening"]').click()
+      await expect(dialog.locator('[data-reminder-summary]')).toHaveText(/Every day · Evening/)
+      await page.keyboard.press('Escape')
+      const unsaved = page.getByRole('alertdialog', { name: 'Unsaved Changes' })
+      await expect(unsaved).toBeVisible()
+      await unsaved.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toBeVisible()
+
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => taskField(page, id, 'anchor_time')).toBe('20:30')
+      await openAllSlots(page)
+      await expect(row('Evening')).toBeVisible()
+      await expect(row('Early morning')).toHaveCount(0)
+
+      await toastUndo(page).click()
+      await expect.poll(() => taskField(page, id, 'anchor_time')).toBe('07:00')
+      await openAllSlots(page)
+      await expect(row('Early morning')).toBeVisible()
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
+  test('a one-time thought reads as Once and can start repeating in its own slot', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, {
+      title: 'A thought with a date but no rule',
+      due_at: todayAt(12),
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      await page
+        .locator('li[data-reminder-id]', { hasText: 'A thought with a date but no rule' })
+        .click()
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(dialog.locator('[data-cadence="once"]')).toHaveAttribute('aria-pressed', 'true')
+      // A one-time thought keeps whatever time it has; there is no slot to pick.
+      await expect(dialog.locator('[data-slot-chip]')).toHaveCount(0)
+
+      // Repeating it lights the slot its due time already falls in.
+      await dialog.locator('[data-cadence="daily"]').click()
+      await expect(dialog.locator('[data-slot-label="Midday"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => taskField(page, id, 'rrule')).toBe('FREQ=DAILY;BYHOUR=12;BYMINUTE=0')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
+  test('the page is the same editor, and "Make this a task" hands it to the task editor', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, {
+      title: 'A thought that became a task',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      due_at: todayAt(9),
+    })
+    try {
+      await page.goto(`/tasks/${id}`)
+      await expect(page.getByRole('heading', { name: 'Reminder' })).toBeVisible()
+      await expect(page.locator('[data-cadence="daily"]')).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.locator('[data-slot-label="Morning"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      await page.getByRole('button', { name: 'Make this a task' }).click()
+      // Same URL, now the task editor — where project, labels and priority live.
+      await expect(page.getByRole('heading', { name: 'Task Details' })).toBeVisible()
+      await expect.poll(() => taskField(page, id, 'is_reminder')).toBe(false)
+
+      await toastUndo(page).click()
+      await expect(page.getByRole('heading', { name: 'Reminder' })).toBeVisible()
+      await expect.poll(() => taskField(page, id, 'is_reminder')).toBe(true)
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
+  test('the dialog opens the full page, whose back arrow returns to Reminders', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -510,9 +636,36 @@ test.describe('Reminder details', () => {
       await openAllSlots(page)
       await page.locator('li[data-reminder-id]', { hasText: 'A thought worth opening' }).click()
       await page.getByRole('button', { name: 'Details', exact: true }).click()
+      await page
+        .getByRole('dialog', { name: 'Reminder' })
+        .getByRole('button', { name: 'Open full page' })
+        .click()
       await page.waitForURL(`/tasks/${id}`)
+      await expect(page.getByRole('heading', { name: 'Reminder' })).toBeVisible()
       await page.getByRole('button', { name: 'Back' }).click()
       await page.waitForURL('/reminders')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
+  test('on a phone the editor is a bottom sheet', async ({ authenticatedPage: page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const id = await createReminder(page, {
+      title: 'A thought on the phone',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+      due_at: todayAt(7),
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      await page.locator('li[data-reminder-id]', { hasText: 'A thought on the phone' }).click()
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+      const sheet = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(sheet).toBeVisible()
+      await expect(sheet.locator('[data-slot-chip]')).toHaveCount(5)
+      await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(sheet).toHaveCount(0)
     } finally {
       await deleteTasks(page, [id])
     }
