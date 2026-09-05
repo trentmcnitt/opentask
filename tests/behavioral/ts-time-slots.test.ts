@@ -86,7 +86,7 @@ describe('Time Slots', () => {
    */
   test('TS-004: an item exactly on a boundary joins that slot', () => {
     const slot = assignSlot({ anchor_time: '09:00', due_at: null }, slots, TEST_TIMEZONE)
-    expect(slot?.label).toBe('Before work')
+    expect(slot?.label).toBe('Morning')
   })
 
   /**

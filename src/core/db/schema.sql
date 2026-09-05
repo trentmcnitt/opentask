@@ -344,7 +344,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_user_name ON labels(user_id, name);
 
 -- Time slots (REDESIGN-V03 §6.0)
 --
--- Life-moment containers ("Early morning", "Before work", "Evening") that both
+-- Life-moment containers ("Early morning", "Morning", "Evening") that both
 -- the dashboard (§7.3) and the Reminders surface (§6) group by, so there is one
 -- definition of "morning" rather than two that drift.
 --
