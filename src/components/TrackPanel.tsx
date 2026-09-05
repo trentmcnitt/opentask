@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
 import { periodLabel, trackSummary } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
+import { useLongPress } from '@/hooks/useLongPress'
 import { useTrackPanelPreference } from '@/components/PreferencesProvider'
 import type { Task } from '@/types'
 
@@ -20,11 +21,16 @@ import type { Task } from '@/types'
  *   The control cluster has fixed widths and sits flush right, so the eight
  *   lines align as one object. No circle, no stripes, no AI commentary, no
  *   recurrence glyph — none of that is what a counter is about.
- * - The panel starts FOLDED to one line — label, period, a slim bar, "2 of
- *   23" — and opens to the full rows on a tap; the choice is remembered as a
- *   user preference, like the filter section. Trent (2026-09-05): open by
- *   default, eight rows pushed the first task of the day below the fold on a
- *   phone. It always comes first.
+ * - The panel has two states, remembered as a user preference like the
+ *   filter section. FOLDED (the default) it is a header — label, period,
+ *   "5 of 23" — over the quotas as tight CHIPS with their full titles,
+ *   wrapping wherever the width runs out (Trent, 2026-09-05: eight open rows
+ *   pushed the first task of the day below the fold on his phone; a folded
+ *   one-liner hid the quotas; chips with truncated titles were rejected, so
+ *   nothing here is ever cut). Tap a chip: +1. Hold it, or shift-click: −1.
+ *   The chip's background fills as the count climbs and turns green at the
+ *   target, so each chip is its own bar. OPEN, it is the full rows below.
+ *   It always comes first.
  * - Order is by title and never changes on a tap — the widget's "order jumps
  *   under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
@@ -51,7 +57,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
       // stray line between the filters and "Select all"). The header row is
       // built exactly like a group header — same padding, chevron size and
       // negative margin — so the caret and label line up with "Early morning".
-      className={cn('bg-muted/30 mb-6 rounded-2xl transition-colors', open ? 'pb-1' : 'py-0.5')}
+      className="bg-muted/30 mb-6 rounded-2xl pb-1 transition-colors"
     >
       <button
         type="button"
@@ -77,41 +83,24 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
             &middot; {sharedPeriod}
           </span>
         )}
-        {open ? (
-          <span className="text-muted-foreground/60 text-xs tabular-nums">{quotas.length}</span>
-        ) : (
-          <>
-            {/* Folded: the week at a glance, so the line earns its place. */}
-            <span
-              className="bg-muted relative ml-2 h-1.5 min-w-10 flex-1 overflow-hidden rounded-full"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={summary.total}
-              aria-valuenow={summary.done}
-              aria-label={`${summary.done} of ${summary.total}${sharedPeriod ? ` ${sharedPeriod}` : ''}`}
-            >
-              <span
-                className={cn(
-                  'absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out',
-                  allMet ? 'bg-green-600' : 'bg-foreground/50',
-                )}
-                style={{
-                  width: `${summary.total > 0 ? (summary.done / summary.total) * 100 : 0}%`,
-                }}
-              />
-            </span>
-            <span
-              data-track-summary
-              className={cn(
-                'pr-2 text-xs whitespace-nowrap tabular-nums',
-                allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
-              )}
-            >
-              <span className="text-foreground font-medium">{summary.done}</span> of {summary.total}
-            </span>
-          </>
-        )}
+        <span
+          data-track-summary
+          className={cn(
+            'ml-auto pr-2 text-xs whitespace-nowrap tabular-nums',
+            allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+          )}
+        >
+          <span className="text-foreground font-medium">{summary.done}</span> of {summary.total}
+        </span>
       </button>
+
+      {!open && (
+        <ul className="flex flex-wrap gap-1.5 px-2 pt-0.5 pb-2" aria-label="Quotas">
+          {quotas.map((task) => (
+            <TrackChip key={task.id} task={task} />
+          ))}
+        </ul>
+      )}
 
       {open && (
         <ul className="px-2">
@@ -121,6 +110,62 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         </ul>
       )}
     </section>
+  )
+}
+
+/**
+ * One quota as a chip. The whole chip is the +1 button; a hold (400 ms, the
+ * app's long-press) or a shift-click is −1. The fill behind the text is the
+ * count over the target. Long titles wrap the row, never the chip's text.
+ */
+function TrackChip({ task }: { task: Task }) {
+  const { state, period, log } = useTrackProgress(task)
+  const press = useLongPress({ onLongPress: () => void log(-1) })
+
+  return (
+    <li className="max-w-full">
+      <button
+        type="button"
+        data-track-chip={task.id}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerMove={press.onPointerMove}
+        onPointerLeave={press.onPointerLeave}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={(e) => {
+          // A hold already logged its −1; the click that follows it is not a tap.
+          if (press.didFire()) return
+          void log(e.shiftKey ? -1 : 1)
+        }}
+        aria-label={`Log one more for "${task.title}"`}
+        title="Tap: +1 · Hold or shift-click: −1"
+        className={cn(
+          'relative flex h-7 max-w-full touch-manipulation items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-none transition-colors select-none',
+          'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
+          state.met && 'border-green-600/30',
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
+            state.met ? 'bg-green-600/15' : 'bg-foreground/10',
+          )}
+          style={{ width: `${state.fraction * 100}%` }}
+        />
+        <span className="relative truncate">{task.title}</span>
+        <span
+          data-track-count
+          className={cn(
+            'relative text-xs whitespace-nowrap tabular-nums',
+            state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+          )}
+        >
+          <span className="text-foreground font-medium">{state.current}</span>/{state.target}
+        </span>
+        {period && <span className="sr-only"> {period}</span>}
+      </button>
+    </li>
   )
 }
 
