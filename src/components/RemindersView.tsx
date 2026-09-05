@@ -171,9 +171,12 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
             allWaitingDone={total === 0}
             onConsiderSoFar={() => considerAll.askSoFar(summary)}
           />
-          {total === 0 ? (
-            <RemindersEmptyState allClear headingLevel="none" />
-          ) : (
+          {/* The slot cards stay once the day is clear (Trent, 2026-09-05:
+              "once everything is clear there's no way to expand it… in case I
+              need to undo"). Each finished slot still opens to its considered
+              items and their put-back; the headline and the green bar are the
+              all-clear. */}
+          {
             <div className="space-y-3">
               {[...summary.started, ...summary.later].map((group) => {
                 const key = groupKey(group)
@@ -199,7 +202,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                 )
               })}
             </div>
-          )}
+          }
         </>
       )}
 
@@ -845,18 +848,16 @@ function formatSlotTime(startTime: string): string {
 /**
  * The page's h1 is the headline ("34 waiting so far") when there is one. When
  * the empty state stands alone it takes the h1 itself, so the page always has
- * exactly one — the top bar shows the logo, not a title. Under a headline
- * that already says "All clear for today" the card's title is not a heading
- * at all (`'none'`): same look, no second "All clear" in the outline.
+ * exactly one — the top bar shows the logo, not a title.
  */
 function RemindersEmptyState({
   allClear,
   headingLevel = 2,
 }: {
   allClear: boolean
-  headingLevel?: 1 | 2 | 'none'
+  headingLevel?: 1 | 2
 }) {
-  const Heading = headingLevel === 1 ? 'h1' : headingLevel === 2 ? 'h2' : 'p'
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
   if (allClear) {
     return (
       <div className="flex flex-col items-center gap-2 py-20 text-center">
