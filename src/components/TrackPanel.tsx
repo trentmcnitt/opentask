@@ -21,7 +21,7 @@ import type { Task } from '@/types'
  *   The control cluster has fixed widths and sits flush right, so the eight
  *   lines align as one object. No circle, no stripes, no AI commentary, no
  *   recurrence glyph — none of that is what a counter is about.
- * - The panel is a plain group header ("TRACK · 5 of 24") over one CARD per
+ * - The panel is a plain group header ("TRACK") over one CARD per
  *   period — the Reminders slot card: word, count, a hairline that fills as
  *   the period goes. Two states, remembered as a user preference like the
  *   filter section. FOLDED (the default) each card holds its quotas as tight
@@ -50,9 +50,9 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   // labelled hairline ("this week" / "this month"). Trent (2026-09-05): a
   // period word on every chip was repetition, and still didn't tell a week
   // from a month at a glance. The word appears once, on the divider.
+  // No total on the header: the cards carry their own counts, and a header
+  // count sat outside the cards' right edge (Trent, 2026-09-05).
   const groups = groupByPeriod(quotas)
-  const summary = trackSummary(quotas)
-  const allMet = summary.total > 0 && summary.done >= summary.total
 
   return (
     <section aria-label="Track" data-track-panel className="mb-6">
@@ -78,15 +78,6 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         </span>
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
           Track
-        </span>
-        <span
-          data-track-summary
-          className={cn(
-            'ml-auto pr-1 text-xs whitespace-nowrap tabular-nums',
-            allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
-          )}
-        >
-          <span className="text-foreground font-medium">{summary.done}</span> of {summary.total}
         </span>
       </button>
 
