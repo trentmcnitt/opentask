@@ -55,8 +55,8 @@ export interface IncrementProgressResult {
 }
 
 /** Is this task tracked (a quota) rather than an ordinary one-shot task? */
-export function isTracked(task: Pick<Task, 'progress_target'>): boolean {
-  return (task.progress_target ?? 1) > 1
+export function isTracked(task: Pick<Task, 'progress_target' | 'is_tracked'>): boolean {
+  return task.is_tracked === true || (task.progress_target ?? 1) > 1
 }
 
 /**

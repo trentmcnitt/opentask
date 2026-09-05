@@ -60,11 +60,13 @@ export interface Task {
   // Labels
   labels: string[]
 
-  // Track / quotas (§5). progress_target > 1 marks a tracked task; at target it
-  // is "met" but stays open until the period boundary, so overflow (3/2) stays
-  // observable.
+  // Track / quotas (§5). A tracked task counts occurrences toward a target per
+  // period; at target it is "met" but stays open until the period boundary, so
+  // overflow (3/2) stays observable. progress_target > 1 implies tracked;
+  // is_tracked marks a quota whose target is 1 ("date night, once a month").
   progress_target: number
   progress_current: number
+  is_tracked: boolean
 
   /**
    * §6: this item lives on the Reminders surface — a prompted thought rather

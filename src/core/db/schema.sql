@@ -121,6 +121,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- at every query site that wants an indexed boolean (overdue-checker,
   -- dashboard, badge).
   is_reminder      INTEGER NOT NULL DEFAULT 0,
+  -- §5: an explicit "this is a quota" mark, for targets of 1 ("date night,
+  -- once a month"). progress_target > 1 still implies it; this lets a count of
+  -- one per period be tracked rather than scheduled.
+  is_tracked       INTEGER NOT NULL DEFAULT 0,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

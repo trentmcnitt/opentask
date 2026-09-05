@@ -7,9 +7,12 @@
  */
 import type { Task } from '@/types'
 
-/** A tracked task is a quota: something to do N times per period, N > 1. */
-export function isTracked(task: Pick<Task, 'progress_target'>): boolean {
-  return (task.progress_target ?? 1) > 1
+/**
+ * A tracked task is a quota: something to do N times per period. N > 1 implies
+ * it; `is_tracked` marks one with N = 1 ("date night, once a month").
+ */
+export function isTracked(task: Pick<Task, 'progress_target' | 'is_tracked'>): boolean {
+  return task.is_tracked === true || (task.progress_target ?? 1) > 1
 }
 
 export interface TrackState {
