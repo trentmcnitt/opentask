@@ -114,7 +114,13 @@ export function getRemindersBySlot(
     const consideredItems = consideredBySlot.get(group.slot?.id ?? null) ?? []
     return {
       slot: group.slot,
-      reminders: [...group.items].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)),
+      // Priority first; then creation order, which never moves. The query's
+      // own order is by due_at, and for a reminder due_at is an artifact — a
+      // schedule edit recomputes it to the next occurrence, which sent an
+      // edited reminder to the bottom of its slot (Trent, 2026-09-05).
+      reminders: [...group.items].sort(
+        (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.id - b.id,
+      ),
       considered: consideredItems.length,
       consideredItems,
     }
