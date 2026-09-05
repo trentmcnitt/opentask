@@ -125,6 +125,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- once a month"). progress_target > 1 still implies it; this lets a count of
   -- one per period be tracked rather than scheduled.
   is_tracked       INTEGER NOT NULL DEFAULT 0,
+  -- §5: when the quota's current period began (UTC ISO of the local period
+  -- start). NULL until the rollover job first sees the task. The rollover
+  -- advances it by the rrule's period and resets progress_current.
+  progress_period_start TEXT,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -388,3 +392,19 @@ CREATE TABLE IF NOT EXISTS progress_events (
   logged_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_progress_events_task ON progress_events(task_id, logged_at);
+
+-- §5: one row per closed period of a quota — what was logged against the
+-- target that week / month. Written by the rollover job at the period
+-- boundary; a met period also writes a completions row.
+CREATE TABLE IF NOT EXISTS progress_periods (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id      INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  period_start TEXT NOT NULL,
+  period_end   TEXT NOT NULL,
+  logged       INTEGER NOT NULL,
+  target       INTEGER NOT NULL,
+  met          INTEGER NOT NULL DEFAULT 0,
+  closed_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_progress_periods_task ON progress_periods(task_id, period_start);

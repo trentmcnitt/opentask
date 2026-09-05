@@ -221,6 +221,10 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks ADD COLUMN is_tracked INTEGER NOT NULL DEFAULT 0')
     database.exec('UPDATE tasks SET is_tracked = 1 WHERE progress_target > 1')
   }
+  // §5: the period rollover's anchor (see src/core/tasks/period-rollover.ts).
+  if (!hasColumn(database, 'tasks', 'progress_period_start')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_period_start TEXT')
+  }
 
   // Collapsible dashboard filter chips (§7.3) — default collapsed for everyone,
   // including existing users: the whole point is that the front door stops
