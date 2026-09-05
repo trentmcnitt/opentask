@@ -21,9 +21,11 @@ import type { Task } from '@/types'
  *   The control cluster has fixed widths and sits flush right, so the eight
  *   lines align as one object. No circle, no stripes, no AI commentary, no
  *   recurrence glyph — none of that is what a counter is about.
- * - The panel has two states, remembered as a user preference like the
- *   filter section. FOLDED (the default) it is a header — label, period,
- *   "5 of 23" — over the quotas as tight CHIPS with their full titles,
+ * - The panel is a plain group header ("TRACK · 5 of 24") over one CARD per
+ *   period — the Reminders slot card: word, count, a hairline that fills as
+ *   the period goes. Two states, remembered as a user preference like the
+ *   filter section. FOLDED (the default) each card holds its quotas as tight
+ *   CHIPS with their full titles,
  *   wrapping wherever the width runs out (Trent, 2026-09-05: eight open rows
  *   pushed the first task of the day below the fold on his phone; a folded
  *   one-liner hid the quotas; chips with truncated titles were rejected, so
@@ -49,26 +51,21 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   // period word on every chip was repetition, and still didn't tell a week
   // from a month at a glance. The word appears once, on the divider.
   const groups = groupByPeriod(quotas)
-  const sharedPeriod = groups.length === 1 ? groups[0].period : null
   const summary = trackSummary(quotas)
   const allMet = summary.total > 0 && summary.done >= summary.total
 
   return (
-    <section
-      aria-label="Track"
-      data-track-panel
-      // Its own box in both states (Trent, 2026-09-05: folded, it read as a
-      // stray line between the filters and "Select all"). The header row is
-      // built exactly like a group header — same padding, chevron size and
-      // negative margin — so the caret and label line up with "Early morning".
-      className="bg-muted/30 mb-6 rounded-2xl pb-1 transition-colors"
-    >
+    <section aria-label="Track" data-track-panel className="mb-6">
+      {/* A plain group header, built exactly like "Early morning" below —
+          same padding, chevron size and negative margin — so the carets and
+          labels line up. The caret switches every card between chips and
+          the full rows. */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-label={open ? 'Collapse Track' : 'Expand Track'}
-        className="hover:text-foreground flex min-h-10 w-full items-center gap-2 rounded-2xl px-1 py-1.5 text-left transition-colors"
+        className="hover:text-foreground mb-2 flex min-h-7 w-full items-center gap-2 px-1 text-left transition-colors"
       >
         <span className="-mr-1.5 flex items-center justify-center p-0.5">
           <ChevronDown
@@ -82,15 +79,10 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
           Track
         </span>
-        {sharedPeriod && (
-          <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
-            &middot; {sharedPeriod}
-          </span>
-        )}
         <span
           data-track-summary
           className={cn(
-            'ml-auto pr-2 text-xs whitespace-nowrap tabular-nums',
+            'ml-auto pr-1 text-xs whitespace-nowrap tabular-nums',
             allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
           )}
         >
@@ -98,37 +90,81 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         </span>
       </button>
 
-      {!open && (
-        <div className="px-2 pt-0.5 pb-2">
-          {groups.map((g) => (
-            <div key={g.period ?? 'none'}>
-              {groups.length > 1 && <PeriodDivider period={g.period} />}
-              <ul className="flex flex-wrap gap-1.5" aria-label={g.period ?? 'Quotas'}>
-                {g.tasks.map((task) => (
-                  <TrackChip key={task.id} task={task} />
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {open && (
-        <div className="px-2">
-          {groups.map((g) => (
-            <div key={g.period ?? 'none'}>
-              {groups.length > 1 && <PeriodDivider period={g.period} />}
-              <ul aria-label={g.period ?? 'Quotas'}>
-                {g.tasks.map((task) => (
-                  <TrackRow key={task.id} task={task} />
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* One card per period — the Reminders slot card: word top-left, count
+          top-right, a full-width hairline that fills as the period goes, then
+          the quotas (Trent chose this over nested boxes, 2026-09-05). */}
+      <div className="space-y-2.5">
+        {groups.map((g) => (
+          <PeriodCard key={g.period ?? 'none'} period={g.period} tasks={g.tasks} open={open} />
+        ))}
+      </div>
     </section>
   )
+}
+
+function PeriodCard({
+  period,
+  tasks,
+  open,
+}: {
+  period: string | null
+  tasks: Task[]
+  open: boolean
+}) {
+  const word = period ? periodShort(period) : 'no period'
+  const s = trackSummary(tasks)
+  const met = s.total > 0 && s.done >= s.total
+  return (
+    <div className="bg-muted/30 rounded-2xl px-2 pt-2 pb-2.5" data-track-period={word}>
+      <div className="flex items-center gap-2 px-1 pb-1.5">
+        <span className="text-muted-foreground text-[11px] font-semibold tracking-widest uppercase">
+          {word}
+        </span>
+        <span
+          className={cn(
+            'ml-auto text-xs whitespace-nowrap tabular-nums',
+            met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+          )}
+        >
+          <span className="text-foreground font-medium">{s.done}</span> of {s.total}
+        </span>
+      </div>
+      <div
+        className="bg-muted mx-1 mb-2.5 h-1 overflow-hidden rounded-full"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={s.total}
+        aria-valuenow={s.done}
+        aria-label={`${s.done} of ${s.total} ${period ?? ''}`.trim()}
+      >
+        <div
+          className={cn(
+            'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
+            met ? 'bg-green-600' : 'bg-foreground/50',
+          )}
+          style={{ width: `${s.total > 0 ? (s.done / s.total) * 100 : 0}%` }}
+        />
+      </div>
+      {open ? (
+        <ul aria-label={word}>
+          {tasks.map((task) => (
+            <TrackRow key={task.id} task={task} />
+          ))}
+        </ul>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5" aria-label={word}>
+          {tasks.map((task) => (
+            <TrackChip key={task.id} task={task} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** "this week" → "week", for the card's word. */
+function periodShort(period: string): string {
+  return period.replace(/^this /, '').replace(/^today$/, 'day')
 }
 
 /**
@@ -196,16 +232,6 @@ function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }
     by.set(p, [...(by.get(p) ?? []), t])
   }
   return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
-}
-
-/** A hairline carrying the group's period, once. */
-function PeriodDivider({ period }: { period: string | null }) {
-  return (
-    <div className="text-muted-foreground/70 flex items-center gap-2 px-1 pt-1.5 pb-1.5 text-[10px] font-semibold tracking-wider uppercase">
-      <span>{period ?? 'no period'}</span>
-      <span aria-hidden="true" className="bg-border h-px flex-1" />
-    </div>
-  )
 }
 
 function TrackRow({ task }: { task: Task }) {
