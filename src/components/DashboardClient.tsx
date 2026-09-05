@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
 import { TrackPanel } from '@/components/TrackPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -1033,6 +1034,17 @@ function HomeContent({
   })
 
   const { overdueCount, todayCount } = useTaskCounts(tasks_, timezone)
+  // The nav's Tasks badges read a shared cache; this page is its source of
+  // truth. Published from the unfiltered list (reminders excluded, nothing
+  // else): a filter chip changes the view, not what is due.
+  const navCounts = useTaskCounts(visibleTasks, timezone)
+  useEffect(() => {
+    publishTaskCounts({
+      total: visibleTasks.length,
+      overdue: navCounts.overdueCount,
+      today: navCounts.todayCount,
+    })
+  }, [visibleTasks.length, navCounts.overdueCount, navCounts.todayCount])
 
   // Update browser tab title with overdue count
   useEffect(() => {

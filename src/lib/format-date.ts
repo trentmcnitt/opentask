@@ -16,9 +16,8 @@ export interface DayBoundaries {
 /**
  * Returns UTC Date objects representing day boundaries in the given timezone.
  */
-export function getTimezoneDayBoundaries(timezone: string): DayBoundaries {
-  // Get current date parts in the user's timezone
-  const now = new Date()
+export function getTimezoneDayBoundaries(timezone: string, now: Date = new Date()): DayBoundaries {
+  // Date parts of `now` in the user's timezone
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',

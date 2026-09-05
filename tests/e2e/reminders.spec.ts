@@ -388,7 +388,8 @@ test.describe('Reminders top bar', () => {
       await expect(undo).toHaveAccessibleName('Undo (1 available)')
       // The green pill is the day's score, and the popover spells it out.
       await counts.click()
-      await expect(page.getByRole('dialog')).toContainText('1 considered today')
+      await expect(counts.getByText(/^1\/\d+$/)).toBeVisible()
+      await expect(page.getByRole('dialog')).toContainText(/1 of \d+ considered today/)
       await page.keyboard.press('Escape')
 
       await undo.click()

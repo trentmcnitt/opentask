@@ -11,18 +11,19 @@ import { useRemindersSummary } from '@/hooks/useReminders'
  *
  * Two numbers, the same two the headline below keeps: waiting so far (the
  * nav badge's number, neutral — reminders are never debt, so never red) and
- * considered today (green, the day's score). A pill only appears when its
- * number is above zero, so a finished day reads as a single green pill and a
- * day with nothing in it shows none. Tap opens a popover that spells them
- * out, with "later today" — the slots that haven't started — as the third
- * line, since it is context rather than a call to act.
+ * the day's progress in green as "28/38" — considered over the day's total.
+ * A bare "28" read as 28 left to do (Trent, 2026-09-05); the slash makes it
+ * a score. A pill only appears when its number is above zero. On a phone the
+ * waiting pill steps aside (the tab bar right below carries it) so the bar
+ * fits. Tap opens a popover that spells them out, with "later today" — the
+ * slots that haven't started — as context rather than a call to act.
  */
 export function RemindersCountBadges({ timezone }: { timezone: string }) {
   const summary = useRemindersSummary(timezone)
   const [popoverOpen, setPopoverOpen] = useState(false)
   if (!summary || summary.dayTotal === 0) return null
 
-  const { waitingSoFar, waitingLater, consideredTotal } = summary
+  const { waitingSoFar, waitingLater, consideredTotal, dayTotal } = summary
   return (
     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
       <PopoverTrigger asChild>
@@ -37,14 +38,16 @@ export function RemindersCountBadges({ timezone }: { timezone: string }) {
             <CountBadge
               count={waitingSoFar}
               tooltip={popoverOpen ? undefined : `${waitingSoFar} waiting so far`}
-              className="inline-flex items-center justify-center select-none"
+              className="hidden items-center justify-center select-none md:inline-flex"
             />
           )}
           {consideredTotal > 0 && (
             <CountBadge
-              count={consideredTotal}
+              count={`${consideredTotal}/${dayTotal}`}
               variant="done"
-              tooltip={popoverOpen ? undefined : `${consideredTotal} considered today`}
+              tooltip={
+                popoverOpen ? undefined : `${consideredTotal} of ${dayTotal} considered today`
+              }
               className="inline-flex items-center justify-center select-none"
             />
           )}
@@ -57,7 +60,7 @@ export function RemindersCountBadges({ timezone }: { timezone: string }) {
             <span className="text-muted-foreground">{waitingLater} later today</span>
           )}
           <span className="text-green-700 dark:text-green-400">
-            {consideredTotal} considered today
+            {consideredTotal} of {dayTotal} considered today
           </span>
         </div>
       </PopoverContent>

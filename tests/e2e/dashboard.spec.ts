@@ -6,6 +6,27 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('Buy groceries')).toBeVisible({ timeout: 5000 })
     await expect(page.getByText('Morning routine')).toBeVisible()
   })
+
+  test('the nav carries the top bar\u2019s overdue and today numbers', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const bar = page.getByRole('group', { name: 'Task counts' })
+    await expect(bar).toBeVisible()
+    const nav = page.locator('aside [data-tasks-badge]')
+    await expect(nav).toBeVisible()
+    // The bar shows total, overdue (if any), today (if any); the nav shows the
+    // last two. Same numbers, same order.
+    const barPills = (await bar.innerText()).trim().split(/\s+/)
+    const navPills = (await nav.innerText()).trim().split(/\s+/)
+    expect(navPills.length).toBeGreaterThan(0)
+    expect(barPills.slice(-navPills.length)).toEqual(navPills)
+
+    // And it is there on a page that never loads the task list.
+    await page.getByRole('link', { name: 'Reminders' }).click()
+    await page.waitForURL('/reminders')
+    await expect(page.locator('aside [data-tasks-badge]')).toHaveText(navPills.join(''))
+  })
 })
 
 /**
