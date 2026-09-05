@@ -5,7 +5,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
-import { ReminderDetail } from '@/components/ReminderDetail'
+import { ReminderDetail, type ReminderRuleChange } from '@/components/ReminderDetail'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
@@ -17,30 +17,35 @@ import type { Task } from '@/types'
  * screen and a bottom sheet on a phone — the same split, the same dirty
  * guard, as the dashboard's quick-action popover, so the two surfaces feel
  * like one app. The host page renders the very same component at full size.
+ * One selected reminder gets the full editor; several get their schedule
+ * edited together.
  *
- * `task` is a SNAPSHOT taken when the modal opened, not a row looked up in
+ * `tasks` is a SNAPSHOT taken when the modal opened, not rows looked up in
  * the live groups: the surface refreshes on every sync event, and a task
  * identity that changed under the editor would either reset the staged edits
  * or vanish when the row left today's list.
  */
 interface ReminderDetailModalProps {
-  task: Task | null
+  tasks: Task[]
   open: boolean
   timeSlots: TimeSlot[]
   onClose: () => void
-  /** Saves and reports; rejects on failure so the modal stays open with the edits. */
+  /** One reminder: saves and reports; rejects on failure so the modal stays open with the edits. */
   onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
-  onConsidered: (task: Task) => void
-  onDelete: (task: Task) => void
+  /** Several: one request, one Undo; same contract. */
+  onSaveMany: (changes: ReminderRuleChange[]) => Promise<void>
+  onConsidered: (tasks: Task[]) => void
+  onDelete: (tasks: Task[]) => void
   onOpenPage: (taskId: number) => void
 }
 
 export function ReminderDetailModal({
-  task,
+  tasks,
   open,
   timeSlots,
   onClose,
   onSaveAll,
+  onSaveMany,
   onConsidered,
   onDelete,
   onOpenPage,
@@ -49,23 +54,46 @@ export function ReminderDetailModal({
   const [isDirty, setIsDirty] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
+  const single = tasks.length === 1 ? tasks[0] : null
+
+  // The dismiss guard reads dirtiness through a ref, not the state. Radix
+  // hands a dismissal (Escape, a click outside) to whichever `onOpenChange`
+  // it last captured, and a callback that closes over state trails the
+  // editor's report by a render — under load, an Escape that follows a chip
+  // tap closely reached a guard that still believed the editor was clean, and
+  // the staged edit was dropped without asking (seen in the full E2E run).
+  // The ref is current the moment the editor reports; the state only paints
+  // the stripe.
+  const isDirtyRef = useRef(false)
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty
+    setIsDirty(dirty)
+  }, [])
 
   const handleSaveAll = useCallback(
     async (changes: QuickActionPanelChanges) => {
-      if (!task) return
-      await onSaveAll(task.id, changes)
+      if (!single) return
+      await onSaveAll(single.id, changes)
       onClose()
     },
-    [task, onSaveAll, onClose],
+    [single, onSaveAll, onClose],
+  )
+
+  const handleSaveMany = useCallback(
+    async (changes: ReminderRuleChange[]) => {
+      await onSaveMany(changes)
+      onClose()
+    },
+    [onSaveMany, onClose],
   )
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (nextOpen) return
-      if (isDirty) setShowCloseConfirm(true)
+      if (isDirtyRef.current) setShowCloseConfirm(true)
       else onClose()
     },
-    [isDirty, onClose],
+    [onClose],
   )
 
   const handleDiscardAndClose = useCallback(() => {
@@ -80,8 +108,9 @@ export function ReminderDetailModal({
     setShowCloseConfirm(false)
   }, [])
 
-  if (!task) return null
+  if (tasks.length === 0) return null
 
+  const name = single ? 'Reminder' : 'Reminders'
   const panel = (
     <div
       className={cn(
@@ -90,25 +119,30 @@ export function ReminderDetailModal({
       )}
     >
       <ReminderDetail
-        key={task.id}
-        task={task}
+        key={tasks.map((t) => t.id).join(',')}
+        tasks={tasks}
         timeSlots={timeSlots}
         showKind
         onSaveAll={handleSaveAll}
+        onSaveMany={handleSaveMany}
         onConsidered={() => {
-          onConsidered(task)
+          onConsidered(tasks)
           onClose()
         }}
         onDelete={() => {
-          onDelete(task)
+          onDelete(tasks)
           onClose()
         }}
         onCancel={onClose}
-        onOpenPage={() => {
-          onOpenPage(task.id)
-          onClose()
-        }}
-        onDirtyChange={setIsDirty}
+        onOpenPage={
+          single
+            ? () => {
+                onOpenPage(single.id)
+                onClose()
+              }
+            : undefined
+        }
+        onDirtyChange={handleDirtyChange}
         saveRef={saveRef}
       />
     </div>
@@ -134,8 +168,8 @@ export function ReminderDetailModal({
             draggable={!isDirty}
           >
             <VisuallyHidden>
-              <SheetTitle>Reminder</SheetTitle>
-              <SheetDescription>Change when this reminder comes up</SheetDescription>
+              <SheetTitle>{name}</SheetTitle>
+              <SheetDescription>Change when this comes up</SheetDescription>
             </VisuallyHidden>
             <div className="px-4 pb-2">{panel}</div>
           </SheetContent>
@@ -153,8 +187,8 @@ export function ReminderDetailModal({
           showCloseButton={false}
         >
           <VisuallyHidden>
-            <DialogTitle>Reminder</DialogTitle>
-            <DialogDescription>Change when this reminder comes up</DialogDescription>
+            <DialogTitle>{name}</DialogTitle>
+            <DialogDescription>Change when this comes up</DialogDescription>
           </VisuallyHidden>
           <div className="min-w-0">{panel}</div>
         </DialogContent>

@@ -263,6 +263,16 @@ export const bulkEditSchema = z.object({
     labels_add: labels.optional(),
     labels_remove: labels.optional(),
   }),
+  /**
+   * Values that legitimately differ from task to task within ONE gesture,
+   * keyed by task id and merged over `changes` for that task. The case that
+   * needs it: moving several reminders to another time slot rewrites each
+   * one's own rule (daily, Tue/Thu, monthly) with the new time — one request,
+   * one Undo. Only the schedule is per-task; everything else stays shared.
+   */
+  per_task: z
+    .record(z.string().regex(/^\d+$/, 'Task id'), z.object({ rrule: rruleString }).strict())
+    .optional(),
 })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>

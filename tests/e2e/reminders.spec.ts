@@ -249,11 +249,12 @@ test.describe('Reminders surface', () => {
       // Single selection offers Details; that is the deliberate way to open one.
       await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
 
-      // Shift-click extends to a range, and the bar reports the count.
+      // Shift-click extends to a range, and the bar reports the count. Details
+      // stays: several selected edit their schedule together.
       await row('Third thought of the range').click({ modifiers: ['Shift'] })
       await expect(row('Second thought of the range')).toHaveAttribute('aria-selected', 'true')
       await expect(page.getByText('3 selected')).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
 
       // One action considers the whole selection, and one Undo brings it all back.
       await page.getByRole('button', { name: 'Considered', exact: true }).click()
@@ -624,6 +625,68 @@ test.describe('Reminder details', () => {
       await expect(dialog).toHaveCount(0)
       await expect(target).toBeVisible()
       expect(await taskField(page, ids[0], 'completion_count')).toBe(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('several selected edit their schedule together, each keeping its own days', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+    const today = DateTime.now().setZone(TEST_TZ).weekday - 1
+    const weeklyDays = [today, (today + 3) % 7].sort((a, b) => a - b).map((d) => RRULE_DAYS[d])
+    const ids = [
+      await createReminder(page, {
+        title: 'A thought every day',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+      await createReminder(page, {
+        title: 'A thought on some days',
+        rrule: `FREQ=WEEKLY;BYDAY=${weeklyDays.join(',')};BYHOUR=7;BYMINUTE=0`,
+        due_at: todayAt(7),
+      }),
+    ]
+    const taskField = async (id: number, field: string) =>
+      (await (await page.request.get(`/api/tasks/${id}`)).json()).data[field]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+      await row('A thought every day').click()
+      await row('A thought on some days').click({ modifiers: ['ControlOrMeta'] })
+      await expect(page.getByText('2 selected')).toBeVisible()
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+
+      const dialog = page.getByRole('dialog', { name: 'Reminders', exact: true })
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toContainText('2 reminders')
+      // They disagree on days and agree on the slot; the chips say exactly that.
+      await expect(dialog.locator('[data-reminder-summary]')).toHaveText(
+        /Different days · Early morning/,
+      )
+      await expect(dialog.locator('[data-cadence][aria-pressed="true"]')).toHaveCount(0)
+      await expect(dialog.locator('[data-slot-label="Early morning"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+
+      await dialog.locator('[data-slot-label="Evening"]').click()
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect(page.getByText('Updated 2 reminders')).toBeVisible()
+      await expect.poll(() => taskField(ids[0], 'anchor_time')).toBe('20:30')
+      await expect.poll(() => taskField(ids[1], 'anchor_time')).toBe('20:30')
+      // The weekly one is still weekly on its own days.
+      expect(await taskField(ids[1], 'rrule')).toBe(
+        `FREQ=WEEKLY;BYDAY=${weeklyDays.join(',')};BYHOUR=20;BYMINUTE=30`,
+      )
+
+      await toastUndo(page).click()
+      await expect.poll(() => taskField(ids[0], 'anchor_time')).toBe('07:00')
+      await expect.poll(() => taskField(ids[1], 'anchor_time')).toBe('07:00')
     } finally {
       await deleteTasks(page, ids)
     }

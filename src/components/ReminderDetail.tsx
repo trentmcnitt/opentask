@@ -22,7 +22,6 @@ import {
   describeTimeOfDay,
   buildSchedule,
   formatMinutes,
-  isCompleteSchedule,
   readSchedule,
   sameSchedule,
   slotAtMinutes,
@@ -49,26 +48,38 @@ import type { Task } from '@/types'
  * and WHEN in the day (its slot). Plus its wording and notes. That is all
  * this shows. Project, labels and priority are reachable by making it a task.
  *
+ * SEVERAL AT ONCE: with more than one reminder selected the same editor edits
+ * their schedule together (Trent, 2026-09-05: "we need that"). Wording and
+ * notes are one reminder's own and disappear; the cadence and slot chips show
+ * what the selection agrees on and nothing where it doesn't. Only what the
+ * user touches is applied, and each reminder keeps the rest of its own rule:
+ * picking a slot moves a daily one and a Tue/Thu one to that slot, still
+ * daily and still Tue/Thu. A one-time thought keeps its time, as it does in
+ * the single editor. The save is one request and one Undo.
+ *
  * STAGED, LIKE THE QUICK PANEL: every change is staged locally and saved in
- * one PATCH (one undo entry) when Save is pressed. The dirty state is
- * reported to the host so it can guard navigation or dismissal. After a
- * successful save the host hands back the updated task and the staging
- * resets against it; after a failed one the staged edits stay put, so nothing
- * typed is lost to a network error.
+ * one request when Save is pressed. The dirty state is reported to the host
+ * so it can guard navigation or dismissal. After a successful save the host
+ * hands back the updated task and the staging resets against it; after a
+ * failed one the staged edits stay put, so nothing typed is lost to a network
+ * error.
  */
 export interface ReminderDetailProps {
-  task: Task
+  /** One reminder, or several selected together. */
+  tasks: Task[]
   /**
    * The user's slots. The Reminders page already holds them and passes them
    * through; the task page passes nothing and this fetches them once.
    */
   timeSlots?: TimeSlot[]
   /**
-   * Save the staged changes in one request. Should reject on failure (after
-   * reporting it) so the staged edits are kept rather than reset.
+   * One reminder: save the staged changes in one PATCH. Should reject on
+   * failure (after reporting it) so the staged edits are kept rather than reset.
    */
-  onSaveAll: (changes: QuickActionPanelChanges) => void | Promise<void>
-  /** Consider this reminder — the host removes it and closes or navigates. */
+  onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
+  /** Several: save each reminder's new rule in one request. Same contract. */
+  onSaveMany?: (changes: ReminderRuleChange[]) => void | Promise<void>
+  /** Consider the reminder(s) — the host removes them and closes or navigates. */
   onConsidered?: () => void
   /** Move to Trash — a soft delete with Undo, handled by the host. */
   onDelete?: () => void
@@ -82,6 +93,19 @@ export interface ReminderDetailProps {
   /** Populated with the save function so a host's unsaved-changes dialog can call it. */
   saveRef?: MutableRefObject<(() => Promise<void> | void) | null>
 }
+
+/** One reminder's new rule, for a bulk save. */
+export interface ReminderRuleChange {
+  id: number
+  rrule: string | null
+}
+
+/**
+ * A schedule being edited. `cadence: null` and `time: null` mean "the
+ * selection disagrees here" when editing several; nothing is pressed and
+ * nothing is applied unless the user picks.
+ */
+type DraftSchedule = Omit<ReminderSchedule, 'cadence'> & { cadence: ReminderCadence | null }
 
 const CADENCES: ReadonlyArray<{ id: ReminderCadence; label: string }> = [
   { id: 'daily', label: 'Every day' },
@@ -100,6 +124,9 @@ const WEEKDAYS = [
   { dow: 6, short: 'S', full: 'Sunday' },
 ]
 
+/** How many of a selection's titles the header lists before "and N more". */
+const LISTED_TITLES = 3
+
 /** Same size steps the quick panel uses for a prominent title. */
 function titleSizeClass(title: string): string {
   if (title.length <= 200) return 'text-lg'
@@ -107,10 +134,43 @@ function titleSizeClass(title: string): string {
   return 'text-sm'
 }
 
+function sameCadence(a: DraftSchedule, b: DraftSchedule): boolean {
+  if (a.cadence !== b.cadence) return false
+  switch (a.cadence) {
+    case 'weekly':
+      return a.days.length === b.days.length && a.days.every((d, i) => d === b.days[i])
+    case 'monthly':
+      return a.monthDay === b.monthDay
+    case 'custom':
+      return a.custom === b.custom
+    default:
+      return true
+  }
+}
+
+/** One reminder's stored schedule, or what several agree on. */
+function baseFor(tasks: Task[], timezone: string): DraftSchedule {
+  const schedules = tasks.map((t) => readSchedule(t, timezone))
+  if (schedules.length <= 1) {
+    return schedules[0] ?? { cadence: 'once', days: [], monthDay: 1, time: null, custom: null }
+  }
+  const [first, ...rest] = schedules
+  const cadenceAgrees = rest.every((s) => sameCadence(s, first))
+  const timeAgrees = rest.every((s) => s.time === first.time)
+  return {
+    cadence: cadenceAgrees ? first.cadence : null,
+    days: cadenceAgrees ? first.days : [],
+    monthDay: cadenceAgrees ? first.monthDay : 1,
+    custom: cadenceAgrees ? first.custom : null,
+    time: timeAgrees ? first.time : null,
+  }
+}
+
 export function ReminderDetail({
-  task,
+  tasks,
   timeSlots: providedSlots,
   onSaveAll,
+  onSaveMany,
   onConsidered,
   onDelete,
   onCancel,
@@ -122,12 +182,16 @@ export function ReminderDetail({
   const timezone = useTimezone()
   const fetched = useTimeSlots(providedSlots)
   const timeSlots = providedSlots ?? fetched.timeSlots
+  const single = tasks.length === 1 ? tasks[0] : null
+  const bulk = single === null
+  const primaryId = tasks[0]?.id ?? 0
 
   // The schedule as stored (`base`) and as edited (`draft`); dirty when they
   // differ in meaning, not in spelling — a stored "FREQ=DAILY;INTERVAL=1"
-  // reads the same as the "FREQ=DAILY" the editor would write.
-  const [base, setBase] = useState<ReminderSchedule>(() => readSchedule(task, timezone))
-  const [draft, setDraft] = useState<ReminderSchedule>(base)
+  // reads the same as the "FREQ=DAILY" the editor would write. For several,
+  // `base` is what they agree on.
+  const [base, setBase] = useState<DraftSchedule>(() => baseFor(tasks, timezone))
+  const [draft, setDraft] = useState<DraftSchedule>(base)
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -137,14 +201,15 @@ export function ReminderDetail({
   const [notesDraft, setNotesDraft] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Re-baseline only when the task itself moves on: the host hands back the
-  // saved row (updated_at changes) or the session's timezone resolves. A
-  // refresh that brings the same row leaves the staged edits alone.
-  const version = `${task.updated_at}|${timezone}`
+  // Re-baseline only when the reminders themselves move on: the host hands
+  // back a saved row (updated_at changes), the selection changes, or the
+  // session's timezone resolves. A refresh that brings the same rows leaves
+  // the staged edits alone.
+  const version = `${tasks.map((t) => `${t.id}:${t.updated_at}`).join('|')}|${timezone}`
   const [seenVersion, setSeenVersion] = useState(version)
   if (version !== seenVersion) {
     setSeenVersion(version)
-    const fresh = readSchedule(task, timezone)
+    const fresh = baseFor(tasks, timezone)
     setBase(fresh)
     setDraft(fresh)
     setPendingTitle(null)
@@ -153,13 +218,20 @@ export function ReminderDetail({
     setEditingNotes(false)
   }
 
-  const title = pendingTitle ?? task.title
-  const notes = pendingNotes !== undefined ? pendingNotes : task.notes
-  const scheduleDirty = !sameSchedule(draft, base)
+  const title = pendingTitle ?? single?.title ?? ''
+  const notes = pendingNotes !== undefined ? pendingNotes : (single?.notes ?? null)
+  const cadenceStaged = !sameCadence(draft, base)
+  const timeStaged = draft.time !== base.time
+  const scheduleDirty = cadenceStaged || timeStaged
   const titleDirty =
-    pendingTitle !== null || (editingTitle && titleDraft.trim() !== (pendingTitle ?? task.title))
+    pendingTitle !== null || (editingTitle && titleDraft.trim() !== (pendingTitle ?? title))
   const isDirty = scheduleDirty || titleDirty || pendingNotes !== undefined
-  const complete = isCompleteSchedule(draft)
+  // A weekly schedule needs a day; a repeating one needs a time, which the
+  // single editor always supplies and the bulk editor supplies per reminder.
+  const complete =
+    draft.cadence === 'weekly'
+      ? draft.days.length > 0
+      : bulk || draft.cadence === 'once' || draft.time !== null
 
   useEffect(() => {
     onDirtyChange?.(isDirty)
@@ -187,30 +259,72 @@ export function ReminderDetail({
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  /**
+   * A reminder that had no time of day (a one-time thought with no due time)
+   * gets one the moment it starts repeating: the slot that is current right
+   * now, else the first slot, so the chip that lights up is the honest answer
+   * to "when will this come up".
+   */
+  const defaultTime = useCallback((): number => {
+    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
+    return (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
+  }, [timeSlots, timezone])
+
+  /**
+   * Several at once: each reminder's own schedule with only the staged parts
+   * replaced. A staged time reaches the repeating ones; a one-time thought
+   * keeps its time. Reminders whose rule would not change are left out, so
+   * the request (and its Undo) touches exactly what moved.
+   */
+  const bulkChanges = useCallback((): ReminderRuleChange[] => {
+    if (!bulk) return []
+    return tasks.flatMap((task) => {
+      const own = readSchedule(task, timezone)
+      const next: ReminderSchedule = {
+        cadence: cadenceStaged && draft.cadence ? draft.cadence : own.cadence,
+        days: cadenceStaged ? draft.days : own.days,
+        monthDay: cadenceStaged ? draft.monthDay : own.monthDay,
+        custom: own.custom,
+        time: own.time,
+      }
+      if (timeStaged && draft.time !== null && next.cadence !== 'once') next.time = draft.time
+      if (next.cadence !== 'once' && next.time === null) next.time = draft.time ?? defaultTime()
+      return sameSchedule(next, own) ? [] : [{ id: task.id, rrule: buildSchedule(next) }]
+    })
+  }, [bulk, tasks, timezone, cadenceStaged, timeStaged, draft, defaultTime])
+  const bulkChangeCount = bulk ? bulkChanges().length : 0
+
   const collect = useCallback((): QuickActionPanelChanges => {
     const changes: QuickActionPanelChanges = {}
+    if (!single) return changes
     const stagedTitle =
       pendingTitle ?? (editingTitle && titleDraft.trim() ? titleDraft.trim() : null)
-    if (stagedTitle !== null && stagedTitle !== task.title) changes.title = stagedTitle
-    if (scheduleDirty) changes.rrule = buildSchedule(draft)
+    if (stagedTitle !== null && stagedTitle !== single.title) changes.title = stagedTitle
+    if (scheduleDirty && draft.cadence) {
+      changes.rrule = buildSchedule({ ...draft, cadence: draft.cadence })
+    }
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     return changes
-  }, [pendingTitle, editingTitle, titleDraft, task.title, scheduleDirty, draft, pendingNotes])
+  }, [single, pendingTitle, editingTitle, titleDraft, scheduleDirty, draft, pendingNotes])
 
   const save = useCallback(
     async (extra: QuickActionPanelChanges = {}) => {
-      const changes = { ...collect(), ...extra }
-      if (Object.keys(changes).length === 0) return
       setSaving(true)
       try {
-        await onSaveAll(changes)
+        if (bulk) {
+          const changes = bulkChanges()
+          if (changes.length > 0) await onSaveMany?.(changes)
+        } else {
+          const changes = { ...collect(), ...extra }
+          if (Object.keys(changes).length > 0) await onSaveAll?.(changes)
+        }
       } catch {
         // The host has already reported the failure; the staged edits stay.
       } finally {
         setSaving(false)
       }
     },
-    [collect, onSaveAll],
+    [bulk, bulkChanges, collect, onSaveAll, onSaveMany],
   )
 
   const handleSave = useCallback(() => save(), [save])
@@ -234,7 +348,9 @@ export function ReminderDetail({
   /**
    * "Make this a task" goes out with whatever else is staged, as one change:
    * the item leaves this surface for the task editor, where project, labels
-   * and priority live. The toast's Undo brings it back here.
+   * and priority live. The toast's Undo brings it back here. One at a time
+   * only — changing what KIND of thing several items are in one tap is the
+   * sort of bulk mistake §6 exists to avoid.
    */
   const makeTask = useCallback(() => save({ is_reminder: false }), [save])
 
@@ -247,31 +363,22 @@ export function ReminderDetail({
   const commitTitle = () => {
     const trimmed = titleDraft.trim()
     setEditingTitle(false)
-    if (!trimmed) return
-    setPendingTitle(trimmed === task.title ? null : trimmed)
+    if (!trimmed || !single) return
+    setPendingTitle(trimmed === single.title ? null : trimmed)
   }
 
   // --- Schedule --------------------------------------------------------------
 
-  /**
-   * A reminder that had no time of day (a one-time thought with no due time)
-   * gets one the moment it starts repeating: the slot that is current right
-   * now, else the first slot, so the chip that lights up is the honest answer
-   * to "when will this come up".
-   */
-  const defaultTime = useCallback((): number => {
-    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
-    return (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
-  }, [timeSlots, timezone])
-
   const selectCadence = (cadence: ReminderCadence) => {
     setDraft((prev) => {
       if (prev.cadence === cadence) return prev
-      const next: ReminderSchedule = { ...prev, cadence }
+      const next: DraftSchedule = { ...prev, cadence }
       if (cadence === 'custom') next.custom = base.custom
       if (cadence === 'weekly') next.days = base.cadence === 'weekly' ? base.days : []
       if (cadence === 'monthly') next.monthDay = base.cadence === 'monthly' ? base.monthDay : 1
-      if (cadence !== 'once' && next.time === null) next.time = defaultTime()
+      // Several at once: a time is only ever applied when the user picks one,
+      // so a selection with different times keeps them.
+      if (!bulk && cadence !== 'once' && next.time === null) next.time = defaultTime()
       return next
     })
   }
@@ -299,7 +406,7 @@ export function ReminderDetail({
   const selectedSlot = slotAtMinutes(draft.time, timeSlots)
   const onBoundary =
     draft.time !== null && timeSlots.some((s) => parseHHMM(s.start_time) === draft.time)
-  const timeText = describeTimeOfDay(draft.time, timeSlots)
+  const summary = summarize(draft, bulk, timeSlots)
 
   // --- Notes -----------------------------------------------------------------
 
@@ -310,20 +417,35 @@ export function ReminderDetail({
   const changeNotes = (value: string) => {
     setNotesDraft(value)
     const trimmed = value.trim() || null
-    setPendingNotes(trimmed === task.notes ? undefined : trimmed)
+    setPendingNotes(trimmed === (single?.notes ?? null) ? undefined : trimmed)
   }
 
   return (
-    <div className="space-y-4" data-reminder-detail={task.id}>
-      {/* Wording */}
+    <div
+      className="space-y-4"
+      data-reminder-detail={bulk ? 'bulk' : primaryId}
+      data-reminder-count={tasks.length}
+    >
+      {/* Wording — one reminder's own; several show which ones are in hand. */}
       <div className="space-y-1">
-        {showKind && (
+        {(showKind || bulk) && (
           <p className="text-muted-foreground inline-flex items-center gap-1 text-[11px] font-semibold tracking-wider uppercase">
             <Lightbulb className="size-3" />
-            Reminder
+            {bulk ? `${tasks.length} reminders` : 'Reminder'}
           </p>
         )}
-        {editingTitle ? (
+        {bulk ? (
+          <ul className="text-muted-foreground space-y-0.5 text-sm">
+            {tasks.slice(0, LISTED_TITLES).map((t) => (
+              <li key={t.id} className="truncate">
+                {t.title}
+              </li>
+            ))}
+            {tasks.length > LISTED_TITLES && (
+              <li className="text-muted-foreground/70">and {tasks.length - LISTED_TITLES} more</li>
+            )}
+          </ul>
+        ) : editingTitle ? (
           <Textarea
             value={titleDraft}
             onChange={(e) => setTitleDraft(e.target.value)}
@@ -363,13 +485,12 @@ export function ReminderDetail({
           data-reminder-summary
         >
           <Repeat className="mr-1 inline size-3" />
-          {describeCadence(draft)}
-          {timeText && <> &middot; {timeText}</>}
+          {summary}
         </p>
       </div>
 
       <RepeatsSection
-        taskId={task.id}
+        taskId={primaryId}
         draft={draft}
         base={base}
         cadences={cadences}
@@ -381,7 +502,7 @@ export function ReminderDetail({
       {/* When in the day — a one-time thought keeps whatever time it has. */}
       {draft.cadence !== 'once' && (
         <TimeOfDaySection
-          taskId={task.id}
+          taskId={primaryId}
           timeSlots={timeSlots}
           time={draft.time}
           selectedSlotId={selectedSlot?.id ?? null}
@@ -390,28 +511,34 @@ export function ReminderDetail({
         />
       )}
 
-      <NotesSection
-        taskId={task.id}
-        notes={notes}
-        dirty={pendingNotes !== undefined}
-        editing={editingNotes}
-        draft={notesDraft}
-        onStartEdit={startNotesEdit}
-        onChange={changeNotes}
-        onDone={() => setEditingNotes(false)}
-      />
+      {!bulk && (
+        <NotesSection
+          taskId={primaryId}
+          notes={notes}
+          dirty={pendingNotes !== undefined}
+          editing={editingNotes}
+          draft={notesDraft}
+          onStartEdit={startNotesEdit}
+          onChange={changeNotes}
+          onDone={() => setEditingNotes(false)}
+        />
+      )}
 
       {/* The same bar as the quick panel: Save, Reset, the green verb, Cancel.
           Four of them do not fit a phone's sheet in one row, so below `sm`
           they wrap two per row; the desktop dialog keeps a single row. */}
       <div className="flex flex-wrap gap-2 border-t pt-3 select-none [&>button]:grow [&>button]:basis-[calc(50%-0.25rem)] sm:[&>button]:basis-0">
-        <Button size="sm" onClick={handleSave} disabled={!isDirty || !complete || saving}>
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={!isDirty || !complete || saving || (bulk && bulkChangeCount === 0)}
+        >
           Save
         </Button>
         <Button size="sm" variant="outline" onClick={reset} disabled={!isDirty}>
           Reset
         </Button>
-        {onConsidered && !task.done && (
+        {onConsidered && !single?.done && (
           <Button
             size="sm"
             onClick={onConsidered}
@@ -446,16 +573,18 @@ export function ReminderDetail({
             Move to Trash
           </button>
         )}
-        <button
-          type="button"
-          onClick={makeTask}
-          disabled={saving}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Leave the Reminders surface and edit it as a task — project, labels, priority, due date"
-        >
-          Make this a task
-        </button>
-        {onOpenPage && (
+        {!bulk && (
+          <button
+            type="button"
+            onClick={makeTask}
+            disabled={saving}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="Leave the Reminders surface and edit it as a task — project, labels, priority, due date"
+          >
+            Make this a task
+          </button>
+        )}
+        {onOpenPage && !bulk && (
           <button
             type="button"
             onClick={onOpenPage}
@@ -467,6 +596,23 @@ export function ReminderDetail({
       </div>
     </div>
   )
+}
+
+/**
+ * The one-line summary: "Every day · Evening". Editing several, a part the
+ * selection disagrees on says so rather than picking a side.
+ */
+function summarize(draft: DraftSchedule, bulk: boolean, timeSlots: TimeSlot[]): string {
+  const cadence =
+    draft.cadence !== null ? describeCadence({ ...draft, cadence: draft.cadence }) : null
+  const time =
+    draft.time !== null
+      ? describeTimeOfDay(draft.time, timeSlots)
+      : bulk && draft.cadence !== 'once'
+        ? 'different times'
+        : null
+  if (bulk && cadence === null && draft.time === null) return 'Different schedules'
+  return [cadence ?? 'Different days', time].filter(Boolean).join(' · ')
 }
 
 function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
@@ -487,8 +633,8 @@ function RepeatsSection({
   onMonthDay,
 }: {
   taskId: number
-  draft: ReminderSchedule
-  base: ReminderSchedule
+  draft: DraftSchedule
+  base: DraftSchedule
   cadences: ReadonlyArray<{ id: ReminderCadence; label: string }>
   onCadence: (cadence: ReminderCadence) => void
   onToggleDay: (dow: number) => void
@@ -508,7 +654,11 @@ function RepeatsSection({
             data-cadence={c.id}
             onClick={() => onCadence(c.id)}
             className="rounded-full"
-            title={c.id === 'custom' && base.custom ? describeCadence(base) : undefined}
+            title={
+              c.id === 'custom' && base.custom
+                ? describeCadence({ ...base, cadence: 'custom' })
+                : undefined
+            }
           >
             {c.label}
           </Button>

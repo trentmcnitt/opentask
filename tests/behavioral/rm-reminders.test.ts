@@ -9,12 +9,12 @@
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
-import { createTask, getTaskById, updateTask, bulkSnooze, markDone } from '@/core/tasks'
+import { createTask, getTaskById, updateTask, bulkSnooze, bulkEdit, markDone } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { getTodaysReminders, getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getOverdueCount } from '@/core/notifications/dismiss'
-import { validateTaskCreate } from '@/core/validation'
+import { validateTaskCreate, validateBulkEdit } from '@/core/validation'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { ZodError } from 'zod'
@@ -461,5 +461,51 @@ describe('Reminders surface', () => {
     // drop it to the bottom — and it stays where it was.
     expect(getTaskById(first.id)!.due_at! > getTaskById(second.id)!.due_at!).toBe(true)
     expect(order()).toEqual([first.id, second.id, third.id])
+  })
+
+  /**
+   * RM-022: Several reminders moved to another slot in one gesture (Trent,
+   * 2026-09-05: "we need that"). Each keeps its own days and gets the new
+   * time — different rules per task in ONE bulk edit — and one Undo puts
+   * every one of them back.
+   */
+  test('RM-022: a bulk edit gives each reminder its own rule, with one Undo', () => {
+    const daily = makeReminder({ title: 'Daily', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const tuThu = makeReminder({
+      title: 'Tue/Thu',
+      rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0',
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [daily.id, tuThu.id],
+      changes: {},
+      perTask: {
+        [daily.id]: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' },
+        [tuThu.id]: { rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30' },
+      },
+    })
+    expect(result.tasksAffected).toBe(2)
+    expect(getTaskById(daily.id)!.anchor_time).toBe('20:30')
+    expect(getTaskById(tuThu.id)!.anchor_time).toBe('20:30')
+    expect(getTaskById(tuThu.id)!.rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30')
+
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(daily.id)!.anchor_time).toBe('07:00')
+    expect(getTaskById(tuThu.id)!.anchor_time).toBe('07:00')
+    expect(getTaskById(tuThu.id)!.rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0')
+
+    // Only the schedule is per-task, and only a real rule (BYHOUR=99 is not).
+    expect(() =>
+      validateBulkEdit({ ids: [daily.id], changes: {}, per_task: { [daily.id]: { title: 'x' } } }),
+    ).toThrow(ZodError)
+    expect(() =>
+      validateBulkEdit({
+        ids: [daily.id],
+        changes: {},
+        per_task: { [daily.id]: { rrule: 'FREQ=DAILY;BYHOUR=99;BYMINUTE=0' } },
+      }),
+    ).toThrow(ZodError)
   })
 })
