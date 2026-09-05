@@ -494,3 +494,27 @@ test.describe('Reminders trash', () => {
     }
   })
 })
+
+/**
+ * Details is a round trip: the page's back arrow returns to the Reminders
+ * surface, not to Tasks (Trent, 2026-09-05).
+ */
+test.describe('Reminder details', () => {
+  test('back from a reminder\u2019s details lands on Reminders', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, { title: 'A thought worth opening', due_at: todayAt(7) })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      await page.locator('li[data-reminder-id]', { hasText: 'A thought worth opening' }).click()
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+      await page.waitForURL(`/tasks/${id}`)
+      await page.getByRole('button', { name: 'Back' }).click()
+      await page.waitForURL('/reminders')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+})

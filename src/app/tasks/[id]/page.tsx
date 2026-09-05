@@ -64,14 +64,21 @@ export default function TaskDetailPage() {
     return () => setDirty(false)
   }, [setDirty])
 
+  // Where "back" (and "done", and "deleted") lead: a reminder's home is the
+  // Reminders surface, a task's is the Tasks page. Trent (2026-09-05): back
+  // from a reminder's details landed on Tasks. Read through a ref so the
+  // callbacks handed to useTaskActions see the task after it loads.
+  const homeRef = useRef('/')
+  homeRef.current = task?.is_reminder ? '/reminders' : '/'
+
   const handleBackClick = useCallback(() => {
-    if (requestNavigation('/')) {
-      router.push('/')
+    if (requestNavigation(homeRef.current)) {
+      router.push(homeRef.current)
     }
   }, [requestNavigation, router])
 
   const handleConfirmLeave = useCallback(() => {
-    const href = pendingNavigation ?? '/'
+    const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
@@ -188,7 +195,7 @@ export default function TaskDetailPage() {
     task,
     taskId,
     setTask,
-    onCompletedNavigation: () => router.push('/'),
+    onCompletedNavigation: () => router.push(homeRef.current),
   }) as SingleTaskActionsReturn
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
@@ -220,11 +227,11 @@ export default function TaskDetailPage() {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
       showToast({
-        message: 'Task moved to trash',
+        message: task.is_reminder ? 'Reminder moved to trash' : 'Task moved to trash',
         type: 'success',
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
-      router.push('/')
+      router.push(homeRef.current)
     } catch {
       showToast({ message: 'Delete failed', type: 'error' })
     }
