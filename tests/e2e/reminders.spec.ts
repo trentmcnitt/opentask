@@ -348,7 +348,14 @@ test.describe('Reminders surface', () => {
       await slot.getByRole('button', { name: 'Show 1 considered' }).click()
       await slot.getByRole('button', { name: 'Put back "The only thought left"' }).click()
       await expect(page.getByRole('option', { name: 'The only thought left' })).toBeVisible()
-      await expect(page.getByRole('heading', { name: '1 waiting so far' })).toBeVisible()
+      // Time-agnostic: before noon the thought is "waiting later" and the
+      // headline reads "Caught up until…"; after noon it is "1 waiting so far".
+      // Either way its slot's hairline is back to none considered.
+      const slotAfter = page
+        .locator('[data-slot-group]')
+        .filter({ has: page.getByRole('option', { name: 'The only thought left' }) })
+      await expect(slotAfter.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+      await expect(page.getByRole('heading', { name: 'All clear for today' })).toHaveCount(0)
     } finally {
       await deleteTasks(page, [id])
     }
