@@ -87,6 +87,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     completeMany,
     completeGroup,
     putBack,
+    remove,
     refresh,
   } = useReminders({ onUndo, onCompleted })
   const timezone = useTimezone()
@@ -151,6 +152,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     complete,
     completeMany,
     completeGroup,
+    remove,
   })
   // Both sweep buttons confirm first (Trent, 2026-09-05); single and selected
   // considerations do not.
@@ -209,6 +211,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
       <ReminderSelectionBar
         selectedCount={selectedIds.size}
         onConsidered={actions.considerSelection}
+        onDelete={actions.deleteSelection}
         onDetails={
           selectedTasks.length === 1
             ? () => router.push(`/tasks/${selectedTasks[0].id}`)
@@ -238,6 +241,7 @@ function useReminderActions({
   complete,
   completeMany,
   completeGroup,
+  remove,
 }: {
   selection: ReturnType<typeof useSelectionMode>
   orderedIds: number[]
@@ -246,6 +250,7 @@ function useReminderActions({
   complete: (task: Task) => Promise<void>
   completeMany: (tasks: Task[]) => Promise<void>
   completeGroup: (group: ReminderGroup) => Promise<void>
+  remove: (tasks: Task[]) => Promise<void>
 }) {
   const { isSelectionMode, toggle, rangeSelect, selectOnly, removeAll, clear } = selection
 
@@ -290,6 +295,11 @@ function useReminderActions({
     clear()
     void completeMany(tasks)
   }, [startedGroups, clear, completeMany])
+  const deleteSelection = useCallback(() => {
+    const tasks = selectedTasks
+    clear()
+    void remove(tasks)
+  }, [selectedTasks, clear, remove])
 
   return {
     rowClick,
@@ -297,6 +307,7 @@ function useReminderActions({
     completeGroup: completeSlot,
     considerSelection,
     considerSoFar,
+    deleteSelection,
   }
 }
 
