@@ -84,12 +84,13 @@ test.describe('Track', () => {
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
       await expect(night.locator('[data-track-count]')).toHaveText('0/1')
-      // Mixed periods: the chips are grouped under labelled hairlines, the word
-      // once per group, never on a chip; the header names no period.
-      await expect(panel.getByRole('list', { name: 'this month' })).toContainText('Date night')
-      await expect(panel.getByRole('list', { name: 'this week' })).toContainText(
-        'Eggs for the kids',
-      )
+      // One card per period, the word once on the card, never on a chip; each
+      // card has its own bar.
+      const monthCard = panel.locator('[data-track-period="month"]')
+      const weekCard = panel.locator('[data-track-period="week"]')
+      await expect(monthCard.getByRole('list', { name: 'month' })).toContainText('Date night')
+      await expect(weekCard.getByRole('list', { name: 'week' })).toContainText('Eggs for the kids')
+      await expect(weekCard.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
       await expect(panel.getByRole('button', { name: 'Expand Track' })).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
@@ -99,6 +100,7 @@ test.describe('Track', () => {
       // Tap: +1, with a toast whose Undo takes it back.
       await chip.click()
       await expect(chipCount).toHaveText('1/2')
+      await expect(weekCard.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1')
       const toast = page
         .locator('[data-sonner-toast]')
         .filter({ hasText: 'Logged one for \u201cEggs for the kids\u201d \u00b7 1/2' })
