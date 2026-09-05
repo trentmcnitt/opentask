@@ -47,22 +47,28 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
     <section
       aria-label="Track"
       data-track-panel
-      className={cn('mb-6 rounded-2xl transition-colors', open && 'bg-muted/30 pb-1')}
+      // Its own box in both states (Trent, 2026-09-05: folded, it read as a
+      // stray line between the filters and "Select all"). The header row is
+      // built exactly like a group header — same padding, chevron size and
+      // negative margin — so the caret and label line up with "Early morning".
+      className={cn('bg-muted/30 mb-6 rounded-2xl transition-colors', open ? 'pb-1' : 'py-0.5')}
     >
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-label={open ? 'Collapse Track' : 'Expand Track'}
-        className="hover:text-foreground flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors"
+        className="hover:text-foreground flex min-h-10 w-full items-center gap-2 rounded-2xl px-1 py-1.5 text-left transition-colors"
       >
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            'text-muted-foreground/60 size-3.5 shrink-0 transition-transform duration-200',
-            !open && '-rotate-90',
-          )}
-        />
+        <span className="-mr-1.5 flex items-center justify-center p-0.5">
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
+              !open && '-rotate-90',
+            )}
+          />
+        </span>
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
           Track
         </span>
@@ -97,7 +103,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
             <span
               data-track-summary
               className={cn(
-                'text-xs whitespace-nowrap tabular-nums',
+                'pr-2 text-xs whitespace-nowrap tabular-nums',
                 allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
               )}
             >
