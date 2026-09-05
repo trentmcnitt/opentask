@@ -834,6 +834,19 @@ paths:
                         type: string
                     project_id:
                       type: integer
+                per_task:
+                  type: object
+                  description: >-
+                    Per-task values merged over `changes`, keyed by task id. Lets one
+                    request give each task its own recurrence rule (e.g. moving several
+                    reminders to another time slot while each keeps its own days), as a
+                    single undoable action.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      rrule:
+                        type: string
+                        nullable: true
       responses:
         '200':
           description: Bulk operation result

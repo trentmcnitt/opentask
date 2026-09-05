@@ -365,7 +365,7 @@ export default function TaskDetailPage() {
             >
               <ReminderDetail
                 key={task.id}
-                task={task}
+                tasks={[task]}
                 onSaveAll={actions.handleSaveAllChanges}
                 onConsidered={handleConsidered}
                 onDelete={handleDelete}

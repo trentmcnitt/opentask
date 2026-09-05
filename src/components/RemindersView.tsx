@@ -16,6 +16,7 @@ import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
+import type { ReminderRuleChange } from '@/components/ReminderDetail'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { Task } from '@/types'
@@ -167,16 +168,53 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   const considerAll = useConsiderAll(actions, UNSLOTTED_LABEL)
 
   // Details opens the reminder's own editor in a dialog (a sheet on a phone)
-  // rather than leaving for the task page. The task is snapshotted here at
-  // open time — see ReminderDetailModal for why it must not track the groups.
-  const [detailTask, setDetailTask] = useState<Task | null>(null)
-  const closeDetail = useCallback(() => setDetailTask(null), [])
+  // rather than leaving for the task page; several selected edit their
+  // schedule together. The tasks are snapshotted here at open time — see
+  // ReminderDetailModal for why they must not track the groups.
+  const [detailTasks, setDetailTasks] = useState<Task[]>([])
+  const openDetail = useCallback((task: Task) => setDetailTasks([task]), [])
+  const closeDetail = useCallback(() => setDetailTasks([]), [])
   const saveDetail = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
       try {
         const { description } = await saveTaskChanges(taskId, changes)
         showToast({
           message: description || 'Reminder updated',
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted?.()
+        void refresh()
+      } catch (err) {
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Save failed',
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [onUndo, onCompleted, refresh],
+  )
+  // Several at once: each reminder's own new rule in ONE bulk edit, so the
+  // toast's Undo puts every one of them back.
+  const saveDetailMany = useCallback(
+    async (changes: ReminderRuleChange[]) => {
+      try {
+        const res = await fetch('/api/tasks/bulk/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ids: changes.map((c) => c.id),
+            changes: {},
+            per_task: Object.fromEntries(changes.map((c) => [c.id, { rrule: c.rrule }])),
+          }),
+        })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null
+          throw new Error(body?.error || 'Failed to update reminders')
+        }
+        showToast({
+          message: `Updated ${changes.length} reminders`,
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
         })
@@ -234,7 +272,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     completingIds={completingIds}
                     selectedIds={selectedIds}
                     onRowClick={actions.rowClick}
-                    onRowOpen={setDetailTask}
+                    onRowOpen={openDetail}
                     onComplete={actions.complete}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
@@ -250,7 +288,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         selectedCount={selectedIds.size}
         onConsidered={actions.considerSelection}
         onDelete={actions.deleteSelection}
-        onDetails={selectedTasks.length === 1 ? () => setDetailTask(selectedTasks[0]) : undefined}
+        onDetails={selectedTasks.length > 0 ? () => setDetailTasks(selectedTasks) : undefined}
         onClear={clear}
       />
       <ConsiderAllDialog
@@ -259,13 +297,14 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         onCancel={considerAll.cancel}
       />
       <ReminderDetailModal
-        task={detailTask}
-        open={detailTask !== null}
+        tasks={detailTasks}
+        open={detailTasks.length > 0}
         timeSlots={timeSlots}
         onClose={closeDetail}
         onSaveAll={saveDetail}
-        onConsidered={actions.complete}
-        onDelete={actions.deleteOne}
+        onSaveMany={saveDetailMany}
+        onConsidered={actions.considerMany}
+        onDelete={actions.deleteMany}
         onOpenPage={(id) => router.push(`/tasks/${id}`)}
       />
     </section>
@@ -344,10 +383,19 @@ function useReminderActions({
     clear()
     void remove(tasks)
   }, [selectedTasks, clear, remove])
-  const deleteOne = useCallback(
-    (task: Task) => {
-      removeAll([task.id])
-      void remove([task])
+  // The details editor's verbs: the reminder(s) it holds, whether or not
+  // they are the selection.
+  const considerMany = useCallback(
+    (tasks: Task[]) => {
+      removeAll(tasks.map((t) => t.id))
+      void completeMany(tasks)
+    },
+    [removeAll, completeMany],
+  )
+  const deleteMany = useCallback(
+    (tasks: Task[]) => {
+      removeAll(tasks.map((t) => t.id))
+      void remove(tasks)
     },
     [removeAll, remove],
   )
@@ -359,7 +407,8 @@ function useReminderActions({
     considerSelection,
     considerSoFar,
     deleteSelection,
-    deleteOne,
+    considerMany,
+    deleteMany,
   }
 }
 
