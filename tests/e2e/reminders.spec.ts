@@ -336,10 +336,19 @@ test.describe('Reminders surface', () => {
 
       // Calm, not an error state — and distinctly not the "what is this?"
       // explainer, which would be wrong for someone who just finished.
-      await expect(page.getByRole('heading', { name: 'All clear' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'All clear for today' })).toBeVisible()
       await expect(
         page.getByRole('heading', { name: 'Reminders are thoughts, not tasks' }),
       ).toHaveCount(0)
+      // The slot is still there, finished, and opens to the considered thought
+      // so a slip can be put back after the toast is gone.
+      const slot = page.locator('[data-slot-group]').filter({ hasText: /1 of 1/ })
+      await expect(slot).toBeVisible()
+      await slot.getByRole('button', { expanded: false }).click()
+      await slot.getByRole('button', { name: 'Show 1 considered' }).click()
+      await slot.getByRole('button', { name: 'Put back "The only thought left"' }).click()
+      await expect(page.getByRole('option', { name: 'The only thought left' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '1 waiting so far' })).toBeVisible()
     } finally {
       await deleteTasks(page, [id])
     }
