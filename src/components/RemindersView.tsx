@@ -7,11 +7,16 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { currentSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { saveTaskChanges } from '@/lib/save-task-changes'
+import { showToast } from '@/lib/toast'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
+import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
+import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { Task } from '@/types'
 
 /**
@@ -94,6 +99,8 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   const router = useRouter()
   const selection = useSelectionMode()
   const { selectedIds, clear } = selection
+  // Held for the details editor's slot chips, so opening one never waits on a fetch.
+  const { timeSlots } = useTimeSlots()
 
   useEffect(() => {
     if (!refreshRef) return
@@ -158,6 +165,33 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   // considerations do not.
   const considerAll = useConsiderAll(actions, UNSLOTTED_LABEL)
 
+  // Details opens the reminder's own editor in a dialog (a sheet on a phone)
+  // rather than leaving for the task page. The task is snapshotted here at
+  // open time — see ReminderDetailModal for why it must not track the groups.
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
+  const closeDetail = useCallback(() => setDetailTask(null), [])
+  const saveDetail = useCallback(
+    async (taskId: number, changes: QuickActionPanelChanges) => {
+      try {
+        const { description } = await saveTaskChanges(taskId, changes)
+        showToast({
+          message: description || 'Reminder updated',
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted?.()
+        void refresh()
+      } catch (err) {
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Save failed',
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [onUndo, onCompleted, refresh],
+  )
+
   return (
     <section aria-label="Reminders" className="w-full">
       {loading ? (
@@ -212,17 +246,23 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         selectedCount={selectedIds.size}
         onConsidered={actions.considerSelection}
         onDelete={actions.deleteSelection}
-        onDetails={
-          selectedTasks.length === 1
-            ? () => router.push(`/tasks/${selectedTasks[0].id}`)
-            : undefined
-        }
+        onDetails={selectedTasks.length === 1 ? () => setDetailTask(selectedTasks[0]) : undefined}
         onClear={clear}
       />
       <ConsiderAllDialog
         request={considerAll.request}
         onConfirm={considerAll.confirm}
         onCancel={considerAll.cancel}
+      />
+      <ReminderDetailModal
+        task={detailTask}
+        open={detailTask !== null}
+        timeSlots={timeSlots}
+        onClose={closeDetail}
+        onSaveAll={saveDetail}
+        onConsidered={actions.complete}
+        onDelete={actions.deleteOne}
+        onOpenPage={(id) => router.push(`/tasks/${id}`)}
       />
     </section>
   )
@@ -300,6 +340,13 @@ function useReminderActions({
     clear()
     void remove(tasks)
   }, [selectedTasks, clear, remove])
+  const deleteOne = useCallback(
+    (task: Task) => {
+      removeAll([task.id])
+      void remove([task])
+    },
+    [removeAll, remove],
+  )
 
   return {
     rowClick,
@@ -308,6 +355,7 @@ function useReminderActions({
     considerSelection,
     considerSoFar,
     deleteSelection,
+    deleteOne,
   }
 }
 
