@@ -222,6 +222,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'filters_expanded')) {
     database.exec('ALTER TABLE users ADD COLUMN filters_expanded INTEGER NOT NULL DEFAULT 0')
   }
+  // §5: the Track panel folds to one line by default (Trent, 2026-09-05: the
+  // open panel pushed the first task of the day below the fold on a phone).
+  if (!hasColumn(database, 'users', 'track_expanded')) {
+    database.exec('ALTER TABLE users ADD COLUMN track_expanded INTEGER NOT NULL DEFAULT 0')
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)

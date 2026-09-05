@@ -53,6 +53,9 @@ interface PreferencesContextValue {
   /** §7.3 — dashboard filter-chip section pinned open by the user. */
   filtersExpanded: boolean
   setFiltersExpanded: (expanded: boolean) => void
+  /** §5 — the Track panel pinned open by the user (it starts folded). */
+  trackExpanded: boolean
+  setTrackExpanded: (expanded: boolean) => void
   notificationsEnabled: boolean
   setNotificationsEnabled: (enabled: boolean) => void
   criticalAlertVolume: number
@@ -141,6 +144,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSortPreference: () => {},
   filtersExpanded: false,
   setFiltersExpanded: () => {},
+  trackExpanded: false,
+  setTrackExpanded: () => {},
   notificationsEnabled: true,
   setNotificationsEnabled: () => {},
   criticalAlertVolume: 1.0,
@@ -194,6 +199,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [filtersExpanded, setFiltersExpandedState] = useState(false)
+  const [trackExpanded, setTrackExpandedState] = useState(false)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
   const [criticalAlertVolume, setCriticalAlertVolumeState] = useState(1.0)
   const [aiContext, setAiContextState] = useState<string | null>(null)
@@ -335,6 +341,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.filters_expanded !== undefined) {
           setFiltersExpandedState(data.data.filters_expanded)
         }
+        if (data?.data?.track_expanded !== undefined) {
+          setTrackExpandedState(data.data.track_expanded)
+        }
         if (data?.data?.notifications_enabled !== undefined) {
           setNotificationsEnabledState(data.data.notifications_enabled)
         }
@@ -466,6 +475,16 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             body: JSON.stringify({ filters_expanded: expanded }),
           }).catch(() => {})
         },
+        trackExpanded,
+        setTrackExpanded: (expanded: boolean) => {
+          if (expanded === trackExpanded) return
+          setTrackExpandedState(expanded)
+          fetch('/api/user/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ track_expanded: expanded }),
+          }).catch(() => {})
+        },
         notificationsEnabled,
         setNotificationsEnabled: setNotificationsEnabledState,
         criticalAlertVolume,
@@ -572,6 +591,12 @@ export function useDefaultSort() {
 export function useFilterSectionPreference() {
   const { filtersExpanded, setFiltersExpanded } = useContext(PreferencesContext)
   return { filtersExpanded, setFiltersExpanded }
+}
+
+/** §5 — whether the Track panel is pinned open. Starts folded; the user's choice sticks. */
+export function useTrackPanelPreference() {
+  const { trackExpanded, setTrackExpanded } = useContext(PreferencesContext)
+  return { trackExpanded, setTrackExpanded }
 }
 
 export function useAiContext() {

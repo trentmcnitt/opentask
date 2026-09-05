@@ -17,6 +17,19 @@ async function deleteTasks(page: Page, ids: number[]): Promise<void> {
   for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
 }
 
+/** The panel starts folded; open it (the choice persists, so tests close it again). */
+async function openTrack(page: Page) {
+  const panel = page.getByRole('region', { name: 'Track' })
+  await expect(panel).toBeVisible()
+  const fold = panel.getByRole('button', { name: 'Expand Track' })
+  if (await fold.isVisible()) await fold.click()
+  await expect(panel.getByRole('button', { name: 'Collapse Track' })).toBeVisible()
+}
+async function closeTrack(page: Page) {
+  const fold = page.getByRole('button', { name: 'Collapse Track' })
+  if (await fold.isVisible()) await fold.click()
+}
+
 test.describe('Track', () => {
   test('the Track panel shows a quota, logs +1 and −1, and reads "met" at target', async ({
     authenticatedPage: page,
@@ -33,6 +46,14 @@ test.describe('Track', () => {
       await page.goto('/')
       const panel = page.getByRole('region', { name: 'Track' })
       await expect(panel).toBeVisible()
+      // Folded by default: one line with the week's total, and the row hidden.
+      await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 2')
+      await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
+      await openTrack(page)
+      // The choice sticks across a reload.
+      await page.reload()
+      await expect(panel.getByRole('button', { name: 'Collapse Track' })).toBeVisible()
       const row = panel.locator(`[data-track-row="${id}"]`)
       await expect(row).toBeVisible()
       // On the Today view it is not also a row in the day's groups: the panel
@@ -83,6 +104,7 @@ test.describe('Track', () => {
       expect(task.done).toBe(false)
       expect(task.progress_current).toBe(3)
     } finally {
+      await closeTrack(page)
       await deleteTasks(page, [id])
     }
   })
