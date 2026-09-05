@@ -31,6 +31,7 @@ export async function register() {
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
     const { purgeOldStats } = await import('@/core/stats/purge')
+    const { rolloverTrackedPeriods } = await import('@/core/tasks/period-rollover')
     const {
       initAI,
       isAIEnabled,
@@ -124,6 +125,11 @@ export async function register() {
         )
       }
     }
+
+    // §5: a quota's period ends on its own. Every 5 minutes, and once at
+    // startup, so a boundary crossed while the server was down is caught up.
+    cron.schedule('*/5 * * * *', () => safeCronRun('track period rollover', rolloverTrackedPeriods))
+    setTimeout(() => safeCronRun('track period rollover', rolloverTrackedPeriods), 10_000)
 
     cron.schedule('0 3 * * *', () => safeCronRun('undo log purge', purgeOldUndoLogs))
     cron.schedule('30 3 * * *', () => safeCronRun('trash purge', purgeOldTrash))
