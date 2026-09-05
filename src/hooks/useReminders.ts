@@ -62,6 +62,8 @@ export interface UseRemindersReturn {
   completeGroup: (group: ReminderGroup) => Promise<void>
   /** Reverse a consideration: the thought returns to waiting. */
   putBack: (task: Task) => Promise<void>
+  /** Move reminders to Trash (soft delete), with Undo. */
+  remove: (tasks: Task[]) => Promise<void>
   refresh: () => Promise<void>
 }
 
@@ -292,6 +294,7 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
   )
 
   const putBack = usePutBack({ setGroups, refresh, restoringIdsRef, callbacksRef })
+  const remove = useRemove({ setGroups, refresh, pendingIdsRef, callbacksRef })
 
   const complete = useCallback(
     (task: Task) => completeIds([task], `Considered \u201c${task.title}\u201d`),
@@ -317,8 +320,101 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     completeMany,
     completeGroup,
     putBack,
+    remove,
     refresh,
   }
+}
+
+/**
+ * Trash one or more reminders (POST /api/tasks/bulk/delete — a soft delete,
+ * one undo entry). Trent (2026-09-05): the surface had no way to get rid of a
+ * reminder. Same optimistic shape as considering: the rows leave at once,
+ * the toast's Undo waits for the request, a failure restores the snapshot.
+ * The ids ride in `pendingIdsRef` so a refresh landing mid-request does not
+ * re-insert them.
+ */
+function useRemove({
+  setGroups,
+  refresh,
+  pendingIdsRef,
+  callbacksRef,
+}: {
+  setGroups: React.Dispatch<React.SetStateAction<ReminderGroup[]>>
+  refresh: () => Promise<void>
+  pendingIdsRef: React.MutableRefObject<Set<number>>
+  callbacksRef: React.MutableRefObject<UseRemindersOptions>
+}) {
+  return useCallback(
+    async (tasks: Task[]) => {
+      const ids = tasks.map((t) => t.id)
+      if (ids.length === 0) return
+      const idSet = new Set(ids)
+      for (const id of ids) pendingIdsRef.current.add(id)
+      let snapshot: ReminderGroup[] | null = null
+      setGroups((prev) => {
+        snapshot = prev
+        const next = prev.map((g) => {
+          const reminders = g.reminders.filter((r) => !idSet.has(r.id))
+          const consideredItems = g.consideredItems.filter((r) => !idSet.has(r.id))
+          if (
+            reminders.length === g.reminders.length &&
+            consideredItems.length === g.consideredItems.length
+          )
+            return g
+          return {
+            ...g,
+            reminders,
+            count: reminders.length,
+            consideredItems,
+            considered: consideredItems.length,
+          }
+        })
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+        return next
+      })
+
+      const request = (async () => {
+        const res = await fetch('/api/tasks/bulk/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        })
+        if (!res.ok) throw new Error('Failed to delete reminders')
+        callbacksRef.current.onCompleted?.()
+      })()
+
+      let settledOk = false
+      showToast({
+        message:
+          tasks.length === 1
+            ? `Moved \u201c${tasks[0].title}\u201d to Trash`
+            : `Moved ${tasks.length} reminders to Trash`,
+        type: 'success',
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+          },
+        },
+      })
+
+      try {
+        await request
+        settledOk = true
+      } catch {
+        if (snapshot) {
+          const restored = snapshot
+          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
+          setGroups(restored)
+        }
+        showToast({ message: 'Could not delete reminders', type: 'error' })
+      } finally {
+        for (const id of ids) pendingIdsRef.current.delete(id)
+        if (settledOk) void refresh()
+      }
+    },
+    [refresh, setGroups, pendingIdsRef, callbacksRef],
+  )
 }
 
 /**

@@ -449,3 +449,48 @@ test.describe('Considered all confirms', () => {
     }
   })
 })
+
+/**
+ * A reminder can be got rid of from its own surface (Trent, 2026-09-05: the
+ * bar had Considered and Details and no trash can). The bar's Trash is a soft
+ * delete with one Undo, like the task bar's.
+ */
+test.describe('Reminders trash', () => {
+  test('the bar moves a selection to Trash, and Undo brings it back', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createReminder(page, { title: 'A thought to let go of', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'A thought to keep', due_at: todayAt(7) }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+      await row('A thought to let go of').click()
+      await page.getByRole('button', { name: 'Move to Trash' }).click()
+      await expect(row('A thought to let go of')).toHaveCount(0)
+      await expect(row('A thought to keep')).toBeVisible()
+      await expect(
+        page.getByText('Moved \u201cA thought to let go of\u201d to Trash'),
+      ).toBeVisible()
+      await expect
+        .poll(
+          async () =>
+            (await (await page.request.get(`/api/tasks/${ids[0]}`)).json()).data.deleted_at,
+        )
+        .not.toBeNull()
+
+      await toastUndo(page).click()
+      await expect(row('A thought to let go of')).toBeVisible()
+      await expect
+        .poll(
+          async () =>
+            (await (await page.request.get(`/api/tasks/${ids[0]}`)).json()).data.deleted_at,
+        )
+        .toBeNull()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})

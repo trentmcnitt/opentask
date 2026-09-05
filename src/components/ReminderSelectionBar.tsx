@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCheck, FileText, X } from 'lucide-react'
+import { CheckCheck, FileText, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -11,8 +11,9 @@ import { Button } from '@/components/ui/button'
  * reminders screen to behave like the dashboard, not like a second app. What
  * differs is the verb set. A reminder has no due date to move and no priority
  * ladder worth editing in bulk, and the server refuses to snooze one (RM-006),
- * so the task bar's Snooze / More / Delete would be dead or misleading here.
- * Three actions remain: consider the selection, open a single item's details,
+ * so the task bar's Snooze / More would be dead or misleading here. What
+ * remains: consider the selection, open a single item's details, move the
+ * selection to Trash (Trent, 2026-09-05: "why doesn't it have a trash can?"),
  * clear.
  */
 interface ReminderSelectionBarProps {
@@ -21,6 +22,8 @@ interface ReminderSelectionBarProps {
   onConsidered: () => void
   /** Open the selected item; only offered for a single selection. */
   onDetails?: () => void
+  /** Move every selected reminder to Trash — a soft delete, one Undo. */
+  onDelete: () => void
   onClear: () => void
 }
 
@@ -28,6 +31,7 @@ export function ReminderSelectionBar({
   selectedCount,
   onConsidered,
   onDetails,
+  onDelete,
   onClear,
 }: ReminderSelectionBarProps) {
   if (selectedCount === 0) return null
@@ -61,6 +65,16 @@ export function ReminderSelectionBar({
             Details
           </Button>
         )}
+
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onDelete}
+          aria-label={selectedCount === 1 ? 'Move to Trash' : `Move ${selectedCount} to Trash`}
+          className="bg-primary-foreground/10 text-primary-foreground hover:bg-destructive active:bg-destructive hover:text-white"
+        >
+          <Trash2 className="size-4" />
+        </Button>
 
         <Button
           variant="ghost"
