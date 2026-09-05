@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
-import { periodLabel } from '@/lib/track'
+import { periodLabel, trackSummary } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
+import { useTrackPanelPreference } from '@/components/PreferencesProvider'
 import type { Task } from '@/types'
 
 /**
@@ -20,7 +20,11 @@ import type { Task } from '@/types'
  *   The control cluster has fixed widths and sits flush right, so the eight
  *   lines align as one object. No circle, no stripes, no AI commentary, no
  *   recurrence glyph — none of that is what a counter is about.
- * - The panel folds to a header with a count, and it always comes first.
+ * - The panel starts FOLDED to one line — label, period, a slim bar, "2 of
+ *   23" — and opens to the full rows on a tap; the choice is remembered as a
+ *   user preference, like the filter section. Trent (2026-09-05): open by
+ *   default, eight rows pushed the first task of the day below the fold on a
+ *   phone. It always comes first.
  * - Order is by title and never changes on a tap — the widget's "order jumps
  *   under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
@@ -29,13 +33,15 @@ import type { Task } from '@/types'
  * "0 / 4" chip and no controls); logging happens here.
  */
 export function TrackPanel({ tasks }: { tasks: Task[] }) {
-  const [open, setOpen] = useState(true)
+  const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const quotas = trackedItems(tasks)
   if (quotas.length === 0) return null
 
   // One shared period label when every quota counts over the same period.
   const periods = new Set(quotas.map((t) => periodLabel(t.rrule)))
   const sharedPeriod = periods.size === 1 ? [...periods][0] : null
+  const summary = trackSummary(quotas)
+  const allMet = summary.total > 0 && summary.done >= summary.total
 
   return (
     <section
@@ -45,8 +51,9 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
+        aria-label={open ? 'Collapse Track' : 'Expand Track'}
         className="hover:text-foreground flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors"
       >
         <ChevronDown
@@ -67,9 +74,36 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         {open ? (
           <span className="text-muted-foreground/60 text-xs tabular-nums">{quotas.length}</span>
         ) : (
-          <span className="bg-foreground/10 text-foreground/80 ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums">
-            {quotas.length}
-          </span>
+          <>
+            {/* Folded: the week at a glance, so the line earns its place. */}
+            <span
+              className="bg-muted relative ml-2 h-1.5 min-w-10 flex-1 overflow-hidden rounded-full"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={summary.total}
+              aria-valuenow={summary.done}
+              aria-label={`${summary.done} of ${summary.total}${sharedPeriod ? ` ${sharedPeriod}` : ''}`}
+            >
+              <span
+                className={cn(
+                  'absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out',
+                  allMet ? 'bg-green-600' : 'bg-foreground/50',
+                )}
+                style={{
+                  width: `${summary.total > 0 ? (summary.done / summary.total) * 100 : 0}%`,
+                }}
+              />
+            </span>
+            <span
+              data-track-summary
+              className={cn(
+                'text-xs whitespace-nowrap tabular-nums',
+                allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+              )}
+            >
+              <span className="text-foreground font-medium">{summary.done}</span> of {summary.total}
+            </span>
+          </>
         )}
       </button>
 

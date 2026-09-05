@@ -11,6 +11,7 @@
  */
 import { describe, expect, test } from 'vitest'
 import { groupByTimeSlot, trackedItems, UNDATED_LABEL, earlySlotLabel } from '@/lib/slot-view'
+import { trackSummary } from '@/lib/track'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
@@ -118,6 +119,15 @@ describe('Tracked items and the Today front door', () => {
     ])
     expect(groups[0].tasks.map((t) => t.title)).toEqual(['Dawn walk'])
     expect(groups.at(-1)?.tasks.map((t) => t.title)).toEqual(['Someday'])
+  })
+
+  test('DV-014: the folded summary caps each quota at its target', () => {
+    const summary = trackSummary([
+      { progress_target: 4, progress_current: 1 },
+      { progress_target: 2, progress_current: 3 }, // overflow counts as 2, not 3
+      { progress_target: 3, progress_current: 0 },
+    ])
+    expect(summary).toEqual({ done: 3, total: 9 })
   })
 
   test('DV-012: the panel set is alphabetical, skips done quotas, and never reorders on a tap', () => {

@@ -182,6 +182,13 @@ function validateGeneralFields(
     params.push(body.filters_expanded ? 1 : 0)
   }
 
+  // §5: whether the Track panel is pinned open.
+  if (body.track_expanded !== undefined) {
+    if (typeof body.track_expanded !== 'boolean') return 'track_expanded must be a boolean'
+    updates.push('track_expanded = ?')
+    params.push(body.track_expanded ? 1 : 0)
+  }
+
   if (body.label_config !== undefined) {
     const validated = validateLabelConfig(body.label_config)
     if (typeof validated === 'string') return validated
@@ -440,13 +447,14 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
+  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
   default_sort: string
   default_sort_reversed: number
   filters_expanded: number
+  track_expanded: number
   label_config: string
   priority_display: string
   auto_snooze_minutes: number
@@ -484,6 +492,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   default_sort: 'due_date',
   default_sort_reversed: 0,
   filters_expanded: 0,
+  track_expanded: 0,
   label_config: '[]',
   priority_display: JSON.stringify(DEFAULT_PRIORITY_DISPLAY),
   auto_snooze_minutes: 30,
@@ -523,6 +532,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     default_sort: row.default_sort,
     default_sort_reversed: row.default_sort_reversed !== 0,
     filters_expanded: row.filters_expanded !== 0,
+    track_expanded: row.track_expanded !== 0,
     label_config: labelConfig,
     priority_display: priorityDisplay,
     auto_snooze_minutes: row.auto_snooze_minutes,

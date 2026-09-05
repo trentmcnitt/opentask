@@ -52,3 +52,24 @@ export function periodLabel(rrule: string | null | undefined): string | null {
       return null
   }
 }
+
+export interface TrackSummary {
+  /** Logged, each quota capped at its target — overflow on one never pays for another. */
+  done: number
+  /** The targets added up. */
+  total: number
+}
+
+/** The folded panel's one number: "2 of 23 this week". */
+export function trackSummary(
+  tasks: Pick<Task, 'progress_target' | 'progress_current'>[],
+): TrackSummary {
+  let done = 0
+  let total = 0
+  for (const task of tasks) {
+    const state = trackState(task)
+    done += Math.min(state.current, state.target)
+    total += state.target
+  }
+  return { done, total }
+}
