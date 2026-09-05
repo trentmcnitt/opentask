@@ -42,6 +42,13 @@ export function useTrackProgress(task: Task): {
   // still sees the count as it is now, not as it was when the toast was made.
   const displayedRef = useRef(displayed)
   displayedRef.current = displayed
+  // The pin must be keyed to the server value AS OF SETTLING, not as of the
+  // tap. Tap then hold quickly: the +1 settles, the sync refresh brings 1,
+  // then the −1 settles — keyed to the 0 it was tapped against it would not
+  // match the prop (1), the server value would show, and the count would
+  // bounce 0 → 1 → 0 until the next refresh (Trent, 2026-09-05).
+  const serverRef = useRef(serverCurrent)
+  serverRef.current = serverCurrent
 
   const log = async (delta: 1 | -1, options?: { quiet?: boolean }) => {
     const shown = displayedRef.current
@@ -67,7 +74,7 @@ export function useTrackProgress(task: Task): {
       if (!res.ok) throw new Error('Failed to log progress')
       const json = await res.json()
       const settled = Number(json?.data?.progress_current)
-      if (Number.isFinite(settled)) setPinned({ base: serverCurrent, value: settled })
+      if (Number.isFinite(settled)) setPinned({ base: serverRef.current, value: settled })
     } catch {
       setLocal((v) => Math.max(0, v - delta))
       showToast({ message: `Could not log progress on "${task.title}"`, type: 'error' })
