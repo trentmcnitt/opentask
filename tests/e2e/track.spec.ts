@@ -66,6 +66,13 @@ test.describe('Track', () => {
       progress_target: 2,
       rrule: 'FREQ=WEEKLY;BYDAY=WE',
     })
+    // A quota with a target of 1 — only the flag makes it one — on a different
+    // period, so the chips say their periods and the header says none.
+    const nightId = await createTask(page, {
+      title: 'Date night',
+      rrule: 'FREQ=MONTHLY',
+      is_tracked: true,
+    })
 
     try {
       await page.goto('/')
@@ -73,7 +80,17 @@ test.describe('Track', () => {
       await expect(panel).toBeVisible()
       // Folded by default: the header's total, and the quota as a chip.
       await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
-      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 2')
+      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 3')
+      const night = panel.locator(`[data-track-chip="${nightId}"]`)
+      await expect(night).toContainText('Date night')
+      await expect(night.locator('[data-track-count]')).toHaveText('0/1')
+      // Mixed periods: the chips are grouped under labelled hairlines, the word
+      // once per group, never on a chip; the header names no period.
+      await expect(panel.getByRole('list', { name: 'this month' })).toContainText('Date night')
+      await expect(panel.getByRole('list', { name: 'this week' })).toContainText(
+        'Eggs for the kids',
+      )
+      await expect(panel.getByRole('button', { name: 'Expand Track' })).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
@@ -98,7 +115,7 @@ test.describe('Track', () => {
       await expect(chipCount).toHaveText('1/2')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('0/2')
-      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 2')
+      await expect(panel.locator('[data-track-summary]')).toContainText('0 of 3')
 
       await openTrack(page)
       // The choice sticks across a reload.
@@ -155,7 +172,7 @@ test.describe('Track', () => {
       expect(task.progress_current).toBe(3)
     } finally {
       await closeTrack(page)
-      await deleteTasks(page, [id])
+      await deleteTasks(page, [id, nightId])
     }
   })
 

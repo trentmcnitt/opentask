@@ -43,9 +43,13 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   const quotas = trackedItems(tasks)
   if (quotas.length === 0) return null
 
-  // One shared period label when every quota counts over the same period.
-  const periods = new Set(quotas.map((t) => periodLabel(t.rrule)))
-  const sharedPeriod = periods.size === 1 ? [...periods][0] : null
+  // Quotas are grouped by period. With one period the header names it; with
+  // several, the header says nothing and each group sits under its own
+  // labelled hairline ("this week" / "this month"). Trent (2026-09-05): a
+  // period word on every chip was repetition, and still didn't tell a week
+  // from a month at a glance. The word appears once, on the divider.
+  const groups = groupByPeriod(quotas)
+  const sharedPeriod = groups.length === 1 ? groups[0].period : null
   const summary = trackSummary(quotas)
   const allMet = summary.total > 0 && summary.done >= summary.total
 
@@ -95,19 +99,33 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
       </button>
 
       {!open && (
-        <ul className="flex flex-wrap gap-1.5 px-2 pt-0.5 pb-2" aria-label="Quotas">
-          {quotas.map((task) => (
-            <TrackChip key={task.id} task={task} />
+        <div className="px-2 pt-0.5 pb-2">
+          {groups.map((g) => (
+            <div key={g.period ?? 'none'}>
+              {groups.length > 1 && <PeriodDivider period={g.period} />}
+              <ul className="flex flex-wrap gap-1.5" aria-label={g.period ?? 'Quotas'}>
+                {g.tasks.map((task) => (
+                  <TrackChip key={task.id} task={task} />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
       {open && (
-        <ul className="px-2">
-          {quotas.map((task) => (
-            <TrackRow key={task.id} task={task} showPeriod={!sharedPeriod} />
+        <div className="px-2">
+          {groups.map((g) => (
+            <div key={g.period ?? 'none'}>
+              {groups.length > 1 && <PeriodDivider period={g.period} />}
+              <ul aria-label={g.period ?? 'Quotas'}>
+                {g.tasks.map((task) => (
+                  <TrackRow key={task.id} task={task} />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </section>
   )
@@ -169,7 +187,28 @@ function TrackChip({ task }: { task: Task }) {
   )
 }
 
-function TrackRow({ task, showPeriod }: { task: Task; showPeriod: boolean }) {
+/** Quotas by period, in day-to-year order, each group in title order (as given). */
+function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }[] {
+  const order = ['today', 'this week', 'this month', 'this year', null]
+  const by = new Map<string | null, Task[]>()
+  for (const t of quotas) {
+    const p = periodLabel(t.rrule)
+    by.set(p, [...(by.get(p) ?? []), t])
+  }
+  return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
+}
+
+/** A hairline carrying the group's period, once. */
+function PeriodDivider({ period }: { period: string | null }) {
+  return (
+    <div className="text-muted-foreground/70 flex items-center gap-2 px-1 pt-1.5 pb-1.5 text-[10px] font-semibold tracking-wider uppercase">
+      <span>{period ?? 'no period'}</span>
+      <span aria-hidden="true" className="bg-border h-px flex-1" />
+    </div>
+  )
+}
+
+function TrackRow({ task }: { task: Task }) {
   const { state, period, log } = useTrackProgress(task)
 
   return (
@@ -217,7 +256,7 @@ function TrackRow({ task, showPeriod }: { task: Task; showPeriod: boolean }) {
           <span>
             <span className="text-foreground font-medium">{state.current}</span> / {state.target}
           </span>
-          {showPeriod && period && <span className="sr-only"> {period}</span>}
+          {period && <span className="sr-only"> {period}</span>}
         </span>
 
         <button

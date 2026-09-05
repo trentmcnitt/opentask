@@ -215,6 +215,12 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'is_reminder')) {
     database.exec('ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0')
   }
+  // §5: explicit tracked flag (2026-09-05, "1 date night a month"). Existing
+  // quotas are marked so the flag is the single source of truth going forward.
+  if (!hasColumn(database, 'tasks', 'is_tracked')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN is_tracked INTEGER NOT NULL DEFAULT 0')
+    database.exec('UPDATE tasks SET is_tracked = 1 WHERE progress_target > 1')
+  }
 
   // Collapsible dashboard filter chips (§7.3) — default collapsed for everyone,
   // including existing users: the whole point is that the front door stops

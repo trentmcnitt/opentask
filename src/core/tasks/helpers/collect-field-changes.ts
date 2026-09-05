@@ -202,10 +202,20 @@ function collectBasicFields(
     trackField(data, 'auto_snooze_minutes', task.auto_snooze_minutes, input.auto_snooze_minutes)
   }
 
-  // §5 Track. Setting progress_target > 1 is the whole opt-in gesture — there is
-  // no separate "make this tracked" flag.
+  // §5 Track. progress_target > 1 opts in by itself; is_tracked is the explicit
+  // mark for a quota whose target is 1.
   if (input.progress_target !== undefined && input.progress_target !== task.progress_target) {
     trackField(data, 'progress_target', task.progress_target, input.progress_target)
+  }
+  if (input.is_tracked !== undefined && input.is_tracked !== task.is_tracked) {
+    trackField(
+      data,
+      'is_tracked',
+      task.is_tracked,
+      input.is_tracked,
+      'is_tracked = ?',
+      input.is_tracked ? 1 : 0,
+    )
   }
 
   if (input.progress_current !== undefined && input.progress_current !== task.progress_current) {

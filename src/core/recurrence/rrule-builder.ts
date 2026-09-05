@@ -176,6 +176,16 @@ export function isValidRRule(rrule: string): boolean {
 }
 
 /**
+ * A quota's rule: FREQ and an optional INTERVAL, nothing else. It names the
+ * period a count runs over ("this week", "this month"), not a day to occur
+ * on — the §9 migration wrote these for every quota ("FREQ=WEEKLY" for
+ * "2x/week"). Only valid on a tracked task; see validation.
+ */
+export function isPeriodRRule(rrule: string): boolean {
+  return /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;INTERVAL=([1-9]\d{0,2}))?$/i.test(rrule.trim())
+}
+
+/**
  * Common RRULE patterns for convenience
  */
 export const RRulePatterns = {
