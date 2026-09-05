@@ -92,7 +92,7 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks?limit=500')
+      const res = await fetch('/api/tasks?limit=1000')
       if (res.status === 401) {
         router.push(loginUrlFromLocation())
         return
@@ -317,7 +317,7 @@ function useBulkActions(
     selection.clear() // Clear selection when search changes
     setSearchQuery(query)
     try {
-      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=500`)
+      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=1000`)
       if (!res.ok) return
       const data = await res.json()
       setSearchResults(data.data?.tasks || [])

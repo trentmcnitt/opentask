@@ -23,7 +23,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // Same query the Tasks page server-renders from, minus reminders — the
     // page never counts those (§6: reminders are not debt), see the
     // `visibleTasks` filter in DashboardClient.
-    const tasks = formatTasksResponse(getTasks({ userId: user.id, limit: 500 })).filter(
+    const tasks = formatTasksResponse(getTasks({ userId: user.id, limit: 1000 })).filter(
       (t) => !t.is_reminder,
     )
     return success(countTasks(tasks, user.timezone))
