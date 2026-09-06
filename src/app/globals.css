@@ -24,6 +24,11 @@
      so underlying icons don't show through. Adjust L/C values to change perceived opacity. */
   --badge-destructive: oklch(0.662 0.196 27.325);
   --badge-neutral: oklch(0.368 0 0);
+  /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
+     thought is never overdue, so it must not be red, but grey read as disabled
+     next to a live count (Trent, 2026-09-06). Violet is the surface's own
+     colour and carries no urgency. */
+  --badge-reminders: oklch(0.55 0.2 295);
   --ai-glow: oklch(0.7 0.15 270);
   --ai-glow-shadow: rgba(129, 140, 248, 0.3);
   --ai-glow-shadow-strong: rgba(129, 140, 248, 0.55);
@@ -57,6 +62,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --badge-destructive: oklch(0.55 0.22 27.325);
   --badge-neutral: oklch(0.803 0 0);
+  --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
   --ai-glow-shadow: rgba(129, 140, 248, 0.4);
   --ai-glow-shadow-strong: rgba(129, 140, 248, 0.65);
@@ -89,6 +95,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-badge-destructive: var(--badge-destructive);
   --color-badge-neutral: var(--badge-neutral);
+  --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

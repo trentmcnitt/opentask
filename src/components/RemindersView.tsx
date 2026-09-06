@@ -43,7 +43,8 @@ import type { Task } from '@/types'
  *    current slot opens by default, the rest fold to a header with a badge:
  *    accent while the slot has started and holds something, muted "later"
  *    before its time.
- * 3. **Inside an open slot: the first five, then "Show all N".**
+ * 3. **Inside an open slot: everything if the slot has started, else the first
+ *    five then "Show all N".**
  * 4. **Progress fills, it never scolds.** A bar per slot and one for the day
  *    show what has been considered so far today (his add: "satisfying to get
  *    through all the reminders"). It only ever counts what he did — a bar that
@@ -62,8 +63,24 @@ import type { Task } from '@/types'
 /** Un-slotted reminders (no anchor_time and no due time) group under this label. */
 const UNSLOTTED_LABEL = 'Anytime'
 
-/** How many rows an open slot shows before "Show all" — matches the dashboard (§7.3). */
+/** How many rows a not-yet-started slot shows before "Show all" (§7.3). */
 const SLOT_PREVIEW_COUNT = 5
+
+/**
+ * Whether a slot shows every row or just the first few.
+ *
+ * A slot whose time has come shows ALL of it. Trent's rule, 2026-09-06:
+ * "everything expanded up to that point in the day if there are items that are
+ * not finished… it's annoying to have to tap things to see what's undone from
+ * early morning into the morning." A cap on a slot he has already reached is
+ * exactly that tap, so the part of the day behind him is never abbreviated.
+ *
+ * Slots still ahead keep the cap: they are a preview of what is coming, not
+ * work in hand, and uncapping them would bury today under tonight.
+ */
+function slotShowsEverything(started: boolean, expanded: boolean): boolean {
+  return started || expanded
+}
 
 interface RemindersViewProps {
   /** Undo the last action — wired to the completion toast. */
@@ -224,9 +241,10 @@ export function RemindersView({
     [visibleGroups, timezone],
   )
 
-  // Which slot opens by default: the current one if it has anything waiting,
-  // otherwise the first with something waiting.
-  const defaultOpenKey = useMemo(() => {
+  // The slot the day is currently in — no longer "the one that opens", since
+  // every slot now opens (see useSlotDisclosure). It is the scroll target, and
+  // it is still the honest answer to "where am I in the day".
+  const currentKey = useMemo(() => {
     const withWaiting = visibleGroups.filter((g) => g.reminders.length > 0)
     const slots = withWaiting.flatMap((g) => (g.slot ? [g.slot] : []))
     const now = currentSlot(slots, timezone)
@@ -234,7 +252,27 @@ export function RemindersView({
     return withWaiting.length > 0 ? groupKey(withWaiting[0]) : null
   }, [visibleGroups, timezone])
 
-  const { isOpen, toggleOpen, expandedKeys, setExpanded } = useSlotDisclosure(defaultOpenKey)
+  const { isOpen, toggleOpen, expandedKeys, setExpanded } = useSlotDisclosure()
+
+  // Land on the slot the day is actually in.
+  //
+  // With every slot open, an earlier slot's unfinished items push the current
+  // one below the fold, and the user arrives looking at breakfast at four in
+  // the afternoon. Scrolling puts them where they are while leaving everything
+  // above reachable by scrolling up — which is the point of opening them all.
+  //
+  // Once per load, never during a search (the results are the subject then),
+  // and never if the current slot is already the first thing on screen.
+  const scrolledRef = useRef(false)
+  useEffect(() => {
+    if (searching || scrolledRef.current || !currentKey) return
+    const el = document.querySelector(`[data-slot-key="${CSS.escape(currentKey)}"]`)
+    if (!el) return
+    scrolledRef.current = true
+    // The first paint of a slot is its header; rows arrive with it, so there is
+    // no second layout pass to fight here.
+    el.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [currentKey, searching, visibleGroups])
 
   // Rows actually rendered, in DOM order — the universe for range selection.
   const renderedRows = useMemo(() => {
@@ -244,9 +282,13 @@ export function RemindersView({
     return visibleGroups.flatMap((group) => {
       const key = groupKey(group)
       if (!isOpen(key)) return []
-      return expandedKeys.has(key) ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
+      // Must mirror ReminderSlotGroup's own slice, or a shift-click range would
+      // span rows that are not on screen.
+      return slotShowsEverything(summary.started.includes(group), expandedKeys.has(key))
+        ? group.reminders
+        : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
     })
-  }, [searching, searchGroups, visibleGroups, isOpen, expandedKeys])
+  }, [searching, searchGroups, visibleGroups, isOpen, expandedKeys, summary.started])
   const orderedIds = useMemo(() => renderedRows.map((r) => r.id), [renderedRows])
   const selectedTasks = useMemo(
     () => renderedRows.filter((r) => selectedIds.has(r.id)),
@@ -486,6 +528,7 @@ export function RemindersView({
                 return (
                   <ReminderSlotGroup
                     key={key}
+                    slotKey={key}
                     group={group}
                     started={summary.started.includes(group)}
                     open={
@@ -779,13 +822,23 @@ function RemindersHeadline({
  * see. Reopening a slot resets its "show all": it reads as a fresh glance, not
  * a resumed deep scroll.
  */
-function useSlotDisclosure(defaultOpenKey: string | null) {
+/**
+ * Which slots are open.
+ *
+ * Every slot starts open, including the ones whose time has not come — Trent,
+ * 2026-09-06: "we can actually have all of them start expanded… the grayed-out
+ * darker color lets you know that's not quite time for that yet but you can
+ * still mark the items off." Before this only the current slot opened, so
+ * anything left unfinished in the morning was invisible by lunchtime unless
+ * you went looking for it, which is the opposite of what this surface is for.
+ *
+ * A slot the user closes stays closed for the session; the override map is
+ * what remembers that, and it is deliberately not persisted.
+ */
+function useSlotDisclosure() {
   const [openOverrides, setOpenOverrides] = useState<Map<string, boolean>>(new Map())
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
-  const isOpen = useCallback(
-    (key: string) => openOverrides.get(key) ?? key === defaultOpenKey,
-    [openOverrides, defaultOpenKey],
-  )
+  const isOpen = useCallback((key: string) => openOverrides.get(key) ?? true, [openOverrides])
   const toggleOpen = useCallback(
     (key: string) => {
       const nextOpen = !isOpen(key)
@@ -809,12 +862,51 @@ function useSlotDisclosure(defaultOpenKey: string | null) {
   return { isOpen, toggleOpen, expandedKeys, setExpanded }
 }
 
+/**
+ * "Show all N" / "Show less" under a slot's rows.
+ *
+ * Only a slot still ahead in the day can be in a capped state, so only one of
+ * these can ever be showing — a started slot draws all its rows and neither
+ * button (see `slotShowsEverything`).
+ */
+function SlotRowCountToggle({
+  count,
+  hiddenCount,
+  canShowLess,
+  onExpand,
+}: {
+  count: number
+  hiddenCount: number
+  canShowLess: boolean
+  onExpand: (expanded: boolean) => void
+}) {
+  const className =
+    'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors'
+  if (hiddenCount > 0) {
+    return (
+      <button type="button" onClick={() => onExpand(true)} className={className}>
+        Show all {count}
+        <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
+      </button>
+    )
+  }
+  if (canShowLess) {
+    return (
+      <button type="button" onClick={() => onExpand(false)} className={className}>
+        Show less
+      </button>
+    )
+  }
+  return null
+}
+
 function ReminderSlotGroup({
   group,
   started,
   open,
   expanded,
   locked = false,
+  slotKey,
   onToggle,
   onExpand,
   completingIds,
@@ -832,6 +924,8 @@ function ReminderSlotGroup({
   expanded: boolean
   /** Search results: the slot cannot be folded and offers no sweep. */
   locked?: boolean
+  /** Scroll anchor — the surface lands the viewport on the current slot. */
+  slotKey?: string
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number>
@@ -850,7 +944,8 @@ function ReminderSlotGroup({
   // A slot with nothing waiting can still open: its considered items live
   // behind the counter, and one of them may need putting back.
   const canOpen = !locked && (count > 0 || group.consideredItems.length > 0)
-  const visible = expanded ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
+  const showsEverything = slotShowsEverything(started, expanded)
+  const visible = showsEverything ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = count - visible.length
 
   const headerRow = (
@@ -875,6 +970,9 @@ function ReminderSlotGroup({
       )}
       data-slot-group={label}
       data-slot-started={started}
+      data-slot-key={slotKey}
+      // Clears the fixed top bar when scrollIntoView lands on this card.
+      style={{ scrollMarginTop: '4.5rem' }}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         {!canOpen ? (
@@ -927,24 +1025,13 @@ function ReminderSlotGroup({
               ))}
             </ul>
           )}
-          {hiddenCount > 0 && !locked && (
-            <button
-              type="button"
-              onClick={() => onExpand(true)}
-              className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
-            >
-              Show all {count}
-              <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
-            </button>
-          )}
-          {expanded && count > SLOT_PREVIEW_COUNT && !locked && (
-            <button
-              type="button"
-              onClick={() => onExpand(false)}
-              className="text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground w-full rounded-lg py-2 pl-11 text-left text-xs font-medium transition-colors"
-            >
-              Show less
-            </button>
+          {!locked && (
+            <SlotRowCountToggle
+              count={count}
+              hiddenCount={hiddenCount}
+              canShowLess={showsEverything && !started && count > SLOT_PREVIEW_COUNT}
+              onExpand={onExpand}
+            />
           )}
           {group.consideredItems.length > 0 && (
             <ConsideredDisclosure
