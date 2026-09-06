@@ -25,25 +25,27 @@ import { useRef, useCallback } from 'react'
  *    way useLongPress's `didFire()` does, so the two read the same at the call
  *    site.
  */
-export function useHorizontalSwipe({
-  onSwipeLeft,
-  threshold = 40,
-  /** Past this much vertical movement it is a scroll, not a swipe. */
-  verticalTolerance = 30,
-}: {
-  onSwipeLeft: () => void
-  threshold?: number
-  verticalTolerance?: number
-}): {
+/** How far left counts as a swipe. */
+const THRESHOLD_PX = 40
+/** Past this much vertical movement it is a scroll, not a swipe. */
+const VERTICAL_TOLERANCE_PX = 30
+
+export function useHorizontalSwipe({ onSwipeLeft }: { onSwipeLeft: () => void }): {
   onPointerDown: (e: React.PointerEvent) => void
   onPointerMove: (e: React.PointerEvent) => void
   onPointerUp: (e: React.PointerEvent) => void
-  onPointerCancel: () => void
+  onPointerCancel: (e: React.PointerEvent) => void
   didSwipe: () => boolean
 } {
   const start = useRef<{ x: number; y: number } | null>(null)
+  // ONE flag, cleared at the start of every gesture.
+  //
+  // There used to be a second, cleared only when `didSwipe()` was read — and
+  // the call site reads it behind a `||`, so a long press short-circuited past
+  // it and left it set. Worse, iOS Safari suppresses the trailing `click`
+  // after a real drag, so nothing read it at all and the NEXT tap on that chip
+  // was swallowed: a silently lost +1 on the exact surface this is for.
   const fired = useRef(false)
-  const swiped = useRef(false)
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     start.current = { x: e.clientX, y: e.clientY }
@@ -61,18 +63,17 @@ export function useHorizontalSwipe({
       if (!start.current || fired.current) return
       const dx = e.clientX - start.current.x
       const dy = Math.abs(e.clientY - start.current.y)
-      if (dy > verticalTolerance) {
+      if (dy > VERTICAL_TOLERANCE_PX) {
         // Vertical intent wins: this is the page scrolling past.
         start.current = null
         return
       }
-      if (dx <= -threshold) {
+      if (dx <= -THRESHOLD_PX) {
         fired.current = true
-        swiped.current = true
         onSwipeLeft()
       }
     },
-    [onSwipeLeft, threshold, verticalTolerance],
+    [onSwipeLeft],
   )
 
   const release = useCallback((e: React.PointerEvent) => {
@@ -84,15 +85,20 @@ export function useHorizontalSwipe({
     }
   }, [])
 
-  const onPointerCancel = useCallback(() => {
+  const onPointerCancel = useCallback((e: React.PointerEvent) => {
+    // Release the capture here too — cancel and up must clean up alike, or a
+    // cancelled gesture leaves the element holding the pointer.
     start.current = null
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    } catch {
+      // Already released, or never captured.
+    }
   }, [])
 
-  const didSwipe = useCallback(() => {
-    const value = swiped.current
-    swiped.current = false
-    return value
-  }, [])
+  /** Did the gesture just ended swipe? Reads the same flag the next
+   *  pointerdown clears, so an unread value can never leak into a later tap. */
+  const didSwipe = useCallback(() => fired.current, [])
 
   return { onPointerDown, onPointerMove, onPointerUp: release, onPointerCancel, didSwipe }
 }

@@ -5,6 +5,7 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
+import { isTracked } from '@/lib/track'
 import type { Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
@@ -208,7 +209,13 @@ function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkS
   // Skipped silently and reported as a count, never prompted: §4.3 is explicit
   // that bulk paths must not modal-block, and per L1 sweep participation
   // carries no per-item intent to confirm.
-  const snoozable = tasks.filter((t) => !t.is_reminder)
+  //
+  // §5: a quota is never late either. It carries a vestigial `due_at` (the iOS
+  // widget draws its pace tick from it), and the counts stopped calling that
+  // overdue on 2026-09-06 — so a sweep that still moved it would have been
+  // rescheduling items the app says are never overdue, and shifting the exact
+  // timestamp the widget reads. Counted with the reminders as "not debt".
+  const snoozable = tasks.filter((t) => !t.is_reminder && !isTracked(t))
   const reminderSkipped = tasks.length - snoozable.length
 
   const eligible = snoozable.filter(

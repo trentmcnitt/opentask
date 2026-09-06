@@ -1,9 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
-import { trackState, periodLabel } from '@/lib/track'
+import { periodLabel, type TrackState } from '@/lib/track'
 import { formatRRule } from '@/lib/format-rrule'
 import type { Task } from '@/types'
 
@@ -27,17 +28,22 @@ import type { Task } from '@/types'
  */
 export function TrackChipPopover({
   task,
+  state,
   open,
   onOpenChange,
   children,
 }: {
   task: Task | null
+  /** The chip's own live count, so the bubble cannot disagree with the chip it
+   *  points at while a tap is still in flight. */
+  state: TrackState
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The chip this bubble points at. */
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const { requestNavigation } = useNavigationGuard()
 
   return (
     <Popover open={open && task !== null} onOpenChange={onOpenChange}>
@@ -54,15 +60,29 @@ export function TrackChipPopover({
           // handler and closes it in the same gesture that opened it.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <QuotaSummary task={task} onOpen={() => router.push(`/tasks/${task.id}`)} />
+          <QuotaSummary
+            task={task}
+            state={state}
+            onOpen={() => {
+              // Through the guard, like every other route change in the app.
+              if (requestNavigation(`/tasks/${task.id}`)) router.push(`/tasks/${task.id}`)
+            }}
+          />
         </PopoverContent>
       )}
     </Popover>
   )
 }
 
-function QuotaSummary({ task, onOpen }: { task: Task; onOpen: () => void }) {
-  const state = trackState(task)
+function QuotaSummary({
+  task,
+  state,
+  onOpen,
+}: {
+  task: Task
+  state: TrackState
+  onOpen: () => void
+}) {
   const period = periodLabel(task.rrule)
   const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
 

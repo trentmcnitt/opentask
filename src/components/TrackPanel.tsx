@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
-import { periodLabel, trackSummary } from '@/lib/track'
+import { periodShort, groupByPeriod, trackSummary } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
@@ -180,11 +180,6 @@ function PeriodCard({
   )
 }
 
-/** "this week" → "week", for the card's word. */
-export function periodShort(period: string): string {
-  return period.replace(/^this /, '').replace(/^today$/, 'day')
-}
-
 /**
  * One quota as a chip.
  *
@@ -219,6 +214,7 @@ function TrackChip({
     <li className="max-w-full">
       <TrackChipPopover
         task={task}
+        state={state}
         open={detailOpen}
         onOpenChange={(next) => {
           if (!next) onCloseDetail()
@@ -289,17 +285,6 @@ function TrackChip({
       </TrackChipPopover>
     </li>
   )
-}
-
-/** Quotas by period, in day-to-year order, each group in title order (as given). */
-export function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }[] {
-  const order = ['today', 'this week', 'this month', 'this year', null]
-  const by = new Map<string | null, Task[]>()
-  for (const t of quotas) {
-    const p = periodLabel(t.rrule)
-    by.set(p, [...(by.get(p) ?? []), t])
-  }
-  return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
 }
 
 function TrackRow({ task }: { task: Task }) {

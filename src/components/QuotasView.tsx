@@ -8,10 +8,9 @@ import { Gauge, Minus, Plus, Trash2, X, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import type { QuotaChanges, QuotaCreateDraft } from '@/components/QuotaDetail'
-import { groupByPeriod, periodShort } from '@/components/TrackPanel'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
-import { trackSummary } from '@/lib/track'
+import { trackSummary, groupByPeriod, periodShort } from '@/lib/track'
 import { trackedItems } from '@/lib/slot-view'
 import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
@@ -71,7 +70,15 @@ export function QuotasView({
       setError(null)
     } catch (err) {
       log.error('ui', 'Loading quotas failed:', err)
-      setError('Could not load quotas.')
+      // A failed BACKGROUND refresh over data we already have is not an error
+      // state — the same rule useReminders keeps. This runs on every sync
+      // event, so a transient 500 used to replace the list AND an open editor,
+      // losing staged edits, with nothing to retry. Only a failure with
+      // nothing on screen is worth showing.
+      setTasks((current) => {
+        if (current === null) setError('Could not load quotas.')
+        return current
+      })
     }
   }, [])
 
@@ -119,9 +126,10 @@ export function QuotasView({
   const groups = useMemo(() => groupByPeriod(tasks ?? []), [tasks])
   const orderedIds = useMemo(() => groups.flatMap((g) => g.tasks.map((t) => t.id)), [groups])
 
-  if (error) return <p className="text-muted-foreground py-16 text-center text-sm">{error}</p>
   if (tasks === null)
-    return <p className="text-muted-foreground py-16 text-center text-sm">Loading…</p>
+    return (
+      <p className="text-muted-foreground py-16 text-center text-sm">{error ?? 'Loading\u2026'}</p>
+    )
 
   const selected = tasks.filter((t) => selectedIds.has(t.id))
 
@@ -302,9 +310,11 @@ function QuotaRow({
       // the same.
       //
       // The house model: a click selects and never navigates, a double-click
-      // opens the editor. Both clicks go through deliberately — two selectOnly
-      // calls on the same row leave exactly it selected, so the modal opens
-      // over a tidy selection rather than a stray one.
+      // opens the editor. Both clicks go through deliberately — the second
+      // selectOnly on an already-sole selection clears it, so the modal opens
+      // over an empty selection rather than leaving a row lit underneath. The
+      // modal is handed the task directly, not the selection, so it still gets
+      // the right one.
       onClick={onSelect}
       onDoubleClick={onOpen}
       className={cn(

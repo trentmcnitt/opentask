@@ -1,11 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { trackState } from '@/lib/track'
+import { trackState, quotaFreqOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
 import type { Task } from '@/types'
 
 /**
@@ -27,19 +27,14 @@ import type { Task } from '@/types'
  * widget reads it for its pace tick (`TrackWidget.elapsedFraction`).
  */
 
-export type QuotaPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY'
-
-export const QUOTA_PERIODS: [QuotaPeriod, string][] = [
-  ['DAILY', 'Every day'],
-  ['WEEKLY', 'Every week'],
-  ['MONTHLY', 'Every month'],
-]
-
-/** The FREQ a quota counts against; weekly for anything unreadable. */
-export function quotaPeriodOf(rrule: string | null): QuotaPeriod {
-  const freq = /(?:^|;)FREQ=([A-Z]+)/i.exec(rrule ?? '')?.[1]?.toUpperCase()
-  return freq === 'DAILY' || freq === 'MONTHLY' ? freq : 'WEEKLY'
-}
+/**
+ * The period a quota is being edited against. `null` means either "the
+ * selection disagrees" or "this quota has no period at all" — both real states,
+ * and both are why this is nullable rather than defaulting to WEEKLY. It used
+ * to default, which silently rewrote a yearly or period-less quota to weekly
+ * the first time its target was touched.
+ */
+type QuotaPeriod = QuotaFreq
 
 export interface QuotaCreateDraft {
   title: string
@@ -95,14 +90,18 @@ export function QuotaDetail({
         target: '3',
         period: 'WEEKLY' as QuotaPeriod | null,
         notes: '',
+        allPeriodless: false,
       }
     const targets = new Set(tasks.map((t) => String(Math.max(1, t.progress_target ?? 1))))
-    const periods = new Set(tasks.map((t) => quotaPeriodOf(t.rrule)))
+    const periods = new Set(tasks.map((t) => quotaFreqOf(t.rrule)))
     return {
       title: single?.title ?? '',
       target: targets.size === 1 ? [...targets][0] : '',
       period: periods.size === 1 ? [...periods][0] : null,
       notes: single?.notes ?? '',
+      // Every selected quota genuinely has no period, as opposed to the
+      // selection disagreeing about which one it is.
+      allPeriodless: periods.size === 1 && [...periods][0] === null,
     }
   }, [creating, create, tasks, single])
 
@@ -111,31 +110,96 @@ export function QuotaDetail({
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
   const [notes, setNotes] = useState(base.notes)
 
-  const { targetNumber, titleTouched, notesTouched, schedulePart, dirty, targetOk, canSave } =
-    describeDraft({ creating, base, title, target, period, notes })
+  const {
+    targetNumber,
+    titleTouched,
+    notesTouched,
+    targetTouched,
+    periodTouched,
+    dirty,
+    targetOk,
+    canSave,
+  } = describeDraft({ creating, base, title, target, period, notes })
 
+  // Report dirtiness, and report clean on the way out: the modal unmounts this
+  // when it closes, and without the unmount clear the host stayed "dirty" until
+  // the next mount's effect ran — one frame of blue stripe and a disabled drag
+  // every time it reopened. ReminderDetail does the same through a ref.
+  const onDirtyChangeRef = useRef(onDirtyChange)
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange
+  }, [onDirtyChange])
   useEffect(() => {
     onDirtyChange?.(dirty)
   }, [dirty, onDirtyChange])
+  useEffect(() => {
+    return () => onDirtyChangeRef.current?.(false)
+  }, [])
 
   const buildChanges = useCallback((): QuotaChanges => {
     const changes: QuotaChanges = {}
     if (creating || titleTouched) changes.title = title.trim()
     if (creating || notesTouched) changes.notes = notes.trim() || null
-    if (creating || schedulePart) {
+    if (creating || targetTouched) {
       changes.progress_target = targetNumber
       changes.is_tracked = true
-      changes.rrule = `FREQ=${period}`
+    }
+    // The rule goes ONLY when the period was actually changed.
+    //
+    // Sending it on any schedule edit flattened whatever else the rule carried:
+    // a quota on FREQ=WEEKLY;INTERVAL=2 silently became every week, and a BYDAY
+    // was dropped — and because the rrule then differed, the server re-derived
+    // anchors and recomputed `due_at`, the one field this editor promises not
+    // to touch because the iOS widget's pace tick reads it.
+    //
+    // It also means a quota with NO period, and a selection that disagrees
+    // about its period, can both have their target edited while each keeps its
+    // own rule. `is_tracked` alone satisfies the server's rule for a bare FREQ,
+    // so nothing has to be invented to make the request legal.
+    if (creating || periodTouched) {
+      changes.is_tracked = true
+      if (period !== null) changes.rrule = `FREQ=${period}`
     }
     return changes
-  }, [creating, titleTouched, notesTouched, schedulePart, title, notes, targetNumber, period])
+  }, [
+    creating,
+    titleTouched,
+    notesTouched,
+    targetTouched,
+    periodTouched,
+    title,
+    notes,
+    targetNumber,
+    period,
+  ])
+
+  const [saving, setSaving] = useState(false)
 
   const handleSave = useCallback(async () => {
-    if (!canSave) return
-    const changes = buildChanges()
-    if (creating) await onCreate?.(changes)
-    else await onSave?.(changes)
-  }, [canSave, buildChanges, creating, onCreate, onSave])
+    // `saving` is the in-flight guard as well as the label: the modal only
+    // closes once the request resolves, so without it two taps on a slow
+    // connection made two quotas — or two PATCHes and two undo entries.
+    if (!canSave || saving) return
+    setSaving(true)
+    try {
+      const changes = buildChanges()
+      if (creating) await onCreate?.(changes)
+      else await onSave?.(changes)
+      // Adopt what was actually SENT, not what was typed. The request trims,
+      // so a stray trailing space left `base` and the field disagreeing
+      // forever: a fully saved quota kept its blue stripe and kept raising the
+      // unsaved-changes guard.
+      setTitle((t) => t.trim())
+      setNotes((n) => n.trim())
+    } catch {
+      // The host has already reported it. Swallowing here is what lets the
+      // unsaved-changes dialog finish its own close — a rejection escaping
+      // this left that dialog up forever with an unhandled rejection behind
+      // it. The staged edits are deliberately kept so the save can be retried.
+    } finally {
+      setSaving(false)
+    }
+  }, [canSave, saving, buildChanges, creating, onCreate, onSave])
 
   useEffect(() => {
     if (!saveRef) return
@@ -161,19 +225,7 @@ export function QuotaDetail({
       )}
 
       {(creating || single) && (
-        <div className="space-y-2">
-          <label htmlFor="quota-title" className="text-sm font-medium">
-            Title
-          </label>
-          <Input
-            id="quota-title"
-            autoFocus={creating}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What are you counting?"
-            className="text-[16px]"
-          />
-        </div>
+        <TitleField value={title} onChange={setTitle} autoFocus={creating} />
       )}
 
       {!creating && !single && (
@@ -187,30 +239,17 @@ export function QuotaDetail({
         onTargetChange={setTarget}
         period={period}
         onPeriodChange={setPeriod}
-        showError={schedulePart && !targetOk}
+        showError={targetTouched && !targetOk}
       />
 
-      {(creating || single) && (
-        <div className="space-y-2">
-          <label htmlFor="quota-notes" className="text-sm font-medium">
-            Notes
-          </label>
-          <Textarea
-            id="quota-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder="What does this one actually mean?"
-            className="resize-none text-[16px]"
-          />
-        </div>
-      )}
+      {(creating || single) && <NotesField value={notes} onChange={setNotes} />}
 
       {single && <QuotaStats task={single} />}
 
       <QuotaActions
         creating={creating}
-        canSave={canSave}
+        canSave={canSave && !saving}
+        saving={saving}
         dirty={dirty}
         onSave={() => void handleSave()}
         onReset={handleReset}
@@ -251,21 +290,21 @@ function CadenceField({
         />
         <span className="text-muted-foreground text-sm">{n === 1 ? 'time' : 'times'}</span>
         <div className="flex flex-wrap gap-1.5">
-          {QUOTA_PERIODS.map(([value, label]) => (
+          {QUOTA_PERIODS.map(({ freq, editor }) => (
             <button
-              key={value}
+              key={freq}
               type="button"
-              onClick={() => onPeriodChange(value)}
-              aria-pressed={period === value}
-              data-period-chip={value}
+              onClick={() => onPeriodChange(freq)}
+              aria-pressed={period === freq}
+              data-period-chip={freq}
               className={cn(
                 'rounded-full border px-3 py-1 text-sm transition-colors',
-                period === value
+                period === freq
                   ? 'border-foreground bg-foreground text-background'
                   : 'hover:border-foreground/40',
               )}
             >
-              {label}
+              {editor}
             </button>
           ))}
         </div>
@@ -301,6 +340,7 @@ function QuotaStats({ task }: { task: Task }) {
 function QuotaActions({
   creating,
   canSave,
+  saving,
   dirty,
   onSave,
   onReset,
@@ -310,6 +350,7 @@ function QuotaActions({
 }: {
   creating: boolean
   canSave: boolean
+  saving: boolean
   dirty: boolean
   onSave: () => void
   onReset: () => void
@@ -320,7 +361,7 @@ function QuotaActions({
   return (
     <div className="flex flex-wrap items-center gap-2 border-t pt-3">
       <Button onClick={onSave} disabled={!canSave}>
-        {creating ? 'Create' : 'Save'}
+        {saving ? 'Saving…' : creating ? 'Create' : 'Save'}
       </Button>
       {!creating && (
         <Button variant="outline" onClick={onReset} disabled={!dirty}>
@@ -356,8 +397,9 @@ function QuotaActions({
  *
  * Creating needs every field. Editing needs only what is being changed to be
  * valid, and a schedule edit needs BOTH halves: validation refuses a bare
- * `FREQ=` rule that does not also say the task is tracked, so a target and a
- * period always travel together.
+ * `FREQ=` rule that does not also say the task is tracked — which `is_tracked`
+ * on its own satisfies, so a target and a period do NOT have to travel
+ * together, and deliberately don't: see buildChanges.
  */
 function describeDraft({
   creating,
@@ -368,7 +410,13 @@ function describeDraft({
   notes,
 }: {
   creating: boolean
-  base: { title: string; target: string; period: QuotaPeriod | null; notes: string }
+  base: {
+    title: string
+    target: string
+    period: QuotaPeriod | null
+    notes: string
+    allPeriodless: boolean
+  }
   title: string
   target: string
   period: QuotaPeriod | null
@@ -379,12 +427,67 @@ function describeDraft({
   const periodTouched = period !== base.period
   const titleTouched = title !== base.title
   const notesTouched = notes !== base.notes
-  const schedulePart = targetTouched || periodTouched
-  const dirty = titleTouched || notesTouched || schedulePart
+  const dirty = titleTouched || notesTouched || targetTouched || periodTouched
   const targetOk = target.length > 0 && targetNumber >= 1 && targetNumber <= 1000
-  const scheduleOk = targetOk && period !== null
+  // Creating needs a title, a valid target and a period. Editing needs only
+  // what is being changed to be valid — a period-less quota, and a selection
+  // that disagrees about its period, must both stay editable, and they do
+  // because an untouched period is simply not sent.
   const canSave = creating
-    ? title.trim().length > 0 && scheduleOk
-    : dirty && (!schedulePart || scheduleOk)
-  return { targetNumber, titleTouched, notesTouched, schedulePart, dirty, targetOk, canSave }
+    ? title.trim().length > 0 && targetOk && period !== null
+    : dirty && (!targetTouched || targetOk)
+  return {
+    targetNumber,
+    titleTouched,
+    notesTouched,
+    targetTouched,
+    periodTouched,
+    dirty,
+    targetOk,
+    canSave,
+  }
+}
+
+function TitleField({
+  value,
+  onChange,
+  autoFocus,
+}: {
+  value: string
+  onChange: (v: string) => void
+  autoFocus: boolean
+}) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor="quota-title" className="text-sm font-medium">
+        Title
+      </label>
+      <Input
+        id="quota-title"
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="What are you counting?"
+        className="text-[16px]"
+      />
+    </div>
+  )
+}
+
+function NotesField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor="quota-notes" className="text-sm font-medium">
+        Notes
+      </label>
+      <Textarea
+        id="quota-notes"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        placeholder="What does this one actually mean?"
+        className="resize-none text-[16px]"
+      />
+    </div>
+  )
 }
