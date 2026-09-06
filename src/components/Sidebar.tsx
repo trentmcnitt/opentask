@@ -4,6 +4,9 @@ import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, History, Archive, Trash2, Settings, Plus, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useRemindersBadge } from '@/hooks/useReminders'
+import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
+import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { Button } from '@/components/ui/button'
 
@@ -18,8 +21,15 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   // the split is "where you work" on top, "where things end up" pinned at the
   // bottom. Reminders (§6) belongs to the first group: it is a daily surface, not
   // an archive of anything.
+  // §6: the reminders badge is "waiting so far today" — never overdue, never
+  // red. Same number the Reminders headline shows.
+  const remindersWaiting = useRemindersBadge(useTimezone())
+  // Tasks carries the top bar's overdue (red) and due-today (blue) numbers, so
+  // the other surface is visible from here.
+  const taskCounts = useTaskNavCounts()
+
   const navItems = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/', label: 'Tasks', icon: LayoutDashboard },
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '/history', label: 'History', icon: History },
   ]
@@ -60,6 +70,37 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               >
                 <Icon className="size-4" />
                 {item.label}
+                {item.href === '/' &&
+                  taskCounts &&
+                  (taskCounts.overdue > 0 || taskCounts.today > 0) && (
+                    <span className="ml-auto flex items-center gap-1" data-tasks-badge>
+                      {taskCounts.overdue > 0 && (
+                        <span
+                          className="bg-destructive/15 text-destructive rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                          aria-label={`${taskCounts.overdue} overdue`}
+                        >
+                          {taskCounts.overdue}
+                        </span>
+                      )}
+                      {taskCounts.today > 0 && (
+                        <span
+                          className="bg-primary/15 text-primary rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                          aria-label={`${taskCounts.today} due today`}
+                        >
+                          {taskCounts.today}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                {item.href === '/reminders' && remindersWaiting > 0 && (
+                  <span
+                    data-reminders-badge
+                    className="bg-foreground/10 text-foreground/80 ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                    aria-label={`${remindersWaiting} reminders waiting so far today`}
+                  >
+                    {remindersWaiting}
+                  </span>
+                )}
               </GuardedLink>
             )
           })}
@@ -87,7 +128,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
         <div className="border-t px-2 py-3">
           <Button variant="outline" className="w-full justify-start gap-2" onClick={onAddClick}>
             <Plus className="size-4" />
-            Add Task
+            {pathname.startsWith('/reminders') ? 'Add Reminder' : 'Add Task'}
           </Button>
         </div>
       )}

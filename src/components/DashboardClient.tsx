@@ -5,6 +5,9 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { UNDATED_LABEL } from '@/lib/slot-view'
+import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
+import { TrackPanel } from '@/components/TrackPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { SortOption } from '@/hooks/useGroupSort'
@@ -68,13 +71,15 @@ import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
   initialTasks?: FormattedTask[]
+  /** Server-loaded with the tasks, so the first paint groups by slot (no un-slotted flash). */
+  initialTimeSlots?: TimeSlot[]
 }
 
-export default function DashboardClient({ initialTasks }: DashboardClientProps) {
+export default function DashboardClient({ initialTasks, initialTimeSlots }: DashboardClientProps) {
   return (
     <Suspense>
       <SelectionProvider>
-        <HomeContent initialTasks={initialTasks} />
+        <HomeContent initialTasks={initialTasks} initialTimeSlots={initialTimeSlots} />
       </SelectionProvider>
     </Suspense>
   )
@@ -87,7 +92,7 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks?limit=500')
+      const res = await fetch('/api/tasks?limit=1000')
       if (res.status === 401) {
         router.push(loginUrlFromLocation())
         return
@@ -123,6 +128,7 @@ function useDashboardActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
   onViewTask: (task: Task) => void,
+  onCreated?: (task: Task) => void,
 ): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<number | null> } {
   const actions = useTaskActions({
     mode: 'list',
@@ -141,6 +147,7 @@ function useDashboardActions(
         })
         if (!res.ok) throw new Error('Failed to create task')
         const { data: task } = await res.json()
+        onCreated?.(task)
         fetchTasks()
         showToast({
           message: 'Task added',
@@ -154,7 +161,7 @@ function useDashboardActions(
         return null
       }
     },
-    [fetchTasks, onViewTask],
+    [fetchTasks, onViewTask, onCreated],
   )
 
   return { ...actions, handleQuickAdd }
@@ -310,7 +317,7 @@ function useBulkActions(
     selection.clear() // Clear selection when search changes
     setSearchQuery(query)
     try {
-      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=500`)
+      const res = await fetch(`/api/tasks?search=${encodeURIComponent(query)}&limit=1000`)
       if (!res.ok) return
       const data = await res.json()
       setSearchResults(data.data?.tasks || [])
@@ -322,13 +329,19 @@ function useBulkActions(
   return { bulkDone, bulkSaveAll, bulkDelete, handleBulkMoveToProject, handleSearch }
 }
 
-function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
+function HomeContent({
+  initialTasks,
+  initialTimeSlots,
+}: {
+  initialTasks?: FormattedTask[]
+  initialTimeSlots?: TimeSlot[]
+}) {
   const { status } = useSession()
   const router = useRouter()
   const searchParams = useSearchParams()
   const selection = useSelection()
   const timezone = useTimezone()
-  const { timeSlots } = useTimeSlots()
+  const { timeSlots } = useTimeSlots(initialTimeSlots)
   const data = useFetchData(router, initialTasks)
   const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
   const { projects, refreshProjects } = useProjects()
@@ -404,7 +417,16 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
       )
     },
   })
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
+  // The "Undated" pile starts folded so Today reads as a day. A task added
+  // with no date would land inside it unseen, so adding one opens it.
+  const { isCollapsed, toggleCollapse, expand } = useCollapsedGroups([UNDATED_LABEL])
+  const onCreated = useCallback(
+    (task: Task) => {
+      if (!task.due_at) expand(UNDATED_LABEL)
+    },
+    [expand],
+  )
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, onCreated)
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {
@@ -553,8 +575,6 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
     },
     [sortOption, reversed, setSortPreference],
   )
-  const { isCollapsed, toggleCollapse } = useCollapsedGroups()
-
   useQuickActionShortcut(focusedTask, setQuickActionOpen, quickActionOpen, {
     isSelectionMode: selection.isSelectionMode,
     selectedCount: selection.selectedIds.size,
@@ -1024,6 +1044,17 @@ function HomeContent({ initialTasks }: { initialTasks?: FormattedTask[] }) {
   })
 
   const { overdueCount, todayCount } = useTaskCounts(tasks_, timezone)
+  // The nav's Tasks badges read a shared cache; this page is its source of
+  // truth. Published from the unfiltered list (reminders excluded, nothing
+  // else): a filter chip changes the view, not what is due.
+  const navCounts = useTaskCounts(visibleTasks, timezone)
+  useEffect(() => {
+    publishTaskCounts({
+      total: visibleTasks.length,
+      overdue: navCounts.overdueCount,
+      today: navCounts.todayCount,
+    })
+  }, [visibleTasks.length, navCounts.overdueCount, navCounts.todayCount])
 
   // Update browser tab title with overdue count
   useEffect(() => {
@@ -1700,6 +1731,11 @@ function DashboardView({
             </button>
           </div>
         )}
+
+        {/* §5: the quotas' instrument panel — above the list on every view of
+            the Tasks page ("wherever they go, it can't be buried"), unaffected
+            by list filters. Hidden while searching so results stay results. */}
+        {!searchQuery && <TrackPanel tasks={allTasks} />}
 
         <TaskList
           tasks={tasks}

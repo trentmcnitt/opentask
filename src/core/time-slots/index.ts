@@ -1,7 +1,7 @@
 /**
  * Time slots (REDESIGN-V03 §6.0)
  *
- * Life-moment containers — "Early morning", "Before work", "Evening" — that
+ * Life-moment containers — "Early morning", "Morning", "Evening" — that
  * items are grouped into by their time of day. Shared infrastructure: the
  * dashboard (§7.3) and the Reminders surface (§6) group by this SAME table, so
  * "morning" means one thing in the app rather than two that drift apart.

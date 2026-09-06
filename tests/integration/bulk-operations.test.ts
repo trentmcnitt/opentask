@@ -26,6 +26,51 @@ describe('Bulk operations integration', () => {
     }
   })
 
+  test('POST bulk/edit applies per-task rules as one undoable action', async () => {
+    // Two reminders in the morning slot, different cadences.
+    const make = async (title: string, rrule: string) => {
+      const res = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title, is_reminder: true, rrule },
+      })
+      expect(res.status).toBe(201)
+      return (await res.json()).data.id as number
+    }
+    const daily = await make('Daily thought', 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0')
+    const weekly = await make('Tue/Thu thought', 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0')
+
+    // Move both to the evening; each keeps its own days.
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: {
+        ids: [daily, weekly],
+        changes: {},
+        per_task: {
+          [daily]: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' },
+          [weekly]: { rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30' },
+        },
+      },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.tasks_affected).toBe(2)
+    const after = async (id: number) => (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+    expect((await after(daily)).anchor_time).toBe('20:30')
+    expect((await after(weekly)).rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30')
+
+    // One Undo restores both.
+    const undo = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undo.status).toBe(200)
+    expect((await after(daily)).anchor_time).toBe('07:00')
+    expect((await after(weekly)).anchor_time).toBe('07:00')
+
+    // per_task carries the schedule only.
+    const bad = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [daily], changes: {}, per_task: { [daily]: { priority: 3 } } },
+    })
+    expect(bad.status).toBe(400)
+  })
+
   test('POST bulk/done with one invalid ID fails atomically', async () => {
     // Get original states
     const before1 = (await (await apiFetch('/api/tasks/1')).json()).data

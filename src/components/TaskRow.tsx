@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { isTracked, periodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -341,9 +342,17 @@ export function TaskRow({
   const priorityColors = getPriorityColors(task.priority)
   // A task is snoozed when its due date has drifted from the original.
   // On creation, original_due_at === due_at; snoozing changes due_at but not original_due_at.
-  const isSnoozed = task.original_due_at !== null && task.original_due_at !== task.due_at
+  // A quota's due_at is its period boundary, not a promise that got moved — no
+  // "snoozed" stripe on tracked rows (§5), just as they get no overdue stripe.
+  const isSnoozed =
+    !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
   const isAiProcessing = task.labels.includes('ai-to-process')
-  const metaSegments = buildMetaSegments(task, timezone, isOverdue)
+  const tracked = isTracked(task)
+  // §5: a quota's row states its count where a task states its due time; the
+  // controls live in the Track panel on the Tasks page, not on every row.
+  const metaSegments = tracked
+    ? trackedMetaSegments(task)
+    : buildMetaSegments(task, timezone, isOverdue)
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length
   const hasLabels = visibleLabelCount > 0
@@ -707,10 +716,25 @@ interface MetaSegment {
   className?: string
 }
 
+/** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
+function trackedMetaSegments(task: Task): MetaSegment[] {
+  const { current, target, met } = trackState(task)
+  const period = periodLabel(task.rrule)
+  return [
+    {
+      text: `${current} / ${target}${period ? ` ${period}` : ''}${met ? ' · met' : ''}`,
+      className: met ? 'text-green-700 dark:text-green-400' : undefined,
+    },
+  ]
+}
+
 function buildMetaSegments(task: Task, timezone: string, isOverdue?: boolean): MetaSegment[] {
   const segments: MetaSegment[] = []
 
-  const isSnoozed = task.original_due_at !== null && task.original_due_at !== task.due_at
+  // A quota's due_at is its period boundary, not a promise that got moved — no
+  // "snoozed" stripe on tracked rows (§5), just as they get no overdue stripe.
+  const isSnoozed =
+    !isTracked(task) && task.original_due_at !== null && task.original_due_at !== task.due_at
 
   if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone)

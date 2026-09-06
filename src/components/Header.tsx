@@ -55,7 +55,19 @@ interface HeaderProps {
   backHref?: string
   title?: string
   headerAction?: React.ReactNode
-  taskCount: number
+  /**
+   * Replaces the task-count pills. Surfaces that are not about tasks (Reminders)
+   * put their own numbers here so they get the same top bar as the Tasks page —
+   * logo, undo, menu — instead of a bare page title.
+   */
+  badges?: React.ReactNode
+  /**
+   * Where you are, set beside the logo (“OpenTask | Reminders”). The Tasks
+   * page is home and goes without; a peer surface names itself here so the
+   * bar reads as the same app in a different mode rather than a bare title.
+   */
+  section?: string
+  taskCount?: number
   overdueCount?: number
   todayCount?: number
   isSelectionMode?: boolean
@@ -69,13 +81,17 @@ interface HeaderProps {
   onShowKeyboardShortcuts?: () => void
   timezone?: string
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
+  /** What the search bar searches, for its placeholder. Default: tasks. */
+  searchSubject?: string
 }
 
 export function Header({
   backHref,
   title,
   headerAction,
-  taskCount,
+  badges,
+  section,
+  taskCount = 0,
   overdueCount = 0,
   todayCount = 0,
   isSelectionMode = false,
@@ -89,11 +105,11 @@ export function Header({
   onShowKeyboardShortcuts,
   timezone,
   searchFocusRef,
+  searchSubject,
 }: HeaderProps) {
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [searchExpanded, setSearchExpanded] = useState(false)
-  const [badgePopoverOpen, setBadgePopoverOpen] = useState(false)
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
   const [aiSlotState, setAiSlotState] = useState<string | null>(null)
@@ -190,7 +206,11 @@ export function Header({
                   width={120}
                   height={36}
                   className={cn(
-                    'h-7 w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
+                    'w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
+                    // With a section label beside it the bar is tight on a phone
+                    // (logo + label + pill + two buttons in 375px), so the logo
+                    // drops a step there.
+                    section ? 'h-6' : 'h-7',
                     searchExpanded ? 'opacity-0 md:opacity-100' : '',
                   )}
                   unoptimized
@@ -203,6 +223,21 @@ export function Header({
             </Popover>
           )}
 
+          {section && !title && (
+            <>
+              <span
+                aria-hidden="true"
+                className="bg-border mx-0.5 h-5 w-px flex-shrink-0 md:mx-1"
+              />
+              <span
+                data-header-section
+                className="text-foreground flex-shrink-0 text-sm font-semibold tracking-tight md:text-base"
+              >
+                {section}
+              </span>
+            </>
+          )}
+
           {headerAction}
 
           {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
@@ -210,63 +245,21 @@ export function Header({
             {/* Badge container: @container enables container queries on mobile.
                 md:[container-type:normal] disables containment on desktop where
                 md:inline-flex handles visibility via media queries instead. */}
-            <div className="@container/badges min-w-0 flex-1 md:[container-type:normal] md:flex-none md:flex-shrink-0">
-              <Popover open={badgePopoverOpen} onOpenChange={setBadgePopoverOpen}>
-                <PopoverTrigger asChild>
-                  <div
-                    className={cn(
-                      'flex flex-shrink-0 cursor-pointer items-center gap-1 transition-[opacity,max-width] duration-200',
-                      searchExpanded
-                        ? 'pointer-events-none opacity-0 md:max-w-0 md:overflow-hidden'
-                        : 'max-w-[12rem] opacity-100',
-                    )}
-                    role="group"
-                    aria-label="Task counts"
-                    tabIndex={0}
-                  >
-                    <CountBadge
-                      count={taskCount}
-                      tooltip={
-                        badgePopoverOpen
-                          ? undefined
-                          : `${taskCount} total task${taskCount === 1 ? '' : 's'}`
-                      }
-                      className={cn(
-                        'hidden items-center justify-center select-none md:inline-flex',
-                        overdueCount > 0
-                          ? '@[4.75rem]/badges:inline-flex'
-                          : '@[2.75rem]/badges:inline-flex',
-                      )}
-                    />
-                    {overdueCount > 0 && (
-                      <CountBadge
-                        count={overdueCount}
-                        variant="overdue"
-                        tooltip={badgePopoverOpen ? undefined : `${overdueCount} overdue`}
-                        className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
-                      />
-                    )}
-                    <CountBadge
-                      count={todayCount}
-                      variant="today"
-                      tooltip={badgePopoverOpen ? undefined : `${todayCount} due today`}
-                      className={cn(
-                        'inline-flex items-center justify-center select-none',
-                        todayCount === 0 && 'md:hidden',
-                      )}
-                    />
-                  </div>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
-                  <div className="flex flex-col gap-1">
-                    <span>{taskCount} total tasks</span>
-                    {overdueCount > 0 && (
-                      <span className="text-destructive">{overdueCount} overdue</span>
-                    )}
-                    {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
-                  </div>
-                </PopoverContent>
-              </Popover>
+            <div
+              className={cn(
+                '@container/badges min-w-0 flex-1 transition-[opacity,max-width] duration-200 md:[container-type:normal] md:flex-none md:flex-shrink-0',
+                searchExpanded
+                  ? 'pointer-events-none opacity-0 md:max-w-0 md:overflow-hidden'
+                  : 'max-w-[12rem] opacity-100',
+              )}
+            >
+              {badges ?? (
+                <TaskCountBadges
+                  taskCount={taskCount}
+                  overdueCount={overdueCount}
+                  todayCount={todayCount}
+                />
+              )}
             </div>
 
             {/* Search: ml-auto keeps it right-aligned, expands leftward */}
@@ -274,6 +267,7 @@ export function Header({
               <SearchBar
                 onSearch={onSearch}
                 onClear={onSearchClear}
+                subject={searchSubject}
                 onExpandedChange={setSearchExpanded}
                 focusRef={searchFocusRef}
               />
@@ -433,5 +427,69 @@ export function Header({
         <AIStatusModal open={aiStatusOpen} onOpenChange={setAiStatusOpen} timezone={timezone} />
       )}
     </TooltipProvider>
+  )
+}
+
+/**
+ * The Tasks page's three pills: total, overdue (red, only when > 0), due today
+ * (blue). Tap opens a popover that spells each one out; the tooltips step
+ * aside while it is open so the two never stack.
+ */
+function TaskCountBadges({
+  taskCount,
+  overdueCount,
+  todayCount,
+}: {
+  taskCount: number
+  overdueCount: number
+  todayCount: number
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false)
+  return (
+    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <PopoverTrigger asChild>
+        <div
+          className="flex flex-shrink-0 cursor-pointer items-center gap-1"
+          role="group"
+          aria-label="Task counts"
+          tabIndex={0}
+        >
+          <CountBadge
+            count={taskCount}
+            tooltip={
+              popoverOpen ? undefined : `${taskCount} total task${taskCount === 1 ? '' : 's'}`
+            }
+            className={cn(
+              'hidden items-center justify-center select-none md:inline-flex',
+              overdueCount > 0 ? '@[4.75rem]/badges:inline-flex' : '@[2.75rem]/badges:inline-flex',
+            )}
+          />
+          {overdueCount > 0 && (
+            <CountBadge
+              count={overdueCount}
+              variant="overdue"
+              tooltip={popoverOpen ? undefined : `${overdueCount} overdue`}
+              className="hidden items-center justify-center select-none md:inline-flex @[2.75rem]/badges:inline-flex"
+            />
+          )}
+          <CountBadge
+            count={todayCount}
+            variant="today"
+            tooltip={popoverOpen ? undefined : `${todayCount} due today`}
+            className={cn(
+              'inline-flex items-center justify-center select-none',
+              todayCount === 0 && 'md:hidden',
+            )}
+          />
+        </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto px-3 py-2 text-xs" sideOffset={6}>
+        <div className="flex flex-col gap-1">
+          <span>{taskCount} total tasks</span>
+          {overdueCount > 0 && <span className="text-destructive">{overdueCount} overdue</span>}
+          {todayCount > 0 && <span className="text-primary">{todayCount} due today</span>}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

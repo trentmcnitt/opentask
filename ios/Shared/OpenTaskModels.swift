@@ -35,6 +35,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// `var` alone among the fields: `withOptimisticIncrement()` below needs to
     /// bump it on a value-type copy. Nothing mutates the decoded instance.
     var progressCurrent: Int
+    /// The server's explicit "this is a quota" flag. It exists because a quota
+    /// whose target is 1 ("date night, once a month") is indistinguishable from
+    /// an ordinary task by target alone. Read it through `isTracked`, not
+    /// directly — the flag is only half the test.
+    let trackedFlag: Bool
     let isReminder: Bool
     let labels: [String]
 
@@ -48,6 +53,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case anchorTime = "anchor_time"
         case progressTarget = "progress_target"
         case progressCurrent = "progress_current"
+        case trackedFlag = "is_tracked"
         case isReminder = "is_reminder"
         case labels
     }
@@ -63,6 +69,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         anchorTime = try c.decodeIfPresent(String.self, forKey: .anchorTime)
         progressTarget = try c.decodeIfPresent(Int.self, forKey: .progressTarget) ?? 1
         progressCurrent = try c.decodeIfPresent(Int.self, forKey: .progressCurrent) ?? 0
+        trackedFlag = try c.decodeIfPresent(Bool.self, forKey: .trackedFlag) ?? false
         isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
         labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
     }
@@ -79,6 +86,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         anchorTime: String? = nil,
         progressTarget: Int = 1,
         progressCurrent: Int = 0,
+        trackedFlag: Bool = false,
         isReminder: Bool = false,
         labels: [String] = []
     ) {
@@ -91,6 +99,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.anchorTime = anchorTime
         self.progressTarget = progressTarget
         self.progressCurrent = progressCurrent
+        self.trackedFlag = trackedFlag
         self.isReminder = isReminder
         self.labels = labels
     }
@@ -100,8 +109,12 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         return DateHelpers.parseISO(dueAt)
     }
 
-    /// §5: `progress_target > 1` is what marks a task as tracked.
-    var isTracked: Bool { progressTarget > 1 }
+    /// §5: a task is a quota if the server flagged it as one, or if its target
+    /// is above 1. Both halves are load-bearing and must stay in step with the
+    /// server's `isTracked()` (`src/lib/track.ts`): the target test alone misses
+    /// a once-a-month quota, and the flag alone misses every quota created
+    /// before the flag existed, which is most of them.
+    var isTracked: Bool { trackedFlag || progressTarget > 1 }
 
     /// At or past target. The task deliberately stays open past this point so
     /// overflow (3/2) remains observable, so this is styling, not filtering.

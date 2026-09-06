@@ -47,6 +47,7 @@ function fetchDueCandidates(userId: number): DueCandidate[] {
           -- tracked task with a due date would get the standard nag PLUS the
           -- nudge, which is the pile-up this redesign exists to remove.
           AND t.progress_target <= 1
+          AND t.is_tracked = 0
           -- §6: reminders have NO DEBT. They are never counted in overdue,
           -- never reach the badge, and never fire individually — the time slot
           -- notifies, not the item. Missing one costs nothing; the next

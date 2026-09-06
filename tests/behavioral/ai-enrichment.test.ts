@@ -136,6 +136,25 @@ describe('AI enrichment trigger (label-based)', () => {
     expect(fromDb!.labels).toContain('ai-to-process')
   })
 
+  test('enrich:true asks for enrichment even with fields already set', () => {
+    // The Reminders quick add sends a default schedule so the row appears in a
+    // slot at once. That would otherwise disqualify it from the title-only
+    // trigger, and nothing the user actually said would ever be read.
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'every friday evening think about the week ahead',
+        is_reminder: true,
+        rrule: 'FREQ=DAILY;BYHOUR=16;BYMINUTE=0',
+        enrich: true,
+      },
+    })
+
+    const fromDb = getTaskById(task.id)
+    expect(fromDb!.labels).toContain('ai-to-process')
+  })
+
   test('task with due_at set skips AI enrichment', () => {
     const task = createTask({
       userId: TEST_USER_ID,

@@ -423,6 +423,8 @@ export interface BulkEditOptions {
   userTimezone: string
   taskIds: number[]
   changes: BulkEditChanges
+  /** Per-task values merged over `changes` (see `bulkEditSchema.per_task`). */
+  perTask?: Record<string, Partial<BulkEditChanges>>
 }
 
 export interface BulkEditResult {
@@ -436,18 +438,25 @@ export interface BulkEditResult {
  * Applies the same changes to all specified tasks.
  */
 export function bulkEdit(options: BulkEditOptions): BulkEditResult {
-  const { userId, userTimezone, taskIds, changes } = options
+  const { userId, userTimezone, taskIds, changes, perTask } = options
 
   if (taskIds.length === 0) {
     return { tasksAffected: 0, tasksSkipped: 0 }
   }
 
   let tasks = validateBulkTasks(taskIds, userId)
+  const inputFor = (task: Task): BulkEditChanges => ({
+    ...changes,
+    ...(perTask?.[String(task.id)] ?? {}),
+  })
 
   // Reject rrule changes on done tasks — setting rrule on a done+archived task creates
   // an impossible state (done=1 + rrule set) that the system never produces organically
   let rruleSkippedCount = 0
-  if (changes.rrule !== undefined && changes.rrule !== null) {
+  const setsRrule =
+    (changes.rrule !== undefined && changes.rrule !== null) ||
+    Object.values(perTask ?? {}).some((p) => p.rrule !== undefined && p.rrule !== null)
+  if (setsRrule) {
     const beforeCount = tasks.length
     tasks = tasks.filter((t) => !t.done)
     rruleSkippedCount = beforeCount - tasks.length
@@ -495,7 +504,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       // Collect field changes using shared helper
       const data = collectFieldChanges({
         task,
-        input: changes,
+        input: inputFor(task),
         userId,
         userTimezone,
         now: nowDate,

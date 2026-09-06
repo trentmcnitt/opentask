@@ -167,6 +167,36 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/tasks/counts:
+    get:
+      summary: Counts for the nav badges
+      operationId: getTaskCounts
+      tags: [Tasks]
+      description: |
+        `{ total, overdue, today }` over the user's active tasks — the same
+        numbers the Tasks page shows in its top bar, computed with the same
+        function, for pages that do not load the list.
+      responses:
+        '200':
+          description: Task counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      overdue:
+                        type: integer
+                        description: due_at in the past.
+                      today:
+                        type: integer
+                        description: due_at inside the user's local day.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskId'
@@ -283,10 +313,15 @@ paths:
     parameters:
       - $ref: '#/components/parameters/TaskId'
     post:
-      summary: Mark task undone (reopen)
+      summary: Mark task undone (reopen / put back)
       operationId: markTaskUndone
       tags: [Tasks]
-      description: Only works for one-off tasks. For recurring tasks, use undo.
+      description: |
+        One-off task: reopens it. Recurring task: puts back its most recent
+        completion — the occurrence returns to the due date it had and the
+        completion counts roll back one. Refuses (400) when the task's due date
+        has changed since that completion, or when there is nothing to put back.
+        Logged as an undoable action either way.
       responses:
         '200':
           description: Reopened task
@@ -799,6 +834,19 @@ paths:
                         type: string
                     project_id:
                       type: integer
+                per_task:
+                  type: object
+                  description: >-
+                    Per-task values merged over `changes`, keyed by task id. Lets one
+                    request give each task its own recurrence rule (e.g. moving several
+                    reminders to another time slot while each keeps its own days), as a
+                    single undoable action.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      rrule:
+                        type: string
+                        nullable: true
       responses:
         '200':
           description: Bulk operation result
@@ -902,6 +950,14 @@ paths:
                     properties:
                       total:
                         type: integer
+                      considered_total:
+                        type: integer
+                        description: Reminders considered today, all slots.
+                      not_today:
+                        type: array
+                        description: Reminders with no occurrence today (e.g. a weekly one on its off day), so they stay reachable. Not counted in total.
+                        items:
+                          $ref: '#/components/schemas/Task'
                       has_any:
                         type: boolean
                         description: |
@@ -930,6 +986,16 @@ paths:
                               type: integer
                             reminders:
                               type: array
+                              items:
+                                $ref: '#/components/schemas/Task'
+                            considered:
+                              type: integer
+                              description: Considered today in this slot.
+                            considered_items:
+                              type: array
+                              description: |
+                                The considered ones, most recent first. Put one
+                                back with `POST /api/tasks/{id}/undone`.
                               items:
                                 $ref: '#/components/schemas/Task'
         '401':
@@ -1786,6 +1852,14 @@ components:
         ai_added:
           type: boolean
           description: Apply the `ai-added` provenance label.
+        enrich:
+          type: boolean
+          description: >
+            Ask for AI enrichment even though this request supplies structured
+            fields. Enrichment is normally triggered only by title-only input;
+            the Reminders quick add sets this because it always sends a default
+            schedule so the new reminder appears in a time slot immediately.
+            Ignored when AI is disabled.
 
     Label:
       type: object

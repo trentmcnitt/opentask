@@ -34,6 +34,7 @@ import type { AIFeature } from '@/core/ai/models'
 import type {
   AITestScenario,
   EnrichmentInput,
+  ReminderEnrichmentInput,
   WhatsNextInput,
   InsightsInput,
   QuickTakeInput,
@@ -198,6 +199,20 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Reminder enrichment scenarios (REDESIGN-V03 §6)
+  // -------------------------------------------------------------------------
+
+  describe('Reminder enrichment', () => {
+    const reminderTests = allScenarios.filter((s) => s.feature === 'enrichment_reminder')
+
+    for (const scenario of reminderTests) {
+      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+        await runScenario(scenario)
+      })
+    }
+  })
+
+  // -------------------------------------------------------------------------
   // What's Next scenarios
   // -------------------------------------------------------------------------
 
@@ -282,6 +297,11 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
     switch (scenario.feature) {
       case 'enrichment':
         ;({ output, durationMs } = await runEnrichment(scenario.input as EnrichmentInput))
+        break
+      case 'enrichment_reminder':
+        ;({ output, durationMs } = await runReminderEnrichment(
+          scenario.input as ReminderEnrichmentInput,
+        ))
         break
       case 'whats_next':
         ;({ output, durationMs } = await runWhatsNext(scenario.input as WhatsNextInput))
@@ -403,6 +423,75 @@ async function runEnrichment(
   }
 
   return { output: parsed as unknown as Record<string, unknown>, durationMs: result.durationMs }
+}
+
+/**
+ * Reminder enrichment (REDESIGN-V03 §6) — the same production builder and
+ * schema as a task, but the reminder user prompt and the sanitizer that runs
+ * on its result in production, so what a scenario is judged on is what the
+ * database would actually receive.
+ */
+async function runReminderEnrichment(
+  input: ReminderEnrichmentInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { ENRICHMENT_SYSTEM_PROMPT, buildReminderEnrichmentUserPrompt } =
+    await import('@/core/ai/prompts')
+  const { aiQuery } = await import('@/core/ai/sdk')
+  const { EnrichmentResultSchema } = await import('@/core/ai/types')
+  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { sanitizeReminderEnrichment } = await import('@/core/ai/enrichment')
+  const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
+  const { z } = await import('zod')
+
+  const slots = input.slots ?? [...DEFAULT_TIME_SLOTS]
+  const prompt = buildReminderEnrichmentUserPrompt({
+    timezone: input.timezone,
+    slots,
+    currentSlotLabel: input.currentSlotLabel ?? null,
+    userContext: input.userContext,
+    taskText: input.text,
+  })
+
+  const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
+  const provider = getTestProvider()
+  const maxTurns = provider === 'sdk' ? 3 : 1
+  const result = await aiQuery({
+    prompt,
+    systemPrompt: ENRICHMENT_SYSTEM_PROMPT,
+    outputSchema: jsonSchema,
+    model: getModelForFeature('enrichment'),
+    maxTurns,
+    userId: QUALITY_TEST_USER_ID,
+    action: 'quality_test_enrich_reminder',
+    inputText: input.text,
+    provider,
+  })
+
+  const parsed = parseAIResponse(result, EnrichmentResultSchema, 'Enrichment', (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    const attempt = EnrichmentResultSchema.safeParse(json)
+    return attempt.success ? attempt.data : null
+  })
+
+  if (!parsed) {
+    throw new Error(`AI query failed: ${result.error || 'No output'}`)
+  }
+
+  const sanitized = sanitizeReminderEnrichment(
+    parsed,
+    slots.map((slot, index) => ({
+      id: index + 1,
+      user_id: QUALITY_TEST_USER_ID,
+      label: slot.label,
+      start_time: slot.start_time,
+      sort_order: index,
+      created_at: new Date().toISOString(),
+    })),
+    input.currentSlotLabel ?? null,
+  )
+
+  return { output: sanitized as unknown as Record<string, unknown>, durationMs: result.durationMs }
 }
 
 async function runWhatsNext(

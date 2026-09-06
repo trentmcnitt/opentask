@@ -728,3 +728,112 @@ ${ENRICHMENT_REMINDERS}
 Current local time: ${localNow}
 Parse the task above and return the structured result.`
 }
+
+// ---------------------------------------------------------------------------
+// Reminder enrichment (REDESIGN-V03 §6)
+// ---------------------------------------------------------------------------
+//
+// A reminder is a task row with `is_reminder = 1`, but it is a different kind
+// of thing to parse: a thought the user wants prompted at a recurring moment,
+// not an action with a deadline. So it gets its own user prompt rather than a
+// branch inside the task one — that way the task prompt stays byte-identical
+// and its quality scenarios keep their meaning.
+//
+// The system prompt is shared: the warm enrichment slot pins ONE system prompt
+// for the life of the subprocess, so everything reminder-specific has to live
+// here, in the user turn. That shapes what this prompt says. The model has just
+// read fifteen thousand characters about TASKS — due dates, priorities,
+// projects, labels, and worked examples in which "every morning at 8" becomes
+// a bare `FREQ=DAILY` with the time in `due_at`. This fragment exists to
+// counteract exactly that priming and nothing else; what the system prompt
+// already covers (cleaning dictation, keeping the user's words, RRULE syntax,
+// resolving names from context) is not repeated here.
+//
+// Two lines were added after watching the model get them wrong, and stay for
+// that reason: the current-slot marker is authoritative (the model computed
+// "current" from the clock printed in the prompt), and the subject of a
+// thought says nothing about when the user wants it (a gratitude practice
+// went to Evening on thematic grounds). `sanitizeReminderEnrichment` enforces
+// the shape server-side regardless, which is why the wording below describes
+// the result rather than shouting rules.
+
+export interface ReminderEnrichmentPromptParams {
+  timezone: string
+  /** The user's editable time slots, in sort order. */
+  slots: Array<{ label: string; start_time: string }>
+  /** Label of the slot that is current right now, if any. */
+  currentSlotLabel?: string | null
+  userContext?: string | null
+  taskText: string
+}
+
+/**
+ * Build the reminder enrichment user prompt.
+ *
+ * Shared by production (enrichment.ts), quality tests, and dump-prompts so the
+ * template is defined exactly once.
+ */
+export function buildReminderEnrichmentUserPrompt(params: ReminderEnrichmentPromptParams): string {
+  const { timezone, slots, currentSlotLabel, userContext, taskText } = params
+
+  // No clock. A reminder has no due date, so nothing in it needs today's date
+  // or time, and printing one gave the model something to contradict the
+  // current-slot marker with — it recomputed "current" from the clock and
+  // overrode the marker (seen in the quality run). The marker is the clock,
+  // already digested.
+  const slotList = slots
+    .map((slot) => {
+      const [hour, minute] = slot.start_time.split(':')
+      const marker = slot.label === currentSlotLabel ? '  ← current slot' : ''
+      return `- ${slot.label} — ${formatMorningTime(slot.start_time)} — BYHOUR=${parseInt(hour, 10)};BYMINUTE=${parseInt(minute, 10)}${marker}`
+    })
+    .join('\n')
+
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  return `## This one is a reminder, not a task
+
+A reminder is a thought the user wants put in front of them again and again,
+at a moment of the day they choose. Nothing is due and nothing gets finished,
+and it belongs to no project and carries no labels — it has only its words,
+its days, and its part of the day. Parsing one means finding those two
+things — which days it comes up, and which part of the day — while keeping
+the thought in the user's own words.
+
+The user has divided their day into a few named windows, each starting at a
+set time, and a reminder comes up at the start of one of them. These are the
+user's time slots:
+${slotList}
+
+Time words map onto these windows, not onto clock times. "Evening" means the
+user's Evening slot even if that starts at 8:30 PM; "morning" means their
+Morning even at 9 AM; a word that matches no label ("lunch", "when I wake up")
+goes to the window its time falls in. When the thought says nothing about when,
+it goes in the slot marked current. That marker is authoritative — it is
+already worked out from the user's clock — and the subject of a thought says
+nothing about when they want it: a gratitude practice is not an evening
+thought, and a stretch is not a morning one, unless the user said so. The
+current time is not given here because the marker already carries it.
+
+User's timezone: ${timezone}${userContextBlock}
+
+<reminder>
+${taskText}
+</reminder>
+
+## What the result looks like for a reminder
+
+- There is always a rule. The days come from the text; when none are named, it
+  is every day (FREQ=DAILY). An INTERVAL appears only when the user asked for
+  one ("every other week").
+- The time of day lives inside the rule, as the chosen slot's BYHOUR and
+  BYMINUTE — the opposite of the task examples above, where the time sits in
+  due_at and the rule stays bare. Here due_at is null.
+- labels is [], project_name is null, auto_snooze_minutes is null, and
+  recurrence_mode is null. A reminder does not use them.
+- priority follows the same signals as a task: a stated one lands, otherwise 0.
+- The title is the thought itself, with the schedule words removed. Whatever
+  the title cannot carry goes to notes.
+
+Parse the reminder above and return the structured result.`
+}

@@ -6,6 +6,7 @@
  */
 
 import Database from 'better-sqlite3'
+import { reinsertCompletion } from './completion-row'
 import { getDb, withTransaction } from '@/core/db'
 import { emitSyncEvent } from '@/lib/sync-events'
 import type { UndoSnapshot, UndoResult } from '@/types'
@@ -42,9 +43,13 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
     for (const snapshot of entry.snapshots) {
       applyFieldsToTask(snapshot.task_id, snapshot.before_state, entry.fieldsChanged)
 
-      // If this was a task completion, delete the completion record
+      // A completion's row goes with it; a put-back's row comes back.
       if (snapshot.completion_id) {
-        tx.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
+        if (entry.action === 'undone') {
+          reinsertCompletion(tx, snapshot.completion_id, snapshot.task_id, snapshot.before_state)
+        } else {
+          tx.prepare('DELETE FROM completions WHERE id = ?').run(snapshot.completion_id)
+        }
       }
     }
   }

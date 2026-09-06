@@ -45,6 +45,26 @@ describe('Mark done integration', () => {
     expect(archivedTask.archived_at).not.toBeNull()
   })
 
+  test('POST undone on a recurring task puts the latest occurrence back', async () => {
+    await resetTestData()
+    const before = (await (await apiFetch('/api/tasks/2')).json()).data
+    expect(before.rrule).toBe('FREQ=DAILY')
+
+    await apiFetch('/api/tasks/2/done', { method: 'POST' })
+    const advanced = (await (await apiFetch('/api/tasks/2')).json()).data
+    expect(advanced.due_at).not.toBe(before.due_at)
+
+    const undoneRes = await apiFetch('/api/tasks/2/undone', { method: 'POST' })
+    expect(undoneRes.status).toBe(200)
+    const restored = (await undoneRes.json()).data
+    expect(restored.due_at).toBe(before.due_at)
+    expect(restored.completion_count).toBe(before.completion_count)
+
+    // Nothing left to put back: a second call is a 400, not a silent no-op.
+    const again = await apiFetch('/api/tasks/2/undone', { method: 'POST' })
+    expect(again.status).toBe(400)
+  })
+
   test('POST done then POST undo restores original state', async () => {
     await resetTestData()
 

@@ -38,6 +38,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import type { Task } from '@/types'
+import { emitSyncEvent } from '@/lib/sync-events'
 
 export interface IncrementProgressOptions {
   userId: number
@@ -54,8 +55,8 @@ export interface IncrementProgressResult {
 }
 
 /** Is this task tracked (a quota) rather than an ordinary one-shot task? */
-export function isTracked(task: Pick<Task, 'progress_target'>): boolean {
-  return (task.progress_target ?? 1) > 1
+export function isTracked(task: Pick<Task, 'progress_target' | 'is_tracked'>): boolean {
+  return task.is_tracked === true || (task.progress_target ?? 1) > 1
 }
 
 /**
@@ -103,6 +104,10 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     )
     return after
   })
+
+  // Other tabs and the widgets learn about the new count the same way they
+  // learn about every other mutation.
+  emitSyncEvent(userId)
 
   // §5: progress is NOT completion. Firing task.completed here would make every
   // downstream counter over-count by the target.

@@ -24,6 +24,9 @@ export type ActivityAction =
   // §7.5: declining an occurrence. Deliberately distinct from 'complete' —
   // the whole purpose of skip is that it is NOT a completion.
   | 'skip'
+  // §5: a quota's period closed at its boundary (the rollover job, not the
+  // user). Metadata carries what was logged against the target.
+  | 'period_rollover'
 
 export interface ActivityEntry {
   userId: number

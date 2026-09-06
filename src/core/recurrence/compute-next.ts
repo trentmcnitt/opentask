@@ -40,6 +40,74 @@ const FREQ_MAP: Record<string, number> = {
   YEARLY: RRule.YEARLY,
 }
 
+/**
+ * The pattern's epoch. Fixed so that a rule's phase (which weeks an
+ * every-other-week rule lands on, which months a quarterly one does) never
+ * depends on when the task was created or last edited.
+ */
+const PATTERN_EPOCH_YEAR = 2020
+
+/**
+ * Advance the fixed epoch dtstart toward `ref` in whole periods of the rule.
+ *
+ * rrule.js finds `after(ref)` by iterating occurrences forward from dtstart,
+ * so a DAILY rule anchored in 2020 walks ~2,500 days for every single "is this
+ * due today?" question. With ~185 recurring rows that put ~2.3 s inside every
+ * check-off (the badge recount) and ~0.8 s inside every reminders load, and the
+ * same cost in the browser when the Today view groups by slot. Sliding dtstart
+ * to a couple of periods before `ref` makes each call O(1) while leaving the
+ * answer identical: shifting by an exact multiple of the interval keeps a
+ * WEEKLY/INTERVAL=2 rule on the same weeks and a MONTHLY/INTERVAL=3 rule on the
+ * same months. Weekly shifts move by whole weeks, so the epoch's weekday is
+ * preserved too (rrule.js reads it when BYDAY is absent).
+ *
+ * Works in the same naive-UTC representation as dtstart itself, so no DST
+ * arithmetic is involved.
+ */
+export function advanceDtstart(base: Date, freq: string, interval: number, ref: Date): Date {
+  const n = Math.max(1, Math.floor(interval))
+  // Leave at least two full periods of runway before `ref`, so rrule's
+  // "strictly after" search sees the same neighbourhood it would have from 2020.
+  const MARGIN = 2
+  const hour = base.getUTCHours()
+  const minute = base.getUTCMinutes()
+
+  if (freq === 'DAILY' || freq === 'WEEKLY') {
+    const periodMs = (freq === 'DAILY' ? 1 : 7) * n * 86_400_000
+    const periods = Math.floor((ref.getTime() - base.getTime()) / periodMs) - MARGIN
+    return periods > 0 ? new Date(base.getTime() + periods * periodMs) : base
+  }
+  if (freq === 'MONTHLY') {
+    const months =
+      (ref.getUTCFullYear() - base.getUTCFullYear()) * 12 + (ref.getUTCMonth() - base.getUTCMonth())
+    const periods = Math.floor(months / n) - MARGIN
+    if (periods <= 0) return base
+    return new Date(
+      Date.UTC(
+        base.getUTCFullYear(),
+        base.getUTCMonth() + periods * n,
+        base.getUTCDate(),
+        hour,
+        minute,
+      ),
+    )
+  }
+  if (freq === 'YEARLY') {
+    const periods = Math.floor((ref.getUTCFullYear() - base.getUTCFullYear()) / n) - MARGIN
+    if (periods <= 0) return base
+    return new Date(
+      Date.UTC(
+        base.getUTCFullYear() + periods * n,
+        base.getUTCMonth(),
+        base.getUTCDate(),
+        hour,
+        minute,
+      ),
+    )
+  }
+  return base
+}
+
 export interface ComputeNextOptions {
   rrule: string
   recurrenceMode: 'from_due' | 'from_completion'
@@ -108,11 +176,22 @@ function computeFromDue(
     minute = components.byminute ?? 0
   }
 
+  // Reference point: the later of prevDueAt and completedAt. This ensures the next
+  // occurrence is strictly after the previous due, so completing early (or completing
+  // the same recurring task twice in a row) always advances by one cycle.
+  const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
+  const prevDueDt = prevDueAt ? DateTime.fromJSDate(prevDueAt).setZone(timezone) : null
+  const refDt = prevDueDt && prevDueDt > completedDt ? prevDueDt : completedDt
+  const refNaive = toNaiveLocal(refDt)
+
   // Create DTSTART in "naive" format (UTC slot) with the anchor time. Using
   // Date.UTC keeps the pattern independent of the server's local timezone —
   // critical on DST-observing hosts where new Date(2020,0,1,h,m) would carry
-  // the winter UTC offset and drift from summer target dates.
-  const dtstart = new Date(Date.UTC(2020, 0, 1, hour, minute, 0, 0))
+  // the winter UTC offset and drift from summer target dates. The epoch is then
+  // slid forward toward the reference (see advanceDtstart) so rrule.js does not
+  // iterate years of occurrences to answer a question about this week.
+  const epoch = new Date(Date.UTC(PATTERN_EPOCH_YEAR, 0, 1, hour, minute, 0, 0))
+  const dtstart = advanceDtstart(epoch, components.freq, components.interval || 1, refNaive)
 
   // Build RRule options - NO BYHOUR/BYMINUTE, time comes from dtstart
   const ruleOptions: Partial<InstanceType<typeof RRule>['options']> = {
@@ -144,14 +223,6 @@ function computeFromDue(
   }
 
   const rule = new RRule(ruleOptions)
-
-  // Reference point: the later of prevDueAt and completedAt. This ensures the next
-  // occurrence is strictly after the previous due, so completing early (or completing
-  // the same recurring task twice in a row) always advances by one cycle.
-  const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
-  const prevDueDt = prevDueAt ? DateTime.fromJSDate(prevDueAt).setZone(timezone) : null
-  const refDt = prevDueDt && prevDueDt > completedDt ? prevDueDt : completedDt
-  const refNaive = toNaiveLocal(refDt)
 
   // Get the next occurrence (in "naive local")
   const nextNaive = rule.after(refNaive, false)

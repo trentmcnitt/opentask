@@ -24,7 +24,7 @@ export interface TimeSlot {
 /** Seeded from the production clusters measured at spec time (§6.0). */
 export const DEFAULT_TIME_SLOTS: ReadonlyArray<{ label: string; start_time: string }> = [
   { label: 'Early morning', start_time: '07:00' },
-  { label: 'Before work', start_time: '09:00' },
+  { label: 'Morning', start_time: '09:00' },
   { label: 'Midday', start_time: '12:00' },
   { label: 'Afternoon', start_time: '16:00' },
   { label: 'Evening', start_time: '20:30' },
@@ -128,4 +128,33 @@ export function groupBySlot<T extends SlottableItem>(
   }))
   result.push({ slot: null, items: groups.get(null)! })
   return result
+}
+
+/**
+ * The slot the day is "in" right now: the slot with the latest `start_time`
+ * at or before the current local time. Before the first slot starts there is
+ * no current slot (null) — the day hasn't reached its first moment yet.
+ *
+ * Used by the Reminders surface to decide which slot opens by default: the
+ * user asked for the screen to read as "a handful", and the current slot is
+ * the only one whose thoughts are timely. Everything else stays one tap away.
+ */
+export function currentSlot(
+  slots: TimeSlot[],
+  timezone: string,
+  now: Date = new Date(),
+): TimeSlot | null {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const minutes = local.hour * 60 + local.minute
+  let best: TimeSlot | null = null
+  let bestStart = -1
+  for (const slot of slots) {
+    const start = parseHHMM(slot.start_time)
+    if (start === null || start > minutes) continue
+    if (start > bestStart) {
+      bestStart = start
+      best = slot
+    }
+  }
+  return best
 }

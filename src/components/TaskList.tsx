@@ -17,20 +17,19 @@ import type { Task, Project } from '@/types'
 import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
+import { isTracked } from '@/lib/track'
+import { groupByTimeSlot } from '@/lib/slot-view'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { computeSnoozeTime } from '@/lib/snooze'
-import { groupBySlot, type TimeSlot } from '@/lib/time-slot-assign'
-import { effectiveDueAt } from '@/core/recurrence/occurrence'
-import { DateTime } from 'luxon'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 
 /**
  * §7.3: items with no time of day (most Track items) get their own group after
  * the timed slots rather than being dropped from the front door.
  */
-const UNSLOTTED_LABEL = 'Anytime today'
 
 /**
  * How many tasks a group shows before "show all" (§7.3).
@@ -494,7 +493,10 @@ export function TaskList({
                           task={task}
                           onDone={() => onDone(task.id)}
                           onSnooze={(_taskId, until) => requestSnooze(task, until)}
-                          isOverdue={isTaskOverdue(task)}
+                          // §5: a quota is exempt from the overdue cadence and
+                          // must never wear the red stripe — its period is what
+                          // is "due", and the bar already says how it stands.
+                          isOverdue={!isTracked(task) && isTaskOverdue(task)}
                           isSelected={selection.selectedIds.has(task.id)}
                           isSelectionMode={selection.isSelectionMode}
                           onSelect={() => selection.toggle(task.id)}
@@ -619,7 +621,7 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
  * Two things this must not do:
  *
  * 1. Drop the un-slotted items. Anything with no time of day — which is most
- *    Track items — goes into an explicit "Anytime today" group rendered AFTER
+ *    Track items — goes into an explicit "Undated" group rendered AFTER
  *    the timed slots. §7.3 is explicit that they must not become invisible
  *    from the front door.
  * 2. Hide empty slots... except when the whole day is empty. A slot the user
@@ -628,44 +630,6 @@ function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
  *    genuinely nothing left defeats the "all caught up" feeling §7.3 asks for,
  *    so a fully-empty day collapses to no groups and the caught-up state shows.
  */
-function groupByTimeSlot(tasks: Task[], slots: TimeSlot[], timezone: string): TaskGroup[] {
-  if (tasks.length === 0) return []
-
-  // §7.3: the front door is TODAY, not the whole corpus. Due-ness comes from
-  // §4.6's derivation rather than raw due_at, so a recurring item whose date
-  // froze months ago doesn't wrongly appear, and one that genuinely recurs
-  // today does — even if its stored due_at disagrees.
-  //
-  // Undated items are kept: they can't be "not today", and dropping them would
-  // hide most Track items from the front door, which §7.3 forbids.
-  const now = new Date()
-  const endOfToday = DateTime.fromJSDate(now).setZone(timezone).endOf('day').toJSDate()
-
-  const todays = tasks.filter((task) => {
-    if (!task.due_at && !task.rrule) return true
-    const effective = effectiveDueAt(task, timezone, now)
-    if (!effective) return false
-    return effective.getTime() <= endOfToday.getTime()
-  })
-
-  if (todays.length === 0) return []
-
-  const grouped = groupBySlot(todays, slots, timezone)
-  const out: TaskGroup[] = []
-
-  for (const group of grouped) {
-    if (group.slot === null) {
-      if (group.items.length > 0) {
-        out.push({ label: UNSLOTTED_LABEL, tasks: group.items })
-      }
-      continue
-    }
-    out.push({ label: group.slot.label, tasks: group.items })
-  }
-
-  return out
-}
-
 function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
   const projectMap = new Map<number, Project>()
   for (const p of projects) {

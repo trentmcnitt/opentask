@@ -45,9 +45,40 @@ export const CIRCUIT_BREAKER_INITIAL_FAILURES = 4
 
 // --- Shared functions ---
 
+/**
+ * Warmup for a slot that answers in free text: the subprocess is alive if it
+ * echoed the word back.
+ */
 export function validateWarmup(text: string | null): boolean {
   if (!text) return false
   return text.includes('READY')
+}
+
+/**
+ * Warmup for a slot that pins a JSON schema.
+ *
+ * Such a slot cannot answer the warmup with a bare word. The CLI injects a
+ * synthetic "you MUST call the StructuredOutput tool" turn, so the model
+ * responds with an object matching the schema, and `result` is that object
+ * serialized — whether the word READY survives into one of its fields is
+ * luck. That is why the plain text check failed the enrichment slot's warmup
+ * intermittently for months (27 times in one day on dev), leaving the slot
+ * dead and every enrichment, reminder and task alike, unprocessed until a
+ * later retry happened to land.
+ *
+ * Proof of life here is the shape instead: the subprocess spawned, accepted a
+ * message, honored the schema, and returned something the slot's own parser
+ * accepts. Text is still honored for a model that answers in words despite the
+ * schema, so this is strictly more permissive than the check it replaces —
+ * never less.
+ */
+export function validateSchemaWarmup(
+  text: string | null,
+  structuredOutput: Record<string, unknown> | null,
+  schema: { safeParse: (value: unknown) => { success: boolean } },
+): boolean {
+  if (structuredOutput && schema.safeParse(structuredOutput).success) return true
+  return validateWarmup(text)
 }
 
 /** Parse an integer from an env var with a default fallback. Returns the default if the value is not a valid integer. */

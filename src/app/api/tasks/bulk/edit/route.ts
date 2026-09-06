@@ -3,7 +3,7 @@
  *
  * POST /api/tasks/bulk/edit - Edit multiple tasks
  *
- * Body: { ids: [1, 2, 3, ...], changes: { priority: 3, ... } }
+ * Body: { ids: [1, 2, 3, ...], changes: { priority: 3, ... }, per_task?: { "1": { rrule } } }
  */
 
 import { NextRequest } from 'next/server'
@@ -31,6 +31,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       userTimezone: user.timezone,
       taskIds: input.ids,
       changes: input.changes,
+      perTask: input.per_task,
     })
 
     notifyDemoEngagement(user.name, 'update')

@@ -20,11 +20,24 @@ import { getDb } from '@/core/db'
 import { todaysOccurrence } from '@/core/recurrence/occurrence'
 import { groupBySlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
 import type { Task } from '@/types'
-import { getTasks } from './create'
+import { getTasks, getTaskById } from './create'
 
 export interface ReminderGroup {
   slot: TimeSlot | null
+  /** Still waiting to be considered today, highest priority first. */
   reminders: Task[]
+  /**
+   * Considered today in this slot. Feeds the per-slot and per-day progress —
+   * the one score this surface keeps, because it only ever counts what the
+   * user DID (L1: absence is never a signal; a bar that filled with misses
+   * would be reading intent from what he didn't do).
+   */
+  considered: number
+  /**
+   * The considered ones, most recent first, so a slip is at the top. The
+   * surface shows them behind the slot's counter with a way to put one back.
+   */
+  consideredItems: Task[]
 }
 
 /**
@@ -85,11 +98,80 @@ export function getRemindersBySlot(
 ): ReminderGroup[] {
   const reminders = getTodaysReminders(userId, timezone, now)
   const slots = listTimeSlots(userId)
+  // A reminder that is waiting again (an undone completion leaves
+  // last_completed_at behind) is waiting, not considered — never both.
+  const waitingIds = new Set(reminders.map((t) => t.id))
+  const considered = getConsideredToday(userId, timezone, now).filter((t) => !waitingIds.has(t.id))
+  const consideredAt = (t: Task) => t.last_completed_at ?? t.done_at ?? ''
+  const consideredBySlot = new Map(
+    groupBySlot(considered, slots, timezone).map((g) => [
+      g.slot?.id ?? null,
+      [...g.items].sort((a, b) => consideredAt(b).localeCompare(consideredAt(a))),
+    ]),
+  )
 
-  return groupBySlot(reminders, slots, timezone).map((group) => ({
-    slot: group.slot,
-    reminders: [...group.items].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0)),
-  }))
+  return groupBySlot(reminders, slots, timezone).map((group) => {
+    const consideredItems = consideredBySlot.get(group.slot?.id ?? null) ?? []
+    return {
+      slot: group.slot,
+      // Priority first; then creation order, which never moves. The query's
+      // own order is by due_at, and for a reminder due_at is an artifact — a
+      // schedule edit recomputes it to the next occurrence, which sent an
+      // edited reminder to the bottom of its slot (Trent, 2026-09-05).
+      reminders: [...group.items].sort(
+        (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.id - b.id,
+      ),
+      considered: consideredItems.length,
+      consideredItems,
+    }
+  })
+}
+
+/**
+ * Reminders the user considered today: a recurring one whose last completion
+ * fell on today's local date, or a one-off completed today. Read straight
+ * from the table rather than through `getTasks`, which excludes done rows.
+ */
+export function getConsideredToday(
+  userId: number,
+  timezone: string,
+  now: Date = new Date(),
+): Task[] {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const start = local.startOf('day').toUTC().toISO()
+  const end = local.endOf('day').toUTC().toISO()
+  const rows = getDb()
+    .prepare(
+      `SELECT id FROM tasks
+        WHERE user_id = ? AND is_reminder = 1 AND deleted_at IS NULL
+          AND ((last_completed_at >= ? AND last_completed_at <= ?)
+            OR (done = 1 AND done_at >= ? AND done_at <= ?))`,
+    )
+    .all(userId, start, end, start, end) as { id: number }[]
+  // Load through the ordinary row loader so labels etc. are parsed the same
+  // way as everywhere else; a day's considered set is a few dozen rows at most.
+  return rows.flatMap((r) => {
+    const task = getTaskById(r.id)
+    return task ? [task] : []
+  })
+}
+
+/**
+ * Reminders that exist but have no occurrence today, so the surface can still
+ * reach them. Today's list is derived from the schedule (§4.6), and a weekly
+ * or monthly thought is therefore invisible on its off days — Trent hit this
+ * with a Sun/Fri reminder on a Saturday (2026-09-05). Considered-today ones
+ * are today's, just behind the counter, so they are not "not today".
+ */
+export function getRemindersNotToday(
+  userId: number,
+  timezone: string,
+  now: Date = new Date(),
+): Task[] {
+  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const today = new Set(getTodaysReminders(userId, timezone, now).map((t) => t.id))
+  const considered = new Set(getConsideredToday(userId, timezone, now).map((t) => t.id))
+  return all.filter((t) => !today.has(t.id) && !considered.has(t.id)).sort((a, b) => a.id - b.id)
 }
 
 /** How many reminders are pending in each slot — used by the slot notifications (§4.2). */

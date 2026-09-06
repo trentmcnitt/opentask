@@ -215,12 +215,27 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'is_reminder')) {
     database.exec('ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0')
   }
+  // §5: explicit tracked flag (2026-09-05, "1 date night a month"). Existing
+  // quotas are marked so the flag is the single source of truth going forward.
+  if (!hasColumn(database, 'tasks', 'is_tracked')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN is_tracked INTEGER NOT NULL DEFAULT 0')
+    database.exec('UPDATE tasks SET is_tracked = 1 WHERE progress_target > 1')
+  }
+  // §5: the period rollover's anchor (see src/core/tasks/period-rollover.ts).
+  if (!hasColumn(database, 'tasks', 'progress_period_start')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN progress_period_start TEXT')
+  }
 
   // Collapsible dashboard filter chips (§7.3) — default collapsed for everyone,
   // including existing users: the whole point is that the front door stops
   // opening onto a wall of chips.
   if (!hasColumn(database, 'users', 'filters_expanded')) {
     database.exec('ALTER TABLE users ADD COLUMN filters_expanded INTEGER NOT NULL DEFAULT 0')
+  }
+  // §5: the Track panel folds to one line by default (Trent, 2026-09-05: the
+  // open panel pushed the first task of the day below the fold on a phone).
+  if (!hasColumn(database, 'users', 'track_expanded')) {
+    database.exec('ALTER TABLE users ADD COLUMN track_expanded INTEGER NOT NULL DEFAULT 0')
   }
 
   backfillLabelRegistry(database)
@@ -244,7 +259,9 @@ function backfillTimeSlots(database: Database.Database): void {
   // cycle at module-init time is exactly where it would break.
   const defaults: [string, string][] = [
     ['Early morning', '07:00'],
-    ['Before work', '09:00'],
+    // Was "Before work" — the spec's guess at the 09:00 cluster. Trent
+    // (2026-09-05): "10 am is not before work… it's just morning."
+    ['Morning', '09:00'],
     ['Midday', '12:00'],
     ['Afternoon', '16:00'],
     ['Evening', '20:30'],

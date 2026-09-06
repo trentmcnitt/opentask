@@ -9,12 +9,17 @@
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
-import { createTask, getTaskById, updateTask, bulkSnooze, markDone } from '@/core/tasks'
+import { createTask, getTaskById, updateTask, bulkSnooze, bulkEdit, markDone } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
-import { getTodaysReminders, getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
+import {
+  getTodaysReminders,
+  getRemindersBySlot,
+  getRemindersNotToday,
+  hasAnyReminders,
+} from '@/core/tasks/reminders'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getOverdueCount } from '@/core/notifications/dismiss'
-import { validateTaskCreate } from '@/core/validation'
+import { validateTaskCreate, validateBulkEdit } from '@/core/validation'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { ZodError } from 'zod'
@@ -373,5 +378,167 @@ describe('Reminders surface', () => {
       .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
       .run(new Date().toISOString(), mondayOnly.id)
     expect(hasAnyReminders(TEST_USER_ID)).toBe(false)
+  })
+
+  /**
+   * RM-019: The reminder editor's one real move — "this thought belongs in
+   * the evening, not the morning" — on a reminder already considered today.
+   * It must stay considered, and appear under the slot it now belongs to,
+   * rather than resurfacing as waiting because its schedule changed.
+   */
+  test('RM-019: moving a considered reminder to another slot keeps it considered there', () => {
+    const reminder = makeReminder({ rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id })
+
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: reminder.id,
+      input: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' },
+    })
+
+    expect(getTaskById(reminder.id)!.anchor_time).toBe('20:30')
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).not.toContain(
+      reminder.id,
+    )
+    const groups = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
+    const evening = groups.find((g) => g.slot?.label === 'Evening')
+    expect(evening?.consideredItems.map((t) => t.id)).toEqual([reminder.id])
+    expect(groups.find((g) => g.slot?.label === 'Early morning')?.considered ?? 0).toBe(0)
+  })
+
+  /**
+   * RM-020: A missed reminder's due_at is frozen at its last occurrence. A
+   * task in that state keeps its overdue date across a schedule edit (the
+   * user still has to sweep it); a reminder carries no debt, so its due_at
+   * follows the new schedule instead of claiming a morning that has passed.
+   */
+  test('RM-020: a past-due reminder gets a fresh due_at when its schedule changes', () => {
+    const reminder = makeReminder({
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+      due_at: localTime(7, 0, -3),
+    })
+    const plain = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: {
+        title: 'Real task',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: localTime(7, 0, -3),
+      },
+    })
+    const input = { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' }
+
+    updateTask({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id, input })
+    updateTask({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: plain.id, input })
+
+    // The reminder moves to tonight; the task keeps its three-day-old date.
+    expect(getTaskById(reminder.id)!.due_at).toBe(localTime(20, 30))
+    expect(getTaskById(plain.id)!.due_at).toBe(localTime(7, 0, -3))
+  })
+
+  /**
+   * RM-021: Order within a slot is priority, then creation order — never
+   * due_at. Trent (2026-09-05) changed one reminder's schedule and it fell to
+   * the bottom of its slot, because the edit had recomputed its due_at.
+   */
+  test('RM-021: a schedule edit does not move a reminder within its slot', () => {
+    const first = makeReminder({ title: 'First thought', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const second = makeReminder({
+      title: 'Second thought',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+    })
+    const third = makeReminder({ title: 'Third thought', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const order = () =>
+      getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
+        .find((g) => g.slot?.label === 'Early morning')!
+        .reminders.map((t) => t.id)
+    expect(order()).toEqual([first.id, second.id, third.id])
+
+    // Every day but Monday — still today (a Thursday), with a fresh due_at.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: first.id,
+      input: { rrule: 'FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=0' },
+    })
+    // Its due_at now sits after the others' — the very thing that used to
+    // drop it to the bottom — and it stays where it was.
+    expect(getTaskById(first.id)!.due_at! > getTaskById(second.id)!.due_at!).toBe(true)
+    expect(order()).toEqual([first.id, second.id, third.id])
+  })
+
+  /**
+   * RM-022: Several reminders moved to another slot in one gesture (Trent,
+   * 2026-09-05: "we need that"). Each keeps its own days and gets the new
+   * time — different rules per task in ONE bulk edit — and one Undo puts
+   * every one of them back.
+   */
+  test('RM-022: a bulk edit gives each reminder its own rule, with one Undo', () => {
+    const daily = makeReminder({ title: 'Daily', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const tuThu = makeReminder({
+      title: 'Tue/Thu',
+      rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0',
+    })
+
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [daily.id, tuThu.id],
+      changes: {},
+      perTask: {
+        [daily.id]: { rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30' },
+        [tuThu.id]: { rrule: 'FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30' },
+      },
+    })
+    expect(result.tasksAffected).toBe(2)
+    expect(getTaskById(daily.id)!.anchor_time).toBe('20:30')
+    expect(getTaskById(tuThu.id)!.anchor_time).toBe('20:30')
+    expect(getTaskById(tuThu.id)!.rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=20;BYMINUTE=30')
+
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(daily.id)!.anchor_time).toBe('07:00')
+    expect(getTaskById(tuThu.id)!.anchor_time).toBe('07:00')
+    expect(getTaskById(tuThu.id)!.rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH;BYHOUR=7;BYMINUTE=0')
+
+    // Only the schedule is per-task, and only a real rule (BYHOUR=99 is not).
+    expect(() =>
+      validateBulkEdit({ ids: [daily.id], changes: {}, per_task: { [daily.id]: { title: 'x' } } }),
+    ).toThrow(ZodError)
+    expect(() =>
+      validateBulkEdit({
+        ids: [daily.id],
+        changes: {},
+        per_task: { [daily.id]: { rrule: 'FREQ=DAILY;BYHOUR=99;BYMINUTE=0' } },
+      }),
+    ).toThrow(ZodError)
+  })
+  /**
+   * RM-023: A thought that is not today's is still reachable from its own
+   * surface (Trent, 2026-09-05: a Sun/Fri reminder could not be opened on a
+   * Saturday). "Not today" is every reminder with no occurrence today that
+   * was not considered today either — considered ones are today's, behind
+   * the counter.
+   */
+  test('RM-023: reminders with no occurrence today are listed as not today', () => {
+    // 2026-01-15 is a Thursday.
+    const daily = makeReminder({ title: 'Daily', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const monday = makeReminder({
+      title: 'Monday',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7;BYMINUTE=0',
+    })
+    const considered = makeReminder({
+      title: 'Done today',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+    })
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: considered.id })
+
+    const notToday = getRemindersNotToday(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)
+    expect(notToday).toEqual([monday.id])
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toEqual([daily.id])
+
+    // Monday comes, and it is today's.
+    vi.setSystemTime(new Date('2026-01-19T16:00:00Z'))
+    expect(getRemindersNotToday(TEST_USER_ID, TEST_TIMEZONE)).toHaveLength(0)
   })
 })

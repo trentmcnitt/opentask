@@ -3,9 +3,34 @@
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Archive, Plus, Clock, Lightbulb } from 'lucide-react'
+import { useRemindersBadge } from '@/hooks/useReminders'
+import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
+import { useTimezone } from '@/hooks/useTimezone'
 
 interface BottomTabsProps {
   onAddClick?: () => void
+}
+
+/**
+ * The tab badge.
+ *
+ * Anchored to the icon's top-right corner and growing OUTWARD from it, because
+ * the count is routinely wider than the 20px icon it sits on — three digits is
+ * an ordinary Tuesday here. A right-anchored badge grows leftward instead, and
+ * at three digits it covers the icon completely, which is what this looked like
+ * before: a number printed over a glyph.
+ *
+ * Absolutely positioned, so the width of the number never moves the tab it
+ * belongs to and the five tabs keep their spacing whatever the counts are. The
+ * ring is the separation: it punches a background-colored gap between badge and
+ * icon so the small overlap at the corner reads as deliberate.
+ */
+const BADGE =
+  'text-destructive-foreground absolute -top-1.5 left-full -ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums ring-2 ring-background'
+
+/** Four digits would reach the next tab; the house cap (see Header) is 999+. */
+function capCount(n: number): string {
+  return n > 999 ? '999+' : String(n)
 }
 
 /**
@@ -18,9 +43,19 @@ interface BottomTabsProps {
  */
 export function BottomTabs({ onAddClick }: BottomTabsProps) {
   const pathname = usePathname()
+  // §6: reminders waiting so far today — never overdue, never red.
+  const remindersWaiting = useRemindersBadge(useTimezone())
+  // One badge fits a tab: overdue (red) when there is any, else due today (blue).
+  const taskCounts = useTaskNavCounts()
+  const tasksBadge =
+    taskCounts && taskCounts.overdue > 0
+      ? { n: taskCounts.overdue, label: `${taskCounts.overdue} overdue`, tone: 'overdue' }
+      : taskCounts && taskCounts.today > 0
+        ? { n: taskCounts.today, label: `${taskCounts.today} due today`, tone: 'today' }
+        : null
 
   const tabs = [
-    { href: '/', label: 'Dashboard', icon: LayoutGrid },
+    { href: '/', label: 'Tasks', icon: LayoutGrid },
     // Lightbulb is the Reminders surface's own icon (see RemindersView's empty state).
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '#add', label: 'Add', icon: Plus, isAction: true },
@@ -70,7 +105,29 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
                 isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}
             >
-              <Icon className="h-5 w-5" />
+              <span className="relative inline-flex">
+                <Icon className="h-5 w-5" />
+                {tab.href === '/' && tasksBadge && (
+                  <span
+                    data-tasks-badge
+                    className={`${BADGE} ${
+                      tasksBadge.tone === 'overdue' ? 'bg-badge-destructive' : 'bg-primary'
+                    }`}
+                    aria-label={tasksBadge.label}
+                  >
+                    {capCount(tasksBadge.n)}
+                  </span>
+                )}
+                {tab.href === '/reminders' && remindersWaiting > 0 && (
+                  <span
+                    data-reminders-badge
+                    className={`${BADGE} bg-badge-neutral`}
+                    aria-label={`${remindersWaiting} reminders waiting so far today`}
+                  >
+                    {capCount(remindersWaiting)}
+                  </span>
+                )}
+              </span>
               <span className="mt-0.5 text-[10px]">{tab.label}</span>
             </GuardedLink>
           )
