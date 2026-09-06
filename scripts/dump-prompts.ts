@@ -24,7 +24,11 @@
 
 import { writeFileSync, mkdirSync } from 'fs'
 import { DateTime } from 'luxon'
-import { ENRICHMENT_SYSTEM_PROMPT, buildEnrichmentUserPrompt } from '../src/core/ai/prompts'
+import {
+  ENRICHMENT_SYSTEM_PROMPT,
+  buildEnrichmentUserPrompt,
+  buildReminderEnrichmentUserPrompt,
+} from '../src/core/ai/prompts'
 import { buildWhatsNextFullPrompt } from '../src/core/ai/whats-next'
 import { buildInsightsFullPrompt } from '../src/core/ai/insights'
 import { formatTaskLine } from '../src/core/ai/format'
@@ -36,6 +40,7 @@ import {
   QUICK_TAKE_SYSTEM_PROMPT,
 } from '../src/core/ai/quick-take'
 import type { TaskSummary } from '../src/core/ai/types'
+import { DEFAULT_TIME_SLOTS } from '../src/lib/time-slot-assign'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,6 +100,8 @@ interface ScenarioInput {
     wakeTime?: string
     sleepTime?: string
     projects?: Array<{ id: number; name: string; shared?: boolean }>
+    slots?: Array<{ label: string; start_time: string }>
+    currentSlotLabel?: string
   }
 }
 
@@ -124,6 +131,24 @@ function renderEnrichmentPrompt(scenario?: ScenarioInput): string {
 ${systemPrompt}
 
 ${separator('ENRICHMENT — User Prompt ' + charCount(userPrompt))}
+${userPrompt}`
+}
+
+function renderReminderEnrichmentPrompt(scenario?: ScenarioInput): string {
+  const userPrompt = buildReminderEnrichmentUserPrompt({
+    timezone: scenario?.input.timezone || DEFAULTS.timezone,
+    slots: scenario?.input.slots ?? [...DEFAULT_TIME_SLOTS],
+    currentSlotLabel: scenario?.input.currentSlotLabel ?? 'Morning',
+    userContext: scenario?.input.userContext,
+    taskText: scenario?.input.text || '<raw reminder text would appear here>',
+  })
+
+  const systemPrompt = ENRICHMENT_SYSTEM_PROMPT
+
+  return `${separator('REMINDER ENRICHMENT — System Prompt (shared) ' + charCount(systemPrompt))}
+${systemPrompt}
+
+${separator('REMINDER ENRICHMENT — User Prompt ' + charCount(userPrompt))}
 ${userPrompt}`
 }
 
@@ -220,7 +245,7 @@ ${userPrompt}`
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-const VALID_FEATURES = ['enrichment', 'insights', 'whats_next', 'quick_take']
+const VALID_FEATURES = ['enrichment', 'enrichment_reminder', 'insights', 'whats_next', 'quick_take']
 
 async function listScenarios(): Promise<void> {
   const scenarios = await loadScenarios()
@@ -276,6 +301,11 @@ function renderPrompts(
 
   if (featuresToRender.includes('enrichment')) {
     output += renderEnrichmentPrompt(scenario?.feature === 'enrichment' ? scenario : undefined)
+  }
+  if (featuresToRender.includes('enrichment_reminder')) {
+    output += renderReminderEnrichmentPrompt(
+      scenario?.feature === 'enrichment_reminder' ? scenario : undefined,
+    )
   }
   if (featuresToRender.includes('whats_next')) {
     output += renderWhatsNextPrompt(scenario?.feature === 'whats_next' ? scenario : undefined)

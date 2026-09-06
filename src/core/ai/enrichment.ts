@@ -40,7 +40,10 @@ import { logAction, createTaskSnapshot } from '@/core/undo'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
-import { buildEnrichmentUserPrompt } from './prompts'
+import { buildEnrichmentUserPrompt, buildReminderEnrichmentUserPrompt } from './prompts'
+import { listTimeSlots } from '@/core/time-slots'
+import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
@@ -222,7 +225,7 @@ export async function processEnrichmentQueue(): Promise<void> {
     // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
-        `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule
+        `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
          FROM tasks
          WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
            AND deleted_at IS NULL
@@ -273,9 +276,16 @@ export async function processEnrichmentQueue(): Promise<void> {
 
       processingTasks.add(row.id)
       try {
-        await enrichTask(row)
+        const enrichedFields = await enrichTask(row)
         retryCount.delete(row.id)
         processed++
+        // The queue normally only refreshes tabs silently — the toast belongs to
+        // the on-demand path. A reminder is the exception: it is enriched from a
+        // quick add that already promised the user a slot ("Added to Evening"),
+        // and when the AI moves it the surface has to say so. Whenever the warm
+        // slot is unavailable the on-demand call fails and this cycle is what
+        // actually does the work, so without this the explanation is simply lost.
+        if (row.is_reminder === 1) emitEnrichmentComplete(row.id, row.user_id, enrichedFields)
       } catch (err) {
         log.error('ai', `Enrichment failed for task ${row.id}:`, err)
         handleFailure(row.id)
@@ -314,7 +324,10 @@ function buildEnrichmentDescription(
 ): string | undefined {
   const parts: string[] = []
 
-  if (fieldsChanged.includes('due_at') && task.due_at) {
+  // A reminder's due_at is bookkeeping for "which occurrence is next", never a
+  // deadline, so saying "in 5 days" about one would be describing debt it does
+  // not carry. Its schedule alone is the news.
+  if (!task.is_reminder && fieldsChanged.includes('due_at') && task.due_at) {
     parts.push(formatDueTimeParts(task.due_at, userTimezone).relative)
   }
 
@@ -354,7 +367,7 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   const db = getDb()
   const row = db
     .prepare(
-      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule
+      `SELECT id, user_id, title, original_title, labels, priority, due_at, rrule, is_reminder
        FROM tasks
        WHERE id = ? AND user_id = ?
          AND deleted_at IS NULL
@@ -389,33 +402,101 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
   // Notify all connected tabs so the AI glow stops and enriched data appears
   emitSyncEvent(userId)
 
-  // Send enrichment-specific event for toast notification (on-demand only, not cron)
-  if (enrichmentSucceeded) {
-    const enrichedTask = getTaskById(taskId)
-    if (enrichedTask) {
-      const userRow = db.prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
-        | { timezone: string }
-        | undefined
-      const projectName = enrichedTask.project_id
-        ? (
-            db.prepare('SELECT name FROM projects WHERE id = ?').get(enrichedTask.project_id) as
-              | { name: string }
-              | undefined
-          )?.name
-        : undefined
-      emitEnrichmentCompleteEvent(userId, {
-        taskId,
-        title: enrichedTask.title,
-        description: buildEnrichmentDescription(
-          enrichedTask,
-          enrichedFields,
-          userRow?.timezone ?? 'America/Chicago',
-          projectName,
-        ),
-        due_at: enrichedTask.due_at,
-        priority: enrichedTask.priority,
-      })
+  // Tell open tabs what the AI did, so the change can be explained rather than
+  // just appearing.
+  if (enrichmentSucceeded) emitEnrichmentComplete(taskId, userId, enrichedFields)
+}
+
+/**
+ * Announce a finished enrichment to the user's open tabs.
+ *
+ * The payload's `description` is the whole point: it is what a surface shows to
+ * explain a change the user did not make. Without it a reminder quietly jumps
+ * from one time slot to another a second after it was typed, which reads as a
+ * bug rather than as the AI doing its job.
+ */
+function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: string[]): void {
+  const db = getDb()
+  const enrichedTask = getTaskById(taskId)
+  if (!enrichedTask) return
+
+  const userRow = db.prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
+    | { timezone: string }
+    | undefined
+  const projectName = enrichedTask.project_id
+    ? (
+        db.prepare('SELECT name FROM projects WHERE id = ?').get(enrichedTask.project_id) as
+          | { name: string }
+          | undefined
+      )?.name
+    : undefined
+
+  emitEnrichmentCompleteEvent(userId, {
+    taskId,
+    title: enrichedTask.title,
+    description: buildEnrichmentDescription(
+      enrichedTask,
+      enrichedFields,
+      userRow?.timezone ?? 'America/Chicago',
+      projectName,
+    ),
+    due_at: enrichedTask.due_at,
+    priority: enrichedTask.priority,
+  })
+}
+
+/**
+ * Choose and render the prompt for one pending row.
+ *
+ * A reminder is parsed against the user's editable time slots, not their
+ * workday, and against its own instruction list — see
+ * `buildReminderEnrichmentUserPrompt` for why that is a separate prompt rather
+ * than a branch inside the task one. The slots come back with the prompt
+ * because the sanitizer needs the same ones the model was shown.
+ */
+function buildPromptFor(
+  row: PendingTaskRow,
+  user: {
+    id: number
+    timezone: string
+    ai_context: string | null
+    morning_time: string
+    wake_time: string
+    sleep_time: string
+  },
+  projects: Array<{ id: number; name: string; shared: number }>,
+  textToEnrich: string,
+): { prompt: string; isReminder: boolean; slots: TimeSlot[]; currentSlotLabel: string | null } {
+  if (row.is_reminder !== 1) {
+    return {
+      isReminder: false,
+      slots: [],
+      currentSlotLabel: null,
+      prompt: buildEnrichmentUserPrompt({
+        timezone: user.timezone,
+        morningTime: user.morning_time,
+        wakeTime: user.wake_time,
+        sleepTime: user.sleep_time,
+        projects,
+        userContext: user.ai_context,
+        taskText: textToEnrich,
+      }),
     }
+  }
+
+  const slots = listTimeSlots(user.id)
+  const currentSlotLabel = currentSlot(slots, user.timezone)?.label ?? null
+  return {
+    isReminder: true,
+    slots,
+    currentSlotLabel,
+    prompt: buildReminderEnrichmentUserPrompt({
+      timezone: user.timezone,
+      slots,
+      currentSlotLabel,
+      userContext: user.ai_context,
+      taskText: textToEnrich,
+    }),
   }
 }
 
@@ -458,15 +539,12 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
   // Legacy tasks with null original_title fall back to current title.
   const textToEnrich = row.original_title || row.title
 
-  const prompt = buildEnrichmentUserPrompt({
-    timezone: user.timezone,
-    morningTime: user.morning_time,
-    wakeTime: user.wake_time,
-    sleepTime: user.sleep_time,
+  const { prompt, isReminder, slots, currentSlotLabel } = buildPromptFor(
+    row,
+    user,
     projects,
-    userContext: user.ai_context,
-    taskText: textToEnrich,
-  })
+    textToEnrich,
+  )
 
   const modes = getUserFeatureModes(row.user_id)
   if (modes.enrichment === 'off') {
@@ -527,6 +605,8 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
     throw new Error('Failed to parse enrichment result')
   }
 
+  if (isReminder) parsed = sanitizeReminderEnrichment(parsed, slots, currentSlotLabel)
+
   // Convert due_at from local time to UTC using Luxon.
   // The AI returns local time (no Z, no offset). Luxon handles DST transitions
   // correctly for the target date, unlike naive Date() parsing.
@@ -554,6 +634,79 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
   }
 
   return applyEnrichment(row, parsed, user, textToEnrich)
+}
+
+/**
+ * Post-parse guard for reminders (REDESIGN-V03 §6).
+ *
+ * The prompt asks for a rule pinned to one of the user's time slots and for
+ * every task-shaped field to be left empty. Models comply most of the time, so
+ * this enforces it — the same belt-and-suspenders stance as
+ * `filterExplicitLabels`. Without it, one stray `due_at` gives a reminder a
+ * deadline it can never miss, and a BYHOUR of 19 puts a thought in a slot the
+ * user does not have.
+ *
+ * Rebuilding the rule through parseCadence/buildSchedule also canonicalizes it,
+ * so a model that answers `FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0` to a rule
+ * that already reads `FREQ=DAILY;BYHOUR=9;BYMINUTE=0` produces no change, no
+ * undo entry, and no toast for an edit that never happened.
+ */
+/** The slot whose start time is closest to `minutes`, earlier or later. */
+function nearestSlot(minutes: number, slots: TimeSlot[]): TimeSlot | null {
+  let best: TimeSlot | null = null
+  let bestDistance = Infinity
+  for (const slot of slots) {
+    const start = parseHHMM(slot.start_time)
+    if (start === null) continue
+    const distance = Math.abs(start - minutes)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = slot
+    }
+  }
+  return best
+}
+
+export function sanitizeReminderEnrichment(
+  enrichment: EnrichmentResult,
+  slots: TimeSlot[],
+  currentSlotLabel: string | null,
+): EnrichmentResult {
+  // Everything a reminder does not carry, cleared regardless of what came back.
+  const base: EnrichmentResult = {
+    ...enrichment,
+    due_at: null,
+    labels: [],
+    project_name: null,
+    auto_snooze_minutes: null,
+    recurrence_mode: null,
+  }
+
+  // No usable rule: keep whatever the reminder already had rather than
+  // clearing its schedule, which would strand it out of every slot.
+  if (!enrichment.rrule || !/FREQ=/i.test(enrichment.rrule)) return { ...base, rrule: null }
+
+  const hourMatch = /(?:^|;)BYHOUR=(\d{1,2})/i.exec(enrichment.rrule)
+  const minuteMatch = /(?:^|;)BYMINUTE=(\d{1,2})/i.exec(enrichment.rrule)
+  const stated = hourMatch
+    ? parseInt(hourMatch[1], 10) * 60 + (minuteMatch ? parseInt(minuteMatch[1], 10) : 0)
+    : null
+
+  // A stated time snaps to the NEAREST slot, not the one it falls inside.
+  // Falling inside is how a reminder is displayed, but a stated time is a near
+  // miss to be corrected: a model that answers 7pm for "evening" meant this
+  // user's 8:30pm Evening, and rounding down would drop it into Afternoon,
+  // three hours from what was asked for. No stated time at all is different —
+  // the model said nothing about when, so the slot the user is living in now
+  // is the answer.
+  const slot =
+    stated === null
+      ? (slots.find((s) => s.label === currentSlotLabel) ?? nearestSlot(0, slots))
+      : nearestSlot(stated, slots)
+  const minutes = slot ? parseHHMM(slot.start_time) : stated
+  if (minutes === null) return { ...base, rrule: null }
+
+  return { ...base, rrule: buildSchedule({ ...parseCadence(enrichment.rrule), time: minutes }) }
 }
 
 /**
@@ -687,12 +840,21 @@ function collectEnrichmentChanges(
     values.push(anchors.anchor_time, anchors.anchor_dow, anchors.anchor_dom)
     fieldsChanged.push('anchor_time', 'anchor_dow', 'anchor_dom')
 
-    // Compute first occurrence if no due_at
-    if (!task.due_at && !enrichment.due_at) {
-      const firstOccurrence = computeFirstOccurrence(enrichment.rrule, null, user.timezone)
-      setClauses.push('due_at = ?')
-      values.push(firstOccurrence.toISOString())
-      if (!fieldsChanged.includes('due_at')) fieldsChanged.push('due_at')
+    // Compute the first occurrence when there is no due date to keep — and
+    // always for a reminder, whose due_at exists only to point at its next
+    // occurrence. A reminder created daily-at-4pm and then enriched to Fridays
+    // at 8:30 would otherwise keep pointing at today at 4pm.
+    if (task.is_reminder || (!task.due_at && !enrichment.due_at)) {
+      const firstOccurrence = computeFirstOccurrence(
+        enrichment.rrule,
+        null,
+        user.timezone,
+      ).toISOString()
+      if (firstOccurrence !== task.due_at) {
+        setClauses.push('due_at = ?')
+        values.push(firstOccurrence)
+        if (!fieldsChanged.includes('due_at')) fieldsChanged.push('due_at')
+      }
     }
   }
 
@@ -799,7 +961,7 @@ function applyEnrichment(
       const changeList = changes.fieldsChanged
         .filter((f) => !['anchor_time', 'anchor_dow', 'anchor_dom'].includes(f))
         .join(', ')
-      const description = `AI: Enriched task — set ${changeList}`
+      const description = `AI: Enriched ${task.is_reminder ? 'reminder' : 'task'} — set ${changeList}`
 
       const snapshot = createTaskSnapshot(task, updatedTask, changes.fieldsChanged)
       logAction(user.id, 'edit', description, changes.fieldsChanged, [snapshot])
@@ -823,4 +985,5 @@ interface PendingTaskRow {
   priority: number
   due_at: string | null
   rrule: string | null
+  is_reminder: number
 }

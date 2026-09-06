@@ -1,11 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb, StickyNote } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
-import { currentSlot, parseHHMM } from '@/lib/time-slot-assign'
+import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
@@ -14,6 +14,7 @@ import { useReminders, type ReminderCreateInput, type ReminderGroup } from '@/ho
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useSyncStream } from '@/hooks/useSyncStream'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { QuickAdd } from '@/components/QuickAdd'
@@ -108,6 +109,39 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   const selection = useSelectionMode()
   const { selectedIds, clear } = selection
 
+  // The surface listens for enrichment finishing because the quick add hands
+  // what was typed to the AI: a thought added to Afternoon can legitimately
+  // move to Evening a second or two later, and a row that relocates with no
+  // explanation reads as a bug. The toast is the explanation.
+  // Reminders this surface just handed to enrichment, mapped to the words the
+  // user typed. The sync stream carries every enrichment for the user, including
+  // tasks added on another device, and a toast about one of those here would be
+  // about something not on this screen. The original text is kept so a rewrite
+  // of the wording can be announced when the schedule did not move.
+  const awaitingEnrichment = useRef<Map<number, string>>(new Map())
+
+  useSyncStream({
+    onSync: () => void refresh(),
+    onEnrichmentComplete: (data) => {
+      void refresh()
+      const typed = awaitingEnrichment.current.get(data.taskId)
+      if (typed === undefined) return
+      awaitingEnrichment.current.delete(data.taskId)
+      // What to say is what changed. A moved schedule is the description; if the
+      // schedule held and only the wording was cleaned up, the new wording is
+      // the news. When neither moved there is nothing to report, and a toast
+      // would be noise about a change the user cannot see.
+      const message = data.description ?? (data.title !== typed ? `Reworded: ${data.title}` : null)
+      if (!message) return
+      showToast({
+        message,
+        type: 'success',
+        action: { label: 'Undo', onClick: onUndo },
+        id: `reminder-created-${data.taskId}`,
+      })
+    },
+  })
+
   useEffect(() => {
     if (!refreshRef) return
     refreshRef.current = () => void refresh()
@@ -197,23 +231,35 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
 
   /**
    * Creating: the quick add makes a daily thought in the slot that is current
-   * right now (else the first slot), and it is on screen the moment the
-   * server answers; the form can say anything else. Undo is the ordinary one.
+   * right now (else the first slot), and it is on screen the moment the server
+   * answers. That default is also a fallback — the quick add sets `enrich`, so
+   * the text goes to AI enrichment, which reads any cadence or time of day the
+   * user actually said ("every Friday evening") and rewrites the schedule,
+   * snapping it to one of their slots. The form does not enrich: there the user
+   * picked the schedule by hand. Undo is the ordinary one.
    */
-  const dailyNow = useCallback((): string => {
-    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
-    const minutes = (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
-    return `FREQ=DAILY;BYHOUR=${Math.floor(minutes / 60)};BYMINUTE=${minutes % 60}`
-  }, [timeSlots, timezone])
+  const dailyIn = useCallback(
+    (slots: TimeSlot[]): string => {
+      const slot = currentSlot(slots, timezone) ?? slots[0]
+      const minutes = (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
+      return `FREQ=DAILY;BYHOUR=${Math.floor(minutes / 60)};BYMINUTE=${minutes % 60}`
+    },
+    [timezone],
+  )
   const createReminder = useCallback(
     async (input: ReminderCreateInput) => {
       try {
         const task = await create(input)
+        if (input.enrich) awaitingEnrichment.current.set(task.id, input.title)
         const slot = task.anchor_time ? slotAtMinutes(parseHHMM(task.anchor_time), timeSlots) : null
         showToast({
           message: slot ? `Added to ${slot.label}` : `Added \u201c${task.title}\u201d`,
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
+          // Shared with the enrichment toast below: when the AI moves a
+          // just-added thought to another slot, that news REPLACES "Added to
+          // Afternoon" instead of stacking a second toast that contradicts it.
+          id: `reminder-created-${task.id}`,
         })
       } catch (err) {
         showToast({
@@ -226,8 +272,15 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     [create, timeSlots, onUndo],
   )
   const quickAdd = useCallback(
-    (title: string) => createReminder({ title, rrule: dailyNow() }),
-    [createReminder, dailyNow],
+    async (title: string) => {
+      // The slots arrive on their own fetch, and this box is live before it
+      // lands — typing that fast is rare but reachable on a cold load. Guessing
+      // a time of day with the slots unknown would drop the thought at 9am,
+      // which may not even be a slot this user has, so wait for them instead.
+      const slots = timeSlots.length > 0 ? timeSlots : await fetchTimeSlots()
+      return createReminder({ title, rrule: dailyIn(slots), enrich: true })
+    },
+    [createReminder, dailyIn, timeSlots],
   )
   const saveDetail = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
@@ -298,7 +351,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
           at once; the plus opens the editor for anything more. */}
       <div className="mb-4">
         <QuickAdd
-          placeholder="Add a thought…"
+          placeholder="Add a reminder…"
           ariaLabel="Add a reminder"
           onAdd={quickAdd}
           onOpenAddForm={openCreate}
@@ -1159,6 +1212,22 @@ function RemindersEmptyState({
       </p>
     </div>
   )
+}
+
+/**
+ * The user's slots, for the one caller that needs them before `useTimeSlots`
+ * has finished. Returns an empty list on any failure — the caller has a
+ * fallback, and a thrown error here would lose what the user just typed.
+ */
+async function fetchTimeSlots(): Promise<TimeSlot[]> {
+  try {
+    const res = await fetch('/api/time-slots')
+    if (!res.ok) return []
+    const json = await res.json()
+    return (json?.data?.time_slots ?? []) as TimeSlot[]
+  } catch {
+    return []
+  }
 }
 
 /** Quiet placeholder while the first fetch is in flight — no spinner, no jump. */
