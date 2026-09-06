@@ -181,7 +181,7 @@ function PeriodCard({
 }
 
 /** "this week" → "week", for the card's word. */
-function periodShort(period: string): string {
+export function periodShort(period: string): string {
   return period.replace(/^this /, '').replace(/^today$/, 'day')
 }
 
@@ -292,7 +292,7 @@ function TrackChip({
 }
 
 /** Quotas by period, in day-to-year order, each group in title order (as given). */
-function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }[] {
+export function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }[] {
   const order = ['today', 'this week', 'this month', 'this year', null]
   const by = new Map<string | null, Task[]>()
   for (const t of quotas) {

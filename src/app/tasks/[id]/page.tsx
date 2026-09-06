@@ -76,7 +76,7 @@ export default function TaskDetailPage() {
   // from a reminder's details landed on Tasks. Read through a ref so the
   // callbacks handed to useTaskActions see the task after it loads.
   const homeRef = useRef('/')
-  homeRef.current = task?.is_reminder ? '/reminders' : '/'
+  homeRef.current = task?.is_reminder ? '/reminders' : task && isTracked(task) ? '/quotas' : '/'
 
   const handleBackClick = useCallback(() => {
     if (requestNavigation(homeRef.current)) {
@@ -235,7 +235,11 @@ export default function TaskDetailPage() {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
       showToast({
-        message: task.is_reminder ? 'Reminder moved to trash' : 'Task moved to trash',
+        message: task.is_reminder
+          ? 'Reminder moved to trash'
+          : isTracked(task)
+            ? 'Quota moved to trash'
+            : 'Task moved to trash',
         type: 'success',
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
@@ -303,7 +307,13 @@ export default function TaskDetailPage() {
               variant="ghost"
               size="icon"
               onClick={handleBackClick}
-              aria-label={task.is_reminder ? 'Back to reminders' : 'Back to dashboard'}
+              aria-label={
+                task.is_reminder
+                  ? 'Back to reminders'
+                  : isTracked(task)
+                    ? 'Back to quotas'
+                    : 'Back to dashboard'
+              }
               className="-ml-2"
             >
               <ChevronLeft className="size-5" />
@@ -311,7 +321,7 @@ export default function TaskDetailPage() {
 
             {/* Title - takes remaining space */}
             <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">
-              {task.is_reminder ? 'Reminder' : 'Task Details'}
+              {task.is_reminder ? 'Reminder' : isTracked(task) ? 'Quota' : 'Task Details'}
             </h1>
 
             {/* Undo button */}
@@ -360,14 +370,21 @@ export default function TaskDetailPage() {
                Done button — none of which mean anything for "four times a
                week", and all of which implied a debt the app never chases
                (Trent, 2026-09-06). */
-            <QuotaDetail
-              key={task.id}
-              task={task}
-              onSaveAll={actions.handleSaveAllChanges}
-              onDelete={handleDelete}
-              onDirtyChange={handleDirtyChange}
-              saveRef={saveRef}
-            />
+            <div
+              className={cn(
+                'rounded-lg border p-3',
+                panelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+              )}
+            >
+              <QuotaDetail
+                key={task.id}
+                tasks={[task]}
+                onSave={actions.handleSaveAllChanges}
+                onDelete={handleDelete}
+                onDirtyChange={handleDirtyChange}
+                saveRef={saveRef}
+              />
+            </div>
           ) : task.is_reminder ? (
             /* A reminder gets its own editor (§6) — the same component the
                Reminders bar opens in a dialog — in the same card the task

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
@@ -35,9 +35,17 @@ export default function QuotasPage() {
   const router = useRouter()
   const timezone = useTimezone()
 
+  // The view populates this, so an undo/redo from the header or the keyboard
+  // actually refreshes what is on screen — the same wiring the Reminders page
+  // uses. Passing a no-op here left ⌘Z firing against a list that never moved.
+  const refreshRef = useRef<(() => void) | null>(null)
+  const refresh = useCallback(async () => {
+    refreshRef.current?.()
+  }, [])
+
   const actions = useTaskActions({
     mode: 'list',
-    onRefresh: async () => {},
+    onRefresh: refresh,
     tasks: NO_TASKS,
     setTasks: () => {},
   }) as ListTaskActionsReturn
@@ -64,6 +72,10 @@ export default function QuotasPage() {
     <div className="flex-1">
       <Header
         section="Quotas"
+        // No badges: the default is the TASK counts, which read as "0 0" here
+        // and mean nothing on this surface. Reminders passes its own; quotas
+        // carry their numbers on the period card instead.
+        badges={<span />}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}
@@ -71,7 +83,11 @@ export default function QuotasPage() {
         timezone={timezone}
       />
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        <QuotasView />
+        <QuotasView
+          onUndo={actions.handleUndo}
+          onCompleted={actions.bumpUndoCount}
+          refreshRef={refreshRef}
+        />
       </main>
     </div>
   )

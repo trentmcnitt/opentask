@@ -314,8 +314,10 @@ test.describe('Quotas page', () => {
       // Creating one: the only route that existed before this page was the API.
       for (const title of ['Probe quota one', 'Probe quota two']) {
         await view.getByRole('button', { name: 'New quota' }).click()
-        const form = page.locator('[data-new-quota]')
-        await form.getByRole('textbox', { name: 'Quota title' }).fill(title)
+        // A modal, not an inline form.
+        const form = page.getByRole('dialog')
+        await expect(form).toBeVisible()
+        await form.getByRole('textbox').first().fill(title)
         const created = page.waitForResponse(
           (r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST',
         )
@@ -344,29 +346,32 @@ test.describe('Quotas page', () => {
 
       // Editing several at once — the reason selection exists here beyond
       // retiring things.
-      await bar.getByRole('button', { name: 'Edit' }).click()
-      const bulk = page.locator('[data-bulk-quota-editor]')
+      await bar.getByRole('button', { name: 'Details' }).click()
+      // A modal, like every other editor in the app — not an inline panel.
+      const bulk = page.getByRole('dialog')
       await expect(bulk).toContainText('Editing 2 quotas')
       await bulk.getByRole('textbox', { name: 'Times per period' }).fill('7')
       const edited = page.waitForResponse(
         (r) => r.url().includes('/bulk/edit') && r.request().method() === 'POST',
       )
-      await bulk.getByRole('button', { name: 'Apply' }).click()
+      await bulk.getByRole('button', { name: 'Save' }).click()
       expect((await edited).status()).toBe(200)
       await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toContainText('/ 7')
 
-      // A double-click opens the quota's own editor.
+      // A double-click opens the editor as a MODAL and stays on the surface —
+      // the same contract reminders have.
       await page.locator(`[data-quota-row="${ids[0]}"]`).dblclick()
-      await page.waitForURL(`**/tasks/${ids[0]}`)
-      await expect(page.locator(`[data-quota-detail="${ids[0]}"]`)).toBeVisible()
-      await page.goto('/quotas')
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await expect(page).toHaveURL(/\/quotas$/)
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
 
       // And the bar retires the set.
       await page.locator(`[data-quota-row="${ids[0]}"]`).click()
       await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
       await page
         .locator('[data-quota-selection-bar]')
-        .getByRole('button', { name: 'Trash' })
+        .getByRole('button', { name: /Move .*to Trash/ })
         .click()
       await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(0)
       await expect(page.locator(`[data-quota-row="${ids[1]}"]`)).toHaveCount(0)
