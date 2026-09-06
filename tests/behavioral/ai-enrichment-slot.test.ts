@@ -100,6 +100,55 @@ describe('enrichment slot initialization', () => {
     expect(stats.activatedAt).not.toBeNull()
   })
 
+  // The slot pins a JSON schema, so the CLI forces the model to answer with an
+  // object instead of the word READY. Requiring the word is what left the slot
+  // dead 27 times in one day on dev, taking all enrichment down with it.
+  test('warmup with a schema-valid object and no READY text → available', async () => {
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+
+    currentStream.emit(
+      makeSuccessResult('{"title":"","due_at":null}', {
+        title: '',
+        due_at: null,
+        priority: 0,
+        labels: [],
+        project_name: null,
+        rrule: null,
+        auto_snooze_minutes: null,
+        recurrence_mode: null,
+        notes: null,
+        reasoning: 'No input to parse.',
+      }),
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+
+    expect(getEnrichmentSlotStats().state).toBe('available')
+  })
+
+  test('warmup with an object that is not the enrichment shape → dead', async () => {
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+
+    currentStream.emit(makeSuccessResult('{"nonsense":true}', { nonsense: true }))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+  })
+
+  test('warmup still accepts plain READY text when no object comes back', async () => {
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+
+    currentStream.emit(makeSuccessResult('READY', undefined))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+
+    expect(getEnrichmentSlotStats().state).toBe('available')
+  })
+
   test('warmup failure: response without READY → dead', async () => {
     const initPromise = initEnrichmentSlot()
     await waitForStream()

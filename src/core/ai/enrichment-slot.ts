@@ -20,7 +20,7 @@ import {
   type BaseSlotStats,
   WARMUP_MESSAGE,
   WARMUP_TIMEOUT_MS,
-  validateWarmup,
+  validateSchemaWarmup,
   parseEnvInt,
   checkCircuitBreaker,
   computeReinitBackoff,
@@ -505,11 +505,13 @@ async function consumeStream(stream: AsyncIterable<unknown>): Promise<void> {
         }
 
         if (resultCount === 1) {
-          // Warmup result
-          const warmupOk = validateWarmup(text)
+          // Warmup result. This slot pins a JSON schema, so the answer comes
+          // back as an object rather than the word READY — see
+          // validateSchemaWarmup.
+          const warmupOk = validateSchemaWarmup(text, structuredOutput, EnrichmentResultSchema)
           log.debug(
             'ai',
-            `Enrichment slot: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${text?.slice(0, 50)})`,
+            `Enrichment slot: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${text?.slice(0, 50)}, structured: ${structuredOutput ? Object.keys(structuredOutput).join(',') : 'none'})`,
           )
           g.warmupResolver?.(warmupOk)
           g.warmupResolver = null
