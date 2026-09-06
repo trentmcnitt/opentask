@@ -131,7 +131,13 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
       // schedule held and only the wording was cleaned up, the new wording is
       // the news. When neither moved there is nothing to report, and a toast
       // would be noise about a change the user cannot see.
-      const message = data.description ?? (data.title !== typed ? `Reworded: ${data.title}` : null)
+      //
+      // "Cleaned up" is compared loosely on purpose: the model capitalizes the
+      // first letter of almost everything, so a strict comparison would
+      // announce a rewrite on nearly every add.
+      const reworded =
+        data.title !== undefined && normalizeWording(data.title) !== normalizeWording(typed)
+      const message = data.description ?? (reworded ? `Reworded: ${data.title}` : null)
       if (!message) return
       showToast({
         message,
@@ -1212,6 +1218,19 @@ function RemindersEmptyState({
       </p>
     </div>
   )
+}
+
+/**
+ * Reduce a reminder's wording to what a person would call "the same words":
+ * case, surrounding space, runs of space and trailing punctuation all go. Used
+ * only to decide whether the AI's rewrite is worth mentioning.
+ */
+function normalizeWording(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.,;:!?\s]+$/, '')
+    .trim()
 }
 
 /**

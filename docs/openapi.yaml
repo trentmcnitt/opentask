@@ -1852,6 +1852,14 @@ components:
         ai_added:
           type: boolean
           description: Apply the `ai-added` provenance label.
+        enrich:
+          type: boolean
+          description: >
+            Ask for AI enrichment even though this request supplies structured
+            fields. Enrichment is normally triggered only by title-only input;
+            the Reminders quick add sets this because it always sends a default
+            schedule so the new reminder appears in a time slot immediately.
+            Ignored when AI is disabled.
 
     Label:
       type: object
