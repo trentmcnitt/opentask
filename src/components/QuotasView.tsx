@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Gauge, Plus, Trash2, X } from 'lucide-react'
+import { Gauge, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useRouter } from 'next/navigation'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { isTracked, trackState, periodLabel } from '@/lib/track'
@@ -27,15 +28,43 @@ import type { Task } from '@/types'
  * "Quota" is the word, settled the same day: "I guess you call it quota. Yeah
  * I guess quota is a fine name."
  */
+export type QuotaPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY'
+
+const PERIOD_OPTIONS: [QuotaPeriod, string][] = [
+  ['DAILY', 'Every day'],
+  ['WEEKLY', 'Every week'],
+  ['MONTHLY', 'Every month'],
+]
+
+/** The FREQ a quota counts against, defaulting to weekly for an unreadable rule. */
+function periodOf(rrule: string | null): QuotaPeriod {
+  const freq = /(?:^|;)FREQ=([A-Z]+)/i.exec(rrule ?? '')?.[1]?.toUpperCase()
+  return freq === 'DAILY' || freq === 'MONTHLY' ? freq : 'WEEKLY'
+}
+
 export function QuotasView() {
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   // The dashboard's selection model, the same one Reminders uses: click
   // selects, shift-click takes a range, a floating bar acts on the set.
+  const router = useRouter()
   const selection = useSelectionMode()
-  const { selectedIds, toggle, rangeSelect, clear } = selection
+  const { selectedIds, toggle, rangeSelect, selectOnly, clear } = selection
   const orderedIds = useMemo(() => (tasks ?? []).map((t) => t.id), [tasks])
+  const [editing, setEditing] = useState(false)
+
+  /** What the selection agrees on; null where it does not. */
+  const shared = useMemo(() => {
+    const chosen = (tasks ?? []).filter((t) => selectedIds.has(t.id))
+    if (chosen.length === 0) return { target: '', period: null as QuotaPeriod | null }
+    const targets = new Set(chosen.map((t) => String(Math.max(1, t.progress_target ?? 1))))
+    const periods = new Set(chosen.map((t) => periodOf(t.rrule)))
+    return {
+      target: targets.size === 1 ? [...targets][0] : '',
+      period: periods.size === 1 ? [...periods][0] : null,
+    }
+  }, [tasks, selectedIds])
 
   const refresh = useCallback(async () => {
     try {
@@ -82,6 +111,19 @@ export function QuotasView() {
         />
       )}
 
+      {editing && selectedIds.size > 0 && (
+        <BulkQuotaEditor
+          ids={[...selectedIds]}
+          shared={shared}
+          onCancel={() => setEditing(false)}
+          onSaved={async () => {
+            setEditing(false)
+            clear()
+            await refresh()
+          }}
+        />
+      )}
+
       {tasks.length === 0 && !creating ? (
         <EmptyState />
       ) : (
@@ -91,10 +133,18 @@ export function QuotasView() {
               key={task.id}
               task={task}
               selected={selectedIds.has(task.id)}
-              onSelect={(shiftKey) => {
-                if (shiftKey) rangeSelect(task.id, orderedIds)
-                else toggle(task.id)
+              // The house rules, identical to Reminders' rowClick: shift takes
+              // a range, cmd/ctrl toggles one, a plain click selects only that
+              // one. It used to toggle on a plain click, which put the page in
+              // multi-select from the first click and never let go (Trent,
+              // 2026-09-06: "as I select, if I just go and use my mouse, it's
+              // already in multi-select mode, which is weird").
+              onSelect={(e) => {
+                if (e.shiftKey) rangeSelect(task.id, orderedIds)
+                else if (e.metaKey || e.ctrlKey) toggle(task.id)
+                else selectOnly(task.id)
               }}
+              onOpen={() => router.push(`/tasks/${task.id}`)}
             />
           ))}
         </ul>
@@ -103,7 +153,11 @@ export function QuotasView() {
       {selectedIds.size > 0 && (
         <QuotaSelectionBar
           count={selectedIds.size}
-          onClear={clear}
+          onEdit={() => setEditing(true)}
+          onClear={() => {
+            setEditing(false)
+            clear()
+          }}
           onDelete={async () => {
             const ids = [...selectedIds]
             try {
@@ -138,10 +192,12 @@ export function QuotasView() {
  */
 function QuotaSelectionBar({
   count,
+  onEdit,
   onClear,
   onDelete,
 }: {
   count: number
+  onEdit: () => void
   onClear: () => void
   onDelete: () => void | Promise<void>
 }) {
@@ -152,6 +208,15 @@ function QuotaSelectionBar({
         className="bg-primary text-primary-foreground pointer-events-auto flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
       >
         <span className="text-sm font-medium tabular-nums">{count} selected</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onEdit}
+          className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+        >
+          <Pencil className="size-4" />
+          Edit
+        </Button>
         <Button
           size="sm"
           variant="ghost"
@@ -198,10 +263,12 @@ function QuotaRow({
   task,
   selected,
   onSelect,
+  onOpen,
 }: {
   task: Task
   selected: boolean
-  onSelect: (shiftKey: boolean) => void
+  onSelect: (e: React.MouseEvent) => void
+  onOpen: () => void
 }) {
   const { state, log: logProgress } = useTrackProgress(task)
   const period = periodLabel(task.rrule)
@@ -213,9 +280,15 @@ function QuotaRow({
       role="option"
       aria-selected={selected}
       aria-label={task.title}
-      // Clicking the row selects it; the title is a link and the +1 is a
-      // button, so both stop the click before it reaches here.
-      onClick={(e) => onSelect(e.shiftKey)}
+      // The house selection model, shared with the dashboard and Reminders: a
+      // click selects and NEVER navigates, and a double-click opens. The title
+      // is deliberately not a link — as one it spanned the row and swallowed
+      // every click into a navigation.
+      onClick={(e) => {
+        if (e.detail > 1) return
+        onSelect(e)
+      }}
+      onDoubleClick={onOpen}
       className={cn(
         'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2.5 transition-colors',
         selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40',
@@ -250,8 +323,165 @@ function QuotaRow({
         >
           +1
         </Button>
+        {/* The explicit, keyboard-reachable door. Double-click does the same,
+            but a double-click is not a thing you can do from a keyboard. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpen()
+          }}
+          aria-label={`Open "${task.title}"`}
+        >
+          Open
+        </Button>
       </div>
     </li>
+  )
+}
+
+/**
+ * The "N times · every week" control, shared by the create form and the bulk
+ * editor so the two can never drift apart.
+ *
+ * `period` may be null in the bulk editor, meaning "the selection disagrees and
+ * nothing has been chosen yet" — picking one then applies it to all of them.
+ */
+function CadenceControls({
+  target,
+  onTargetChange,
+  period,
+  onPeriodChange,
+}: {
+  target: string
+  onTargetChange: (value: string) => void
+  period: QuotaPeriod | null
+  onPeriodChange: (value: QuotaPeriod) => void
+}) {
+  const n = Number.parseInt(target, 10)
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input
+        aria-label="Times per period"
+        inputMode="numeric"
+        value={target}
+        onChange={(e) => onTargetChange(e.target.value.replace(/[^0-9]/g, ''))}
+        placeholder="—"
+        className="w-20 text-center text-[16px] tabular-nums"
+      />
+      <span className="text-muted-foreground text-sm">{n === 1 ? 'time' : 'times'}</span>
+      {PERIOD_OPTIONS.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onPeriodChange(value)}
+          aria-pressed={period === value}
+          className={cn(
+            'rounded-full border px-3 py-1 text-sm transition-colors',
+            period === value
+              ? 'border-foreground bg-foreground text-background'
+              : 'hover:border-foreground/40',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Change several quotas at once — the reason the page has selection at all
+ * beyond retiring things (Trent, 2026-09-06: "the ability to multi-select
+ * allows us to change multiple at once. We can change them all to have the
+ * same quota").
+ *
+ * Only what you touch is applied: leave the target blank and the periods
+ * alone, and each quota keeps its own. That is the same rule the Reminders
+ * bulk editor follows, so the two behave alike.
+ */
+function BulkQuotaEditor({
+  ids,
+  shared,
+  onCancel,
+  onSaved,
+}: {
+  ids: number[]
+  /** Target and period where the whole selection already agrees, else null. */
+  shared: { target: string; period: QuotaPeriod | null }
+  onCancel: () => void
+  onSaved: () => void | Promise<void>
+}) {
+  const [target, setTarget] = useState(shared.target)
+  const [period, setPeriod] = useState<QuotaPeriod | null>(shared.period)
+  const [saving, setSaving] = useState(false)
+
+  const targetNumber = Number.parseInt(target, 10)
+  const targetTouched = target !== shared.target && target.length > 0
+  const periodTouched = period !== shared.period && period !== null
+  const targetValid = !targetTouched || (targetNumber >= 1 && targetNumber <= 1000)
+  const dirty = targetTouched || periodTouched
+
+  async function save() {
+    if (!dirty || !targetValid) return
+    setSaving(true)
+    try {
+      // Target, flag and rule travel together: validation refuses a bare FREQ
+      // rule that does not also say the task is tracked. When only one of the
+      // two was touched, the other is re-sent at its current shared value.
+      const changes: Record<string, unknown> = { is_tracked: true }
+      changes.progress_target = targetTouched ? targetNumber : Number.parseInt(shared.target, 10)
+      changes.rrule = `FREQ=${periodTouched ? period : shared.period}`
+      // POST, not PATCH — every bulk endpoint in this app is a POST.
+      const res = await fetch('/api/tasks/bulk/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, changes }),
+      })
+      if (!res.ok) throw new Error(`bulk/edit ${res.status}`)
+      showToast({
+        message: `${ids.length} quota${ids.length === 1 ? '' : 's'} updated`,
+        type: 'success',
+      })
+      await onSaved()
+    } catch (err) {
+      log.error('ui', 'Bulk-editing quotas failed:', err)
+      showToast({ message: 'Could not update those quotas', type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Only sendable when both halves are known — a selection that disagrees about
+  // its period cannot be given a target without also being given a period.
+  const complete =
+    (periodTouched ? period : shared.period) !== null &&
+    (targetTouched ? target : shared.target).length > 0
+
+  return (
+    <div className="space-y-3 rounded-xl border p-3" data-bulk-quota-editor>
+      <p className="text-muted-foreground text-sm">
+        Editing {ids.length} quota{ids.length === 1 ? '' : 's'}. Only what you change is applied.
+      </p>
+      <CadenceControls
+        target={target}
+        onTargetChange={setTarget}
+        period={period}
+        onPeriodChange={setPeriod}
+      />
+      {!targetValid && (
+        <p className="text-destructive text-xs">A target is a whole number from 1 to 1000.</p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={save} disabled={!dirty || !targetValid || !complete || saving}>
+          {saving ? 'Saving…' : 'Apply'}
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -259,7 +489,7 @@ function QuotaRow({
 function NewQuotaForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
   const [title, setTitle] = useState('')
   const [target, setTarget] = useState('3')
-  const [period, setPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY'>('WEEKLY')
+  const [period, setPeriod] = useState<QuotaPeriod>('WEEKLY')
   const [saving, setSaving] = useState(false)
 
   const targetNumber = Number.parseInt(target, 10)
@@ -306,34 +536,12 @@ function NewQuotaForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
         aria-label="Quota title"
         className="text-[16px]"
       />
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          aria-label="Times per period"
-          inputMode="numeric"
-          value={target}
-          onChange={(e) => setTarget(e.target.value.replace(/[^0-9]/g, ''))}
-          className="w-20 text-center text-[16px] tabular-nums"
-        />
-        <span className="text-muted-foreground text-sm">
-          {targetNumber === 1 ? 'time' : 'times'}
-        </span>
-        {(['DAILY', 'WEEKLY', 'MONTHLY'] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setPeriod(p)}
-            aria-pressed={period === p}
-            className={cn(
-              'rounded-full border px-3 py-1 text-sm transition-colors',
-              period === p
-                ? 'border-foreground bg-foreground text-background'
-                : 'hover:border-foreground/40',
-            )}
-          >
-            {p === 'DAILY' ? 'Every day' : p === 'WEEKLY' ? 'Every week' : 'Every month'}
-          </button>
-        ))}
-      </div>
+      <CadenceControls
+        target={target}
+        onTargetChange={setTarget}
+        period={period}
+        onPeriodChange={setPeriod}
+      />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Cancel
