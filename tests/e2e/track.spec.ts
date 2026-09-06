@@ -328,17 +328,46 @@ test.describe('Quotas page', () => {
       const row = page.locator(`[data-quota-row="${ids[0]}"]`)
       await expect(row).toContainText('never met')
 
-      // The dashboard's selection model: click selects and never navigates.
+      // The house selection model: a plain click selects EXACTLY one and never
+      // navigates. It does not accumulate — which is what it wrongly did when
+      // this page first shipped.
       await row.click()
       await expect(row).toHaveAttribute('aria-selected', 'true')
       await expect(page).toHaveURL(/\/quotas$/)
-      await expect(page.locator('[data-quota-selection-bar]')).toContainText('1 selected')
+      await page.locator(`[data-quota-row="${ids[1]}"]`).click()
+      await expect(page.locator('[data-quota-row][aria-selected="true"]')).toHaveCount(1)
 
-      // Shift-click takes the range, and the bar retires the set.
-      await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
+      // Shift takes a range.
+      await row.click({ modifiers: ['Shift'] })
       const bar = page.locator('[data-quota-selection-bar]')
       await expect(bar).toContainText('2 selected')
-      await bar.getByRole('button', { name: 'Trash' }).click()
+
+      // Editing several at once — the reason selection exists here beyond
+      // retiring things.
+      await bar.getByRole('button', { name: 'Edit' }).click()
+      const bulk = page.locator('[data-bulk-quota-editor]')
+      await expect(bulk).toContainText('Editing 2 quotas')
+      await bulk.getByRole('textbox', { name: 'Times per period' }).fill('7')
+      const edited = page.waitForResponse(
+        (r) => r.url().includes('/bulk/edit') && r.request().method() === 'POST',
+      )
+      await bulk.getByRole('button', { name: 'Apply' }).click()
+      expect((await edited).status()).toBe(200)
+      await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toContainText('/ 7')
+
+      // A double-click opens the quota's own editor.
+      await page.locator(`[data-quota-row="${ids[0]}"]`).dblclick()
+      await page.waitForURL(`**/tasks/${ids[0]}`)
+      await expect(page.locator(`[data-quota-detail="${ids[0]}"]`)).toBeVisible()
+      await page.goto('/quotas')
+
+      // And the bar retires the set.
+      await page.locator(`[data-quota-row="${ids[0]}"]`).click()
+      await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
+      await page
+        .locator('[data-quota-selection-bar]')
+        .getByRole('button', { name: 'Trash' })
+        .click()
       await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(0)
       await expect(page.locator(`[data-quota-row="${ids[1]}"]`)).toHaveCount(0)
     } finally {
