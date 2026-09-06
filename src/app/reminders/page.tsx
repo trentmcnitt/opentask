@@ -1,12 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { Header } from '@/components/Header'
+import { RemindersCountBadges } from '@/components/RemindersCountBadges'
 import { RemindersView } from '@/components/RemindersView'
 import { useTaskActions, type ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useSyncStream } from '@/hooks/useSyncStream'
+import { useTimezone } from '@/hooks/useTimezone'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import type { Task } from '@/types'
 
@@ -20,10 +23,16 @@ import type { Task } from '@/types'
  *
  * The page is deliberately thin. `RemindersView` owns the rendering and
  * `useReminders` owns the data and the completion path, exactly as they did when
- * this surface lived inside the dashboard. What the page adds is the shell every
- * standalone page has (auth guard, sticky h1 header) plus the two things the
- * dashboard used to provide: an undo pipeline behind the "Considered" toast, and a
- * refresh chain so changes arriving from elsewhere land here too.
+ * this surface lived inside the dashboard. What the page adds is the shell plus
+ * the two things the dashboard used to provide: an undo pipeline behind the
+ * "Considered" toast, and a refresh chain so changes arriving from elsewhere land
+ * here too.
+ *
+ * The shell is the same top bar as the Tasks page (logo, undo with its count,
+ * the menu), not the bare page-title bar the secondary pages use: Reminders is
+ * a peer daily surface, and Trent found the plain "Reminders" title "ugly and
+ * basic" next to Tasks (2026-09-05). The pills carry this surface's numbers —
+ * waiting so far, considered today — in place of the task counts.
  */
 
 /**
@@ -39,6 +48,32 @@ const NO_TASKS: Task[] = []
 export default function RemindersPage() {
   const { status } = useSession()
   const router = useRouter()
+  const timezone = useTimezone()
+
+  // Searching narrows the slots to matching thoughts; the surface filters what
+  // it already holds, so there is no request behind this.
+  const [searchQuery, setSearchQuery] = useState('')
+  const clearSearch = useCallback(() => setSearchQuery(''), [])
+  const searchFocusRef = useRef<(() => void) | null>(null)
+
+  // Cmd/Ctrl+K focuses search here as it does on Tasks. The dashboard's own
+  // shortcut lives in useDashboardKeyboard, which carries a pile of list
+  // shortcuts this surface has no use for.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inInput =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable === true
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !inInput) {
+        e.preventDefault()
+        searchFocusRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // Registered by RemindersView while it is mounted.
   const refreshRef = useRef<(() => void) | null>(null)
@@ -78,17 +113,26 @@ export default function RemindersPage() {
 
   return (
     <div className="flex-1">
-      <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
-        <div className="mx-auto max-w-2xl px-4 py-3">
-          <h1 className="text-xl font-semibold">Reminders</h1>
-        </div>
-      </header>
+      <Header
+        section="Reminders"
+        badges={<RemindersCountBadges timezone={timezone} />}
+        onUndo={actions.handleUndo}
+        onRedo={actions.handleRedo}
+        undoCount={actions.undoCount}
+        redoCount={actions.redoCount}
+        onSearch={setSearchQuery}
+        onSearchClear={clearSearch}
+        searchFocusRef={searchFocusRef}
+        searchSubject="reminders"
+        timezone={timezone}
+      />
 
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
         <RemindersView
           onUndo={actions.handleUndo}
           onCompleted={actions.bumpUndoCount}
           refreshRef={refreshRef}
+          searchQuery={searchQuery}
         />
       </main>
     </div>

@@ -584,18 +584,28 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | File                        | Category                                               | Count |
 | --------------------------- | ------------------------------------------------------ | ----- |
 | `enrichment-core.ts`        | Core enrichment (title, date, priority, etc.)          | 32    |
+| `enrichment-priority.ts`    | Priority inference                                     | 13    |
+| `enrichment-recurrence.ts`  | Expanded recurrence patterns                           | 11    |
+| `enrichment-edge.ts`        | Edge cases                                             | 11    |
 | `enrichment-labels.ts`      | Explicit-only label extraction                         | 10    |
 | `enrichment-dictation.ts`   | Dictation realism and typo tolerance                   | 10    |
-| `enrichment-recurrence.ts`  | Expanded recurrence patterns                           | 10    |
+| `enrichment-context.ts`     | User context resolution                                | 8     |
 | `enrichment-voice.ts`       | Voice preservation                                     | 8     |
-| `enrichment-edge.ts`        | Edge cases                                             | 10    |
-| `whats-next.ts`             | What's Next recommendations                            | 8     |
+| `enrichment-reminders.ts`   | Reminder enrichment — cadence and time slots (§6)      | 6     |
+| `quick-take.ts`             | Quick Take                                             | 12    |
 | `insights.ts`               | AI Insights scoring and signals                        | 11    |
+| `whats-next.ts`             | What's Next recommendations                            | 8     |
 | `insights-large.ts`         | Large-scale insights (50-600 tasks, production)        | 3     |
 | `helpers/generate-tasks.ts` | Realistic task list generator (used by insights-large) | —     |
 | `index.ts`                  | Barrel export                                          | —     |
 
-**Total: 102 scenarios** (80 enrichment + 8 whats_next + 14 insights)
+**Total: 143 scenarios** (103 enrichment + 6 enrichment_reminder + 12 quick_take + 14 insights + 8 whats_next)
+
+Reminder scenarios are a separate feature, not a subset of enrichment: a
+reminder has its own user prompt (`buildReminderEnrichmentUserPrompt`) built
+around the user's time slots, and its result passes through
+`sanitizeReminderEnrichment` before it is judged, so what a scenario asserts is
+what the database would actually receive.
 
 Each scenario defines:
 
@@ -613,7 +623,7 @@ Edit `tests/quality/validator-prompt.md`. The rubric is organized by feature wit
 | File                                | Purpose                                            |
 | ----------------------------------- | -------------------------------------------------- |
 | `tests/quality/types.ts`            | Type definitions for scenarios, inputs, outputs    |
-| `tests/quality/scenarios/`          | Test scenario definitions (102 scenarios)          |
+| `tests/quality/scenarios/`          | Test scenario definitions (143 scenarios)          |
 | `tests/quality/ai-quality.test.ts`  | Layer 1 runner (vitest)                            |
 | `tests/quality/validator-prompt.md` | Layer 2 judge rubric                               |
 | `vitest.quality.config.ts`          | Separate vitest config (long timeouts, sequential) |
@@ -627,6 +637,7 @@ The main `AGENTS.md` has a condensed AI quality testing section with pointers he
 ```bash
 npm run dump-prompts                              # All prompts (templates only) → .tmp/prompts.txt
 npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
+npm run dump-prompts -- --feature enrichment_reminder  # The reminder variant (slots instead of workday times)
 npm run dump-prompts -- --feature insights         # Just the insights prompt
 npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
 npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows static system prompt and per-request dynamic slot separately)

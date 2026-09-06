@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
+import { ReminderDetail } from '@/components/ReminderDetail'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -58,20 +60,30 @@ export default function TaskDetailPage() {
 
   const isDirtyRef = useRef(false)
   const pendingRefreshRef = useRef(false)
+  // Rendered state for the reminder card's dirty stripe (the ref above is for
+  // the refresh logic and does not re-render).
+  const [panelDirty, setPanelDirty] = useState(false)
 
   // Clean up guard registration on unmount
   useEffect(() => {
     return () => setDirty(false)
   }, [setDirty])
 
+  // Where "back" (and "done", and "deleted") lead: a reminder's home is the
+  // Reminders surface, a task's is the Tasks page. Trent (2026-09-05): back
+  // from a reminder's details landed on Tasks. Read through a ref so the
+  // callbacks handed to useTaskActions see the task after it loads.
+  const homeRef = useRef('/')
+  homeRef.current = task?.is_reminder ? '/reminders' : '/'
+
   const handleBackClick = useCallback(() => {
-    if (requestNavigation('/')) {
-      router.push('/')
+    if (requestNavigation(homeRef.current)) {
+      router.push(homeRef.current)
     }
   }, [requestNavigation, router])
 
   const handleConfirmLeave = useCallback(() => {
-    const href = pendingNavigation ?? '/'
+    const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
@@ -99,7 +111,7 @@ export default function TaskDetailPage() {
       clearPendingNavigation()
       return
     }
-    const href = pendingNavigation ?? '/'
+    const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
     router.push(href)
   }, [pendingNavigation, clearPendingNavigation, router])
@@ -164,6 +176,7 @@ export default function TaskDetailPage() {
   const handleDirtyChange = useCallback(
     (dirty: boolean) => {
       isDirtyRef.current = dirty
+      setPanelDirty(dirty)
       setDirty(dirty)
       if (!dirty && pendingRefreshRef.current) {
         pendingRefreshRef.current = false
@@ -188,7 +201,7 @@ export default function TaskDetailPage() {
     task,
     taskId,
     setTask,
-    onCompletedNavigation: () => router.push('/'),
+    onCompletedNavigation: () => router.push(homeRef.current),
   }) as SingleTaskActionsReturn
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
@@ -220,13 +233,33 @@ export default function TaskDetailPage() {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
       showToast({
-        message: 'Task moved to trash',
+        message: task.is_reminder ? 'Reminder moved to trash' : 'Task moved to trash',
         type: 'success',
         action: { label: 'Undo', onClick: actions.handleUndo },
       })
-      router.push('/')
+      router.push(homeRef.current)
     } catch {
       showToast({ message: 'Delete failed', type: 'error' })
+    }
+  }
+
+  // Considering a reminder from its page is a round trip: the thought is
+  // done for today, so the page's job is done too and Reminders is where the
+  // next one waits. (A task's Done stays on the page — the task may recur.)
+  const handleConsidered = async () => {
+    if (!task) return
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to mark considered')
+      actions.bumpUndoCount()
+      showToast({
+        message: `Considered \u201c${task.title}\u201d`,
+        type: 'success',
+        action: { label: 'Undo', onClick: actions.handleUndo },
+      })
+      router.push('/reminders')
+    } catch {
+      showToast({ message: 'Could not mark it considered', type: 'error' })
     }
   }
 
@@ -268,14 +301,16 @@ export default function TaskDetailPage() {
               variant="ghost"
               size="icon"
               onClick={handleBackClick}
-              aria-label="Back to dashboard"
+              aria-label={task.is_reminder ? 'Back to reminders' : 'Back to dashboard'}
               className="-ml-2"
             >
               <ChevronLeft className="size-5" />
             </Button>
 
             {/* Title - takes remaining space */}
-            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">Task Details</h1>
+            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">
+              {task.is_reminder ? 'Reminder' : 'Task Details'}
+            </h1>
 
             {/* Undo button */}
             <Tooltip>
@@ -317,19 +352,42 @@ export default function TaskDetailPage() {
         </header>
 
         <main className="mx-auto w-full max-w-2xl px-4 py-6">
-          <TaskDetail
-            task={task}
-            project={project}
-            projects={projects}
-            editable
-            onDelete={handleDelete}
-            onMarkDone={actions.handleDone}
-            onDirtyChange={handleDirtyChange}
-            saveRef={saveRef}
-            onSaveAll={actions.handleSaveAllChanges}
-            annotation={annotationMap.get(task.id)}
-            insightsCommentary={insightsData.annotationMap.get(task.id)}
-          />
+          {task.is_reminder ? (
+            /* A reminder gets its own editor (§6) — the same component the
+               Reminders bar opens in a dialog — in the same card the task
+               editor sits in, dirty stripe included. "Make this a task" flips
+               the flag and this page becomes the task editor in place. */
+            <div
+              className={cn(
+                'rounded-lg border p-3',
+                panelDirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]',
+              )}
+            >
+              <ReminderDetail
+                key={task.id}
+                tasks={[task]}
+                onSaveAll={actions.handleSaveAllChanges}
+                onConsidered={handleConsidered}
+                onDelete={handleDelete}
+                onDirtyChange={handleDirtyChange}
+                saveRef={saveRef}
+              />
+            </div>
+          ) : (
+            <TaskDetail
+              task={task}
+              project={project}
+              projects={projects}
+              editable
+              onDelete={handleDelete}
+              onMarkDone={actions.handleDone}
+              onDirtyChange={handleDirtyChange}
+              saveRef={saveRef}
+              onSaveAll={actions.handleSaveAllChanges}
+              annotation={annotationMap.get(task.id)}
+              insightsCommentary={insightsData.annotationMap.get(task.id)}
+            />
+          )}
         </main>
 
         {/* Unsaved changes confirmation dialog — shown when navigation is attempted while dirty */}

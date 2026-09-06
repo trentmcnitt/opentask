@@ -4,7 +4,7 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
-import { withTransaction } from '@/core/db'
+import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
@@ -115,10 +115,15 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
 }
 
 /**
- * Mark a one-off task as undone (reopen)
+ * Mark a task as undone (reopen / put back).
  *
- * Only works for one-off tasks that are done.
- * For recurring tasks, use undo instead.
+ * One-off: clears done. Recurring: puts back the latest completion — the
+ * occurrence returns to the due date it had, and the counts roll back one.
+ * Both are logged as an `undone` action, so this is itself undoable.
+ *
+ * The recurring case exists for the Reminders surface (2026-09-05): a
+ * "considered" thought is a completion, and an accidental tap needs a direct
+ * way back that does not depend on the undo stack's order.
  */
 export function markUndone(options: MarkDoneOptions): Task {
   const { userId, taskId } = options
@@ -134,9 +139,8 @@ export function markUndone(options: MarkDoneOptions): Task {
     throw new ForbiddenError('Access denied')
   }
 
-  // Cannot mark a recurring task undone (use undo instead)
   if (isRecurring(task.rrule)) {
-    throw new ValidationError('Cannot mark recurring task undone - use undo instead')
+    return putBackLatestOccurrence(task, userId)
   }
 
   // Must be done
@@ -220,6 +224,129 @@ export function markUndone(options: MarkDoneOptions): Task {
       throw new Error('Failed to retrieve updated task')
     }
 
+    return result
+  })
+
+  emitSyncEvent(userId)
+  return updatedTask
+}
+
+interface CompletionRow {
+  id: number
+  completed_at: string
+  due_at_was: string | null
+  due_at_next: string | null
+}
+
+/**
+ * Reverse a recurring task's most recent completion.
+ *
+ * The completion row remembers the due date it advanced from (`due_at_was`)
+ * and to (`due_at_next`), which is all a clean reversal needs. It refuses if
+ * the task's due date no longer matches `due_at_next` — a snooze or edit since
+ * the completion would otherwise be overwritten — and if there is no
+ * completion to put back.
+ */
+function putBackLatestOccurrence(task: Task, userId: number): Task {
+  const db = getDb()
+  const latest = db
+    .prepare(
+      `SELECT id, completed_at, due_at_was, due_at_next FROM completions
+        WHERE task_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(task.id, userId) as CompletionRow | undefined
+  if (!latest) {
+    throw new ValidationError('Nothing to put back')
+  }
+  if (task.due_at !== latest.due_at_next) {
+    throw new ValidationError('Task changed since it was completed')
+  }
+  const previous = db
+    .prepare(
+      `SELECT completed_at FROM completions
+        WHERE task_id = ? AND user_id = ? AND id < ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(task.id, userId, latest.id) as { completed_at: string } | undefined
+
+  const nowStr = nowUtc()
+  const restoredCount = Math.max(0, task.completion_count - 1)
+  const restoredFirstCompleted = restoredCount === 0 ? null : task.first_completed_at
+  const restoredLastCompleted = previous?.completed_at ?? null
+  const fieldsChanged = [
+    'due_at',
+    'original_due_at',
+    'completion_count',
+    'first_completed_at',
+    'last_completed_at',
+  ]
+
+  const updatedTask = withTransaction((tx) => {
+    tx.prepare(
+      `UPDATE tasks
+        SET due_at = ?, original_due_at = ?,
+            completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+            updated_at = ?
+        WHERE id = ?`,
+    ).run(
+      latest.due_at_was,
+      latest.due_at_was,
+      restoredCount,
+      restoredFirstCompleted,
+      restoredLastCompleted,
+      nowStr,
+      task.id,
+    )
+    tx.prepare('DELETE FROM completions WHERE id = ?').run(latest.id)
+
+    // The snapshot carries the deleted completion row (as a `done` action's
+    // carries the created one), so undoing this put-back re-inserts it with
+    // the same id and a redo deletes it again — see execute-undo / execute-redo.
+    const snapshot = createTaskSnapshot(
+      {
+        id: task.id,
+        title: task.title,
+        due_at: task.due_at,
+        original_due_at: task.original_due_at,
+        completion_count: task.completion_count,
+        first_completed_at: task.first_completed_at,
+        last_completed_at: task.last_completed_at,
+      },
+      {
+        id: task.id,
+        title: task.title,
+        due_at: latest.due_at_was,
+        original_due_at: latest.due_at_was,
+        completion_count: restoredCount,
+        first_completed_at: restoredFirstCompleted,
+        last_completed_at: restoredLastCompleted,
+      },
+      fieldsChanged,
+      latest.id,
+    )
+    snapshot.before_state = {
+      ...snapshot.before_state,
+      _completion: {
+        user_id: userId,
+        completed_at: latest.completed_at,
+        due_at_was: latest.due_at_was,
+        due_at_next: latest.due_at_next,
+      },
+    } as typeof snapshot.before_state
+    logAction(userId, 'undone', `Put back "${task.title}"`, fieldsChanged, [snapshot])
+    logActivity({
+      userId,
+      taskId: task.id,
+      action: 'uncomplete',
+      fields: fieldsChanged,
+      before: snapshot.before_state,
+      after: snapshot.after_state,
+      metadata: { recurring: true },
+    })
+
+    const result = getTaskById(task.id)
+    if (!result) {
+      throw new Error('Failed to retrieve updated task')
+    }
     return result
   })
 

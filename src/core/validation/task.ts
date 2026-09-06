@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import { isValidRRule } from '@/core/recurrence/rrule-builder'
+import { isValidRRule, isPeriodRRule } from '@/core/recurrence/rrule-builder'
 
 /**
  * ISO 8601 datetime string validator
@@ -91,10 +91,10 @@ const isReminderFlag = z.boolean()
  * quota, while a reminder has no debt at all and completing it just means
  * "considered". A row claiming both has no coherent behavior.
  */
-function refuseTrackedReminder<T extends { progress_target?: number; is_reminder?: boolean }>(
-  data: T,
-): boolean {
-  return !(data.is_reminder === true && (data.progress_target ?? 1) > 1)
+function refuseTrackedReminder<
+  T extends { progress_target?: number; is_reminder?: boolean; is_tracked?: boolean },
+>(data: T): boolean {
+  return !(data.is_reminder === true && isTrackedInput(data))
 }
 
 export const TRACKED_REMINDER_MESSAGE =
@@ -113,7 +113,27 @@ const rruleString = z
   .string()
   .nullable()
   .optional()
-  .refine((val) => !val || isValidRRule(val), { message: 'Invalid RRULE format' })
+  .refine((val) => !val || isValidRRule(val) || isPeriodRRule(val), {
+    message: 'Invalid RRULE format',
+  })
+
+function isTrackedInput(data: { progress_target?: number; is_tracked?: boolean }): boolean {
+  return data.is_tracked === true || (data.progress_target ?? 1) > 1
+}
+
+/**
+ * A bare period rule ("FREQ=MONTHLY", no day) is a quota's rule — it names the
+ * period the count runs over, not a day to occur on — so it is only valid on
+ * a tracked task. On an untracked one it would land on an arbitrary weekday.
+ */
+function periodRuleOnlyWhenTracked<
+  T extends { rrule?: string | null; progress_target?: number; is_tracked?: boolean },
+>(data: T): boolean {
+  if (!data.rrule || isValidRRule(data.rrule)) return true
+  return isTrackedInput(data)
+}
+export const PERIOD_RULE_MESSAGE =
+  'A bare period rule (e.g. FREQ=MONTHLY) is only valid on a tracked task'
 
 /**
  * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
@@ -142,8 +162,15 @@ export const taskCreateSchema = z
     ai_added: provenanceFlag,
     progress_target: progressTarget.optional(),
     is_reminder: isReminderFlag.optional(),
+    is_tracked: z.boolean().optional(),
+    // Ask for AI enrichment even though the caller supplied structured fields.
+    // The Reminders quick add sets it: it always sends a sensible default
+    // schedule so the row lands in a slot immediately, which would otherwise
+    // disqualify it from the title-only enrichment trigger.
+    enrich: z.boolean().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
+  .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
 
 export type TaskCreateInput = z.infer<typeof taskCreateSchema>
 
@@ -151,22 +178,27 @@ export type TaskCreateInput = z.infer<typeof taskCreateSchema>
  * Task update (PATCH) input schema
  * All fields optional - only included fields are updated
  */
-export const taskUpdateSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long').optional(),
-  due_at: dateTimeString.nullable().optional(),
-  rrule: rruleString,
-  recurrence_mode: recurrenceMode.optional(),
-  project_id: z.number().int().positive().optional(),
-  priority: priority.optional(),
-  labels: labels.optional(),
-  notes: z.string().max(10000, 'Notes too long').nullable().optional(),
-  auto_snooze_minutes: autoSnoozeMinutes.optional(),
-  reset_original_due_at: z.boolean().optional(),
-  create_label: createLabelFlag,
-  progress_target: progressTarget.optional(),
-  progress_current: progressCurrent.optional(),
-  is_reminder: isReminderFlag.optional(),
-})
+export const taskUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long').optional(),
+    due_at: dateTimeString.nullable().optional(),
+    rrule: rruleString,
+    recurrence_mode: recurrenceMode.optional(),
+    project_id: z.number().int().positive().optional(),
+    priority: priority.optional(),
+    labels: labels.optional(),
+    notes: z.string().max(10000, 'Notes too long').nullable().optional(),
+    auto_snooze_minutes: autoSnoozeMinutes.optional(),
+    reset_original_due_at: z.boolean().optional(),
+    create_label: createLabelFlag,
+    progress_target: progressTarget.optional(),
+    progress_current: progressCurrent.optional(),
+    is_reminder: isReminderFlag.optional(),
+    is_tracked: z.boolean().optional(),
+  })
+  // A PATCH carrying a bare period rule must say the task is tracked in the
+  // same request (is_tracked or progress_target); the schema has no task to ask.
+  .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
 
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>
 
@@ -236,6 +268,16 @@ export const bulkEditSchema = z.object({
     labels_add: labels.optional(),
     labels_remove: labels.optional(),
   }),
+  /**
+   * Values that legitimately differ from task to task within ONE gesture,
+   * keyed by task id and merged over `changes` for that task. The case that
+   * needs it: moving several reminders to another time slot rewrites each
+   * one's own rule (daily, Tue/Thu, monthly) with the new time — one request,
+   * one Undo. Only the schedule is per-task; everything else stays shared.
+   */
+  per_task: z
+    .record(z.string().regex(/^\d+$/, 'Task id'), z.object({ rrule: rruleString }).strict())
+    .optional(),
 })
 
 export type BulkEditInput = z.infer<typeof bulkEditSchema>

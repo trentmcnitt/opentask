@@ -27,6 +27,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // during the transition. The modal opens with its animation, and by the time it
   // closes after creation, DashboardClient is mounted to receive the task-created event.
   const handleAddClick = useCallback(() => {
+    // On the Reminders surface the button adds a reminder, in place: the
+    // surface owns the editor (and the optimistic insert), so it is told to
+    // open it rather than being left for the task form on the dashboard.
+    if (pathname.startsWith('/reminders')) {
+      window.dispatchEvent(new CustomEvent('open-add-reminder'))
+      return
+    }
     if (pathname !== '/') {
       router.push('/')
     }

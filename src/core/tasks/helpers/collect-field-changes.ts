@@ -202,10 +202,20 @@ function collectBasicFields(
     trackField(data, 'auto_snooze_minutes', task.auto_snooze_minutes, input.auto_snooze_minutes)
   }
 
-  // §5 Track. Setting progress_target > 1 is the whole opt-in gesture — there is
-  // no separate "make this tracked" flag.
+  // §5 Track. progress_target > 1 opts in by itself; is_tracked is the explicit
+  // mark for a quota whose target is 1.
   if (input.progress_target !== undefined && input.progress_target !== task.progress_target) {
     trackField(data, 'progress_target', task.progress_target, input.progress_target)
+  }
+  if (input.is_tracked !== undefined && input.is_tracked !== task.is_tracked) {
+    trackField(
+      data,
+      'is_tracked',
+      task.is_tracked,
+      input.is_tracked,
+      'is_tracked = ?',
+      input.is_tracked ? 1 : 0,
+    )
   }
 
   if (input.progress_current !== undefined && input.progress_current !== task.progress_current) {
@@ -303,9 +313,15 @@ function collectRruleChanges(
 
     // Only auto-compute due_at if:
     // 1. User didn't explicitly pass due_at
-    // 2. Task is NOT overdue (due_at is in the future or null)
+    // 2. Task is NOT overdue (due_at is in the future or null) — an overdue
+    //    task keeps its overdue date so a schedule edit cannot quietly clear
+    //    debt the user still has to sweep.
+    // A reminder (§6) has no debt to protect, and a missed one's due_at is
+    // just frozen at its last occurrence, so its due_at follows the new
+    // schedule: the reminder editor's "move it to the evening" must not leave
+    // a due date claiming last Tuesday's morning.
     const isOverdue = task.due_at && new Date(task.due_at) < now
-    if (input.due_at === undefined && !isOverdue) {
+    if (input.due_at === undefined && (!isOverdue || task.is_reminder)) {
       const nextOccurrence = computeFirstOccurrence(input.rrule, anchors.anchor_time, userTimezone)
       const nextDueAt = nextOccurrence.toISOString()
 

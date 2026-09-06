@@ -1,15 +1,15 @@
 /**
  * Shared hook for computing task count badges (overdue, today).
  *
- * Uses a single `now` reference to avoid inconsistencies between counts.
- * Uses getTimezoneDayBoundaries() for DST-safe "today" boundaries.
+ * Thin memo over `countTasks` (src/lib/task-counts.ts), which is the single
+ * definition the nav badges and GET /api/tasks/counts share.
  */
 
 import { useMemo } from 'react'
 import type { Task } from '@/types'
-import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { countTasks } from '@/lib/task-counts'
 
-interface TaskCounts {
+interface TaskCountsResult {
   overdueCount: number
   todayCount: number
 }
@@ -20,20 +20,9 @@ interface TaskCounts {
  * @param allTasks Full task list (used for both overdueCount and todayCount)
  * @param timezone User's IANA timezone string
  */
-export function useTaskCounts(allTasks: Task[], timezone: string): TaskCounts {
+export function useTaskCounts(allTasks: Task[], timezone: string): TaskCountsResult {
   return useMemo(() => {
-    const now = new Date()
-
-    const overdueCount = allTasks.filter((t) => t.due_at && new Date(t.due_at) < now).length
-
-    // DST-safe today boundaries
-    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(timezone)
-    const todayCount = allTasks.filter((t) => {
-      if (!t.due_at) return false
-      const due = new Date(t.due_at)
-      return due >= todayStart && due < tomorrowStart
-    }).length
-
-    return { overdueCount, todayCount }
+    const { overdue, today } = countTasks(allTasks, timezone)
+    return { overdueCount: overdue, todayCount: today }
   }, [allTasks, timezone])
 }

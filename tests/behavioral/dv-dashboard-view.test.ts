@@ -17,7 +17,7 @@ const NOW = new Date('2026-01-15T16:00:00Z') // Thursday, 10:00 local
 
 const SLOTS: TimeSlot[] = [
   { id: 1, user_id: 1, label: 'Early morning', start_time: '07:00', sort_order: 0, created_at: '' },
-  { id: 2, user_id: 1, label: 'Before work', start_time: '09:00', sort_order: 1, created_at: '' },
+  { id: 2, user_id: 1, label: 'Morning', start_time: '09:00', sort_order: 1, created_at: '' },
   { id: 3, user_id: 1, label: 'Midday', start_time: '12:00', sort_order: 2, created_at: '' },
   { id: 4, user_id: 1, label: 'Evening', start_time: '20:30', sort_order: 3, created_at: '' },
 ]
@@ -83,7 +83,7 @@ describe('Dashboard slot view', () => {
   test('DV-003: slots render in time order', () => {
     const groups = groupBySlot([], SLOTS, TZ)
     const labels = groups.filter((g) => g.slot).map((g) => g.slot!.label)
-    expect(labels).toEqual(['Early morning', 'Before work', 'Midday', 'Evening'])
+    expect(labels).toEqual(['Early morning', 'Morning', 'Midday', 'Evening'])
   })
 
   /**

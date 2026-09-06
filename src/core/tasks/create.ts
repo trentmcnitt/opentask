@@ -95,7 +95,10 @@ export function createTask(options: CreateTaskOptions): Task {
     taskLabels.push(PROVENANCE_LABELS.added)
   }
 
-  if (isAIEnabled() && isTitleOnly) {
+  // `enrich` lets a caller opt in explicitly: the Reminders quick add sends a
+  // default schedule so the row appears in a slot at once, which makes it look
+  // structured even though the user only typed a sentence.
+  if (isAIEnabled() && (isTitleOnly || input.enrich === true)) {
     taskLabels.push('ai-to-process')
   }
   const labelsJson = JSON.stringify(taskLabels)
@@ -111,8 +114,8 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        auto_snooze_minutes, labels, notes, progress_target, is_reminder, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -134,6 +137,7 @@ export function createTask(options: CreateTaskOptions): Task {
         // §5: setting a target above 1 at creation is the whole opt-in gesture.
         input.progress_target ?? 1,
         input.is_reminder ? 1 : 0,
+        input.is_tracked ? 1 : 0,
         now,
         now,
       )
@@ -192,7 +196,7 @@ export function getTaskById(taskId: number): Task | null {
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
-           progress_target, progress_current, is_reminder,
+           progress_target, progress_current, is_reminder, is_tracked,
            completion_count, snooze_count, skip_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
     FROM tasks WHERE id = ?
@@ -310,7 +314,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
            tasks.last_notified_at, tasks.last_critical_alert_at, tasks.auto_snooze_minutes,
            tasks.deleted_at, tasks.archived_at,
-           tasks.labels, tasks.progress_target, tasks.progress_current, tasks.is_reminder,
+           tasks.labels, tasks.progress_target, tasks.progress_current, tasks.is_reminder, tasks.is_tracked,
            tasks.completion_count, tasks.snooze_count, tasks.skip_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.notes, tasks.created_at, tasks.updated_at
@@ -351,6 +355,7 @@ interface TaskRow {
   progress_target: number
   progress_current: number
   is_reminder: number
+  is_tracked: number
   completion_count: number
   snooze_count: number
   skip_count: number
@@ -390,6 +395,7 @@ function rowToTask(row: TaskRow): Task {
     progress_target: row.progress_target ?? 1,
     progress_current: row.progress_current ?? 0,
     is_reminder: (row.is_reminder ?? 0) === 1,
+    is_tracked: (row.is_tracked ?? 0) === 1,
     completion_count: row.completion_count,
     snooze_count: row.snooze_count,
     skip_count: row.skip_count ?? 0,

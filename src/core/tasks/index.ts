@@ -18,6 +18,7 @@ export type { DeleteTaskOptions, RestoreTaskOptions } from './delete'
 
 // Mark done
 export { markDone, markUndone } from './mark-done'
+export { rolloverTrackedPeriods } from './period-rollover'
 export type { MarkDoneOptions, MarkDoneResult } from './mark-done'
 
 // Snooze

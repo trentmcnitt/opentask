@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- §7.3: dashboard filter-chip section starts collapsed; this remembers the
   -- user's explicit choice to keep it open.
   filters_expanded INTEGER NOT NULL DEFAULT 0,
+  -- §5: the Track panel on the Tasks page starts folded to one line; this
+  -- remembers the user's explicit choice to keep it open.
+  track_expanded INTEGER NOT NULL DEFAULT 0,
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
@@ -118,6 +121,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- at every query site that wants an indexed boolean (overdue-checker,
   -- dashboard, badge).
   is_reminder      INTEGER NOT NULL DEFAULT 0,
+  -- §5: an explicit "this is a quota" mark, for targets of 1 ("date night,
+  -- once a month"). progress_target > 1 still implies it; this lets a count of
+  -- one per period be tracked rather than scheduled.
+  is_tracked       INTEGER NOT NULL DEFAULT 0,
+  -- §5: when the quota's current period began (UTC ISO of the local period
+  -- start). NULL until the rollover job first sees the task. The rollover
+  -- advances it by the rrule's period and resets progress_current.
+  progress_period_start TEXT,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -344,7 +355,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_user_name ON labels(user_id, name);
 
 -- Time slots (REDESIGN-V03 §6.0)
 --
--- Life-moment containers ("Early morning", "Before work", "Evening") that both
+-- Life-moment containers ("Early morning", "Morning", "Evening") that both
 -- the dashboard (§7.3) and the Reminders surface (§6) group by, so there is one
 -- definition of "morning" rather than two that drift.
 --
@@ -381,3 +392,19 @@ CREATE TABLE IF NOT EXISTS progress_events (
   logged_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_progress_events_task ON progress_events(task_id, logged_at);
+
+-- §5: one row per closed period of a quota — what was logged against the
+-- target that week / month. Written by the rollover job at the period
+-- boundary; a met period also writes a completions row.
+CREATE TABLE IF NOT EXISTS progress_periods (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id      INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  period_start TEXT NOT NULL,
+  period_end   TEXT NOT NULL,
+  logged       INTEGER NOT NULL,
+  target       INTEGER NOT NULL,
+  met          INTEGER NOT NULL DEFAULT 0,
+  closed_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_progress_periods_task ON progress_periods(task_id, period_start);

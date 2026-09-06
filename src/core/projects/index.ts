@@ -47,6 +47,7 @@ export function getProjects(userId: number): Project[] {
         (SELECT COUNT(*) FROM tasks t
          WHERE t.project_id = p.id AND t.user_id = ?
            AND t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
+           AND t.is_reminder = 0
            AND t.due_at IS NOT NULL AND datetime(t.due_at) < datetime(?)
         ) AS overdue_count
       FROM projects p
