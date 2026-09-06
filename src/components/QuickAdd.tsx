@@ -11,6 +11,9 @@ import { showToast } from '@/lib/toast'
 interface QuickAddProps {
   onAdd: (title: string) => void | Promise<void>
   onOpenAddForm?: (title: string) => void
+  /** Another surface's prompt (the Reminders page: "Add a thought…"); fixed, never rotated. */
+  placeholder?: string
+  ariaLabel?: string
 }
 
 // Rotating placeholder text for the quick-add input — for the DEMO account only. The
@@ -30,12 +33,12 @@ const PLACEHOLDER_EXAMPLES = [
 ]
 const PLACEHOLDER_ROTATE_MS = 3200
 
-export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
+export function QuickAdd({ onAdd, onOpenAddForm, placeholder, ariaLabel }: QuickAddProps) {
   const [title, setTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const { data: session } = useSession()
-  const rotate = session?.user?.is_demo === true
+  const rotate = session?.user?.is_demo === true && placeholder === undefined
   const inputRef = useRef<HTMLInputElement>(null)
   const { isSupported, isListening, startListening, stopListening, transcript, error } =
     useSpeechRecognition()
@@ -126,9 +129,9 @@ export function QuickAdd({ onAdd, onOpenAddForm }: QuickAddProps) {
               handleSubmit()
             }
           }}
-          placeholder={PLACEHOLDER_EXAMPLES[placeholderIndex]}
+          placeholder={placeholder ?? PLACEHOLDER_EXAMPLES[placeholderIndex]}
           className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
-          aria-label="Quick add task"
+          aria-label={ariaLabel ?? 'Quick add task'}
           disabled={submitting}
         />
         {isSupported && (

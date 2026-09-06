@@ -953,6 +953,11 @@ paths:
                       considered_total:
                         type: integer
                         description: Reminders considered today, all slots.
+                      not_today:
+                        type: array
+                        description: Reminders with no occurrence today (e.g. a weekly one on its off day), so they stay reachable. Not counted in total.
+                        items:
+                          $ref: '#/components/schemas/Task'
                       has_any:
                         type: boolean
                         description: |

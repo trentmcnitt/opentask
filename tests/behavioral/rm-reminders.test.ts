@@ -11,7 +11,12 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask, bulkSnooze, bulkEdit, markDone } from '@/core/tasks'
 import { snoozeTask } from '@/core/tasks/snooze'
-import { getTodaysReminders, getRemindersBySlot, hasAnyReminders } from '@/core/tasks/reminders'
+import {
+  getTodaysReminders,
+  getRemindersBySlot,
+  getRemindersNotToday,
+  hasAnyReminders,
+} from '@/core/tasks/reminders'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { validateTaskCreate, validateBulkEdit } from '@/core/validation'
@@ -507,5 +512,33 @@ describe('Reminders surface', () => {
         per_task: { [daily.id]: { rrule: 'FREQ=DAILY;BYHOUR=99;BYMINUTE=0' } },
       }),
     ).toThrow(ZodError)
+  })
+  /**
+   * RM-023: A thought that is not today's is still reachable from its own
+   * surface (Trent, 2026-09-05: a Sun/Fri reminder could not be opened on a
+   * Saturday). "Not today" is every reminder with no occurrence today that
+   * was not considered today either — considered ones are today's, behind
+   * the counter.
+   */
+  test('RM-023: reminders with no occurrence today are listed as not today', () => {
+    // 2026-01-15 is a Thursday.
+    const daily = makeReminder({ title: 'Daily', rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0' })
+    const monday = makeReminder({
+      title: 'Monday',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;BYHOUR=7;BYMINUTE=0',
+    })
+    const considered = makeReminder({
+      title: 'Done today',
+      rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+    })
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: considered.id })
+
+    const notToday = getRemindersNotToday(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)
+    expect(notToday).toEqual([monday.id])
+    expect(getTodaysReminders(TEST_USER_ID, TEST_TIMEZONE).map((t) => t.id)).toEqual([daily.id])
+
+    // Monday comes, and it is today's.
+    vi.setSystemTime(new Date('2026-01-19T16:00:00Z'))
+    expect(getRemindersNotToday(TEST_USER_ID, TEST_TIMEZONE)).toHaveLength(0)
   })
 })

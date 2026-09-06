@@ -13,9 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import type { ReminderCreateInput } from '@/hooks/useReminders'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { cn } from '@/lib/utils'
+import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
 import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import {
   describeCadence,
@@ -33,29 +35,33 @@ import type { Task } from '@/types'
 /**
  * A reminder's own details (REDESIGN-V03 §6).
  *
- * ONE component, two hosts. Trent (2026-09-05): "there should be a reminder
+ * ONE component, three hosts. Trent (2026-09-05): "there should be a reminder
  * detail page but then we also need an accompanying modal that kind of works
  * the same way. It should all probably be based on the same component since
  * these are only variants of the same core." The Reminders bar's Details
  * opens this in a dialog (a bottom sheet on a phone) via
  * `ReminderDetailModal`; `/tasks/:id` renders the same thing full-page when
- * the task is a reminder. Both hand it the same props; only the chrome differs.
+ * the task is a reminder; and with `create` set it is the new-reminder form.
+ * All hand it the same props; only the chrome differs.
  *
  * WHY NOT THE TASK EDITOR: the quick panel offers snooze times, a date grid,
- * priority, "schedule from completion", end conditions — none of which mean
- * anything for a thought, and the server refuses to snooze a reminder anyway.
- * A reminder has exactly two settings worth a screen: WHICH DAYS it comes up
- * and WHEN in the day (its slot). Plus its wording and notes. That is all
- * this shows. Project, labels and priority are reachable by making it a task.
+ * labels, projects, "schedule from completion", end conditions — none of
+ * which mean anything for a thought, and the server refuses to snooze a
+ * reminder anyway. A reminder has two settings worth a screen: WHICH DAYS it
+ * comes up and WHEN in the day (its slot). Plus its wording, notes, and its
+ * priority — which on this surface is prominence, not interruption: it sets
+ * where a thought sits in its slot and how heavy it reads, never whether it
+ * nags. Labels and projects stay on the row, untouched, and reappear the
+ * moment the thought is made a task (none of Trent's 38 reminders carries a
+ * label; 34 sit in one project).
  *
  * SEVERAL AT ONCE: with more than one reminder selected the same editor edits
- * their schedule together (Trent, 2026-09-05: "we need that"). Wording and
- * notes are one reminder's own and disappear; the cadence and slot chips show
- * what the selection agrees on and nothing where it doesn't. Only what the
- * user touches is applied, and each reminder keeps the rest of its own rule:
- * picking a slot moves a daily one and a Tue/Thu one to that slot, still
- * daily and still Tue/Thu. A one-time thought keeps its time, as it does in
- * the single editor. The save is one request and one Undo.
+ * their schedule and priority together. Wording and notes are one reminder's
+ * own and disappear; the chips show what the selection agrees on and nothing
+ * where it doesn't. Only what the user touches is applied, and each reminder
+ * keeps the rest of its own rule: picking a slot moves a daily one and a
+ * Tue/Thu one to that slot, still daily and still Tue/Thu. A one-time
+ * thought keeps its time, as in the single editor. One request, one Undo.
  *
  * STAGED, LIKE THE QUICK PANEL: every change is staged locally and saved in
  * one request when Save is pressed. The dirty state is reported to the host
@@ -65,8 +71,10 @@ import type { Task } from '@/types'
  * error.
  */
 export interface ReminderDetailProps {
-  /** One reminder, or several selected together. */
+  /** One reminder, or several selected together; none when creating. */
   tasks: Task[]
+  /** New-reminder mode: what was typed before the form opened, if anything. */
+  create?: ReminderCreateDraft
   /**
    * The user's slots. The Reminders page already holds them and passes them
    * through; the task page passes nothing and this fetches them once.
@@ -77,8 +85,10 @@ export interface ReminderDetailProps {
    * failure (after reporting it) so the staged edits are kept rather than reset.
    */
   onSaveAll?: (changes: QuickActionPanelChanges) => void | Promise<void>
-  /** Several: save each reminder's new rule in one request. Same contract. */
-  onSaveMany?: (changes: ReminderRuleChange[]) => void | Promise<void>
+  /** Several: save in one request. Same contract. */
+  onSaveMany?: (changes: ReminderBulkChanges) => void | Promise<void>
+  /** New: create it. Same contract. */
+  onCreate?: (input: ReminderCreateInput) => void | Promise<void>
   /** Consider the reminder(s) — the host removes them and closes or navigates. */
   onConsidered?: () => void
   /** Move to Trash — a soft delete with Undo, handled by the host. */
@@ -94,10 +104,21 @@ export interface ReminderDetailProps {
   saveRef?: MutableRefObject<(() => Promise<void> | void) | null>
 }
 
+export interface ReminderCreateDraft {
+  title: string
+}
+
 /** One reminder's new rule, for a bulk save. */
 export interface ReminderRuleChange {
   id: number
   rrule: string | null
+}
+
+/** What a bulk save carries: rules per reminder, and what is shared by all. */
+export interface ReminderBulkChanges {
+  ids: number[]
+  rules: ReminderRuleChange[]
+  priority?: number
 }
 
 /**
@@ -127,6 +148,15 @@ const WEEKDAYS = [
 /** How many of a selection's titles the header lists before "and N more". */
 const LISTED_TITLES = 3
 
+/** A new reminder starts as a daily thought; its slot is filled in from the clock. */
+const NEW_SCHEDULE: DraftSchedule = {
+  cadence: 'daily',
+  days: [],
+  monthDay: 1,
+  time: null,
+  custom: null,
+}
+
 /** Same size steps the quick panel uses for a prominent title. */
 function titleSizeClass(title: string): string {
   if (title.length <= 200) return 'text-lg'
@@ -148,12 +178,11 @@ function sameCadence(a: DraftSchedule, b: DraftSchedule): boolean {
   }
 }
 
-/** One reminder's stored schedule, or what several agree on. */
+/** One reminder's stored schedule, what several agree on, or a new one's default. */
 function baseFor(tasks: Task[], timezone: string): DraftSchedule {
   const schedules = tasks.map((t) => readSchedule(t, timezone))
-  if (schedules.length <= 1) {
-    return schedules[0] ?? { cadence: 'once', days: [], monthDay: 1, time: null, custom: null }
-  }
+  if (schedules.length === 0) return NEW_SCHEDULE
+  if (schedules.length === 1) return schedules[0]
   const [first, ...rest] = schedules
   const cadenceAgrees = rest.every((s) => sameCadence(s, first))
   const timeAgrees = rest.every((s) => s.time === first.time)
@@ -166,11 +195,20 @@ function baseFor(tasks: Task[], timezone: string): DraftSchedule {
   }
 }
 
+/** The priority the selection agrees on, or null where it disagrees; 0 for a new one. */
+function basePriorityFor(tasks: Task[]): number | null {
+  if (tasks.length === 0) return 0
+  const first = tasks[0].priority
+  return tasks.every((t) => t.priority === first) ? first : null
+}
+
 export function ReminderDetail({
   tasks,
+  create,
   timeSlots: providedSlots,
   onSaveAll,
   onSaveMany,
+  onCreate,
   onConsidered,
   onDelete,
   onCancel,
@@ -182,8 +220,9 @@ export function ReminderDetail({
   const timezone = useTimezone()
   const fetched = useTimeSlots(providedSlots)
   const timeSlots = providedSlots ?? fetched.timeSlots
+  const creating = tasks.length === 0 && create !== undefined
   const single = tasks.length === 1 ? tasks[0] : null
-  const bulk = single === null
+  const bulk = tasks.length > 1
   const primaryId = tasks[0]?.id ?? 0
 
   // The schedule as stored (`base`) and as edited (`draft`); dirty when they
@@ -192,9 +231,11 @@ export function ReminderDetail({
   // `base` is what they agree on.
   const [base, setBase] = useState<DraftSchedule>(() => baseFor(tasks, timezone))
   const [draft, setDraft] = useState<DraftSchedule>(base)
+  const [basePriority, setBasePriority] = useState<number | null>(() => basePriorityFor(tasks))
+  const [pendingPriority, setPendingPriority] = useState<number | null>(null)
   const [pendingTitle, setPendingTitle] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft, setTitleDraft] = useState('')
+  const [titleDraft, setTitleDraft] = useState(create?.title ?? '')
   // undefined = untouched, null = cleared, string = new text (the quick panel's convention).
   const [pendingNotes, setPendingNotes] = useState<string | null | undefined>(undefined)
   const [editingNotes, setEditingNotes] = useState(false)
@@ -212,26 +253,46 @@ export function ReminderDetail({
     const fresh = baseFor(tasks, timezone)
     setBase(fresh)
     setDraft(fresh)
+    setBasePriority(basePriorityFor(tasks))
+    setPendingPriority(null)
     setPendingTitle(null)
     setEditingTitle(false)
     setPendingNotes(undefined)
     setEditingNotes(false)
   }
 
-  const title = pendingTitle ?? single?.title ?? ''
+  /**
+   * A reminder that has no time of day (a new one, or a one-time thought with
+   * no due time) gets one the moment it repeats: the slot that is current
+   * right now, else the first slot, so the chip that lights up is the honest
+   * answer to "when will this come up".
+   */
+  const defaultTime = useCallback((): number => {
+    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
+    return (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
+  }, [timeSlots, timezone])
+
+  const title = creating ? titleDraft : (pendingTitle ?? single?.title ?? '')
   const notes = pendingNotes !== undefined ? pendingNotes : (single?.notes ?? null)
   const cadenceStaged = !sameCadence(draft, base)
   const timeStaged = draft.time !== base.time
   const scheduleDirty = cadenceStaged || timeStaged
-  const titleDirty =
-    pendingTitle !== null || (editingTitle && titleDraft.trim() !== (pendingTitle ?? title))
-  const isDirty = scheduleDirty || titleDirty || pendingNotes !== undefined
+  const priorityDirty = pendingPriority !== null && pendingPriority !== basePriority
+  const displayPriority = pendingPriority ?? basePriority
+  const titleDirty = creating
+    ? titleDraft.trim() !== (create?.title ?? '')
+    : pendingTitle !== null || (editingTitle && titleDraft.trim() !== (pendingTitle ?? title))
+  const isDirty = scheduleDirty || titleDirty || priorityDirty || pendingNotes !== undefined
+  // A new reminder's time is filled in from the clock, so it is only ever
+  // shown and saved through `effectiveTime`; the draft's own time stays null
+  // until a slot is picked.
+  const effectiveTime = draft.time ?? (creating && draft.cadence !== 'once' ? defaultTime() : null)
   // A weekly schedule needs a day; a repeating one needs a time, which the
   // single editor always supplies and the bulk editor supplies per reminder.
   const complete =
-    draft.cadence === 'weekly'
-      ? draft.days.length > 0
-      : bulk || draft.cadence === 'once' || draft.time !== null
+    (draft.cadence === 'weekly' ? draft.days.length > 0 : true) &&
+    (bulk || draft.cadence === 'once' || effectiveTime !== null) &&
+    (!creating || titleDraft.trim().length > 0)
 
   useEffect(() => {
     onDirtyChange?.(isDirty)
@@ -260,23 +321,12 @@ export function ReminderDetail({
   }, [isDirty])
 
   /**
-   * A reminder that had no time of day (a one-time thought with no due time)
-   * gets one the moment it starts repeating: the slot that is current right
-   * now, else the first slot, so the chip that lights up is the honest answer
-   * to "when will this come up".
-   */
-  const defaultTime = useCallback((): number => {
-    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
-    return (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
-  }, [timeSlots, timezone])
-
-  /**
    * Several at once: each reminder's own schedule with only the staged parts
    * replaced. A staged time reaches the repeating ones; a one-time thought
    * keeps its time. Reminders whose rule would not change are left out, so
    * the request (and its Undo) touches exactly what moved.
    */
-  const bulkChanges = useCallback((): ReminderRuleChange[] => {
+  const bulkRules = useCallback((): ReminderRuleChange[] => {
     if (!bulk) return []
     return tasks.flatMap((task) => {
       const own = readSchedule(task, timezone)
@@ -292,7 +342,8 @@ export function ReminderDetail({
       return sameSchedule(next, own) ? [] : [{ id: task.id, rrule: buildSchedule(next) }]
     })
   }, [bulk, tasks, timezone, cadenceStaged, timeStaged, draft, defaultTime])
-  const bulkChangeCount = bulk ? bulkChanges().length : 0
+  const bulkRuleCount = bulk ? bulkRules().length : 0
+  const bulkHasChanges = bulkRuleCount > 0 || priorityDirty
 
   const collect = useCallback((): QuickActionPanelChanges => {
     const changes: QuickActionPanelChanges = {}
@@ -303,17 +354,48 @@ export function ReminderDetail({
     if (scheduleDirty && draft.cadence) {
       changes.rrule = buildSchedule({ ...draft, cadence: draft.cadence })
     }
+    if (priorityDirty && pendingPriority !== null) changes.priority = pendingPriority
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     return changes
-  }, [single, pendingTitle, editingTitle, titleDraft, scheduleDirty, draft, pendingNotes])
+  }, [
+    single,
+    pendingTitle,
+    editingTitle,
+    titleDraft,
+    scheduleDirty,
+    draft,
+    priorityDirty,
+    pendingPriority,
+    pendingNotes,
+  ])
+
+  const createInput = useCallback((): ReminderCreateInput => {
+    const cadence = draft.cadence ?? 'daily'
+    const rrule =
+      cadence === 'once' ? null : buildSchedule({ ...draft, cadence, time: effectiveTime })
+    return {
+      title: titleDraft.trim(),
+      rrule,
+      notes: pendingNotes ?? null,
+      priority: pendingPriority ?? 0,
+    }
+  }, [draft, effectiveTime, titleDraft, pendingNotes, pendingPriority])
 
   const save = useCallback(
     async (extra: QuickActionPanelChanges = {}) => {
       setSaving(true)
       try {
-        if (bulk) {
-          const changes = bulkChanges()
-          if (changes.length > 0) await onSaveMany?.(changes)
+        if (creating) {
+          if (titleDraft.trim()) await onCreate?.(createInput())
+        } else if (bulk) {
+          const rules = bulkRules()
+          if (rules.length > 0 || priorityDirty) {
+            await onSaveMany?.({
+              ids: tasks.map((t) => t.id),
+              rules,
+              priority: priorityDirty && pendingPriority !== null ? pendingPriority : undefined,
+            })
+          }
         } else {
           const changes = { ...collect(), ...extra }
           if (Object.keys(changes).length > 0) await onSaveAll?.(changes)
@@ -324,7 +406,20 @@ export function ReminderDetail({
         setSaving(false)
       }
     },
-    [bulk, bulkChanges, collect, onSaveAll, onSaveMany],
+    [
+      creating,
+      titleDraft,
+      onCreate,
+      createInput,
+      bulk,
+      bulkRules,
+      priorityDirty,
+      pendingPriority,
+      tasks,
+      onSaveMany,
+      collect,
+      onSaveAll,
+    ],
   )
 
   const handleSave = useCallback(() => save(), [save])
@@ -339,16 +434,18 @@ export function ReminderDetail({
 
   const reset = useCallback(() => {
     setDraft(base)
+    setPendingPriority(null)
     setPendingTitle(null)
     setEditingTitle(false)
+    if (creating) setTitleDraft(create?.title ?? '')
     setPendingNotes(undefined)
     setEditingNotes(false)
-  }, [base])
+  }, [base, creating, create?.title])
 
   /**
    * "Make this a task" goes out with whatever else is staged, as one change:
    * the item leaves this surface for the task editor, where project, labels
-   * and priority live. The toast's Undo brings it back here. One at a time
+   * and the date live. The toast's Undo brings it back here. One at a time
    * only — changing what KIND of thing several items are in one tap is the
    * sort of bulk mistake §6 exists to avoid.
    */
@@ -377,8 +474,9 @@ export function ReminderDetail({
       if (cadence === 'weekly') next.days = base.cadence === 'weekly' ? base.days : []
       if (cadence === 'monthly') next.monthDay = base.cadence === 'monthly' ? base.monthDay : 1
       // Several at once: a time is only ever applied when the user picks one,
-      // so a selection with different times keeps them.
-      if (!bulk && cadence !== 'once' && next.time === null) next.time = defaultTime()
+      // so a selection with different times keeps them. A new one is filled
+      // in from the clock through `effectiveTime` instead.
+      if (single && cadence !== 'once' && next.time === null) next.time = defaultTime()
       return next
     })
   }
@@ -395,6 +493,9 @@ export function ReminderDetail({
     if (minutes === null) return
     setDraft((prev) => ({ ...prev, time: minutes }))
   }
+  const selectPriority = (value: number) => {
+    setPendingPriority(value === basePriority ? null : value)
+  }
 
   const cadences = useMemo(
     () =>
@@ -403,10 +504,10 @@ export function ReminderDetail({
         : CADENCES,
     [base.cadence],
   )
-  const selectedSlot = slotAtMinutes(draft.time, timeSlots)
+  const selectedSlot = slotAtMinutes(effectiveTime, timeSlots)
   const onBoundary =
-    draft.time !== null && timeSlots.some((s) => parseHHMM(s.start_time) === draft.time)
-  const summary = summarize(draft, bulk, timeSlots)
+    effectiveTime !== null && timeSlots.some((s) => parseHHMM(s.start_time) === effectiveTime)
+  const summary = summarize({ ...draft, time: effectiveTime }, bulk, timeSlots)
 
   // --- Notes -----------------------------------------------------------------
 
@@ -420,18 +521,20 @@ export function ReminderDetail({
     setPendingNotes(trimmed === (single?.notes ?? null) ? undefined : trimmed)
   }
 
+  const kind = creating ? 'New reminder' : bulk ? `${tasks.length} reminders` : 'Reminder'
+
   return (
     <div
       className="space-y-4"
-      data-reminder-detail={bulk ? 'bulk' : primaryId}
+      data-reminder-detail={creating ? 'new' : bulk ? 'bulk' : primaryId}
       data-reminder-count={tasks.length}
     >
       {/* Wording — one reminder's own; several show which ones are in hand. */}
       <div className="space-y-1">
-        {(showKind || bulk) && (
+        {(showKind || bulk || creating) && (
           <p className="text-muted-foreground inline-flex items-center gap-1 text-[11px] font-semibold tracking-wider uppercase">
             <Lightbulb className="size-3" />
-            {bulk ? `${tasks.length} reminders` : 'Reminder'}
+            {kind}
           </p>
         )}
         {bulk ? (
@@ -445,6 +548,25 @@ export function ReminderDetail({
               <li className="text-muted-foreground/70">and {tasks.length - LISTED_TITLES} more</li>
             )}
           </ul>
+        ) : creating ? (
+          <Textarea
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (complete && !saving) void handleSave()
+              }
+            }}
+            placeholder="A thought to have at the right moment…"
+            aria-label="Reminder text"
+            className={cn(
+              '-mx-2 max-h-48 min-h-0 resize-none overflow-y-auto rounded-sm border-transparent bg-transparent px-2 py-1 font-medium shadow-none',
+              'hover:bg-muted/50 focus:bg-muted/50 focus-visible:border-transparent focus-visible:ring-0',
+              titleSizeClass(titleDraft),
+            )}
+            autoFocus
+          />
         ) : editingTitle ? (
           <Textarea
             value={titleDraft}
@@ -504,12 +626,19 @@ export function ReminderDetail({
         <TimeOfDaySection
           taskId={primaryId}
           timeSlots={timeSlots}
-          time={draft.time}
+          time={effectiveTime}
           selectedSlotId={selectedSlot?.id ?? null}
           onBoundary={onBoundary}
           onSelect={selectSlot}
         />
       )}
+
+      <PrioritySection
+        taskId={primaryId}
+        value={displayPriority}
+        dirty={priorityDirty}
+        onSelect={selectPriority}
+      />
 
       {!bulk && (
         <NotesSection
@@ -531,9 +660,13 @@ export function ReminderDetail({
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={!isDirty || !complete || saving || (bulk && bulkChangeCount === 0)}
+          disabled={
+            creating
+              ? !complete || saving
+              : !isDirty || !complete || saving || (bulk && !bulkHasChanges)
+          }
         >
-          Save
+          {creating ? 'Add reminder' : 'Save'}
         </Button>
         <Button size="sm" variant="outline" onClick={reset} disabled={!isDirty}>
           Reset
@@ -562,38 +695,40 @@ export function ReminderDetail({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        {onDelete && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="text-destructive/80 hover:text-destructive inline-flex items-center gap-1 transition-colors"
-          >
-            <Trash2 className="size-3" />
-            Move to Trash
-          </button>
-        )}
-        {!bulk && (
-          <button
-            type="button"
-            onClick={makeTask}
-            disabled={saving}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            title="Leave the Reminders surface and edit it as a task — project, labels, priority, due date"
-          >
-            Make this a task
-          </button>
-        )}
-        {onOpenPage && !bulk && (
-          <button
-            type="button"
-            onClick={onOpenPage}
-            className="text-muted-foreground hover:text-foreground ml-auto transition-colors"
-          >
-            Open full page
-          </button>
-        )}
-      </div>
+      {!creating && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-destructive/80 hover:text-destructive inline-flex items-center gap-1 transition-colors"
+            >
+              <Trash2 className="size-3" />
+              Move to Trash
+            </button>
+          )}
+          {single && (
+            <button
+              type="button"
+              onClick={makeTask}
+              disabled={saving}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Leave the Reminders surface and edit it as a task — project, labels, due date"
+            >
+              Make this a task
+            </button>
+          )}
+          {onOpenPage && single && (
+            <button
+              type="button"
+              onClick={onOpenPage}
+              className="text-muted-foreground hover:text-foreground ml-auto transition-colors"
+            >
+              Open full page
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -757,6 +892,51 @@ function TimeOfDaySection({
           Set for {formatMinutes(time)}. Choosing a slot moves it to that slot&apos;s start.
         </p>
       )}
+    </section>
+  )
+}
+
+/**
+ * The same five values and colours as a task's priority. On this surface it
+ * is prominence: order within the slot and weight of the row, never a nag.
+ */
+function PrioritySection({
+  taskId,
+  value,
+  dirty,
+  onSelect,
+}: {
+  taskId: number
+  value: number | null
+  dirty: boolean
+  onSelect: (value: number) => void
+}) {
+  return (
+    <section className="space-y-2" aria-labelledby={`priority-${taskId}`}>
+      <SectionHeading id={`priority-${taskId}`}>
+        Priority
+        {dirty && <span className="ml-1 text-blue-500">●</span>}
+      </SectionHeading>
+      <div className="flex flex-wrap gap-1.5">
+        {PRIORITY_OPTIONS.map((option) => {
+          const selected = value === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              data-priority-chip={option.value}
+              onClick={() => onSelect(option.value)}
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                getPriorityBadgeClasses(option.value, selected ? 'included' : 'unselected'),
+              )}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
     </section>
   )
 }

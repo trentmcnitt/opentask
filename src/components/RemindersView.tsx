@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCheck, ChevronDown, Lightbulb, StickyNote } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb, StickyNote } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
-import { currentSlot } from '@/lib/time-slot-assign'
+import { currentSlot, parseHHMM } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
-import { cadenceMark } from '@/lib/reminder-rule'
+import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
-import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
+import { useReminders, type ReminderCreateInput, type ReminderGroup } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
-import type { ReminderRuleChange } from '@/components/ReminderDetail'
+import { QuickAdd } from '@/components/QuickAdd'
+import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { Task } from '@/types'
@@ -82,6 +83,10 @@ function groupKey(group: ReminderGroup): string {
 }
 
 export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersViewProps) {
+  const timezone = useTimezone()
+  // Held for the details editor's slot chips (so opening one never waits on a
+  // fetch) and for placing a new reminder in its slot at once.
+  const { timeSlots } = useTimeSlots()
   const {
     groups,
     total,
@@ -96,13 +101,12 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     putBack,
     remove,
     refresh,
-  } = useReminders({ onUndo, onCompleted })
-  const timezone = useTimezone()
+    notToday,
+    create,
+  } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const router = useRouter()
   const selection = useSelectionMode()
   const { selectedIds, clear } = selection
-  // Held for the details editor's slot chips, so opening one never waits on a fetch.
-  const { timeSlots } = useTimeSlots()
 
   useEffect(() => {
     if (!refreshRef) return
@@ -172,8 +176,59 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   // schedule together. The tasks are snapshotted here at open time — see
   // ReminderDetailModal for why they must not track the groups.
   const [detailTasks, setDetailTasks] = useState<Task[]>([])
+  const [createDraft, setCreateDraft] = useState<ReminderCreateDraft | null>(null)
   const openDetail = useCallback((task: Task) => setDetailTasks([task]), [])
-  const closeDetail = useCallback(() => setDetailTasks([]), [])
+  const openCreate = useCallback((title = '') => {
+    setDetailTasks([])
+    setCreateDraft({ title })
+  }, [])
+  const closeDetail = useCallback(() => {
+    setDetailTasks([])
+    setCreateDraft(null)
+  }, [])
+
+  // The sidebar's Add Reminder and the phone's plus (AppLayout) ask this
+  // surface to open its own form, rather than leaving for the task form.
+  useEffect(() => {
+    const handler = () => openCreate('')
+    window.addEventListener('open-add-reminder', handler)
+    return () => window.removeEventListener('open-add-reminder', handler)
+  }, [openCreate])
+
+  /**
+   * Creating: the quick add makes a daily thought in the slot that is current
+   * right now (else the first slot), and it is on screen the moment the
+   * server answers; the form can say anything else. Undo is the ordinary one.
+   */
+  const dailyNow = useCallback((): string => {
+    const slot = currentSlot(timeSlots, timezone) ?? timeSlots[0]
+    const minutes = (slot ? parseHHMM(slot.start_time) : null) ?? 9 * 60
+    return `FREQ=DAILY;BYHOUR=${Math.floor(minutes / 60)};BYMINUTE=${minutes % 60}`
+  }, [timeSlots, timezone])
+  const createReminder = useCallback(
+    async (input: ReminderCreateInput) => {
+      try {
+        const task = await create(input)
+        const slot = task.anchor_time ? slotAtMinutes(parseHHMM(task.anchor_time), timeSlots) : null
+        showToast({
+          message: slot ? `Added to ${slot.label}` : `Added \u201c${task.title}\u201d`,
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+      } catch (err) {
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Could not add the reminder',
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [create, timeSlots, onUndo],
+  )
+  const quickAdd = useCallback(
+    (title: string) => createReminder({ title, rrule: dailyNow() }),
+    [createReminder, dailyNow],
+  )
   const saveDetail = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
       try {
@@ -198,15 +253,18 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   // Several at once: each reminder's own new rule in ONE bulk edit, so the
   // toast's Undo puts every one of them back.
   const saveDetailMany = useCallback(
-    async (changes: ReminderRuleChange[]) => {
+    async ({ ids, rules, priority }: ReminderBulkChanges) => {
       try {
+        // A shared priority goes to every id; a rule change only to the ids
+        // whose rule moved. Both in one request, one Undo.
+        const targets = priority !== undefined ? ids : rules.map((r) => r.id)
         const res = await fetch('/api/tasks/bulk/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ids: changes.map((c) => c.id),
-            changes: {},
-            per_task: Object.fromEntries(changes.map((c) => [c.id, { rrule: c.rrule }])),
+            ids: targets,
+            changes: priority !== undefined ? { priority } : {},
+            per_task: Object.fromEntries(rules.map((c) => [c.id, { rrule: c.rrule }])),
           }),
         })
         if (!res.ok) {
@@ -214,7 +272,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
           throw new Error(body?.error || 'Failed to update reminders')
         }
         showToast({
-          message: `Updated ${changes.length} reminders`,
+          message: `Updated ${targets.length} reminders`,
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
         })
@@ -235,6 +293,17 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     // Clearance below the last row for the floating selection bar, so the
     // end of the list can always be scrolled out from under it.
     <section aria-label="Reminders" className="w-full pb-24">
+      {/* Creating lives here, on the surface, not on the task form: a thought
+          typed and entered is a daily reminder in the current slot, on screen
+          at once; the plus opens the editor for anything more. */}
+      <div className="mb-4">
+        <QuickAdd
+          placeholder="Add a thought…"
+          ariaLabel="Add a reminder"
+          onAdd={quickAdd}
+          onOpenAddForm={openCreate}
+        />
+      </div>
       {loading ? (
         <RemindersSkeleton />
       ) : error ? (
@@ -284,6 +353,11 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         </>
       )}
 
+      {/* Reminders with no occurrence today, so a weekly thought is reachable
+          on its off days (Trent, 2026-09-05). Never counted; a row opens its
+          editor, since there is nothing to consider today. */}
+      {!loading && notToday.length > 0 && <NotTodayFold items={notToday} onOpen={openDetail} />}
+
       <ReminderSelectionBar
         selectedCount={selectedIds.size}
         onConsidered={actions.considerSelection}
@@ -298,11 +372,13 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
       />
       <ReminderDetailModal
         tasks={detailTasks}
-        open={detailTasks.length > 0}
+        create={createDraft}
+        open={detailTasks.length > 0 || createDraft !== null}
         timeSlots={timeSlots}
         onClose={closeDetail}
         onSaveAll={saveDetail}
         onSaveMany={saveDetailMany}
+        onCreate={createReminder}
         onConsidered={actions.considerMany}
         onDelete={actions.deleteMany}
         onOpenPage={(id) => router.push(`/tasks/${id}`)}
@@ -958,6 +1034,65 @@ function ReminderRow({
         )}
       </p>
     </li>
+  )
+}
+
+/**
+ * The reminders that are not today's — a weekly thought on its off day, a
+ * monthly one mid-month — folded at the bottom, so every thought stays
+ * reachable from its own surface. Rows carry their cadence mark (the reason
+ * they are not today's) and open the editor on click; there is no circle,
+ * because there is nothing to consider today.
+ */
+function NotTodayFold({ items, onOpen }: { items: Task[]; onOpen: (task: Task) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="bg-muted/30 mt-3 rounded-2xl pb-1" data-not-today>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="hover:text-foreground flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors"
+      >
+        <span className="text-muted-foreground flex size-6 shrink-0 items-center justify-center">
+          {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        </span>
+        <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+          Not today
+        </span>
+        <span className="text-muted-foreground ml-auto text-xs tabular-nums">{items.length}</span>
+      </button>
+      {open && (
+        <ul className="space-y-0.5 px-1">
+          {items.map((task) => {
+            const mark = cadenceMark(task.rrule)
+            return (
+              <li key={task.id} data-not-today-id={task.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(task)}
+                  className="hover:bg-foreground/[0.04] flex w-full items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors"
+                >
+                  <span className="mt-[3px] size-6 shrink-0" aria-hidden />
+                  <p className="text-foreground/70 min-w-0 flex-1 text-[16px] leading-6">
+                    <span className="text-pretty">{task.title}</span>
+                    {mark && (
+                      <span
+                        className="text-muted-foreground/60 ml-2 text-xs whitespace-nowrap"
+                        title={mark.full}
+                        data-cadence-mark
+                      >
+                        {mark.short}
+                      </span>
+                    )}
+                  </p>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }
 

@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
-import type { TimeSlot } from '@/lib/time-slot-assign'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 
@@ -33,6 +33,12 @@ interface UseRemindersOptions {
    * endpoint, so it produces an ordinary undo entry.
    */
   onCompleted?: () => void
+  /**
+   * For placing a newly created reminder into its slot at once, before the
+   * server's next payload confirms it.
+   */
+  timeSlots?: TimeSlot[]
+  timezone?: string
 }
 
 export interface UseRemindersReturn {
@@ -65,6 +71,21 @@ export interface UseRemindersReturn {
   /** Move reminders to Trash (soft delete), with Undo. */
   remove: (tasks: Task[]) => Promise<void>
   refresh: () => Promise<void>
+  /** Reminders with no occurrence today — reachable, never counted. */
+  notToday: Task[]
+  /**
+   * Create a reminder. A daily one is placed in its slot the moment the server
+   * answers; any other cadence waits for the refresh, since only the server
+   * knows whether it is today's.
+   */
+  create: (input: ReminderCreateInput) => Promise<Task>
+}
+
+export interface ReminderCreateInput {
+  title: string
+  rrule: string | null
+  notes?: string | null
+  priority?: number
 }
 
 /**
@@ -74,7 +95,7 @@ export interface UseRemindersReturn {
  * goes through a full page load, which resets module state, so one user's
  * cache cannot leak into another's session.
  */
-let remindersCache: { groups: ReminderGroup[]; hasAny: boolean } | null = null
+let remindersCache: { groups: ReminderGroup[]; hasAny: boolean; notToday: Task[] } | null = null
 
 // Anyone showing a number derived from the cache (the nav badge) subscribes
 // here and re-renders whenever the surface refreshes or completes something.
@@ -127,9 +148,51 @@ function reconcileInFlight(
   })
 }
 
-export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseRemindersReturn {
+/**
+ * Place a fresh reminder in the group for its slot, creating the group if the
+ * slot had nothing today; groups stay in slot order with the un-slotted last.
+ */
+function insertIntoGroups(
+  groups: ReminderGroup[],
+  task: Task,
+  slots: TimeSlot[],
+  timezone: string,
+): ReminderGroup[] {
+  const slot = groupBySlot([task], slots, timezone)[0]?.slot ?? null
+  const existing = groups.findIndex((g) => (g.slot?.id ?? null) === (slot?.id ?? null))
+  if (existing >= 0) {
+    return groups.map((g, i) =>
+      i === existing
+        ? { ...g, reminders: [...g.reminders, task], count: g.reminders.length + 1 }
+        : g,
+    )
+  }
+  const fresh: ReminderGroup = {
+    slot,
+    reminders: [task],
+    count: 1,
+    considered: 0,
+    consideredItems: [],
+  }
+  const startOf = (g: ReminderGroup) => (g.slot ? parseHHMM(g.slot.start_time) : null)
+  const mine = startOf(fresh)
+  const at = groups.findIndex((g) => {
+    const theirs = startOf(g)
+    if (mine === null) return false
+    return theirs === null || theirs > mine
+  })
+  return at < 0 ? [...groups, fresh] : [...groups.slice(0, at), fresh, ...groups.slice(at)]
+}
+
+export function useReminders({
+  onUndo,
+  onCompleted,
+  timeSlots,
+  timezone,
+}: UseRemindersOptions): UseRemindersReturn {
   const [groups, setGroups] = useState<ReminderGroup[]>(remindersCache?.groups ?? [])
   const [hasAny, setHasAny] = useState(remindersCache?.hasAny ?? false)
+  const [notToday, setNotToday] = useState<Task[]>(remindersCache?.notToday ?? [])
   const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number>>(new Set())
@@ -141,6 +204,8 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
   // registration a moving target.
   const callbacksRef = useRef({ onUndo, onCompleted })
   callbacksRef.current = { onUndo, onCompleted }
+  const placementRef = useRef({ timeSlots, timezone })
+  placementRef.current = { timeSlots, timezone }
 
   // IDs whose completion request is still in flight. A background refresh
   // (sync stream, undo chain) can land BETWEEN the optimistic removal and the
@@ -160,9 +225,12 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
       const json = await res.json()
       const nextGroups = stripPending(parseGroups(json))
       const nextHasAny = json?.data?.has_any === true
-      setRemindersCache({ groups: nextGroups, hasAny: nextHasAny })
+      const nextNotToday = ((json as { data?: { not_today?: Task[] } })?.data?.not_today ??
+        []) as Task[]
+      setRemindersCache({ groups: nextGroups, hasAny: nextHasAny, notToday: nextNotToday })
       setGroups(nextGroups)
       setHasAny(nextHasAny)
+      setNotToday(nextNotToday)
       setError(null)
     } catch (err) {
       // A failed background refresh over cached data is not an error state —
@@ -301,6 +369,48 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     [completeIds],
   )
 
+  /**
+   * Create a reminder (POST /api/tasks with the flag). The row is shown the
+   * moment the server answers when it is certainly today's — a daily one —
+   * so the quick add feels immediate; otherwise the refresh decides where it
+   * belongs (today's slot, or "Not today"). Undoable like any creation.
+   */
+  const create = useCallback(
+    async (input: ReminderCreateInput): Promise<Task> => {
+      const body: Record<string, unknown> = { title: input.title, is_reminder: true }
+      if (input.rrule) body.rrule = input.rrule
+      if (input.notes) body.notes = input.notes
+      if (input.priority) body.priority = input.priority
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(err?.error || 'Could not add the reminder')
+      }
+      const task = (await res.json()).data as Task
+      setHasAny(true)
+      const { timeSlots: slots, timezone: tz } = placementRef.current
+      const daily =
+        /^FREQ=DAILY(?:;|$)/.test(task.rrule ?? '') && !/INTERVAL=/.test(task.rrule ?? '')
+      if (daily && slots && tz) {
+        setGroups((prev) => {
+          const next = insertIntoGroups(prev, task, slots, tz)
+          if (remindersCache) setRemindersCache({ ...remindersCache, groups: next, hasAny: true })
+          return next
+        })
+        void refresh()
+      } else {
+        await refresh()
+      }
+      callbacksRef.current.onCompleted?.()
+      return task
+    },
+    [refresh],
+  )
+
   const completeGroup = useCallback(
     (group: ReminderGroup) => completeMany(group.reminders),
     [completeMany],
@@ -322,6 +432,8 @@ export function useReminders({ onUndo, onCompleted }: UseRemindersOptions): UseR
     putBack,
     remove,
     refresh,
+    notToday,
+    create,
   }
 }
 
@@ -511,6 +623,7 @@ function loadRemindersCache(): Promise<void> {
       setRemindersCache({
         groups: parseGroups(json),
         hasAny: json?.data?.has_any === true,
+        notToday: ((json as { data?: { not_today?: Task[] } })?.data?.not_today ?? []) as Task[],
       })
     } catch {
       // A badge that stays at its last value beats one that flickers.

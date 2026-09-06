@@ -156,6 +156,24 @@ export function getConsideredToday(
   })
 }
 
+/**
+ * Reminders that exist but have no occurrence today, so the surface can still
+ * reach them. Today's list is derived from the schedule (§4.6), and a weekly
+ * or monthly thought is therefore invisible on its off days — Trent hit this
+ * with a Sun/Fri reminder on a Saturday (2026-09-05). Considered-today ones
+ * are today's, just behind the counter, so they are not "not today".
+ */
+export function getRemindersNotToday(
+  userId: number,
+  timezone: string,
+  now: Date = new Date(),
+): Task[] {
+  const all = getTasks({ userId, done: false, limit: 1000 }).filter((t) => t.is_reminder)
+  const today = new Set(getTodaysReminders(userId, timezone, now).map((t) => t.id))
+  const considered = new Set(getConsideredToday(userId, timezone, now).map((t) => t.id))
+  return all.filter((t) => !today.has(t.id) && !considered.has(t.id)).sort((a, b) => a.id - b.id)
+}
+
 /** How many reminders are pending in each slot — used by the slot notifications (§4.2). */
 export function countRemindersBySlot(
   userId: number,

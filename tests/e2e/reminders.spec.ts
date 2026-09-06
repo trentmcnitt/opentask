@@ -469,12 +469,17 @@ test.describe('Reminders trash', () => {
       await openAllSlots(page)
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
       await row('A thought to let go of').click()
+      // The row and the toast are optimistic; the server's answer is what
+      // the API check below depends on (on the dev server a first hit of a
+      // route compiles it, which can take seconds), so wait for it by name.
+      const deleted = page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/delete'))
       await page.getByRole('button', { name: 'Move to Trash' }).click()
       await expect(row('A thought to let go of')).toHaveCount(0)
       await expect(row('A thought to keep')).toBeVisible()
       await expect(
         page.getByText('Moved \u201cA thought to let go of\u201d to Trash'),
       ).toBeVisible()
+      await deleted
       await expect
         .poll(
           async () =>
@@ -482,8 +487,10 @@ test.describe('Reminders trash', () => {
         )
         .not.toBeNull()
 
+      const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
       await toastUndo(page).click()
       await expect(row('A thought to let go of')).toBeVisible()
+      await undone
       await expect
         .poll(
           async () =>
@@ -692,6 +699,120 @@ test.describe('Reminder details', () => {
     }
   })
 
+  test('a thought typed into the quick add is a daily reminder in the current slot', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    let id: number | null = null
+    try {
+      await openReminders(page)
+      const input = page.getByRole('textbox', { name: 'Add a reminder' })
+      await input.fill('A thought typed in place')
+      await input.press('Enter')
+      // On screen the moment the server answers, in whichever slot is current.
+      const row = page.locator('li[data-reminder-id]', { hasText: 'A thought typed in place' })
+      await expect(row).toBeVisible()
+      await expect(page.getByText(/^Added to /)).toBeVisible()
+      id = Number(await row.getAttribute('data-reminder-id'))
+      const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+      expect(task.is_reminder).toBe(true)
+      expect(task.rrule).toMatch(/^FREQ=DAILY;BYHOUR=\d+;BYMINUTE=\d+$/)
+      // It sits in the slot its time falls in, which is the current one.
+      const slot = row.locator('xpath=ancestor::*[@data-slot-group]')
+      await expect(slot).toHaveCount(1)
+    } finally {
+      if (id) await deleteTasks(page, [id])
+    }
+  })
+
+  test('Add Reminder opens the form in place; a weekly thought lands under Not today until its day', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+    const today = DateTime.now().setZone(TEST_TZ).weekday - 1
+    const tomorrow = (today + 1) % 7
+    let id: number | null = null
+    try {
+      await openReminders(page)
+      // The sidebar's button is this surface's: it says so and stays here.
+      await page.getByRole('button', { name: 'Add Reminder' }).click()
+      await expect(page).toHaveURL(/\/reminders/)
+      const dialog = page.getByRole('dialog', { name: 'New reminder' })
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('textbox', { name: 'Reminder text' }).fill('A thought for tomorrow')
+      await dialog.locator('[data-cadence="weekly"]').click()
+      await dialog.locator(`[data-weekday="${tomorrow}"]`).click()
+      await dialog.getByRole('button', { name: 'Add reminder' }).click()
+      await expect(dialog).toHaveCount(0)
+
+      // Not on today's list; reachable under the fold, with its day as the mark.
+      await expect(
+        page.locator('li[data-reminder-id]', { hasText: 'A thought for tomorrow' }),
+      ).toHaveCount(0)
+      const fold = page.locator('[data-not-today]')
+      await expect(fold).toBeVisible()
+      await fold.getByRole('button', { name: /Not today/ }).click()
+      const entry = fold.locator('[data-not-today-id]', { hasText: 'A thought for tomorrow' })
+      await expect(entry).toBeVisible()
+      id = Number(await entry.getAttribute('data-not-today-id'))
+      const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+      expect(task.rrule).toContain(`BYDAY=${RRULE_DAYS[tomorrow]}`)
+
+      // A click opens its editor — that is what the fold is for.
+      await entry.getByRole('button').click()
+      await expect(page.getByRole('dialog', { name: 'Reminder', exact: true })).toContainText(
+        'A thought for tomorrow',
+      )
+    } finally {
+      if (id) await deleteTasks(page, [id])
+    }
+  })
+
+  test('priority is the same five values, and reads as prominence in the slot', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids = [
+      await createReminder(page, {
+        title: 'A quiet thought',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+      await createReminder(page, {
+        title: 'A thought to lift',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+    ]
+    const taskField = async (id: number, field: string) =>
+      (await (await page.request.get(`/api/tasks/${id}`)).json()).data[field]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const rows = page.locator('[data-slot-group="Early morning"] li[data-reminder-id]')
+      await expect(rows.nth(0)).toContainText('A quiet thought')
+
+      await rows.nth(1).dblclick()
+      const dialog = page.getByRole('dialog', { name: 'Reminder', exact: true })
+      await expect(dialog.locator('[data-priority-chip="0"]')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await dialog.locator('[data-priority-chip="3"]').click()
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => taskField(ids[1], 'priority')).toBe(3)
+      // Higher priority sits first in the slot, and nothing else about it shouts.
+      await expect(rows.nth(0)).toContainText('A thought to lift')
+
+      await toastUndo(page).click()
+      await expect.poll(() => taskField(ids[1], 'priority')).toBe(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('a one-time thought reads as Once and can start repeating in its own slot', async ({
     authenticatedPage: page,
   }) => {
@@ -736,9 +857,12 @@ test.describe('Reminder details', () => {
       due_at: todayAt(9),
     })
     try {
+      // The slot chips arrive with the page's own time-slots fetch.
+      const slots = page.waitForResponse((r) => r.url().includes('/api/time-slots'))
       await page.goto(`/tasks/${id}`)
       await expect(page.getByRole('heading', { name: 'Reminder' })).toBeVisible()
       await expect(page.locator('[data-cadence="daily"]')).toHaveAttribute('aria-pressed', 'true')
+      await slots
       await expect(page.locator('[data-slot-label="Morning"]')).toHaveAttribute(
         'aria-pressed',
         'true',
