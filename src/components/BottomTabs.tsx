@@ -121,7 +121,7 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
                 {tab.href === '/reminders' && remindersWaiting > 0 && (
                   <span
                     data-reminders-badge
-                    className={`${BADGE} bg-badge-neutral`}
+                    className={`${BADGE} bg-badge-reminders`}
                     aria-label={`${remindersWaiting} reminders waiting so far today`}
                   >
                     {capCount(remindersWaiting)}
