@@ -1,11 +1,15 @@
 'use client'
 
+import { useState } from 'react'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
-import { periodLabel, trackSummary } from '@/lib/track'
+import { periodShort, groupByPeriod, trackSummary } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
+import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
+import { TrackChipPopover } from '@/components/TrackChipPopover'
+import { GuardedLink } from '@/components/GuardedLink'
 import { useTrackPanelPreference } from '@/components/PreferencesProvider'
 import type { Task } from '@/types'
 
@@ -42,6 +46,9 @@ import type { Task } from '@/types'
  */
 export function TrackPanel({ tasks }: { tasks: Task[] }) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
+  // The quota whose detail sheet is showing. Held by id rather than by object
+  // so a sync refresh replaces the rendered task underneath an open sheet.
+  const [detailId, setDetailId] = useState<number | null>(null)
   const quotas = trackedItems(tasks)
   if (quotas.length === 0) return null
 
@@ -86,7 +93,15 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
           the quotas (Trent chose this over nested boxes, 2026-09-05). */}
       <div className="space-y-2.5">
         {groups.map((g) => (
-          <PeriodCard key={g.period ?? 'none'} period={g.period} tasks={g.tasks} open={open} />
+          <PeriodCard
+            key={g.period ?? 'none'}
+            period={g.period}
+            tasks={g.tasks}
+            open={open}
+            detailId={detailId}
+            onOpenDetail={(t) => setDetailId(t.id)}
+            onCloseDetail={() => setDetailId(null)}
+          />
         ))}
       </div>
     </section>
@@ -96,11 +111,17 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
 function PeriodCard({
   period,
   tasks,
+  detailId,
+  onOpenDetail,
+  onCloseDetail,
   open,
 }: {
   period: string | null
   tasks: Task[]
   open: boolean
+  detailId: number | null
+  onOpenDetail: (task: Task) => void
+  onCloseDetail: () => void
 }) {
   const word = period ? periodShort(period) : 'no period'
   const s = trackSummary(tasks)
@@ -145,7 +166,13 @@ function PeriodCard({
       ) : (
         <ul className="flex flex-wrap gap-1.5" aria-label={word}>
           {tasks.map((task) => (
-            <TrackChip key={task.id} task={task} />
+            <TrackChip
+              key={task.id}
+              task={task}
+              detailOpen={detailId === task.id}
+              onOpenDetail={onOpenDetail}
+              onCloseDetail={onCloseDetail}
+            />
           ))}
         </ul>
       )}
@@ -153,78 +180,111 @@ function PeriodCard({
   )
 }
 
-/** "this week" → "week", for the card's word. */
-function periodShort(period: string): string {
-  return period.replace(/^this /, '').replace(/^today$/, 'day')
-}
-
 /**
- * One quota as a chip. The whole chip is the +1 button; a hold (400 ms, the
- * app's long-press) or a shift-click is −1. The fill behind the text is the
- * count over the target. Long titles wrap the row, never the chip's text.
+ * One quota as a chip.
+ *
+ * The gestures, and why each one (Trent, 2026-09-06):
+ *   tap / click        +1
+ *   swipe left         −1   "I think I want to try swiping left to reduce them"
+ *   click-drag left    −1   the same handler; pointer events cover both
+ *   right-click        −1   "or it could be maybe right-click to subtract one"
+ *   shift-click        −1   kept, the pre-existing desktop path
+ *   press and hold     open the detail sheet — this REPLACED hold-to-subtract,
+ *                      which is why swipe had to take over −1 first
+ *
+ * The fill behind the text is the count over the target. Long titles wrap the
+ * row, never the chip's text.
  */
-function TrackChip({ task }: { task: Task }) {
+function TrackChip({
+  task,
+  detailOpen,
+  onOpenDetail,
+  onCloseDetail,
+}: {
+  task: Task
+  detailOpen: boolean
+  onOpenDetail: (task: Task) => void
+  onCloseDetail: () => void
+}) {
   const { state, period, log } = useTrackProgress(task)
-  const press = useLongPress({ onLongPress: () => void log(-1) })
+  const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
+  const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
 
   return (
     <li className="max-w-full">
-      <button
-        type="button"
-        data-track-chip={task.id}
-        onPointerDown={press.onPointerDown}
-        onPointerUp={press.onPointerUp}
-        onPointerMove={press.onPointerMove}
-        onPointerLeave={press.onPointerLeave}
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={(e) => {
-          // A hold already logged its −1; the click that follows it is not a tap.
-          if (press.didFire()) return
-          void log(e.shiftKey ? -1 : 1)
+      <TrackChipPopover
+        task={task}
+        state={state}
+        open={detailOpen}
+        onOpenChange={(next) => {
+          if (!next) onCloseDetail()
         }}
-        aria-label={`Log one more for "${task.title}"`}
-        title="Tap: +1 · Hold or shift-click: −1"
-        className={cn(
-          // leading-5, not leading-none: with the chip clipping its fill, a tight line
-          // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
-          'relative flex h-7 max-w-full touch-manipulation items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-5 transition-colors select-none',
-          'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
-          state.met && 'border-green-600/30',
-        )}
       >
-        <span
-          aria-hidden="true"
+        <button
+          type="button"
+          data-track-chip={task.id}
+          onPointerDown={(e) => {
+            press.onPointerDown(e)
+            swipe.onPointerDown(e)
+          }}
+          onPointerUp={(e) => {
+            press.onPointerUp()
+            swipe.onPointerUp(e)
+          }}
+          onPointerMove={(e) => {
+            press.onPointerMove(e)
+            swipe.onPointerMove(e)
+          }}
+          onPointerLeave={press.onPointerLeave}
+          onPointerCancel={swipe.onPointerCancel}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            // Mouse only. A long-press on iOS can raise a contextmenu of its own,
+            // and that must not silently subtract when the user meant to open
+            // the sheet.
+            if (!press.wasTouch()) void log(-1)
+          }}
+          onClick={(e) => {
+            // A hold opened the sheet and a swipe already logged its −1; the
+            // click that trails either one is not a tap.
+            if (press.didFire() || swipe.didSwipe()) return
+            void log(e.shiftKey ? -1 : 1)
+          }}
+          aria-label={`Log one more for "${task.title}"`}
+          title="Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details"
           className={cn(
-            'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
-            state.met ? 'bg-green-600/15' : 'bg-foreground/10',
-          )}
-          style={{ width: `${state.fraction * 100}%` }}
-        />
-        <span className="relative truncate">{task.title}</span>
-        <span
-          data-track-count
-          className={cn(
-            'relative text-xs whitespace-nowrap tabular-nums',
-            state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            // leading-5, not leading-none: with the chip clipping its fill, a tight line
+            // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
+            // touch-action pan-y, NOT touch-manipulation: the page must keep
+            // scrolling vertically while the horizontal drag belongs to us.
+            'relative flex h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-5 transition-colors select-none',
+            'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
+            state.met && 'border-green-600/30',
           )}
         >
-          <span className="text-foreground font-medium">{state.current}</span>/{state.target}
-        </span>
-        {period && <span className="sr-only"> {period}</span>}
-      </button>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
+              state.met ? 'bg-green-600/15' : 'bg-foreground/10',
+            )}
+            style={{ width: `${state.fraction * 100}%` }}
+          />
+          <span className="relative truncate">{task.title}</span>
+          <span
+            data-track-count
+            className={cn(
+              'relative text-xs whitespace-nowrap tabular-nums',
+              state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            )}
+          >
+            <span className="text-foreground font-medium">{state.current}</span>/{state.target}
+          </span>
+          {period && <span className="sr-only"> {period}</span>}
+        </button>
+      </TrackChipPopover>
     </li>
   )
-}
-
-/** Quotas by period, in day-to-year order, each group in title order (as given). */
-function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }[] {
-  const order = ['today', 'this week', 'this month', 'this year', null]
-  const by = new Map<string | null, Task[]>()
-  for (const t of quotas) {
-    const p = periodLabel(t.rrule)
-    by.set(p, [...(by.get(p) ?? []), t])
-  }
-  return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
 }
 
 function TrackRow({ task }: { task: Task }) {
@@ -235,15 +295,21 @@ function TrackRow({ task }: { task: Task }) {
       data-track-row={task.id}
       className="hover:bg-background flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors"
     >
-      <span
+      {/* The rows view is the keyboard-reachable route into a quota. The chips'
+          press-and-hold has no keyboard equivalent, and the popover it opens is
+          anchored to a chip that does not exist here — so this goes straight to
+          the editor, which is the fuller thing and where a row has the room to
+          send you. */}
+      <GuardedLink
+        href={`/tasks/${task.id}`}
+        title={`${task.title} — open`}
         className={cn(
-          'basis-full truncate text-[15px] sm:flex-1 sm:basis-0',
+          'hover:text-foreground basis-full truncate rounded text-left text-[15px] underline-offset-4 hover:underline sm:flex-1 sm:basis-0',
           state.met ? 'text-foreground/70' : 'text-foreground',
         )}
-        title={task.title}
       >
         {task.title}
-      </span>
+      </GuardedLink>
 
       {/* Fixed-width cluster, flush right: the same columns on every line. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">

@@ -13,6 +13,7 @@ import {
   Redo2,
   Menu,
   Keyboard,
+  Archive,
   Settings,
   Trash2,
   Bot,
@@ -401,10 +402,18 @@ export function Header({
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
-                {/* Trash and Settings live here because the mobile tab bar has
-                    five slots and spends them on daily destinations. This menu is
-                    the only overflow surface on mobile, so it is also the only
-                    route to Trash there — the desktop sidebar still lists both. */}
+                {/* Archive, Trash and Settings live here because the mobile tab
+                    bar has five slots and spends them on daily destinations.
+                    This menu is the only overflow surface on mobile, so it is
+                    also the only route to these there — the desktop sidebar
+                    still lists all three. Archive moved here on 2026-09-06 when
+                    Quotas took its tab. */}
+                <DropdownMenuItem asChild>
+                  <GuardedLink href="/archive">
+                    <Archive className="size-4" />
+                    Archive
+                  </GuardedLink>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <GuardedLink href="/trash">
                     <Trash2 className="size-4" />
