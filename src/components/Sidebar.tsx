@@ -128,7 +128,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
         <div className="border-t px-2 py-3">
           <Button variant="outline" className="w-full justify-start gap-2" onClick={onAddClick}>
             <Plus className="size-4" />
-            Add Task
+            {pathname.startsWith('/reminders') ? 'Add Reminder' : 'Add Task'}
           </Button>
         </div>
       )}

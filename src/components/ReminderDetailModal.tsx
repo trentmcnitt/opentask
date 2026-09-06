@@ -5,8 +5,13 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
-import { ReminderDetail, type ReminderRuleChange } from '@/components/ReminderDetail'
+import {
+  ReminderDetail,
+  type ReminderBulkChanges,
+  type ReminderCreateDraft,
+} from '@/components/ReminderDetail'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import type { ReminderCreateInput } from '@/hooks/useReminders'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -18,7 +23,8 @@ import type { Task } from '@/types'
  * guard, as the dashboard's quick-action popover, so the two surfaces feel
  * like one app. The host page renders the very same component at full size.
  * One selected reminder gets the full editor; several get their schedule
- * edited together.
+ * edited together; with `create` set and no tasks it is the new-reminder
+ * form (the sidebar's Add Reminder, the phone's plus, the quick add's plus).
  *
  * `tasks` is a SNAPSHOT taken when the modal opened, not rows looked up in
  * the live groups: the surface refreshes on every sync event, and a task
@@ -27,13 +33,17 @@ import type { Task } from '@/types'
  */
 interface ReminderDetailModalProps {
   tasks: Task[]
+  /** New-reminder mode, with whatever was typed before the form was opened. */
+  create?: ReminderCreateDraft | null
   open: boolean
   timeSlots: TimeSlot[]
   onClose: () => void
   /** One reminder: saves and reports; rejects on failure so the modal stays open with the edits. */
   onSaveAll: (taskId: number, changes: QuickActionPanelChanges) => Promise<void>
   /** Several: one request, one Undo; same contract. */
-  onSaveMany: (changes: ReminderRuleChange[]) => Promise<void>
+  onSaveMany: (changes: ReminderBulkChanges) => Promise<void>
+  /** New: creates and reports; same contract. */
+  onCreate: (input: ReminderCreateInput) => Promise<void>
   onConsidered: (tasks: Task[]) => void
   onDelete: (tasks: Task[]) => void
   onOpenPage: (taskId: number) => void
@@ -41,11 +51,13 @@ interface ReminderDetailModalProps {
 
 export function ReminderDetailModal({
   tasks,
+  create,
   open,
   timeSlots,
   onClose,
   onSaveAll,
   onSaveMany,
+  onCreate,
   onConsidered,
   onDelete,
   onOpenPage,
@@ -55,6 +67,7 @@ export function ReminderDetailModal({
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
   const single = tasks.length === 1 ? tasks[0] : null
+  const creating = tasks.length === 0 && !!create
 
   // The dismiss guard reads dirtiness through a ref, not the state. Radix
   // hands a dismissal (Escape, a click outside) to whichever `onOpenChange`
@@ -80,11 +93,19 @@ export function ReminderDetailModal({
   )
 
   const handleSaveMany = useCallback(
-    async (changes: ReminderRuleChange[]) => {
+    async (changes: ReminderBulkChanges) => {
       await onSaveMany(changes)
       onClose()
     },
     [onSaveMany, onClose],
+  )
+
+  const handleCreate = useCallback(
+    async (input: ReminderCreateInput) => {
+      await onCreate(input)
+      onClose()
+    },
+    [onCreate, onClose],
   )
 
   const handleOpenChange = useCallback(
@@ -108,9 +129,9 @@ export function ReminderDetailModal({
     setShowCloseConfirm(false)
   }, [])
 
-  if (tasks.length === 0) return null
+  if (tasks.length === 0 && !creating) return null
 
-  const name = single ? 'Reminder' : 'Reminders'
+  const name = creating ? 'New reminder' : single ? 'Reminder' : 'Reminders'
   const panel = (
     <div
       className={cn(
@@ -119,20 +140,30 @@ export function ReminderDetailModal({
       )}
     >
       <ReminderDetail
-        key={tasks.map((t) => t.id).join(',')}
+        key={creating ? 'new' : tasks.map((t) => t.id).join(',')}
         tasks={tasks}
+        create={creating ? create : undefined}
         timeSlots={timeSlots}
         showKind
         onSaveAll={handleSaveAll}
         onSaveMany={handleSaveMany}
-        onConsidered={() => {
-          onConsidered(tasks)
-          onClose()
-        }}
-        onDelete={() => {
-          onDelete(tasks)
-          onClose()
-        }}
+        onCreate={handleCreate}
+        onConsidered={
+          creating
+            ? undefined
+            : () => {
+                onConsidered(tasks)
+                onClose()
+              }
+        }
+        onDelete={
+          creating
+            ? undefined
+            : () => {
+                onDelete(tasks)
+                onClose()
+              }
+        }
         onCancel={onClose}
         onOpenPage={
           single
