@@ -190,14 +190,6 @@ export function QuotaDetail({
     setNotes(saved.notes)
   }
 
-  /**
-   * Stop tracking: the task stays, the counter goes. One request, because the
-   * validation treats target, flag and rule as a set.
-   */
-  function stopTracking() {
-    void onSaveAll({ progress_target: 1, is_tracked: false, rrule: null })
-  }
-
   return (
     <div
       className={cn('rounded-lg border p-4', dirty && '[box-shadow:inset_4px_0_0_rgb(59_130_246)]')}
@@ -263,11 +255,16 @@ export function QuotaDetail({
           <Button variant="outline" onClick={handleReset} disabled={!dirty}>
             Reset
           </Button>
-          <Button variant="ghost" onClick={stopTracking} className="ml-auto">
-            Stop tracking
-          </Button>
+          {/* No "stop tracking". A quota is its own kind of thing, not a task
+              wearing a counter you can take off — Trent, 2026-09-06: "I think a
+              quota can be something totally different… I'm just trying to keep
+              things simple." Converting also could not be honest:
+              `completion_count` means "times done" on a task and "periods met"
+              on a quota, so carrying it across either direction would quietly
+              change what the number claims. Retiring one is Trash, like
+              anything else; making one is the Quotas page. */}
           {onDelete && (
-            <Button variant="ghost" onClick={onDelete} className="text-destructive">
+            <Button variant="ghost" onClick={onDelete} className="text-destructive ml-auto">
               Move to Trash
             </Button>
           )}

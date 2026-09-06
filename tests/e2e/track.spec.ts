@@ -202,7 +202,7 @@ test.describe('Track', () => {
     }
   })
 
-  test('a quota edits its cadence in its own editor, and can stop being one', async ({
+  test('a quota edits its cadence in its own editor, and is retired by deleting', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -234,15 +234,11 @@ test.describe('Track', () => {
       )
       await expect(after.getByRole('textbox', { name: 'Times per period' })).toHaveValue('5')
 
-      // Stop tracking keeps the task and drops the counter, so it goes back to
-      // being an ordinary task — and the quota editor is no longer what renders.
-      await after.getByRole('button', { name: 'Stop tracking' }).click()
-      await page.waitForResponse(
-        (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
-      )
-      await page.reload()
-      await expect(page.locator(`[data-quota-detail="${id}"]`)).toHaveCount(0)
-      await expect(page.getByText('Walk the dog').first()).toBeVisible()
+      // A quota is retired by deleting it, not by being turned back into a
+      // task: there is no "stop tracking", because a quota is its own kind of
+      // thing rather than a task wearing a counter.
+      await expect(after.getByRole('button', { name: 'Stop tracking' })).toHaveCount(0)
+      await expect(after.getByRole('button', { name: 'Move to Trash' })).toBeVisible()
     } finally {
       await deleteTasks(page, [id])
     }
@@ -296,6 +292,57 @@ test.describe('Track', () => {
     } finally {
       if (before && before !== 'All') await switchView(page, before)
       await deleteTasks(page, [id])
+    }
+  })
+})
+
+/**
+ * The Quotas page (§5) — where quotas are made, managed and retired, as
+ * opposed to the dashboard's Track panel, which is where they are tapped.
+ */
+test.describe('Quotas page', () => {
+  test('makes a quota, selects a range of them, and retires them together', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      await page.goto('/quotas')
+      const view = page.locator('[data-quotas-view]')
+      await expect(view).toBeVisible()
+      const before = await view.locator('[data-quota-row]').count()
+
+      // Creating one: the only route that existed before this page was the API.
+      for (const title of ['Probe quota one', 'Probe quota two']) {
+        await view.getByRole('button', { name: 'New quota' }).click()
+        const form = page.locator('[data-new-quota]')
+        await form.getByRole('textbox', { name: 'Quota title' }).fill(title)
+        const created = page.waitForResponse(
+          (r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST',
+        )
+        await form.getByRole('button', { name: 'Create' }).click()
+        ids.push((await (await created).json()).data.id)
+      }
+      await expect(view.locator('[data-quota-row]')).toHaveCount(before + 2)
+
+      // A brand new quota has never been met, and says so.
+      const row = page.locator(`[data-quota-row="${ids[0]}"]`)
+      await expect(row).toContainText('never met')
+
+      // The dashboard's selection model: click selects and never navigates.
+      await row.click()
+      await expect(row).toHaveAttribute('aria-selected', 'true')
+      await expect(page).toHaveURL(/\/quotas$/)
+      await expect(page.locator('[data-quota-selection-bar]')).toContainText('1 selected')
+
+      // Shift-click takes the range, and the bar retires the set.
+      await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
+      const bar = page.locator('[data-quota-selection-bar]')
+      await expect(bar).toContainText('2 selected')
+      await bar.getByRole('button', { name: 'Trash' }).click()
+      await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(0)
+      await expect(page.locator(`[data-quota-row="${ids[1]}"]`)).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 })
