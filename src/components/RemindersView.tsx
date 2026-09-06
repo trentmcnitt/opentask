@@ -288,10 +288,38 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
     },
     [createReminder, dailyIn, timeSlots],
   )
+  /**
+   * Retry the AI on a reminder it gave up on: the server swaps `ai-failed`
+   * back to `ai-to-process` and runs enrichment again. The row is remembered
+   * with its current wording so the outcome is announced like a fresh add.
+   */
+  const retryEnrichment = useCallback(
+    async (task: Task) => {
+      awaitingEnrichment.current.set(task.id, task.title)
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' })
+        if (!res.ok) throw new Error('Could not retry')
+        showToast({ message: 'Asking the AI again\u2026', id: `reminder-created-${task.id}` })
+        void refresh()
+      } catch {
+        awaitingEnrichment.current.delete(task.id)
+        showToast({ message: 'Could not retry the AI', type: 'error' })
+      }
+    },
+    [refresh],
+  )
   const saveDetail = useCallback(
     async (taskId: number, changes: QuickActionPanelChanges) => {
       try {
-        const { description } = await saveTaskChanges(taskId, changes)
+        // A schedule set by hand makes an earlier AI failure moot: the mark
+        // says "until you edit it", so editing it takes the mark off.
+        const failed = detailTasks.find((t) => t.id === taskId)?.labels.includes('ai-failed')
+        const { description } = await saveTaskChanges(
+          taskId,
+          failed
+            ? { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
+            : changes,
+        )
         showToast({
           message: description || 'Reminder updated',
           type: 'success',
@@ -402,6 +430,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
                     onRowClick={actions.rowClick}
                     onRowOpen={openDetail}
                     onComplete={actions.complete}
+                    onRetry={retryEnrichment}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
                   />
@@ -722,6 +751,7 @@ function ReminderSlotGroup({
   onRowClick,
   onRowOpen,
   onComplete,
+  onRetry,
   onCompleteGroup,
   onPutBack,
 }: {
@@ -736,6 +766,7 @@ function ReminderSlotGroup({
   onRowClick: (task: Task, e: React.MouseEvent) => void
   onRowOpen: (task: Task) => void
   onComplete: (task: Task) => void
+  onRetry: (task: Task) => void
   onCompleteGroup: (group: ReminderGroup) => void
   onPutBack: (task: Task) => void
 }) {
@@ -818,6 +849,7 @@ function ReminderSlotGroup({
                   onClick={onRowClick}
                   onOpen={onRowOpen}
                   onComplete={onComplete}
+                  onRetry={onRetry}
                 />
               ))}
             </ul>
@@ -1023,6 +1055,7 @@ function ReminderRow({
   onClick,
   onOpen,
   onComplete,
+  onRetry,
 }: {
   reminder: Task
   completing: boolean
@@ -1030,9 +1063,18 @@ function ReminderRow({
   onClick: (task: Task, e: React.MouseEvent) => void
   onOpen: (task: Task) => void
   onComplete: (task: Task) => void
+  onRetry: (task: Task) => void
 }) {
   const hasNotes = !!reminder.notes?.trim()
   const mark = cadenceMark(reminder.rrule)
+  // The AI's processing state, carried on the same labels a task uses. The
+  // surface shows no labels, so the two states that matter get their own
+  // marks: the pulse the task row wears while the AI is reading, and a line
+  // under the title when it gave up. The second one is the important one —
+  // the quick add already put this thought in a slot with a plausible daily
+  // rule, so without a mark a failure would look exactly like success.
+  const aiProcessing = reminder.labels.includes('ai-to-process')
+  const aiFailed = reminder.labels.includes('ai-failed')
 
   return (
     <li
@@ -1047,10 +1089,14 @@ function ReminderRow({
       // dashboard's double-click leaves the same state.
       onDoubleClick={() => onOpen(reminder)}
       className={cn(
-        'group flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-all duration-200 ease-out select-none',
+        // The border is always there, transparent, so the processing pulse has
+        // something to color without the row shifting by a pixel.
+        'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all duration-200 ease-out select-none',
         selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
         completing && 'pointer-events-none translate-x-2 opacity-0',
+        aiProcessing && 'animate-ai-processing',
       )}
+      data-ai-state={aiProcessing ? 'processing' : aiFailed ? 'failed' : undefined}
     >
       {/* The circle considers this one item directly and never touches the
           selection, so it stops the row's click from reaching the handler. */}
@@ -1089,6 +1135,21 @@ function ReminderRow({
         {hasNotes && (
           <span className="text-muted-foreground/50 ml-1.5 inline-flex align-[-2px]">
             <StickyNote className="size-3.5" aria-label="Has notes" />
+          </span>
+        )}
+        {aiFailed && (
+          <span className="text-muted-foreground mt-0.5 block text-xs" data-ai-failed>
+            The AI didn&rsquo;t read this. It&rsquo;s daily in this slot until you edit it.
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRetry(reminder)
+              }}
+              className="text-foreground/80 hover:text-foreground ml-1.5 underline underline-offset-2"
+            >
+              Retry
+            </button>
           </span>
         )}
       </p>
