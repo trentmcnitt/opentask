@@ -925,4 +925,34 @@ test.describe('Reminder details', () => {
       await deleteTasks(page, [id])
     }
   })
+
+  test('a reminder the AI gave up on says so, and Retry hands it back', async ({
+    authenticatedPage: page,
+  }) => {
+    // The quick add puts a thought in a slot with a plausible daily rule before
+    // the AI has read a word, so a failure would look exactly like success
+    // unless the row says otherwise. `ai-failed` is a system label the API
+    // accepts on create, which is how the state is staged without an AI.
+    const id = await createReminder(page, {
+      title: 'AI failed probe',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      labels: ['ai-failed'],
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = page.locator(`[data-reminder-id="${id}"]`)
+      await expect(row).toHaveAttribute('data-ai-state', 'failed')
+      await expect(row.locator('[data-ai-failed]')).toContainText('didn\u2019t read this')
+
+      const reprocess = page.waitForResponse((r) => r.url().includes(`/api/tasks/${id}/reprocess`))
+      await row.getByRole('button', { name: 'Retry' }).click()
+      expect((await reprocess).ok()).toBeTruthy()
+      // AI is off under test, so the swapped label stays and the row keeps
+      // its processing pulse rather than resolving.
+      await expect(row).toHaveAttribute('data-ai-state', 'processing')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
 })

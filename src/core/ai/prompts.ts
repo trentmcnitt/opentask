@@ -737,29 +737,25 @@ Parse the task above and return the structured result.`
 // of thing to parse: a thought the user wants prompted at a recurring moment,
 // not an action with a deadline. So it gets its own user prompt rather than a
 // branch inside the task one — that way the task prompt stays byte-identical
-// and its 102 quality scenarios keep their meaning.
+// and its quality scenarios keep their meaning.
 //
 // The system prompt is shared: the warm enrichment slot pins ONE system prompt
 // for the life of the subprocess, so everything reminder-specific has to live
-// here, in the user turn.
+// here, in the user turn. That shapes what this prompt says. The model has just
+// read fifteen thousand characters about TASKS — due dates, priorities,
+// projects, labels, and worked examples in which "every morning at 8" becomes
+// a bare `FREQ=DAILY` with the time in `due_at`. This fragment exists to
+// counteract exactly that priming and nothing else; what the system prompt
+// already covers (cleaning dictation, keeping the user's words, RRULE syntax,
+// resolving names from context) is not repeated here.
 //
-// The point of passing the user's slots is that they OVERRIDE the generic
-// time-of-day advice. "Evening" means whatever the user's Evening slot says
-// (8:30pm for the author of this feature), not a model's idea of early evening.
-
-export const REMINDER_ENRICHMENT_REMINDERS = `## Reminders
-- This is a REMINDER, not a task: a thought to be prompted at a recurring moment. It has no deadline and nothing is "due".
-- Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
-- \`rrule\` is REQUIRED. When the text names no cadence, use FREQ=DAILY.
-- \`rrule\` MUST end with BYHOUR and BYMINUTE taken from ONE of the time slots listed above. Never invent a time between slots.
-- Pick the slot the user's WORDS name. When the text mentions no time of day, use the slot marked "current slot" above — do NOT work out which slot is current from the clock, and do NOT choose a slot from what the thought is about. A gratitude practice does not belong in the evening, and a stretch does not belong in the morning, unless the user said so.
-- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only. WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL, no INTERVAL unless the user asked for one ("every other week").
-- Set \`due_at\` to null — a reminder's next occurrence is computed from the rrule.
-- Set \`labels\` to [], \`project_name\` to null, \`auto_snooze_minutes\` to null, \`recurrence_mode\` to null. Reminders do not use them.
-- Priority is optional and rarely needed. Prefer 0 unless the user says this one matters more than the rest.
-- Put anything the title cannot carry into \`notes\`. Every piece of information the user provided must survive in title, rrule, or notes.
-- Resolve names from user context when the user references people by relationship ("my wife" → name from context)
-- Return valid JSON only (no markdown fences, no text outside the JSON object)`
+// Two lines were added after watching the model get them wrong, and stay for
+// that reason: the current-slot marker is authoritative (the model computed
+// "current" from the clock printed in the prompt), and the subject of a
+// thought says nothing about when the user wants it (a gratitude practice
+// went to Evening on thematic grounds). `sanitizeReminderEnrichment` enforces
+// the shape server-side regardless, which is why the wording below describes
+// the result rather than shouting rules.
 
 export interface ReminderEnrichmentPromptParams {
   timezone: string
@@ -780,49 +776,64 @@ export interface ReminderEnrichmentPromptParams {
 export function buildReminderEnrichmentUserPrompt(params: ReminderEnrichmentPromptParams): string {
   const { timezone, slots, currentSlotLabel, userContext, taskText } = params
 
-  const localNow = new Date().toLocaleString('en-US', {
-    timeZone: timezone,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  })
-
+  // No clock. A reminder has no due date, so nothing in it needs today's date
+  // or time, and printing one gave the model something to contradict the
+  // current-slot marker with — it recomputed "current" from the clock and
+  // overrode the marker (seen in the quality run). The marker is the clock,
+  // already digested.
   const slotList = slots
     .map((slot) => {
       const [hour, minute] = slot.start_time.split(':')
       const marker = slot.label === currentSlotLabel ? '  ← current slot' : ''
-      return `- ${slot.label} — BYHOUR=${parseInt(hour, 10)};BYMINUTE=${parseInt(minute, 10)} (${formatMorningTime(slot.start_time)})${marker}`
+      return `- ${slot.label} — ${formatMorningTime(slot.start_time)} — BYHOUR=${parseInt(hour, 10)};BYMINUTE=${parseInt(minute, 10)}${marker}`
     })
     .join('\n')
 
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
-  return `## Context
+  return `## This one is a reminder, not a task
 
-User's timezone: ${timezone}
-Current local time: ${localNow}
+A reminder is a thought the user wants put in front of them again and again,
+at a moment of the day they choose. Nothing is due and nothing gets finished,
+and it belongs to no project and carries no labels — it has only its words,
+its days, and its part of the day. Parsing one means finding those two
+things — which days it comes up, and which part of the day — while keeping
+the thought in the user's own words.
 
-The user's time slots. A reminder comes up in exactly one of these, so the
-rrule's BYHOUR/BYMINUTE must match one of them exactly:
+The user has divided their day into a few named windows, each starting at a
+set time, and a reminder comes up at the start of one of them. These are the
+user's time slots:
 ${slotList}
 
-Time-of-day words map to the slots above, not to generic times. Match the
-word to the slot whose label and time fit it best — "evening" means this
-user's evening slot even if that is 8:30pm, and "morning" means their morning
-slot even if that is 9am. "First thing" or "when I wake up" is the earliest
-slot; "lunch" or "noon" the midday one. When the text mentions no time of day
-at all, use the slot marked "current slot" above. That marker is authoritative:
-it is the slot the user is in as they add this thought, already worked out for
-you. The subject of the thought is not evidence about when they want it.${userContextBlock}
+Time words map onto these windows, not onto clock times. "Evening" means the
+user's Evening slot even if that starts at 8:30 PM; "morning" means their
+Morning even at 9 AM; a word that matches no label ("lunch", "when I wake up")
+goes to the window its time falls in. When the thought says nothing about when,
+it goes in the slot marked current. That marker is authoritative — it is
+already worked out from the user's clock — and the subject of a thought says
+nothing about when they want it: a gratitude practice is not an evening
+thought, and a stretch is not a morning one, unless the user said so. The
+current time is not given here because the marker already carries it.
+
+User's timezone: ${timezone}${userContextBlock}
 
 <reminder>
 ${taskText}
 </reminder>
 
-${REMINDER_ENRICHMENT_REMINDERS}
-Current local time: ${localNow}
+## What the result looks like for a reminder
+
+- There is always a rule. The days come from the text; when none are named, it
+  is every day (FREQ=DAILY). An INTERVAL appears only when the user asked for
+  one ("every other week").
+- The time of day lives inside the rule, as the chosen slot's BYHOUR and
+  BYMINUTE — the opposite of the task examples above, where the time sits in
+  due_at and the rule stays bare. Here due_at is null.
+- labels is [], project_name is null, auto_snooze_minutes is null, and
+  recurrence_mode is null. A reminder does not use them.
+- priority follows the same signals as a task: a stated one lands, otherwise 0.
+- The title is the thought itself, with the schedule words removed. Whatever
+  the title cannot carry goes to notes.
+
 Parse the reminder above and return the structured result.`
 }

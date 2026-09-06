@@ -168,4 +168,97 @@ export const enrichmentReminderScenarios: AITestScenario[] = [
         'not be jammed into the title.',
     },
   },
+  {
+    id: 'reminder-lunch-word',
+    feature: 'enrichment_reminder',
+    description: 'A time word that matches no slot label must still find its slot by time',
+    input: {
+      text: 'at lunch check in with how my body feels',
+      timezone: 'America/Chicago',
+      slots: SLOTS,
+      currentSlotLabel: 'Early morning',
+    },
+    requirements: {
+      must_include: {
+        rrule: 'FREQ=DAILY;BYHOUR=12;BYMINUTE=0',
+        due_at: null,
+        labels: [],
+      },
+      quality_notes:
+        'No slot is called "Lunch". "At lunch" has to be matched by time to Midday (12:00), ' +
+        'not to the current slot (Early morning) and not to a generic 12:30 or 1pm. ' +
+        'Daily, since no days were named. Title: "Check in with how my body feels".',
+    },
+  },
+  {
+    id: 'reminder-subject-is-not-a-clock',
+    feature: 'enrichment_reminder',
+    description: 'A thought whose subject suggests a time of day, with none stated',
+    input: {
+      text: 'drink a glass of water',
+      timezone: 'America/Chicago',
+      slots: SLOTS,
+      currentSlotLabel: 'Evening',
+    },
+    requirements: {
+      must_include: {
+        rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30',
+        due_at: null,
+        labels: [],
+        priority: 0,
+      },
+      quality_notes:
+        'Every prior about hydration says "morning" or "throughout the day". The user said ' +
+        'nothing about when, so the marked current slot (Evening, 20:30) is the answer. ' +
+        'The subject of a thought is not evidence about when the user wants it. ' +
+        'Title preserved as typed: "Drink a glass of water".',
+    },
+  },
+  {
+    id: 'reminder-every-other-week',
+    feature: 'enrichment_reminder',
+    description:
+      'A cadence the editor cannot express — every other week — round-trips as a custom rule',
+    input: {
+      text: 'every other Sunday evening plan the next two weeks',
+      timezone: 'America/Chicago',
+      slots: SLOTS,
+      currentSlotLabel: 'Midday',
+    },
+    requirements: {
+      must_include: {
+        due_at: null,
+        labels: [],
+        project_name: null,
+      },
+      quality_notes:
+        'rrule must be FREQ=WEEKLY;INTERVAL=2;BYDAY=SU with BYHOUR=20;BYMINUTE=30 (Evening). ' +
+        'INTERVAL=2 is the one case where an interval is right — the user asked for it. ' +
+        'The sanitizer keeps custom rules intact, so the stored rule should still read as ' +
+        'every other Sunday. Title: "Plan the next two weeks".',
+    },
+  },
+  {
+    id: 'reminder-stated-priority',
+    feature: 'enrichment_reminder',
+    description: 'An explicit priority phrase lands in the field and leaves the title',
+    input: {
+      text: 'high priority remember why I started this business every morning',
+      timezone: 'America/Chicago',
+      slots: SLOTS,
+      currentSlotLabel: 'Afternoon',
+    },
+    requirements: {
+      must_include: {
+        rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        priority: 3,
+        due_at: null,
+        labels: [],
+      },
+      quality_notes:
+        '"High priority" is the one explicit priority signal the task prompt maps to 3; it ' +
+        'applies to reminders the same way. The phrase must be removed from the title, as must ' +
+        '"every morning". Title: "Remember why I started this business". Morning slot (09:00).',
+    },
+  },
 ]
