@@ -955,4 +955,56 @@ test.describe('Reminder details', () => {
       await deleteTasks(page, [id])
     }
   })
+
+  test('search narrows the slots to matching thoughts and leaves the folds as they were', async ({
+    authenticatedPage: page,
+  }) => {
+    const morning = await createReminder(page, {
+      title: 'Zebra thought about mornings',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+    })
+    const evening = await createReminder(page, {
+      title: 'Walrus thought about evenings',
+      rrule: 'FREQ=DAILY;BYHOUR=20;BYMINUTE=30',
+    })
+    try {
+      await openReminders(page)
+      // Which slots are open right now is the state search must not disturb.
+      const surface = page.getByRole('region', { name: 'Reminders' })
+      const before = await surface
+        .getByRole('button', { expanded: false })
+        .evaluateAll((els) => els.map((e) => e.textContent?.trim().slice(0, 20)))
+
+      // At this viewport the field is already in the top bar (the icon that
+      // expands it is the phone layout).
+      const field = page.getByRole('textbox', { name: 'Search reminders' })
+      await field.fill('zebra')
+
+      const count = page.locator('[data-search-count]')
+      await expect(count).toHaveAttribute('data-search-count', '1')
+      await expect(page.locator(`[data-reminder-id="${morning}"]`)).toBeVisible()
+      await expect(page.locator(`[data-reminder-id="${evening}"]`)).toHaveCount(0)
+      // A matching thought is never behind a fold: its slot renders open.
+      await expect(page.getByText('Zebra thought about mornings')).toBeVisible()
+
+      // Notes are searched too, matching the Tasks page.
+      await field.fill('walrus')
+      await expect(count).toHaveAttribute('data-search-count', '1')
+      await expect(page.locator(`[data-reminder-id="${evening}"]`)).toBeVisible()
+
+      await field.fill('nothing matches this')
+      await expect(count).toHaveAttribute('data-search-count', '0')
+      await expect(page.getByText('No thought here says that.')).toBeVisible()
+
+      // Clearing restores the surface, folds included.
+      await page.getByRole('button', { name: 'Clear search' }).click()
+      await expect(page.locator('[data-search-count]')).toHaveCount(0)
+      const after = await surface
+        .getByRole('button', { expanded: false })
+        .evaluateAll((els) => els.map((e) => e.textContent?.trim().slice(0, 20)))
+      expect(after).toEqual(before)
+    } finally {
+      await deleteTasks(page, [morning, evening])
+    }
+  })
 })

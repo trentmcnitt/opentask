@@ -11,9 +11,17 @@ interface SearchBarProps {
   onClear: () => void
   onExpandedChange?: (expanded: boolean) => void
   focusRef?: React.MutableRefObject<(() => void) | null>
+  /** What this bar searches, for the placeholder and the label. Default: tasks. */
+  subject?: string
 }
 
-export function SearchBar({ onSearch, onClear, onExpandedChange, focusRef }: SearchBarProps) {
+export function SearchBar({
+  onSearch,
+  onClear,
+  onExpandedChange,
+  focusRef,
+  subject = 'tasks',
+}: SearchBarProps) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -113,9 +121,9 @@ export function SearchBar({ onSearch, onClear, onExpandedChange, focusRef }: Sea
               if (!query) setExpandedState(false)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search tasks..."
+            placeholder={`Search ${subject}...`}
             className="pr-8 pl-9"
-            aria-label="Search tasks"
+            aria-label={`Search ${subject}`}
           />
           {query && (
             <button
@@ -142,7 +150,7 @@ export function SearchBar({ onSearch, onClear, onExpandedChange, focusRef }: Sea
               placeholder="Search..."
               className="min-w-0 flex-1"
               autoFocus
-              aria-label="Search tasks"
+              aria-label={`Search ${subject}`}
             />
             <button
               onClick={handleClear}

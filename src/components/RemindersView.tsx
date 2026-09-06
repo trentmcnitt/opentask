@@ -76,6 +76,14 @@ interface RemindersViewProps {
    * undone completion would stay invisible until a reload.
    */
   refreshRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Narrow the surface to thoughts matching this text. Filtering happens here,
+   * on data the surface already holds, rather than through the API the Tasks
+   * page uses: every active reminder is already on the client (today's slots,
+   * what has been considered today, and the Not today fold together are all of
+   * them), so results appear as fast as the user types.
+   */
+  searchQuery?: string
 }
 
 /** Stable identity for a group across refetches — slot id, or the un-slotted bucket. */
@@ -83,7 +91,12 @@ function groupKey(group: ReminderGroup): string {
   return group.slot ? String(group.slot.id) : 'unslotted'
 }
 
-export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersViewProps) {
+export function RemindersView({
+  onUndo,
+  onCompleted,
+  refreshRef,
+  searchQuery,
+}: RemindersViewProps) {
   const timezone = useTimezone()
   // Held for the details editor's slot chips (so opening one never waits on a
   // fetch) and for placing a new reminder in its slot at once.
@@ -108,6 +121,50 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   const router = useRouter()
   const selection = useSelectionMode()
   const { selectedIds, clear } = selection
+
+  // Searching narrows what is rendered; it deliberately does NOT touch which
+  // slots the user has open. Both `defaultOpenKey` and `useSlotDisclosure`
+  // derive from `visibleGroups`, so filtering upstream would rearrange the
+  // user's disclosure state and leave it rearranged after the search cleared.
+  // Instead every slot holding a match renders open and whole for the duration
+  // of the query, and the moment it clears the surface is exactly as it was.
+  const query = (searchQuery ?? '').trim().toLowerCase()
+  const searching = query.length > 0
+  const matchesQuery = useCallback(
+    // Title and notes, case-insensitive substring — the same fields and the
+    // same semantics as the Tasks page's search, so the two agree about what
+    // "matches" means.
+    (task: Task) =>
+      task.title.toLowerCase().includes(query) || (task.notes ?? '').toLowerCase().includes(query),
+    [query],
+  )
+  const searchGroups = useMemo(() => {
+    if (!searching) return []
+    return groups
+      .map((group) => ({
+        ...group,
+        reminders: group.reminders.filter(matchesQuery),
+        consideredItems: group.consideredItems.filter(matchesQuery),
+      }))
+      .filter((group) => group.reminders.length > 0 || group.consideredItems.length > 0)
+  }, [groups, searching, matchesQuery])
+  const searchNotToday = useMemo(
+    () => (searching ? notToday.filter(matchesQuery) : []),
+    [notToday, searching, matchesQuery],
+  )
+  const searchSummary = useMemo(
+    () => summarizeReminders(searchGroups, timezone),
+    [searchGroups, timezone],
+  )
+  const resultCount =
+    searchGroups.reduce((n, g) => n + g.reminders.length + g.consideredItems.length, 0) +
+    searchNotToday.length
+
+  // A selection made before the query no longer corresponds to what is on
+  // screen, exactly as on the Tasks page.
+  useEffect(() => {
+    clear()
+  }, [query, clear])
 
   // The surface listens for enrichment finishing because the quick add hands
   // what was typed to the AI: a thought added to Afternoon can legitimately
@@ -180,17 +237,16 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
   const { isOpen, toggleOpen, expandedKeys, setExpanded } = useSlotDisclosure(defaultOpenKey)
 
   // Rows actually rendered, in DOM order — the universe for range selection.
-  const renderedRows = useMemo(
-    () =>
-      visibleGroups.flatMap((group) => {
-        const key = groupKey(group)
-        if (!isOpen(key)) return []
-        return expandedKeys.has(key)
-          ? group.reminders
-          : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
-      }),
-    [visibleGroups, isOpen, expandedKeys],
-  )
+  const renderedRows = useMemo(() => {
+    // While searching every match is on screen, so range selection spans all
+    // of them rather than the usual open-and-expanded subset.
+    if (searching) return searchGroups.flatMap((group) => group.reminders)
+    return visibleGroups.flatMap((group) => {
+      const key = groupKey(group)
+      if (!isOpen(key)) return []
+      return expandedKeys.has(key) ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
+    })
+  }, [searching, searchGroups, visibleGroups, isOpen, expandedKeys])
   const orderedIds = useMemo(() => renderedRows.map((r) => r.id), [renderedRows])
   const selectedTasks = useMemo(
     () => renderedRows.filter((r) => selectedIds.has(r.id)),
@@ -335,7 +391,7 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         throw err
       }
     },
-    [onUndo, onCompleted, refresh],
+    [detailTasks, onUndo, onCompleted, refresh],
   )
   // Several at once: each reminder's own new rule in ONE bulk edit, so the
   // toast's Undo puts every one of them back.
@@ -395,6 +451,20 @@ export function RemindersView({ onUndo, onCompleted, refreshRef }: RemindersView
         <RemindersSkeleton />
       ) : error ? (
         <p className="text-muted-foreground py-16 text-center text-sm">{error}</p>
+      ) : searching ? (
+        <SearchResults
+          count={resultCount}
+          query={searchQuery?.trim() ?? ''}
+          groups={[...searchSummary.started, ...searchSummary.later]}
+          notToday={searchNotToday}
+          completingIds={completingIds}
+          selectedIds={selectedIds}
+          onRowClick={actions.rowClick}
+          onRowOpen={openDetail}
+          onComplete={actions.complete}
+          onRetry={retryEnrichment}
+          onPutBack={putBack}
+        />
       ) : visibleGroups.length === 0 ? (
         <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
       ) : (
@@ -744,6 +814,7 @@ function ReminderSlotGroup({
   started,
   open,
   expanded,
+  locked = false,
   onToggle,
   onExpand,
   completingIds,
@@ -759,6 +830,8 @@ function ReminderSlotGroup({
   started: boolean
   open: boolean
   expanded: boolean
+  /** Search results: the slot cannot be folded and offers no sweep. */
+  locked?: boolean
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number>
@@ -776,7 +849,7 @@ function ReminderSlotGroup({
   const slotTotal = count + group.considered
   // A slot with nothing waiting can still open: its considered items live
   // behind the counter, and one of them may need putting back.
-  const canOpen = count > 0 || group.consideredItems.length > 0
+  const canOpen = !locked && (count > 0 || group.consideredItems.length > 0)
   const visible = expanded ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
   const hiddenCount = count - visible.length
 
@@ -816,7 +889,7 @@ function ReminderSlotGroup({
             {headerRow}
           </button>
         )}
-        {open && count > 0 && (
+        {open && count > 0 && !locked && (
           <button
             type="button"
             onClick={() => onCompleteGroup(group)}
@@ -854,7 +927,7 @@ function ReminderSlotGroup({
               ))}
             </ul>
           )}
-          {hiddenCount > 0 && (
+          {hiddenCount > 0 && !locked && (
             <button
               type="button"
               onClick={() => onExpand(true)}
@@ -864,7 +937,7 @@ function ReminderSlotGroup({
               <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
             </button>
           )}
-          {expanded && count > SLOT_PREVIEW_COUNT && (
+          {expanded && count > SLOT_PREVIEW_COUNT && !locked && (
             <button
               type="button"
               onClick={() => onExpand(false)}
@@ -1158,14 +1231,102 @@ function ReminderRow({
 }
 
 /**
+ * The surface while a search is active.
+ *
+ * Results are results: the headline and the day bar describe today as a whole,
+ * not the matches, so they step aside for a count line — the same move the
+ * Tasks page makes with its Track panel. Every slot holding a match renders
+ * open and whole, with no "Show all" fold and no caret to collapse it, because
+ * a folded result is a result the user cannot see. Clearing the search restores
+ * the surface exactly as they left it, since none of this touched the
+ * disclosure state.
+ */
+function SearchResults({
+  count,
+  query,
+  groups,
+  notToday,
+  completingIds,
+  selectedIds,
+  onRowClick,
+  onRowOpen,
+  onComplete,
+  onRetry,
+  onPutBack,
+}: {
+  count: number
+  query: string
+  groups: ReminderGroup[]
+  notToday: Task[]
+  completingIds: Set<number>
+  selectedIds: Set<number>
+  onRowClick: (task: Task, e: React.MouseEvent) => void
+  onRowOpen: (task: Task) => void
+  onComplete: (task: Task) => void
+  onRetry: (task: Task) => void
+  onPutBack: (task: Task) => void
+}) {
+  return (
+    <>
+      <div className="text-muted-foreground mb-4 px-2 text-sm" data-search-count={count}>
+        {count} result{count !== 1 ? 's' : ''} for &ldquo;{query}&rdquo;
+      </div>
+      {count === 0 ? (
+        <p className="text-muted-foreground py-12 text-center text-sm">
+          No thought here says that.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {groups.map((group) => (
+            <ReminderSlotGroup
+              key={groupKey(group)}
+              group={group}
+              started
+              open
+              expanded
+              locked
+              onToggle={NO_OP}
+              onExpand={NO_OP}
+              completingIds={completingIds}
+              selectedIds={selectedIds}
+              onRowClick={onRowClick}
+              onRowOpen={onRowOpen}
+              onComplete={onComplete}
+              onRetry={onRetry}
+              onCompleteGroup={NO_OP}
+              onPutBack={onPutBack}
+            />
+          ))}
+          {notToday.length > 0 && <NotTodayFold items={notToday} onOpen={onRowOpen} forceOpen />}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Handlers the search view deliberately does nothing with. */
+const NO_OP = () => {}
+
+/**
  * The reminders that are not today's — a weekly thought on its off day, a
  * monthly one mid-month — folded at the bottom, so every thought stays
  * reachable from its own surface. Rows carry their cadence mark (the reason
  * they are not today's) and open the editor on click; there is no circle,
  * because there is nothing to consider today.
  */
-function NotTodayFold({ items, onOpen }: { items: Task[]; onOpen: (task: Task) => void }) {
-  const [open, setOpen] = useState(false)
+function NotTodayFold({
+  items,
+  onOpen,
+  forceOpen = false,
+}: {
+  items: Task[]
+  onOpen: (task: Task) => void
+  /** Search results are shown, never folded away. */
+  forceOpen?: boolean
+}) {
+  const [userOpen, setUserOpen] = useState(false)
+  const open = forceOpen || userOpen
+  const setOpen = forceOpen ? NO_OP : setUserOpen
   return (
     <div className="bg-muted/30 mt-3 rounded-2xl pb-1" data-not-today>
       <button
