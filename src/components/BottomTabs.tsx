@@ -12,6 +12,28 @@ interface BottomTabsProps {
 }
 
 /**
+ * The tab badge.
+ *
+ * Anchored to the icon's top-right corner and growing OUTWARD from it, because
+ * the count is routinely wider than the 20px icon it sits on — three digits is
+ * an ordinary Tuesday here. A right-anchored badge grows leftward instead, and
+ * at three digits it covers the icon completely, which is what this looked like
+ * before: a number printed over a glyph.
+ *
+ * Absolutely positioned, so the width of the number never moves the tab it
+ * belongs to and the five tabs keep their spacing whatever the counts are. The
+ * ring is the separation: it punches a background-colored gap between badge and
+ * icon so the small overlap at the corner reads as deliberate.
+ */
+const BADGE =
+  'text-destructive-foreground absolute -top-1.5 left-full -ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums ring-2 ring-background'
+
+/** Four digits would reach the next tab; the house cap (see Header) is 999+. */
+function capCount(n: number): string {
+  return n > 999 ? '999+' : String(n)
+}
+
+/**
  * Mobile tab bar.
  *
  * Reminders (§6) is a destination, not a setting, so it takes a tab; Settings and
@@ -83,28 +105,26 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
                 isActive ? 'text-blue-500' : 'text-muted-foreground'
               }`}
             >
-              <span className="relative">
+              <span className="relative inline-flex">
                 <Icon className="h-5 w-5" />
                 {tab.href === '/' && tasksBadge && (
                   <span
                     data-tasks-badge
-                    className={`absolute -top-1.5 -right-3 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums ${
-                      tasksBadge.tone === 'overdue'
-                        ? 'bg-destructive/15 text-destructive'
-                        : 'bg-primary/15 text-primary'
+                    className={`${BADGE} ${
+                      tasksBadge.tone === 'overdue' ? 'bg-badge-destructive' : 'bg-primary'
                     }`}
                     aria-label={tasksBadge.label}
                   >
-                    {tasksBadge.n}
+                    {capCount(tasksBadge.n)}
                   </span>
                 )}
                 {tab.href === '/reminders' && remindersWaiting > 0 && (
                   <span
                     data-reminders-badge
-                    className="bg-foreground/10 text-foreground/80 absolute -top-1.5 -right-3 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums"
+                    className={`${BADGE} bg-badge-neutral`}
                     aria-label={`${remindersWaiting} reminders waiting so far today`}
                   >
-                    {remindersWaiting}
+                    {capCount(remindersWaiting)}
                   </span>
                 )}
               </span>
