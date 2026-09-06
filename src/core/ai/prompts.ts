@@ -728,3 +728,101 @@ ${ENRICHMENT_REMINDERS}
 Current local time: ${localNow}
 Parse the task above and return the structured result.`
 }
+
+// ---------------------------------------------------------------------------
+// Reminder enrichment (REDESIGN-V03 §6)
+// ---------------------------------------------------------------------------
+//
+// A reminder is a task row with `is_reminder = 1`, but it is a different kind
+// of thing to parse: a thought the user wants prompted at a recurring moment,
+// not an action with a deadline. So it gets its own user prompt rather than a
+// branch inside the task one — that way the task prompt stays byte-identical
+// and its 102 quality scenarios keep their meaning.
+//
+// The system prompt is shared: the warm enrichment slot pins ONE system prompt
+// for the life of the subprocess, so everything reminder-specific has to live
+// here, in the user turn.
+//
+// The point of passing the user's slots is that they OVERRIDE the generic
+// time-of-day advice. "Evening" means whatever the user's Evening slot says
+// (8:30pm for the author of this feature), not a model's idea of early evening.
+
+export const REMINDER_ENRICHMENT_REMINDERS = `## Reminders
+- This is a REMINDER, not a task: a thought to be prompted at a recurring moment. It has no deadline and nothing is "due".
+- Act as a transcriptionist, not an editor — preserve the user's voice, including bare-noun titles without adding verbs
+- \`rrule\` is REQUIRED. When the text names no cadence, use FREQ=DAILY.
+- \`rrule\` MUST end with BYHOUR and BYMINUTE taken from ONE of the time slots listed above. Never invent a time between slots.
+- Pick the slot the user's WORDS name. When the text mentions no time of day, use the slot marked "current slot" above — do NOT work out which slot is current from the clock, and do NOT choose a slot from what the thought is about. A gratitude practice does not belong in the evening, and a stretch does not belong in the morning, unless the user said so.
+- Valid RRULE FREQ values: YEARLY, MONTHLY, WEEKLY, DAILY only. WEEKLY requires BYDAY. MONTHLY requires BYMONTHDAY or BYDAY. No COUNT or UNTIL, no INTERVAL unless the user asked for one ("every other week").
+- Set \`due_at\` to null — a reminder's next occurrence is computed from the rrule.
+- Set \`labels\` to [], \`project_name\` to null, \`auto_snooze_minutes\` to null, \`recurrence_mode\` to null. Reminders do not use them.
+- Priority is optional and rarely needed. Prefer 0 unless the user says this one matters more than the rest.
+- Put anything the title cannot carry into \`notes\`. Every piece of information the user provided must survive in title, rrule, or notes.
+- Resolve names from user context when the user references people by relationship ("my wife" → name from context)
+- Return valid JSON only (no markdown fences, no text outside the JSON object)`
+
+export interface ReminderEnrichmentPromptParams {
+  timezone: string
+  /** The user's editable time slots, in sort order. */
+  slots: Array<{ label: string; start_time: string }>
+  /** Label of the slot that is current right now, if any. */
+  currentSlotLabel?: string | null
+  userContext?: string | null
+  taskText: string
+}
+
+/**
+ * Build the reminder enrichment user prompt.
+ *
+ * Shared by production (enrichment.ts), quality tests, and dump-prompts so the
+ * template is defined exactly once.
+ */
+export function buildReminderEnrichmentUserPrompt(params: ReminderEnrichmentPromptParams): string {
+  const { timezone, slots, currentSlotLabel, userContext, taskText } = params
+
+  const localNow = new Date().toLocaleString('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  const slotList = slots
+    .map((slot) => {
+      const [hour, minute] = slot.start_time.split(':')
+      const marker = slot.label === currentSlotLabel ? '  ← current slot' : ''
+      return `- ${slot.label} — BYHOUR=${parseInt(hour, 10)};BYMINUTE=${parseInt(minute, 10)} (${formatMorningTime(slot.start_time)})${marker}`
+    })
+    .join('\n')
+
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  return `## Context
+
+User's timezone: ${timezone}
+Current local time: ${localNow}
+
+The user's time slots. A reminder comes up in exactly one of these, so the
+rrule's BYHOUR/BYMINUTE must match one of them exactly:
+${slotList}
+
+Time-of-day words map to the slots above, not to generic times. Match the
+word to the slot whose label and time fit it best — "evening" means this
+user's evening slot even if that is 8:30pm, and "morning" means their morning
+slot even if that is 9am. "First thing" or "when I wake up" is the earliest
+slot; "lunch" or "noon" the midday one. When the text mentions no time of day
+at all, use the slot marked "current slot" above. That marker is authoritative:
+it is the slot the user is in as they add this thought, already worked out for
+you. The subject of the thought is not evidence about when they want it.${userContextBlock}
+
+<reminder>
+${taskText}
+</reminder>
+
+${REMINDER_ENRICHMENT_REMINDERS}
+Current local time: ${localNow}
+Parse the reminder above and return the structured result.`
+}

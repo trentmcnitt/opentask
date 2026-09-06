@@ -12,11 +12,11 @@ export interface AITestScenario {
   /** Unique scenario ID, e.g., "enrich-garbled-dictation" */
   id: string
   /** Which AI feature this scenario tests */
-  feature: 'enrichment' | 'whats_next' | 'insights' | 'quick_take'
+  feature: 'enrichment' | 'enrichment_reminder' | 'whats_next' | 'insights' | 'quick_take'
   /** Human-readable description of what this scenario tests */
   description: string
   /** Input data specific to the feature being tested */
-  input: EnrichmentInput | WhatsNextInput | InsightsInput | QuickTakeInput
+  input: EnrichmentInput | ReminderEnrichmentInput | WhatsNextInput | InsightsInput | QuickTakeInput
   /** Requirements for Layer 1 structural checks and Layer 2 quality evaluation */
   requirements: ScenarioRequirements
 }
@@ -36,6 +36,26 @@ export interface EnrichmentInput {
   wakeTime?: string
   /** User's sleep time preference in HH:MM format (default: '22:00') */
   sleepTime?: string
+}
+
+/**
+ * Reminder enrichment input (REDESIGN-V03 §6).
+ *
+ * A reminder is parsed against the user's editable time slots rather than
+ * their workday, so it carries slots instead of morning/wake/sleep times and
+ * no projects at all.
+ */
+export interface ReminderEnrichmentInput {
+  /** Raw reminder text (what the user typed or dictated) */
+  text: string
+  /** User's timezone */
+  timezone: string
+  /** The user's time slots, in order. Defaults to DEFAULT_TIME_SLOTS. */
+  slots?: Array<{ label: string; start_time: string }>
+  /** Label of the slot that is current when the reminder is added. */
+  currentSlotLabel?: string
+  /** Optional user-provided AI context for personalization */
+  userContext?: string
 }
 
 export interface ProjectInfo {

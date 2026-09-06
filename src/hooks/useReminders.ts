@@ -86,6 +86,13 @@ export interface ReminderCreateInput {
   rrule: string | null
   notes?: string | null
   priority?: number
+  /**
+   * Hand the text to AI enrichment after creating it. The quick add sets this:
+   * it sends a daily-in-this-slot default so the row is on screen at once, and
+   * enrichment then reads what was actually typed ("every Friday evening") and
+   * corrects the schedule. The form does not — there the user chose.
+   */
+  enrich?: boolean
 }
 
 /**
@@ -381,6 +388,7 @@ export function useReminders({
       if (input.rrule) body.rrule = input.rrule
       if (input.notes) body.notes = input.notes
       if (input.priority) body.priority = input.priority
+      if (input.enrich) body.enrich = true
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

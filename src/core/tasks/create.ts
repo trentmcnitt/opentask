@@ -95,7 +95,10 @@ export function createTask(options: CreateTaskOptions): Task {
     taskLabels.push(PROVENANCE_LABELS.added)
   }
 
-  if (isAIEnabled() && isTitleOnly) {
+  // `enrich` lets a caller opt in explicitly: the Reminders quick add sends a
+  // default schedule so the row appears in a slot at once, which makes it look
+  // structured even though the user only typed a sentence.
+  if (isAIEnabled() && (isTitleOnly || input.enrich === true)) {
     taskLabels.push('ai-to-process')
   }
   const labelsJson = JSON.stringify(taskLabels)

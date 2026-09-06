@@ -163,6 +163,11 @@ export const taskCreateSchema = z
     progress_target: progressTarget.optional(),
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
+    // Ask for AI enrichment even though the caller supplied structured fields.
+    // The Reminders quick add sets it: it always sends a sensible default
+    // schedule so the row lands in a slot immediately, which would otherwise
+    // disqualify it from the title-only enrichment trigger.
+    enrich: z.boolean().optional(),
   })
   .refine(refuseTrackedReminder, { message: TRACKED_REMINDER_MESSAGE })
   .refine(periodRuleOnlyWhenTracked, { message: PERIOD_RULE_MESSAGE, path: ['rrule'] })
