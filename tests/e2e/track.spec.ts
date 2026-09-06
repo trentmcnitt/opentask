@@ -117,28 +117,27 @@ test.describe('Track', () => {
       await chip.click({ button: 'right' })
       await expect(chipCount).toHaveText('0/2')
 
-      // A hold opens the detail sheet instead of subtracting, and the note is
-      // writable there — the whole point, since a terse title like "Eggs" says
-      // nothing about what is actually being tracked.
+      // A hold opens the detail sheet instead of subtracting. It READS, it does
+      // not edit (Trent, 2026-09-06: "I don't want an editable field") — and it
+      // ends in a route to the ordinary task, which is where editing happens.
       await chip.click({ delay: 500 })
       const sheet = page.getByRole('dialog').filter({ hasText: 'Eggs for the kids' })
       await expect(sheet).toBeVisible()
-      await sheet.getByLabel('Notes').fill('Two eggs each, breakfast or dinner')
-      await sheet.getByRole('button', { name: 'Save' }).click()
+      await expect(sheet).toContainText('Never yet')
+      await expect(sheet.getByRole('textbox')).toHaveCount(0)
+      await page.keyboard.press('Escape')
       await expect(sheet).toBeHidden()
-      await expect(
-        page.locator('[data-sonner-toast]').filter({ hasText: 'Note saved' }),
-      ).toBeVisible()
       // The click that trails a hold is not a tap: the count is untouched.
       await expect(chipCount).toHaveText('0/2')
 
-      // The note survives a reload, which proves it reached the server.
-      await page.reload()
-      await panel.locator(`[data-track-chip="${id}"]`).click({ delay: 500 })
-      await expect(
-        page.getByRole('dialog').filter({ hasText: 'Eggs for the kids' }).getByLabel('Notes'),
-      ).toHaveValue('Two eggs each, breakfast or dinner')
-      await page.keyboard.press('Escape')
+      // "Open task" is the answer to "how do I even edit these" — a quota is an
+      // ordinary task and this is the only route the chips ever had to it.
+      await chip.click({ delay: 500 })
+      await page.getByRole('button', { name: 'Open task' }).click()
+      await page.waitForURL(`**/tasks/${id}`)
+      await expect(page.getByText('Eggs for the kids').first()).toBeVisible()
+      await page.goBack()
+      await expect(panel).toBeVisible()
 
       await openTrack(page)
       // The choice sticks across a reload.

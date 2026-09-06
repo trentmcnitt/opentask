@@ -1,117 +1,98 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { showToast } from '@/lib/toast'
 import { trackState, periodLabel } from '@/lib/track'
-import { log as logger } from '@/lib/logger'
+import { formatRRule } from '@/lib/format-rrule'
 import type { Task } from '@/types'
 
 /**
- * What a quota actually is, behind its chip.
+ * What a quota is, behind its chip — a readout, not an editor.
  *
- * Trent, 2026-09-06: "press and hold to bring up any explicit notes for it…
- * more importantly, notes, because some of these are pretty terse. It just
- * says things like 'Eggs' so it'd be nice to be able to be reminded about what
- * each item being tracked is."
+ * Trent, 2026-09-06: "When I press and hold I don't want to add notes to it.
+ * It should just show me the notes. I don't want an editable field… I just
+ * wanted a popover or something that gave me some valuable information."
  *
- * So this is an EDITOR, not a readout. Every one of his eight quotas had an
- * empty notes field when this was built, which means a display-only panel
- * would have shown him eight empty boxes — the note has to be writable here or
- * "Eggs" stays "Eggs" forever.
+ * The same message asked "What is Track? Is it a different type of task? How
+ * do I even edit the Track items?" — which is a fair question the UI could not
+ * answer, because a quota IS an ordinary task (a `progress_target` above 1 is
+ * the whole difference) and yet the chips were the one row in the app with no
+ * route to their own task. So this panel ends in "Open task", and editing —
+ * notes included — happens in the ordinary task editor like everything else.
  *
- * A sheet on the phone and a dialog on the desktop, matching ReminderDetail:
- * a textarea under an iOS keyboard needs the bottom sheet, not a popover.
+ * A sheet on the phone, a dialog on the desktop, matching ReminderDetail.
  */
 export function TrackDetailSheet({
   task,
   open,
   onOpenChange,
-  onSaved,
 }: {
   task: Task | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Refresh the list once a note is saved, so the next open shows it. */
-  onSaved?: () => void
 }) {
   const isMobile = useIsMobile()
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  // The note as the server has it, so "dirty" is a comparison and not a guess.
-  const savedRef = useRef('')
-
-  useEffect(() => {
-    if (!open || !task) return
-    const initial = task.notes ?? ''
-    setNotes(initial)
-    savedRef.current = initial
-  }, [open, task])
+  const router = useRouter()
 
   if (!task) return null
 
   const state = trackState(task)
   const period = periodLabel(task.rrule)
-  const dirty = notes !== savedRef.current
-
-  async function save() {
-    if (!task || !dirty) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        // Through updateTask, so the edit is transactional and undoable like
-        // any other — a note is task data, not a UI preference.
-        body: JSON.stringify({ notes: notes.trim() || null }),
-      })
-      if (!res.ok) throw new Error(`PATCH ${res.status}`)
-      savedRef.current = notes
-      showToast({ message: 'Note saved', type: 'success' })
-      onSaved?.()
-      onOpenChange(false)
-    } catch (err) {
-      logger.error('ui', 'Saving a quota note failed:', err)
-      showToast({ message: 'Could not save the note', type: 'error' })
-    } finally {
-      setSaving(false)
-    }
-  }
+  const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
 
   const body = (
-    <div className="space-y-5 px-4 pb-4">
-      {/* The progress is the sheet's subtitle already; repeating it as a field
-          here said the same number twice in adjacent lines. */}
-      <dl className="text-sm">
-        <dt className="text-muted-foreground text-xs">Tracking since</dt>
-        <dd>{formatCreated(task.created_at)}</dd>
+    <div className="space-y-4 px-4 pb-4">
+      <section>
+        <h3 className="text-muted-foreground mb-1 text-xs">Notes</h3>
+        {task.notes ? (
+          <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{task.notes}</p>
+        ) : (
+          <p className="text-muted-foreground text-sm italic">
+            Nothing written down yet — open the task to say what this one means.
+          </p>
+        )}
+      </section>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-3 text-sm">
+        {cadence && (
+          <div className="col-span-2">
+            <dt className="text-muted-foreground text-xs">Cadence</dt>
+            <dd>{cadence}</dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-muted-foreground text-xs">Logged so far</dt>
+          <dd className="tabular-nums">
+            <span className="font-medium">{state.current}</span> of {state.target}
+            {period && <span className="text-muted-foreground"> {period}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground text-xs">Periods met</dt>
+          {/* The honest history: how many times this quota has actually been
+              reached. Zero is a real and useful answer — it says the routine
+              has never once happened, which is the thing worth knowing. */}
+          <dd className="tabular-nums">
+            {task.completion_count > 0 ? `${task.completion_count}×` : 'Never yet'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground text-xs">Tracking since</dt>
+          <dd>{formatMonth(task.created_at)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground text-xs">Last met</dt>
+          <dd>{task.last_completed_at ? formatMonth(task.last_completed_at) : '—'}</dd>
+        </div>
       </dl>
 
-      <div className="space-y-2">
-        <label htmlFor="quota-notes" className="text-muted-foreground text-xs">
-          Notes
-        </label>
-        <Textarea
-          id="quota-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={5}
-          placeholder="What does this one actually mean?"
-          className="resize-none text-[16px]"
-        />
-      </div>
-
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="ghost" onClick={() => onOpenChange(false)}>
-          Cancel
-        </Button>
-        <Button onClick={save} disabled={!dirty || saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
+      {/* No Close button: the dialog and the sheet both already carry an X,
+          and two controls labelled "Close" is one too many. */}
+      <div className="flex items-center justify-end border-t pt-3">
+        <Button onClick={() => router.push(`/tasks/${task.id}`)}>Open task</Button>
       </div>
     </div>
   )
@@ -145,8 +126,8 @@ export function TrackDetailSheet({
   )
 }
 
-/** "Tracking since March 2026" — the month is the useful grain for a quota. */
-function formatCreated(iso: string): string {
+/** "March 2026" — the month is the useful grain for a quota's history. */
+function formatMonth(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
