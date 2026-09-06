@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
@@ -50,6 +50,31 @@ export default function RemindersPage() {
   const router = useRouter()
   const timezone = useTimezone()
 
+  // Searching narrows the slots to matching thoughts; the surface filters what
+  // it already holds, so there is no request behind this.
+  const [searchQuery, setSearchQuery] = useState('')
+  const clearSearch = useCallback(() => setSearchQuery(''), [])
+  const searchFocusRef = useRef<(() => void) | null>(null)
+
+  // Cmd/Ctrl+K focuses search here as it does on Tasks. The dashboard's own
+  // shortcut lives in useDashboardKeyboard, which carries a pile of list
+  // shortcuts this surface has no use for.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inInput =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable === true
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !inInput) {
+        e.preventDefault()
+        searchFocusRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   // Registered by RemindersView while it is mounted.
   const refreshRef = useRef<(() => void) | null>(null)
   const refresh = useCallback(() => {
@@ -95,6 +120,10 @@ export default function RemindersPage() {
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}
         redoCount={actions.redoCount}
+        onSearch={setSearchQuery}
+        onSearchClear={clearSearch}
+        searchFocusRef={searchFocusRef}
+        searchSubject="reminders"
         timezone={timezone}
       />
 
@@ -103,6 +132,7 @@ export default function RemindersPage() {
           onUndo={actions.handleUndo}
           onCompleted={actions.bumpUndoCount}
           refreshRef={refreshRef}
+          searchQuery={searchQuery}
         />
       </main>
     </div>

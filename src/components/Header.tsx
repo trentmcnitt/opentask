@@ -81,6 +81,8 @@ interface HeaderProps {
   onShowKeyboardShortcuts?: () => void
   timezone?: string
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
+  /** What the search bar searches, for its placeholder. Default: tasks. */
+  searchSubject?: string
 }
 
 export function Header({
@@ -103,6 +105,7 @@ export function Header({
   onShowKeyboardShortcuts,
   timezone,
   searchFocusRef,
+  searchSubject,
 }: HeaderProps) {
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -264,6 +267,7 @@ export function Header({
               <SearchBar
                 onSearch={onSearch}
                 onClear={onSearchClear}
+                subject={searchSubject}
                 onExpandedChange={setSearchExpanded}
                 focusRef={searchFocusRef}
               />
