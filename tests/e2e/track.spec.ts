@@ -107,15 +107,38 @@ test.describe('Track', () => {
       await toast.getByRole('button', { name: 'Undo' }).click()
       await expect(chipCount).toHaveText('0/2')
 
-      // Hold (the app's 400 ms long-press): −1. The click that follows a hold
-      // is not a tap. Shift-click: −1 too.
+      // Subtracting: shift-click and right-click. A hold no longer subtracts —
+      // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
       await expect(chipCount).toHaveText('2/2')
-      await chip.click({ delay: 500 })
-      await expect(chipCount).toHaveText('1/2')
       await chip.click({ modifiers: ['Shift'] })
+      await expect(chipCount).toHaveText('1/2')
+      await chip.click({ button: 'right' })
       await expect(chipCount).toHaveText('0/2')
+
+      // A hold opens the detail sheet instead of subtracting, and the note is
+      // writable there — the whole point, since a terse title like "Eggs" says
+      // nothing about what is actually being tracked.
+      await chip.click({ delay: 500 })
+      const sheet = page.getByRole('dialog').filter({ hasText: 'Eggs for the kids' })
+      await expect(sheet).toBeVisible()
+      await sheet.getByLabel('Notes').fill('Two eggs each, breakfast or dinner')
+      await sheet.getByRole('button', { name: 'Save' }).click()
+      await expect(sheet).toBeHidden()
+      await expect(
+        page.locator('[data-sonner-toast]').filter({ hasText: 'Note saved' }),
+      ).toBeVisible()
+      // The click that trails a hold is not a tap: the count is untouched.
+      await expect(chipCount).toHaveText('0/2')
+
+      // The note survives a reload, which proves it reached the server.
+      await page.reload()
+      await panel.locator(`[data-track-chip="${id}"]`).click({ delay: 500 })
+      await expect(
+        page.getByRole('dialog').filter({ hasText: 'Eggs for the kids' }).getByLabel('Notes'),
+      ).toHaveValue('Two eggs each, breakfast or dinner')
+      await page.keyboard.press('Escape')
 
       await openTrack(page)
       // The choice sticks across a reload.
