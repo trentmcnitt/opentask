@@ -95,7 +95,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
                 {item.href === '/reminders' && remindersWaiting > 0 && (
                   <span
                     data-reminders-badge
-                    className="bg-foreground/10 text-foreground/80 ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                    className="bg-badge-reminders text-destructive-foreground ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
                     aria-label={`${remindersWaiting} reminders waiting so far today`}
                   >
                     {remindersWaiting}

@@ -68,6 +68,13 @@ async function openReminders(page: Page): Promise<void> {
  * they open every folded slot first — without toggling one that is already
  * open, which would hide the rows they are about to look for.
  */
+/**
+ * Open any slot that is folded.
+ *
+ * Since 2026-09-06 every slot starts open, so this is usually a no-op — it is
+ * kept because a test may fold one deliberately, and because it states the
+ * precondition the assertions after it depend on.
+ */
 async function openAllSlots(page: Page) {
   // Scoped to the surface itself so a folded nav menu elsewhere is never clicked.
   const surface = page.getByRole('region', { name: 'Reminders' })
@@ -345,7 +352,9 @@ test.describe('Reminders surface', () => {
       // so a slip can be put back after the toast is gone.
       const slot = page.locator('[data-slot-group]').filter({ hasText: /1 of 1/ })
       await expect(slot).toBeVisible()
-      await slot.getByRole('button', { expanded: false }).click()
+      // Slots are open by default now, so the finished one needs no unfolding —
+      // its considered counter is right there.
+      await expect(slot.getByRole('button', { expanded: true })).toBeVisible()
       await slot.getByRole('button', { name: 'Show 1 considered' }).click()
       await slot.getByRole('button', { name: 'Put back "The only thought left"' }).click()
       await expect(page.getByRole('option', { name: 'The only thought left' })).toBeVisible()
@@ -359,6 +368,42 @@ test.describe('Reminders surface', () => {
       await expect(page.getByRole('heading', { name: 'All clear for today' })).toHaveCount(0)
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+
+  test('every slot starts open, later ones included, and lands on the current slot', async ({
+    authenticatedPage: page,
+  }) => {
+    // One thought in the first slot of the day and one in the last, so the
+    // assertion covers both a started slot and one whose time has not come.
+    const ids = [
+      await createReminder(page, { title: 'An early unfinished thought', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'A thought for much later', due_at: todayAt(20, 30) }),
+    ]
+
+    try {
+      await openReminders(page)
+      const surface = page.getByRole('region', { name: 'Reminders' })
+
+      // Nothing is folded on arrival — the whole day is readable by scrolling.
+      // This is the point: an unfinished morning thought must stay visible at
+      // four in the afternoon without hunting for it.
+      await expect(surface.getByRole('button', { expanded: false })).toHaveCount(0)
+      await expect(page.getByRole('option', { name: 'An early unfinished thought' })).toBeVisible()
+      await expect(page.getByRole('option', { name: 'A thought for much later' })).toBeVisible()
+
+      // A later slot is dimmed rather than closed, and its items still act.
+      const later = page.locator('[data-slot-group][data-slot-started="false"]').first()
+      if (await later.count()) {
+        await expect(later).toHaveClass(/opacity-70/)
+      }
+
+      // Folding one still works and sticks — the default is a default, not a lock.
+      const first = surface.getByRole('button', { expanded: true }).first()
+      await first.click()
+      await expect(surface.getByRole('button', { expanded: false })).toHaveCount(1)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 
