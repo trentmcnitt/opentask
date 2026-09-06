@@ -1699,6 +1699,11 @@ export function QuickActionPanel({
                         (effectiveTask?.due_at || effectiveTask?.rrule) &&
                         !pendingDueAtCleared && (
                           <DropdownMenuItem
+                            // `inset` matches the left padding DropdownMenuCheckboxItem
+                            // reserves for its tick, so the icons and labels in this
+                            // mixed menu sit on one line (Trent, 2026-09-06: "reminder
+                            // and due date are not aligned right").
+                            inset
                             onClick={() => {
                               setPendingDueAtCleared(true)
                               if (effectiveTask?.rrule) {
@@ -1739,7 +1744,7 @@ export function QuickActionPanel({
                         </DropdownMenuCheckboxItem>
                       )}
                       {isSingleTask && onNavigateToDetail && (
-                        <DropdownMenuItem onClick={onNavigateToDetail}>
+                        <DropdownMenuItem inset onClick={onNavigateToDetail}>
                           <Info className="mr-2 size-4" />
                           Task Details
                         </DropdownMenuItem>

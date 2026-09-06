@@ -2,7 +2,16 @@
 
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, History, Archive, Trash2, Settings, Plus, Lightbulb } from 'lucide-react'
+import {
+  LayoutDashboard,
+  History,
+  Archive,
+  Trash2,
+  Settings,
+  Plus,
+  Lightbulb,
+  Gauge,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
@@ -31,6 +40,9 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   const navItems = [
     { href: '/', label: 'Tasks', icon: LayoutDashboard },
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
+    // §5: quotas are a place, not only the instrument on the dashboard —
+    // somewhere to make one, retire one, and see which have never been met.
+    { href: '/quotas', label: 'Quotas', icon: Gauge },
     { href: '/history', label: 'History', icon: History },
   ]
 
@@ -128,7 +140,11 @@ export function Sidebar({ onAddClick }: SidebarProps) {
         <div className="border-t px-2 py-3">
           <Button variant="outline" className="w-full justify-start gap-2" onClick={onAddClick}>
             <Plus className="size-4" />
-            {pathname.startsWith('/reminders') ? 'Add Reminder' : 'Add Task'}
+            {pathname.startsWith('/reminders')
+              ? 'Add Reminder'
+              : pathname.startsWith('/quotas')
+                ? 'Add Quota'
+                : 'Add Task'}
           </Button>
         </div>
       )}

@@ -2,7 +2,7 @@
 
 import { GuardedLink } from './GuardedLink'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Archive, Plus, Clock, Lightbulb } from 'lucide-react'
+import { LayoutGrid, Plus, Clock, Lightbulb, Gauge } from 'lucide-react'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -59,8 +59,13 @@ export function BottomTabs({ onAddClick }: BottomTabsProps) {
     // Lightbulb is the Reminders surface's own icon (see RemindersView's empty state).
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     { href: '#add', label: 'Add', icon: Plus, isAction: true },
+    // Quotas takes the slot Archive had. Five is the ceiling and one of the
+    // four destinations had to go: quotas are a daily surface now (§5, and
+    // Trent asked for them to be first-class on 2026-09-06), while Archive is
+    // occasional and still reachable from the header menu — the same place
+    // Settings and Trash already live on a phone.
+    { href: '/quotas', label: 'Quotas', icon: Gauge },
     { href: '/history', label: 'History', icon: Clock },
-    { href: '/archive', label: 'Archive', icon: Archive },
   ]
 
   return (

@@ -8,6 +8,7 @@
  */
 
 import { useCallback } from 'react'
+import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { computeSnoozeTime } from '@/lib/snooze'
@@ -44,7 +45,12 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   return useCallback(
     async (until?: string) => {
       const now = new Date()
-      const overdueTasks = displayTasks.filter((t) => t.due_at && new Date(t.due_at) < now)
+      // Same predicate the badge counts with (`countTasks`): a quota is never
+      // late, so it is never swept. Without this the header read "0 overdue"
+      // while the button beside it snoozed every quota.
+      const overdueTasks = displayTasks.filter(
+        (t) => t.due_at && new Date(t.due_at) < now && !isTracked(t),
+      )
 
       if (overdueTasks.length === 0) {
         showToast({ message: 'No overdue tasks' })

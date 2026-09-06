@@ -34,6 +34,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       window.dispatchEvent(new CustomEvent('open-add-reminder'))
       return
     }
+    // Same on Quotas: the app's primary add affordance must make the thing the
+    // surface is about, not drag the user to the dashboard to make a task.
+    if (pathname.startsWith('/quotas')) {
+      window.dispatchEvent(new CustomEvent('open-add-quota'))
+      return
+    }
     if (pathname !== '/') {
       router.push('/')
     }

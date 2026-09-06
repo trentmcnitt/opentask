@@ -107,15 +107,41 @@ test.describe('Track', () => {
       await toast.getByRole('button', { name: 'Undo' }).click()
       await expect(chipCount).toHaveText('0/2')
 
-      // Hold (the app's 400 ms long-press): −1. The click that follows a hold
-      // is not a tap. Shift-click: −1 too.
+      // Subtracting: shift-click and right-click. A hold no longer subtracts —
+      // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
       await expect(chipCount).toHaveText('2/2')
-      await chip.click({ delay: 500 })
-      await expect(chipCount).toHaveText('1/2')
       await chip.click({ modifiers: ['Shift'] })
+      await expect(chipCount).toHaveText('1/2')
+      await chip.click({ button: 'right' })
       await expect(chipCount).toHaveText('0/2')
+
+      // A hold opens a popover anchored to the chip — the shape Trent asked
+      // for on 2026-09-06 ("still the same concept but not hover"). It reads,
+      // it does not edit, and the click trailing the hold is not a tap.
+      await chip.click({ delay: 500 })
+      const pop = page.locator('[data-track-popover]')
+      await expect(pop).toBeVisible()
+      await expect(pop).toContainText('Never yet')
+      await expect(pop.getByRole('textbox')).toHaveCount(0)
+      await expect(chipCount).toHaveText('0/2')
+
+      // Open is the answer to "how do I even edit the Track items": a quota is
+      // an ordinary task, and it gets its OWN editor — no due date, no snooze
+      // grid, no Done, none of which mean anything for "twice a week".
+      await pop.getByRole('button', { name: 'Open' }).click()
+      await page.waitForURL(`**/tasks/${id}`)
+      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(editor).toBeVisible()
+      await expect(editor.getByRole('button', { name: 'Every week' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(page.getByRole('button', { name: '+1 hr' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0)
+
+      await page.goto('/')
 
       await openTrack(page)
       // The choice sticks across a reload.
@@ -176,6 +202,48 @@ test.describe('Track', () => {
     }
   })
 
+  test('a quota edits its cadence in its own editor, and is retired by deleting', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Walk the dog',
+      progress_target: 3,
+      is_tracked: true,
+      rrule: 'FREQ=WEEKLY',
+    })
+
+    try {
+      await page.goto(`/tasks/${id}`)
+      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(editor).toBeVisible()
+
+      // Target, flag and rule travel together in one PATCH — validation rejects
+      // a bare FREQ rrule that does not also say the task is tracked.
+      await editor.getByRole('textbox', { name: 'Times per period' }).fill('5')
+      await editor.getByRole('button', { name: 'Every day' }).click()
+      await editor.getByRole('button', { name: 'Save' }).click()
+      await page.waitForResponse(
+        (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
+      )
+
+      await page.reload()
+      const after = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(after.getByRole('button', { name: 'Every day' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(after.getByRole('textbox', { name: 'Times per period' })).toHaveValue('5')
+
+      // A quota is retired by deleting it, not by being turned back into a
+      // task: there is no "stop tracking", because a quota is its own kind of
+      // thing rather than a task wearing a counter.
+      await expect(after.getByRole('button', { name: 'Stop tracking' })).toHaveCount(0)
+      await expect(after.getByRole('button', { name: 'Move to Trash' })).toBeVisible()
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
+
   test('an ordinary task is a row in the day, not a line in the panel', async ({
     authenticatedPage: page,
   }) => {
@@ -224,6 +292,91 @@ test.describe('Track', () => {
     } finally {
       if (before && before !== 'All') await switchView(page, before)
       await deleteTasks(page, [id])
+    }
+  })
+})
+
+/**
+ * The Quotas page (§5) — where quotas are made, managed and retired, as
+ * opposed to the dashboard's Track panel, which is where they are tapped.
+ */
+test.describe('Quotas page', () => {
+  test('makes a quota, selects a range of them, and retires them together', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      await page.goto('/quotas')
+      const view = page.locator('[data-quotas-view]')
+      await expect(view).toBeVisible()
+      const before = await view.locator('[data-quota-row]').count()
+
+      // Creating one: the only route that existed before this page was the API.
+      for (const title of ['Probe quota one', 'Probe quota two']) {
+        await view.getByRole('button', { name: 'New quota' }).click()
+        // A modal, not an inline form.
+        const form = page.getByRole('dialog')
+        await expect(form).toBeVisible()
+        await form.getByRole('textbox').first().fill(title)
+        const created = page.waitForResponse(
+          (r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST',
+        )
+        await form.getByRole('button', { name: 'Create' }).click()
+        ids.push((await (await created).json()).data.id)
+      }
+      await expect(view.locator('[data-quota-row]')).toHaveCount(before + 2)
+
+      // A brand new quota has never been met, and says so.
+      const row = page.locator(`[data-quota-row="${ids[0]}"]`)
+      await expect(row).toContainText('never met')
+
+      // The house selection model: a plain click selects EXACTLY one and never
+      // navigates. It does not accumulate — which is what it wrongly did when
+      // this page first shipped.
+      await row.click()
+      await expect(row).toHaveAttribute('aria-selected', 'true')
+      await expect(page).toHaveURL(/\/quotas$/)
+      await page.locator(`[data-quota-row="${ids[1]}"]`).click()
+      await expect(page.locator('[data-quota-row][aria-selected="true"]')).toHaveCount(1)
+
+      // Shift takes a range.
+      await row.click({ modifiers: ['Shift'] })
+      const bar = page.locator('[data-quota-selection-bar]')
+      await expect(bar).toContainText('2 selected')
+
+      // Editing several at once — the reason selection exists here beyond
+      // retiring things.
+      await bar.getByRole('button', { name: 'Details' }).click()
+      // A modal, like every other editor in the app — not an inline panel.
+      const bulk = page.getByRole('dialog')
+      await expect(bulk).toContainText('Editing 2 quotas')
+      await bulk.getByRole('textbox', { name: 'Times per period' }).fill('7')
+      const edited = page.waitForResponse(
+        (r) => r.url().includes('/bulk/edit') && r.request().method() === 'POST',
+      )
+      await bulk.getByRole('button', { name: 'Save' }).click()
+      expect((await edited).status()).toBe(200)
+      await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toContainText('/ 7')
+
+      // A double-click opens the editor as a MODAL and stays on the surface —
+      // the same contract reminders have.
+      await page.locator(`[data-quota-row="${ids[0]}"]`).dblclick()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await expect(page).toHaveURL(/\/quotas$/)
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      // And the bar retires the set.
+      await page.locator(`[data-quota-row="${ids[0]}"]`).click()
+      await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
+      await page
+        .locator('[data-quota-selection-bar]')
+        .getByRole('button', { name: /Move .*to Trash/ })
+        .click()
+      await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(0)
+      await expect(page.locator(`[data-quota-row="${ids[1]}"]`)).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 })
