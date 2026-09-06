@@ -117,27 +117,31 @@ test.describe('Track', () => {
       await chip.click({ button: 'right' })
       await expect(chipCount).toHaveText('0/2')
 
-      // A hold opens the detail sheet instead of subtracting. It READS, it does
-      // not edit (Trent, 2026-09-06: "I don't want an editable field") — and it
-      // ends in a route to the ordinary task, which is where editing happens.
+      // A hold opens a popover anchored to the chip — the shape Trent asked
+      // for on 2026-09-06 ("still the same concept but not hover"). It reads,
+      // it does not edit, and the click trailing the hold is not a tap.
       await chip.click({ delay: 500 })
-      const sheet = page.getByRole('dialog').filter({ hasText: 'Eggs for the kids' })
-      await expect(sheet).toBeVisible()
-      await expect(sheet).toContainText('Never yet')
-      await expect(sheet.getByRole('textbox')).toHaveCount(0)
-      await page.keyboard.press('Escape')
-      await expect(sheet).toBeHidden()
-      // The click that trails a hold is not a tap: the count is untouched.
+      const pop = page.locator('[data-track-popover]')
+      await expect(pop).toBeVisible()
+      await expect(pop).toContainText('Never yet')
+      await expect(pop.getByRole('textbox')).toHaveCount(0)
       await expect(chipCount).toHaveText('0/2')
 
-      // "Open task" is the answer to "how do I even edit these" — a quota is an
-      // ordinary task and this is the only route the chips ever had to it.
-      await chip.click({ delay: 500 })
-      await page.getByRole('button', { name: 'Open task' }).click()
+      // Open is the answer to "how do I even edit the Track items": a quota is
+      // an ordinary task, and it gets its OWN editor — no due date, no snooze
+      // grid, no Done, none of which mean anything for "twice a week".
+      await pop.getByRole('button', { name: 'Open' }).click()
       await page.waitForURL(`**/tasks/${id}`)
-      await expect(page.getByText('Eggs for the kids').first()).toBeVisible()
-      await page.goBack()
-      await expect(panel).toBeVisible()
+      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(editor).toBeVisible()
+      await expect(editor.getByRole('button', { name: 'Every week' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(page.getByRole('button', { name: '+1 hr' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0)
+
+      await page.goto('/')
 
       await openTrack(page)
       // The choice sticks across a reload.
@@ -195,6 +199,52 @@ test.describe('Track', () => {
     } finally {
       await closeTrack(page)
       await deleteTasks(page, [id, nightId])
+    }
+  })
+
+  test('a quota edits its cadence in its own editor, and can stop being one', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Walk the dog',
+      progress_target: 3,
+      is_tracked: true,
+      rrule: 'FREQ=WEEKLY',
+    })
+
+    try {
+      await page.goto(`/tasks/${id}`)
+      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(editor).toBeVisible()
+
+      // Target, flag and rule travel together in one PATCH — validation rejects
+      // a bare FREQ rrule that does not also say the task is tracked.
+      await editor.getByRole('textbox', { name: 'Times per period' }).fill('5')
+      await editor.getByRole('button', { name: 'Every day' }).click()
+      await editor.getByRole('button', { name: 'Save' }).click()
+      await page.waitForResponse(
+        (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
+      )
+
+      await page.reload()
+      const after = page.locator(`[data-quota-detail="${id}"]`)
+      await expect(after.getByRole('button', { name: 'Every day' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(after.getByRole('textbox', { name: 'Times per period' })).toHaveValue('5')
+
+      // Stop tracking keeps the task and drops the counter, so it goes back to
+      // being an ordinary task — and the quota editor is no longer what renders.
+      await after.getByRole('button', { name: 'Stop tracking' }).click()
+      await page.waitForResponse(
+        (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
+      )
+      await page.reload()
+      await expect(page.locator(`[data-quota-detail="${id}"]`)).toHaveCount(0)
+      await expect(page.getByText('Walk the dog').first()).toBeVisible()
+    } finally {
+      await deleteTasks(page, [id])
     }
   })
 

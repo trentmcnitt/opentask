@@ -6,6 +6,8 @@ import { useRouter, useParams } from 'next/navigation'
 import { ChevronLeft, Undo2, Redo2, Menu, Settings } from 'lucide-react'
 import { TaskDetail } from '@/components/TaskDetail'
 import { ReminderDetail } from '@/components/ReminderDetail'
+import { QuotaDetail } from '@/components/QuotaDetail'
+import { isTracked } from '@/lib/track'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -352,7 +354,21 @@ export default function TaskDetailPage() {
         </header>
 
         <main className="mx-auto w-full max-w-2xl px-4 py-6">
-          {task.is_reminder ? (
+          {isTracked(task) ? (
+            /* A quota gets its own editor (§5). It used to fall through to the
+               task editor, which showed it a due date, a snooze grid and a
+               Done button — none of which mean anything for "four times a
+               week", and all of which implied a debt the app never chases
+               (Trent, 2026-09-06). */
+            <QuotaDetail
+              key={task.id}
+              task={task}
+              onSaveAll={actions.handleSaveAllChanges}
+              onDelete={handleDelete}
+              onDirtyChange={handleDirtyChange}
+              saveRef={saveRef}
+            />
+          ) : task.is_reminder ? (
             /* A reminder gets its own editor (§6) — the same component the
                Reminders bar opens in a dialog — in the same card the task
                editor sits in, dirty stripe included. "Make this a task" flips

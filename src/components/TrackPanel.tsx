@@ -8,7 +8,8 @@ import { periodLabel, trackSummary } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
-import { TrackDetailSheet } from '@/components/TrackDetailSheet'
+import { TrackChipPopover } from '@/components/TrackChipPopover'
+import { GuardedLink } from '@/components/GuardedLink'
 import { useTrackPanelPreference } from '@/components/PreferencesProvider'
 import type { Task } from '@/types'
 
@@ -49,7 +50,6 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   // so a sync refresh replaces the rendered task underneath an open sheet.
   const [detailId, setDetailId] = useState<number | null>(null)
   const quotas = trackedItems(tasks)
-  const detailTask = quotas.find((q) => q.id === detailId) ?? null
   if (quotas.length === 0) return null
 
   // Quotas are grouped by period. With one period the header names it; with
@@ -98,17 +98,12 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
             period={g.period}
             tasks={g.tasks}
             open={open}
+            detailId={detailId}
             onOpenDetail={(t) => setDetailId(t.id)}
+            onCloseDetail={() => setDetailId(null)}
           />
         ))}
       </div>
-      <TrackDetailSheet
-        task={detailTask}
-        open={detailTask !== null}
-        onOpenChange={(next) => {
-          if (!next) setDetailId(null)
-        }}
-      />
     </section>
   )
 }
@@ -116,13 +111,17 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
 function PeriodCard({
   period,
   tasks,
+  detailId,
   onOpenDetail,
+  onCloseDetail,
   open,
 }: {
   period: string | null
   tasks: Task[]
   open: boolean
+  detailId: number | null
   onOpenDetail: (task: Task) => void
+  onCloseDetail: () => void
 }) {
   const word = period ? periodShort(period) : 'no period'
   const s = trackSummary(tasks)
@@ -161,13 +160,19 @@ function PeriodCard({
       {open ? (
         <ul aria-label={word}>
           {tasks.map((task) => (
-            <TrackRow key={task.id} task={task} onOpenDetail={onOpenDetail} />
+            <TrackRow key={task.id} task={task} />
           ))}
         </ul>
       ) : (
         <ul className="flex flex-wrap gap-1.5" aria-label={word}>
           {tasks.map((task) => (
-            <TrackChip key={task.id} task={task} onOpenDetail={onOpenDetail} />
+            <TrackChip
+              key={task.id}
+              task={task}
+              detailOpen={detailId === task.id}
+              onOpenDetail={onOpenDetail}
+              onCloseDetail={onCloseDetail}
+            />
           ))}
         </ul>
       )}
@@ -195,75 +200,93 @@ function periodShort(period: string): string {
  * The fill behind the text is the count over the target. Long titles wrap the
  * row, never the chip's text.
  */
-function TrackChip({ task, onOpenDetail }: { task: Task; onOpenDetail: (task: Task) => void }) {
+function TrackChip({
+  task,
+  detailOpen,
+  onOpenDetail,
+  onCloseDetail,
+}: {
+  task: Task
+  detailOpen: boolean
+  onOpenDetail: (task: Task) => void
+  onCloseDetail: () => void
+}) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
   const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
 
   return (
     <li className="max-w-full">
-      <button
-        type="button"
-        data-track-chip={task.id}
-        onPointerDown={(e) => {
-          press.onPointerDown(e)
-          swipe.onPointerDown(e)
+      <TrackChipPopover
+        task={task}
+        open={detailOpen}
+        onOpenChange={(next) => {
+          if (!next) onCloseDetail()
         }}
-        onPointerUp={(e) => {
-          press.onPointerUp()
-          swipe.onPointerUp(e)
-        }}
-        onPointerMove={(e) => {
-          press.onPointerMove(e)
-          swipe.onPointerMove(e)
-        }}
-        onPointerLeave={press.onPointerLeave}
-        onPointerCancel={swipe.onPointerCancel}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          // Mouse only. A long-press on iOS can raise a contextmenu of its own,
-          // and that must not silently subtract when the user meant to open
-          // the sheet.
-          if (!press.wasTouch()) void log(-1)
-        }}
-        onClick={(e) => {
-          // A hold opened the sheet and a swipe already logged its −1; the
-          // click that trails either one is not a tap.
-          if (press.didFire() || swipe.didSwipe()) return
-          void log(e.shiftKey ? -1 : 1)
-        }}
-        aria-label={`Log one more for "${task.title}"`}
-        title="Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details"
-        className={cn(
-          // leading-5, not leading-none: with the chip clipping its fill, a tight line
-          // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
-          // touch-action pan-y, NOT touch-manipulation: the page must keep
-          // scrolling vertically while the horizontal drag belongs to us.
-          'relative flex h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-5 transition-colors select-none',
-          'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
-          state.met && 'border-green-600/30',
-        )}
       >
-        <span
-          aria-hidden="true"
+        <button
+          type="button"
+          data-track-chip={task.id}
+          onPointerDown={(e) => {
+            press.onPointerDown(e)
+            swipe.onPointerDown(e)
+          }}
+          onPointerUp={(e) => {
+            press.onPointerUp()
+            swipe.onPointerUp(e)
+          }}
+          onPointerMove={(e) => {
+            press.onPointerMove(e)
+            swipe.onPointerMove(e)
+          }}
+          onPointerLeave={press.onPointerLeave}
+          onPointerCancel={swipe.onPointerCancel}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            // Mouse only. A long-press on iOS can raise a contextmenu of its own,
+            // and that must not silently subtract when the user meant to open
+            // the sheet.
+            if (!press.wasTouch()) void log(-1)
+          }}
+          onClick={(e) => {
+            // A hold opened the sheet and a swipe already logged its −1; the
+            // click that trails either one is not a tap.
+            if (press.didFire() || swipe.didSwipe()) return
+            void log(e.shiftKey ? -1 : 1)
+          }}
+          aria-label={`Log one more for "${task.title}"`}
+          title="Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details"
           className={cn(
-            'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
-            state.met ? 'bg-green-600/15' : 'bg-foreground/10',
-          )}
-          style={{ width: `${state.fraction * 100}%` }}
-        />
-        <span className="relative truncate">{task.title}</span>
-        <span
-          data-track-count
-          className={cn(
-            'relative text-xs whitespace-nowrap tabular-nums',
-            state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            // leading-5, not leading-none: with the chip clipping its fill, a tight line
+            // box cut the descenders off "Eggs" and "Grinding" (Trent, 2026-09-05).
+            // touch-action pan-y, NOT touch-manipulation: the page must keep
+            // scrolling vertically while the horizontal drag belongs to us.
+            'relative flex h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-full border px-2.5 text-[13px] leading-5 transition-colors select-none',
+            'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
+            state.met && 'border-green-600/30',
           )}
         >
-          <span className="text-foreground font-medium">{state.current}</span>/{state.target}
-        </span>
-        {period && <span className="sr-only"> {period}</span>}
-      </button>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
+              state.met ? 'bg-green-600/15' : 'bg-foreground/10',
+            )}
+            style={{ width: `${state.fraction * 100}%` }}
+          />
+          <span className="relative truncate">{task.title}</span>
+          <span
+            data-track-count
+            className={cn(
+              'relative text-xs whitespace-nowrap tabular-nums',
+              state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            )}
+          >
+            <span className="text-foreground font-medium">{state.current}</span>/{state.target}
+          </span>
+          {period && <span className="sr-only"> {period}</span>}
+        </button>
+      </TrackChipPopover>
     </li>
   )
 }
@@ -279,7 +302,7 @@ function groupByPeriod(quotas: Task[]): { period: string | null; tasks: Task[] }
   return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
 }
 
-function TrackRow({ task, onOpenDetail }: { task: Task; onOpenDetail: (task: Task) => void }) {
+function TrackRow({ task }: { task: Task }) {
   const { state, period, log } = useTrackProgress(task)
 
   return (
@@ -287,21 +310,21 @@ function TrackRow({ task, onOpenDetail }: { task: Task; onOpenDetail: (task: Tas
       data-track-row={task.id}
       className="hover:bg-background flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors"
     >
-      {/* The row's title is the sheet's keyboard-reachable door.
-          Press-and-hold on a chip is a touch gesture with no keyboard
-          equivalent, so the notes a quota carries would otherwise be
-          unreachable without a pointer. Same destination, two ways in. */}
-      <button
-        type="button"
-        onClick={() => onOpenDetail(task)}
-        title={`${task.title} — notes and details`}
+      {/* The rows view is the keyboard-reachable route into a quota. The chips'
+          press-and-hold has no keyboard equivalent, and the popover it opens is
+          anchored to a chip that does not exist here — so this goes straight to
+          the editor, which is the fuller thing and where a row has the room to
+          send you. */}
+      <GuardedLink
+        href={`/tasks/${task.id}`}
+        title={`${task.title} — open`}
         className={cn(
           'hover:text-foreground basis-full truncate rounded text-left text-[15px] underline-offset-4 hover:underline sm:flex-1 sm:basis-0',
           state.met ? 'text-foreground/70' : 'text-foreground',
         )}
       >
         {task.title}
-      </button>
+      </GuardedLink>
 
       {/* Fixed-width cluster, flush right: the same columns on every line. */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
