@@ -431,6 +431,60 @@ describe('Bulk Snooze Relative Mode', () => {
   })
 
   /**
+   * BS-002b: the result names exactly which ids moved.
+   *
+   * The snooze-overdue route relies on this instead of walking
+   * `getCurrentlyDueTaskIds()` a second time and diffing — a per-recurring-task
+   * rrule evaluation to recover something bulkSnooze already knew. If this
+   * contract silently drops back to an empty array the route stops dismissing
+   * notifications at all, which is invisible in the response body.
+   */
+  test('BS-002b: snoozedIds names the tasks that actually moved, and excludes the skipped', () => {
+    const moved = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Ordinary task', due_at: localTime(9, 0), priority: 1 },
+    })
+    // P4 Urgent is excluded from a bulk sweep, so it must not appear.
+    const urgent = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Urgent task', due_at: localTime(9, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [moved.id, urgent.id],
+      deltaMinutes: 60,
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.snoozedIds).toEqual([moved.id])
+    expect(result.snoozedIds).not.toContain(urgent.id)
+    expect(result.snoozedIds).toHaveLength(result.tasksAffected)
+  })
+
+  /** Nothing eligible means nothing claimed. */
+  test('BS-002c: snoozedIds is empty when every task is skipped', () => {
+    const urgent = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Only urgent', due_at: localTime(9, 0), priority: 4 },
+    })
+
+    const result = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [urgent.id],
+      deltaMinutes: 60,
+    })
+
+    expect(result.tasksAffected).toBe(0)
+    expect(result.snoozedIds).toEqual([])
+  })
+
+  /**
    * BS-003: Relative snooze skips tasks with null due_at
    */
   test('BS-003: Relative snooze skips tasks with null due_at', () => {

@@ -244,6 +244,17 @@ export interface BulkSnoozeResult {
   /** §6: reminders excluded because they are bucket-locked. */
   reminderSkipped: number
   noDueDateSkipped: number
+  /**
+   * The ids actually moved, in the order they were snoozed.
+   *
+   * The caller used to recover this by walking `getCurrentlyDueTaskIds()` a
+   * second time and diffing — an rrule evaluation over every recurring task
+   * (~70ms on a 512-task account) to learn something this function already
+   * knew. It is also the more truthful answer: the diff inferred "snoozed"
+   * from "no longer due", which is only the same thing as long as nothing else
+   * changes a due date in between.
+   */
+  snoozedIds: number[]
 }
 
 /**
@@ -265,6 +276,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       urgentSkipped: 0,
       reminderSkipped: 0,
       noDueDateSkipped: 0,
+      snoozedIds: [],
     }
   }
 
@@ -314,6 +326,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       urgentSkipped,
       reminderSkipped,
       noDueDateSkipped,
+      snoozedIds: [],
     }
   }
 
@@ -404,6 +417,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       urgentSkipped,
       reminderSkipped,
       noDueDateSkipped,
+      snoozedIds: snoozeable.map((t) => t.id),
     }
   })
 

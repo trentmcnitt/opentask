@@ -925,6 +925,53 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  # --- Quotas (§5) ---
+
+  /api/quotas:
+    get:
+      summary: Every open quota for the user
+      operationId: listQuotas
+      tags: [Quotas]
+      description: |
+        The Quotas surface. A quota is "how often", not "when" — four workouts a
+        week, one date night a month — and is a task carrying `progress_target`
+        greater than 1 OR `is_tracked` true. The flag exists so a target of one
+        can still be a quota rather than a deadline.
+
+        Quotas are never counted overdue and are excluded from the bulk snooze
+        sweep: "four times this week" cannot be late on a Tuesday. They do carry
+        a `due_at`, which is vestigial and read only by the iOS widget to draw
+        its pace tick — do not treat it as a promise.
+
+        Order is deliberately NOT specified here. Clients sort quotas
+        alphabetically so that logging progress on one never reorders the others
+        under the user's finger.
+      responses:
+        '200':
+          description: The user's open quotas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      quotas:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+                      total:
+                        type: integer
+                      has_any:
+                        type: boolean
+                        description: |
+                          Whether the user has any quota at all, including done
+                          ones. Lets a client tell "none open" apart from "has
+                          never made one" when `quotas` is empty.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # --- Reminders (§6) ---
 
   /api/reminders:

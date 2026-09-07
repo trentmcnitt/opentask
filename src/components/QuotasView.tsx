@@ -60,13 +60,17 @@ export function QuotasView({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks?done=false&limit=1000')
-      if (!res.ok) throw new Error(`GET /api/tasks ${res.status}`)
+      // This surface's OWN endpoint, the way Reminders has one. It used to ask
+      // for `/api/tasks?done=false&limit=1000` and filter in the browser: 512
+      // tasks over the wire to render eight, on every sync event — and a +1
+      // emits a sync event, so the phone paid it for every tap.
+      const res = await fetch('/api/quotas')
+      if (!res.ok) throw new Error(`GET /api/quotas ${res.status}`)
       const body = await res.json()
-      // trackedItems, not a raw filter: the dashboard sorts quotas by title so
-      // the order cannot jump as counts change (commit 9bcf03d, "frozen
-      // order"), and the two views of the same eight things must agree.
-      setTasks(trackedItems(body.data.tasks as Task[]))
+      // Still trackedItems, not the server's order: the dashboard sorts quotas
+      // by title so the order cannot jump as counts change (commit 9bcf03d,
+      // "frozen order"), and the two views of the same eight things must agree.
+      setTasks(trackedItems(body.data.quotas as Task[]))
       setError(null)
     } catch (err) {
       log.error('ui', 'Loading quotas failed:', err)

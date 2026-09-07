@@ -54,7 +54,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     // freezes once the daily sweep stops, so the old `due_at < now` SQL would
     // sweep items that aren't scheduled today — re-dating them and deepening
     // exactly the mess this redesign is unwinding.
-    const taskIds = getCurrentlyDueTaskIds(user.id)
+    const dueNow = getCurrentlyDueTaskIds(user.id)
+    const taskIds = [...dueNow]
 
     // Merge in explicitly included task IDs (e.g., the P4 task the user is acting on)
     const includeTaskIds = input.include_task_ids
@@ -87,10 +88,26 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     // Dismiss only the tasks that were actually snoozed, not tasks that were
     // skipped by priority filtering (P4 Urgent may still be overdue).
+    //
+    // PERF (2026-09-06): this used to walk `getCurrentlyDueTaskIds()` a second
+    // time and diff, and `dismissNotificationsForTasks` then walked it a THIRD
+    // time for the badge. Each walk evaluates an rrule per recurring task —
+    // measured at 69ms on Trent's 512-task/193-recurring account, so ~208ms of
+    // the request was the same question asked three times. `bulkSnooze` already
+    // knows exactly which ids it moved, and the surviving overdue count follows
+    // from arithmetic: everything snoozed went to `until`, which is in the
+    // future, so what stays due is precisely what was due and did not move.
     if (result.tasksAffected > 0) {
-      const stillOverdueIds = new Set(getCurrentlyDueTaskIds(user.id))
-      const snoozedIds = taskIds.filter((id) => !stillOverdueIds.has(id))
-      dismissNotificationsForTasks(user.id, snoozedIds)
+      // The arithmetic only holds while `until` is genuinely in the future.
+      // bulkSnooze deliberately permits a past target ("tasks will just appear
+      // overdue immediately"), and in that case a snoozed task is still due —
+      // so fall back to measuring rather than report a badge that is too low.
+      const untilIsFuture = new Date(until).getTime() > Date.now()
+      const snoozedSet = new Set(result.snoozedIds)
+      const stillOverdue = untilIsFuture
+        ? dueNow.filter((id) => !snoozedSet.has(id)).length
+        : undefined
+      dismissNotificationsForTasks(user.id, result.snoozedIds, stillOverdue)
     }
 
     notifyDemoEngagement(user.name, 'update')
