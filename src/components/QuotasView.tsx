@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useRouter } from 'next/navigation'
-import { Gauge, Minus, Plus, Trash2, X, Pencil } from 'lucide-react'
+import { Gauge, Minus, Plus, Trash2, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import type { QuotaChanges, QuotaCreateDraft } from '@/components/QuotaDetail'
@@ -14,6 +14,7 @@ import { trackSummary, groupByPeriod, periodShort } from '@/lib/track'
 import { trackedItems } from '@/lib/slot-view'
 import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
+import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { cn, fromRowControl } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -144,11 +145,15 @@ export function QuotasView({
   return (
     <section aria-label="Quotas" data-quotas-view className="space-y-3 pb-24">
       <div className="flex items-center justify-between gap-2 px-1">
-        <p className="text-muted-foreground text-sm">
+        {/* The page's h1, exactly as the Reminders headline is: this one line
+            is the surface's summary, so it is the heading rather than a
+            paragraph sitting where a heading should be. Same size and colour
+            as before — the change is semantic, not visual. */}
+        <h1 className="text-muted-foreground text-sm">
           {tasks.length === 0
             ? 'No quotas yet.'
             : `${tasks.length} quota${tasks.length === 1 ? '' : 's'}`}
-        </p>
+        </h1>
         <Button size="sm" onClick={() => setCreating({ title: '' })}>
           <Plus className="size-4" />
           New quota
@@ -400,7 +405,11 @@ function QuotaRow({
   )
 }
 
-/** The floating bar, the same shape and position the other surfaces use. */
+/**
+ * The Quotas surface's verbs inside the shared selection bar. Position, count,
+ * Clear and the double-click guard all live in `SelectionBarShell`, so this bar
+ * cannot drift from the Reminders and dashboard ones again.
+ */
 function QuotaSelectionBar({
   count,
   onEdit,
@@ -412,53 +421,27 @@ function QuotaSelectionBar({
   onClear: () => void
   onDelete: () => void
 }) {
-  if (count === 0) return null
   return (
-    <div
-      data-selection-sheet
-      data-quota-selection-bar
-      className="animate-slide-up fixed bottom-20 left-1/2 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 md:bottom-6"
-      // A double-click on a row near the bottom: the first click selects and
-      // summons this bar over the row, so the second click lands here. The
-      // browser still counts it as the second click of one gesture, so it must
-      // not press whatever it fell on — it finishes what was meant and opens
-      // the editor. Straight from ReminderSelectionBar.
-      onClickCapture={(e) => {
-        if (e.detail < 2) return
-        e.preventDefault()
-        e.stopPropagation()
-        onEdit()
-      }}
+    <SelectionBarShell
+      count={count}
+      onClear={onClear}
+      onDoubleClickIntent={onEdit}
+      testAttr="data-quota-selection-bar"
     >
-      <div
-        className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
-        aria-live="polite"
+      <Button size="sm" variant="secondary" onClick={onEdit}>
+        <Pencil className="size-4" />
+        Details
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={onDelete}
+        aria-label={count === 1 ? 'Move to Trash' : `Move ${count} quotas to Trash`}
+        className="bg-primary-foreground/10 text-primary-foreground hover:bg-destructive active:bg-destructive hover:text-white"
       >
-        {count > 1 && <span className="text-sm font-medium tabular-nums">{count} selected</span>}
-        <Button size="sm" variant="secondary" onClick={onEdit}>
-          <Pencil className="size-4" />
-          Details
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onDelete}
-          aria-label={count === 1 ? 'Move to Trash' : `Move ${count} quotas to Trash`}
-          className="hover:bg-destructive active:bg-destructive hover:text-white"
-        >
-          <Trash2 className="size-4" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onClear}
-          aria-label="Clear selection"
-          className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 ml-1"
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-    </div>
+        <Trash2 className="size-4" />
+      </Button>
+    </SelectionBarShell>
   )
 }
 

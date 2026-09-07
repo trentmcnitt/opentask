@@ -1,12 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
+import { DetailModalShell } from '@/components/DetailModalShell'
 import { QuotaDetail, type QuotaChanges, type QuotaCreateDraft } from '@/components/QuotaDetail'
-import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -40,17 +36,15 @@ export function QuotaDetailModal({
   onDelete: (tasks: Task[]) => void
   onOpenPage: (taskId: number) => void
 }) {
-  const isMobile = useIsMobile()
   const [isDirty, setIsDirty] = useState(false)
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
   const single = tasks.length === 1 ? tasks[0] : null
   const creating = tasks.length === 0 && !!create
 
-  // Dirtiness through a ref, not state: Radix hands a dismissal to whichever
-  // onOpenChange it last captured, and a callback closing over state trails the
-  // editor's report by a render — an Escape right after an edit reached a guard
-  // that still believed the editor was clean. Same fix as ReminderDetailModal.
+  // The ref is written synchronously here, the state drives rendering. The
+  // dismissal guard reads the ref: a callback closing over state trails the
+  // editor's report by a render, and an Escape right after an edit used to
+  // reach a guard that still believed the editor was clean.
   const isDirtyRef = useRef(false)
   const handleDirtyChange = useCallback((dirty: boolean) => {
     isDirtyRef.current = dirty
@@ -76,19 +70,8 @@ export function QuotaDetailModal({
     [onCreate, onClose],
   )
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen) return
-      if (isDirtyRef.current) setShowCloseConfirm(true)
-      else onClose()
-    },
-    [onClose],
-  )
-
-  const handleSaveAndClose = useCallback(async () => {
-    await saveRef.current?.()
-    setShowCloseConfirm(false)
-  }, [])
+  /** Commit whatever the editor has staged — used by the unsaved-changes guard. */
+  const handleCommit = useCallback(() => saveRef.current?.(), [])
 
   if (tasks.length === 0 && !creating) return null
 
@@ -130,55 +113,17 @@ export function QuotaDetailModal({
     </div>
   )
 
-  const confirmDialog = (
-    <UnsavedChangesDialog
-      open={showCloseConfirm}
-      onOpenChange={setShowCloseConfirm}
-      onDiscard={() => {
-        setShowCloseConfirm(false)
-        onClose()
-      }}
-      onSave={handleSaveAndClose}
-    />
-  )
-
-  if (isMobile) {
-    return (
-      <>
-        <Sheet open={open} onOpenChange={handleOpenChange}>
-          <SheetContent
-            side="bottom"
-            className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
-            showCloseButton={false}
-            draggable={!isDirty}
-          >
-            <VisuallyHidden>
-              <SheetTitle>{name}</SheetTitle>
-              <SheetDescription>Change how often this is counted</SheetDescription>
-            </VisuallyHidden>
-            <div className="px-4 pb-2">{panel}</div>
-          </SheetContent>
-        </Sheet>
-        {confirmDialog}
-      </>
-    )
-  }
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent
-          className="max-h-[90vh] w-[32rem] max-w-[calc(100%-2rem)] overflow-y-auto p-4"
-          showCloseButton={false}
-        >
-          <VisuallyHidden>
-            <DialogTitle>{name}</DialogTitle>
-            <DialogDescription>Change how often this is counted</DialogDescription>
-          </VisuallyHidden>
-          <div className="min-w-0">{panel}</div>
-        </DialogContent>
-      </Dialog>
-      {confirmDialog}
-    </>
+    <DetailModalShell
+      open={open}
+      title={name}
+      description="Change how often this is counted"
+      isDirty={isDirty}
+      dirtyRef={isDirtyRef}
+      onClose={onClose}
+      onSave={handleCommit}
+    >
+      {panel}
+    </DetailModalShell>
   )
 }
