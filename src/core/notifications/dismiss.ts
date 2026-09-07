@@ -41,16 +41,24 @@ export function getOverdueCount(userId: number): number {
  * Fire-and-forget — errors are logged but never thrown.
  * Called by dismissNotificationsForTasks and directly by undo/redo routes.
  */
-export function syncBadgeCount(userId: number): void {
+export function syncBadgeCount(userId: number, knownCount?: number): void {
   if (!isApnsConfigured()) return
-  const badgeCount = getOverdueCount(userId)
+  // `knownCount` lets a caller that has ALREADY established the post-change
+  // overdue count hand it over instead of paying for another
+  // `countCurrentlyDue()` — which evaluates an rrule for every recurring task.
+  // Only pass it when the number is exact; everyone else measures.
+  const badgeCount = knownCount ?? getOverdueCount(userId)
   log.info('notifications', `Badge update for user ${userId}: ${badgeCount} overdue`)
   sendApnsBadgeUpdate(userId, badgeCount)
     .then(() => log.info('notifications', `Badge update sent for user ${userId}: ${badgeCount}`))
     .catch((err) => log.error('notifications', 'Badge update error:', err))
 }
 
-export function dismissNotificationsForTasks(userId: number, taskIds: number[]): void {
+export function dismissNotificationsForTasks(
+  userId: number,
+  taskIds: number[],
+  knownOverdueCount?: number,
+): void {
   if (taskIds.length === 0) return
   log.info('notifications', `Dismiss requested for tasks [${taskIds.join(',')}] user ${userId}`)
   dismissTaskNotifications(userId, taskIds)
@@ -60,7 +68,7 @@ export function dismissNotificationsForTasks(userId: number, taskIds: number[]):
     .then(() => log.info('notifications', `APNs dismiss sent for tasks [${taskIds.join(',')}]`))
     .catch((err) => log.error('notifications', 'APNs dismiss error:', err))
 
-  syncBadgeCount(userId)
+  syncBadgeCount(userId, knownOverdueCount)
 }
 
 /**
