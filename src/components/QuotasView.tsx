@@ -14,7 +14,7 @@ import { trackSummary, groupByPeriod, periodShort } from '@/lib/track'
 import { trackedItems } from '@/lib/slot-view'
 import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
-import { cn } from '@/lib/utils'
+import { cn, fromRowControl } from '@/lib/utils'
 import type { Task } from '@/types'
 
 /**
@@ -102,7 +102,11 @@ export function QuotasView({
   // The sidebar's button and the phone's plus reach this surface through an
   // event, the way Reminders does, so "add" on /quotas makes a quota.
   useEffect(() => {
-    const open = () => setCreating({ title: '' })
+    // Idempotent: a second event while the form is already open is a no-op
+    // rather than a fresh draft. A double-tap on the phone's plus dispatches
+    // twice, and re-setting the draft threw away anything already typed and
+    // re-ran the modal's open effects.
+    const open = () => setCreating((current) => current ?? { title: '' })
     window.addEventListener('open-add-quota', open)
     return () => window.removeEventListener('open-add-quota', open)
   }, [])
@@ -316,7 +320,12 @@ function QuotaRow({
       // modal is handed the task directly, not the selection, so it still gets
       // the right one.
       onClick={onSelect}
-      onDoubleClick={onOpen}
+      // Not when the double-click was on the +1/-1 buttons: those stop the
+      // row's click, but dblclick is its own event and bubbles regardless.
+      onDoubleClick={(e) => {
+        if (fromRowControl(e)) return
+        onOpen()
+      }}
       className={cn(
         // Wraps like TrackRow: on a phone the title takes the whole first line
         // and the bar/count/buttons sit beneath it. Five fixed-width things on

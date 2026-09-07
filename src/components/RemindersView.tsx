@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronDown, ChevronRight, Lightbulb, StickyNote } from 'lucide-react'
 import { DateTime } from 'luxon'
-import { cn } from '@/lib/utils'
+import { cn, fromRowControl } from '@/lib/utils'
 import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
@@ -1247,7 +1247,13 @@ function ReminderRow({
       // bring up the modal"). Its two clicks select and then deselect the row
       // (a lone selection toggles), so afterwards nothing is selected — the
       // dashboard's double-click leaves the same state.
-      onDoubleClick={() => onOpen(reminder)}
+      // Same guard the quota rows use: the check circle and Retry stop the
+      // row's click, but dblclick travels separately and would open this on
+      // top of whatever the button just did.
+      onDoubleClick={(e) => {
+        if (fromRowControl(e)) return
+        onOpen(reminder)
+      }}
       className={cn(
         // The border is always there, transparent, so the processing pulse has
         // something to color without the row shifting by a pixel.

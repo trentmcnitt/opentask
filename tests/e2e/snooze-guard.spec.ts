@@ -64,9 +64,15 @@ test.describe('Snooze guards', () => {
     authenticatedPage: page,
   }) => {
     const title = 'Guard daily task'
-    // Due earlier today so the row is overdue and the menu offers "Tomorrow",
-    // which lands past tomorrow's 08:00 occurrence.
-    const dueAt = DateTime.now().set({ hour: 8, minute: 0, second: 0, millisecond: 0 })
+    // Due at the most recent 08:00 that has ALREADY PASSED, so the row is
+    // overdue and the menu offers "Tomorrow", which lands past the next
+    // occurrence. Anchoring on "08:00 today" was a latent time bomb: run the
+    // suite before 08:00 and that timestamp is in the future, the row is not
+    // overdue, and the menu this test needs never appears. CI runs in UTC, so
+    // it failed every night between 00:00 and 08:00 UTC while passing all day
+    // locally (found 2026-09-06, reproduced with TZ=UTC on clean main).
+    let dueAt = DateTime.now().set({ hour: 8, minute: 0, second: 0, millisecond: 0 })
+    if (dueAt > DateTime.now()) dueAt = dueAt.minus({ days: 1 })
     await createTask(page, {
       title,
       due_at: dueAt.toUTC().toISO(),

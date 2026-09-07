@@ -379,4 +379,41 @@ test.describe('Quotas page', () => {
       await deleteTasks(page, ids)
     }
   })
+
+  /**
+   * Rapid-tapping +1 is how a count gets to three, so the two clicks must both
+   * land — but the dblclick riding behind them must not also open the editor.
+   * The buttons stop the row's `click`; `dblclick` is a separate event that
+   * ignored that, which is exactly what Trent hit (2026-09-06): "if I
+   * double-tap the +1 on Broccoli Avocado, then the modal pops up".
+   */
+  test('double-tapping +1 counts twice and does not open the editor', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Probe rapid tap',
+      progress_target: 5,
+      rrule: 'FREQ=WEEKLY',
+    })
+    try {
+      await page.goto('/quotas')
+      const row = page.locator(`[data-quota-row="${id}"]`)
+      await expect(row.locator('[data-quota-count]')).toHaveText('0 / 5')
+
+      await row.getByRole('button', { name: /Log one more/ }).dblclick()
+
+      // Both taps counted...
+      await expect(row.locator('[data-quota-count]')).toHaveText('2 / 5')
+      // ...and nothing opened on top of them.
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      // The row itself still opens on a double-click — the guard is about where
+      // the click landed, not about disabling the gesture.
+      await row.getByText('Probe rapid tap').dblclick()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await page.keyboard.press('Escape')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
 })
