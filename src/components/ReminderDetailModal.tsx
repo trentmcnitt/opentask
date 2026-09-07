@@ -1,10 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog'
+import { DetailModalShell } from '@/components/DetailModalShell'
 import {
   ReminderDetail,
   type ReminderBulkChanges,
@@ -12,7 +9,6 @@ import {
 } from '@/components/ReminderDetail'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import type { ReminderCreateInput } from '@/hooks/useReminders'
-import { useIsMobile } from '@/hooks/useIsMobile'
 import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -62,9 +58,7 @@ export function ReminderDetailModal({
   onDelete,
   onOpenPage,
 }: ReminderDetailModalProps) {
-  const isMobile = useIsMobile()
   const [isDirty, setIsDirty] = useState(false)
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false)
   const saveRef = useRef<(() => Promise<void> | void) | null>(null)
   const single = tasks.length === 1 ? tasks[0] : null
   const creating = tasks.length === 0 && !!create
@@ -77,6 +71,10 @@ export function ReminderDetailModal({
   // the staged edit was dropped without asking (seen in the full E2E run).
   // The ref is current the moment the editor reports; the state only paints
   // the stripe.
+  // The ref is written synchronously here, the state drives rendering. The
+  // dismissal guard reads the ref: a callback closing over state trails the
+  // editor's report by a render, and an Escape right after an edit used to
+  // reach a guard that still believed the editor was clean.
   const isDirtyRef = useRef(false)
   const handleDirtyChange = useCallback((dirty: boolean) => {
     isDirtyRef.current = dirty
@@ -108,26 +106,8 @@ export function ReminderDetailModal({
     [onCreate, onClose],
   )
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen) return
-      if (isDirtyRef.current) setShowCloseConfirm(true)
-      else onClose()
-    },
-    [onClose],
-  )
-
-  const handleDiscardAndClose = useCallback(() => {
-    setShowCloseConfirm(false)
-    onClose()
-  }, [onClose])
-
-  const handleSaveAndClose = useCallback(async () => {
-    await saveRef.current?.()
-    // A successful save closes the modal itself; a failed one leaves it open
-    // with the edits, and the confirmation has served its purpose either way.
-    setShowCloseConfirm(false)
-  }, [])
+  /** Commit whatever the editor has staged — used by the unsaved-changes guard. */
+  const handleCommit = useCallback(() => saveRef.current?.(), [])
 
   if (tasks.length === 0 && !creating) return null
 
@@ -179,52 +159,17 @@ export function ReminderDetailModal({
     </div>
   )
 
-  const confirmDialog = (
-    <UnsavedChangesDialog
-      open={showCloseConfirm}
-      onOpenChange={setShowCloseConfirm}
-      onDiscard={handleDiscardAndClose}
-      onSave={handleSaveAndClose}
-    />
-  )
-
-  if (isMobile) {
-    return (
-      <>
-        <Sheet open={open} onOpenChange={handleOpenChange}>
-          <SheetContent
-            side="bottom"
-            className="max-h-[92dvh] overflow-y-auto rounded-t-2xl"
-            showCloseButton={false}
-            draggable={!isDirty}
-          >
-            <VisuallyHidden>
-              <SheetTitle>{name}</SheetTitle>
-              <SheetDescription>Change when this comes up</SheetDescription>
-            </VisuallyHidden>
-            <div className="px-4 pb-2">{panel}</div>
-          </SheetContent>
-        </Sheet>
-        {confirmDialog}
-      </>
-    )
-  }
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent
-          className="max-h-[90vh] w-[32rem] max-w-[calc(100%-2rem)] overflow-y-auto p-4"
-          showCloseButton={false}
-        >
-          <VisuallyHidden>
-            <DialogTitle>{name}</DialogTitle>
-            <DialogDescription>Change when this comes up</DialogDescription>
-          </VisuallyHidden>
-          <div className="min-w-0">{panel}</div>
-        </DialogContent>
-      </Dialog>
-      {confirmDialog}
-    </>
+    <DetailModalShell
+      open={open}
+      title={name}
+      description="Change when this comes up"
+      isDirty={isDirty}
+      dirtyRef={isDirtyRef}
+      onClose={onClose}
+      onSave={handleCommit}
+    >
+      {panel}
+    </DetailModalShell>
   )
 }
