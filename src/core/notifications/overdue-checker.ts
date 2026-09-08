@@ -56,18 +56,20 @@ interface OverdueTask {
   user_auto_snooze_low_minutes: number
   user_auto_snooze_medium_minutes: number
   critical_alert_volume: number
-  // §4.6 inputs — a recurring task's due-today-ness comes from its schedule,
-  // not from due_at, which freezes as soon as the daily sweep stops.
+  // §4.6 inputs — needed for the no-due_at case (today's occurrence from the
+  // schedule) and for from_completion. With a due_at, that IS the due time.
   rrule: string | null
   recurrence_mode: 'from_due' | 'from_completion' | null
   anchor_time: string | null
   timezone: string
   /**
-   * The due time this task is actually being notified about, derived at read
-   * time (§4.6). For a one-off this equals due_at; for a recurring task it is
-   * today's occurrence. All interval math uses this — using the frozen due_at
-   * would put minutesSinceDue in the tens of thousands and scramble the
-   * repeat cadence.
+   * The due time this task is actually being notified about, from
+   * `effectiveDueAt` (§4.6 as amended 2026-09-07). For anything carrying a
+   * due_at — one-off or recurring — this IS due_at: a recurring task missed on
+   * its day has been overdue since then and keeps being nagged until done. All
+   * interval math uses this; a task three days overdue on a 30-minute cadence
+   * still fires only on the minute where minutesSinceDue % 30 === 0, so a
+   * large value scrambles nothing (see notification-timing.test.ts).
    */
   effective_due_at: string
 }
@@ -253,13 +255,13 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
 
     // Fetch CANDIDATES, then decide due-ness in JS (§4.6).
     //
-    // The SQL can no longer answer "is this overdue" on its own. A recurring
-    // task's due_at freezes the moment the daily sweep stops, so `due_at <= now`
-    // would both keep nagging about items that aren't scheduled today and time
-    // their repeat intervals from a date months in the past. Recurring rows are
-    // therefore admitted regardless of due_at (including NULL) and filtered by
-    // effectiveDueAt() below; one-offs keep the cheap SQL predicate, since for
-    // them due_at is still the whole truth.
+    // For anything with a due_at, `due_at <= now` is the answer — a recurring
+    // task carries debt exactly like a one-off (Trent, 2026-09-07: "it's been
+    // overdue ever since I didn't get it done"). The JS pass exists for the
+    // recurring rows WITHOUT a due_at, whose only due time is today's
+    // occurrence from the rrule; those are admitted here regardless of due_at
+    // and resolved by effectiveDueAt() below. One-offs keep the cheap SQL
+    // predicate.
     //
     // Boundary filtering was already done in JS because the repeat interval
     // varies per task/priority. Uses a parameterized timestamp (not
