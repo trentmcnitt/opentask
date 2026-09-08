@@ -950,7 +950,9 @@ paths:
         `original_due_at` are always null, creating or updating one with a date
         is a 400, and snoozing one is a 400. "Four times this week" cannot be
         late on a Tuesday. The period a quota counts within is named by its
-        rrule's FREQ; the current period's start is tracked server-side.
+        rrule's FREQ, and the current period's start is `progress_period_start`
+        on the task — that field is the period anchor; use it, not `due_at`, for
+        pace.
 
         A quota is also absent from `GET /api/tasks`-backed list surfaces in the
         app — it appears on this endpoint and in the Track panel and nowhere
@@ -1827,6 +1829,17 @@ components:
             How many increments are logged this period. Reaching the target
             marks the task "met" but does NOT complete it; the task stays open
             until its period boundary, so overflow (3/2) remains observable.
+        progress_period_start:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            A quota's period anchor (§5) - the UTC instant the current period
+            began, by the user's local calendar (Monday 00:00 for a week, the
+            1st for a month). Null until the period-rollover job first runs for
+            the quota, and null on anything that is not a quota. USE THIS, NOT
+            due_at, for anything that needs to know how far through its period a
+            quota is (a pace indicator, for example): a quota has no due_at.
         completion_count:
           type: integer
         snooze_count:

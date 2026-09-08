@@ -395,34 +395,6 @@ test.describe('Quotas page', () => {
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog')).toHaveCount(0)
 
-      // §5/A3: retiring a quota through the API — `is_tracked: false` — takes
-      // its period rule with it. A bare "FREQ=WEEKLY" left on an untracked task
-      // with no due date is evaluated as a schedule, and rrule.js places it on
-      // an arbitrary weekday, so the retired task would surface on a day nobody
-      // chose. There is no "stop tracking" button (see the editor test above),
-      // so the API is the whole of this path. Done on a quota of its own so the
-      // two above stay selectable for the bulk step below.
-      const retireId = await createTask(page, {
-        title: 'Probe quota to retire',
-        progress_target: 2,
-        rrule: 'FREQ=WEEKLY',
-      })
-      ids.push(retireId)
-      const retired = await page.request.patch(`/api/tasks/${retireId}`, {
-        data: { is_tracked: false, progress_target: 1 },
-      })
-      expect(retired.status()).toBe(200)
-      const retiredBody = (await retired.json()).data
-      expect(retiredBody.is_tracked).toBe(false)
-      expect(retiredBody.rrule).toBeNull()
-      expect(retiredBody.due_at).toBeNull()
-
-      // And a quota refuses a snooze outright (§5/A4).
-      const snoozed = await page.request.post(`/api/tasks/${ids[0]}/snooze`, {
-        data: { until: new Date(Date.now() + 3_600_000).toISOString() },
-      })
-      expect(snoozed.status()).toBe(400)
-
       // And the bar retires the set.
       await page.locator(`[data-quota-row="${ids[0]}"]`).click()
       await page.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
@@ -432,6 +404,49 @@ test.describe('Quotas page', () => {
         .click()
       await expect(page.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(0)
       await expect(page.locator(`[data-quota-row="${ids[1]}"]`)).toHaveCount(0)
+
+      // §5/A3+A4, over the API — last, because both of these mutate the list
+      // this page is showing. Every write emits a sync event and QuotasView
+      // refreshes on it, so doing them mid-sequence re-rendered the rows out
+      // from under the clicks above. There is no "stop tracking" button (see
+      // the editor test), so the API is the whole of the retire path.
+      //
+      // Retiring takes the period rule with it: a bare "FREQ=WEEKLY" left on an
+      // untracked task with no due date is evaluated as a schedule, and rrule.js
+      // places it on an arbitrary weekday, so the task would surface on a day
+      // nobody chose.
+      const retireId = await createTask(page, {
+        title: 'Probe quota to retire',
+        progress_target: 2,
+        rrule: 'FREQ=WEEKLY',
+      })
+      ids.push(retireId)
+      await expect(page.locator(`[data-quota-row="${retireId}"]`)).toBeVisible()
+
+      const retired = await page.request.patch(`/api/tasks/${retireId}`, {
+        data: { is_tracked: false, progress_target: 1 },
+      })
+      expect(retired.status()).toBe(200)
+      const retiredBody = (await retired.json()).data
+      expect(retiredBody.is_tracked).toBe(false)
+      expect(retiredBody.rrule).toBeNull()
+      expect(retiredBody.due_at).toBeNull()
+      // It is no longer a quota, so it leaves this page — which is also how we
+      // know the refresh has landed, rather than by waiting a fixed time.
+      await expect(page.locator(`[data-quota-row="${retireId}"]`)).toHaveCount(0)
+
+      // Undo puts it back, flag and rule together. This is the path that used
+      // to throw inside undo's column allowlist and wedge the whole stack
+      // (`is_tracked` was not on it), so a green 200 here is the contract.
+      const undone = await page.request.post('/api/undo')
+      expect(undone.status()).toBe(200)
+      await expect(page.locator(`[data-quota-row="${retireId}"]`)).toBeVisible()
+
+      // And a quota refuses a snooze outright (§5/A4).
+      const snoozed = await page.request.post(`/api/tasks/${retireId}/snooze`, {
+        data: { until: new Date(Date.now() + 3_600_000).toISOString() },
+      })
+      expect(snoozed.status()).toBe(400)
     } finally {
       await deleteTasks(page, ids)
     }

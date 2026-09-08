@@ -214,7 +214,7 @@ export function getTaskById(taskId: number): Task | null {
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
-           progress_target, progress_current, is_reminder, is_tracked,
+           progress_target, progress_current, progress_period_start, is_reminder, is_tracked,
            completion_count, snooze_count, skip_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
     FROM tasks WHERE id = ?
@@ -332,7 +332,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
            tasks.last_notified_at, tasks.last_critical_alert_at, tasks.auto_snooze_minutes,
            tasks.deleted_at, tasks.archived_at,
-           tasks.labels, tasks.progress_target, tasks.progress_current, tasks.is_reminder, tasks.is_tracked,
+           tasks.labels, tasks.progress_target, tasks.progress_current,
+           tasks.progress_period_start, tasks.is_reminder, tasks.is_tracked,
            tasks.completion_count, tasks.snooze_count, tasks.skip_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.notes, tasks.created_at, tasks.updated_at
@@ -372,6 +373,7 @@ interface TaskRow {
   labels: string
   progress_target: number
   progress_current: number
+  progress_period_start: string | null
   is_reminder: number
   is_tracked: number
   completion_count: number
@@ -412,6 +414,7 @@ function rowToTask(row: TaskRow): Task {
     // produce NaN in pace math.
     progress_target: row.progress_target ?? 1,
     progress_current: row.progress_current ?? 0,
+    progress_period_start: row.progress_period_start ?? null,
     is_reminder: (row.is_reminder ?? 0) === 1,
     is_tracked: (row.is_tracked ?? 0) === 1,
     completion_count: row.completion_count,

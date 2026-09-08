@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     progress_target: 1,
     is_reminder: false,
     is_tracked: false,
+    progress_period_start: null,
     progress_current: 0,
     skip_count: 0,
     priority: 0,

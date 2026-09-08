@@ -20,6 +20,7 @@
 
 import { DateTime } from 'luxon'
 import { getTasks } from '@/core/tasks'
+import { isTracked } from '@/lib/track'
 import { getProjectNameMap } from '@/core/projects'
 import { isAIEnabled, aiQuery } from './sdk'
 import { quickTakeSlotQuery } from './quick-take-slot'
@@ -235,12 +236,24 @@ export function buildTaskStats(tasks: QuickTakeTask[], timezone: string): TaskSt
 /**
  * Build a compact task list + stats from the database for the given user.
  * Production entry point — fetches tasks and resolves project names.
+ *
+ * Exported for the same reason `formatCompactTaskList` is: it decides WHICH
+ * rows the model is shown, and that decision needs a test that does not go
+ * near the SDK.
  */
-function buildFromDb(
+export function buildFromDb(
   userId: number,
   timezone: string,
 ): { text: string; count: number; stats: TaskStats; tasks: QuickTakeTask[] } {
-  const tasks = getTasks({ userId, done: false })
+  // Quick Take reads the TASK list. Quotas (§5) and reminders (§6) are not in
+  // it — they live on their own surfaces — so neither is described to the
+  // model or counted in the stats it is handed. Quotas leak loudest now that
+  // they carry no date: every one of them landed in the `undated` bucket, so
+  // "you have N tasks with no due date" was inflated by the whole quota set
+  // and the compact list named them as things to do. Same filter as
+  // `buildTaskSummaries` (task-summaries.ts), which feeds What's Next and
+  // Insights.
+  const tasks = getTasks({ userId, done: false }).filter((t) => !isTracked(t) && !t.is_reminder)
   if (tasks.length === 0) {
     return {
       text: '(none)',

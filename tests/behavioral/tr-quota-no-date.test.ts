@@ -12,6 +12,8 @@
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTask, getTaskById, updateTask, snoozeTask, bulkEdit } from '@/core/tasks'
+import { executeUndo, executeRedo } from '@/core/undo'
+import { buildFromDb } from '@/core/ai/quick-take'
 import { clearQuotaDueDates, getDb } from '@/core/db'
 import { ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
@@ -226,5 +228,246 @@ describe('A quota has no due date', () => {
     const stored = getTaskById(quota.id)!
     // Two independent reasons now: no due_at, and the explicit tracked guard.
     expect(countTasks([stored], TEST_TIMEZONE, NOW)).toEqual({ total: 1, overdue: 0, today: 0 })
+  })
+})
+
+/**
+ * Review finding 1, 2026-09-08 (HIGH). `is_tracked` was missing from undo's
+ * column allowlist. Its own block because undo has its own failure mode: the
+ * allowlist THROWS rather than skipping, and the throw takes the whole
+ * transaction with it.
+ */
+describe('Undo and redo of a quota flag', () => {
+  beforeEach(() => {
+    vi.setSystemTime(NOW)
+    setupTestDb()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * `undoEntry` runs inside the caller's transaction, so the throw rolled back
+   * the `undone = 1` write too: the entry stayed unconsumed and every later
+   * Undo found it again — one retire wedged the whole stack.
+   *
+   * Every quota in the tests above was created with `progress_target` alone, so
+   * `is_tracked` never entered `fieldsChanged` and none of them reached this.
+   */
+  test('TR-020: retiring a quota with an explicit flag can be undone and redone', () => {
+    const quota = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      // The flag EXPLICITLY, so retiring it puts `is_tracked` in fieldsChanged.
+      input: { title: 'Date night', rrule: 'FREQ=MONTHLY', is_tracked: true },
+    })
+
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: quota.id,
+      input: { is_tracked: false },
+    })
+    expect(getTaskById(quota.id)!.is_tracked).toBe(false)
+    expect(getTaskById(quota.id)!.rrule).toBeNull()
+
+    expect(() => executeUndo(TEST_USER_ID)).not.toThrow()
+    const undone = getTaskById(quota.id)!
+    expect(undone.is_tracked).toBe(true)
+    // The rule rides in the same fieldsChanged, so a throw on `is_tracked`
+    // took the rrule's restoration down with it.
+    expect(undone.rrule).toBe('FREQ=MONTHLY')
+
+    expect(() => executeRedo(TEST_USER_ID)).not.toThrow()
+    const redone = getTaskById(quota.id)!
+    expect(redone.is_tracked).toBe(false)
+    expect(redone.rrule).toBeNull()
+  })
+
+  test('TR-021: the editor path (0 → 1) undoes, and the stack is not wedged', () => {
+    // What QuotaDetail.buildChanges sends whenever the target or period is
+    // touched: `is_tracked: true` on a row whose column is still 0.
+    const quota = makeQuota({ title: 'Eggs' })
+    expect(getTaskById(quota.id)!.is_tracked).toBe(false)
+
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: quota.id,
+      input: { is_tracked: true, progress_target: 5 },
+    })
+    expect(getTaskById(quota.id)!.is_tracked).toBe(true)
+
+    // A second, unrelated action on top, so the failing entry is not the only
+    // one on the stack — this is what "wedges" means: the throw leaves the
+    // entry at undone = 0 and every later Undo lands on it again.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: quota.id,
+      input: { title: 'Eggs for the kids' },
+    })
+
+    expect(() => executeUndo(TEST_USER_ID)).not.toThrow()
+    expect(getTaskById(quota.id)!.title).toBe('Eggs')
+    expect(() => executeUndo(TEST_USER_ID)).not.toThrow()
+    const after = getTaskById(quota.id)!
+    expect(after.is_tracked).toBe(false)
+    expect(after.progress_target).toBe(4)
+  })
+})
+
+/**
+ * Review findings 2, 3, 4 and 6, 2026-09-08 — each a path the first cut of "a
+ * quota is not a task" missed, found by a fresh-eyes pass over that change.
+ */
+describe('A quota is not a task — the other paths the first cut missed', () => {
+  beforeEach(() => {
+    vi.setSystemTime(NOW)
+    setupTestDb()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  /**
+   * Finding 4. Widening the rrule-changed guard to "any explicit date" fixed a
+   * dropped date but let `{ rrule: null, due_at: X }` — the quick panel's
+   * "clear recurrence and pick a date" — fall into the snooze branch. A
+   * re-schedule is not a deferral.
+   */
+  test('TR-022: clearing recurrence while setting a date is not a snooze', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      // Must already HAVE a date: the snooze branch only fires when it does.
+      input: { title: 'Weekly report', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    const before = getTaskById(task.id)!
+    expect(before.due_at).not.toBeNull()
+    expect(before.snooze_count).toBe(0)
+
+    const when = new Date(NOW.getTime() + 86_400_000).toISOString()
+    const { description } = updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: null, due_at: when },
+    })
+
+    const after = getTaskById(task.id)!
+    expect(after.rrule).toBeNull()
+    expect(after.due_at).toBe(when)
+    expect(after.snooze_count).toBe(0)
+    expect(after.original_due_at).toBe(before.original_due_at)
+    expect(description).not.toMatch(/snooz/i)
+  })
+
+  /**
+   * Finding 6. A date-bearing bulk edit hit `collectFieldChanges`' refusal on a
+   * quota, and one throw aborts the whole transaction — the reviewer's probe
+   * lost a sibling task's priority edit. Skip the quota, keep the batch.
+   */
+  test('TR-023: a bulk edit carrying a date skips quotas instead of losing the batch', () => {
+    const quota = makeQuota({ title: 'Quota in the selection' })
+    const plain = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Plain sibling', due_at: NOW.toISOString() },
+    })
+    const when = new Date(NOW.getTime() + 86_400_000).toISOString()
+
+    // `{ due_at, rrule }` together — the shape the snooze filter never saw,
+    // because it only runs when rrule is absent.
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [quota.id, plain.id],
+      changes: { due_at: when, rrule: null, priority: 2 },
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
+    // The sibling's edit survived...
+    const plainAfter = getTaskById(plain.id)!
+    expect(plainAfter.due_at).toBe(when)
+    expect(plainAfter.priority).toBe(2)
+    // ...and the quota is untouched, still dateless.
+    const quotaAfter = getTaskById(quota.id)!
+    expect(quotaAfter.due_at).toBeNull()
+    expect(quotaAfter.priority).toBe(0)
+  })
+
+  test('TR-024: a per-task date does not lose the batch either', () => {
+    const quota = makeQuota({ title: 'Quota with a per-task date' })
+    const plain = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Plain sibling' },
+    })
+    const when = new Date(NOW.getTime() + 86_400_000).toISOString()
+
+    // Only reachable from core: `bulkEditSchema.per_task` is `.strict()` on
+    // `{ rrule }`, so the route rejects a per-task `due_at` before it gets
+    // here. Pinned anyway — the guard is in core, and the schema could widen.
+    const result = bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [quota.id, plain.id],
+      changes: { priority: 3 },
+      perTask: { [String(quota.id)]: { due_at: when } as { due_at: string } },
+    })
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
+    expect(getTaskById(plain.id)!.priority).toBe(3)
+    expect(getTaskById(quota.id)!.due_at).toBeNull()
+  })
+
+  /**
+   * Finding 2. Quick Take read the whole open corpus. With quotas now undated
+   * every one of them landed in the `undated` stat and was named in the
+   * compact list as a task to do.
+   */
+  test('TR-025: Quick Take is not shown quotas or reminders', () => {
+    const plain = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'A real undated task' },
+    })
+    makeQuota({ title: 'Eat beef' })
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'A reminder', is_reminder: true },
+    })
+
+    const built = buildFromDb(TEST_USER_ID, TEST_TIMEZONE)
+
+    expect(built.count).toBe(1)
+    expect(built.tasks.map((t) => t.title)).toEqual([plain.title])
+    expect(built.text).not.toContain('Eat beef')
+    expect(built.text).not.toContain('A reminder')
+    // The stat the leak inflated: one undated task, not three.
+    expect(built.stats.undated).toBe(1)
+  })
+
+  /**
+   * Finding 3. The iOS Track widget's pace tick read `due_at`; with the date
+   * gone it needs the real anchor, which was exposed nowhere.
+   */
+  test('TR-026: a quota carries its period anchor in the task shape', () => {
+    const quota = makeQuota()
+    const stored = getTaskById(quota.id)!
+    // Null until the rollover job first anchors it — but present, and typed.
+    expect(stored).toHaveProperty('progress_period_start')
+    expect(stored.progress_period_start).toBeNull()
+
+    getDb()
+      .prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?')
+      .run('2026-01-12T06:00:00.000Z', quota.id)
+    expect(getTaskById(quota.id)!.progress_period_start).toBe('2026-01-12T06:00:00.000Z')
   })
 })

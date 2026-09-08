@@ -196,3 +196,68 @@ describe('A quota over HTTP has no date and no snooze', () => {
     expect(after).toEqual(before)
   })
 })
+
+/**
+ * Review findings, 2026-09-08 — the two that are contracts an HTTP caller sees.
+ */
+describe('Quota review fixes over HTTP', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('retiring a quota then undoing it is a 200, not a wedged stack', async () => {
+    const quota = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          // The flag explicitly, so `is_tracked` reaches the undo snapshot's
+          // fieldsChanged — the field the allowlist used to throw on.
+          body: { title: 'Date night', is_tracked: true, rrule: 'FREQ=MONTHLY' },
+        })
+      ).json()
+    ).data
+
+    const retired = await apiFetch(`/api/tasks/${quota.id}`, {
+      method: 'PATCH',
+      body: { is_tracked: false },
+    })
+    expect(retired.status).toBe(200)
+
+    const undo = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undo.status).toBe(200)
+
+    const after = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(after.is_tracked).toBe(true)
+    expect(after.rrule).toBe('FREQ=MONTHLY')
+
+    // The stack is not wedged: a second Undo consumes the entry BELOW this
+    // one (the create) rather than hitting the same failed row again.
+    const second = await apiFetch('/api/undo', { method: 'POST' })
+    expect(second.status).toBe(200)
+  })
+
+  test("a quota's response carries its period anchor", async () => {
+    const quota = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY' },
+        })
+      ).json()
+    ).data
+
+    // Present and explicitly null — the iOS Track widget needs this field, not
+    // due_at, to know how far through its period a quota is.
+    expect(quota).toHaveProperty('progress_period_start')
+    expect(quota.progress_period_start).toBeNull()
+    expect(quota.due_at).toBeNull()
+
+    const fetched = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(fetched).toHaveProperty('progress_period_start')
+
+    const listed = (await (await apiFetch('/api/quotas')).json()).data.quotas
+    expect(listed.find((q: { id: number }) => q.id === quota.id)).toHaveProperty(
+      'progress_period_start',
+    )
+  })
+})

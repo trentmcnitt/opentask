@@ -453,8 +453,17 @@ function collectDueAtChanges(
   trackField(data, 'due_at', task.due_at, input.due_at)
 
   // Apply snooze logic if task had a previous due_at and is being moved to a new date
-  // (not when clearing due_at to null — that's not a snooze)
-  if (task.due_at !== null && input.due_at !== null) {
+  // (not when clearing due_at to null — that's not a snooze).
+  //
+  // Never when the rrule changed in the same request: that is a RE-SCHEDULE,
+  // not a deferral. `{ rrule: null, due_at: <date> }` is exactly what the quick
+  // panel sends when a user clears recurrence and picks a date, and it only
+  // started reaching this branch when the guard above was widened from
+  // `due_at === null` to "any explicit date" — before that the payload lost its
+  // date instead. Without this it would bump `snooze_count`, back-fill
+  // `original_due_at`, fire the snooze stat and the `snooze` activity entry,
+  // and draw the snoozed indicator on a row nobody snoozed.
+  if (!rruleChanged && task.due_at !== null && input.due_at !== null) {
     data.isSnoozeScenario = true
 
     // Set original_due_at if not already set (preserve existing)
