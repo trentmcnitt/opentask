@@ -41,8 +41,11 @@ import type { Task } from '@/types'
  *   under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
  *
- * Tracked tasks still appear as plain rows in the All / Projects lists (with a
- * "0 / 4" chip and no controls); logging happens here.
+ * This panel and the Quotas page are the ONLY places a quota appears (Trent,
+ * 2026-09-08: "a quota is not a task"). It used to be a plain row in the All
+ * and Projects lists too, wearing a "0 / 4" chip and no controls; the
+ * dashboard now filters tracked rows out of every list, which is why this
+ * panel is handed the unfiltered corpus rather than the list's own array.
  */
 export function TrackPanel({ tasks }: { tasks: Task[] }) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
