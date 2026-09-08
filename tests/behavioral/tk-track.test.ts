@@ -119,7 +119,9 @@ describe('Track (quotas)', () => {
    * period rolling over.
    */
   test('TK-007: completing a recurring tracked task resets progress at the boundary', () => {
-    const task = makeTracked(2, { rrule: 'FREQ=WEEKLY;BYDAY=TH', due_at: localTime(9, 0) })
+    // A bare period rule, which is what the corpus actually holds — and with
+    // no due_at, because a quota has none (§5, 2026-09-08).
+    const task = makeTracked(2, { rrule: 'FREQ=WEEKLY' })
     incrementProgress({ userId: TEST_USER_ID, taskId: task.id })
     incrementProgress({ userId: TEST_USER_ID, taskId: task.id })
     expect(getTaskById(task.id)!.progress_current).toBe(2)
@@ -131,6 +133,8 @@ describe('Track (quotas)', () => {
     expect(after.completion_count).toBe(1)
     // Still open — recurring tasks advance rather than closing.
     expect(after.done).toBe(false)
+    // The boundary advanced nothing: there is no occurrence to move.
+    expect(after.due_at).toBeNull()
   })
 
   /**
@@ -233,7 +237,9 @@ describe('Track (quotas)', () => {
       userTimezone: TEST_TIMEZONE,
       input: { title: 'Plain overdue', due_at: localTime(8, 0) },
     })
-    const tracked = makeTracked(2, { due_at: localTime(8, 0) })
+    // A quota has no due_at at all now, so it is doubly excluded: by the
+    // `is_tracked = 0` clause and by having no date to be due at.
+    const tracked = makeTracked(2)
 
     const due = getCurrentlyDueTaskIds(TEST_USER_ID)
     expect(due).toContain(plain.id)

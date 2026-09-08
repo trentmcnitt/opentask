@@ -69,15 +69,13 @@ describe('Tracked flag', () => {
     const night = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      input: {
-        title: 'Date night',
-        rrule: 'FREQ=MONTHLY',
-        is_tracked: true,
-        due_at: NOW.toISOString(),
-      },
+      // No due_at: a quota has none (§5, 2026-09-08) and creating one with a
+      // date is refused — see tr-quota-no-date.test.ts.
+      input: { title: 'Date night', rrule: 'FREQ=MONTHLY', is_tracked: true },
     })
     const stored = getTaskById(night.id)!
     expect(stored.is_tracked).toBe(true)
+    expect(stored.due_at).toBeNull()
     expect(stored.progress_target).toBe(1)
     expect(isTracked(stored)).toBe(true)
 
