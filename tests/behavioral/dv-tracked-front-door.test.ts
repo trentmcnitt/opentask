@@ -70,11 +70,14 @@ describe('Tracked items and the Today front door', () => {
       progress_target: 2,
       progress_current: 1,
     })
-    // Control: the same rule on an ordinary task is correctly NOT today.
+    // Control: the same rule on an ordinary task IS on the front door — it was
+    // due last Wednesday and never done, so it is overdue (§4.6 as amended
+    // 2026-09-07: a task carries debt). The quota beside it is not, because a
+    // counter over the week has no day to be overdue from.
     const routine = task({ title: 'Wednesday thing', rrule: 'FREQ=WEEKLY', due_at: eggs.due_at })
 
     const groups = groupByTimeSlot([routine, eggs], SLOTS, TZ, NOW)
-    expect(groups.flatMap((g) => g.tasks)).toHaveLength(0)
+    expect(groups.flatMap((g) => g.tasks).map((t) => t.title)).toEqual(['Wednesday thing'])
     expect(trackedItems([routine, eggs]).map((t) => t.title)).toEqual(['Eggs'])
   })
 
