@@ -49,6 +49,10 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 `computeNextOccurrence()` in `src/core/recurrence/` handles timezone-aware advancement.
 
+**A recurring task carries debt.** Its `due_at` is the truth, past or future: in the future it is the next occurrence (or an explicit snooze target); in the past it has been overdue _since then_ and stays overdue — nagged at its priority cadence, across midnight, until done. It does not stop being overdue because a new day arrived, and a snooze that isn't honoured leaves it overdue from the snoozed time. Completing it advances `due_at` to the next scheduled occurrence after the completion (`from_due`: `rrule.after(max(prevDue, completedAt))`), so a Mon/Thu task finished on Tuesday next lands on Thursday. Only a recurring task with no `due_at` derives today's occurrence from the rrule at read time. Reminders (`is_reminder = 1`) are the exception and roll forward: a missed one is not re-shown until its next occurrence. See `effectiveDueAt()` in `src/core/recurrence/occurrence.ts` and REDESIGN-V03 §4.6 (amended 2026-09-07).
+
+`recurrence_mode`: `from_due` (default) keeps the calendar anchor — the next occurrence is the next scheduled one after completion; `from_completion` counts the interval from when it was actually done (e.g. "every 3 months from the last filter change").
+
 ## Completion Behavior
 
 - **Recurring tasks** advance in place: completing a daily task moves `due_at` forward and leaves `done=0`

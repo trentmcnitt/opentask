@@ -1,41 +1,52 @@
 /**
- * Read-time occurrence derivation (REDESIGN-V03 §4.6)
+ * Read-time occurrence derivation — and the rule for recurring tasks
+ * (REDESIGN-V03 §4.6, AMENDED 2026-09-07 by Trent)
  *
- * THE TRAP THIS EXISTS TO CLOSE
+ * THE RULE, as it stands now
  *
- * Today, a recurring item's `due_at` stays fresh only because the user's daily
- * bulk sweep re-dates it — roughly 100,000 snoozes that are, functionally, a
- * hand-cranked roll-forward. Every change in this redesign that reduces nagging
- * also reduces sweeping, and the moment sweeping stops, `due_at` on a
- * never-completed recurring item freezes at its last value.
+ * A recurring TASK carries debt. Its `due_at` is the truth, past or future:
+ *   - in the future, it is the next occurrence or an explicit snooze target
+ *     ("it's due at the time it was snoozed to");
+ *   - in the past, it has been overdue SINCE THEN, and stays overdue — nagged
+ *     at its priority cadence, through midnight, into the next day and the
+ *     one after — until it is done. Completing it moves `due_at` to the next
+ *     scheduled occurrence after the completion (compute-next.ts, from_due:
+ *     `after(max(prevDue, completedAt))`), so a Mon/Thu task finished on a
+ *     Tuesday next lands on Thursday. The schedule is respected; the debt is
+ *     kept.
+ *   - only when there is NO `due_at` at all is today's occurrence derived from
+ *     the rrule.
  *
- * A frozen `due_at` is not merely stale, it is actively harmful: the item looks
- * more and more overdue forever, monopolises the notifier's limited per-tick
- * slots (§4.5), and quotes a date from months ago. A weekly task would nag
- * every single day.
+ * A REMINDER rolls forward. It has no debt by design (§6): a missed one is
+ * not re-shown until its next occurrence. Reminders are evaluated on their own
+ * surface through `todaysOccurrence`, never through `effectiveDueAt`.
  *
- * So: **for a recurring item, the schedule is the source of truth for whether
- * it is due today — never `due_at` freshness.** One-offs are unaffected; their
- * `due_at` is a real fact about them and stays authoritative.
+ * One-offs are untouched: `due_at` was always the whole truth for them.
  *
- * THE RULE
+ * HISTORY — why the rule was briefly the other way, and who changed it back
  *
- * A recurring item's effective due time today is:
- *   1. `due_at` if it is still in the future — a forward-looking target is
- *      never a stale artifact. This is what makes an explicit snooze win for
- *      the rest of the day; tomorrow the schedule reasserts itself.
- *   2. otherwise today's occurrence derived from the rrule, if there is one.
- *   3. otherwise nothing — the item is simply not due today, no matter what a
- *      frozen `due_at` claims. This is the case that stops the endless nagging.
+ * §4.6 as first written (07-27-26, AI-authored, no attribution) made EVERY
+ * recurring item roll forward: a past-dated recurring task was "not due" unless
+ * the rrule produced an occurrence today, and it stopped being overdue at
+ * midnight. That closed a real trap — in July all ~217 recurring items were
+ * tasks, kept current only by the daily bulk sweep, so killing the nagging
+ * would have frozen ~175 never-completed protocol items at "overdue by 40
+ * days" forever. Rolling everything forward was the only lever available
+ * before the Reminders surface existed.
  *
- * Deriving from the schedule rather than mutating rows is deliberate: §10
- * rejects a nightly roll-forward cron that rewrites user-visible due dates.
- * What it permits is exactly this — computing the answer at read time.
+ * It also contradicted the user's own recorded rule of 07-22-26 — "if missed
+ * today, does it need making up? no → rhythm (rolls forward), yes → task
+ * (STAYS OVERDUE)" — for the whole "yes" branch. Once reminders existed and
+ * took the rhythm population, the reason for it on tasks was gone. Trent,
+ * 2026-09-07, on discovering the behaviour: "there's no intuitiveness to me
+ * about how something at midnight magically stops being overdue and is
+ * waiting for its next recurrence... How else am I going to make sure that
+ * it gets done? It's been overdue ever since I didn't get it done." He asked
+ * whether there was a record of him wanting the July behaviour. There was not.
  *
- * ONE EVALUATOR: this reuses `computeNextOccurrence`, which already prefers
- * `anchor_time` over BYHOUR (§4.6 — for the many rrules with no BYHOUR,
- * `anchor_time` is the only carrier of time-of-day). Writing a second rrule
- * evaluator here would let the two drift.
+ * ONE EVALUATOR: `todaysOccurrence` reuses `computeNextOccurrence`, which
+ * prefers `anchor_time` over BYHOUR (§4.6) — 29 of the rrules carry no BYHOUR,
+ * so for those `anchor_time` is the only carrier of time-of-day.
  */
 
 import { DateTime } from 'luxon'
@@ -104,7 +115,7 @@ export function effectiveDueAt(
   timezone: string,
   now: Date = new Date(),
 ): Date | null {
-  // One-offs: due_at is the whole truth (§4.6).
+  // One-offs: due_at is the whole truth.
   if (!task.rrule) {
     return task.due_at ? new Date(task.due_at) : null
   }
@@ -114,25 +125,18 @@ export function effectiveDueAt(
     return task.due_at ? new Date(task.due_at) : null
   }
 
-  // A due_at in the future is a deliberate forward-looking target — an explicit
-  // snooze, or simply the next occurrence already recorded. Honour it. This is
-  // what lets a snooze win for the rest of the day.
+  // A recurring TASK carries debt (Trent, 2026-09-07 — see the header). Its
+  // due_at is the truth whether it is ahead of us (the next occurrence, or an
+  // explicit snooze) or behind us (overdue since then, and staying so until
+  // done). Nothing about a new day changes that.
   if (task.due_at) {
     const due = new Date(task.due_at)
-    if (!Number.isNaN(due.getTime()) && due.getTime() > now.getTime()) return due
+    if (!Number.isNaN(due.getTime())) return due
   }
 
-  // Past-dated: ignore it entirely and ask the schedule.
-  const occurrence = todaysOccurrence(task, timezone, now)
-  if (occurrence) return occurrence
-
-  // No occurrence today. If the rrule couldn't be evaluated at all we still owe
-  // the user their notification, so fall back to due_at; otherwise the item is
-  // genuinely not due today.
-  if (!isEvaluableSchedule(task, timezone, now)) {
-    return task.due_at ? new Date(task.due_at) : null
-  }
-  return null
+  // No due_at at all: ask the schedule whether there is an occurrence today.
+  // (A task that has never carried a date has nothing to be overdue from.)
+  return todaysOccurrence(task, timezone, now)
 }
 
 /**
@@ -147,29 +151,4 @@ export function isCurrentlyDue(
 ): boolean {
   const due = effectiveDueAt(task, timezone, now)
   return due !== null && due.getTime() <= now.getTime()
-}
-
-/**
- * Can this item's schedule be evaluated at all?
- *
- * Distinguishes "no occurrence today" (a real answer) from "the rrule is
- * broken" (where falling back to due_at is safer than going silent — L2's
- * failure-asymmetry rule: silence fails dangerous).
- */
-function isEvaluableSchedule(task: OccurrenceTask, timezone: string, now: Date): boolean {
-  if (!task.rrule) return false
-  try {
-    const probe = DateTime.fromJSDate(now).setZone(timezone).startOf('day').toJSDate()
-    computeNextOccurrence({
-      rrule: task.rrule,
-      recurrenceMode: 'from_due',
-      anchorTime: task.anchor_time,
-      timezone,
-      completedAt: probe,
-      prevDueAt: probe,
-    })
-    return true
-  } catch {
-    return false
-  }
 }

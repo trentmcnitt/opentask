@@ -76,30 +76,40 @@ describe('Read-time occurrence derivation', () => {
   })
 
   /**
-   * OC-004: ...and it is due, timed from TODAY's occurrence rather than the
-   * frozen date. Without this the notifier's minutes-overdue math would be in
-   * the tens of thousands.
+   * OC-004: ...but a TASK carries debt (Trent, 2026-09-07). Its due_at is the
+   * truth: a daily task never done since 90 days ago has been overdue since
+   * then, not since this morning. (Before the amendment this asserted today's
+   * occurrence — the AI-authored §4.6 rule that made a missed task stop being
+   * overdue at midnight.)
    */
-  test('OC-004: a daily task with a frozen due_at is due from today occurrence', () => {
+  test('OC-004: a daily task with a past due_at has been overdue since then', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(-90, 7) })
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 7))
+    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(-90, 7))
     expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
   })
 
   /**
-   * OC-005: A daily task whose time hasn't arrived yet is not due.
+   * OC-005: A daily task whose next occurrence is later today is not yet due.
+   * Its due_at is that occurrence — completing yesterday's moved it there.
    */
   test('OC-005: a daily task later today is not yet due', () => {
-    const t = task({ rrule: 'FREQ=DAILY', anchor_time: '20:00', due_at: localIso(-90, 20) })
+    const t = task({ rrule: 'FREQ=DAILY', anchor_time: '20:00', due_at: localIso(0, 20) })
+    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 20))
     expect(isCurrentlyDue(t, TZ, NOW)).toBe(false)
   })
 
   /**
-   * OC-006: THE headline case. A weekly task not scheduled today must not be
-   * due today, however old its due_at is. Under the old due_at-only rule this
-   * task nagged every day forever once sweeping stopped.
+   * OC-006: THE headline case, reversed by Trent on 2026-09-07. A Monday task
+   * that was not done on Monday is STILL overdue on Thursday — "it's been
+   * overdue ever since I didn't get it done." It has no occurrence today (the
+   * schedule is still consulted for that), but it is due, from Monday.
+   *
+   * The July version of this test asserted the opposite: not due, "however
+   * old its due_at is." That rule was written for the ~175 never-completed
+   * protocol items that were tasks at the time; they are reminders now, and
+   * reminders roll forward on their own surface.
    */
-  test('OC-006: a weekly task not scheduled today is NOT due despite a stale due_at', () => {
+  test('OC-006: a weekly task missed on its day stays overdue on the days after', () => {
     // 2026-01-15 is a Thursday; this recurs Mondays.
     const t = task({
       rrule: 'FREQ=WEEKLY;BYDAY=MO',
@@ -107,8 +117,8 @@ describe('Read-time occurrence derivation', () => {
       due_at: localIso(-60, 9),
     })
     expect(todaysOccurrence(t, TZ, NOW)).toBeNull()
-    expect(effectiveDueAt(t, TZ, NOW)).toBeNull()
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(false)
+    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(-60, 9))
+    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
   })
 
   /**
@@ -135,13 +145,16 @@ describe('Read-time occurrence derivation', () => {
   })
 
   /**
-   * OC-009: ...but only for that day. Evaluated tomorrow, the schedule
-   * reasserts itself and the snooze no longer applies.
+   * OC-009: ...and once the snoozed time has passed, the task is overdue FROM
+   * THAT TIME, and stays so — Trent, 2026-09-07: "it's due at the time it's
+   * snoozed to, and if I don't do it when the snoozed time comes up, then it's
+   * overdue from there." (July's version had the schedule reassert itself the
+   * next morning, which made a snoozed-then-missed task quietly vanish.)
    */
-  test('OC-009: a snooze does not carry past its own day', () => {
+  test('OC-009: a snooze that is not honoured leaves the task overdue from the snoozed time', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(0, 15) })
     const tomorrow = new Date(localIso(1, 10))
-    expect(effectiveDueAt(t, TZ, tomorrow)?.toISOString()).toBe(localIso(1, 7))
+    expect(effectiveDueAt(t, TZ, tomorrow)?.toISOString()).toBe(localIso(0, 15))
     expect(isCurrentlyDue(t, TZ, tomorrow)).toBe(true)
   })
 

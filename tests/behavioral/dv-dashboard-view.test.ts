@@ -115,15 +115,18 @@ describe('Dashboard slot view', () => {
   })
 
   /**
-   * DV-007: ...and one NOT scheduled today is absent, however stale it looks.
-   * This is what stops the front door filling with items that aren't today's.
+   * DV-007: ...and one missed on its day is STILL on the front door on the days
+   * after — a task carries debt (Trent, 2026-09-07). A Monday task not done on
+   * Monday is overdue on Thursday, and an overdue task belongs in the today
+   * view (DV-005). Before the amendment this asserted exclusion "however stale
+   * it looks", which is exactly the disappearance Trent objected to.
    */
-  test('DV-007: a recurring task not scheduled today is excluded', () => {
+  test('DV-007: a recurring task missed on its day stays in the today view', () => {
     // Evaluated on a Thursday; recurs Mondays.
     const items = [
       { due_at: localIso(-60, 9), rrule: 'FREQ=WEEKLY;BYDAY=MO', anchor_time: '09:00' },
     ]
-    expect(todaysOnly(items)).toHaveLength(0)
+    expect(todaysOnly(items)).toHaveLength(1)
   })
 
   /**

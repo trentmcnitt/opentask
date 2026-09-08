@@ -317,6 +317,42 @@ describe('isNotificationBoundary', () => {
     expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(false)
   })
 
+  /**
+   * A recurring task carries debt (§4.6 as amended 2026-09-07): one missed on
+   * Monday is still overdue on Thursday, and effective_due_at IS its Monday
+   * due_at. The old §4.6 comment feared a "frozen" due_at would "scramble the
+   * cadence" — it does not: minutesSinceDue % interval picks out exactly one
+   * minute per interval however large minutesSinceDue is.
+   */
+  test('task 3 days overdue fires on the boundary minute and not the one after', () => {
+    const dueAt = '2026-01-12T10:00:00.000Z'
+    const task = {
+      id: 1,
+      title: 'Weekly, missed on Monday',
+      due_at: dueAt,
+      priority: 0,
+      user_id: 1,
+      auto_snooze_minutes: null,
+      user_auto_snooze_minutes: 30,
+      user_auto_snooze_urgent_minutes: 5,
+      user_auto_snooze_high_minutes: 15,
+      user_auto_snooze_low_minutes: 240,
+      user_auto_snooze_medium_minutes: 60,
+      critical_alert_volume: 1.0,
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      recurrence_mode: 'from_due' as const,
+      anchor_time: '04:00',
+      timezone: 'America/Chicago',
+      effective_due_at: dueAt,
+    }
+    // 4320 minutes (3 days) later — 4320 % 30 === 0 → boundary
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:00:00.000Z'))).toBe(true)
+    // 4321 — not a boundary, and not the first-notification special case either
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:01:00.000Z'))).toBe(false)
+    // 4350 — the next boundary
+    expect(isNotificationBoundary(task, new Date('2026-01-15T10:30:00.000Z'))).toBe(true)
+  })
+
   test('task not yet overdue → false', () => {
     const dueAt = '2026-01-15T11:00:00.000Z'
     const now = new Date('2026-01-15T10:00:00.000Z')

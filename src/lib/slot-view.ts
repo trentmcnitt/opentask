@@ -42,9 +42,10 @@ export function groupByTimeSlot(
   if (tasks.length === 0) return []
 
   // §7.3: the front door is TODAY, not the whole corpus. Due-ness comes from
-  // §4.6's derivation rather than raw due_at, so a recurring item whose date
-  // froze months ago doesn't wrongly appear, and one that genuinely recurs
-  // today does — even if its stored due_at disagrees.
+  // §4.6's derivation (as amended 2026-09-07): a recurring task with a due_at
+  // is due from that date — so one missed last Monday is still here on
+  // Thursday, overdue, until done — and one with no due_at at all appears on
+  // the day its schedule says.
   //
   // Undated items are kept: they can't be "not today".
   //
