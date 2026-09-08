@@ -23,8 +23,9 @@ import type { Task } from '@/types'
  * left alone stays per-quota, and a period the selection disagrees about shows
  * nothing pressed until one is chosen.
  *
- * The `due_at` these rows still carry is deliberately untouched — the iOS Track
- * widget reads it for its pace tick (`TrackWidget.elapsedFraction`).
+ * A quota carries no `due_at` at all since 2026-09-08 (§5, Trent: "a quota is
+ * not a task"): the server refuses to stamp one, refuses to accept one, and
+ * the startup migration cleared the stale dates these rows used to hold.
  */
 
 /**
@@ -148,9 +149,9 @@ export function QuotaDetail({
     //
     // Sending it on any schedule edit flattened whatever else the rule carried:
     // a quota on FREQ=WEEKLY;INTERVAL=2 silently became every week, and a BYDAY
-    // was dropped — and because the rrule then differed, the server re-derived
-    // anchors and recomputed `due_at`, the one field this editor promises not
-    // to touch because the iOS widget's pace tick reads it.
+    // was dropped. (It also made the server re-derive anchors and recompute a
+    // `due_at` behind the editor's back — that half is now fixed at the source:
+    // a tracked row never gets a computed date.)
     //
     // It also means a quota with NO period, and a selection that disagrees
     // about its period, can both have their target edited while each keeps its

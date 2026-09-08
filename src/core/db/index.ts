@@ -240,6 +240,39 @@ function runMigrations(database: Database.Database): void {
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
+  clearQuotaDueDates(database)
+}
+
+/**
+ * §5: a quota has no due date — drop the ones already stored (2026-09-08).
+ *
+ * Every quota in the corpus carries a `due_at` left over from the life it had
+ * before it became one, and the §9 migration that rewrote quota rules to the
+ * bare period ("FREQ=WEEKLY") did not touch it. It was never the period
+ * boundary and was never true: on the dev corpus, 15 of 19 quotas held the
+ * same date in the past while their real period anchor
+ * (`progress_period_start`) sat days later. That stale date is what made a
+ * quota show up as overdue debt in counts and offer a snooze grid.
+ *
+ * `original_due_at` goes with it: it is the occurrence origin of a due date
+ * that no longer exists, and left behind it makes `is_snoozed` true in the API
+ * response for a row that cannot be snoozed.
+ *
+ * Data-only, so there is no new column to hang a `hasColumn` guard on and no
+ * migrations table in this app to record a version in. It is instead
+ * idempotent by construction — the WHERE clause matches nothing once it has
+ * run — and left to run on every start, where it also repairs any quota that
+ * somehow acquires a date again.
+ *
+ * Exported so a behavioral test can call it directly.
+ */
+export function clearQuotaDueDates(database: Database.Database): void {
+  database.exec(
+    `UPDATE tasks
+        SET due_at = NULL, original_due_at = NULL
+      WHERE (is_tracked = 1 OR progress_target > 1)
+        AND (due_at IS NOT NULL OR original_due_at IS NOT NULL)`,
+  )
 }
 
 /**

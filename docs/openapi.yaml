@@ -602,6 +602,12 @@ paths:
       summary: Snooze task
       operationId: snoozeTask
       tags: [Tasks]
+      description: |
+        Moves a task's `due_at`. Two populations refuse it with a 400, because
+        neither has a due date to move: reminders (§6), which stay in their time
+        slot until completed, and quotas (§5), which are counted within a period
+        rather than due on a day. The bulk snooze sweep skips both instead of
+        failing.
       requestBody:
         required: true
         content:
@@ -638,6 +644,8 @@ paths:
                           description:
                             type: string
                             nullable: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -938,10 +946,16 @@ paths:
         greater than 1 OR `is_tracked` true. The flag exists so a target of one
         can still be a quota rather than a deadline.
 
-        Quotas are never counted overdue and are excluded from the bulk snooze
-        sweep: "four times this week" cannot be late on a Tuesday. They do carry
-        a `due_at`, which is vestigial and read only by the iOS widget to draw
-        its pace tick — do not treat it as a promise.
+        A quota has NO due date (since 2026-09-08): `due_at` and
+        `original_due_at` are always null, creating or updating one with a date
+        is a 400, and snoozing one is a 400. "Four times this week" cannot be
+        late on a Tuesday. The period a quota counts within is named by its
+        rrule's FREQ; the current period's start is tracked server-side.
+
+        A quota is also absent from `GET /api/tasks`-backed list surfaces in the
+        app — it appears on this endpoint and in the Track panel and nowhere
+        else — but `GET /api/tasks` itself still returns quotas, so clients that
+        build their own Track view from the full corpus keep working.
 
         Order is deliberately NOT specified here. Clients sort quotas
         alphabetically so that logging progress on one never reorders the others

@@ -146,8 +146,8 @@ describe('Skip occurrence', () => {
       userTimezone: TEST_TIMEZONE,
       input: {
         title: 'Eggs',
-        rrule: 'FREQ=WEEKLY;BYDAY=TH',
-        due_at: localTime(9, 0),
+        // A quota's own rule (bare period) and no due_at — §5, 2026-09-08.
+        rrule: 'FREQ=WEEKLY',
         progress_target: 2,
       },
     })
@@ -156,6 +156,8 @@ describe('Skip occurrence', () => {
 
     skipOccurrence({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: task.id })
     expect(getTaskById(task.id)!.progress_current).toBe(0)
+    // The skip is a period boundary, not a date move: a quota has no date.
+    expect(getTaskById(task.id)!.due_at).toBeNull()
   })
 
   /**

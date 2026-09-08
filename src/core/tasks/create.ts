@@ -12,7 +12,9 @@ import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
-import { NotFoundError, ForbiddenError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
+import { isTracked } from '@/lib/track'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
@@ -54,9 +56,25 @@ export function createTask(options: CreateTaskOptions): Task {
     throw new ForbiddenError('Access denied to project')
   }
 
-  // Compute due_at if rrule provided but no due_at
-  let dueAt = input.due_at ?? null
-  if (input.rrule && !dueAt) {
+  // §5: a quota is not a task — it has no due date (see QUOTA_DUE_DATE_MESSAGE).
+  // Asked of the row being created, not of one field: `progress_target > 1`
+  // opts in by itself, `is_tracked` marks a quota whose target is 1.
+  const tracked = isTracked({
+    is_tracked: input.is_tracked ?? false,
+    progress_target: input.progress_target ?? 1,
+  })
+  if (tracked && input.due_at) {
+    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  }
+
+  // Compute due_at if rrule provided but no due_at.
+  //
+  // A quota is skipped: its rrule is a bare period rule ("FREQ=WEEKLY"), which
+  // names the period the count runs over rather than a day to occur on, so
+  // asking rrule.js for its "first occurrence" produced an arbitrary weekday —
+  // which is how quotas ended up carrying a stray local-midnight due date.
+  let dueAt = tracked ? null : (input.due_at ?? null)
+  if (!tracked && input.rrule && !dueAt) {
     const firstOccurrence = computeFirstOccurrence(input.rrule, null, userTimezone)
     dueAt = firstOccurrence.toISOString()
   }

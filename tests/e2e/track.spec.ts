@@ -268,7 +268,14 @@ test.describe('Track', () => {
     }
   })
 
-  test('in the All list a quota is a plain row with its count as a chip', async ({
+  /**
+   * §5, amended 2026-09-08 (Trent): "a quota is not a task. It appears on the
+   * Quotas page and in the Track panel and nowhere else." It used to be a plain
+   * row in the All list wearing a "1 / 3 this week" chip, which put a thing
+   * with no due date, no snooze and no Done in among things that have all
+   * three. This pins both halves: gone from the list, still in the panel.
+   */
+  test('a quota is absent from the All list but still in the Track panel', async ({
     authenticatedPage: page,
   }) => {
     const id = await createTask(page, {
@@ -278,17 +285,31 @@ test.describe('Track', () => {
     })
     let before: View | null = null
     try {
-      // Log one through the API so the chip has a non-zero count to show.
       const logged = await page.request.post(`/api/tasks/${id}/progress`, { data: { delta: 1 } })
       expect(logged.ok()).toBeTruthy()
       await page.goto('/')
       await expect(page.getByRole('button', { name: 'All', exact: true })).toBeVisible()
       before = await pressedView(page)
       if (before !== 'All') await switchView(page, 'All')
-      const row = page.locator(`#task-row-${id}`)
-      await expect(row).toBeVisible()
-      await expect(row).toContainText('1 / 3 this week')
-      await expect(row.getByRole('button', { name: /Log one more/ })).toHaveCount(0)
+
+      // A plain task is here, so an empty assertion below cannot pass by the
+      // list simply not having rendered.
+      const plainId = await createTask(page, { title: 'Plain sibling task' })
+      try {
+        await page.reload()
+        if ((await pressedView(page)) !== 'All') await switchView(page, 'All')
+        await expect(page.locator(`#task-row-${plainId}`)).toBeVisible()
+        await expect(page.locator(`#task-row-${id}`)).toHaveCount(0)
+
+        // ...and the panel above the list still has it, with its count.
+        await openTrack(page)
+        const row = page.locator(`[data-track-row="${id}"]`)
+        await expect(row).toBeVisible()
+        await expect(row).toContainText('1')
+        await closeTrack(page)
+      } finally {
+        await deleteTasks(page, [plainId])
+      }
     } finally {
       if (before && before !== 'All') await switchView(page, before)
       await deleteTasks(page, [id])
@@ -365,6 +386,34 @@ test.describe('Quotas page', () => {
       await expect(page).toHaveURL(/\/quotas$/)
       await page.keyboard.press('Escape')
       await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      // §5/A3: retiring a quota through the API — `is_tracked: false` — takes
+      // its period rule with it. A bare "FREQ=WEEKLY" left on an untracked task
+      // with no due date is evaluated as a schedule, and rrule.js places it on
+      // an arbitrary weekday, so the retired task would surface on a day nobody
+      // chose. There is no "stop tracking" button (see the editor test above),
+      // so the API is the whole of this path. Done on a quota of its own so the
+      // two above stay selectable for the bulk step below.
+      const retireId = await createTask(page, {
+        title: 'Probe quota to retire',
+        progress_target: 2,
+        rrule: 'FREQ=WEEKLY',
+      })
+      ids.push(retireId)
+      const retired = await page.request.patch(`/api/tasks/${retireId}`, {
+        data: { is_tracked: false, progress_target: 1 },
+      })
+      expect(retired.status()).toBe(200)
+      const retiredBody = (await retired.json()).data
+      expect(retiredBody.is_tracked).toBe(false)
+      expect(retiredBody.rrule).toBeNull()
+      expect(retiredBody.due_at).toBeNull()
+
+      // And a quota refuses a snooze outright (§5/A4).
+      const snoozed = await page.request.post(`/api/tasks/${ids[0]}/snooze`, {
+        data: { until: new Date(Date.now() + 3_600_000).toISOString() },
+      })
+      expect(snoozed.status()).toBe(400)
 
       // And the bar retires the set.
       await page.locator(`[data-quota-row="${ids[0]}"]`).click()

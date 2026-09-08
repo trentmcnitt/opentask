@@ -136,6 +136,21 @@ export const PERIOD_RULE_MESSAGE =
   'A bare period rule (e.g. FREQ=MONTHLY) is only valid on a tracked task'
 
 /**
+ * §5: a quota is not a task, so it has no due date (Trent, 2026-09-08).
+ *
+ * The period a quota counts within is carried by `progress_period_start` and
+ * named by the rrule's FREQ — see `period-rollover.ts`. A `due_at` on top of
+ * that is a second, contradictory clock: it made the row overdue in every
+ * count, offered a snooze grid, and drew a pace tick from a date that was
+ * never the period boundary. Enforced in the core (create.ts and
+ * collect-field-changes.ts) rather than in the Zod schema, because the schema
+ * sees only the payload and "is this row a quota?" is a question about the
+ * resulting row.
+ */
+export const QUOTA_DUE_DATE_MESSAGE =
+  'A quota has no due date — it is counted within its period, not due on a day'
+
+/**
  * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
  */
 const bulkIds = z

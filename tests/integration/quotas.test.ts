@@ -108,3 +108,91 @@ describe('Quotas surface API', () => {
     expect(after.quotas.map((q: { id: number }) => q.id)).not.toContain(id)
   })
 })
+
+/**
+ * A quota is not a task (§5, Trent 2026-09-08): it has no due date and cannot
+ * be snoozed, and retiring one takes its period rule with it. Pinned over HTTP
+ * because each of these is a route contract an external caller depends on —
+ * the automation API and the iOS app both PATCH tasks.
+ */
+describe('A quota over HTTP has no date and no snooze', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function makeQuota(body: Record<string, unknown> = {}) {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY', ...body },
+    })
+    return { status: res.status, body: (await res.json()).data }
+  }
+
+  test('POST /api/tasks never stamps a due date on a quota', async () => {
+    const { status, body } = await makeQuota()
+    expect(status).toBe(201)
+    expect(body.due_at).toBeNull()
+    expect(body.original_due_at).toBeNull()
+    expect(body.is_snoozed).toBe(false)
+  })
+
+  test('POST /api/tasks refuses a quota that is given a due date', async () => {
+    const { status } = await makeQuota({ due_at: new Date().toISOString() })
+    expect(status).toBe(400)
+  })
+
+  test('POST /api/tasks/:id/snooze on a quota is a 400', async () => {
+    const { body: quota } = await makeQuota()
+    const res = await apiFetch(`/api/tasks/${quota.id}/snooze`, {
+      method: 'POST',
+      body: { until: new Date(Date.now() + 3_600_000).toISOString() },
+    })
+    expect(res.status).toBe(400)
+  })
+
+  test('PATCH converting a dated task into a quota clears the date', async () => {
+    const created = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Becomes a quota', due_at: new Date().toISOString() },
+        })
+      ).json()
+    ).data
+    expect(created.due_at).not.toBeNull()
+
+    const res = await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { is_tracked: true, progress_target: 3, rrule: 'FREQ=WEEKLY' },
+    })
+    expect(res.status).toBe(200)
+    const patched = (await res.json()).data
+    expect(patched.due_at).toBeNull()
+    expect(patched.original_due_at).toBeNull()
+  })
+
+  test('POST /api/tasks/bulk/edit retiring a quota clears its period rule', async () => {
+    const { body: one } = await makeQuota({ title: 'Quota one' })
+    const { body: two } = await makeQuota({ title: 'Quota two' })
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id, two.id], changes: { is_tracked: false, progress_target: 1 } },
+    })
+    expect(res.status).toBe(200)
+
+    for (const id of [one.id, two.id]) {
+      const after = (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+      expect(after.is_tracked).toBe(false)
+      expect(after.rrule).toBeNull()
+      expect(after.due_at).toBeNull()
+    }
+  })
+
+  test('GET /api/tasks/counts does not count quotas at all', async () => {
+    const before = (await (await apiFetch('/api/tasks/counts')).json()).data
+    await makeQuota({ title: 'Uncounted quota' })
+    const after = (await (await apiFetch('/api/tasks/counts')).json()).data
+    expect(after).toEqual(before)
+  })
+})

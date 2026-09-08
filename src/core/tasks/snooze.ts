@@ -10,6 +10,7 @@ import type { Task } from '@/types'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
+import { isTracked } from '@/lib/track'
 import { getTaskById } from './create'
 import { canUserAccessTask, updateTask } from './update'
 
@@ -63,6 +64,18 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   if (task.is_reminder) {
     throw new ValidationError(
       'Reminders cannot be snoozed — they stay in their time slot until completed',
+    )
+  }
+
+  // §5: a quota cannot be snoozed either, for the stronger reason that it has
+  // no due date to move (QUOTA_DUE_DATE_MESSAGE). "Four times this week" is a
+  // count over a period, not an appointment to defer. `collectFieldChanges`
+  // would refuse the underlying PATCH anyway; checking here names the
+  // operation the caller actually asked for. Bulk snooze skips quotas rather
+  // than failing the sweep (see `bulkSnooze`).
+  if (isTracked(task)) {
+    throw new ValidationError(
+      'Quotas cannot be snoozed — a quota is counted within its period, not due on a day',
     )
   }
 
