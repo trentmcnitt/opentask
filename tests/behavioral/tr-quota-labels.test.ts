@@ -54,9 +54,46 @@ describe('grouping quotas by label', () => {
     expect(groups.map((g) => g.tasks.length)).toEqual([1, 1, 1, 1, 2])
   })
 
-  test('case does not split or reorder a group', () => {
+  test('case does not split a group — "Kids" and "kids" are one', () => {
+    // The registry's UNIQUE is case-sensitive, so both spellings can exist and
+    // both can end up on quotas. Grouping by the raw string drew two cards
+    // whose headers both read "KIDS". The FIRST spelling seen names the group.
+    //
+    // This test used to pass `Health` and `house` — two different labels — so
+    // it asserted nothing about case despite its name.
+    const groups = groupByLabel([quota('B', ['Kids']), quota('A', ['kids']), quota('C', ['KIDS'])])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe('Kids')
+    expect(groups[0].tasks.map((t) => t.title)).toEqual(['B', 'A', 'C'])
+  })
+
+  test('different labels still sort into different groups, case regardless', () => {
+    // The coverage the old test actually had, kept: case-insensitive KEYING
+    // must not collapse distinct names or disturb the alphabetical order.
     const groups = groupByLabel([quota('B', ['Health']), quota('A', ['house'])])
     expect(groups.map((g) => g.label)).toEqual(['Health', 'house'])
+  })
+
+  /**
+   * Second review, finding 2. `ai-*` labels are machinery — `createTask`
+   * appends `ai-to-process`/`ai-proposed`/`ai-added`, enrichment writes
+   * `ai-failed` — and a quota carrying one is not filed under it. Taking
+   * `labels[0]` blindly gave a group header reading "AI-FAILED".
+   */
+  test('an operational label is never the label a quota is filed under', () => {
+    expect(quotaLabelOf(quota('Eggs', ['ai-added', 'kids']))).toBe('kids')
+    expect(quotaLabelOf(quota('Eggs', ['ai-failed']))).toBeNull()
+    expect(quotaLabelOf(quota('Eggs', ['ai-to-process', 'ai-proposed']))).toBeNull()
+
+    const groups = groupByLabel([
+      quota('Freshly created', ['ai-to-process']),
+      quota('Enriched and filed', ['ai-added', 'kids']),
+      quota('Plain', ['kids']),
+    ])
+    // One real group, and the machinery-only quota is unlabelled — not a group
+    // of its own called "ai-to-process".
+    expect(groups.map((g) => g.label)).toEqual(['kids', null])
+    expect(groups.map((g) => g.tasks.length)).toEqual([2, 1])
   })
 
   test('every quota lands in exactly one group', () => {

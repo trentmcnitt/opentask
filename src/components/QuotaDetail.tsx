@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { trackState, quotaFreqOf, quotaLabelOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
+import { isReservedLabel } from '@/lib/label-vocabulary'
 import { useDomainLabels } from '@/hooks/useDomainLabels'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
@@ -378,17 +379,32 @@ function LabelField({
   // The current value is always offered, even when the registry has never
   // heard of it: a quota carrying a legacy label must be able to keep it, and
   // a name typed a moment ago must show as chosen before the registry reloads.
+  //
+  // Except a RESERVED one. `ai-*` labels are machinery — enrichment writes
+  // `ai-failed`, creation writes `ai-to-process` — and a quota that happens to
+  // carry one is not thereby filed under it. Offering it as a chip invited the
+  // user to hand-assign a processing state; `quotaLabelOf` skips them for the
+  // same reason, so such a quota reads as unlabelled here and "None" is what
+  // shows as chosen.
   const options = useMemo(() => {
-    const names = new Set(registered)
-    if (value) names.add(value)
+    const names = new Set(registered.filter((n) => !isReservedLabel(n)))
+    if (value && !isReservedLabel(value)) names.add(value)
     return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   }, [registered, value])
 
   function commitDraft() {
-    const name = draft.trim()
+    const typed = draft.trim()
     setTyping(false)
     setDraft('')
-    if (name) onChange(name)
+    if (!typed) return
+    // Typing a name the registry already has in another case reuses ITS
+    // spelling rather than creating a variant. The registry's UNIQUE is
+    // case-sensitive, so "Kids" typed against an existing "kids" would become a
+    // second row, a second chip and — before `groupByLabel` started keying
+    // case-insensitively — a second group with an identical header. Fixing the
+    // grouping hides that; this stops making them.
+    const existing = registered.find((n) => n.toLowerCase() === typed.toLowerCase())
+    onChange(existing ?? typed)
   }
 
   return (

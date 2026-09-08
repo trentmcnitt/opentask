@@ -320,15 +320,29 @@ function collectRruleChanges(
 
   trackField(data, 'rrule', task.rrule, input.rrule)
 
-  // The occurrence origin belongs to the OLD schedule, so any rrule change
-  // takes it with it — including a change TO null, which it did not until
-  // 2026-09-08. A task created recurring has `original_due_at` set to its first
-  // occurrence, so "clear recurrence and pick a date" left that stale value
-  // behind: `is_snoozed` stayed true in the API response and the row drew the
-  // snoozed indicator, for an edit that was a re-schedule rather than a
-  // deferral. The other half of the same finding is the snooze branch below,
-  // which no longer fires when the rrule changed.
-  if (task.original_due_at) {
+  // When an rrule change takes the occurrence origin with it — and when it
+  // must not.
+  //
+  // The origin belongs to the schedule the task had, so a change to a NEW
+  // schedule drops it. That has always been true. Clearing the rule to null was
+  // added on 2026-09-08 for `{ rrule: null, due_at: X }` — "clear recurrence and
+  // pick a date", which is a re-schedule and must not read as a snooze — but it
+  // was applied to EVERY clear, and that was too wide: `{ rrule: null }` alone
+  // on a genuinely snoozed recurring task (snooze_count 2, origin = the
+  // pre-snooze date) kept the deferred `due_at` and the count while losing the
+  // origin, so the row stopped drawing its snoozed stripe and the quick panel's
+  // age anchor jumped back to `created_at`. A date has to be arriving in the
+  // same request for the clear to mean a re-schedule.
+  //
+  // An explicit `reset_original_due_at` always wins: it is the user saying what
+  // the origin is, in the same breath. `collectBasicFields` has already pushed
+  // it, and SQLite takes the last clause, so without this guard the reset was
+  // silently overridden — including on the pre-existing `{ reset, rrule: <new
+  // rule> }` path.
+  const rruleTakesTheOrigin =
+    !input.reset_original_due_at && (input.rrule !== null || input.due_at != null)
+
+  if (rruleTakesTheOrigin && task.original_due_at) {
     data.setClauses.push('original_due_at = NULL')
     if (!data.fieldsChanged.includes('original_due_at')) {
       data.fieldsChanged.push('original_due_at')

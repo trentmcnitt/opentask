@@ -421,6 +421,12 @@ test.describe('Quotas page', () => {
         rrule: 'FREQ=WEEKLY',
       })
       ids.push(retireId)
+      // Reload rather than waiting for the row to be pushed in. This quota was
+      // made through the API, so the only thing that would bring it to a page
+      // already open is the sync stream — and asserting on a push makes the
+      // test depend on delivery timing rather than on server state. Same for
+      // the reload after the undo below.
+      await page.reload()
       await expect(page.locator(`[data-quota-row="${retireId}"]`)).toBeVisible()
 
       const retired = await page.request.patch(`/api/tasks/${retireId}`, {
@@ -431,8 +437,8 @@ test.describe('Quotas page', () => {
       expect(retiredBody.is_tracked).toBe(false)
       expect(retiredBody.rrule).toBeNull()
       expect(retiredBody.due_at).toBeNull()
-      // It is no longer a quota, so it leaves this page — which is also how we
-      // know the refresh has landed, rather than by waiting a fixed time.
+      // It is no longer a quota, so it leaves this page.
+      await page.reload()
       await expect(page.locator(`[data-quota-row="${retireId}"]`)).toHaveCount(0)
 
       // Undo puts it back, flag and rule together. This is the path that used
@@ -440,6 +446,7 @@ test.describe('Quotas page', () => {
       // (`is_tracked` was not on it), so a green 200 here is the contract.
       const undone = await page.request.post('/api/undo')
       expect(undone.status()).toBe(200)
+      await page.reload()
       await expect(page.locator(`[data-quota-row="${retireId}"]`)).toBeVisible()
 
       // And a quota refuses a snooze outright (§5/A4).
@@ -581,6 +588,71 @@ test.describe('Quota labels', () => {
       await expect(
         view.locator(`[data-quota-group="probe-domain"] [data-quota-row="${newId}"]`),
       ).toHaveCount(1)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  /**
+   * Second review finding 1: a label typed while editing SEVERAL quotas goes
+   * through `POST /api/tasks/bulk/edit`, which writes `labels` as raw SQL and
+   * never registered the name. Both rows carried it and the registry had never
+   * heard of it, so the NEXT editor did not offer the chip — which is what this
+   * asserts, by opening a third quota that was never part of the selection.
+   */
+  test('a new label typed while editing several quotas reaches the registry', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    const fresh = `probe-bulk-${Date.now()}`
+    try {
+      for (const title of [
+        'Probe bulk label one',
+        'Probe bulk label two',
+        'Probe bulk label third',
+      ]) {
+        ids.push(await createTask(page, { title, progress_target: 2, rrule: 'FREQ=WEEKLY' }))
+      }
+
+      await page.goto('/quotas')
+      const view = page.locator('[data-quotas-view]')
+      await expect(view).toBeVisible()
+
+      // Two selected → the bulk endpoint.
+      await view.locator(`[data-quota-row="${ids[0]}"]`).click()
+      await view.locator(`[data-quota-row="${ids[1]}"]`).click({ modifiers: ['Shift'] })
+      const bar = page.locator('[data-quota-selection-bar]')
+      await bar.getByRole('button', { name: 'Details' }).click()
+
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await editor.getByRole('button', { name: '+ New' }).click()
+      await editor.getByRole('textbox', { name: 'New label' }).fill(fresh)
+      await editor.getByRole('textbox', { name: 'New label' }).press('Enter')
+      const edited = page.waitForResponse(
+        (r) => r.url().includes('/bulk/edit') && r.request().method() === 'POST',
+      )
+      await editor.getByRole('button', { name: 'Save' }).click()
+      expect((await edited).status()).toBe(200)
+
+      // Both rows moved into the new group...
+      await expect(
+        view.locator(`[data-quota-group="${fresh}"] [data-quota-row="${ids[0]}"]`),
+      ).toHaveCount(1)
+      await expect(
+        view.locator(`[data-quota-group="${fresh}"] [data-quota-row="${ids[1]}"]`),
+      ).toHaveCount(1)
+
+      // ...and the registry learned the name: a THIRD quota, never selected,
+      // is offered the chip in its own editor. This is the half that was
+      // broken — the rows carried a label nothing else knew existed.
+      await page.reload()
+      await expect(view.locator(`[data-quota-row="${ids[2]}"]`)).toBeVisible()
+      await view.locator(`[data-quota-row="${ids[2]}"]`).dblclick()
+      const third = page.getByRole('dialog')
+      await expect(third).toBeVisible()
+      await expect(third.getByRole('button', { name: fresh, exact: true })).toBeVisible()
+      await page.keyboard.press('Escape')
     } finally {
       await deleteTasks(page, ids)
     }

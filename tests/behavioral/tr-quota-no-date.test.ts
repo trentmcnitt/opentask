@@ -458,10 +458,151 @@ describe('A quota is not a task — the other paths the first cut missed', () =>
     // The stat the leak inflated: one undated task, not three.
     expect(built.stats.undated).toBe(1)
   })
+})
+
+/**
+ * Second review, 2026-09-08 — the two findings that are regressions from the
+ * FIRST round of fixes, not from the original change. Hoisting "clear the
+ * occurrence origin when the rrule changes" out of its branch was too wide.
+ */
+describe('The occurrence origin survives what it should', () => {
+  beforeEach(() => {
+    vi.setSystemTime(NOW)
+    setupTestDb()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
 
   /**
-   * Finding 3. The iOS Track widget's pace tick read `due_at`; with the date
-   * gone it needs the real anchor, which was exposed nowhere.
+   * Finding 5 — a regression from the previous commit. Hoisting
+   * "clear the occurrence origin when the rrule changes" out of the
+   * new-schedule branch applied it to EVERY rrule change, including clearing
+   * the rule on a genuinely snoozed task.
+   */
+  test('TR-027: dropping the rule alone leaves a snoozed task its snooze', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Weekly report', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    // Genuinely snoozed, twice, so the origin is a real pre-snooze date rather
+    // than the create-time first occurrence.
+    for (const days of [1, 2]) {
+      snoozeTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: task.id,
+        until: new Date(NOW.getTime() + days * 86_400_000).toISOString(),
+      })
+    }
+    const before = getTaskById(task.id)!
+    expect(before.snooze_count).toBe(2)
+    expect(before.original_due_at).not.toBeNull()
+
+    // The rule alone. Nothing here says anything about the date.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: null },
+    })
+
+    const after = getTaskById(task.id)!
+    expect(after.rrule).toBeNull()
+    // The deferral survives: the row keeps its stripe and "snoozed from", and
+    // the quick panel's age anchor stays on the origin instead of jumping back
+    // to created_at.
+    expect(after.original_due_at).toBe(before.original_due_at)
+    expect(after.snooze_count).toBe(2)
+    expect(after.due_at).toBe(before.due_at)
+  })
+
+  test('TR-028: changing to a new rule still drops the old origin', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Weekly report', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: new Date(NOW.getTime() + 86_400_000).toISOString(),
+    })
+    expect(getTaskById(task.id)!.original_due_at).not.toBeNull()
+
+    // A NEW schedule: the old occurrence origin means nothing under it. This is
+    // the behaviour that predates the whole PR and must not be lost.
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { rrule: 'FREQ=DAILY' },
+    })
+    expect(getTaskById(task.id)!.original_due_at).toBeNull()
+  })
+
+  /**
+   * Finding 4 — also a regression from the previous commit.
+   * `collectBasicFields` pushes the reset first and the hoisted block pushed
+   * `original_due_at = NULL` after it; SQLite takes the last clause, so the
+   * user's explicit reset lost. Reachable from the quick panel, which batches
+   * "Reset origin to current due date" with the recurrence picker.
+   */
+  test('TR-029: an explicit origin reset beats the rrule change in the same PATCH', () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Weekly report', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      until: new Date(NOW.getTime() + 86_400_000).toISOString(),
+    })
+    const dueAt = getTaskById(task.id)!.due_at
+
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      input: { reset_original_due_at: true, rrule: null },
+    })
+
+    const after = getTaskById(task.id)!
+    // "The origin IS the current due date" — said explicitly, so it wins.
+    expect(after.original_due_at).toBe(dueAt)
+    expect(after.snooze_count).toBe(0)
+
+    // The same holds when the rule changes to a NEW value, which was already
+    // overridden before any of this PR's changes.
+    const other = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Another', rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    })
+    snoozeTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: other.id,
+      until: new Date(NOW.getTime() + 86_400_000).toISOString(),
+    })
+    const otherDue = getTaskById(other.id)!.due_at
+    updateTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: other.id,
+      input: { reset_original_due_at: true, rrule: 'FREQ=DAILY' },
+    })
+    expect(getTaskById(other.id)!.original_due_at).toBe(otherDue)
+  })
+
+  /**
+   * Round-one finding 3. The iOS Track widget's pace tick read `due_at`; with
+   * the date gone it needs the real anchor, which was exposed nowhere.
    */
   test('TR-026: a quota carries its period anchor in the task shape', () => {
     const quota = makeQuota()

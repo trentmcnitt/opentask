@@ -5,6 +5,7 @@
  * row component runs in the browser and only needs to read a task's tracked
  * state and name its period. Kept here so a client bundle never pulls core.
  */
+import { isReservedLabel } from '@/lib/label-vocabulary'
 import type { Task } from '@/types'
 
 /**
@@ -133,9 +134,18 @@ export function quotaGroupSummary(tasks: Pick<Task, 'progress_target' | 'progres
   return { count: tasks.length, met: tasks.filter((t) => trackState(t).met).length }
 }
 
-/** The one label a quota is filed under: the first it carries, or none. */
+/**
+ * The one label a quota is filed under: the first MEANING it carries, or none.
+ *
+ * Reserved `ai-*` labels are skipped. They are machinery, not filing — created
+ * by `createTask` (`ai-to-process`, `ai-proposed`, `ai-added`) and by
+ * enrichment (`ai-failed`), often without the user ever typing one. Taking
+ * `labels[0]` blindly gave a quota whose only label was operational a group
+ * header reading "AI-FAILED", and showed that as its pressed chip in the
+ * editor. A quota carrying nothing else is unlabelled, which is the truth.
+ */
 export function quotaLabelOf(quota: Pick<Task, 'labels'>): string | null {
-  return quota.labels?.[0] ?? null
+  return quota.labels?.find((l) => !isReservedLabel(l)) ?? null
 }
 
 /**
@@ -162,14 +172,29 @@ export function quotaLabelOf(quota: Pick<Task, 'labels'>): string | null {
 export function groupByLabel(
   quotas: Pick<Task, 'labels'>[],
 ): { label: string | null; tasks: Task[] }[] {
+  // Grouped case-INSENSITIVELY, displayed in the spelling seen first.
+  //
+  // The registry's UNIQUE is case-sensitive, so "Kids" and "kids" are two rows
+  // and can both end up on quotas. Grouping by the raw string then drew two
+  // separate cards whose headers both read "KIDS", which reads as a bug every
+  // time. `labels_add`/`labels_remove` already dedupe case-insensitively
+  // (collect-field-changes.ts), so this matches a rule the app already keeps
+  // rather than inventing one. Nothing about the schema changes: the two rows
+  // still exist, they just file together.
   const by = new Map<string | null, Task[]>()
+  const display = new Map<string, string>()
   for (const t of quotas as Task[]) {
     const label = quotaLabelOf(t)
-    by.set(label, [...(by.get(label) ?? []), t])
+    const key = label === null ? null : label.toLowerCase()
+    if (label !== null && !display.has(key as string)) display.set(key as string, label)
+    by.set(key, [...(by.get(key) ?? []), t])
   }
   const labels = [...by.keys()]
     .filter((l): l is string => l !== null)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   const order: (string | null)[] = by.has(null) ? [...labels, null] : labels
-  return order.map((label) => ({ label, tasks: by.get(label)! }))
+  return order.map((key) => ({
+    label: key === null ? null : (display.get(key) ?? key),
+    tasks: by.get(key)!,
+  }))
 }

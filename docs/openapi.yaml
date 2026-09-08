@@ -709,9 +709,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [task_ids]
+              required: [ids]
               properties:
-                task_ids:
+                ids:
                   type: array
                   items:
                     type: integer
@@ -823,9 +823,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [task_ids, changes]
+              required: [ids, changes]
               properties:
-                task_ids:
+                ids:
                   type: array
                   items:
                     type: integer
@@ -876,9 +876,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [task_ids]
+              required: [ids]
               properties:
-                task_ids:
+                ids:
                   type: array
                   items:
                     type: integer

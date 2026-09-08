@@ -261,3 +261,75 @@ describe('Quota review fixes over HTTP', () => {
     )
   })
 })
+
+/**
+ * §7.2, second review finding 1: a label typed while editing SEVERAL quotas
+ * goes through `POST /api/tasks/bulk/edit`, which writes `labels` as raw SQL
+ * and never registered it. The rows carried the name and the registry had never
+ * heard of it, so the next editor did not offer the chip.
+ */
+describe('Bulk edit registers a new label', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function makeQuota(title: string) {
+    return (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title, progress_target: 3, rrule: 'FREQ=WEEKLY' },
+        })
+      ).json()
+    ).data
+  }
+
+  const labelNames = async () =>
+    ((await (await apiFetch('/api/labels')).json()).data.labels as { name: string }[]).map(
+      (l) => l.name,
+    )
+
+  test('create_label on bulk/edit puts the name in the registry', async () => {
+    const one = await makeQuota('Quota one')
+    const two = await makeQuota('Quota two')
+    const fresh = `probe-${Date.now()}`
+    expect(await labelNames()).not.toContain(fresh)
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id, two.id], changes: { labels: [fresh], create_label: true } },
+    })
+    expect(res.status).toBe(200)
+
+    // Both rows carry it...
+    for (const id of [one.id, two.id]) {
+      const after = (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+      expect(after.labels).toContain(fresh)
+    }
+    // ...and so does the registry, so the next editor offers the chip.
+    expect(await labelNames()).toContain(fresh)
+  })
+
+  test('labels_add registers too', async () => {
+    const one = await makeQuota('Quota three')
+    const fresh = `probe-add-${Date.now()}`
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id], changes: { labels_add: [fresh], create_label: true } },
+    })
+    expect(res.status).toBe(200)
+    expect(await labelNames()).toContain(fresh)
+  })
+
+  test('a caller that omits the flag is still accepted, as before', async () => {
+    // This endpoint has never validated labels. Registering on the flag must
+    // not turn every existing caller's unknown label into a rejection.
+    const one = await makeQuota('Quota four')
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id], changes: { labels: [`unregistered-${Date.now()}`] } },
+    })
+    expect(res.status).toBe(200)
+  })
+})

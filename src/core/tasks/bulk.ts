@@ -18,6 +18,7 @@ import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
 import { formatDurationDelta } from '@/lib/format-date'
+import { validateLabelsExist } from '@/core/labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import {
@@ -452,6 +453,28 @@ export interface BulkEditResult {
 }
 
 /**
+ * §7.2: a label typed while editing SEVERAL rows has to reach the registry.
+ *
+ * `collectFieldChanges` writes `labels` as raw SQL, so a name that exists on no
+ * other task was written to every selected row and then known to nothing: the
+ * next editor did not offer the chip, and the filter bar had no idea it
+ * existed. The Quotas page routes any selection of two or more through this
+ * endpoint, so "select two quotas → Label → + New → kids → Save" was exactly
+ * the broken case.
+ *
+ * Only when the caller asks. `validateLabelsExist` THROWS on an unknown name
+ * without the flag, and this endpoint has never validated labels at all —
+ * turning that on for every existing caller would start rejecting writes that
+ * work today. `existing: []` because the flag means "register whatever is
+ * missing", independent of what the selected rows already carry.
+ */
+function registerBulkEditLabels(userId: number, changes: BulkEditChanges): void {
+  if (changes.create_label !== true) return
+  const incoming = [...(changes.labels ?? []), ...(changes.labels_add ?? [])]
+  if (incoming.length > 0) validateLabelsExist(userId, incoming, [], true)
+}
+
+/**
  * Bulk edit
  *
  * Applies the same changes to all specified tasks.
@@ -468,6 +491,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     ...changes,
     ...(perTask?.[String(task.id)] ?? {}),
   })
+
+  registerBulkEditLabels(userId, changes)
 
   // Reject rrule changes on done tasks — setting rrule on a done+archived task creates
   // an impossible state (done=1 + rrule set) that the system never produces organically
