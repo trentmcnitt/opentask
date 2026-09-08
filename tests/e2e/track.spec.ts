@@ -351,6 +351,14 @@ test.describe('Quotas page', () => {
       const row = page.locator(`[data-quota-row="${ids[0]}"]`)
       await expect(row).toContainText('never met')
 
+      // Nobody labelled these, so they are in the Unlabelled group — a real
+      // group with a name, not a gap. And the row carries its own period now
+      // that the card it sits in is a label rather than a cadence.
+      const unlabelled = view.locator('[data-quota-group="unlabelled"]')
+      await expect(unlabelled).toContainText('Unlabelled')
+      await expect(unlabelled.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(1)
+      await expect(row.locator('[data-quota-period]')).toHaveText('· week')
+
       // The house selection model: a plain click selects EXACTLY one and never
       // navigates. It does not accumulate — which is what it wrongly did when
       // this page first shipped.
@@ -463,6 +471,103 @@ test.describe('Quotas page', () => {
       await page.keyboard.press('Escape')
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+})
+
+test.describe('Quota labels', () => {
+  /**
+   * §5, Trent 2026-09-08: "I think we need to have one label for quotas… there's
+   * a bunch of stuff for the kids and there are other things." The label is the
+   * page's grouping, so the picker in the editor and the group a row sits in are
+   * one feature and are tested as one.
+   */
+  test('a quota is grouped by its one label, and the picker moves it', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      // A quota that still carries TWO labels — six on Trent's corpus do, and
+      // the migration deliberately left them alone. It belongs to the FIRST.
+      // `create_label` is §7.2's opt-in: an unknown label is refused without it.
+      ids.push(
+        await createTask(page, {
+          title: 'Probe label two-label',
+          progress_target: 2,
+          rrule: 'FREQ=WEEKLY',
+          labels: ['health', 'kids'],
+          create_label: true,
+        }),
+      )
+      ids.push(
+        await createTask(page, {
+          title: 'Probe label house one',
+          progress_target: 1,
+          is_tracked: true,
+          rrule: 'FREQ=MONTHLY',
+          labels: ['house'],
+          create_label: true,
+        }),
+      )
+
+      await page.goto('/quotas')
+      const view = page.locator('[data-quotas-view]')
+      await expect(view).toBeVisible()
+
+      // Each lands under its own label, and the two-label one appears ONCE.
+      await expect(
+        view.locator(`[data-quota-group="health"] [data-quota-row="${ids[0]}"]`),
+      ).toHaveCount(1)
+      await expect(view.locator(`[data-quota-row="${ids[0]}"]`)).toHaveCount(1)
+      await expect(
+        view.locator(`[data-quota-group="house"] [data-quota-row="${ids[1]}"]`),
+      ).toHaveCount(1)
+      // The header counts quotas, never a sum of mixed targets.
+      await expect(view.locator('[data-quota-group="house"]')).toContainText('1 quota')
+
+      // Picking a different label moves the row to that group.
+      await view.locator(`[data-quota-row="${ids[1]}"]`).dblclick()
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await expect(editor.getByRole('button', { name: 'house', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      const saved = page.waitForResponse(
+        (r) => r.url().includes(`/api/tasks/${ids[1]}`) && r.request().method() === 'PATCH',
+      )
+      await editor.getByRole('button', { name: 'health', exact: true }).click()
+      await editor.getByRole('button', { name: 'Save' }).click()
+      expect((await saved).status()).toBe(200)
+      await expect(
+        view.locator(`[data-quota-group="health"] [data-quota-row="${ids[1]}"]`),
+      ).toHaveCount(1)
+      await expect(view.locator('[data-quota-group="house"]')).toHaveCount(0)
+
+      // A label the registry has never heard of is typed in the same picker and
+      // registered by the save itself (`create_label`), so the new quota has a
+      // group of its own the moment it exists.
+      await view.getByRole('button', { name: 'New quota' }).click()
+      const form = page.getByRole('dialog')
+      await form.getByRole('textbox').first().fill('Probe label brand new')
+      await form.getByRole('button', { name: '+ New' }).click()
+      await form.getByRole('textbox', { name: 'New label' }).fill('probe-domain')
+      await form.getByRole('textbox', { name: 'New label' }).press('Enter')
+      await expect(form.getByRole('button', { name: 'probe-domain' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      const created = page.waitForResponse(
+        (r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST',
+      )
+      await form.getByRole('button', { name: 'Create' }).click()
+      const newId = (await (await created).json()).data.id as number
+      ids.push(newId)
+      await expect(
+        view.locator(`[data-quota-group="probe-domain"] [data-quota-row="${newId}"]`),
+      ).toHaveCount(1)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 })

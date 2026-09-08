@@ -116,3 +116,60 @@ export function groupByPeriod(
   }
   return order.filter((p) => by.has(p)).map((p) => ({ period: p, tasks: by.get(p)! }))
 }
+
+/**
+ * What a label group's header says: how many quotas, and how many are met.
+ *
+ * NOT `trackSummary`. That adds targets up, which is honest for one period and
+ * meaningless across several — "2 a day + 3 a week + 1 a month = 7" is a number
+ * nobody can act on, and a label group mixes periods by construction. Counting
+ * quotas survives the mixing, and "met" is per-quota (`trackState`), so it
+ * means the same thing in every group.
+ */
+export function quotaGroupSummary(tasks: Pick<Task, 'progress_target' | 'progress_current'>[]): {
+  count: number
+  met: number
+} {
+  return { count: tasks.length, met: tasks.filter((t) => trackState(t).met).length }
+}
+
+/** The one label a quota is filed under: the first it carries, or none. */
+export function quotaLabelOf(quota: Pick<Task, 'labels'>): string | null {
+  return quota.labels?.[0] ?? null
+}
+
+/**
+ * Quotas by label — the Quotas page's grouping (Trent, 2026-09-08: "I think we
+ * need to have one label for quotas… there's a bunch of stuff for the kids and
+ * there are other things").
+ *
+ * ONE label per quota: the editor writes a single entry, and a quota that
+ * still carries two from before that rule is filed under the FIRST — the
+ * migration deliberately left those rows alone, so this has to have an answer
+ * for them rather than putting one quota in two places.
+ *
+ * Alphabetical, with the unlabelled group last: it is the leftovers, not a
+ * name that happens to sort after "website". `sensitivity: 'base'` matches the
+ * within-group order `trackedItems` uses, so the page sorts by one rule
+ * throughout. Each group keeps the order it was given (that frozen alphabetical
+ * order), because logging on one quota must never reorder the others under the
+ * user's finger.
+ *
+ * The dashboard's Track panel deliberately still groups by PERIOD: it is an
+ * instrument for "what is left this week", where the period is the question.
+ * Here the period is on each row instead, since a label group mixes them.
+ */
+export function groupByLabel(
+  quotas: Pick<Task, 'labels'>[],
+): { label: string | null; tasks: Task[] }[] {
+  const by = new Map<string | null, Task[]>()
+  for (const t of quotas as Task[]) {
+    const label = quotaLabelOf(t)
+    by.set(label, [...(by.get(label) ?? []), t])
+  }
+  const labels = [...by.keys()]
+    .filter((l): l is string => l !== null)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const order: (string | null)[] = by.has(null) ? [...labels, null] : labels
+  return order.map((label) => ({ label, tasks: by.get(label)! }))
+}
