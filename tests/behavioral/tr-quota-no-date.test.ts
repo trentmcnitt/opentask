@@ -361,7 +361,12 @@ describe('A quota is not a task — the other paths the first cut missed', () =>
     expect(after.rrule).toBeNull()
     expect(after.due_at).toBe(when)
     expect(after.snooze_count).toBe(0)
-    expect(after.original_due_at).toBe(before.original_due_at)
+    // The occurrence origin went with the old schedule, so nothing reads this
+    // row as snoozed: `is_snoozed` in the API response is
+    // `original_due_at !== null`, and the row's snoozed indicator is the same
+    // test. A task created recurring has this set to its first occurrence, so
+    // leaving it behind drew the indicator on a plain re-schedule.
+    expect(after.original_due_at).toBeNull()
     expect(description).not.toMatch(/snooz/i)
   })
 

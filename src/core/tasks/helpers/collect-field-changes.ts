@@ -320,6 +320,23 @@ function collectRruleChanges(
 
   trackField(data, 'rrule', task.rrule, input.rrule)
 
+  // The occurrence origin belongs to the OLD schedule, so any rrule change
+  // takes it with it — including a change TO null, which it did not until
+  // 2026-09-08. A task created recurring has `original_due_at` set to its first
+  // occurrence, so "clear recurrence and pick a date" left that stale value
+  // behind: `is_snoozed` stayed true in the API response and the row drew the
+  // snoozed indicator, for an edit that was a re-schedule rather than a
+  // deferral. The other half of the same finding is the snooze branch below,
+  // which no longer fires when the rrule changed.
+  if (task.original_due_at) {
+    data.setClauses.push('original_due_at = NULL')
+    if (!data.fieldsChanged.includes('original_due_at')) {
+      data.fieldsChanged.push('original_due_at')
+      data.beforeState.original_due_at = task.original_due_at
+    }
+    data.afterState.original_due_at = null
+  }
+
   if (input.rrule === null) {
     // Clearing recurrence - null out anchor fields and reset recurrence_mode
     data.setClauses.push('anchor_time = NULL, anchor_dow = NULL, anchor_dom = NULL')
@@ -366,16 +383,6 @@ function collectRruleChanges(
       data.beforeState.anchor_dom = task.anchor_dom
     }
     data.afterState.anchor_dom = anchors.anchor_dom
-
-    // Clear original_due_at when rrule changes
-    if (task.original_due_at) {
-      data.setClauses.push('original_due_at = NULL')
-      if (!data.fieldsChanged.includes('original_due_at')) {
-        data.fieldsChanged.push('original_due_at')
-        data.beforeState.original_due_at = task.original_due_at
-      }
-      data.afterState.original_due_at = null
-    }
 
     // Only auto-compute due_at if:
     // 1. User didn't explicitly pass due_at
