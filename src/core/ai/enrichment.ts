@@ -44,6 +44,7 @@ import { buildEnrichmentUserPrompt, buildReminderEnrichmentUserPrompt } from './
 import { listTimeSlots } from '@/core/time-slots'
 import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
+import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
@@ -757,6 +758,16 @@ interface FieldChanges {
  *
  * Labels are merged (AI labels added to existing), and `ai-to-process` is
  * always removed from the final label set.
+ *
+ * §5: on a QUOTA, everything schedule-shaped is skipped — a quota has no due
+ * date and its rrule is a bare period rule that names the period it counts
+ * within, not a day to occur on. These clauses are raw SQL, so they bypass the
+ * guards in `collectFieldChanges` entirely. Two ways in: a user re-enriches a
+ * quota by adding `ai-to-process`, or an enrichment is already in flight when
+ * the task is converted into a quota. `task` here is the re-read from
+ * `applyEnrichment`, so this sees the row's state at write time rather than at
+ * dispatch time. Labels, priority, title and notes still apply — those mean the
+ * same thing on a quota.
  */
 function collectEnrichmentChanges(
   task: Task,
@@ -775,8 +786,11 @@ function collectEnrichmentChanges(
     fieldsChanged.push('title')
   }
 
+  // §5: a quota has no due date, no schedule to derive and no recurrence mode.
+  const tracked = isTracked(task)
+
   // Due date — always overwrite
-  if (enrichment.due_at) {
+  if (!tracked && enrichment.due_at) {
     if (enrichment.due_at !== task.due_at) {
       setClauses.push('due_at = ?')
       values.push(enrichment.due_at)
@@ -826,7 +840,7 @@ function collectEnrichmentChanges(
   }
 
   // RRULE — always overwrite
-  if (enrichment.rrule) {
+  if (!tracked && enrichment.rrule) {
     if (enrichment.rrule !== task.rrule) {
       setClauses.push('rrule = ?')
       values.push(enrichment.rrule)
@@ -868,7 +882,7 @@ function collectEnrichmentChanges(
   }
 
   // Recurrence mode — overwrite if AI extracted a value
-  if (enrichment.recurrence_mode) {
+  if (!tracked && enrichment.recurrence_mode) {
     if (enrichment.recurrence_mode !== task.recurrence_mode) {
       setClauses.push('recurrence_mode = ?')
       values.push(enrichment.recurrence_mode)

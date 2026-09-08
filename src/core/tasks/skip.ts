@@ -27,6 +27,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { isTracked } from '@/lib/track'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import type { Task } from '@/types'
@@ -72,15 +73,19 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
     let fieldsChanged: string[]
 
     if (recurring) {
-      const nextOccurrence = computeNextOccurrence({
-        rrule: task.rrule!,
-        recurrenceMode: task.recurrence_mode,
-        anchorTime: task.anchor_time,
-        timezone: userTimezone,
-        completedAt: new Date(),
-        prevDueAt: task.due_at ? new Date(task.due_at) : null,
-      })
-      const nextDueAt = nextOccurrence.toISOString()
+      // §5: a quota has no date to advance — see the same guard in
+      // `computeMarkDone`. Skipping one is still a period boundary, so the
+      // progress reset below stands.
+      const nextDueAt = isTracked(task)
+        ? null
+        : computeNextOccurrence({
+            rrule: task.rrule!,
+            recurrenceMode: task.recurrence_mode,
+            anchorTime: task.anchor_time,
+            timezone: userTimezone,
+            completedAt: new Date(),
+            prevDueAt: task.due_at ? new Date(task.due_at) : null,
+          }).toISOString()
 
       // §5: advancing the occurrence is a period boundary, so a tracked task's
       // progress resets here exactly as it would on completion.

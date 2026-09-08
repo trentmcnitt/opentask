@@ -12,7 +12,9 @@ import { emitSyncEvent, emitTaskCreatedEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
-import { NotFoundError, ForbiddenError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
+import { isTracked } from '@/lib/track'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
@@ -54,9 +56,25 @@ export function createTask(options: CreateTaskOptions): Task {
     throw new ForbiddenError('Access denied to project')
   }
 
-  // Compute due_at if rrule provided but no due_at
-  let dueAt = input.due_at ?? null
-  if (input.rrule && !dueAt) {
+  // §5: a quota is not a task — it has no due date (see QUOTA_DUE_DATE_MESSAGE).
+  // Asked of the row being created, not of one field: `progress_target > 1`
+  // opts in by itself, `is_tracked` marks a quota whose target is 1.
+  const tracked = isTracked({
+    is_tracked: input.is_tracked ?? false,
+    progress_target: input.progress_target ?? 1,
+  })
+  if (tracked && input.due_at) {
+    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  }
+
+  // Compute due_at if rrule provided but no due_at.
+  //
+  // A quota is skipped: its rrule is a bare period rule ("FREQ=WEEKLY"), which
+  // names the period the count runs over rather than a day to occur on, so
+  // asking rrule.js for its "first occurrence" produced an arbitrary weekday —
+  // which is how quotas ended up carrying a stray local-midnight due date.
+  let dueAt = tracked ? null : (input.due_at ?? null)
+  if (!tracked && input.rrule && !dueAt) {
     const firstOccurrence = computeFirstOccurrence(input.rrule, null, userTimezone)
     dueAt = firstOccurrence.toISOString()
   }
@@ -196,7 +214,7 @@ export function getTaskById(taskId: number): Task | null {
            rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
            original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
-           progress_target, progress_current, is_reminder, is_tracked,
+           progress_target, progress_current, progress_period_start, is_reminder, is_tracked,
            completion_count, snooze_count, skip_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
     FROM tasks WHERE id = ?
@@ -314,7 +332,8 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.anchor_dow, tasks.anchor_dom, tasks.original_due_at,
            tasks.last_notified_at, tasks.last_critical_alert_at, tasks.auto_snooze_minutes,
            tasks.deleted_at, tasks.archived_at,
-           tasks.labels, tasks.progress_target, tasks.progress_current, tasks.is_reminder, tasks.is_tracked,
+           tasks.labels, tasks.progress_target, tasks.progress_current,
+           tasks.progress_period_start, tasks.is_reminder, tasks.is_tracked,
            tasks.completion_count, tasks.snooze_count, tasks.skip_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.notes, tasks.created_at, tasks.updated_at
@@ -354,6 +373,7 @@ interface TaskRow {
   labels: string
   progress_target: number
   progress_current: number
+  progress_period_start: string | null
   is_reminder: number
   is_tracked: number
   completion_count: number
@@ -394,6 +414,7 @@ function rowToTask(row: TaskRow): Task {
     // produce NaN in pace math.
     progress_target: row.progress_target ?? 1,
     progress_current: row.progress_current ?? 0,
+    progress_period_start: row.progress_period_start ?? null,
     is_reminder: (row.is_reminder ?? 0) === 1,
     is_tracked: (row.is_tracked ?? 0) === 1,
     completion_count: row.completion_count,

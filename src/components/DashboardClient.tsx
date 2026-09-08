@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { TaskList, buildTaskGroups, sortTasks, type GroupingMode } from '@/components/TaskList'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { UNDATED_LABEL } from '@/lib/slot-view'
+import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
 import { TrackPanel } from '@/components/TrackPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
@@ -607,19 +608,25 @@ function HomeContent({
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
   /**
-   * §6/§7.3: the dashboard is tasks; reminders live on their own surface
-   * (`/reminders`, its own route and tab).
+   * §5/§6/§7.3: the dashboard is TASKS. Two populations are not tasks and are
+   * dropped here — reminders (§6), which live on `/reminders`, and quotas (§5),
+   * which live on `/quotas` and in the Track panel above this list.
    *
-   * Reminders are filtered out here rather than server-side so `/api/tasks`
-   * keeps returning the whole corpus for every other caller. Doing it at this
-   * one point also keeps them out of everything derived from the list —
-   * counts, the overdue badge, filters, keyboard order — which is exactly the
-   * §6 carve-out ("never counted in overdue, never in the badge") expressed in
-   * the client.
+   * "A quota is not a task. It appears on the Quotas page and in the Track
+   * panel and nowhere else" (Trent, 2026-09-08). It used to be a plain row in
+   * the All and Projects views wearing a "0 / 4" chip, which put a thing with
+   * no due date, no snooze and no Done in among things that have all three.
+   *
+   * Filtered in the client rather than server-side so `/api/tasks` keeps
+   * returning the whole corpus for every other caller — the Track panel below
+   * builds from that same fetch, and so does the iOS widget. Doing it at this
+   * one point keeps both populations out of everything derived from the list:
+   * the chip counts, "Showing N of M", the header counts, keyboard order,
+   * select-all and the clipboard.
    */
-  const visibleTasks = useMemo(() => tasks.filter((t) => !t.is_reminder), [tasks])
+  const visibleTasks = useMemo(() => tasks.filter((t) => !t.is_reminder && !isTracked(t)), [tasks])
   const visibleSearchResults = useMemo(
-    () => searchResults.filter((t) => !t.is_reminder),
+    () => searchResults.filter((t) => !t.is_reminder && !isTracked(t)),
     [searchResults],
   )
 
@@ -666,7 +673,13 @@ function HomeContent({
     if (!task && tasks.length === 0) return
     taskParamProcessed.current = true
     if (task) {
-      handleViewTask(task)
+      // §5: a quota does not open in the dashboard's QuickActionPanel — that
+      // panel is a due date and a snooze grid, neither of which a quota has.
+      // Its own editor is on the detail route, which already renders
+      // QuotaDetail for a tracked row. This is the last path by which a quota
+      // could still reach the panel now that it is out of every list.
+      if (isTracked(task)) router.push(`/tasks/${task.id}`)
+      else handleViewTask(task)
     }
     // Strip the param with a raw history rewrite, NOT router.replace: a router
     // navigation issues an RSC fetch, and if that fetch fails (WebKit does
@@ -1093,9 +1106,12 @@ function HomeContent({
   }, [tasks_, timezone])
 
   // Compute selected tasks for bulk operations
+  // Reads `visibleTasks`, not the raw corpus: the selection can only ever hold
+  // ids of rendered rows, and resolving it against rows this page deliberately
+  // hides would let a reminder or a quota reach the bulk action sheet.
   const selectedTasks = useMemo(() => {
-    return tasks.filter((t) => selection.selectedIds.has(t.id))
-  }, [tasks, selection.selectedIds])
+    return visibleTasks.filter((t) => selection.selectedIds.has(t.id))
+  }, [visibleTasks, selection.selectedIds])
 
   // Fetch tasks on initial mount (skipped when server provides initialTasks)
   const hasInitialData = initialTasks !== undefined
@@ -1171,6 +1187,7 @@ function HomeContent({
       <DashboardView
         tasks={tasks_}
         allTasks={baseTasks}
+        quotaSource={tasks}
         projects={projects}
         grouping={grouping}
         onGroupingChange={(next) => {
@@ -1320,6 +1337,7 @@ function HomeContent({
 function DashboardView({
   tasks,
   allTasks,
+  quotaSource,
   projects,
   grouping,
   onGroupingChange,
@@ -1430,6 +1448,12 @@ function DashboardView({
 }: {
   tasks: Task[]
   allTasks: Task[]
+  /**
+   * The unfiltered corpus, for the Track panel only. `allTasks` deliberately
+   * has quotas removed (they are not tasks, §5), and the panel is the one
+   * place on this page that needs them.
+   */
+  quotaSource: Task[]
   projects: Project[]
   grouping: GroupingMode
   onGroupingChange: (grouping: GroupingMode) => void
@@ -1734,8 +1758,10 @@ function DashboardView({
 
         {/* §5: the quotas' instrument panel — above the list on every view of
             the Tasks page ("wherever they go, it can't be buried"), unaffected
-            by list filters. Hidden while searching so results stay results. */}
-        {!searchQuery && <TrackPanel tasks={allTasks} />}
+            by list filters. Hidden while searching so results stay results.
+            Fed the UNFILTERED corpus, not `allTasks`: quotas are exactly what
+            `allTasks` now drops, so passing it would empty this panel. */}
+        {!searchQuery && <TrackPanel tasks={quotaSource} />}
 
         <TaskList
           tasks={tasks}

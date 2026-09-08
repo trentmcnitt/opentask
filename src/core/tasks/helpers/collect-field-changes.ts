@@ -8,7 +8,9 @@
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence } from '@/core/recurrence'
-import { NotFoundError, ForbiddenError } from '@/core/errors'
+import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
+import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
+import { isTracked } from '@/lib/track'
 
 /** Extended input type that supports additive/subtractive label operations and origin reset */
 export type FieldChangesInput = TaskUpdateInput & {
@@ -78,8 +80,39 @@ function trackField<K extends keyof Task>(
  * @returns Field change data ready for SQL execution
  */
 export function collectFieldChanges(options: CollectFieldChangesOptions): FieldChangeData {
-  const { task, input, userId, userTimezone, skipProjectValidation = false } = options
+  const { task, userId, userTimezone, skipProjectValidation = false } = options
   const now = options.now ?? new Date()
+
+  // §5: what this update leaves behind — a quota, or an ordinary task.
+  //
+  // Asked of the RESULTING row rather than of the payload, the way the
+  // reminder/track exclusivity check in updateTask is: `is_tracked: false` on
+  // its own retires a quota, and `is_tracked: true` on its own converts a task
+  // into one, and neither request mentions the other's fields.
+  const wasTracked = isTracked(task)
+  const willBeTracked = isTracked({
+    is_tracked: options.input.is_tracked ?? task.is_tracked,
+    progress_target: options.input.progress_target ?? task.progress_target,
+  })
+
+  // A quota has no due date, so it cannot be given one — by a snooze, by the
+  // task editor, or by a bulk edit that swept it up.
+  if (willBeTracked && options.input.due_at) {
+    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  }
+
+  // Retiring a quota takes its rule with it.
+  //
+  // A quota's rule is a bare period rule ("FREQ=WEEKLY"), legal only while the
+  // row is tracked (`periodRuleOnlyWhenTracked`). Left behind on the retired
+  // task it would be evaluated as a schedule — and with no due_at to anchor
+  // it, `effectiveDueAt` asks rrule.js for today's occurrence of a bare weekly
+  // rule, which lands on an arbitrary weekday. Clearing it here rather than in
+  // updateTask means bulk edit retires correctly too.
+  const input: FieldChangesInput =
+    wasTracked && !willBeTracked && options.input.rrule === undefined
+      ? { ...options.input, rrule: null }
+      : options.input
 
   const data: FieldChangeData = {
     setClauses: [],
@@ -94,12 +127,44 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   collectBasicFields(data, task, input, userId, skipProjectValidation)
 
   // Track rrule changes with anchor derivation
-  const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now)
+  const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
 
   // Track due_at changes with snooze detection
   collectDueAtChanges(data, task, input, rruleChanged)
 
+  // Whatever date the row still carried, drop it if it is (or is becoming) a quota
+  collectQuotaDateClear(data, task, willBeTracked)
+
   return data
+}
+
+/**
+ * §5: a quota carries no date, whether it was just converted into one or has
+ * been one all along.
+ *
+ * Runs last, and only when nothing above already decided `due_at`, so an
+ * explicit `due_at: null` in the payload is not written twice. Because it
+ * looks at the row rather than the payload it is also self-healing: a legacy
+ * quota that still holds a date from before the migration loses it the first
+ * time anything about it is edited.
+ *
+ * `original_due_at` goes with it — it is the occurrence origin of a due date
+ * that no longer exists, and left behind it makes `is_snoozed` true on a row
+ * that cannot be snoozed.
+ */
+function collectQuotaDateClear(data: FieldChangeData, task: Task, willBeTracked: boolean): void {
+  if (!willBeTracked) return
+  if (data.afterState.due_at !== undefined) return
+
+  if (task.due_at !== null) {
+    trackField(data, 'due_at', task.due_at, null)
+  }
+  if (task.original_due_at !== null && !data.fieldsChanged.includes('original_due_at')) {
+    data.setClauses.push('original_due_at = NULL')
+    data.fieldsChanged.push('original_due_at')
+    data.beforeState.original_due_at = task.original_due_at
+    data.afterState.original_due_at = null
+  }
 }
 
 /**
@@ -247,12 +312,44 @@ function collectRruleChanges(
   input: FieldChangesInput,
   userTimezone: string,
   now: Date,
+  willBeTracked: boolean,
 ): boolean {
   if (input.rrule === undefined || input.rrule === task.rrule) {
     return false
   }
 
   trackField(data, 'rrule', task.rrule, input.rrule)
+
+  // When an rrule change takes the occurrence origin with it — and when it
+  // must not.
+  //
+  // The origin belongs to the schedule the task had, so a change to a NEW
+  // schedule drops it. That has always been true. Clearing the rule to null was
+  // added on 2026-09-08 for `{ rrule: null, due_at: X }` — "clear recurrence and
+  // pick a date", which is a re-schedule and must not read as a snooze — but it
+  // was applied to EVERY clear, and that was too wide: `{ rrule: null }` alone
+  // on a genuinely snoozed recurring task (snooze_count 2, origin = the
+  // pre-snooze date) kept the deferred `due_at` and the count while losing the
+  // origin, so the row stopped drawing its snoozed stripe and the quick panel's
+  // age anchor jumped back to `created_at`. A date has to be arriving in the
+  // same request for the clear to mean a re-schedule.
+  //
+  // An explicit `reset_original_due_at` always wins: it is the user saying what
+  // the origin is, in the same breath. `collectBasicFields` has already pushed
+  // it, and SQLite takes the last clause, so without this guard the reset was
+  // silently overridden — including on the pre-existing `{ reset, rrule: <new
+  // rule> }` path.
+  const rruleTakesTheOrigin =
+    !input.reset_original_due_at && (input.rrule !== null || input.due_at != null)
+
+  if (rruleTakesTheOrigin && task.original_due_at) {
+    data.setClauses.push('original_due_at = NULL')
+    if (!data.fieldsChanged.includes('original_due_at')) {
+      data.fieldsChanged.push('original_due_at')
+      data.beforeState.original_due_at = task.original_due_at
+    }
+    data.afterState.original_due_at = null
+  }
 
   if (input.rrule === null) {
     // Clearing recurrence - null out anchor fields and reset recurrence_mode
@@ -301,16 +398,6 @@ function collectRruleChanges(
     }
     data.afterState.anchor_dom = anchors.anchor_dom
 
-    // Clear original_due_at when rrule changes
-    if (task.original_due_at) {
-      data.setClauses.push('original_due_at = NULL')
-      if (!data.fieldsChanged.includes('original_due_at')) {
-        data.fieldsChanged.push('original_due_at')
-        data.beforeState.original_due_at = task.original_due_at
-      }
-      data.afterState.original_due_at = null
-    }
-
     // Only auto-compute due_at if:
     // 1. User didn't explicitly pass due_at
     // 2. Task is NOT overdue (due_at is in the future or null) — an overdue
@@ -320,8 +407,14 @@ function collectRruleChanges(
     // just frozen at its last occurrence, so its due_at follows the new
     // schedule: the reminder editor's "move it to the evening" must not leave
     // a due date claiming last Tuesday's morning.
+    //
+    // A quota (§5) is skipped entirely: it has no due date to compute, and its
+    // rule is a bare period rule that rrule.js would place on an arbitrary
+    // weekday. This is what the quota editor's "one field this editor promises
+    // not to touch" note used to be working around — it sent the rule and the
+    // server stamped a date behind it.
     const isOverdue = task.due_at && new Date(task.due_at) < now
-    if (input.due_at === undefined && (!isOverdue || task.is_reminder)) {
+    if (!willBeTracked && input.due_at === undefined && (!isOverdue || task.is_reminder)) {
       const nextOccurrence = computeFirstOccurrence(input.rrule, anchors.anchor_time, userTimezone)
       const nextDueAt = nextOccurrence.toISOString()
 
@@ -362,19 +455,36 @@ function collectDueAtChanges(
   if (rruleChanged) {
     // Only process due_at if:
     // 1. rrule is being cleared to null, AND
-    // 2. due_at is explicitly being set to null, AND
+    // 2. due_at is explicitly present in the input, AND
     // 3. due_at wasn't already processed by collectRruleChanges
-    const isClearingRruleAndDueAt =
-      input.rrule === null && input.due_at === null && data.afterState.due_at === undefined
-    if (!isClearingRruleAndDueAt) return
+    //
+    // Clearing the rule is the one case where `collectRruleChanges` computes
+    // nothing, so an explicit date in the same request has to be applied here
+    // or it is silently dropped. That used to be limited to `due_at: null`,
+    // which was enough while the only caller was "clear both"; retiring a
+    // quota now injects `rrule: null` of its own accord, so
+    // `{ is_tracked: false, due_at: <date> }` — retire this and give it a real
+    // date — would otherwise lose the date.
+    const isClearingRruleWithExplicitDueAt =
+      input.rrule === null && input.due_at !== undefined && data.afterState.due_at === undefined
+    if (!isClearingRruleWithExplicitDueAt) return
   }
   if (input.due_at === undefined || input.due_at === task.due_at) return
 
   trackField(data, 'due_at', task.due_at, input.due_at)
 
   // Apply snooze logic if task had a previous due_at and is being moved to a new date
-  // (not when clearing due_at to null — that's not a snooze)
-  if (task.due_at !== null && input.due_at !== null) {
+  // (not when clearing due_at to null — that's not a snooze).
+  //
+  // Never when the rrule changed in the same request: that is a RE-SCHEDULE,
+  // not a deferral. `{ rrule: null, due_at: <date> }` is exactly what the quick
+  // panel sends when a user clears recurrence and picks a date, and it only
+  // started reaching this branch when the guard above was widened from
+  // `due_at === null` to "any explicit date" — before that the payload lost its
+  // date instead. Without this it would bump `snooze_count`, back-fill
+  // `original_due_at`, fire the snooze stat and the `snooze` activity entry,
+  // and draw the snoozed indicator on a row nobody snoozed.
+  if (!rruleChanged && task.due_at !== null && input.due_at !== null) {
     data.isSnoozeScenario = true
 
     // Set original_due_at if not already set (preserve existing)

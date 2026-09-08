@@ -50,6 +50,14 @@ const VALID_TASK_COLUMNS = new Set([
   'progress_target',
   'progress_current',
   'skip_count',
+  // §5: the explicit quota flag. Missing here until 2026-09-08, which was not
+  // merely "undo does nothing": this allowlist THROWS on an unknown field, and
+  // `undoEntry` runs inside the caller's transaction, so the throw rolled back
+  // the `undone = 1` write too. The entry stayed at `undone = 0` and every
+  // later Undo found it again — one retire wedged the whole stack. Reached by
+  // retiring a quota (`is_tracked: false`) and by the quota editor, which
+  // sends `is_tracked: true` whenever the target or period is touched.
+  'is_tracked',
   // §6
   'is_reminder',
 ])
@@ -98,6 +106,12 @@ export function applyFieldsToTask(
         // Same reason as `done`: SQLite has no boolean type (§6).
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_reminder?: boolean }).is_reminder ? 1 : 0)
+      } else if (dbColumn === 'is_tracked') {
+        // Same reason again (§5). The snapshot holds the domain value, because
+        // `trackField` records `true`/`false` while binding 0/1 to the column —
+        // so without this branch better-sqlite3 refuses the raw JS boolean.
+        setClauses.push(`${dbColumn} = ?`)
+        values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
       } else {
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as Record<string, unknown>)[stateKey])

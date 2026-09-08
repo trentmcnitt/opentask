@@ -18,6 +18,7 @@ import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
 import { formatDurationDelta } from '@/lib/format-date'
+import { validateLabelsExist } from '@/core/labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import {
@@ -210,11 +211,9 @@ function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkS
   // that bulk paths must not modal-block, and per L1 sweep participation
   // carries no per-item intent to confirm.
   //
-  // §5: a quota is never late either. It carries a vestigial `due_at` (the iOS
-  // widget draws its pace tick from it), and the counts stopped calling that
-  // overdue on 2026-09-06 — so a sweep that still moved it would have been
-  // rescheduling items the app says are never overdue, and shifting the exact
-  // timestamp the widget reads. Counted with the reminders as "not debt".
+  // §5: a quota is never late either — since 2026-09-08 it has no `due_at` at
+  // all, so there is nothing for a sweep to move. Counted with the reminders as
+  // "not debt".
   const snoozable = tasks.filter((t) => !t.is_reminder && !isTracked(t))
   const reminderSkipped = tasks.length - snoozable.length
 
@@ -454,6 +453,28 @@ export interface BulkEditResult {
 }
 
 /**
+ * §7.2: a label typed while editing SEVERAL rows has to reach the registry.
+ *
+ * `collectFieldChanges` writes `labels` as raw SQL, so a name that exists on no
+ * other task was written to every selected row and then known to nothing: the
+ * next editor did not offer the chip, and the filter bar had no idea it
+ * existed. The Quotas page routes any selection of two or more through this
+ * endpoint, so "select two quotas → Label → + New → kids → Save" was exactly
+ * the broken case.
+ *
+ * Only when the caller asks. `validateLabelsExist` THROWS on an unknown name
+ * without the flag, and this endpoint has never validated labels at all —
+ * turning that on for every existing caller would start rejecting writes that
+ * work today. `existing: []` because the flag means "register whatever is
+ * missing", independent of what the selected rows already carry.
+ */
+function registerBulkEditLabels(userId: number, changes: BulkEditChanges): void {
+  if (changes.create_label !== true) return
+  const incoming = [...(changes.labels ?? []), ...(changes.labels_add ?? [])]
+  if (incoming.length > 0) validateLabelsExist(userId, incoming, [], true)
+}
+
+/**
  * Bulk edit
  *
  * Applies the same changes to all specified tasks.
@@ -471,6 +492,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     ...(perTask?.[String(task.id)] ?? {}),
   })
 
+  registerBulkEditLabels(userId, changes)
+
   // Reject rrule changes on done tasks — setting rrule on a done+archived task creates
   // an impossible state (done=1 + rrule set) that the system never produces organically
   let rruleSkippedCount = 0
@@ -486,6 +509,26 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     }
   }
 
+  // §5: a quota has no due date, so a date-bearing batch skips it rather than
+  // failing. `collectFieldChanges` throws QUOTA_DUE_DATE_MESSAGE on a tracked
+  // row given a date, and one throw aborts the whole transaction — a mixed
+  // selection lost the plain tasks' edits too. The snooze path below already
+  // filtered quotas out through `filterForBulkSnooze`, but only for a date sent
+  // WITHOUT an rrule; `{ due_at, rrule }` together, and a per-task date, went
+  // straight through. Runs before that filter so the two never double-count.
+  let quotaSkippedCount = 0
+  const bearsDate =
+    changes.due_at != null ||
+    Object.values(perTask ?? {}).some((p) => (p as { due_at?: string | null }).due_at != null)
+  if (bearsDate) {
+    const beforeCount = tasks.length
+    tasks = tasks.filter((t) => !isTracked(t))
+    quotaSkippedCount = beforeCount - tasks.length
+    if (tasks.length === 0) {
+      return { tasksAffected: 0, tasksSkipped: rruleSkippedCount + quotaSkippedCount }
+    }
+  }
+
   // Priority filter for snooze edits — same logic as bulkSnooze (P3/P4 excluded).
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
@@ -496,7 +539,10 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     snoozeSkippedCount = tasks.length - eligible.length
     tasks = eligible
     if (tasks.length === 0) {
-      return { tasksAffected: 0, tasksSkipped: snoozeSkippedCount }
+      return {
+        tasksAffected: 0,
+        tasksSkipped: rruleSkippedCount + quotaSkippedCount + snoozeSkippedCount,
+      }
     }
   }
 
@@ -588,7 +634,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
     return {
       tasksAffected: snapshots.length,
-      tasksSkipped: snoozeSkippedCount + rruleSkippedCount,
+      tasksSkipped: snoozeSkippedCount + rruleSkippedCount + quotaSkippedCount,
     }
   })
 

@@ -26,14 +26,15 @@ export function countTasks(
   let today = 0
   for (const t of tasks) {
     if (!t.due_at) continue
-    // A quota is never late. It carries a `due_at` — vestigial, from before it
-    // was a quota, and still read by the iOS widget to draw its pace tick — but
-    // that date is not a promise: "four times this week" cannot be overdue on a
-    // Tuesday. The notifier already refuses to fire on tracked items
-    // (overdue-checker.ts, currently-due.ts); this makes the badges agree, so
-    // the app no longer shows a debt it would never chase (Trent, 2026-09-06:
-    // "I don't even know if they have reminders. Do they have times when
-    // they're reminded?" — no, and now nothing implies they do).
+    // A quota is never late: "four times this week" cannot be overdue on a
+    // Tuesday. Since 2026-09-08 a quota carries no `due_at` at all, so the line
+    // above normally settles it; this stays as the explicit statement of the
+    // rule, and catches a legacy row the migration has not reached yet. The
+    // notifier already refuses to fire on tracked items (overdue-checker.ts,
+    // currently-due.ts); this makes the badges agree, so the app no longer
+    // shows a debt it would never chase (Trent, 2026-09-06: "I don't even know
+    // if they have reminders. Do they have times when they're reminded?" — no,
+    // and now nothing implies they do).
     if (isTracked(t)) continue
     const due = new Date(t.due_at)
     if (due < now) overdue++

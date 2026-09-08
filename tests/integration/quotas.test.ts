@@ -108,3 +108,228 @@ describe('Quotas surface API', () => {
     expect(after.quotas.map((q: { id: number }) => q.id)).not.toContain(id)
   })
 })
+
+/**
+ * A quota is not a task (§5, Trent 2026-09-08): it has no due date and cannot
+ * be snoozed, and retiring one takes its period rule with it. Pinned over HTTP
+ * because each of these is a route contract an external caller depends on —
+ * the automation API and the iOS app both PATCH tasks.
+ */
+describe('A quota over HTTP has no date and no snooze', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function makeQuota(body: Record<string, unknown> = {}) {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY', ...body },
+    })
+    return { status: res.status, body: (await res.json()).data }
+  }
+
+  test('POST /api/tasks never stamps a due date on a quota', async () => {
+    const { status, body } = await makeQuota()
+    expect(status).toBe(201)
+    expect(body.due_at).toBeNull()
+    expect(body.original_due_at).toBeNull()
+    expect(body.is_snoozed).toBe(false)
+  })
+
+  test('POST /api/tasks refuses a quota that is given a due date', async () => {
+    const { status } = await makeQuota({ due_at: new Date().toISOString() })
+    expect(status).toBe(400)
+  })
+
+  test('POST /api/tasks/:id/snooze on a quota is a 400', async () => {
+    const { body: quota } = await makeQuota()
+    const res = await apiFetch(`/api/tasks/${quota.id}/snooze`, {
+      method: 'POST',
+      body: { until: new Date(Date.now() + 3_600_000).toISOString() },
+    })
+    expect(res.status).toBe(400)
+  })
+
+  test('PATCH converting a dated task into a quota clears the date', async () => {
+    const created = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Becomes a quota', due_at: new Date().toISOString() },
+        })
+      ).json()
+    ).data
+    expect(created.due_at).not.toBeNull()
+
+    const res = await apiFetch(`/api/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: { is_tracked: true, progress_target: 3, rrule: 'FREQ=WEEKLY' },
+    })
+    expect(res.status).toBe(200)
+    const patched = (await res.json()).data
+    expect(patched.due_at).toBeNull()
+    expect(patched.original_due_at).toBeNull()
+  })
+
+  test('POST /api/tasks/bulk/edit retiring a quota clears its period rule', async () => {
+    const { body: one } = await makeQuota({ title: 'Quota one' })
+    const { body: two } = await makeQuota({ title: 'Quota two' })
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id, two.id], changes: { is_tracked: false, progress_target: 1 } },
+    })
+    expect(res.status).toBe(200)
+
+    for (const id of [one.id, two.id]) {
+      const after = (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+      expect(after.is_tracked).toBe(false)
+      expect(after.rrule).toBeNull()
+      expect(after.due_at).toBeNull()
+    }
+  })
+
+  test('GET /api/tasks/counts does not count quotas at all', async () => {
+    const before = (await (await apiFetch('/api/tasks/counts')).json()).data
+    await makeQuota({ title: 'Uncounted quota' })
+    const after = (await (await apiFetch('/api/tasks/counts')).json()).data
+    expect(after).toEqual(before)
+  })
+})
+
+/**
+ * Review findings, 2026-09-08 — the two that are contracts an HTTP caller sees.
+ */
+describe('Quota review fixes over HTTP', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('retiring a quota then undoing it is a 200, not a wedged stack', async () => {
+    const quota = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          // The flag explicitly, so `is_tracked` reaches the undo snapshot's
+          // fieldsChanged — the field the allowlist used to throw on.
+          body: { title: 'Date night', is_tracked: true, rrule: 'FREQ=MONTHLY' },
+        })
+      ).json()
+    ).data
+
+    const retired = await apiFetch(`/api/tasks/${quota.id}`, {
+      method: 'PATCH',
+      body: { is_tracked: false },
+    })
+    expect(retired.status).toBe(200)
+
+    const undo = await apiFetch('/api/undo', { method: 'POST' })
+    expect(undo.status).toBe(200)
+
+    const after = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(after.is_tracked).toBe(true)
+    expect(after.rrule).toBe('FREQ=MONTHLY')
+
+    // The stack is not wedged: a second Undo consumes the entry BELOW this
+    // one (the create) rather than hitting the same failed row again.
+    const second = await apiFetch('/api/undo', { method: 'POST' })
+    expect(second.status).toBe(200)
+  })
+
+  test("a quota's response carries its period anchor", async () => {
+    const quota = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Workouts', progress_target: 4, rrule: 'FREQ=WEEKLY' },
+        })
+      ).json()
+    ).data
+
+    // Present and explicitly null — the iOS Track widget needs this field, not
+    // due_at, to know how far through its period a quota is.
+    expect(quota).toHaveProperty('progress_period_start')
+    expect(quota.progress_period_start).toBeNull()
+    expect(quota.due_at).toBeNull()
+
+    const fetched = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(fetched).toHaveProperty('progress_period_start')
+
+    const listed = (await (await apiFetch('/api/quotas')).json()).data.quotas
+    expect(listed.find((q: { id: number }) => q.id === quota.id)).toHaveProperty(
+      'progress_period_start',
+    )
+  })
+})
+
+/**
+ * §7.2, second review finding 1: a label typed while editing SEVERAL quotas
+ * goes through `POST /api/tasks/bulk/edit`, which writes `labels` as raw SQL
+ * and never registered it. The rows carried the name and the registry had never
+ * heard of it, so the next editor did not offer the chip.
+ */
+describe('Bulk edit registers a new label', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  async function makeQuota(title: string) {
+    return (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title, progress_target: 3, rrule: 'FREQ=WEEKLY' },
+        })
+      ).json()
+    ).data
+  }
+
+  const labelNames = async () =>
+    ((await (await apiFetch('/api/labels')).json()).data.labels as { name: string }[]).map(
+      (l) => l.name,
+    )
+
+  test('create_label on bulk/edit puts the name in the registry', async () => {
+    const one = await makeQuota('Quota one')
+    const two = await makeQuota('Quota two')
+    const fresh = `probe-${Date.now()}`
+    expect(await labelNames()).not.toContain(fresh)
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id, two.id], changes: { labels: [fresh], create_label: true } },
+    })
+    expect(res.status).toBe(200)
+
+    // Both rows carry it...
+    for (const id of [one.id, two.id]) {
+      const after = (await (await apiFetch(`/api/tasks/${id}`)).json()).data
+      expect(after.labels).toContain(fresh)
+    }
+    // ...and so does the registry, so the next editor offers the chip.
+    expect(await labelNames()).toContain(fresh)
+  })
+
+  test('labels_add registers too', async () => {
+    const one = await makeQuota('Quota three')
+    const fresh = `probe-add-${Date.now()}`
+
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id], changes: { labels_add: [fresh], create_label: true } },
+    })
+    expect(res.status).toBe(200)
+    expect(await labelNames()).toContain(fresh)
+  })
+
+  test('a caller that omits the flag is still accepted, as before', async () => {
+    // This endpoint has never validated labels. Registering on the flag must
+    // not turn every existing caller's unknown label into a rejection.
+    const one = await makeQuota('Quota four')
+    const res = await apiFetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      body: { ids: [one.id], changes: { labels: [`unregistered-${Date.now()}`] } },
+    })
+    expect(res.status).toBe(200)
+  })
+})

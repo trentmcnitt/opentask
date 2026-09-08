@@ -67,6 +67,15 @@ export interface Task {
   progress_target: number
   progress_current: number
   is_tracked: boolean
+  /**
+   * §5: the UTC instant the current period began, by the user's local calendar
+   * (Monday 00:00 for a week, the 1st for a month). Written by the period
+   * rollover job — see `src/core/tasks/period-rollover.ts` — and null until it
+   * first runs for a quota. This is a quota's ONLY anchor in time: it has no
+   * `due_at`, so anything computing how far through the period a quota is (the
+   * iOS Track widget's pace tick) must read this, not a date.
+   */
+  progress_period_start: string | null
 
   /**
    * §6: this item lives on the Reminders surface — a prompted thought rather

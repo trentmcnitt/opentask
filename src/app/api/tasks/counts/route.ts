@@ -14,17 +14,20 @@ import { success, unauthorized, handleError } from '@/lib/api-response'
 import { formatTasksResponse } from '@/lib/format-task'
 import { getTasks } from '@/core/tasks'
 import { countTasks } from '@/lib/task-counts'
+import { isTracked } from '@/lib/track'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request)
-    // Same query the Tasks page server-renders from, minus reminders — the
-    // page never counts those (§6: reminders are not debt), see the
-    // `visibleTasks` filter in DashboardClient.
+    // Same query the Tasks page server-renders from, minus the two populations
+    // that are not tasks: reminders (§6, not debt) and quotas (§5, counted
+    // within a period rather than due on a day). Both live on their own
+    // surfaces — see the `visibleTasks` filter in DashboardClient, which this
+    // has to agree with to the digit.
     const tasks = formatTasksResponse(getTasks({ userId: user.id, limit: 1000 })).filter(
-      (t) => !t.is_reminder,
+      (t) => !t.is_reminder && !isTracked(t),
     )
     return success(countTasks(tasks, user.timezone))
   } catch (err) {

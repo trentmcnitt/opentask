@@ -1336,3 +1336,56 @@ describe('AI activity log table', () => {
     expect(rows[0].status).toBe('success')
   })
 })
+
+/**
+ * §5, review finding 2026-09-08: enrichment writes `due_at`, `rrule` and the
+ * derived anchors with raw SQL, so it bypasses the quota guards in
+ * `collectFieldChanges` entirely. Two ways in: a user re-enriches a quota by
+ * adding `ai-to-process`, or an enrichment is in flight while the task is
+ * converted into one. `applyEnrichment` re-reads the task before writing, so
+ * the guard sits on that re-read.
+ */
+describe('enrichment leaves a quota dateless', () => {
+  beforeEach(() => clearPendingEnrichment())
+
+  test('a date and a schedule from the model are dropped on a tracked task', async () => {
+    const quota = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'eat beef four times a week', progress_target: 4, rrule: 'FREQ=WEEKLY' },
+    })
+    expect(getTaskById(quota.id)!.due_at).toBeNull()
+
+    // Re-enrichment: the user adds the trigger label back by hand.
+    getDb()
+      .prepare(
+        "UPDATE tasks SET labels = json_insert(labels, '$[#]', 'ai-to-process') WHERE id = ?",
+      )
+      .run(quota.id)
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({
+        title: 'Eat beef',
+        priority: 2,
+        labels: [],
+        due_at: '2026-02-20T08:00:00',
+        rrule: 'FREQ=WEEKLY;BYDAY=TU',
+        recurrence_mode: 'from_completion',
+      }),
+    )
+
+    await processEnrichmentQueue()
+
+    const after = getTaskById(quota.id)!
+    // Nothing schedule-shaped landed...
+    expect(after.due_at).toBeNull()
+    expect(after.original_due_at).toBeNull()
+    expect(after.rrule).toBe('FREQ=WEEKLY')
+    expect(after.anchor_dow).toBeNull()
+    expect(after.recurrence_mode).toBe('from_due')
+    // ...but the fields that mean the same thing on a quota still did.
+    expect(after.title).toBe('Eat beef')
+    expect(after.priority).toBe(2)
+    expect(after.labels).not.toContain('ai-to-process')
+  })
+})

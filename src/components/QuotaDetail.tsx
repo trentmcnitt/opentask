@@ -5,7 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { trackState, quotaFreqOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
+import { trackState, quotaFreqOf, quotaLabelOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
+import { isReservedLabel } from '@/lib/label-vocabulary'
+import { useDomainLabels } from '@/hooks/useDomainLabels'
+import { useLabelConfig } from '@/components/PreferencesProvider'
+import { getLabelClasses } from '@/lib/label-colors'
 import type { Task } from '@/types'
 
 /**
@@ -23,8 +27,9 @@ import type { Task } from '@/types'
  * left alone stays per-quota, and a period the selection disagrees about shows
  * nothing pressed until one is chosen.
  *
- * The `due_at` these rows still carry is deliberately untouched — the iOS Track
- * widget reads it for its pace tick (`TrackWidget.elapsedFraction`).
+ * A quota carries no `due_at` at all since 2026-09-08 (§5, Trent: "a quota is
+ * not a task"): the server refuses to stamp one, refuses to accept one, and
+ * the startup migration cleared the stale dates these rows used to hold.
  */
 
 /**
@@ -35,6 +40,14 @@ import type { Task } from '@/types'
  * the first time its target was touched.
  */
 type QuotaPeriod = QuotaFreq
+
+/**
+ * The label being edited. THREE states, and they are all different things:
+ * a name, `null` for "no label", and `undefined` for "the selection disagrees".
+ * Collapsing the last two would make it impossible to clear the label off a
+ * mixed selection — the same trap the nullable `period` above documents.
+ */
+type QuotaLabelChoice = string | null | undefined
 
 export interface QuotaCreateDraft {
   title: string
@@ -47,6 +60,10 @@ export interface QuotaChanges {
   progress_target?: number
   is_tracked?: true
   rrule?: string
+  /** Always zero or one entry — a quota has ONE label (§5, Trent 2026-09-08). */
+  labels?: string[]
+  /** §7.2's opt-in: register a name the registry has never seen, in this write. */
+  create_label?: true
 }
 
 export interface QuotaDetailProps {
@@ -83,32 +100,20 @@ export function QuotaDetail({
   const single = tasks.length === 1 ? tasks[0] : null
 
   /** What the selection agrees on; '' / null where it does not. */
-  const base = useMemo(() => {
-    if (creating)
-      return {
-        title: create?.title ?? '',
-        target: '3',
-        period: 'WEEKLY' as QuotaPeriod | null,
-        notes: '',
-        allPeriodless: false,
-      }
-    const targets = new Set(tasks.map((t) => String(Math.max(1, t.progress_target ?? 1))))
-    const periods = new Set(tasks.map((t) => quotaFreqOf(t.rrule)))
-    return {
-      title: single?.title ?? '',
-      target: targets.size === 1 ? [...targets][0] : '',
-      period: periods.size === 1 ? [...periods][0] : null,
-      notes: single?.notes ?? '',
-      // Every selected quota genuinely has no period, as opposed to the
-      // selection disagreeing about which one it is.
-      allPeriodless: periods.size === 1 && [...periods][0] === null,
-    }
-  }, [creating, create, tasks, single])
+  const base = useMemo(
+    () => describeBase({ creating, create, tasks, single }),
+    [creating, create, tasks, single],
+  )
 
   const [title, setTitle] = useState(base.title)
   const [target, setTarget] = useState(base.target)
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
+  const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
   const [notes, setNotes] = useState(base.notes)
+
+  // The registry is the option list. `reload` runs after a save that registered
+  // a new name, so the next quota edited in the same session is offered it.
+  const { labels: registeredLabels, reload: reloadLabels } = useDomainLabels()
 
   const {
     targetNumber,
@@ -116,10 +121,11 @@ export function QuotaDetail({
     notesTouched,
     targetTouched,
     periodTouched,
+    labelTouched,
     dirty,
     targetOk,
     canSave,
-  } = describeDraft({ creating, base, title, target, period, notes })
+  } = describeDraft({ creating, base, title, target, period, label, notes })
 
   // Report dirtiness, and report clean on the way out: the modal unmounts this
   // when it closes, and without the unmount clear the host stayed "dirty" until
@@ -148,9 +154,9 @@ export function QuotaDetail({
     //
     // Sending it on any schedule edit flattened whatever else the rule carried:
     // a quota on FREQ=WEEKLY;INTERVAL=2 silently became every week, and a BYDAY
-    // was dropped — and because the rrule then differed, the server re-derived
-    // anchors and recomputed `due_at`, the one field this editor promises not
-    // to touch because the iOS widget's pace tick reads it.
+    // was dropped. (It also made the server re-derive anchors and recompute a
+    // `due_at` behind the editor's back — that half is now fixed at the source:
+    // a tracked row never gets a computed date.)
     //
     // It also means a quota with NO period, and a selection that disagrees
     // about its period, can both have their target edited while each keeps its
@@ -160,6 +166,18 @@ export function QuotaDetail({
       changes.is_tracked = true
       if (period !== null) changes.rrule = `FREQ=${period}`
     }
+    // The label goes ONLY when it was actually chosen, for the same reason the
+    // rule does: six quotas on this corpus still carry TWO labels from before
+    // one-label-per-quota, and the migration deliberately left them alone.
+    // Editing such a quota's target must not quietly drop its second label —
+    // but choosing a label does, which is the point of the rule.
+    if (labelTouched && label !== undefined) {
+      changes.labels = label ? [label] : []
+      // §7.2: an unknown label is refused unless the write says to create it.
+      // This is the flag the API documents for exactly this case, rather than
+      // a separate round-trip to the registry endpoint.
+      if (label && !registeredLabels.includes(label)) changes.create_label = true
+    }
     return changes
   }, [
     creating,
@@ -167,10 +185,13 @@ export function QuotaDetail({
     notesTouched,
     targetTouched,
     periodTouched,
+    labelTouched,
     title,
     notes,
     targetNumber,
     period,
+    label,
+    registeredLabels,
   ])
 
   const [saving, setSaving] = useState(false)
@@ -185,6 +206,8 @@ export function QuotaDetail({
       const changes = buildChanges()
       if (creating) await onCreate?.(changes)
       else await onSave?.(changes)
+      // The write just minted a label; the option list is now one short.
+      if (changes.create_label) reloadLabels()
       // Adopt what was actually SENT, not what was typed. The request trims,
       // so a stray trailing space left `base` and the field disagreeing
       // forever: a fully saved quota kept its blue stripe and kept raising the
@@ -199,7 +222,7 @@ export function QuotaDetail({
     } finally {
       setSaving(false)
     }
-  }, [canSave, saving, buildChanges, creating, onCreate, onSave])
+  }, [canSave, saving, buildChanges, creating, onCreate, onSave, reloadLabels])
 
   useEffect(() => {
     if (!saveRef) return
@@ -213,6 +236,7 @@ export function QuotaDetail({
     setTitle(base.title)
     setTarget(base.target)
     setPeriod(base.period)
+    setLabel(base.label)
     setNotes(base.notes)
   }
 
@@ -241,6 +265,8 @@ export function QuotaDetail({
         onPeriodChange={setPeriod}
         showError={targetTouched && !targetOk}
       />
+
+      <LabelField value={label} onChange={setLabel} registered={registeredLabels} />
 
       {(creating || single) && <NotesField value={notes} onChange={setNotes} />}
 
@@ -313,6 +339,159 @@ function CadenceField({
         <p className="text-destructive text-xs">A target is a whole number from 1 to 1000.</p>
       )}
     </fieldset>
+  )
+}
+
+/**
+ * The quota's ONE label — the grouping the Quotas page reads.
+ *
+ * Trent, 2026-09-08: "I think we need to have one label for quotas… there's a
+ * bunch of stuff for the kids and there are other things." So this is
+ * single-select, not the task editor's multi-label chip bar: picking a second
+ * label replaces the first rather than adding to it, because the page files
+ * each quota in exactly one place.
+ *
+ * Options are the DOMAIN facet of the label registry (§7.2) — the `ai-*`
+ * operational labels are machinery and are never offered. "None" is a real
+ * choice and sits first. A name that is not in the registry can be typed, and
+ * is registered by the save itself (`create_label`); it is added to the chips
+ * immediately so the pressed state has something to be pressed on.
+ *
+ * Chips rather than a select, matching `CadenceField` directly above it: this
+ * editor's whole vocabulary is chips, and a thirteen-label registry wraps into
+ * two lines. Colours come from `label_config` through `getLabelClasses`, the
+ * same call the filter bar and the task editor make, so a label looks the same
+ * everywhere it appears.
+ */
+function LabelField({
+  value,
+  onChange,
+  registered,
+}: {
+  value: QuotaLabelChoice
+  onChange: (value: string | null) => void
+  registered: string[]
+}) {
+  const { labelConfig } = useLabelConfig()
+  const [typing, setTyping] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  // The current value is always offered, even when the registry has never
+  // heard of it: a quota carrying a legacy label must be able to keep it, and
+  // a name typed a moment ago must show as chosen before the registry reloads.
+  //
+  // Except a RESERVED one. `ai-*` labels are machinery — enrichment writes
+  // `ai-failed`, creation writes `ai-to-process` — and a quota that happens to
+  // carry one is not thereby filed under it. Offering it as a chip invited the
+  // user to hand-assign a processing state; `quotaLabelOf` skips them for the
+  // same reason, so such a quota reads as unlabelled here and "None" is what
+  // shows as chosen.
+  const options = useMemo(() => {
+    const names = new Set(registered.filter((n) => !isReservedLabel(n)))
+    if (value && !isReservedLabel(value)) names.add(value)
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [registered, value])
+
+  function commitDraft() {
+    const typed = draft.trim()
+    setTyping(false)
+    setDraft('')
+    if (!typed) return
+    // Typing a name the registry already has in another case reuses ITS
+    // spelling rather than creating a variant. The registry's UNIQUE is
+    // case-sensitive, so "Kids" typed against an existing "kids" would become a
+    // second row, a second chip and — before `groupByLabel` started keying
+    // case-insensitively — a second group with an identical header. Fixing the
+    // grouping hides that; this stops making them.
+    const existing = registered.find((n) => n.toLowerCase() === typed.toLowerCase())
+    onChange(existing ?? typed)
+  }
+
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium">Label</legend>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {/* Mixed selection: nothing is pressed, and the em dash says why —
+            the same mark the task panel uses for a mixed field. */}
+        {value === undefined && <span className="text-muted-foreground text-sm">—</span>}
+        <LabelChip
+          name="None"
+          pressed={value === null}
+          onClick={() => onChange(null)}
+          testValue="none"
+        />
+        {options.map((name) => (
+          <LabelChip
+            key={name}
+            name={name}
+            pressed={value === name}
+            onClick={() => onChange(name)}
+            colorClasses={getLabelClasses(name, labelConfig)}
+            testValue={name}
+          />
+        ))}
+        {typing ? (
+          <Input
+            aria-label="New label"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            // Blur commits rather than cancels: on a phone, "type the name then
+            // reach for Save" is the ordinary gesture, and throwing the name
+            // away at that moment would look like the field ignoring the user.
+            // Escape is the way out, and it is the only way out.
+            onBlur={commitDraft}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitDraft()
+              }
+              if (e.key === 'Escape') {
+                setTyping(false)
+                setDraft('')
+              }
+            }}
+            placeholder="New label"
+            className="h-8 w-32 text-[16px]"
+          />
+        ) : (
+          <LabelChip name="+ New" pressed={false} onClick={() => setTyping(true)} testValue="new" />
+        )}
+      </div>
+    </fieldset>
+  )
+}
+
+function LabelChip({
+  name,
+  pressed,
+  onClick,
+  colorClasses,
+  testValue,
+}: {
+  name: string
+  pressed: boolean
+  onClick: () => void
+  colorClasses?: string | null
+  testValue: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      data-quota-label-chip={testValue}
+      className={cn(
+        'rounded-full border px-3 py-1 text-sm transition-colors',
+        pressed
+          ? 'border-foreground bg-foreground text-background'
+          : colorClasses
+            ? `${colorClasses} border-current/20`
+            : 'hover:border-foreground/40',
+      )}
+    >
+      {name}
+    </button>
   )
 }
 
@@ -392,6 +571,58 @@ function QuotaActions({
 }
 
 /**
+ * What the editor OPENS on: the stored state, reduced across the selection.
+ *
+ * Every field has to answer three things rather than two — a shared value, a
+ * shared absence, and disagreement — and it is the middle one that keeps
+ * getting lost: a period-less quota once read back as weekly, so editing its
+ * target rewrote its schedule. `null` therefore means "genuinely none" and is
+ * a real answer; only `undefined` (label) or an empty string (target) means
+ * "they differ, do not touch this".
+ *
+ * Module-level and pure, next to `describeDraft`, which does the same job for
+ * the edited half — the component stays layout plus state.
+ */
+function describeBase({
+  creating,
+  create,
+  tasks,
+  single,
+}: {
+  creating: boolean
+  create?: QuotaCreateDraft | null
+  tasks: Task[]
+  single: Task | null
+}) {
+  if (creating)
+    return {
+      title: create?.title ?? '',
+      target: '3',
+      period: 'WEEKLY' as QuotaPeriod | null,
+      // A new quota starts unlabelled — `null`, not `undefined`: nothing is in
+      // disagreement, the answer is simply "none".
+      label: null as QuotaLabelChoice,
+      notes: '',
+      allPeriodless: false,
+    }
+  const targets = new Set(tasks.map((t) => String(Math.max(1, t.progress_target ?? 1))))
+  const periods = new Set(tasks.map((t) => quotaFreqOf(t.rrule)))
+  const labels = new Set(tasks.map(quotaLabelOf))
+  return {
+    title: single?.title ?? '',
+    target: targets.size === 1 ? [...targets][0] : '',
+    period: periods.size === 1 ? [...periods][0] : null,
+    // One agreed label (or one agreed "none"); `undefined` when they differ, so
+    // picking "None" on a mixed selection still reads as a change.
+    label: (labels.size === 1 ? [...labels][0] : undefined) as QuotaLabelChoice,
+    notes: single?.notes ?? '',
+    // Every selected quota genuinely has no period, as opposed to the selection
+    // disagreeing about which one it is.
+    allPeriodless: periods.size === 1 && [...periods][0] === null,
+  }
+}
+
+/**
  * What the draft is, and whether it can be saved — pulled out of the component
  * because it is nearly all of its branching.
  *
@@ -407,6 +638,7 @@ function describeDraft({
   title,
   target,
   period,
+  label,
   notes,
 }: {
   creating: boolean
@@ -414,12 +646,14 @@ function describeDraft({
     title: string
     target: string
     period: QuotaPeriod | null
+    label: QuotaLabelChoice
     notes: string
     allPeriodless: boolean
   }
   title: string
   target: string
   period: QuotaPeriod | null
+  label: QuotaLabelChoice
   notes: string
 }) {
   const targetNumber = Number.parseInt(target, 10)
@@ -427,7 +661,8 @@ function describeDraft({
   const periodTouched = period !== base.period
   const titleTouched = title !== base.title
   const notesTouched = notes !== base.notes
-  const dirty = titleTouched || notesTouched || targetTouched || periodTouched
+  const labelTouched = label !== base.label
+  const dirty = titleTouched || notesTouched || targetTouched || periodTouched || labelTouched
   const targetOk = target.length > 0 && targetNumber >= 1 && targetNumber <= 1000
   // Creating needs a title, a valid target and a period. Editing needs only
   // what is being changed to be valid — a period-less quota, and a selection
@@ -442,6 +677,7 @@ function describeDraft({
     notesTouched,
     targetTouched,
     periodTouched,
+    labelTouched,
     dirty,
     targetOk,
     canSave,

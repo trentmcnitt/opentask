@@ -8,6 +8,7 @@
 
 import type { Task } from '@/types'
 import { computeNextOccurrence, isRecurring } from '@/core/recurrence'
+import { isTracked } from '@/lib/track'
 
 export interface MarkDoneStats {
   completionCount: number
@@ -17,7 +18,11 @@ export interface MarkDoneStats {
 
 export interface RecurringComputation {
   type: 'recurring'
-  nextDueAt: string
+  /**
+   * Null for a quota (§5): it has no due date, so the boundary advances
+   * nothing. See the tracked branch in `computeMarkDone`.
+   */
+  nextDueAt: string | null
   prevDueAt: string | null
   stats: MarkDoneStats
   fieldsChanged: string[]
@@ -57,18 +62,26 @@ export function computeMarkDone(
   }
 
   if (isRecurring(task.rrule)) {
-    const nextOccurrence = computeNextOccurrence({
-      rrule: task.rrule!,
-      recurrenceMode: task.recurrence_mode,
-      anchorTime: task.anchor_time,
-      timezone: userTimezone,
-      completedAt,
-      prevDueAt: task.due_at ? new Date(task.due_at) : null,
-    })
+    // §5: a quota has no due date, so there is no occurrence to advance — the
+    // boundary here is only the progress reset below. Asking anyway would be
+    // wrong twice over: a quota's rule is a bare period rule ("FREQ=WEEKLY")
+    // with no anchor and no previous date, so rrule.js would place the "next
+    // occurrence" on an arbitrary weekday and write that date back onto a row
+    // that is not supposed to have one.
+    const nextOccurrence = isTracked(task)
+      ? null
+      : computeNextOccurrence({
+          rrule: task.rrule!,
+          recurrenceMode: task.recurrence_mode,
+          anchorTime: task.anchor_time,
+          timezone: userTimezone,
+          completedAt,
+          prevDueAt: task.due_at ? new Date(task.due_at) : null,
+        })
 
     return {
       type: 'recurring',
-      nextDueAt: nextOccurrence.toISOString(),
+      nextDueAt: nextOccurrence?.toISOString() ?? null,
       prevDueAt: task.due_at,
       stats,
       fieldsChanged: [

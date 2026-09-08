@@ -7,6 +7,7 @@
 
 import { getTasks } from '@/core/tasks'
 import { getProjectNameMap } from '@/core/projects'
+import { isTracked } from '@/lib/track'
 import type { TaskSummary } from './types'
 
 /**
@@ -14,9 +15,16 @@ import type { TaskSummary } from './types'
  *
  * Fetches the user's active (not done) tasks and enriches them with
  * project names using a single bulk query instead of per-task lookups.
+ *
+ * Quotas are not candidates (§5). What's-Next and Insights answer questions
+ * about the task list, and a quota is not in it — recommending one would
+ * return an id the dashboard cannot show, which inflates the AI chip's count
+ * and points it at a row that isn't there. "Four times this week" also has
+ * none of the inputs these features reason over: no due date, no deadline, no
+ * debt.
  */
 export function buildTaskSummaries(userId: number): TaskSummary[] {
-  const tasks = getTasks({ userId, done: false })
+  const tasks = getTasks({ userId, done: false }).filter((t) => !isTracked(t))
   if (tasks.length === 0) return []
 
   // Pre-fetch all project names in one query to avoid N+1

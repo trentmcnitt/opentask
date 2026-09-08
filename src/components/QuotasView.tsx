@@ -10,8 +10,10 @@ import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import type { QuotaChanges, QuotaCreateDraft } from '@/components/QuotaDetail'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
-import { trackSummary, groupByPeriod, periodShort } from '@/lib/track'
+import { quotaGroupSummary, groupByLabel, periodLabel, periodShort } from '@/lib/track'
 import { trackedItems } from '@/lib/slot-view'
+import { useLabelConfig } from '@/components/PreferencesProvider'
+import { getLabelClasses } from '@/lib/label-colors'
 import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
@@ -31,10 +33,14 @@ import type { Task } from '@/types'
  * invented all of that separately and got every one of them different; the
  * rule is copy the pattern, then justify each deviation.
  *
- * The grouping is the dashboard's own: quotas sit under their period, with the
- * same header word and the same progress bar, using `groupByPeriod` from
- * TrackPanel rather than a second copy of it. That is also why the period is
- * no longer repeated on every row — the card it sits in already says it.
+ * The grouping is by LABEL (Trent, 2026-09-08: "I think we need to have one
+ * label for quotas… there's a bunch of stuff for the kids and there are other
+ * things"). This page is where quotas are worked on as a set, and the set that
+ * matters there is the domain — kids, health, house — not the cadence. The
+ * dashboard's Track panel keeps `groupByPeriod`: it answers "what is left this
+ * week", where the period IS the question. So the two surfaces group
+ * differently on purpose, and each row here carries its own period tag, since
+ * a label group mixes days, weeks and months.
  */
 export function QuotasView({
   onUndo,
@@ -132,7 +138,7 @@ export function QuotasView({
     onCompleted,
   })
 
-  const groups = useMemo(() => groupByPeriod(tasks ?? []), [tasks])
+  const groups = useMemo(() => groupByLabel(tasks ?? []), [tasks])
   const orderedIds = useMemo(() => groups.flatMap((g) => g.tasks.map((t) => t.id)), [groups])
 
   if (tasks === null)
@@ -165,9 +171,9 @@ export function QuotasView({
       ) : (
         <div className="space-y-2.5">
           {groups.map((group) => (
-            <QuotaPeriodCard
-              key={group.period ?? 'none'}
-              period={group.period}
+            <QuotaGroupCard
+              key={group.label ?? 'unlabelled'}
+              label={group.label}
               tasks={group.tasks}
               selectedIds={selectedIds}
               onSelect={(task, e) => {
@@ -226,60 +232,60 @@ function EmptyState() {
 }
 
 /**
- * One period's quotas, in the dashboard's own card: the word top-left, the
- * count top-right, a hairline that fills as the period's targets are met.
- * Identical to `PeriodCard` in TrackPanel by design — the two surfaces show the
- * same thing and should look like it.
+ * One label's quotas, in the same card the periods used to sit in: the name
+ * top-left, a count top-right.
+ *
+ * The count is quotas, NOT progress. The card used to carry the dashboard's
+ * summed bar ("7 of 23"), which was honest while a card held one period and is
+ * meaningless now that it holds several: two a day plus three a week plus one a
+ * month adds up to nothing anybody can act on. "3 quotas · 1 met" is the same
+ * information at a granularity that survives mixing, and each row still shows
+ * its own bar. `met` is `trackState`'s met — reached the target, still open.
  */
-function QuotaPeriodCard({
-  period,
+function QuotaGroupCard({
+  label,
   tasks,
   selectedIds,
   onSelect,
   onOpen,
 }: {
-  period: string | null
+  label: string | null
   tasks: Task[]
   selectedIds: Set<number>
   onSelect: (task: Task, e: React.MouseEvent) => void
   onOpen: (task: Task) => void
 }) {
-  const word = period ? periodShort(period) : 'no period'
-  const s = trackSummary(tasks)
-  const met = s.total > 0 && s.done >= s.total
+  const { labelConfig } = useLabelConfig()
+  // "Unlabelled" rather than "no label": it is a group of things, named the way
+  // the other groups are named. It always sorts last (see `groupByLabel`).
+  const name = label ?? 'Unlabelled'
+  const colorClasses = label ? getLabelClasses(label, labelConfig) : null
+  const { count, met } = quotaGroupSummary(tasks)
 
   return (
-    <div className="bg-muted/30 rounded-2xl px-2 pt-2 pb-2.5" data-quota-period={word}>
-      <div className="flex items-center gap-2 px-1 pb-1.5">
-        <span className="text-muted-foreground text-[11px] font-semibold tracking-widest uppercase">
-          {word}
-        </span>
+    <div
+      className="bg-muted/30 rounded-2xl px-2 pt-2 pb-2.5"
+      data-quota-group={label ?? 'unlabelled'}
+    >
+      <div className="flex items-center gap-2 px-1 pb-2.5">
+        {/* The label wears its registry colour, exactly as its chip does in the
+            filter bar and the task editor; a label with no colour configured
+            reads as the plain group heading the periods used to have. */}
         <span
           className={cn(
-            'ml-auto text-xs whitespace-nowrap tabular-nums',
-            met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            'text-[11px] font-semibold tracking-widest uppercase',
+            colorClasses ? cn('rounded-full px-2 py-0.5', colorClasses) : 'text-muted-foreground',
           )}
         >
-          <span className="text-foreground font-medium">{s.done}</span> of {s.total}
+          {name}
+        </span>
+        <span className="text-muted-foreground ml-auto text-xs whitespace-nowrap">
+          <span className="text-foreground font-medium tabular-nums">{count}</span>{' '}
+          {count === 1 ? 'quota' : 'quotas'}
+          {met > 0 && <span className="text-green-700 dark:text-green-400"> · {met} met</span>}
         </span>
       </div>
-      <div
-        className="bg-muted mx-1 mb-2.5 h-1 overflow-hidden rounded-full"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={s.total}
-        aria-valuenow={s.done}
-        aria-label={`${s.done} of ${s.total} ${period ?? ''}`.trim()}
-      >
-        <div
-          className={cn(
-            'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-            met ? 'bg-green-600' : 'bg-foreground/50',
-          )}
-          style={{ width: `${s.total > 0 ? (s.done / s.total) * 100 : 0}%` }}
-        />
-      </div>
-      <ul role="listbox" aria-multiselectable="true" aria-label={word} className="space-y-1">
+      <ul role="listbox" aria-multiselectable="true" aria-label={name} className="space-y-1">
         {tasks.map((task) => (
           <QuotaRow
             key={task.id}
@@ -312,6 +318,7 @@ function QuotaRow({
   // `state` already reflects the optimistic count — re-wrapping it in
   // trackState was a no-op.
   const { state, log: logProgress } = useTrackProgress(task)
+  const period = periodLabel(task.rrule)
 
   return (
     <li
@@ -370,6 +377,18 @@ function QuotaRow({
           )}
         >
           <span className="text-foreground font-medium">{state.current}</span> / {state.target}
+        </span>
+
+        {/* The period, on the row rather than on the card: the groups are
+            labels now, so a card holds a daily quota next to a monthly one and
+            "0 / 2" alone would not say which. Deliberately OUTSIDE
+            `data-quota-count` — that hook is asserted on exactly. A quota with
+            no rule says so instead of showing a blank column. */}
+        <span
+          data-quota-period
+          className="text-muted-foreground w-16 shrink-0 text-xs whitespace-nowrap"
+        >
+          · {period ? periodShort(period) : 'no period'}
         </span>
 
         {/* Both directions. This was the only surface where a mis-log could not
