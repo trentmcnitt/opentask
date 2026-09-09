@@ -19,11 +19,11 @@ import type { Task } from '@/types'
  * optimistic display hides until the next reload. Tap then Undo is the toast's
  * own advertised gesture, so that is the main path, not an edge case. Queuing
  * costs nothing visible: the count still moves on the tap. When the last
- * request settles, the server's answer is pinned until the task prop catches up — keyed to the prop value
- * it was pinned against, so a refetch (sync stream, undo) that brings a *new*
- * value replaces it and a stale one is ignored. That is what stops the count
- * dipping to an older value for a beat between a response and the refetch it
- * triggers. A failed request reverts its own delta and says so. Progress never
+ * request settles, the server's answer is pinned until the task prop catches
+ * up — keyed to the prop value it was pinned against, so a refetch (sync
+ * stream, undo) that brings a *new* value replaces it and a stale one is
+ * ignored. That is what stops the count dipping to an older value for a beat
+ * between a response and the refetch it triggers. A failed request reverts its own delta and says so. Progress never
  * goes below zero — a correction can undo a mis-log, not manufacture history.
  *
  * Every log shows a toast with Undo (Trent, 2026-09-05): a slip on a chip is
