@@ -82,40 +82,53 @@ test.describe('Track', () => {
       await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
-      await expect(night.locator('[data-track-count]')).toHaveText('0/1')
-      // One card per period, the word once on the card, never on a chip; each
-      // card has its own bar.
-      const monthCard = panel.locator('[data-track-period="month"]')
-      const weekCard = panel.locator('[data-track-period="week"]')
-      await expect(monthCard.getByRole('list', { name: 'month' })).toContainText('Date night')
-      await expect(weekCard.getByRole('list', { name: 'week' })).toContainText('Eggs for the kids')
-      await expect(weekCard.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+      // The period is two letters on the chip's own count, since the panel
+      // groups by LABEL now and a label group mixes days, weeks and months.
+      await expect(night.locator('[data-track-count]')).toHaveText('0/1·mo')
+      // One card, one list: no period cards and no summed bar (a bar across
+      // mixed periods is meaningless — §5, Trent 2026-09-09).
+      await expect(panel.locator('[data-track-period]')).toHaveCount(0)
+      const stream = panel.getByRole('list', { name: 'Quotas' })
+      await expect(stream).toHaveCount(1)
+      await expect(stream).toContainText('Date night')
+      await expect(stream).toContainText('Eggs for the kids')
+      await expect(panel.getByRole('progressbar')).toHaveCount(0)
       await expect(panel.getByRole('button', { name: 'Expand Track' })).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveText('0/2·wk')
 
       // Tap: +1, with a toast whose Undo takes it back.
       await chip.click()
-      await expect(chipCount).toHaveText('1/2')
-      await expect(weekCard.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1')
+      await expect(chipCount).toHaveText('1/2·wk')
       const toast = page
         .locator('[data-sonner-toast]')
         .filter({ hasText: 'Logged one for \u201cEggs for the kids\u201d \u00b7 1/2' })
       await expect(toast).toBeVisible()
       await toast.getByRole('button', { name: 'Undo' }).click()
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveText('0/2·wk')
+      // ...and the server ends where the chip says it does. The +1 and the −1
+      // that takes it back are one gesture apart, so they used to be in flight
+      // together; applied in the wrong order the server's clamp-at-zero ate the
+      // −1 and left 1 behind, which nothing showed until the next reload.
+      // `useTrackProgress` queues a task's requests for exactly this.
+      await expect
+        .poll(async () => {
+          const res = await page.request.get(`/api/tasks/${id}`)
+          return (await res.json()).data.progress_current
+        })
+        .toBe(0)
 
       // Subtracting: shift-click and right-click. A hold no longer subtracts —
       // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
-      await expect(chipCount).toHaveText('2/2')
+      await expect(chipCount).toHaveText('2/2·wk')
       await chip.click({ modifiers: ['Shift'] })
-      await expect(chipCount).toHaveText('1/2')
+      await expect(chipCount).toHaveText('1/2·wk')
       await chip.click({ button: 'right' })
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveText('0/2·wk')
 
       // A hold opens a popover anchored to the chip — the shape Trent asked
       // for on 2026-09-06 ("still the same concept but not hover"). It reads,
@@ -125,7 +138,7 @@ test.describe('Track', () => {
       await expect(pop).toBeVisible()
       await expect(pop).toContainText('Never yet')
       await expect(pop.getByRole('textbox')).toHaveCount(0)
-      await expect(chipCount).toHaveText('0/2')
+      await expect(chipCount).toHaveText('0/2·wk')
 
       // Open is the answer to "how do I even edit the Track items": a quota is
       // an ordinary task, and it gets its OWN editor — no due date, no snooze
@@ -191,11 +204,17 @@ test.describe('Track', () => {
       await plus.click()
       await expect(count).toContainText('3 / 2')
 
-      // The task itself is still open — progress is not completion.
-      const res = await page.request.get(`/api/tasks/${id}`)
-      const task = (await res.json()).data
-      expect(task.done).toBe(false)
-      expect(task.progress_current).toBe(3)
+      // The task itself is still open — progress is not completion. Polled, not
+      // read once: the count on screen is optimistic and the +1 behind it is
+      // still on the wire (`useTrackProgress` sends a task's logs one at a
+      // time), so a single read races the request it is checking on.
+      await expect
+        .poll(async () => {
+          const res = await page.request.get(`/api/tasks/${id}`)
+          const task = (await res.json()).data
+          return { done: task.done, progress_current: task.progress_current }
+        })
+        .toEqual({ done: false, progress_current: 3 })
     } finally {
       await closeTrack(page)
       await deleteTasks(page, [id, nightId])
@@ -241,6 +260,107 @@ test.describe('Track', () => {
       await expect(after.getByRole('button', { name: 'Move to Trash' })).toBeVisible()
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+
+  /**
+   * §5, Trent 2026-09-09, choosing variation G of the `track-by-label` mockup:
+   * the panel groups by LABEL and draws the whole thing as one wrapping row,
+   * so a cluster's heading is a PEER of the chips rather than a box around
+   * them. That is the load-bearing part — a heading that is its own container
+   * would start a new line, which is the height the layout was chosen to save
+   * — so it is asserted as DOM shape (same flex parent, one wrapping list),
+   * never as pixel positions.
+   */
+  test('quotas stream under inline label titles, in label order, unlabelled last', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      // "dev" and "work" are registered by the seed, and sort in that order.
+      const devId = await createTask(page, {
+        title: 'Probe stream dev quota',
+        progress_target: 2,
+        rrule: 'FREQ=WEEKLY',
+        labels: ['dev'],
+        create_label: true,
+      })
+      const workId = await createTask(page, {
+        title: 'Probe stream work quota',
+        progress_target: 3,
+        rrule: 'FREQ=DAILY',
+        labels: ['work'],
+        create_label: true,
+      })
+      const bareId = await createTask(page, {
+        title: 'Probe stream bare quota',
+        progress_target: 1,
+        is_tracked: true,
+        rrule: 'FREQ=MONTHLY',
+      })
+      ids.push(devId, workId, bareId)
+
+      await page.goto('/')
+      const panel = page.getByRole('region', { name: 'Track' })
+      await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+      const stream = panel.getByRole('list', { name: 'Quotas' })
+
+      // One list holds every cluster: no card, no sub-list, per label.
+      await expect(stream).toHaveCount(1)
+      for (const key of ['dev', 'work', 'unlabelled']) {
+        await expect(stream.locator(`[data-track-cluster="${key}"]`)).toBeVisible()
+      }
+
+      // A title and the chips it introduces are siblings — direct children of
+      // the same wrapping list — which is what lets the title attach after the
+      // previous cluster's last chip instead of forcing a break.
+      for (const [key, id] of [
+        ['dev', devId],
+        ['work', workId],
+        ['unlabelled', bareId],
+      ] as const) {
+        await expect(stream.locator(`:scope > li[data-track-cluster="${key}"]`)).toHaveCount(1)
+        await expect(stream.locator(`:scope > li:has([data-track-chip="${id}"])`)).toHaveCount(1)
+      }
+
+      // ...and that parent is the wrapping flex row itself, so a title can
+      // never be pushed onto a line of its own.
+      expect(
+        await stream.evaluate((el) => {
+          const s = getComputedStyle(el)
+          return { display: s.display, wrap: s.flexWrap }
+        }),
+      ).toEqual({ display: 'flex', wrap: 'wrap' })
+
+      // Alphabetical by label, and the unlabelled cluster is the leftovers —
+      // last however the names happen to sort.
+      const order = await stream
+        .locator('[data-track-cluster]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-track-cluster')))
+      expect(order.indexOf('dev')).toBeLessThan(order.indexOf('work'))
+      expect(order[order.length - 1]).toBe('unlabelled')
+
+      // Each quota is in the stream exactly once, and carries its own period
+      // as a suffix now that no card names one.
+      for (const id of ids) await expect(stream.locator(`[data-track-chip="${id}"]`)).toHaveCount(1)
+      await expect(stream.locator(`[data-track-chip="${devId}"] [data-track-count]`)).toHaveText(
+        '0/2\u00b7wk',
+      )
+      await expect(stream.locator(`[data-track-chip="${workId}"] [data-track-count]`)).toHaveText(
+        '0/3\u00b7d',
+      )
+      await expect(stream.locator(`[data-track-chip="${bareId}"] [data-track-count]`)).toHaveText(
+        '0/1\u00b7mo',
+      )
+
+      // Expanded, the same clusters become headings over the full rows — the
+      // grouping does not vanish when the panel opens.
+      await openTrack(page)
+      await expect(panel.locator(`[data-track-row="${devId}"]`)).toBeVisible()
+      await expect(panel.locator('[data-track-cluster="dev"]')).toBeVisible()
+      await closeTrack(page)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 

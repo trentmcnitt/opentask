@@ -10,9 +10,16 @@ import type { Task } from '@/types'
  * rapid taps.
  *
  * While any request is in flight the caller shows this hook's own running
- * count: each tap adjusts it at once, requests fire independently and the
- * server applies them in order. When the last request settles, the server's
- * answer is pinned until the task prop catches up — keyed to the prop value
+ * count: each tap adjusts it at once, and the requests go out ONE AT A TIME so
+ * the server applies them in the order they were tapped. They used to fire
+ * concurrently, which was wrong in a way nothing noticed for months: the server
+ * clamps at zero (a correction may undo a mis-log, not manufacture history), so
+ * a +1 and the −1 that takes it back, in flight together and applied in the
+ * wrong order, clamp the −1 away and leave the count one too high — a state the
+ * optimistic display hides until the next reload. Tap then Undo is the toast's
+ * own advertised gesture, so that is the main path, not an edge case. Queuing
+ * costs nothing visible: the count still moves on the tap. When the last
+ * request settles, the server's answer is pinned until the task prop catches up — keyed to the prop value
  * it was pinned against, so a refetch (sync stream, undo) that brings a *new*
  * value replaces it and a stale one is ignored. That is what stops the count
  * dipping to an older value for a beat between a response and the refetch it
@@ -49,6 +56,9 @@ export function useTrackProgress(task: Task): {
   // bounce 0 → 1 → 0 until the next refresh (Trent, 2026-09-05).
   const serverRef = useRef(serverCurrent)
   serverRef.current = serverCurrent
+  // The tail of this task's request queue. Assigned synchronously inside `log`,
+  // before any await, so two taps in the same tick still queue in order.
+  const queue = useRef<Promise<void>>(Promise.resolve())
 
   const log = async (delta: 1 | -1, options?: { quiet?: boolean }) => {
     const shown = displayedRef.current
@@ -65,22 +75,28 @@ export function useTrackProgress(task: Task): {
         action: { label: 'Undo', onClick: () => void log(delta > 0 ? -1 : 1, { quiet: true }) },
       })
     }
-    try {
-      const res = await fetch(`/api/tasks/${task.id}/progress`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ delta }),
-      })
-      if (!res.ok) throw new Error('Failed to log progress')
-      const json = await res.json()
-      const settled = Number(json?.data?.progress_current)
-      if (Number.isFinite(settled)) setPinned({ base: serverRef.current, value: settled })
-    } catch {
-      setLocal((v) => Math.max(0, v - delta))
-      showToast({ message: `Could not log progress on "${task.title}"`, type: 'error' })
-    } finally {
-      setInFlight((n) => n - 1)
-    }
+    // Never rejects, so one failed request cannot break the queue for the taps
+    // behind it.
+    const sent = queue.current.then(async () => {
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delta }),
+        })
+        if (!res.ok) throw new Error('Failed to log progress')
+        const json = await res.json()
+        const settled = Number(json?.data?.progress_current)
+        if (Number.isFinite(settled)) setPinned({ base: serverRef.current, value: settled })
+      } catch {
+        setLocal((v) => Math.max(0, v - delta))
+        showToast({ message: `Could not log progress on "${task.title}"`, type: 'error' })
+      } finally {
+        setInFlight((n) => n - 1)
+      }
+    })
+    queue.current = sent
+    await sent
   }
 
   return { state, period, log }
