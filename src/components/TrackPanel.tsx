@@ -1,11 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
-import { periodSuffix, trackStream, type TrackStreamItem } from '@/lib/track'
-import { LABEL_COLORS } from '@/lib/label-colors'
+import { periodSuffix, trackStream, trackStripeClass, type TrackStreamItem } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
@@ -30,9 +29,11 @@ import type { LabelColor, Task } from '@/types'
  *   remembered as a user preference like the filter section. FOLDED (the
  *   default) the card holds its quotas as tight CHIPS with their full titles,
  *   wrapping wherever the width runs out (Trent, 2026-09-05: eight open rows
- *   pushed the first task of the day below the fold on his phone; a folded
- *   one-liner hid the quotas; chips with truncated titles were rejected, so
- *   nothing here is ever cut). Tap a chip: +1. Hold it, or shift-click: −1.
+ *   pushed the first task of the day below the fold on his phone, and a folded
+ *   one-liner hid the quotas). A chip is as wide as its title needs, up to the
+ *   card; past that the title ellipsises, which on a phone the longest few do.
+ *   The count never truncates — it is the thing the chip is for. Open the panel,
+ *   or hold a chip, to read a title in full. Tap a chip: +1. Hold, or shift-click: −1.
  *   The chip's background fills as the count climbs and turns green at the
  *   target, so each chip is its own bar. OPEN, it is the full rows.
  * - Order is by label then title, and never changes on a tap — the widget's
@@ -47,10 +48,16 @@ import type { LabelColor, Task } from '@/types'
  * chip, so:
  *
  * - ONE card, holding ONE wrapping row. A cluster opens with its label in the
- *   panel's own small uppercase run, which is a plain flex item: it attaches
- *   after the previous cluster's last chip and wraps with everything else, so
- *   it can never force a line break. That is what makes this the shortest of
- *   the seven layouts drawn — 656px at 375px wide against the runner-up's 773.
+ *   panel's own small uppercase run — a plain flex item, so its chips flow
+ *   after it on the same line and wrap with everything else.
+ * - A TITLE ALWAYS STARTS ITS OWN ROW (Trent, 2026-09-09, on the dev build).
+ *   The mockup let a title attach after the previous cluster's last chip, which
+ *   is what made variation G the shortest of the seven drawn — but "house"
+ *   landing mid-row after a health chip read as confusing rather than compact.
+ *   A zero-height full-width `<li>` before each title after the first forces
+ *   the wrap; the title itself keeps no left margin, so it sits flush with the
+ *   card's left edge and the chips follow it across. The break is layout only,
+ *   which is why it lives here and not in `trackStream`.
  * - NO summed bar. A bar across a group that mixes days, weeks and months is
  *   "2 a day + 3 a week + 1 a month = 7", a number nobody can act on. The
  *   Quotas page dropped it for the same reason when it moved to labels.
@@ -61,7 +68,9 @@ import type { LabelColor, Task } from '@/types'
  *   Colour comes from `label_config`, the same place every other label colour
  *   in the app comes from; a label nobody has coloured, and the unlabelled
  *   cluster, get a neutral one rather than a palette invented in code. Green is
- *   reserved for "met" and is not spent on a label here.
+ *   reserved for "met", so `trackStripeClass` declines it: a label the user
+ *   coloured green gets a neutral stripe HERE, and keeps its green chips
+ *   everywhere else.
  *
  * OPEN, the same clusters in the same order become headings over the full
  * rows. Not drawn in the mockup — that was about the folded state, which is how
@@ -119,7 +128,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
             {items.map((item) =>
               item.kind === 'title' ? (
                 <ClusterTitle
-                  key={`title-${item.label ?? 'unlabelled'}`}
+                  key={`title-${clusterKey(item.label)}`}
                   item={item}
                   className="flex items-center gap-1.5 px-2 pt-3 pb-1 first:pt-1"
                 />
@@ -132,13 +141,20 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
           // One wrapping row for the whole panel: titles and chips are peers in
           // it, which is the entire trick — see the block comment above.
           <ul className="flex flex-wrap items-center gap-1.5" aria-label="Quotas">
-            {items.map((item) =>
+            {items.map((item, i) =>
               item.kind === 'title' ? (
-                <ClusterTitle
-                  key={`title-${item.label ?? 'unlabelled'}`}
-                  item={item}
-                  className="ml-2 flex items-center gap-1.5 whitespace-nowrap first:ml-0"
-                />
+                <Fragment key={`title-${clusterKey(item.label)}`}>
+                  {/* The wrap that puts this title at the start of a row. A
+                      full-basis, zero-height item fills whatever is left of the
+                      line above and takes no height of its own; the row gap on
+                      either side of it is the space between clusters. Not
+                      before the first title, which already starts row one. */}
+                  {i > 0 && <li aria-hidden="true" className="h-0 basis-full" />}
+                  <ClusterTitle
+                    item={item}
+                    className="flex max-w-full items-center gap-1.5 whitespace-nowrap"
+                  />
+                </Fragment>
               ) : (
                 <TrackChip
                   key={item.task.id}
@@ -157,17 +173,23 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   )
 }
 
-/** A label with no colour configured, and the unlabelled cluster, get this. */
-const NEUTRAL = 'bg-muted-foreground/60'
-
-/** The flat colour a stripe or a swatch is painted in. */
-function colorClass(color: LabelColor | null): string {
-  return color ? LABEL_COLORS[color].dot : NEUTRAL
+/**
+ * The grouping key a title carries in the DOM.
+ *
+ * The EMPTY STRING for the unlabelled cluster, not the word "unlabelled" or
+ * "other": a label with either of those names is legal, and would then share a
+ * key — and a selector — with the group of quotas that have no label at all.
+ * A label name is validated non-empty and trimmed (`validateLabelConfig`,
+ * `createLabel`), so "" is the one key no label can take.
+ */
+function clusterKey(label: string | null): string {
+  return label ?? ''
 }
 
 /**
- * A cluster's heading. `whitespace-nowrap` on the whole run, so "job-hunt"
- * never breaks at its hyphen when it lands at the end of a line.
+ * A cluster's heading. `whitespace-nowrap` so "job-hunt" never breaks at its
+ * hyphen, with `max-w-full truncate` behind it so a very long label ellipsises
+ * at the card's edge instead of pushing out of it.
  */
 function ClusterTitle({
   item,
@@ -177,12 +199,12 @@ function ClusterTitle({
   className: string
 }) {
   return (
-    <li data-track-cluster={item.label ?? 'unlabelled'} className={className}>
+    <li data-track-cluster={clusterKey(item.label)} className={className}>
       <span
         aria-hidden="true"
-        className={cn('size-2 shrink-0 rounded-full', colorClass(item.color))}
+        className={cn('size-2 shrink-0 rounded-full', trackStripeClass(item.color))}
       />
-      <span className="text-muted-foreground text-[11px] font-semibold tracking-widest uppercase">
+      <span className="text-muted-foreground min-w-0 truncate text-[11px] font-semibold tracking-widest uppercase">
         {item.name}
       </span>
     </li>
@@ -263,7 +285,14 @@ function TrackChip({
             if (press.didFire() || swipe.didSwipe()) return
             void log(e.shiftKey ? -1 : 1)
           }}
-          aria-label={`Log one more for "${task.title}"`}
+          // The count is IN the accessible name, not beside it. `aria-label`
+          // replaces a button's contents wholesale, so the count on screen and
+          // any sr-only run inside are never announced — and in the folded
+          // panel this chip is now the only progress there is, the period
+          // card's `progressbar` having gone with the cards.
+          aria-label={`Log one more for "${task.title}" — ${state.current} of ${state.target}${
+            period ? ` ${period}` : ''
+          }`}
           title="Tap: +1 · Swipe left, right-click or shift-click: −1 · Hold: details"
           className={cn(
             // leading-5, not leading-none: with the chip clipping its fill, a tight line
@@ -290,7 +319,7 @@ function TrackChip({
               width, and underneath it the stripe would be tinted green. */}
           <span
             aria-hidden="true"
-            className={cn('absolute inset-y-0 left-0 w-[3px]', colorClass(color))}
+            className={cn('absolute inset-y-0 left-0 w-[3px]', trackStripeClass(color))}
           />
           <span className="relative truncate">{task.title}</span>
           <span
@@ -303,15 +332,11 @@ function TrackChip({
             <span className="text-foreground font-medium">{state.current}</span>/{state.target}
             {/* The period, two letters, always muted — even on a met chip,
                 where the count beside it goes green. It is which clock this
-                counts against, not part of the score. Hidden from a screen
-                reader, which gets the full period from the sr-only run. */}
-            {suffix && (
-              <span aria-hidden="true" className="text-muted-foreground">
-                ·{suffix}
-              </span>
-            )}
+                counts against, not part of the score. Sighted-only by
+                construction: the button's `aria-label` spells the period out
+                in full. */}
+            {suffix && <span className="text-muted-foreground">·{suffix}</span>}
           </span>
-          {period && <span className="sr-only"> {period}</span>}
         </button>
       </TrackChipPopover>
     </li>
@@ -388,7 +413,14 @@ function TrackRow({ task }: { task: Task }) {
         <button
           type="button"
           onClick={() => void log(1)}
-          aria-label={`Log one more for "${task.title}"`}
+          // The count is IN the accessible name, not beside it. `aria-label`
+          // replaces a button's contents wholesale, so the count on screen and
+          // any sr-only run inside are never announced — and in the folded
+          // panel this chip is now the only progress there is, the period
+          // card's `progressbar` having gone with the cards.
+          aria-label={`Log one more for "${task.title}" — ${state.current} of ${state.target}${
+            period ? ` ${period}` : ''
+          }`}
           title="Log one more"
           className="text-foreground hover:bg-foreground/5 flex h-7 w-14 items-center justify-center gap-1 rounded-full border text-xs font-medium transition-colors"
         >

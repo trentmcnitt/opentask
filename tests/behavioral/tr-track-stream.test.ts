@@ -12,7 +12,13 @@
  * depends on when it runs.
  */
 import { describe, test, expect } from 'vitest'
-import { trackStream, periodSuffix, type TrackStreamItem } from '@/lib/track'
+import {
+  trackStream,
+  periodSuffix,
+  trackStripeClass,
+  TRACK_NEUTRAL_CLASS,
+  type TrackStreamItem,
+} from '@/lib/track'
 import type { LabelConfig, Task } from '@/types'
 
 const quota = (title: string, labels: string[], rrule = 'FREQ=WEEKLY'): Task =>
@@ -46,7 +52,8 @@ const shape = (items: TrackStreamItem[]) =>
 describe('the Track panel streams its quotas by label', () => {
   test('a title opens each cluster, alphabetically, unlabelled last', () => {
     const items = trackStream(CORPUS, CONFIG)
-    expect(titles(items)).toEqual(['health', 'house', 'job-hunt', 'kids', 'Unlabelled'])
+    // "Other", not the Quotas page's "Unlabelled" — see NO_LABEL_NAME.
+    expect(titles(items)).toEqual(['health', 'house', 'job-hunt', 'kids', 'Other'])
     // Not "no label": the leftovers are a named group, and they sort last
     // however the names happen to fall.
     expect(items[items.length - 1]).toMatchObject({ kind: 'chip' })
@@ -66,7 +73,7 @@ describe('the Track panel streams its quotas by label', () => {
       '· Check for new certifications',
       'kids',
       '· Josie clean dishes (chore)',
-      'Unlabelled',
+      'Other',
       '· Beef For Kids',
       '· Eggs',
     ])
@@ -78,7 +85,7 @@ describe('the Track panel streams its quotas by label', () => {
   test('the first item is always a title, so nothing is orphaned', () => {
     expect(trackStream([quota('Eggs', [])], [])[0]).toMatchObject({
       kind: 'title',
-      name: 'Unlabelled',
+      name: 'Other',
       label: null,
     })
   })
@@ -110,10 +117,11 @@ describe('the colour a cluster is drawn in', () => {
     expect(items.every((i) => i.color === null)).toBe(true)
   })
 
-  test('is null for the unlabelled cluster even when a label is named ""', () => {
-    const items = trackStream([quota('Eggs', [])], [{ name: 'Unlabelled', color: 'red' }])
-    // "Unlabelled" is this panel's word for the gap, not a label anybody can
-    // colour by registering that name.
+  test('is null for the no-label cluster even when a label is named "Other"', () => {
+    const items = trackStream([quota('Eggs', [])], [{ name: 'Other', color: 'red' }])
+    // "Other" is this panel's word for the gap, not a label anybody can colour
+    // by registering that name — the cluster is keyed on a null label, not on
+    // the word.
     expect(items.map((i) => i.color)).toEqual([null, null])
   })
 
@@ -127,7 +135,7 @@ describe('the colour a cluster is drawn in', () => {
     // it must not pick up ai-failed's hard-wired red.
     const items = trackStream([quota('Eggs', ['ai-failed'])], CONFIG)
     expect(items.map((i) => i.color)).toEqual([null, null])
-    expect(titles(items)).toEqual(['Unlabelled'])
+    expect(titles(items)).toEqual(['Other'])
   })
 })
 
@@ -143,5 +151,24 @@ describe('the period suffix on a chip', () => {
     // A quota with no rule has no period; printing the raw string inside a chip
     // would be worse than printing nothing.
     expect(periodSuffix('every other Tuesday')).toBeNull()
+  })
+})
+
+describe('the stripe a chip is painted with', () => {
+  test("is the label colour's flat swatch", () => {
+    expect(trackStripeClass('blue')).toBe('bg-blue-500')
+    expect(trackStripeClass('orange')).toBe('bg-orange-500')
+  })
+
+  test('is neutral when there is no colour', () => {
+    expect(trackStripeClass(null)).toBe(TRACK_NEUTRAL_CLASS)
+  })
+
+  test('is neutral for GREEN, which already means "met" on these chips', () => {
+    // Settings lets a label be green like any other colour, and its chips stay
+    // green everywhere else. Only the stripe declines it: green on a chip that
+    // is not at its target would read as met.
+    expect(trackStripeClass('green')).toBe(TRACK_NEUTRAL_CLASS)
+    expect(trackStripeClass('green')).not.toBe('bg-green-500')
   })
 })

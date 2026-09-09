@@ -5,7 +5,7 @@
  * row component runs in the browser and only needs to read a task's tracked
  * state and name its period. Kept here so a client bundle never pulls core.
  */
-import { getLabelColor } from '@/lib/label-colors'
+import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
@@ -73,7 +73,7 @@ export function periodLabel(rrule: string | null | undefined): string | null {
   return freq ? (QUOTA_PERIODS.find((p) => p.freq === freq)?.label ?? null) : null
 }
 
-/** "this week" → "week", for a card's heading. */
+/** "this week" → "week", for the period tag on a Quotas page row. */
 export function periodShort(label: string): string {
   return QUOTA_PERIODS.find((p) => p.label === label)?.short ?? label
 }
@@ -98,7 +98,15 @@ export interface TrackSummary {
   total: number
 }
 
-/** The folded panel's one number: "2 of 23 this week". */
+/**
+ * Capped progress over summed targets: "2 of 23 this week".
+ *
+ * CURRENTLY UNCALLED in src/. It was the Track panel's period-card number until
+ * the panel moved to label clusters (2026-09-09), and a label group mixes
+ * periods, so adding its targets up would be meaningless — see
+ * `quotaGroupSummary`, which counts quotas instead. Kept, with its tests, for a
+ * future surface that groups by period again, where the sum is honest.
+ */
 export function trackSummary(
   tasks: Pick<Task, 'progress_target' | 'progress_current'>[],
 ): TrackSummary {
@@ -114,6 +122,9 @@ export function trackSummary(
 
 /**
  * Quotas by period, day-to-year, each group keeping the order it was given.
+ *
+ * CURRENTLY UNCALLED in src/, for the same reason as `trackSummary`: the Track
+ * panel groups by label now. Kept, with its tests, for a future period view.
  *
  * Ordered by QUOTA_PERIODS rather than a hand-written list, so a period added
  * to the table cannot be silently dropped from the grouping — and the
@@ -215,8 +226,16 @@ export function groupByLabel(
   }))
 }
 
-/** The name the no-label cluster goes by — a group of things, not a gap. */
-const UNLABELLED = 'Unlabelled'
+/**
+ * The name the no-label cluster goes by — a group of things, not a gap.
+ *
+ * "Other", not the Quotas page's "Unlabelled" (Trent, 2026-09-09). The panel's
+ * titles sit inline among the chips at a small size, where "Unlabelled" reads
+ * as a state of the quotas under it rather than as the name of a group; the
+ * page has a card header with room to say the longer word. The grouping key is
+ * still `unlabelled` in both places — it is the same null label.
+ */
+const NO_LABEL_NAME = 'Other'
 
 /** A cluster's heading: the label's name, and the colour it is drawn in. */
 export interface TrackStreamTitle {
@@ -250,19 +269,40 @@ export type TrackStreamItem = TrackStreamTitle | TrackStreamChip
  * height of the seven variations drawn. Nesting the clusters in their own
  * elements would put a wrap boundary between them and undo that.
  *
- * Order is `groupByLabel`'s — alphabetical, case-insensitive, "Unlabelled"
- * last — and within a cluster the frozen alphabetical order `trackedItems`
+ * Order is `groupByLabel`'s — alphabetical, case-insensitive, the unlabelled
+ * cluster last — and within a cluster the frozen alphabetical order `trackedItems`
  * gave, so logging on one quota never reorders the others under a finger.
  *
  * The colour is resolved once per cluster and copied onto its chips: the chip
  * needs it for its stripe and the title for its swatch, and they must not be
  * able to disagree.
  */
+/**
+ * Neutral: no colour configured, the unlabelled cluster, or a colour the panel
+ * cannot spend.
+ */
+export const TRACK_NEUTRAL_CLASS = 'bg-muted-foreground/60'
+
+/**
+ * The flat colour a chip's stripe and a cluster's swatch are painted in.
+ *
+ * GREEN IS NOT AVAILABLE HERE. Green already means "met" on these chips — the
+ * fill and the border both turn green at the target — so a label configured
+ * green would put a permanent met-coloured mark on quotas that are not met.
+ * Settings offers green like any other colour and should keep doing so; the
+ * label's chips elsewhere in the app are unaffected. Only this stripe declines
+ * it, and falls back to neutral.
+ */
+export function trackStripeClass(color: LabelColor | null): string {
+  if (color === null || color === 'green') return TRACK_NEUTRAL_CLASS
+  return LABEL_COLORS[color].dot
+}
+
 export function trackStream(quotas: Task[], labelConfig: LabelConfig[]): TrackStreamItem[] {
   const out: TrackStreamItem[] = []
   for (const group of groupByLabel(quotas)) {
     const color = group.label ? getLabelColor(group.label, labelConfig) : null
-    out.push({ kind: 'title', name: group.label ?? UNLABELLED, label: group.label, color })
+    out.push({ kind: 'title', name: group.label ?? NO_LABEL_NAME, label: group.label, color })
     for (const task of group.tasks) out.push({ kind: 'chip', task, color })
   }
   return out
