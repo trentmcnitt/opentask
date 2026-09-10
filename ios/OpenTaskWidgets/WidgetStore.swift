@@ -397,8 +397,25 @@ enum WidgetStore {
     // MARK: - Track row order
 
     private static let trackOrderKey = "widget.track.order"
+    private static let trackOrderVersionKey = "widget.track.orderVersion"
 
-    /// The quota id order the list families last rendered.
+    /// The pace algorithm the stored order was ranked under.
+    ///
+    /// Freezing an order (below) means a WRONG one survives the fix that
+    /// corrects it: pace used to be measured from a quota's `due_at`, §5 then
+    /// made quotas dateless, and every pace silently became nil — so the frozen
+    /// order on an existing install is the tie-break, plain id order. Bumping
+    /// this discards such an order exactly once. Version 1 never wrote the key,
+    /// so it reads back as 0 and mismatches on the first pass after the upgrade.
+    ///
+    /// Bump it whenever a change to `TrackTimeline`'s maths would rank the same
+    /// quotas differently. Not for anything else — this is a one-time reset, and
+    /// the freeze it interrupts exists so a `+1` never slides a row out from
+    /// under the finger that tapped it.
+    static let trackOrderVersion = 2
+
+    /// The quota id order the list families last rendered, or empty when it was
+    /// frozen under a different `trackOrderVersion`.
     ///
     /// Persisted because pace is a MOVING target and pace was the sort key:
     /// logging progress changes pace, so re-sorting every reload rearranged the
@@ -408,7 +425,29 @@ enum WidgetStore {
     /// changes; who is behind is already visible in every row's bar and tick, so
     /// nothing is lost by holding the order still.
     static var trackOrder: [Int] {
-        get { (defaults?.array(forKey: trackOrderKey) as? [Int]) ?? [] }
-        set { defaults?.set(newValue, forKey: trackOrderKey) }
+        guard let defaults, defaults.integer(forKey: trackOrderVersionKey) == trackOrderVersion
+        else {
+            return []
+        }
+        return (defaults.array(forKey: trackOrderKey) as? [Int]) ?? []
+    }
+
+    /// Freeze a row order, stamping the version only if pace actually shaped it.
+    ///
+    /// `pacedByPeriod` is the whole point of the parameter, and it is why the
+    /// stamp is not simply part of the setter. The first timeline pass after an
+    /// upgrade can easily render from the OLD build's cached payload — a failed
+    /// fetch, or the cache-only fast path a recent tap takes — and those encoded
+    /// tasks carry no `progress_period_start` at all, so every pace reads nil
+    /// and the ranking degrades to id order. Stamping THAT would retire the
+    /// version marker against a list the new maths never touched, re-freezing
+    /// the exact order the bump exists to discard. Withholding the stamp costs
+    /// one extra re-rank per pass until a fetch with real anchors lands, and
+    /// re-ranking an all-nil list changes nothing on screen.
+    static func setTrackOrder(_ ids: [Int], pacedByPeriod: Bool) {
+        defaults?.set(ids, forKey: trackOrderKey)
+        if pacedByPeriod {
+            defaults?.set(trackOrderVersion, forKey: trackOrderVersionKey)
+        }
     }
 }
