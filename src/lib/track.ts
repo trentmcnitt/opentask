@@ -5,8 +5,9 @@
  * row component runs in the browser and only needs to read a task's tracked
  * state and name its period. Kept here so a client bundle never pulls core.
  */
+import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
-import type { Task } from '@/types'
+import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
  * A tracked task is a quota: something to do N times per period. N > 1 implies
@@ -47,10 +48,10 @@ export function trackState(
  * Anything that needs to know about periods reads this.
  */
 export const QUOTA_PERIODS = [
-  { freq: 'DAILY', label: 'today', short: 'day', editor: 'Every day' },
-  { freq: 'WEEKLY', label: 'this week', short: 'week', editor: 'Every week' },
-  { freq: 'MONTHLY', label: 'this month', short: 'month', editor: 'Every month' },
-  { freq: 'YEARLY', label: 'this year', short: 'year', editor: 'Every year' },
+  { freq: 'DAILY', label: 'today', short: 'day', suffix: 'd', editor: 'Every day' },
+  { freq: 'WEEKLY', label: 'this week', short: 'week', suffix: 'wk', editor: 'Every week' },
+  { freq: 'MONTHLY', label: 'this month', short: 'month', suffix: 'mo', editor: 'Every month' },
+  { freq: 'YEARLY', label: 'this year', short: 'year', suffix: 'yr', editor: 'Every year' },
 ] as const
 
 export type QuotaFreq = (typeof QUOTA_PERIODS)[number]['freq']
@@ -72,9 +73,22 @@ export function periodLabel(rrule: string | null | undefined): string | null {
   return freq ? (QUOTA_PERIODS.find((p) => p.freq === freq)?.label ?? null) : null
 }
 
-/** "this week" → "week", for a card's heading. */
+/** "this week" → "week", for the period tag on a Quotas page row. */
 export function periodShort(label: string): string {
   return QUOTA_PERIODS.find((p) => p.label === label)?.short ?? label
+}
+
+/**
+ * "this week" → "wk", for the two-letter suffix a chip's count carries.
+ *
+ * Null rather than the label when the period is not one this app knows: the
+ * suffix is decoration on a count, and printing "0/3·this week" inside a chip
+ * would be worse than printing nothing. In the table with everything else about
+ * a period, because that table exists precisely because this mapping used to be
+ * written out in five places and two of them had drifted.
+ */
+export function periodSuffix(label: string): string | null {
+  return QUOTA_PERIODS.find((p) => p.label === label)?.suffix ?? null
 }
 
 export interface TrackSummary {
@@ -84,7 +98,15 @@ export interface TrackSummary {
   total: number
 }
 
-/** The folded panel's one number: "2 of 23 this week". */
+/**
+ * Capped progress over summed targets: "2 of 23 this week".
+ *
+ * CURRENTLY UNCALLED in src/. It was the Track panel's period-card number until
+ * the panel moved to label clusters (2026-09-09), and a label group mixes
+ * periods, so adding its targets up would be meaningless — see
+ * `quotaGroupSummary`, which counts quotas instead. Kept, with its tests, for a
+ * future surface that groups by period again, where the sum is honest.
+ */
 export function trackSummary(
   tasks: Pick<Task, 'progress_target' | 'progress_current'>[],
 ): TrackSummary {
@@ -100,6 +122,9 @@ export function trackSummary(
 
 /**
  * Quotas by period, day-to-year, each group keeping the order it was given.
+ *
+ * CURRENTLY UNCALLED in src/, for the same reason as `trackSummary`: the Track
+ * panel groups by label now. Kept, with its tests, for a future period view.
  *
  * Ordered by QUOTA_PERIODS rather than a hand-written list, so a period added
  * to the table cannot be silently dropped from the grouping — and the
@@ -165,9 +190,11 @@ export function quotaLabelOf(quota: Pick<Task, 'labels'>): string | null {
  * order), because logging on one quota must never reorder the others under the
  * user's finger.
  *
- * The dashboard's Track panel deliberately still groups by PERIOD: it is an
- * instrument for "what is left this week", where the period is the question.
- * Here the period is on each row instead, since a label group mixes them.
+ * The dashboard's Track panel groups by this too (see `trackStream`), so a
+ * quota sits under the same name in both places. Neither surface can carry a
+ * summed progress bar as a result — a label group mixes days, weeks and months
+ * by construction — so the period travels with each quota instead: a suffix on
+ * the panel's chips, a `· week` on the page's rows.
  */
 export function groupByLabel(
   quotas: Pick<Task, 'labels'>[],
@@ -197,4 +224,86 @@ export function groupByLabel(
     label: key === null ? null : (display.get(key) ?? key),
     tasks: by.get(key)!,
   }))
+}
+
+/**
+ * The name the no-label cluster goes by — a group of things, not a gap.
+ *
+ * "Other", not the Quotas page's "Unlabelled" (Trent, 2026-09-09). The panel's
+ * titles sit inline among the chips at a small size, where "Unlabelled" reads
+ * as a state of the quotas under it rather than as the name of a group; the
+ * page has a card header with room to say the longer word. The grouping key is
+ * still `unlabelled` in both places — it is the same null label.
+ */
+const NO_LABEL_NAME = 'Other'
+
+/** A cluster's heading: the label's name, and the colour it is drawn in. */
+export interface TrackStreamTitle {
+  kind: 'title'
+  /** As shown — the label, or "Unlabelled". */
+  name: string
+  /** The label itself, null for the unlabelled cluster. The grouping key. */
+  label: string | null
+  /** From `label_config`; null when the label has no colour configured. */
+  color: LabelColor | null
+}
+
+/** One quota, carrying the colour of the cluster it belongs to. */
+export interface TrackStreamChip {
+  kind: 'chip'
+  task: Task
+  color: LabelColor | null
+}
+
+export type TrackStreamItem = TrackStreamTitle | TrackStreamChip
+
+/**
+ * The Track panel's quotas as ONE flat stream: a title, its quotas, the next
+ * title, its quotas (Trent, 2026-09-09, choosing variation G from the mockup).
+ *
+ * Flat, rather than the nested `{ label, tasks }[]` `groupByLabel` returns,
+ * because the panel renders it as a single wrapping flex row in which a title
+ * is just another item. That is the whole point of the layout: the heading
+ * attaches after the previous cluster's last chip and wraps with everything
+ * else, so it can never force a line break and the panel costs the least
+ * height of the seven variations drawn. Nesting the clusters in their own
+ * elements would put a wrap boundary between them and undo that.
+ *
+ * Order is `groupByLabel`'s — alphabetical, case-insensitive, the unlabelled
+ * cluster last — and within a cluster the frozen alphabetical order `trackedItems`
+ * gave, so logging on one quota never reorders the others under a finger.
+ *
+ * The colour is resolved once per cluster and copied onto its chips: the chip
+ * needs it for its stripe and the title for its swatch, and they must not be
+ * able to disagree.
+ */
+/**
+ * Neutral: no colour configured, the unlabelled cluster, or a colour the panel
+ * cannot spend.
+ */
+export const TRACK_NEUTRAL_CLASS = 'bg-muted-foreground/60'
+
+/**
+ * The flat colour a chip's stripe and a cluster's swatch are painted in.
+ *
+ * GREEN IS NOT AVAILABLE HERE. Green already means "met" on these chips — the
+ * fill and the border both turn green at the target — so a label configured
+ * green would put a permanent met-coloured mark on quotas that are not met.
+ * Settings offers green like any other colour and should keep doing so; the
+ * label's chips elsewhere in the app are unaffected. Only this stripe declines
+ * it, and falls back to neutral.
+ */
+export function trackStripeClass(color: LabelColor | null): string {
+  if (color === null || color === 'green') return TRACK_NEUTRAL_CLASS
+  return LABEL_COLORS[color].dot
+}
+
+export function trackStream(quotas: Task[], labelConfig: LabelConfig[]): TrackStreamItem[] {
+  const out: TrackStreamItem[] = []
+  for (const group of groupByLabel(quotas)) {
+    const color = group.label ? getLabelColor(group.label, labelConfig) : null
+    out.push({ kind: 'title', name: group.label ?? NO_LABEL_NAME, label: group.label, color })
+    for (const task of group.tasks) out.push({ kind: 'chip', task, color })
+  }
+  return out
 }
