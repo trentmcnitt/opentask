@@ -71,14 +71,29 @@ const AI_LABEL_COLORS: Record<string, string> = {
 }
 
 /**
+ * The colour a label is configured with, or null when it has none.
+ *
+ * The colour NAME, not the classes: a caller that paints ONE flat colour — the
+ * Track panel's 3px stripe and its cluster swatch — wants `LABEL_COLORS[c].dot`,
+ * and would otherwise have to pick the background back out of the pair of
+ * classes `getLabelClasses` returns. The `ai-*` colours are deliberately absent
+ * here: those are hard-wired class pairs for a label that is machinery, not a
+ * colour the user chose, and nothing files anything under them.
+ */
+export function getLabelColor(label: string, config: LabelConfig[]): LabelColor | null {
+  const lowerLabel = label.toLowerCase()
+  return config.find((c) => c.name.toLowerCase() === lowerLabel)?.color ?? null
+}
+
+/**
  * Returns combined bg + text classes for a label if it matches a predefined label,
  * or null for ad-hoc labels.
  */
 export function getLabelClasses(label: string, config: LabelConfig[]): string | null {
   const lowerLabel = label.toLowerCase()
   if (AI_LABEL_COLORS[lowerLabel]) return AI_LABEL_COLORS[lowerLabel]
-  const match = config.find((c) => c.name.toLowerCase() === lowerLabel)
-  if (!match) return null
-  const colorDef = LABEL_COLORS[match.color]
+  const color = getLabelColor(label, config)
+  if (!color) return null
+  const colorDef = LABEL_COLORS[color]
   return `${colorDef.bg} ${colorDef.text}`
 }
