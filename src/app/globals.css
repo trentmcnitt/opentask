@@ -160,6 +160,25 @@
   animation: fade-in 0.15s ease-out;
 }
 
+/* A deep-linked row (?reminder=<id>, the iOS widget's link): a short flash
+   that says "this one", then nothing. It runs once on the element it lands on
+   and is never cleared in state, so a re-render cannot make it flash again. */
+@keyframes row-highlight {
+  0%,
+  55% {
+    background-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+.animate-row-highlight {
+  animation: row-highlight 2s ease-out;
+}
+
 /* Hide scrollbar for horizontal scroll areas */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

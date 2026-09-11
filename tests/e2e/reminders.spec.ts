@@ -15,7 +15,7 @@
  */
 
 import { test, expect } from './fixtures'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
 /** The seeded test user's timezone — slot assignment is done in local time. */
@@ -83,6 +83,26 @@ async function openAllSlots(page: Page) {
     // Re-query each time: opening a slot re-renders the list.
     await surface.getByRole('button', { expanded: false }).first().click()
   }
+}
+
+/**
+ * Press and hold a row until it is selected — the gesture that replaced a click
+ * for selecting (Trent, 2026-09-11), since a click now considers the thought.
+ *
+ * The hold is held open by an assertion rather than a timer: the row going
+ * `aria-selected` IS the 400ms elapsing, so there is nothing to tune and
+ * nothing to race. Releasing afterwards lets the browser synthesise its click,
+ * which is exactly the path the hook has to swallow — if it ever stopped
+ * swallowing it, every test using this would consider the row it just selected.
+ */
+async function longPressRow(page: Page, row: Locator): Promise<void> {
+  await row.scrollIntoViewIfNeeded()
+  const box = await row.boundingBox()
+  if (!box) throw new Error('the row is not on screen')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await expect(row).toHaveAttribute('aria-selected', 'true')
+  await page.mouse.up()
 }
 
 test.describe('Reminders surface', () => {
@@ -234,7 +254,38 @@ test.describe('Reminders surface', () => {
     }
   })
 
-  test('selects like the dashboard: click, shift-click a range, act from the bar', async ({
+  test('a tap anywhere on a row considers it, and Undo puts it back', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createReminder(page, { title: 'A thought to tap away', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'A thought left alone', due_at: todayAt(7) }),
+    ]
+
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+
+      // Trent, 2026-09-11: "I should be able to just tap reminders pretty much
+      // anywhere to mark them done." The click lands on the title, not the
+      // circle, and does what the circle does.
+      await row('A thought to tap away').click()
+      await expect(page).toHaveURL(/\/reminders/)
+      await expect(row('A thought to tap away')).toHaveCount(0)
+      await expect(row('A thought left alone')).toBeVisible()
+      await expect(page.getByText('Considered \u201cA thought to tap away\u201d')).toBeVisible()
+      // A tap is not a selection: the bar never appears on the way.
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+
+      await toastUndo(page).click()
+      await expect(row('A thought to tap away')).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('press and hold selects, and the bar acts on the selection', async ({
     authenticatedPage: page,
   }) => {
     const ids = [
@@ -248,10 +299,12 @@ test.describe('Reminders surface', () => {
       await openAllSlots(page)
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
 
-      // A plain click selects the row and raises the bar — it does NOT navigate.
-      await row('First thought of the range').click()
+      // The hold turns selection mode on and checks the row. Crucially it does
+      // NOT also consider it: the click the release synthesises is swallowed.
+      await longPressRow(page, row('First thought of the range'))
       await expect(page).toHaveURL(/\/reminders/)
-      await expect(row('First thought of the range')).toHaveAttribute('aria-selected', 'true')
+      await expect(row('First thought of the range')).toBeVisible()
+      await expect(row('First thought of the range').getByRole('checkbox')).toBeVisible()
       await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
       // Single selection offers Details; that is the deliberate way to open one.
       await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
@@ -263,6 +316,14 @@ test.describe('Reminders surface', () => {
       await expect(page.getByText('3 selected')).toBeVisible()
       await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
 
+      // Inside selection mode a plain click toggles, and never considers —
+      // out here a tap is destructive, so it must not silently become one.
+      await row('Second thought of the range').click()
+      await expect(row('Second thought of the range')).toHaveAttribute('aria-selected', 'false')
+      await expect(page.getByText('2 selected')).toBeVisible()
+      await row('Second thought of the range').click()
+      await expect(page.getByText('3 selected')).toBeVisible()
+
       // One action considers the whole selection, and one Undo brings it all back.
       await page.getByRole('button', { name: 'Considered', exact: true }).click()
       await expect(row('First thought of the range')).toHaveCount(0)
@@ -273,11 +334,68 @@ test.describe('Reminders surface', () => {
       await expect(row('Second thought of the range')).toBeVisible()
       await expect(row('Third thought of the range')).toBeVisible()
 
-      // Escape clears a selection.
-      await row('Second thought of the range').click()
+      // Escape clears a selection, and the circles come back with it — so the
+      // next tap considers again rather than selecting.
+      await longPressRow(page, row('Second thought of the range'))
       await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(page.getByRole('button', { name: 'Considered', exact: true })).toHaveCount(0)
+      await expect(row('Second thought of the range').getByRole('checkbox')).toHaveCount(0)
+      await expect(
+        row('Second thought of the range').getByRole('button', {
+          name: 'Mark "Second thought of the range" as considered',
+        }),
+      ).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('?reminder=<id> brings that thought on screen without opening it', async ({
+    authenticatedPage: page,
+  }) => {
+    // The iOS widget's deep link. Two shapes: one in a slot, and one with no
+    // occurrence today, which lives behind the "Not today" fold and so proves
+    // the link opens whatever is hiding it.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+    const today = DateTime.now().setZone(TEST_TZ).weekday - 1
+    const anotherDay = RRULE_DAYS[(today + 3) % 7]
+    const ids = [
+      await createReminder(page, {
+        title: 'A thought the widget links to',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+      await createReminder(page, {
+        title: 'A thought for another day',
+        rrule: `FREQ=WEEKLY;BYDAY=${anotherDay};BYHOUR=7;BYMINUTE=0`,
+      }),
+    ]
+
+    try {
+      await page.goto(`/reminders?reminder=${ids[0]}`)
+      const linked = page.locator(`li[data-reminder-id="${ids[0]}"]`)
+      await expect(linked).toHaveAttribute('data-reminder-highlight', '')
+      await expect(linked).toBeInViewport()
+      // A link is a place to look, not an edit. Nothing opens.
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      // The param is spent, so a reload does not flash the same row again.
+      await expect(page).toHaveURL('/reminders')
+
+      await page.goto(`/reminders?reminder=${ids[1]}`)
+      const folded = page.locator(`li[data-not-today-id="${ids[1]}"]`)
+      await expect(folded).toHaveAttribute('data-reminder-highlight', '')
+      await expect(folded).toBeInViewport()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page).toHaveURL('/reminders')
+
+      // The link opened the fold; it did not take it over — closing it still works.
+      await page
+        .locator('[data-not-today]')
+        .getByRole('button', { name: /Not today/ })
+        .click()
+      await expect(folded).toHaveCount(0)
     } finally {
       await deleteTasks(page, ids)
     }
@@ -513,7 +631,7 @@ test.describe('Reminders trash', () => {
       await openReminders(page)
       await openAllSlots(page)
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
-      await row('A thought to let go of').click()
+      await longPressRow(page, row('A thought to let go of'))
       // The row and the toast are optimistic; the server's answer is what
       // the API check below depends on (on the dev server a first hit of a
       // route compiles it, which can take seconds), so wait for it by name.
@@ -575,7 +693,7 @@ test.describe('Reminder details', () => {
         page.locator(`[data-slot-group="${slot}"] li[data-reminder-id]`, {
           hasText: 'A thought for the evening',
         })
-      await row('Early morning').click()
+      await longPressRow(page, row('Early morning'))
       await page.getByRole('button', { name: 'Details', exact: true }).click()
 
       const dialog = page.getByRole('dialog', { name: 'Reminder' })
@@ -618,7 +736,7 @@ test.describe('Reminder details', () => {
     }
   })
 
-  test('double-click opens the editor, and a row says when it is not every day', async ({
+  test('hold then Details opens the editor, and a row says when it is not every day', async ({
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -650,35 +768,66 @@ test.describe('Reminder details', () => {
       )
       await expect(row('A thought for every day').locator('[data-cadence-mark]')).toHaveCount(0)
 
-      await row('A thought for every day').dblclick()
+      // Hold, then Details: the only way in to a reminder's editor now that a
+      // plain tap considers it (Trent, 2026-09-11: "we just tap and hold and
+      // then click Details with the item checked").
+      await longPressRow(page, row('A thought for every day'))
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Reminder' })
       await expect(dialog).toBeVisible()
       await expect(dialog).toContainText('A thought for every day')
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
       await expect(dialog).toHaveCount(0)
-      // The two clicks selected and then deselected the row: nothing is left
-      // selected, as after the dashboard's double-click.
+
+      // The row is still selected behind the closed editor — the hold said so
+      // and nothing since has said otherwise — and Escape is the way out.
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeVisible()
+      await page.keyboard.press('Escape')
       await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
 
-      // The hazard: a row sitting where the selection bar appears. The first
-      // click selects it and the bar slides over it, so the second click of
-      // the double-click lands on the bar — it must open the editor, not
-      // press whatever button it fell on (on dev it landed on "Considered").
-      await page.setViewportSize({ width: 1280, height: 480 })
-      const target = row('A thought for some days')
-      await target.evaluate((el) => {
-        const r = el.getBoundingClientRect()
-        window.scrollTo(0, window.scrollY + r.bottom - (window.innerHeight - 40))
-      })
-      await target.dblclick()
-      await expect(dialog).toBeVisible()
-      await expect(dialog).toContainText('A thought for some days')
-      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-      await expect(dialog).toHaveCount(0)
-      await expect(target).toBeVisible()
+      // Neither the hold nor the editor considered anything: the thoughts are
+      // both still on the surface with no completion behind them.
+      await expect(row('A thought for every day')).toBeVisible()
+      await expect(row('A thought for some days')).toBeVisible()
       expect(await taskField(page, ids[0], 'completion_count')).toBe(0)
+      expect(await taskField(page, ids[1], 'completion_count')).toBe(0)
     } finally {
       await deleteTasks(page, ids)
+    }
+  })
+
+  test('the keyboard reaches a reminder with no pointer at all', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const id = await createReminder(page, {
+      title: 'A thought for the keyboard',
+      due_at: todayAt(7),
+    })
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = page.locator(`li[data-reminder-id="${id}"]`)
+
+      // A press-and-hold has no keyboard equivalent, so the row offers the
+      // destination directly: Cmd/Ctrl+Enter opens its details.
+      await row.press('ControlOrMeta+Enter')
+      const dialog = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toContainText('A thought for the keyboard')
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+
+      // And Enter on the focused row is the tap.
+      await row.press('Enter')
+      await expect(page.locator(`li[data-reminder-id="${id}"]`)).toHaveCount(0)
+      await expect(
+        page.getByText('Considered \u201cA thought for the keyboard\u201d'),
+      ).toBeVisible()
+      await toastUndo(page).click()
+      await expect(page.locator(`li[data-reminder-id="${id}"]`)).toBeVisible()
+    } finally {
+      await deleteTasks(page, [id])
     }
   })
 
@@ -707,7 +856,8 @@ test.describe('Reminder details', () => {
       await openReminders(page)
       await openAllSlots(page)
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
-      await row('A thought every day').click()
+      await longPressRow(page, row('A thought every day'))
+      // Cmd/Ctrl-click still adds to a selection, as on the dashboard.
       await row('A thought on some days').click({ modifiers: ['ControlOrMeta'] })
       await expect(page.getByText('2 selected')).toBeVisible()
       await page.getByRole('button', { name: 'Details', exact: true }).click()
@@ -838,7 +988,8 @@ test.describe('Reminder details', () => {
       const rows = page.locator('[data-slot-group="Early morning"] li[data-reminder-id]')
       await expect(rows.nth(0)).toContainText('A quiet thought')
 
-      await rows.nth(1).dblclick()
+      await longPressRow(page, rows.nth(1))
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Reminder', exact: true })
       await expect(dialog.locator('[data-priority-chip="0"]')).toHaveAttribute(
         'aria-pressed',
@@ -869,9 +1020,10 @@ test.describe('Reminder details', () => {
     try {
       await openReminders(page)
       await openAllSlots(page)
-      await page
-        .locator('li[data-reminder-id]', { hasText: 'A thought with a date but no rule' })
-        .click()
+      await longPressRow(
+        page,
+        page.locator('li[data-reminder-id]', { hasText: 'A thought with a date but no rule' }),
+      )
       await page.getByRole('button', { name: 'Details', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Reminder' })
       await expect(dialog.locator('[data-cadence="once"]')).toHaveAttribute('aria-pressed', 'true')
@@ -934,7 +1086,10 @@ test.describe('Reminder details', () => {
     try {
       await openReminders(page)
       await openAllSlots(page)
-      await page.locator('li[data-reminder-id]', { hasText: 'A thought worth opening' }).click()
+      await longPressRow(
+        page,
+        page.locator('li[data-reminder-id]', { hasText: 'A thought worth opening' }),
+      )
       await page.getByRole('button', { name: 'Details', exact: true }).click()
       await page
         .getByRole('dialog', { name: 'Reminder' })
@@ -959,7 +1114,10 @@ test.describe('Reminder details', () => {
     try {
       await openReminders(page)
       await openAllSlots(page)
-      await page.locator('li[data-reminder-id]', { hasText: 'A thought on the phone' }).click()
+      await longPressRow(
+        page,
+        page.locator('li[data-reminder-id]', { hasText: 'A thought on the phone' }),
+      )
       await page.getByRole('button', { name: 'Details', exact: true }).click()
       const sheet = page.getByRole('dialog', { name: 'Reminder' })
       await expect(sheet).toBeVisible()
