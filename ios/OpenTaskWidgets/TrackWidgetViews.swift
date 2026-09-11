@@ -217,10 +217,7 @@ private struct TrackListView: View {
             if canPage {
                 ChevronPager(
                     previous: ShiftTrackItemIntent(offset: -1),
-                    next: ShiftTrackItemIntent(offset: 1),
-                    previousLabel: entry.neighborTitle(offset: -1),
-                    nextLabel: entry.neighborTitle(offset: 1),
-                    showsLabels: isLarge
+                    next: ShiftTrackItemIntent(offset: 1)
                 )
             }
         }

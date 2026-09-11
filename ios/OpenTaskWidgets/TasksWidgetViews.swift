@@ -35,9 +35,9 @@ struct TasksWidgetView: View {
         case .systemSmall:
             TasksSmallView(entry: entry)
         case .systemMedium:
-            TasksListView(entry: entry, maxRows: 3, showsChevronLabels: false)
+            TasksListView(entry: entry, maxRows: 3, isLarge: false)
         default:
-            TasksListView(entry: entry, maxRows: 6, showsChevronLabels: true)
+            TasksListView(entry: entry, maxRows: 6, isLarge: true)
         }
     }
 }
@@ -117,11 +117,18 @@ private struct TasksSmallView: View {
 
 // MARK: - Home Screen list
 
+/// The Home Screen list.
+///
+/// HOW MANY ROWS: as many as actually fit, and no more — see the same note on
+/// `RemindersListView`, which this mirrors. A fixed six rows asked for more
+/// height than the card had, and WidgetKit answered by squeezing every row down
+/// to one truncated line and pushing the header off the top edge.
 private struct TasksListView: View {
     let entry: TasksEntry
     let maxRows: Int
-    /// systemLarge only — see `ChevronPager`.
-    let showsChevronLabels: Bool
+    /// systemLarge. Drives two-line titles, 10pt row gaps and the "+N more"
+    /// line — the three things a 4×2 has no height for.
+    let isLarge: Bool
 
     /// The scope ring is All + every project with something due, and it wraps
     /// (`ShiftProjectScopeIntent`), so both chevrons stay live as long as there
@@ -133,47 +140,61 @@ private struct TasksListView: View {
         [(WidgetStore.allProjects, "All")] + entry.projects.map { ($0.id, $0.name) }
     }
 
-    private func neighborLabel(offset: Int) -> String? {
-        let ring = ringLabels
-        guard ring.count > 1, let index = ring.firstIndex(where: { $0.id == entry.scope })
-        else {
-            return nil
-        }
-        let count = ring.count
-        return ring[((index + offset) % count + count) % count].name
+    private var rowSpacing: CGFloat {
+        isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
     }
 
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
         } else {
-            VStack(alignment: .leading, spacing: WidgetTheme.rowSpacing) {
-                header
+            // Tallest first — ViewThatFits renders the first that fits. Written
+            // out rather than looped: ViewThatFits has to see each candidate as
+            // its own child, and a ForEach would hand it one.
+            ViewThatFits(in: .vertical) {
+                card(rows: min(6, maxRows))
+                card(rows: min(5, maxRows))
+                card(rows: min(4, maxRows))
+                card(rows: min(3, maxRows))
+                card(rows: min(2, maxRows))
+                card(rows: 1)
+            }
+            // The candidates carry no Spacer — a flexible child would report
+            // "fits" at every height and defeat the measurement — so the card
+            // is pinned to the top here instead.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .widgetURL(WidgetLink.dashboard)
+        }
+    }
 
-                if entry.tasks.isEmpty {
-                    WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
-                } else {
-                    VStack(alignment: .leading, spacing: WidgetTheme.rowSpacing) {
-                        ForEach(entry.tasks.prefix(maxRows)) { task in
-                            TaskRow(task: task, now: entry.date)
-                        }
+    private func card(rows: Int) -> some View {
+        VStack(alignment: .leading, spacing: rowSpacing) {
+            header
+
+            if entry.tasks.isEmpty {
+                WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
+            } else {
+                VStack(alignment: .leading, spacing: rowSpacing) {
+                    ForEach(entry.tasks.prefix(rows)) { task in
+                        TaskRow(task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1)
                     }
-                    if entry.tasks.count > maxRows {
-                        Text("+\(entry.tasks.count - maxRows) more")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 0)
                 }
-
-                if let staleSince = entry.staleSince {
-                    HStack {
-                        Spacer()
-                        StalenessNote(fetchedAt: staleSince)
-                    }
+                // systemMedium drops the overflow line, as Track's does: at 4×2
+                // that band costs a whole row, and the header's count already
+                // states the total.
+                if isLarge, entry.tasks.count > rows {
+                    Text("+\(entry.tasks.count - rows) more")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .widgetURL(WidgetLink.dashboard)
+
+            if let staleSince = entry.staleSince {
+                HStack {
+                    Spacer()
+                    StalenessNote(fetchedAt: staleSince)
+                }
+            }
         }
     }
 
@@ -200,12 +221,12 @@ private struct TasksListView: View {
                 previous: ShiftProjectScopeIntent(offset: -1),
                 next: ShiftProjectScopeIntent(offset: 1),
                 hasPrevious: canPage,
-                hasNext: canPage,
-                previousLabel: neighborLabel(offset: -1),
-                nextLabel: neighborLabel(offset: 1),
-                showsLabels: showsChevronLabels
+                hasNext: canPage
             )
         }
+        // systemMedium gets none — see `RemindersListView`: on a 128pt card
+        // those 6pt cost a whole row.
+        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
     }
 
     private var countLabel: String {
@@ -220,32 +241,53 @@ private struct TasksListView: View {
 }
 
 /// An ordinary task row: check off on the left, open on the title.
+///
+/// In systemLarge the title wraps to two lines. A task cut at one line
+/// ("Register Josie for Viking Vo…") is a task you have to open the app to
+/// identify, which is the one thing the widget exists to save you.
 private struct TaskRow: View {
     let task: TaskDTO
     let now: Date
+    var titleLineLimit = 2
 
     private var isOverdue: Bool { task.isOverdue(now: now) }
 
     var body: some View {
-        HStack(spacing: 10) {
+        // .top, not .center: on a two-line row a centred dot floats down into
+        // the gap between the lines, reading as if it belongs to neither.
+        HStack(alignment: .top, spacing: 10) {
             Button(intent: CompleteTaskIntent(taskId: task.id)) {
                 Circle()
                     .fill(WidgetTheme.priorityColor(task.priority))
                     .frame(width: 9, height: 9)
-                    // 36pt hit target around the 9pt dot — 26pt missed too often.
-                    .frame(width: 36, height: 36)
+                    // The dot centres on the title's first line; the 36pt hit
+                    // target then hangs below it (26pt missed too often).
+                    .frame(width: 36, height: WidgetTheme.rowTitleLineHeight)
+                    .frame(width: 36, height: 36, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             Link(destination: WidgetLink.task(task.id)) {
+                // .firstTextBaseline keeps the due time on the title's first
+                // line when the title wraps, rather than drifting down beside
+                // the second.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(task.title)
                         .font(.subheadline)
                         .fontWeight(WidgetTheme.priorityWeight(task.priority))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(titleLineLimit)
+                        .multilineTextAlignment(.leading)
+                        // See `ReminderRow`: fixedSize stops any parent from
+                        // squeezing the wrap back out, minHeight reserves the
+                        // row's lines so `ViewThatFits` counts rows honestly.
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: CGFloat(titleLineLimit) * WidgetTheme.rowTitleLineHeight,
+                            alignment: .topLeading
+                        )
 
                     if let due = task.dueDate {
                         Text(WidgetTheme.shortTime(due))
