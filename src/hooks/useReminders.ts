@@ -69,6 +69,20 @@ export interface UseRemindersReturn {
    */
   rowLeft: (id: number) => void
   /**
+   * A row reporting that it is on screen. Returns its own deregistration, so a
+   * row can call it straight out of an effect. Only a mounted row can report
+   * its animation finishing, so only a mounted row's completion is allowed to
+   * hold anything back — see `completeIds`.
+   */
+  registerRow: (id: number) => () => void
+  /**
+   * True once a fetch has resolved since this hook mounted. The module cache
+   * paints the surface instantly on a revisit, so `loading === false` is not
+   * the same as "this is the current truth" — anything that must not act on
+   * stale data (the `?reminder=` deep link) waits for this instead.
+   */
+  hydrated: boolean
+  /**
    * Complete ("consider") a set of reminders at once — a selection made on the
    * surface, or a whole slot. One bulk call, one undo entry.
    */
@@ -216,6 +230,9 @@ export function useReminders({
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number>>(new Set())
   const [consideredAny, setConsideredAny] = useState(false)
+  const consideredAnyRef = useRef(consideredAny)
+  consideredAnyRef.current = consideredAny
+  const [hydrated, setHydrated] = useState(false)
 
   // Callbacks live in a ref so `refresh` and `complete` stay referentially
   // stable — the parent registers `refresh` in a ref and calls it from its own
@@ -243,6 +260,8 @@ export function useReminders({
    */
   const leavingIdsRef = useRef<Set<number>>(new Set())
   const heldRefreshRef = useRef(false)
+  /** IDs with a row actually rendered right now (see `registerRow`). */
+  const mountedIdsRef = useRef<Set<number>>(new Set())
   // The rendered groups, for the snapshot a failed completion restores.
   const groupsRef = useRef<ReminderGroup[]>(groups)
   groupsRef.current = groups
@@ -267,6 +286,7 @@ export function useReminders({
       setHasAny(nextHasAny)
       setNotToday(nextNotToday)
       setError(null)
+      setHydrated(true)
     } catch (err) {
       // A failed background refresh over cached data is not an error state —
       // the stale render plus the next successful refresh beats an error
@@ -309,21 +329,74 @@ export function useReminders({
    * tap and any acknowledgement.) A failed call restores the snapshot and
    * turns the toast's promise into a no-op.
    */
+  /** Move ids out of `reminders` and in behind the slot's counter. */
+  const commitConsidered = useCallback((ids: number[]) => {
+    if (ids.length === 0) return
+    const idSet = new Set(ids)
+    setGroups((prev) => {
+      const next = prev.map((g) => {
+        const considered = g.reminders.filter((r) => idSet.has(r.id))
+        if (considered.length === 0) return g
+        const reminders = g.reminders.filter((r) => !idSet.has(r.id))
+        return {
+          ...g,
+          reminders,
+          count: reminders.length,
+          consideredItems: [...considered, ...g.consideredItems],
+          considered: considered.length + g.consideredItems.length,
+        }
+      })
+      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      return next
+    })
+  }, [])
+
+  /**
+   * Run the refresh that was held while rows were collapsing, if the last of
+   * them has now gone. Every path that empties `leavingIdsRef` ends here —
+   * a held refresh that nothing releases would silently switch this surface
+   * off for the rest of the session.
+   */
+  const releaseHeldRefresh = useCallback(() => {
+    if (leavingIdsRef.current.size > 0 || !heldRefreshRef.current) return
+    heldRefreshRef.current = false
+    void refresh()
+  }, [refresh])
+
+  const registerRow = useCallback((id: number) => {
+    mountedIdsRef.current.add(id)
+    return () => {
+      mountedIdsRef.current.delete(id)
+    }
+  }, [])
+
   const completeIds = useCallback(
-    async (tasks: Task[], message: string) => {
-      const ids = tasks.map((t) => t.id)
+    async (tasks: Task[], message: (considered: number) => string) => {
+      // One completion per reminder in flight. Two Enters inside the collapse,
+      // or a slot sweep confirmed over a row that is still going, would
+      // otherwise send /done twice — and a recurring reminder would advance two
+      // occurrences for one intention.
+      const fresh = tasks.filter((t) => !pendingIdsRef.current.has(t.id))
+      const ids = fresh.map((t) => t.id)
       if (ids.length === 0) return
-      for (const id of ids) {
-        pendingIdsRef.current.add(id)
-        leavingIdsRef.current.add(id)
-      }
-      // The rows do not leave `groups` here. They are marked as leaving, which
-      // is what draws them struck through and inert while they collapse; each
-      // one calls `rowLeft` when its animation ends, and THAT is what moves it
-      // behind the slot's counter. Holding the position is the whole point:
-      // see `rowLeft` for the double-click this prevents.
+      // Only a row that is ON SCREEN can report its animation finishing, so
+      // only those are allowed to hold their place — and with it the refresh.
+      // Anything swept out of a folded slot, or from under a "Show all N" cap,
+      // has no row to reflow under anyone's pointer, so it leaves at once, the
+      // way everything used to.
+      const onScreen = ids.filter((id) => mountedIdsRef.current.has(id))
+      const offScreen = ids.filter((id) => !mountedIdsRef.current.has(id))
+      for (const id of ids) pendingIdsRef.current.add(id)
+      for (const id of onScreen) leavingIdsRef.current.add(id)
+      // The on-screen rows do not leave `groups` here. They are marked as
+      // leaving, which is what draws them struck through and inert while they
+      // collapse; each one calls `rowLeft` when its animation ends, and THAT is
+      // what moves it behind the slot's counter. Holding the position is the
+      // whole point: see `rowLeft` for the double-click this prevents.
       const snapshot = groupsRef.current
-      setCompletingIds((prev) => new Set([...prev, ...ids]))
+      const hadConsidered = consideredAnyRef.current
+      if (onScreen.length > 0) setCompletingIds((prev) => new Set([...prev, ...onScreen]))
+      commitConsidered(offScreen)
       setConsideredAny(true)
 
       const request = (async () => {
@@ -342,7 +415,7 @@ export function useReminders({
       // Undo waits for the completion to be recorded, then undoes exactly it.
       let settledOk = false
       showToast({
-        message,
+        message: message(ids.length),
         type: 'success',
         action: {
           label: 'Undo',
@@ -356,10 +429,10 @@ export function useReminders({
         await request
         settledOk = true
       } catch {
-        // The thoughts never went anywhere the user can see if they are still
-        // collapsing, so this puts them back in place rather than re-inserting
-        // them: clear the leaving marks and restore whatever had been
-        // committed by a row that already finished.
+        // A thought still collapsing never went anywhere the user can see, so
+        // this puts it back in place rather than re-inserting it: drop the
+        // leaving marks, restore whatever a row that already finished had
+        // committed, and take back the session flag if this was the first one.
         for (const id of ids) leavingIdsRef.current.delete(id)
         setCompletingIds((prev) => {
           const next = new Set(prev)
@@ -368,7 +441,11 @@ export function useReminders({
         })
         if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
         setGroups(snapshot)
+        if (!hadConsidered) setConsideredAny(false)
         showToast({ message: 'Could not complete reminders', type: 'error' })
+        // Clearing those marks may have emptied the leaving set, and a refresh
+        // held behind it must not be stranded by a failure.
+        releaseHeldRefresh()
       } finally {
         for (const id of ids) pendingIdsRef.current.delete(id)
         // A refresh after a confirmed completion converges the cache with the
@@ -377,7 +454,7 @@ export function useReminders({
         if (settledOk) void refresh()
       }
     },
-    [refresh],
+    [refresh, commitConsidered, releaseHeldRefresh],
   )
 
   /**
@@ -405,37 +482,18 @@ export function useReminders({
         next.delete(id)
         return next
       })
-      setGroups((prev) => {
-        const next = prev.map((g) => {
-          const considered = g.reminders.find((r) => r.id === id)
-          if (!considered) return g
-          const reminders = g.reminders.filter((r) => r.id !== id)
-          // It moves behind the slot's counter as it goes, so the progress bar
-          // and the "put back" list agree with the row that just left.
-          const consideredItems = [considered, ...g.consideredItems]
-          return {
-            ...g,
-            reminders,
-            count: reminders.length,
-            consideredItems,
-            considered: consideredItems.length,
-          }
-        })
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-        return next
-      })
+      // It moves behind the slot's counter as it goes, so the progress bar and
+      // the "put back" list agree with the row that just left.
+      commitConsidered([id])
       // Any refresh that arrived during the collapse was held rather than
       // applied over a row that was still on screen. Run it now.
-      if (leavingIdsRef.current.size === 0 && heldRefreshRef.current) {
-        heldRefreshRef.current = false
-        void refresh()
-      }
+      releaseHeldRefresh()
     },
-    [refresh],
+    [commitConsidered, releaseHeldRefresh],
   )
 
   const completeMany = useCallback(
-    (tasks: Task[]) => completeIds(tasks, `Considered ${tasks.length}`),
+    (tasks: Task[]) => completeIds(tasks, (n) => `Considered ${n}`),
     [completeIds],
   )
 
@@ -443,7 +501,7 @@ export function useReminders({
   const remove = useRemove({ setGroups, refresh, pendingIdsRef, callbacksRef })
 
   const complete = useCallback(
-    (task: Task) => completeIds([task], `Considered \u201c${task.title}\u201d`),
+    (task: Task) => completeIds([task], () => `Considered \u201c${task.title}\u201d`),
     [completeIds],
   )
 
@@ -509,6 +567,8 @@ export function useReminders({
     completeMany,
     completeGroup,
     rowLeft,
+    registerRow,
+    hydrated,
     putBack,
     remove,
     refresh,

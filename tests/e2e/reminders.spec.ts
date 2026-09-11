@@ -403,6 +403,138 @@ test.describe('Reminders surface', () => {
     }
   })
 
+  test('a thought the AI is still reading leaves like any other, and the surface keeps refreshing', async ({
+    authenticatedPage: page,
+  }) => {
+    // Three animations want the row's single `animation` property: the leaving
+    // collapse, the AI pulse, the deep-link flash. If the pulse wins, the
+    // collapse never ends, the row never reports itself gone, and the refresh
+    // held behind it switches this surface off for the rest of the session.
+    // `ai-to-process` is what the quick add sets on everything it creates.
+    const ids: number[] = [
+      await createReminder(page, {
+        title: 'A thought the AI is still reading',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        labels: ['ai-to-process'],
+      }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = page.locator(`li[data-reminder-id="${ids[0]}"]`)
+      await expect(row).toHaveAttribute('data-ai-state', 'processing')
+
+      await row.click()
+      await expect(page.locator(`li[data-reminder-id="${ids[0]}"]`)).toHaveCount(0)
+
+      // The proof that nothing is stuck: something created elsewhere still
+      // reaches this screen. A held refresh would drop it in silence.
+      const later = await createReminder(page, {
+        title: 'A thought added afterwards',
+        due_at: todayAt(7),
+      })
+      ids.push(later)
+      await expect(page.locator(`li[data-reminder-id="${later}"]`)).toBeVisible({ timeout: 15000 })
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('a sweep reaches a folded slot, whose rows cannot report themselves gone', async ({
+    authenticatedPage: page,
+  }) => {
+    // "Considered all so far" takes every started slot, folded ones included —
+    // and a folded slot renders no rows, so nothing in it can report a collapse
+    // finishing. Those ids have to leave at once instead of holding the screen.
+    const passed = DateTime.now().minus({ hours: 1 })
+    const soFar = passed.hasSame(DateTime.now(), 'day')
+      ? passed
+      : DateTime.now().startOf('day').plus({ minutes: 1 })
+    const ids: number[] = [
+      await createReminder(page, { title: 'Folded thought one', due_at: soFar.toUTC().toISO() }),
+      await createReminder(page, { title: 'Folded thought two', due_at: soFar.toUTC().toISO() }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      // Held by its label, not by the text of a row the sweep is about to take.
+      const label = await page
+        .locator('[data-slot-group]', { hasText: 'Folded thought one' })
+        .getAttribute('data-slot-group')
+      const slot = page.locator(`[data-slot-group="${label}"]`)
+      await slot.getByRole('button', { expanded: true }).first().click()
+      await expect(slot.locator('li[data-reminder-id]')).toHaveCount(0)
+
+      await page.getByRole('button', { name: /^Mark all 2 waiting so far/ }).click()
+      await page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: /^Consider all 2$/ })
+        .click()
+
+      // The counters and the headline move even though no row was on screen.
+      await expect(page.locator('[data-reminders-headline]')).toContainText('All clear for today')
+      await expect(slot.locator('span[aria-label*="considered"]')).toHaveText('2 of 2')
+
+      // And the surface is still listening: a thought created elsewhere still
+      // reaches the headline. A refresh held behind a row that never reported
+      // itself gone would drop it in silence. Read from the headline rather
+      // than the row, since the slot it lands in is the folded one.
+      ids.push(
+        await createReminder(page, {
+          title: 'A thought after the sweep',
+          due_at: soFar.toUTC().toISO(),
+        }),
+      )
+      await expect(page.locator('[data-reminders-headline]')).toContainText('1 waiting so far', {
+        timeout: 15000,
+      })
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('two fast Enters on a focused row consider it once', async ({ authenticatedPage: page }) => {
+    // Focus stays on a row while it collapses, so a second Enter inside those
+    // 180ms would ask for a second completion — and a recurring reminder would
+    // advance two occurrences for one intention. The events are dispatched
+    // rather than pressed because the point is the pair arriving faster than a
+    // re-render, which is the case only the in-flight guard can catch.
+    const ids = [
+      await createReminder(page, {
+        title: 'A thought Entered twice',
+        rrule: 'FREQ=DAILY;BYHOUR=7;BYMINUTE=0',
+        due_at: todayAt(7),
+      }),
+      await createReminder(page, { title: 'The thought after it', due_at: todayAt(7) }),
+    ]
+    const completions = async (id: number) =>
+      (await (await page.request.get(`/api/tasks/${id}`)).json()).data.completion_count
+
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = page.locator(`li[data-reminder-id="${ids[0]}"]`)
+      await row.focus()
+      await row.dispatchEvent('keydown', { key: 'Enter' })
+      await row.dispatchEvent('keydown', { key: 'Enter' })
+
+      await expect(page.locator(`li[data-reminder-id="${ids[0]}"]`)).toHaveCount(0)
+      await expect.poll(() => completions(ids[0])).toBe(1)
+
+      // Focus went to the next row rather than falling to <body>, so the next
+      // Tab does not start again from the top of the page.
+      await expect
+        .poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-reminder-id')))
+        .toBe(String(ids[1]))
+
+      await toastUndo(page).click()
+      await expect(page.locator(`li[data-reminder-id="${ids[0]}"]`)).toBeVisible()
+      await expect.poll(() => completions(ids[0])).toBe(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('?reminder=<id> brings that thought on screen without opening it', async ({
     authenticatedPage: page,
   }) => {
