@@ -35,6 +35,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// `var` alone among the fields: `withOptimisticIncrement()` below needs to
     /// bump it on a value-type copy. Nothing mutates the decoded instance.
     var progressCurrent: Int
+    /// UTC ISO 8601 — the instant this quota's CURRENT period began, or nil for
+    /// anything that isn't a quota (and for a quota the server's rollover job
+    /// has not anchored yet).
+    ///
+    /// The anchor is the user's local calendar boundary — Monday 00:00 for a
+    /// week, the 1st for a month, midnight for a day — advanced one period at a
+    /// time as each period closes (`src/core/tasks/period-rollover.ts`). It is
+    /// the only thing that says where a quota is in its period: §5 quotas carry
+    /// no due date at all.
+    let progressPeriodStart: String?
     /// The server's explicit "this is a quota" flag. It exists because a quota
     /// whose target is 1 ("date night, once a month") is indistinguishable from
     /// an ordinary task by target alone. Read it through `isTracked`, not
@@ -53,6 +63,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case anchorTime = "anchor_time"
         case progressTarget = "progress_target"
         case progressCurrent = "progress_current"
+        case progressPeriodStart = "progress_period_start"
         case trackedFlag = "is_tracked"
         case isReminder = "is_reminder"
         case labels
@@ -69,6 +80,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         anchorTime = try c.decodeIfPresent(String.self, forKey: .anchorTime)
         progressTarget = try c.decodeIfPresent(Int.self, forKey: .progressTarget) ?? 1
         progressCurrent = try c.decodeIfPresent(Int.self, forKey: .progressCurrent) ?? 0
+        progressPeriodStart = try c.decodeIfPresent(String.self, forKey: .progressPeriodStart)
         trackedFlag = try c.decodeIfPresent(Bool.self, forKey: .trackedFlag) ?? false
         isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
         labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
@@ -86,6 +98,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         anchorTime: String? = nil,
         progressTarget: Int = 1,
         progressCurrent: Int = 0,
+        progressPeriodStart: String? = nil,
         trackedFlag: Bool = false,
         isReminder: Bool = false,
         labels: [String] = []
@@ -99,6 +112,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.anchorTime = anchorTime
         self.progressTarget = progressTarget
         self.progressCurrent = progressCurrent
+        self.progressPeriodStart = progressPeriodStart
         self.trackedFlag = trackedFlag
         self.isReminder = isReminder
         self.labels = labels
@@ -107,6 +121,14 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     var dueDate: Date? {
         guard let dueAt else { return nil }
         return DateHelpers.parseISO(dueAt)
+    }
+
+    /// Start of the quota's current period, parsed. Nil is meaningful: it means
+    /// "no clock to be measured against", and nothing may substitute `dueDate`
+    /// for it — see `TrackTimeline.elapsedFraction`.
+    var periodStartDate: Date? {
+        guard let progressPeriodStart else { return nil }
+        return DateHelpers.parseISO(progressPeriodStart)
     }
 
     /// §5: a task is a quota if the server flagged it as one, or if its target
