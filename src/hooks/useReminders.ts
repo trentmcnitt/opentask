@@ -57,6 +57,18 @@ export interface UseRemindersReturn {
   consideredAny: boolean
   complete: (task: Task) => Promise<void>
   /**
+   * "The row has finished leaving the screen." Called by the row itself when
+   * its collapse animation ends (or when it unmounts mid-collapse), and only
+   * then does the considered reminder leave `groups`.
+   *
+   * Completion used to remove the row the instant it was clicked, which made
+   * the list reflow under a stationary pointer: the second click of a
+   * double-click landed on whichever thought had slid up into the gap and
+   * considered that one too. Now the row stays where it is, inert, until it
+   * has visibly gone.
+   */
+  rowLeft: (id: number) => void
+  /**
    * Complete ("consider") a set of reminders at once — a selection made on the
    * surface, or a whole slot. One bulk call, one undo entry.
    */
@@ -222,10 +234,26 @@ export function useReminders({
   // The same in the other direction: a put-back whose request is still out.
   const pendingIdsRef = useRef<Set<number>>(new Set())
   const restoringIdsRef = useRef<Set<number>>(new Set())
+  /**
+   * IDs whose row is still on screen, collapsing. They are still in `groups`,
+   * so a server payload — which no longer lists them — cannot be applied
+   * without deciding where to put them back. Rather than guess, `refresh`
+   * holds until the last one has gone and `rowLeft` runs the held one; the
+   * wait is the length of one animation.
+   */
+  const leavingIdsRef = useRef<Set<number>>(new Set())
+  const heldRefreshRef = useRef(false)
+  // The rendered groups, for the snapshot a failed completion restores.
+  const groupsRef = useRef<ReminderGroup[]>(groups)
+  groupsRef.current = groups
   const stripPending = (incoming: ReminderGroup[]) =>
     reconcileInFlight(incoming, pendingIdsRef.current, restoringIdsRef.current)
 
   const refresh = useCallback(async () => {
+    if (leavingIdsRef.current.size > 0) {
+      heldRefreshRef.current = true
+      return
+    }
     try {
       const res = await fetch('/api/reminders')
       if (!res.ok) throw new Error('Failed to load reminders')
@@ -285,30 +313,17 @@ export function useReminders({
     async (tasks: Task[], message: string) => {
       const ids = tasks.map((t) => t.id)
       if (ids.length === 0) return
-      const idSet = new Set(ids)
-      for (const id of ids) pendingIdsRef.current.add(id)
+      for (const id of ids) {
+        pendingIdsRef.current.add(id)
+        leavingIdsRef.current.add(id)
+      }
+      // The rows do not leave `groups` here. They are marked as leaving, which
+      // is what draws them struck through and inert while they collapse; each
+      // one calls `rowLeft` when its animation ends, and THAT is what moves it
+      // behind the slot's counter. Holding the position is the whole point:
+      // see `rowLeft` for the double-click this prevents.
+      const snapshot = groupsRef.current
       setCompletingIds((prev) => new Set([...prev, ...ids]))
-      let snapshot: ReminderGroup[] | null = null
-      setGroups((prev) => {
-        snapshot = prev
-        const next = prev.map((g) => {
-          const remaining = g.reminders.filter((r) => !idSet.has(r.id))
-          if (remaining.length === g.reminders.length) return g
-          const considered = g.reminders.filter((r) => idSet.has(r.id))
-          // The considered ones move behind the counter at once, so the
-          // progress and the "put back" list agree with the row that just left.
-          const consideredItems = [...considered, ...g.consideredItems]
-          return {
-            ...g,
-            reminders: remaining,
-            count: remaining.length,
-            consideredItems,
-            considered: consideredItems.length,
-          }
-        })
-        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
-        return next
-      })
       setConsideredAny(true)
 
       const request = (async () => {
@@ -341,23 +356,79 @@ export function useReminders({
         await request
         settledOk = true
       } catch {
-        if (snapshot) {
-          const restored = snapshot
-          if (remindersCache) setRemindersCache({ ...remindersCache, groups: restored })
-          setGroups(restored)
-        }
-        showToast({ message: 'Could not complete reminders', type: 'error' })
-      } finally {
-        for (const id of ids) pendingIdsRef.current.delete(id)
+        // The thoughts never went anywhere the user can see if they are still
+        // collapsing, so this puts them back in place rather than re-inserting
+        // them: clear the leaving marks and restore whatever had been
+        // committed by a row that already finished.
+        for (const id of ids) leavingIdsRef.current.delete(id)
         setCompletingIds((prev) => {
           const next = new Set(prev)
           for (const id of ids) next.delete(id)
           return next
         })
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
+        setGroups(snapshot)
+        showToast({ message: 'Could not complete reminders', type: 'error' })
+      } finally {
+        for (const id of ids) pendingIdsRef.current.delete(id)
         // A refresh after a confirmed completion converges the cache with the
         // server (the recurring case: a considered reminder is gone until its next
         // occurrence, which only the server knows).
         if (settledOk) void refresh()
+      }
+    },
+    [refresh],
+  )
+
+  /**
+   * A considered row has finished collapsing — now it leaves the data.
+   *
+   * This is the other half of the deferral in `completeIds`, and the reason
+   * for it: with removal on click, the list reflowed under a pointer that had
+   * not moved, so the second click of a double-click landed on whichever
+   * thought slid up into the gap and considered that one too (measured on dev:
+   * one double-click took two reminders). The row now holds its place, inert,
+   * until it has visibly gone.
+   *
+   * Idempotent, because two things call it: the row's `animationend`, and the
+   * row unmounting while still mid-collapse (a folded slot, a navigation) —
+   * without that second path a row that never finished animating would hold
+   * `refresh` shut.
+   */
+  const rowLeft = useCallback(
+    (id: number) => {
+      if (!leavingIdsRef.current.has(id)) return
+      leavingIdsRef.current.delete(id)
+      setCompletingIds((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      setGroups((prev) => {
+        const next = prev.map((g) => {
+          const considered = g.reminders.find((r) => r.id === id)
+          if (!considered) return g
+          const reminders = g.reminders.filter((r) => r.id !== id)
+          // It moves behind the slot's counter as it goes, so the progress bar
+          // and the "put back" list agree with the row that just left.
+          const consideredItems = [considered, ...g.consideredItems]
+          return {
+            ...g,
+            reminders,
+            count: reminders.length,
+            consideredItems,
+            considered: consideredItems.length,
+          }
+        })
+        if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+        return next
+      })
+      // Any refresh that arrived during the collapse was held rather than
+      // applied over a row that was still on screen. Run it now.
+      if (leavingIdsRef.current.size === 0 && heldRefreshRef.current) {
+        heldRefreshRef.current = false
+        void refresh()
       }
     },
     [refresh],
@@ -437,6 +508,7 @@ export function useReminders({
     complete,
     completeMany,
     completeGroup,
+    rowLeft,
     putBack,
     remove,
     refresh,

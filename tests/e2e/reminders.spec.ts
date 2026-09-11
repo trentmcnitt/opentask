@@ -351,6 +351,58 @@ test.describe('Reminders surface', () => {
     }
   })
 
+  test('a double-click considers one reminder, never the one beneath it', async ({
+    authenticatedPage: page,
+  }) => {
+    // The regression this pins: a considered row used to leave the list on the
+    // click, so the list reflowed under a pointer that had not moved and the
+    // second click of a double-click landed on whichever thought had slid up
+    // into the gap. Measured on dev at the time: one double-click, two
+    // reminders considered. The row now holds its place, struck through and
+    // inert, until its collapse animation ends.
+    const ids = [
+      await createReminder(page, { title: 'One of a close pair', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'The other of the pair', due_at: todayAt(7) }),
+    ]
+    const completions = async (id: number) =>
+      (await (await page.request.get(`/api/tasks/${id}`)).json()).data.completion_count
+
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const rows = page.locator('li[data-reminder-id]')
+      const slot = page.locator('[data-slot-group]', { hasText: 'The other of the pair' })
+      const counter = slot.locator('span[aria-label*="considered"]')
+      await expect(counter).toHaveText('0 of 2')
+
+      // Whichever is drawn first — the survivor is the other one, and which is
+      // which does not matter to the point being made.
+      const firstId = Number(await rows.first().getAttribute('data-reminder-id'))
+      const survivorId = ids.find((id) => id !== firstId) as number
+
+      await rows.first().dblclick()
+
+      // Exactly one left, and the counter agrees.
+      await expect(page.locator(`li[data-reminder-id="${firstId}"]`)).toHaveCount(0)
+      await expect(counter).toHaveText('1 of 2')
+      await expect(page.locator(`li[data-reminder-id="${survivorId}"]`)).toBeVisible()
+      // The second click did not select it either.
+      await expect(page.locator(`li[data-reminder-id="${survivorId}"]`)).toHaveAttribute(
+        'aria-selected',
+        'false',
+      )
+      // And the server was only ever asked once.
+      await expect.poll(() => completions(firstId)).toBe(1)
+      expect(await completions(survivorId)).toBe(0)
+
+      await toastUndo(page).click()
+      await expect(page.locator(`li[data-reminder-id="${firstId}"]`)).toBeVisible()
+      await expect(counter).toHaveText('0 of 2')
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('?reminder=<id> brings that thought on screen without opening it', async ({
     authenticatedPage: page,
   }) => {
@@ -1208,6 +1260,44 @@ test.describe('Reminder details', () => {
       expect(after).toEqual(before)
     } finally {
       await deleteTasks(page, [morning, evening])
+    }
+  })
+})
+
+/**
+ * The row is removed from the list by its collapse animation's `animationend`,
+ * never by a timer — so the event has to fire even when the animation has been
+ * reduced to nothing. This drives exactly that: with reduced motion on, a
+ * considered thought must still leave the slot.
+ */
+test.describe('Reminders with reduced motion', () => {
+  test('a considered row still leaves the list with animations off', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const ids = [
+      await createReminder(page, { title: 'A thought considered quietly', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'A thought that stays put', due_at: todayAt(7) }),
+    ]
+    try {
+      await openReminders(page)
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+
+      await row('A thought considered quietly').click()
+      await expect(row('A thought considered quietly')).toHaveCount(0)
+      await expect(row('A thought that stays put')).toBeVisible()
+      await expect(
+        page.getByText('Considered \u201cA thought considered quietly\u201d'),
+      ).toBeVisible()
+
+      // The surface still refreshes afterwards — a row that never reported
+      // itself gone would have held the refresh shut.
+      await toastUndo(page).click()
+      await expect(row('A thought considered quietly')).toBeVisible()
+    } finally {
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await deleteTasks(page, ids)
     }
   })
 })

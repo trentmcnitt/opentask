@@ -136,6 +136,7 @@ export function RemindersView({
     complete,
     completeMany,
     completeGroup,
+    rowLeft,
     putBack,
     remove,
     refresh,
@@ -567,6 +568,7 @@ export function RemindersView({
           onRowOpen={openDetail}
           onComplete={actions.complete}
           onRetry={retryEnrichment}
+          onLeft={rowLeft}
           onPutBack={putBack}
         />
       ) : visibleGroups.length === 0 ? (
@@ -609,6 +611,7 @@ export function RemindersView({
                     onRowOpen={openDetail}
                     onComplete={actions.complete}
                     onRetry={retryEnrichment}
+                    onLeft={rowLeft}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
                   />
@@ -1007,6 +1010,7 @@ function ReminderSlotGroup({
   onRowOpen,
   onComplete,
   onRetry,
+  onLeft,
   onCompleteGroup,
   onPutBack,
 }: {
@@ -1029,6 +1033,7 @@ function ReminderSlotGroup({
   onRowOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
+  onLeft: (id: number) => void
   onCompleteGroup: (group: ReminderGroup) => void
   onPutBack: (task: Task) => void
 }) {
@@ -1119,6 +1124,7 @@ function ReminderSlotGroup({
                   onOpen={onRowOpen}
                   onComplete={onComplete}
                   onRetry={onRetry}
+                  onLeft={onLeft}
                 />
               ))}
             </ul>
@@ -1320,6 +1326,18 @@ const scrollRowIntoView = (el: HTMLElement | null) => {
 }
 
 /**
+ * Hand the leaving animation the height it has to collapse from.
+ *
+ * A callback ref rather than an effect: React attaches refs during the commit,
+ * before the browser paints, so the row is measured at full size and the first
+ * painted frame of the animation already has the value. An effect would run
+ * after paint and leave one frame at `height: auto`.
+ */
+const measureLeavingRow = (el: HTMLElement | null) => {
+  if (el) el.style.setProperty('--reminder-row-h', `${el.offsetHeight}px`)
+}
+
+/**
  * A row's gestures (Trent, 2026-09-11): "I should be able to just tap reminders
  * pretty much anywhere to mark them done. I can press and hold any item to turn
  * on select mode, a little bit like the way tasks are set up… If you want to
@@ -1404,6 +1422,77 @@ function useReminderRowGestures({
   return { pointer, onClick, onKeyDown }
 }
 
+/**
+ * The 24px mark at the head of a row, in its three states.
+ *
+ * Leaving: a filled check, aria-hidden — it is the answer to the tap, not
+ * something still to press. Selection mode: a check box, as the dashboard's
+ * done button becomes. Otherwise: the circle, which considers this one item
+ * and never touches the selection, so it stops the row's click from reaching
+ * the row handler — and its pointer events too, or holding it would turn
+ * selection mode on underneath and swap the button out mid-press.
+ */
+function ReminderRowMarker({
+  reminder,
+  completing,
+  selected,
+  isSelectionMode,
+  onSelect,
+  onComplete,
+}: {
+  reminder: Task
+  completing: boolean
+  selected: boolean
+  isSelectionMode: boolean
+  onSelect: (task: Task) => void
+  onComplete: (task: Task) => void
+}) {
+  if (completing) {
+    return (
+      <span
+        aria-hidden
+        className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white"
+      >
+        <Check className="size-3.5" strokeWidth={3} />
+      </span>
+    )
+  }
+  if (isSelectionMode) {
+    return (
+      <Checkbox
+        checked={selected}
+        onCheckedChange={() => onSelect(reminder)}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Select "${reminder.title}"`}
+        className="mt-[3px] size-6 shrink-0"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onComplete(reminder)
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      // The row itself is the tab stop and Enter/Space on it does exactly what
+      // this button does, so a second stop per row would be pure duplication on
+      // a surface that can hold seventy of them.
+      tabIndex={-1}
+      aria-label={`Mark "${reminder.title}" as considered`}
+      title="Considered"
+      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+    >
+      <Check
+        className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
+        strokeWidth={3}
+      />
+    </button>
+  )
+}
+
 function ReminderRow({
   reminder,
   completing,
@@ -1415,6 +1504,7 @@ function ReminderRow({
   onOpen,
   onComplete,
   onRetry,
+  onLeft,
 }: {
   reminder: Task
   completing: boolean
@@ -1427,6 +1517,8 @@ function ReminderRow({
   onOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
+  /** This row has finished collapsing and may leave the list. */
+  onLeft: (id: number) => void
 }) {
   const hasNotes = !!reminder.notes?.trim()
   const mark = cadenceMark(reminder.rrule)
@@ -1448,16 +1540,31 @@ function ReminderRow({
     onOpen,
   })
 
+  // The animation is what normally releases the row, but a row can be taken
+  // off screen before it ends — a slot folded, the surface navigated away
+  // from. Reporting it on unmount too means a considered thought can never be
+  // left half-gone, and can never hold the surface's refresh shut.
+  const id = reminder.id
+  useEffect(() => {
+    if (!completing) return
+    return () => onLeft(id)
+  }, [completing, onLeft, id])
+
   return (
     <li
       data-reminder-id={reminder.id}
       data-reminder-highlight={highlighted ? '' : undefined}
-      ref={highlighted ? scrollRowIntoView : undefined}
+      data-reminder-leaving={completing ? '' : undefined}
+      ref={completing ? measureLeavingRow : highlighted ? scrollRowIntoView : undefined}
       role="option"
       aria-selected={selected}
+      // Struck through, inert, and out of the tab order the moment it is
+      // considered: what is on screen is a record of what just happened, not
+      // something still to act on.
+      aria-disabled={completing || undefined}
       // The row is the keyboard's way in — it has to be focusable for
       // Enter/Space to reach it at all, and it is what a screen reader reads.
-      tabIndex={0}
+      tabIndex={completing ? -1 : 0}
       onClick={onClick}
       onKeyDown={onKeyDown}
       onPointerDown={pointer.onPointerDown}
@@ -1465,57 +1572,42 @@ function ReminderRow({
       onPointerMove={pointer.onPointerMove}
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
+      // The list closes the gap only once the row has visibly gone. Other
+      // animations end on this element too (the deep-link flash), so the name
+      // is checked rather than assumed.
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget && e.animationName === 'reminder-leaving') onLeft(id)
+      }}
       className={cn(
         // The border is always there, transparent, so the processing pulse has
         // something to color without the row shifting by a pixel.
-        'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all duration-200 ease-out select-none',
+        'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
         selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
-        completing && 'pointer-events-none translate-x-2 opacity-0',
+        completing && 'animate-reminder-leaving pointer-events-none',
         aiProcessing && 'animate-ai-processing',
         highlighted && 'animate-row-highlight',
       )}
       data-ai-state={aiProcessing ? 'processing' : aiFailed ? 'failed' : undefined}
     >
-      {/* In selection mode the circle becomes a check mark, as the dashboard's
-          done button does — the row's tap is a selection then, and a circle
-          still offering to complete would contradict it. */}
-      {isSelectionMode ? (
-        <Checkbox
-          checked={selected}
-          onCheckedChange={() => onSelect(reminder)}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label={`Select "${reminder.title}"`}
-          className="mt-[3px] size-6 shrink-0"
-        />
-      ) : (
-        /* The circle considers this one item directly and never touches the
-           selection, so it stops the row's click from reaching the handler —
-           and its pointer events too, or holding it would turn selection mode
-           on underneath and swap the button out mid-press. */
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onComplete(reminder)
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label={`Mark "${reminder.title}" as considered`}
-          title="Considered"
-          className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
-        >
-          <Check
-            className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
-            strokeWidth={3}
-          />
-        </button>
-      )}
+      <ReminderRowMarker
+        reminder={reminder}
+        completing={completing}
+        selected={selected}
+        isSelectionMode={isSelectionMode}
+        onSelect={onSelect}
+        onComplete={onComplete}
+      />
       {/* The notes marker sits inline after the title rather than pinned to
           the right edge: on a wide screen a lone icon across the row reads as
           an unrelated control, and this one is only ever a footnote. */}
-      <p className="min-w-0 flex-1 text-[16px] leading-6">
-        <span className={cn('text-pretty', prominenceClasses(reminder.priority))}>
+      <p className={cn('min-w-0 flex-1 text-[16px] leading-6', completing && 'line-through')}>
+        <span
+          className={cn(
+            'text-pretty',
+            completing ? 'text-muted-foreground' : prominenceClasses(reminder.priority),
+          )}
+        >
           {reminder.title}
         </span>
         {/* Not every day: the day codes, "Monthly", "Once". Daily wears nothing. */}
@@ -1578,6 +1670,7 @@ function SearchResults({
   onRowOpen,
   onComplete,
   onRetry,
+  onLeft,
   onPutBack,
 }: {
   count: number
@@ -1592,6 +1685,7 @@ function SearchResults({
   onRowOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
+  onLeft: (id: number) => void
   onPutBack: (task: Task) => void
 }) {
   return (
@@ -1624,6 +1718,7 @@ function SearchResults({
               onRowOpen={onRowOpen}
               onComplete={onComplete}
               onRetry={onRetry}
+              onLeft={onLeft}
               onCompleteGroup={NO_OP}
               onPutBack={onPutBack}
             />
