@@ -69,13 +69,19 @@ enum TrackTimeline {
     ///
     /// **Pace (§5)** is `fraction of target done − fraction of period elapsed`,
     /// both clamped to 0...1: 0 is exactly on pace, negative behind, positive
-    /// ahead. §5 anchors a quota to its rrule period and `due_at` is that
-    /// period's boundary, so the window is `[due − periodLength, due]` and
-    /// `periodLength` comes from the rule's `FREQ` × `INTERVAL`. Everything
-    /// else in an rrule (`BYDAY`, `BYMONTHDAY`) narrows *when* inside the
-    /// period, never how long it is, so it is ignored here on purpose.
+    /// ahead. The period is the window `[progress_period_start, that + one
+    /// period]`: the server anchors every quota to the local calendar boundary
+    /// its period began on and advances that anchor as each period closes, and
+    /// the length comes from the rule's `FREQ` × `INTERVAL`. Everything else in
+    /// an rrule (`BYDAY`, `BYMONTHDAY`) narrows *when* inside the period, never
+    /// how long it is, so it is ignored here on purpose.
     ///
-    /// Items with no rrule or no due date have no clock to be behind: they get
+    /// The anchor replaced `due_at`, which used to stand in for the period's
+    /// end. A quota is dateless as of §5 — `due_at` is always null on one now —
+    /// so that window had silently collapsed: every pace read nil, every quota
+    /// tied, and the ranking below quietly degraded to id order.
+    ///
+    /// Items with no rrule or no anchor have no clock to be behind: they get
     /// no pace, no tick, and sort last. Inventing a period for them would put a
     /// moving marker on a bar where it means nothing.
     ///
@@ -118,12 +124,22 @@ enum TrackTimeline {
     /// present), tap `+1` a hundred times and nothing moves. Nothing is lost —
     /// pace is still fully expressed by each row's bar and tick, which is where
     /// §5 says it belongs.
+    ///
+    /// A frozen order also has to be thrown away once when the pace maths
+    /// itself changes, or a wrong order outlives the fix that corrected it —
+    /// `WidgetStore.trackOrder` reads as empty when it was frozen under an
+    /// older `trackOrderVersion`, which lands on the re-rank branch below.
     static func orderedItems(from tasks: [TaskDTO], now: Date = Date()) -> [TrackItem] {
         let paced = pacedItems(from: tasks, now: now)
         let stored = WidgetStore.trackOrder
 
         guard !stored.isEmpty, Set(stored) == Set(paced.map(\.id)) else {
-            WidgetStore.trackOrder = paced.map(\.id)
+            // Only an order that some item's pace actually shaped may retire the
+            // version marker — see `WidgetStore.setTrackOrder`.
+            WidgetStore.setTrackOrder(
+                paced.map(\.id),
+                pacedByPeriod: paced.contains { $0.pace != nil }
+            )
             return paced
         }
 
@@ -135,47 +151,103 @@ enum TrackTimeline {
     }
 
     /// Fraction of the current period already gone, 0...1.
+    ///
+    /// The window is `[progress_period_start, that + one period]`. The anchor is
+    /// the server's (`src/core/tasks/period-rollover.ts`): the UTC instant the
+    /// current period began by the user's local calendar — Monday 00:00 for a
+    /// week, the 1st for a month, midnight for a day — moved forward one period
+    /// at a time by the rollover job, which is the same moment it zeroes
+    /// `progress_current`. So the tick and the count always describe the same
+    /// period.
+    ///
+    /// No anchor means no pace, and there is deliberately NO fallback to
+    /// `due_at`: a quota is dateless (§5), so any date still sitting on one is a
+    /// leftover from before that rule, and pacing from it is precisely the bug
+    /// this replaced.
     static func elapsedFraction(for task: TaskDTO, now: Date = Date()) -> Double? {
-        guard let end = task.dueDate, let length = periodLength(rrule: task.rrule), length > 0 else {
+        guard let start = task.periodStartDate,
+              let end = periodEnd(rrule: task.rrule, from: start)
+        else {
             return nil
         }
-        let start = end.addingTimeInterval(-length)
+        let length = end.timeIntervalSince(start)
+        guard length > 0 else { return nil }
         return min(max(now.timeIntervalSince(start) / length, 0), 1)
     }
 
-    /// Period length implied by an rrule's `FREQ` and `INTERVAL`.
+    /// The instant the period that began at `start` ends.
     ///
-    /// Months and years are approximated (30 / 365 days). Over a period that
-    /// long the tick moves by a fraction of a percent per day, so calendar
-    /// exactness would buy nothing an eye could resolve.
+    /// Calendar arithmetic rather than `start + periodLength`, now that a real
+    /// anchor makes exactness free: the flat 30-day month is visibly wrong at
+    /// the short end — a monthly quota in February would divide 28 days by 30
+    /// and its tick would stop at 93%, never reaching the end of a period that
+    /// had already ended. It also matches the server, which advances this very
+    /// anchor in calendar units in the user's timezone, and it keeps a
+    /// daily/weekly period honest across a DST change. `periodLength` stays as
+    /// the fallback for the case where the calendar cannot answer.
+    static func periodEnd(rrule: String?, from start: Date) -> Date? {
+        guard let period = periodComponents(rrule: rrule) else { return nil }
+        if let end = Calendar.current.date(byAdding: period.unit, value: period.count, to: start) {
+            return end
+        }
+        guard let length = periodLength(rrule: rrule), length > 0 else { return nil }
+        return start.addingTimeInterval(length)
+    }
+
+    /// The period as calendar units — `.day × 7` for a week, so a `WEEKLY`
+    /// rule never depends on where the locale puts the start of its week.
+    static func periodComponents(rrule: String?) -> (unit: Calendar.Component, count: Int)? {
+        guard let rule = parseFrequency(rrule) else { return nil }
+        switch rule.freq {
+        case "HOURLY": return (.hour, rule.interval)
+        case "DAILY": return (.day, rule.interval)
+        case "WEEKLY": return (.day, 7 * rule.interval)
+        case "MONTHLY": return (.month, rule.interval)
+        case "YEARLY": return (.year, rule.interval)
+        default: return nil
+        }
+    }
+
+    /// Period length implied by an rrule's `FREQ` and `INTERVAL`, as a flat
+    /// interval — the fallback path of `periodEnd` and nothing else.
+    ///
+    /// Months and years are approximated here (30 / 365 days), which is why it
+    /// is the fallback and not the measure.
     static func periodLength(rrule: String?) -> TimeInterval? {
+        guard let rule = parseFrequency(rrule) else { return nil }
+        let day: TimeInterval = 86_400
+        switch rule.freq {
+        case "HOURLY": return 3_600 * Double(rule.interval)
+        case "DAILY": return day * Double(rule.interval)
+        case "WEEKLY": return day * 7 * Double(rule.interval)
+        case "MONTHLY": return day * 30 * Double(rule.interval)
+        case "YEARLY": return day * 365 * Double(rule.interval)
+        default: return nil
+        }
+    }
+
+    /// `FREQ` and `INTERVAL` out of an rrule; everything else is ignored.
+    private static func parseFrequency(_ rrule: String?) -> (freq: String, interval: Int)? {
         guard let rrule, !rrule.isEmpty else { return nil }
 
         // The server writes bare `FREQ=WEEKLY;BYDAY=MO` (see
         // `src/core/recurrence/rrule-builder.ts`); the `RRULE:` prefix is
         // stripped defensively in case a payload ever carries the iCal form.
-        var freq: Substring?
+        var freq: String?
         var interval = 1
         let body = rrule.uppercased().replacingOccurrences(of: "RRULE:", with: "")
         for part in body.split(separator: ";") {
             let pair = part.split(separator: "=", maxSplits: 1)
             guard pair.count == 2 else { continue }
             switch pair[0].trimmingCharacters(in: .whitespaces) {
-            case "FREQ": freq = pair[1]
+            case "FREQ": freq = String(pair[1])
             case "INTERVAL": interval = max(Int(pair[1]) ?? 1, 1)
             default: break
             }
         }
 
-        let day: TimeInterval = 86_400
-        switch freq {
-        case "HOURLY": return 3_600 * Double(interval)
-        case "DAILY": return day * Double(interval)
-        case "WEEKLY": return day * 7 * Double(interval)
-        case "MONTHLY": return day * 30 * Double(interval)
-        case "YEARLY": return day * 365 * Double(interval)
-        default: return nil
-        }
+        guard let freq else { return nil }
+        return (freq, interval)
     }
 
     /// The quota the 2×2 shows: the user's chevron choice while that item still

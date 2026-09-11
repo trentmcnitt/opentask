@@ -20,15 +20,14 @@ enum SampleData {
         return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
     }
 
-    /// A period boundary `days` out. Quota samples need a real `due_at` *and*
-    /// rrule or `TrackTimeline` has no period to measure pace against, and the
-    /// gallery card would show quotas with no pace tick at all.
-    private static func inDays(_ days: Int, hour: Int = 21) -> String {
+    /// Local midnight `days` ago, as the UTC ISO 8601 string the API returns in
+    /// `progress_period_start`. A quota sample needs an anchor *and* an rrule or
+    /// `TrackTimeline` has no period to measure pace against, and the gallery
+    /// card would show quotas with no pace tick at all.
+    private static func periodStart(daysAgo days: Int) -> String {
         let calendar = Calendar.current
-        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
-        var comps = calendar.dateComponents([.year, .month, .day], from: day)
-        comps.hour = hour
-        return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
+        let day = calendar.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        return DateHelpers.formatISO(calendar.startOfDay(for: day))
     }
 
     // MARK: - Reminders
@@ -109,16 +108,29 @@ enum SampleData {
     /// Spread across the pace range on purpose: one behind, one comfortably
     /// ahead, one met, one overflowing, so the gallery card shows every state
     /// the widget can be in.
+    ///
+    /// No `due_at` — §5 quotas are dateless, and the period anchor is what pace
+    /// is measured from. The anchors are offsets from today rather than real
+    /// Monday/1st boundaries so each card keeps the state it was written to
+    /// show whatever day the gallery is opened on.
     static var trackedTasks: [TaskDTO] {
         [
-            TaskDTO(id: 301, projectId: 3, title: "Workout", priority: 2, dueAt: inDays(3),
-                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 4, progressCurrent: 1),
-            TaskDTO(id: 302, projectId: 3, title: "Read", priority: 0, dueAt: inDays(3),
-                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 3, progressCurrent: 2),
-            TaskDTO(id: 303, projectId: 1, title: "Walk the long way home", priority: 1, dueAt: inDays(1),
-                    rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2),
-            TaskDTO(id: 304, projectId: 2, title: "Deep work block", priority: 3, dueAt: inDays(5),
-                    rrule: "FREQ=WEEKLY;BYDAY=FR", progressTarget: 3, progressCurrent: 4),
+            // 5/7 of a week gone against 1 of 4 done: behind.
+            TaskDTO(id: 301, projectId: 3, title: "Workout", priority: 2,
+                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 4, progressCurrent: 1,
+                    progressPeriodStart: periodStart(daysAgo: 5)),
+            // 2/7 gone against 2 of 3 done: ahead.
+            TaskDTO(id: 302, projectId: 3, title: "Read", priority: 0,
+                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 3, progressCurrent: 2,
+                    progressPeriodStart: periodStart(daysAgo: 2)),
+            // Today's daily quota, already met.
+            TaskDTO(id: 303, projectId: 1, title: "Walk the long way home", priority: 1,
+                    rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2,
+                    progressPeriodStart: periodStart(daysAgo: 0)),
+            // Overflowing: 4 logged against a target of 3.
+            TaskDTO(id: 304, projectId: 2, title: "Deep work block", priority: 3,
+                    rrule: "FREQ=WEEKLY;BYDAY=FR", progressTarget: 3, progressCurrent: 4,
+                    progressPeriodStart: periodStart(daysAgo: 3)),
         ]
     }
 
