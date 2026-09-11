@@ -68,6 +68,17 @@ struct OpenTaskApp: App {
             } else {
                 WebViewManager.shared.navigate(path: "/")
             }
+        case "reminder":
+            // A reminder opens ON the Reminders surface, and opens nothing:
+            // `?reminder=<id>` brings that row into view and highlights it.
+            // Tapping a reminder means "show me that one" — routing it through
+            // `task` instead put it on the dashboard with an editor open, which
+            // is the wrong tab and more than was asked for.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/reminders?reminder=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/reminders")
+            }
         case "reminders":
             WebViewManager.shared.navigate(path: "/reminders")
         default:

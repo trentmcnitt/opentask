@@ -17,15 +17,9 @@ struct TrackEntry: TimelineEntry {
         items.first { $0.id == selectedId } ?? items.first
     }
 
-    /// Position in the chevron ring, for naming the adjacent quotas.
+    /// Position in the chevron ring — where the list's window starts.
     var selectedIndex: Int? {
         items.firstIndex { $0.id == selectedId }
-    }
-
-    func neighborTitle(offset: Int) -> String? {
-        guard items.count > 1, let index = selectedIndex else { return nil }
-        let count = items.count
-        return items[((index + offset) % count + count) % count].task.title
     }
 }
 
