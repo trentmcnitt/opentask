@@ -1,5 +1,6 @@
 import AppIntents
 import SwiftUI
+import UIKit
 import WidgetKit
 
 /// Visual vocabulary shared by both widget kinds.
@@ -76,6 +77,46 @@ enum WidgetTheme {
     static let headerSpacing: CGFloat = 12
     static let cornerRadius: CGFloat = 8
 
+    /// Breathing room above the title in the Reminders / Tasks headers.
+    ///
+    /// WidgetKit's default content margin alone left the title sitting almost
+    /// on the card's top edge while the rows below it had 10pt gaps, so the
+    /// card read as if it had been shoved up under the bezel. Apple's own
+    /// Reminders widget drops its title noticeably below the top edge; this is
+    /// that drop. Track is deliberately excluded — its 4×4 spends every point
+    /// of height on quota rows.
+    static let headerTopPadding: CGFloat = 6
+
+    /// Row gap in the 4×2 families, where `rowSpacing`'s 10 costs a whole row.
+    ///
+    /// A systemMedium card is 128pt of usable height on an iPhone 17 Pro. A
+    /// 40pt header (the pager's hit targets set that floor) and two 36pt rows
+    /// spend 112 of it, so the gaps get what is left and not a point more —
+    /// at 6 the second row did not fit and the card dropped to one.
+    static let compactRowSpacing: CGFloat = 4
+
+    /// One line of a `.subheadline` row title, at the reader's text size.
+    ///
+    /// Two jobs, both in `ReminderRow` / `TaskRow`:
+    ///
+    /// 1. It centres the row's marker on the title's FIRST line. The marker's
+    ///    36pt hit target is taller than a line of text, so without this a
+    ///    two-line row floats its circle down between the two lines instead of
+    ///    beside the words it acts on.
+    /// 2. It RESERVES the row's lines, which is what lets `ViewThatFits` count
+    ///    rows correctly. ViewThatFits compares each candidate's *ideal* height,
+    ///    and a Text's ideal height is one unwrapped line however long the
+    ///    string is — so without a reserved height every candidate measured as
+    ///    if nothing wrapped, the tallest was chosen, and the card then squeezed
+    ///    the wrapping right back out of it. That was the truncation Trent saw.
+    ///
+    /// Read from UIKit rather than hardcoded so it tracks the system text size,
+    /// and rounded UP so a reserved two lines is never a hair short of two real
+    /// ones (which would silently cost the second line).
+    static var rowTitleLineHeight: CGFloat {
+        ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
+    }
+
     /// Track's list rows are spaced tighter than everything else.
     ///
     /// A quota row is only as tall as its 36pt buttons, and a typical corpus is
@@ -128,6 +169,17 @@ enum WidgetLink {
     static func task(_ id: Int) -> URL {
         URL(string: "\(scheme)://task/\(id)") ?? dashboard
     }
+
+    /// One reminder, ON the Reminders surface.
+    ///
+    /// Deliberately NOT `task(_:)`: that lands on the dashboard with the task's
+    /// editor open, which for a reminder is both the wrong tab and more than
+    /// was asked for. Tapping a reminder means "let me see that one" — the app
+    /// resolves this to `/reminders?reminder=<id>`, which brings the row into
+    /// view and highlights it, and opens nothing.
+    static func reminder(_ id: Int) -> URL {
+        URL(string: "\(scheme)://reminder/\(id)") ?? reminders
+    }
 }
 
 // MARK: - Shared chrome
@@ -147,49 +199,27 @@ struct ChevronButton<I: AppIntent>: View {
 
     let intent: I
     let direction: Direction
-    /// Name of the page this chevron lands on. Rendered only where the layout
-    /// affords it (see `ChevronPager.showsLabels`).
-    var label: String?
     /// False when there is nothing further this way — §8: "chevrons must
     /// telegraph their edges", so a dead chevron dims and stops responding
     /// rather than looking live and doing nothing.
     var enabled = true
 
-    /// ~10 chars: a slot or project name still reads ("Early morn…"), and two
-    /// of them plus the glyphs still fit a systemLarge header beside the title.
-    private var shortLabel: String? {
-        guard let label, !label.isEmpty else { return nil }
-        return label.count > 10 ? String(label.prefix(9)) + "…" : label
-    }
-
     var body: some View {
         Button(intent: intent) {
-            HStack(spacing: 2) {
-                if direction == .previous { glyph }
-                if let shortLabel {
-                    Text(shortLabel)
-                        .font(.caption2)
-                        .lineLimit(1)
-                }
-                if direction == .next { glyph }
-            }
-            // 40pt MINIMUM hit target (HIG says 44, but widget headers can't
-            // spare that height) — the glyph stays small, the tappable area
-            // doesn't. At 22pt these were nearly impossible to hit with a
-            // casual tap. `minWidth` rather than a fixed width so a label can
-            // widen the target; it never shrinks it.
-            .frame(minWidth: 40, minHeight: 40)
-            .contentShape(Rectangle())
+            Image(systemName: direction.symbol)
+                .font(.caption.weight(.semibold))
+                // 40pt hit target (HIG says 44, but widget headers can't spare
+                // that height) — the glyph stays small, the tappable area
+                // doesn't. At 22pt these were nearly impossible to hit with a
+                // casual tap. Fixed, not `minWidth`: both halves of a pager
+                // must be exactly the same size as each other.
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .opacity(enabled ? 1 : 0.3)
         .disabled(!enabled)
-    }
-
-    private var glyph: some View {
-        Image(systemName: direction.symbol)
-            .font(.caption.weight(.semibold))
     }
 }
 
@@ -197,41 +227,30 @@ struct ChevronButton<I: AppIntent>: View {
 /// quotas.
 ///
 /// It is told about its *ring*, not just its intents (§8, amended 2026-07-27):
+/// `hasPrevious`/`hasNext` are false when the ring has nowhere to go (one
+/// project, one quota), and the chevron dims out. All three rings currently
+/// wrap, so a live ring keeps both chevrons live — wrapping is unambiguous with
+/// a handful of pages and beats a dead end the user can't explain.
 ///
-/// - `hasPrevious`/`hasNext` are false when the ring has nowhere to go (one
-///   project, one quota), and the chevron dims out. All three rings currently
-///   wrap, so a live ring keeps both chevrons live — wrapping is unambiguous
-///   with a handful of pages and beats a dead end the user can't explain.
-/// - `previousLabel`/`nextLabel` name the *adjacent* page, so paging is a
-///   choice rather than a gamble. They render only when `showsLabels` — pass it
-///   in `systemLarge`, where the header has the width, and not in
-///   `systemMedium`, where it would crowd out the title.
+/// §8 as first written ALSO had systemLarge name the adjacent page beside each
+/// glyph ("‹ Midday   Evening ›"). That is gone (2026-09-11, after Trent's
+/// first use of the widgets): page names are page-length, the header is not,
+/// and the truncation that followed — "‹ Early mor…" — spent width to tell the
+/// reader nothing a tap wouldn't. The header already names the page you are ON,
+/// in headline type; the rings wrap and hold a handful of pages; a chevron tap
+/// is free and reversible. So a chevron says "there is more this way", which is
+/// the whole of its job, and the room it gave back goes to the content.
 struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
     let previous: Previous
     let next: Next
     var hasPrevious = true
     var hasNext = true
-    var previousLabel: String?
-    var nextLabel: String?
-    var showsLabels = false
 
     var body: some View {
-        // Zero spacing with bare glyphs (the 40pt targets already separate
-        // them); a gap once labels are on, or the two page names read as one
-        // run-on word — "RemindersOne-offs".
-        HStack(spacing: showsLabels ? 10 : 0) {
-            ChevronButton(
-                intent: previous,
-                direction: .previous,
-                label: showsLabels ? previousLabel : nil,
-                enabled: hasPrevious
-            )
-            ChevronButton(
-                intent: next,
-                direction: .next,
-                label: showsLabels ? nextLabel : nil,
-                enabled: hasNext
-            )
+        // Zero spacing: the two 40pt hit targets already separate the glyphs.
+        HStack(spacing: 0) {
+            ChevronButton(intent: previous, direction: .previous, enabled: hasPrevious)
+            ChevronButton(intent: next, direction: .next, enabled: hasNext)
         }
     }
 }
