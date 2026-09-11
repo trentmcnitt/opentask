@@ -10,11 +10,13 @@ import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summa
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
+import { useLongPress } from '@/hooks/useLongPress'
 import { useReminders, type ReminderCreateInput, type ReminderGroup } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useSyncStream } from '@/hooks/useSyncStream'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { QuickAdd } from '@/components/QuickAdd'
@@ -50,9 +52,14 @@ import type { Task } from '@/types'
  *    through all the reminders"). It only ever counts what he did — a bar that
  *    filled with misses would read intent from absence (L1).
  *
- * Selection works exactly as it does on the dashboard, on purpose: plain click
- * selects, shift-click a range, cmd/ctrl-click adds, Escape clears; the same
- * floating bar appears with the verbs that apply. A row click never navigates.
+ * Touching a row considers it (Trent, 2026-09-11: "I should be able to just
+ * tap reminders pretty much anywhere to mark them done"). Selection is behind a
+ * press-and-hold, the same 400ms gesture the dashboard's TaskRow uses, and the
+ * same floating bar appears with the verbs that apply — including Details,
+ * which is now the deliberate way in to a reminder's editor ("we just tap and
+ * hold and then click Details with the item checked"). A mouse keeps its
+ * shortcuts into a selection: shift-click a range, cmd/ctrl-click to add.
+ * Escape clears. A row click never navigates.
  *
  * Completed items leave immediately, and a slot that never had anything today
  * is not shown (on this surface there is no day to read, only thoughts still
@@ -103,6 +110,28 @@ interface RemindersViewProps {
   searchQuery?: string
 }
 
+/**
+ * Everything a reminder row can ask the surface to do.
+ *
+ * One object rather than nine props, because the same set is threaded
+ * unchanged through the slot groups and the search view, and a chain that long
+ * drifts: it is how `onLeft` reached the rows in a slot before it reached the
+ * ones in a search result.
+ */
+interface ReminderRowHandlers {
+  onSelect: (task: Task) => void
+  onRangeSelect: (task: Task) => void
+  onOpen: (task: Task) => void
+  onComplete: (task: Task) => void
+  onRetry: (task: Task) => void
+  /** This row has finished collapsing and may leave the list. */
+  onLeft: (id: number) => void
+  /** The deep link's flash has played; it must not play again on a remount. */
+  onHighlightDone: () => void
+  /** Report that a row is on screen; returns its own deregistration. */
+  onRegister: (id: number) => () => void
+}
+
 /** Stable identity for a group across refetches — slot id, or the un-slotted bucket. */
 function groupKey(group: ReminderGroup): string {
   return group.slot ? String(group.slot.id) : 'unslotted'
@@ -129,6 +158,9 @@ export function RemindersView({
     complete,
     completeMany,
     completeGroup,
+    rowLeft,
+    registerRow,
+    hydrated,
     putBack,
     remove,
     refresh,
@@ -252,7 +284,71 @@ export function RemindersView({
     return withWaiting.length > 0 ? groupKey(withWaiting[0]) : null
   }, [visibleGroups, timezone])
 
-  const { isOpen, toggleOpen, expandedKeys, setExpanded } = useSlotDisclosure()
+  const { isOpen, toggleOpen, expandedKeys, setOpen, setExpanded } = useSlotDisclosure()
+
+  // Claimed by whichever of the two effects below gets to it first: a deep
+  // link is a place the user asked for, and it outranks the current slot.
+  const scrolledRef = useRef(false)
+
+  /**
+   * `?reminder=<id>` — the deep link the iOS widget opens.
+   *
+   * The row is brought on screen and flashed once; nothing is opened. The
+   * widget's user tapped a thought to SEE it, and an editor over the top of the
+   * surface would hide the five thoughts around it that are the reason they
+   * looked. (The dashboard's `?task=` does open its panel — a task tapped from
+   * a notification is one thing to act on, not a place in a list.)
+   *
+   * The id is looked up once the fetch has resolved. Found or not, that answer
+   * is definitive — unlike the dashboard's list, an empty payload here is a
+   * real "no reminders" — so the param is consumed either way. An error is the
+   * one case that waits: a retry may still find it.
+   */
+  const [highlightId, setHighlightId] = useState<number | null>(null)
+  const [openNotToday, setOpenNotToday] = useState(false)
+  // Once the flash has played it is spent. Without this the row would flash —
+  // and drag the viewport back to itself — every time it remounted, which a
+  // fold, a search, or a slot re-render does minutes after the link was used.
+  const clearHighlight = useCallback(() => setHighlightId(null), [])
+  const deepLinkDone = useRef(false)
+  useEffect(() => {
+    // `hydrated`, not `loading`: the module cache paints the surface instantly
+    // on a client-side visit, so `loading` is already false over data that may
+    // predate the reminder being linked to. Consuming the param then would
+    // spend it on a list that simply had not been fetched yet — the same trap
+    // the dashboard's `?task=` avoids by refusing to resolve against an empty
+    // list.
+    if (deepLinkDone.current || !hydrated || error) return
+    // Read the URL directly rather than through useSearchParams: the param is
+    // stripped below with a raw history rewrite (same reason as the dashboard's
+    // — a router.replace issues an RSC fetch that can remount this surface),
+    // which the hook does not observe anyway, and reading window.location keeps
+    // this component out of a Suspense boundary it otherwise would need.
+    const raw = new URLSearchParams(window.location.search).get('reminder')
+    if (!raw) {
+      deepLinkDone.current = true
+      return
+    }
+    deepLinkDone.current = true
+    const id = Number.parseInt(raw, 10)
+    const group = Number.isNaN(id)
+      ? undefined
+      : groups.find((g) => g.reminders.some((r) => r.id === id))
+    if (group) {
+      // A slot the user folded, or one still ahead in the day showing only its
+      // first few, would leave the linked row unrendered. Open and uncap it.
+      const key = groupKey(group)
+      setOpen(key, true)
+      setExpanded(key, true)
+      setHighlightId(id)
+      scrolledRef.current = true
+    } else if (!Number.isNaN(id) && notToday.some((t) => t.id === id)) {
+      setOpenNotToday(true)
+      setHighlightId(id)
+      scrolledRef.current = true
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [hydrated, error, groups, notToday, setOpen, setExpanded])
 
   // Land on the slot the day is actually in.
   //
@@ -263,7 +359,6 @@ export function RemindersView({
   //
   // Once per load, never during a search (the results are the subject then),
   // and never if the current slot is already the first thing on screen.
-  const scrolledRef = useRef(false)
   useEffect(() => {
     if (searching || scrolledRef.current || !currentKey) return
     const el = document.querySelector(`[data-slot-key="${CSS.escape(currentKey)}"]`)
@@ -474,6 +569,29 @@ export function RemindersView({
     [onUndo, onCompleted, refresh],
   )
 
+  const rowHandlers: ReminderRowHandlers = useMemo(
+    () => ({
+      onSelect: actions.selectRow,
+      onRangeSelect: actions.rangeSelectRow,
+      onOpen: openDetail,
+      onComplete: actions.complete,
+      onRetry: retryEnrichment,
+      onLeft: rowLeft,
+      onHighlightDone: clearHighlight,
+      onRegister: registerRow,
+    }),
+    [
+      actions.selectRow,
+      actions.rangeSelectRow,
+      openDetail,
+      actions.complete,
+      retryEnrichment,
+      rowLeft,
+      clearHighlight,
+      registerRow,
+    ],
+  )
+
   return (
     // Clearance below the last row for the floating selection bar, so the
     // end of the list can always be scrolled out from under it.
@@ -501,10 +619,8 @@ export function RemindersView({
           notToday={searchNotToday}
           completingIds={completingIds}
           selectedIds={selectedIds}
-          onRowClick={actions.rowClick}
-          onRowOpen={openDetail}
-          onComplete={actions.complete}
-          onRetry={retryEnrichment}
+          isSelectionMode={actions.isSelectionMode}
+          rowHandlers={rowHandlers}
           onPutBack={putBack}
         />
       ) : visibleGroups.length === 0 ? (
@@ -540,10 +656,9 @@ export function RemindersView({
                     onExpand={(expanded) => setExpanded(key, expanded)}
                     completingIds={completingIds}
                     selectedIds={selectedIds}
-                    onRowClick={actions.rowClick}
-                    onRowOpen={openDetail}
-                    onComplete={actions.complete}
-                    onRetry={retryEnrichment}
+                    isSelectionMode={actions.isSelectionMode}
+                    highlightId={highlightId}
+                    rowHandlers={rowHandlers}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
                   />
@@ -557,7 +672,15 @@ export function RemindersView({
       {/* Reminders with no occurrence today, so a weekly thought is reachable
           on its off days (Trent, 2026-09-05). Never counted; a row opens its
           editor, since there is nothing to consider today. */}
-      {!loading && notToday.length > 0 && <NotTodayFold items={notToday} onOpen={openDetail} />}
+      {!loading && notToday.length > 0 && (
+        <NotTodayFold
+          items={notToday}
+          onOpen={openDetail}
+          requestOpen={openNotToday}
+          highlightId={highlightId}
+          onHighlightDone={clearHighlight}
+        />
+      )}
 
       <ReminderSelectionBar
         selectedCount={selectedIds.size}
@@ -612,7 +735,7 @@ function useReminderActions({
   completeGroup: (group: ReminderGroup) => Promise<void>
   remove: (tasks: Task[]) => Promise<void>
 }) {
-  const { isSelectionMode, toggle, rangeSelect, selectOnly, removeAll, clear } = selection
+  const { isSelectionMode, toggle, rangeSelect, removeAll, clear } = selection
 
   useEffect(() => {
     if (!isSelectionMode) return
@@ -623,13 +746,17 @@ function useReminderActions({
     return () => window.removeEventListener('keydown', onKey)
   }, [isSelectionMode, clear])
 
-  const rowClick = useCallback(
-    (task: Task, e: React.MouseEvent) => {
-      if (e.shiftKey) rangeSelect(task.id, orderedIds)
-      else if (e.metaKey || e.ctrlKey) toggle(task.id)
-      else selectOnly(task.id)
-    },
-    [rangeSelect, toggle, selectOnly, orderedIds],
+  /**
+   * Add or remove one row. Deliberately `toggle`, where the dashboard's plain
+   * desktop click is `selectOnly`: there, a click that replaced the selection
+   * costs a click to undo, but here dropping out of selection mode means the
+   * NEXT tap considers the thought. Replace-and-exit is a footgun this surface
+   * has and the dashboard does not, so every tap in selection mode accumulates.
+   */
+  const selectRow = useCallback((task: Task) => toggle(task.id), [toggle])
+  const rangeSelectRow = useCallback(
+    (task: Task) => rangeSelect(task.id, orderedIds),
+    [rangeSelect, orderedIds],
   )
   const completeOne = useCallback(
     (task: Task) => {
@@ -678,7 +805,9 @@ function useReminderActions({
   )
 
   return {
-    rowClick,
+    isSelectionMode,
+    selectRow,
+    rangeSelectRow,
     complete: completeOne,
     completeGroup: completeSlot,
     considerSelection,
@@ -851,15 +980,26 @@ function useSlotDisclosure() {
     },
     [isOpen],
   )
+  // Both setters return the previous state untouched when nothing would
+  // change. The deep-link effect below asks for a slot to be open and expanded
+  // while reading `expandedKeys`; a fresh Set every call would re-render, re-run
+  // the effect, and ask again forever.
+  const setOpen = useCallback((key: string, open: boolean) => {
+    setOpenOverrides((prev) => {
+      if ((prev.get(key) ?? true) === open) return prev
+      return new Map(prev).set(key, open)
+    })
+  }, [])
   const setExpanded = useCallback((key: string, expanded: boolean) => {
     setExpandedKeys((prev) => {
+      if (prev.has(key) === expanded) return prev
       const next = new Set(prev)
       if (expanded) next.add(key)
       else next.delete(key)
       return next
     })
   }, [])
-  return { isOpen, toggleOpen, expandedKeys, setExpanded }
+  return { isOpen, toggleOpen, expandedKeys, setOpen, setExpanded }
 }
 
 /**
@@ -911,10 +1051,9 @@ function ReminderSlotGroup({
   onExpand,
   completingIds,
   selectedIds,
-  onRowClick,
-  onRowOpen,
-  onComplete,
-  onRetry,
+  isSelectionMode,
+  highlightId,
+  rowHandlers,
   onCompleteGroup,
   onPutBack,
 }: {
@@ -930,10 +1069,9 @@ function ReminderSlotGroup({
   onExpand: (expanded: boolean) => void
   completingIds: Set<number>
   selectedIds: Set<number>
-  onRowClick: (task: Task, e: React.MouseEvent) => void
-  onRowOpen: (task: Task) => void
-  onComplete: (task: Task) => void
-  onRetry: (task: Task) => void
+  isSelectionMode: boolean
+  highlightId: number | null
+  rowHandlers: ReminderRowHandlers
   onCompleteGroup: (group: ReminderGroup) => void
   onPutBack: (task: Task) => void
 }) {
@@ -1017,10 +1155,9 @@ function ReminderSlotGroup({
                   reminder={reminder}
                   completing={completingIds.has(reminder.id)}
                   selected={selectedIds.has(reminder.id)}
-                  onClick={onRowClick}
-                  onOpen={onRowOpen}
-                  onComplete={onComplete}
-                  onRetry={onRetry}
+                  isSelectionMode={isSelectionMode}
+                  highlighted={highlightId === reminder.id}
+                  {...rowHandlers}
                 />
               ))}
             </ul>
@@ -1208,22 +1345,309 @@ function ConsideredDisclosure({
   )
 }
 
-function ReminderRow({
+/**
+ * Bring a deep-linked row on screen (`?reminder=<id>`).
+ *
+ * A callback ref rather than an effect: the row may mount already highlighted
+ * (inside the "Not today" fold, which the link opens) or become highlighted
+ * while it is mounted, and React hands the node to a changed callback ref in
+ * both cases — one code path instead of two. Module-level so its identity is
+ * stable and it fires once.
+ */
+const scrollRowIntoView = (el: HTMLElement | null) => {
+  el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
+
+/**
+ * A row's own classes.
+ *
+ * The load-bearing part is the animation. `animation` is ONE property and three
+ * of these set it, so they must never be on the row together: the last one
+ * defined in the stylesheet would win and the others would simply not run.
+ * That matters beyond looks — the leaving animation's `animationend` is what
+ * removes the row and releases the surface's held refresh, so an AI pulse
+ * quietly beating it would strand a struck-through row and switch refreshing
+ * off for the rest of the session. While a row is leaving, leaving is the only
+ * animation it gets.
+ */
+function reminderRowClasses({
+  completing,
+  selected,
+  highlighted,
+  aiProcessing,
+}: {
+  completing: boolean
+  selected: boolean
+  highlighted: boolean
+  aiProcessing: boolean
+}): string {
+  return cn(
+    // The border is always there, transparent, so the processing pulse has
+    // something to color without the row shifting by a pixel.
+    'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
+    'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+    selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
+    completing && 'animate-reminder-leaving pointer-events-none',
+    !completing && aiProcessing && 'animate-ai-processing',
+    !completing && highlighted && 'animate-row-highlight',
+  )
+}
+
+/**
+ * Move focus off a row that is about to be considered: the next row, else the
+ * one before it, else the slot's own header. Keyboard work down a slot should
+ * carry on where it was, and focus must never end up on <body>.
+ */
+function focusAfterRow(row: HTMLElement): void {
+  const next = row.nextElementSibling as HTMLElement | null
+  const prev = row.previousElementSibling as HTMLElement | null
+  const header = row
+    .closest('[data-slot-group]')
+    ?.querySelector<HTMLElement>('button[aria-expanded]')
+  ;(next ?? prev ?? header)?.focus()
+}
+
+/**
+ * Hand the leaving animation the height it has to collapse from.
+ *
+ * A callback ref rather than an effect: React attaches refs during the commit,
+ * before the browser paints, so the row is measured at full size and the first
+ * painted frame of the animation already has the value. An effect would run
+ * after paint and leave one frame at `height: auto`.
+ */
+const measureLeavingRow = (el: HTMLElement | null) => {
+  if (el) el.style.setProperty('--reminder-row-h', `${el.offsetHeight}px`)
+}
+
+/**
+ * A row's gestures (Trent, 2026-09-11): "I should be able to just tap reminders
+ * pretty much anywhere to mark them done. I can press and hold any item to turn
+ * on select mode, a little bit like the way tasks are set up… If you want to
+ * actually get the details, I guess we just tap and hold and then click Details
+ * with the item checked."
+ *
+ * So a tap considers, a hold selects, and details are one step further in. The
+ * hold is the dashboard's own `useLongPress` at the same 400ms with the same
+ * jitter tolerance; `didFire()` swallows the click the browser synthesises
+ * afterwards, without which every hold would also consider the thought it had
+ * just selected.
+ *
+ * It lives in a hook because the row is already near ESLint's function-length
+ * limit, and because the two halves — what a pointer means and what a key
+ * means — read better side by side than buried in the markup.
+ */
+function useReminderRowGestures({
+  reminder,
+  completing,
+  highlighted,
+  isSelectionMode,
+  onComplete,
+  onSelect,
+  onRangeSelect,
+  onOpen,
+  onLeft,
+  onHighlightDone,
+}: {
+  reminder: Task
+  /** Already considered and on its way out — every gesture is a no-op. */
+  completing: boolean
+  highlighted: boolean
+  isSelectionMode: boolean
+  onComplete: (task: Task) => void
+  onSelect: (task: Task) => void
+  onRangeSelect: (task: Task) => void
+  onOpen: (task: Task) => void
+  onLeft: (id: number) => void
+  onHighlightDone: () => void
+}) {
+  // In selection mode the hold extends the range from the anchor, exactly as on
+  // the dashboard; out of it, the hold is what turns selection mode on.
+  const onLongPress = useCallback(() => {
+    if (isSelectionMode) onRangeSelect(reminder)
+    else onSelect(reminder)
+  }, [isSelectionMode, onRangeSelect, onSelect, reminder])
+  const pointer = useLongPress({ onLongPress })
+
+  const onClick = useCallback(
+    (e: React.MouseEvent) => {
+      // The hold already acted; swallow the click it left behind.
+      if (pointer.didFire()) {
+        e.preventDefault()
+        return
+      }
+      // The circle, the checkbox and Retry own their own clicks.
+      if (fromRowControl(e)) return
+      // A row on its way out is inert to pointers in CSS as well; this is the
+      // same answer for anything that gets past that.
+      if (completing) return
+      // A held modifier never completes: it is the mouse's fast way into a
+      // selection, and a slip that considered a thought is the one mistake
+      // this surface should not make.
+      if (e.shiftKey) onRangeSelect(reminder)
+      else if (e.metaKey || e.ctrlKey || isSelectionMode) onSelect(reminder)
+      else onComplete(reminder)
+    },
+    [pointer, completing, isSelectionMode, onComplete, onSelect, onRangeSelect, reminder],
+  )
+
+  /**
+   * Keyboard: the row is the tab stop, Enter/Space is the tap (considered, or
+   * the checkbox once selection mode is on), and Cmd/Ctrl+Enter opens details —
+   * the one thing hold-then-Details cannot offer a keyboard.
+   */
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      // Enter on the circle or on Retry has already done its work; the same
+      // keystroke bubbles here and must not do it a second time.
+      if (e.target !== e.currentTarget) return
+      // Focus stays on a row while it collapses (the browser does not move it
+      // just because tabindex went to -1), so a second Enter inside those
+      // 180ms would ask for a second completion — and a recurring reminder
+      // would advance two occurrences for one intention.
+      if (completing) return
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        onOpen(reminder)
+        return
+      }
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      if (isSelectionMode) {
+        onSelect(reminder)
+        return
+      }
+      // Hand focus on before the row goes, or it falls to <body> and the next
+      // Tab starts again from the top of the page.
+      focusAfterRow(e.currentTarget as HTMLElement)
+      onComplete(reminder)
+    },
+    [completing, isSelectionMode, onComplete, onSelect, onOpen, reminder],
+  )
+
+  /**
+   * What an animation ending on this row MEANS. The list closes the gap only
+   * once the row has visibly gone, and the deep link's flash is spent once it
+   * has played; both arrive here, so the name is checked rather than assumed.
+   */
+  const onAnimationEnd = useCallback(
+    (e: React.AnimationEvent) => {
+      if (e.target !== e.currentTarget) return
+      if (e.animationName === 'reminder-leaving') {
+        if (highlighted) onHighlightDone()
+        onLeft(reminder.id)
+      } else if (e.animationName === 'row-highlight') {
+        onHighlightDone()
+      }
+    },
+    [highlighted, onHighlightDone, onLeft, reminder.id],
+  )
+
+  return { pointer, onClick, onKeyDown, onAnimationEnd }
+}
+
+/**
+ * The 24px mark at the head of a row, in its three states.
+ *
+ * Leaving: a filled check, aria-hidden — it is the answer to the tap, not
+ * something still to press. Selection mode: a check box, as the dashboard's
+ * done button becomes. Otherwise: the circle, which considers this one item
+ * and never touches the selection, so it stops the row's click from reaching
+ * the row handler — and its pointer events too, or holding it would turn
+ * selection mode on underneath and swap the button out mid-press.
+ */
+function ReminderRowMarker({
   reminder,
   completing,
   selected,
-  onClick,
-  onOpen,
+  isSelectionMode,
+  onSelect,
   onComplete,
-  onRetry,
 }: {
   reminder: Task
   completing: boolean
   selected: boolean
-  onClick: (task: Task, e: React.MouseEvent) => void
+  isSelectionMode: boolean
+  onSelect: (task: Task) => void
+  onComplete: (task: Task) => void
+}) {
+  if (completing) {
+    return (
+      <span
+        aria-hidden
+        className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white"
+      >
+        <Check className="size-3.5" strokeWidth={3} />
+      </span>
+    )
+  }
+  if (isSelectionMode) {
+    return (
+      <Checkbox
+        checked={selected}
+        onCheckedChange={() => onSelect(reminder)}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Select "${reminder.title}"`}
+        className="mt-[3px] size-6 shrink-0"
+      />
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onComplete(reminder)
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      // The row itself is the tab stop and Enter/Space on it does exactly what
+      // this button does, so a second stop per row would be pure duplication on
+      // a surface that can hold seventy of them.
+      tabIndex={-1}
+      aria-label={`Mark "${reminder.title}" as considered`}
+      title="Considered"
+      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+    >
+      <Check
+        className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
+        strokeWidth={3}
+      />
+    </button>
+  )
+}
+
+function ReminderRow({
+  reminder,
+  completing,
+  selected,
+  isSelectionMode,
+  highlighted,
+  onSelect,
+  onRangeSelect,
+  onOpen,
+  onComplete,
+  onRetry,
+  onLeft,
+  onHighlightDone,
+  onRegister,
+}: {
+  reminder: Task
+  completing: boolean
+  selected: boolean
+  isSelectionMode: boolean
+  /** Deep-linked from the widget: scroll to it and flash it once. */
+  highlighted: boolean
+  onSelect: (task: Task) => void
+  onRangeSelect: (task: Task) => void
   onOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
+  /** This row has finished collapsing and may leave the list. */
+  onLeft: (id: number) => void
+  /** The deep link's flash has played; it must not play again on a remount. */
+  onHighlightDone: () => void
+  /** Report that this row is on screen; returns its own deregistration. */
+  onRegister: (id: number) => () => void
 }) {
   const hasNotes = !!reminder.notes?.trim()
   const mark = cadenceMark(reminder.rrule)
@@ -1236,56 +1660,80 @@ function ReminderRow({
   const aiProcessing = reminder.labels.includes('ai-to-process')
   const aiFailed = reminder.labels.includes('ai-failed')
 
+  const { pointer, onClick, onKeyDown, onAnimationEnd } = useReminderRowGestures({
+    reminder,
+    completing,
+    highlighted,
+    isSelectionMode,
+    onComplete,
+    onSelect,
+    onRangeSelect,
+    onOpen,
+    onLeft,
+    onHighlightDone,
+  })
+
+  // The animation is what normally releases the row, but a row can be taken
+  // off screen before it ends — a slot folded, the surface navigated away
+  // from. Reporting it on unmount too means a considered thought can never be
+  // left half-gone, and can never hold the surface's refresh shut.
+  const id = reminder.id
+  useEffect(() => {
+    if (!completing) return
+    return () => onLeft(id)
+  }, [completing, onLeft, id])
+
+  // Being on screen is what qualifies a row to hold its place when it is
+  // considered — and to hold the surface's refresh with it. A row that is not
+  // rendered (a folded slot, or under a "Show all N" cap) cannot report its
+  // animation finishing, so the surface must know which rows these are rather
+  // than assume every completed id has one. See `completeIds`.
+  useEffect(() => onRegister(id), [onRegister, id])
+
   return (
     <li
       data-reminder-id={reminder.id}
+      data-reminder-highlight={highlighted ? '' : undefined}
+      data-reminder-leaving={completing ? '' : undefined}
+      ref={completing ? measureLeavingRow : highlighted ? scrollRowIntoView : undefined}
       role="option"
       aria-selected={selected}
-      onClick={(e) => onClick(reminder, e)}
-      // Double-click opens the reminder's details, as it opens a task's quick
-      // panel on the dashboard (Trent, 2026-09-05: "why doesn't double-clicking
-      // bring up the modal"). Its two clicks select and then deselect the row
-      // (a lone selection toggles), so afterwards nothing is selected — the
-      // dashboard's double-click leaves the same state.
-      // Same guard the quota rows use: the check circle and Retry stop the
-      // row's click, but dblclick travels separately and would open this on
-      // top of whatever the button just did.
-      onDoubleClick={(e) => {
-        if (fromRowControl(e)) return
-        onOpen(reminder)
-      }}
-      className={cn(
-        // The border is always there, transparent, so the processing pulse has
-        // something to color without the row shifting by a pixel.
-        'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-all duration-200 ease-out select-none',
-        selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
-        completing && 'pointer-events-none translate-x-2 opacity-0',
-        aiProcessing && 'animate-ai-processing',
-      )}
+      // Struck through, inert, and out of the tab order the moment it is
+      // considered: what is on screen is a record of what just happened, not
+      // something still to act on.
+      aria-disabled={completing || undefined}
+      // The row is the keyboard's way in — it has to be focusable for
+      // Enter/Space to reach it at all, and it is what a screen reader reads.
+      tabIndex={completing ? -1 : 0}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      onPointerDown={pointer.onPointerDown}
+      onPointerUp={pointer.onPointerUp}
+      onPointerMove={pointer.onPointerMove}
+      onPointerLeave={pointer.onPointerLeave}
+      onPointerCancel={pointer.onPointerUp}
+      onAnimationEnd={onAnimationEnd}
+      className={reminderRowClasses({ completing, selected, highlighted, aiProcessing })}
       data-ai-state={aiProcessing ? 'processing' : aiFailed ? 'failed' : undefined}
     >
-      {/* The circle considers this one item directly and never touches the
-          selection, so it stops the row's click from reaching the handler. */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onComplete(reminder)
-        }}
-        aria-label={`Mark "${reminder.title}" as considered`}
-        title="Considered"
-        className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
-      >
-        <Check
-          className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
-          strokeWidth={3}
-        />
-      </button>
+      <ReminderRowMarker
+        reminder={reminder}
+        completing={completing}
+        selected={selected}
+        isSelectionMode={isSelectionMode}
+        onSelect={onSelect}
+        onComplete={onComplete}
+      />
       {/* The notes marker sits inline after the title rather than pinned to
           the right edge: on a wide screen a lone icon across the row reads as
           an unrelated control, and this one is only ever a footnote. */}
-      <p className="min-w-0 flex-1 text-[16px] leading-6">
-        <span className={cn('text-pretty', prominenceClasses(reminder.priority))}>
+      <p className={cn('min-w-0 flex-1 text-[16px] leading-6', completing && 'line-through')}>
+        <span
+          className={cn(
+            'text-pretty',
+            completing ? 'text-muted-foreground' : prominenceClasses(reminder.priority),
+          )}
+        >
           {reminder.title}
         </span>
         {/* Not every day: the day codes, "Monthly", "Once". Daily wears nothing. */}
@@ -1312,6 +1760,7 @@ function ReminderRow({
                 e.stopPropagation()
                 onRetry(reminder)
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               className="text-foreground/80 hover:text-foreground ml-1.5 underline underline-offset-2"
             >
               Retry
@@ -1341,10 +1790,8 @@ function SearchResults({
   notToday,
   completingIds,
   selectedIds,
-  onRowClick,
-  onRowOpen,
-  onComplete,
-  onRetry,
+  isSelectionMode,
+  rowHandlers,
   onPutBack,
 }: {
   count: number
@@ -1353,10 +1800,8 @@ function SearchResults({
   notToday: Task[]
   completingIds: Set<number>
   selectedIds: Set<number>
-  onRowClick: (task: Task, e: React.MouseEvent) => void
-  onRowOpen: (task: Task) => void
-  onComplete: (task: Task) => void
-  onRetry: (task: Task) => void
+  isSelectionMode: boolean
+  rowHandlers: ReminderRowHandlers
   onPutBack: (task: Task) => void
 }) {
   return (
@@ -1382,15 +1827,16 @@ function SearchResults({
               onExpand={NO_OP}
               completingIds={completingIds}
               selectedIds={selectedIds}
-              onRowClick={onRowClick}
-              onRowOpen={onRowOpen}
-              onComplete={onComplete}
-              onRetry={onRetry}
+              isSelectionMode={isSelectionMode}
+              highlightId={null}
+              rowHandlers={rowHandlers}
               onCompleteGroup={NO_OP}
               onPutBack={onPutBack}
             />
           ))}
-          {notToday.length > 0 && <NotTodayFold items={notToday} onOpen={onRowOpen} forceOpen />}
+          {notToday.length > 0 && (
+            <NotTodayFold items={notToday} onOpen={rowHandlers.onOpen} forceOpen />
+          )}
         </div>
       )}
     </>
@@ -1411,20 +1857,38 @@ function NotTodayFold({
   items,
   onOpen,
   forceOpen = false,
+  requestOpen = false,
+  highlightId = null,
+  onHighlightDone = NO_OP,
 }: {
   items: Task[]
   onOpen: (task: Task) => void
   /** Search results are shown, never folded away. */
   forceOpen?: boolean
+  /**
+   * A deep link landed on a thought that lives in here. Opens the fold once,
+   * and then gets out of the way — unlike `forceOpen`, which also takes the
+   * toggle away, and the user must be able to fold this again.
+   */
+  requestOpen?: boolean
+  /** The deep-linked row: scrolled to and flashed, as in a slot. */
+  highlightId?: number | null
+  /** The flash has played and must not play again on a remount. */
+  onHighlightDone?: () => void
 }) {
-  const [userOpen, setUserOpen] = useState(false)
-  const open = forceOpen || userOpen
-  const setOpen = forceOpen ? NO_OP : setUserOpen
+  // `requestOpen` moves the DEFAULT rather than forcing the fold: a deep link
+  // opens it, and the moment the user touches the caret their answer (null
+  // until then) takes over, so the link can never hold it open against them.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = forceOpen || (userOpen ?? requestOpen)
+  const toggle = () => {
+    if (!forceOpen) setUserOpen(!open)
+  }
   return (
     <div className="bg-muted/30 mt-3 rounded-2xl pb-1" data-not-today>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         className="hover:text-foreground flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors"
       >
@@ -1440,8 +1904,20 @@ function NotTodayFold({
         <ul className="space-y-0.5 px-1">
           {items.map((task) => {
             const mark = cadenceMark(task.rrule)
+            const highlighted = highlightId === task.id
             return (
-              <li key={task.id} data-not-today-id={task.id}>
+              <li
+                key={task.id}
+                data-not-today-id={task.id}
+                data-reminder-highlight={highlighted ? '' : undefined}
+                ref={highlighted ? scrollRowIntoView : undefined}
+                onAnimationEnd={(e) => {
+                  if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
+                    onHighlightDone()
+                  }
+                }}
+                className={cn('rounded-xl', highlighted && 'animate-row-highlight')}
+              >
                 <button
                   type="button"
                   onClick={() => onOpen(task)}

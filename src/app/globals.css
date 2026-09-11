@@ -160,6 +160,67 @@
   animation: fade-in 0.15s ease-out;
 }
 
+/* A considered reminder leaving its slot.
+   It holds its full height for the first half — long enough that the second
+   click of a double-click lands on the inert row it just struck through
+   rather than on whichever thought would otherwise have slid up into the gap
+   — and only then collapses. The row is removed from the list on this
+   animation's `animationend`, never on a timer, so the two can never disagree.
+   `--reminder-row-h` is measured on the element as the animation starts,
+   because a row's height is however long its thought is. */
+@keyframes reminder-leaving {
+  0% {
+    height: var(--reminder-row-h);
+    opacity: 1;
+  }
+  50% {
+    height: var(--reminder-row-h);
+    opacity: 0.45;
+  }
+  100% {
+    height: 0;
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    opacity: 0;
+  }
+}
+
+.animate-reminder-leaving {
+  animation: reminder-leaving 180ms ease-out forwards;
+  overflow: hidden;
+}
+
+/* Reduced motion still needs the event — the row is removed by `animationend`,
+   so it must fire. A zero-duration animation does fire it, and the dev check
+   confirms it end to end. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-reminder-leaving {
+    animation-duration: 0s;
+  }
+}
+
+/* A deep-linked row (?reminder=<id>, the iOS widget's link): a short flash
+   that says "this one", then nothing. It runs once on the element it lands on
+   and is never cleared in state, so a re-render cannot make it flash again. */
+@keyframes row-highlight {
+  0%,
+  55% {
+    background-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+.animate-row-highlight {
+  animation: row-highlight 2s ease-out;
+}
+
 /* Hide scrollbar for horizontal scroll areas */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
