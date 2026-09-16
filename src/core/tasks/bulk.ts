@@ -188,18 +188,46 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 interface BulkSnoozeFilterResult {
   eligible: Task[]
   urgentSkipped: number
+  highSkipped: number
   reminderSkipped: number
 }
 
 /**
  * Priority filter for bulk snooze operations.
  *
- * P0-P2 (None through Medium) are eligible for bulk snooze.
- * P3-P4 (High/Urgent) are excluded — their due dates are real deadlines and
- * must be snoozed individually.
+ * P0-P2 (None through Medium) are always eligible. P4 (Urgent) never is: its
+ * due date is a hard deadline, and every change to one has to be a deliberate,
+ * individual act.
  *
- * `urgentSkipped` counts all priority-excluded tasks (P3 and P4); the name is
- * kept for API compatibility (`skipped_urgent` reaches the iOS client).
+ * P3 (High) IS BULK-SNOOZABLE, BUT ONLY WHEN NOTHING LOWER IS LEFT (Trent,
+ * 2026-09-15). He had four overdue High tasks and one button, and the button
+ * said "no snoozable tasks" — the sweep could not touch the only thing that was
+ * late, so the list stayed wrong. Excluding High outright was protecting a
+ * deadline from a sweep the user did not read; but a sweep aimed at a batch
+ * that is ALREADY nothing but deadlines is not that sweep, it is the user
+ * looking straight at them and pressing anyway.
+ *
+ * So: the first press clears P0-P2, and a second press — finding only P3 left —
+ * takes it. Two presses, no mode, no second button.
+ *
+ * THE TEST IS "IS ANYTHING LOWER STILL ELIGIBLE", NOT "IS THE BATCH PURE". A
+ * P4 sitting in the batch does NOT hold the P3 sweep back, because a P4 is
+ * never swept — it would sit there forever and the second press would never
+ * come. Only a still-sweepable P0-P2 defers the High tier.
+ *
+ * The test is by PRIORITY, deliberately. In relative (`deltaMinutes`) mode a
+ * P0-P2 task with no `due_at` is dropped later, after this filter, so such a
+ * task counts as "lower and still eligible" here even though this particular
+ * call will not move it. Every caller that sweeps — the header button and the
+ * iOS notification action — uses absolute mode, where that gap cannot open.
+ *
+ * `includeTaskIds` still rescues an explicitly chosen task at any priority,
+ * P4 included, and a rescued task is never what defers the High tier.
+ *
+ * COUNTS: `urgentSkipped` is the TOTAL skipped on priority (High + Urgent) and
+ * keeps its name for API compatibility (`skipped_urgent` reaches the iOS
+ * client); `highSkipped` is the High subset, so a caller can word a message
+ * that names the two accurately. Urgent alone is the difference.
  */
 function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkSnoozeFilterResult {
   // §6: reminders are bucket-locked and can never be snoozed, not even by an
@@ -217,11 +245,25 @@ function filterForBulkSnooze(tasks: Task[], includeTaskIds?: Set<number>): BulkS
   const snoozable = tasks.filter((t) => !t.is_reminder && !isTracked(t))
   const reminderSkipped = tasks.length - snoozable.length
 
-  const eligible = snoozable.filter(
-    (t) => (t.priority ?? 0) < HIGH_PRIORITY_THRESHOLD || includeTaskIds?.has(t.id),
-  )
-  const urgentSkipped = snoozable.length - eligible.length
-  return { eligible, urgentSkipped, reminderSkipped }
+  const priorityOf = (t: Task) => t.priority ?? 0
+  const anyLowerLeft = snoozable.some((t) => priorityOf(t) < HIGH_PRIORITY_THRESHOLD)
+  // The ceiling this call sweeps up to, inclusive. Normally P2; once nothing
+  // lower is left, the High tier joins in. P4 is above both and never included.
+  const ceiling = anyLowerLeft ? HIGH_PRIORITY_THRESHOLD - 1 : HIGH_PRIORITY_THRESHOLD
+
+  const eligible: Task[] = []
+  let urgentSkipped = 0
+  let highSkipped = 0
+  for (const task of snoozable) {
+    if (priorityOf(task) <= ceiling || includeTaskIds?.has(task.id)) {
+      eligible.push(task)
+      continue
+    }
+    urgentSkipped++
+    if (priorityOf(task) === HIGH_PRIORITY_THRESHOLD) highSkipped++
+  }
+
+  return { eligible, urgentSkipped, highSkipped, reminderSkipped }
 }
 
 export interface BulkSnoozeOptions {
@@ -232,14 +274,20 @@ export interface BulkSnoozeOptions {
   until?: string
   /** Relative snooze delta (minutes) - added to each task's current due_at */
   deltaMinutes?: number
-  /** Task IDs to include regardless of priority (bypasses the P3/P4 filter) */
+  /** Task IDs to include regardless of priority (bypasses the High/Urgent filter) */
   includeTaskIds?: number[]
 }
 
 export interface BulkSnoozeResult {
   tasksAffected: number
   tasksSkipped: number
+  /**
+   * Skipped on priority: High AND Urgent together. The name is kept because
+   * `skipped_urgent` is in the public API and reaches the iOS client.
+   */
   urgentSkipped: number
+  /** The High (P3) subset of `urgentSkipped`. Urgent alone is the difference. */
+  highSkipped: number
   /** §6: reminders excluded because they are bucket-locked. */
   reminderSkipped: number
   noDueDateSkipped: number
@@ -263,7 +311,9 @@ export interface BulkSnoozeResult {
  * - Absolute (until): Sets all tasks to the same target time
  * - Relative (deltaMinutes): Adds minutes to each task's current due_at
  *
- * Follows same original_due_at rules as single snooze.
+ * Follows same original_due_at rules as single snooze. Which tasks it will
+ * actually touch is `filterForBulkSnooze`'s decision — P0-P2 always, P3 once
+ * nothing lower is left in the batch, P4 never.
  */
 export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   const { userId, userTimezone, taskIds, until, deltaMinutes, includeTaskIds } = options
@@ -273,6 +323,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksAffected: 0,
       tasksSkipped: 0,
       urgentSkipped: 0,
+      highSkipped: 0,
       reminderSkipped: 0,
       noDueDateSkipped: 0,
       snoozedIds: [],
@@ -300,9 +351,13 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const tasks = validateBulkTasks(taskIds, userId, { excludeDone: true })
 
-  // P0-P2 eligible, P3/P4 (High/Urgent) excluded — unless explicitly included
+  // P0-P2 always; P3 once nothing lower is left; P4 never — unless explicitly
+  // included. See `filterForBulkSnooze`.
   const includeSet = includeTaskIds?.length ? new Set(includeTaskIds) : undefined
-  const { eligible, urgentSkipped, reminderSkipped } = filterForBulkSnooze(tasks, includeSet)
+  const { eligible, urgentSkipped, highSkipped, reminderSkipped } = filterForBulkSnooze(
+    tasks,
+    includeSet,
+  )
 
   // In relative mode, skip tasks without a due_at (can't add delta to nothing)
   let noDueDateSkipped = 0
@@ -323,6 +378,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksAffected: 0,
       tasksSkipped: skippedCount,
       urgentSkipped,
+      highSkipped,
       reminderSkipped,
       noDueDateSkipped,
       snoozedIds: [],
@@ -414,6 +470,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksAffected: snoozeable.length,
       tasksSkipped: skippedCount,
       urgentSkipped,
+      highSkipped,
       reminderSkipped,
       noDueDateSkipped,
       snoozedIds: snoozeable.map((t) => t.id),
@@ -529,7 +586,11 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
     }
   }
 
-  // Priority filter for snooze edits — same logic as bulkSnooze (P3/P4 excluded).
+  // Priority filter for snooze edits — literally the same function as bulkSnooze,
+  // so the High tier's "only once nothing lower is left" rule applies here too:
+  // a selection of nothing but High tasks, given a new date, now moves, where
+  // before it silently did nothing.
+  //
   // A due_at change is only a snooze when rrule is not being changed. If rrule is explicitly
   // set (even to null), the due_at change is part of a schedule change, not a snooze.
   let snoozeSkippedCount = 0

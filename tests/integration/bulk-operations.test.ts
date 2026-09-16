@@ -289,3 +289,74 @@ describe('Bulk snooze integration', () => {
     expect(after4.due_at).toBe(before4.due_at)
   })
 })
+
+describe('Bulk snooze — the High tier', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  /**
+   * The High tier's rule over HTTP (Trent, 2026-09-15): P3 is swept only when
+   * no lower-priority task in the same batch is still eligible, and the
+   * response splits the two tiers so a client can name them.
+   *
+   * Tasks are created here rather than taken from the seed: the batch's exact
+   * priority mix IS the thing under test, and the seed is shared with every
+   * other test in this file.
+   */
+  async function makeTask(title: string, priority: number, minutesAgo: number): Promise<number> {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title,
+        priority,
+        due_at: new Date(Date.now() - minutesAgo * 60 * 1000).toISOString(),
+      },
+    })
+    expect(res.status).toBe(201)
+    return (await res.json()).data.id as number
+  }
+
+  test('POST bulk/snooze defers P3 while something lower is still eligible', async () => {
+    const medium = await makeTask('bulk-high-tier medium', 2, 90)
+    const high = await makeTask('bulk-high-tier high', 3, 60)
+    const target = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+    const res = await apiFetch('/api/tasks/bulk/snooze', {
+      method: 'POST',
+      body: { ids: [medium, high], until: target },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+
+    expect(data.tasks_affected).toBe(1)
+    // The total counts both tiers; `skipped_high` says how much of it is High.
+    expect(data.skipped_urgent).toBe(1)
+    expect(data.skipped_high).toBe(1)
+
+    expect((await (await apiFetch(`/api/tasks/${medium}`)).json()).data.due_at).toBe(target)
+    expect((await (await apiFetch(`/api/tasks/${high}`)).json()).data.due_at).not.toBe(target)
+  })
+
+  test('POST bulk/snooze sweeps P3 once nothing lower is left, and still never P4', async () => {
+    const high = await makeTask('bulk-high-tier high alone', 3, 60)
+    const urgent = await makeTask('bulk-high-tier urgent', 4, 30)
+    const target = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString()
+
+    const res = await apiFetch('/api/tasks/bulk/snooze', {
+      method: 'POST',
+      body: { ids: [high, urgent], until: target },
+    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()).data
+
+    // A P4 in the batch is not "something lower", so it does not hold the
+    // High tier back — it is simply skipped on its own account.
+    expect(data.tasks_affected).toBe(1)
+    expect(data.skipped_urgent).toBe(1)
+    expect(data.skipped_high).toBe(0)
+
+    expect((await (await apiFetch(`/api/tasks/${high}`)).json()).data.due_at).toBe(target)
+    expect((await (await apiFetch(`/api/tasks/${urgent}`)).json()).data.due_at).not.toBe(target)
+  })
+})

@@ -16,7 +16,7 @@ Due dates in OpenTask serve two different purposes depending on task priority. T
 
 For most tasks, `due_at` means "when to next remind me about this." It's aspirational — the time the user intends to do it — but it's not a commitment. These tasks are bulk-snoozed routinely, often many times per day.
 
-**The bulk snooze button** is the primary driver of this behavior. It sits in the app's top bar — the only action button visible at all times — and snoozes every overdue P0-2 task by one hour (or a user-configured interval) with a single tap. P3 (High) and P4 (Urgent) tasks are excluded from bulk snooze; they must be snoozed individually, because their due dates are real deadlines rather than reminders.
+**The bulk snooze button** is the primary driver of this behavior. It sits in the app's top bar — the only action button visible at all times — and snoozes every overdue P0-2 task by one hour (or a user-configured interval) with a single tap. P3 (High) tasks sit out that first pass — their due dates are real deadlines, not reminders — but they are not exempt: once nothing lower is left to sweep, the next tap takes them, so a day that is nothing but overdue deadlines still clears in two taps. P4 (Urgent) is never bulk-snoozed and must be snoozed individually.
 
 A typical daily pattern:
 
@@ -39,7 +39,7 @@ These tasks represent real commitments with real consequences: tax deadlines, fi
 
 ### The dividing line
 
-The `URGENT_PRIORITY` constant (value: 4) in `src/lib/priority.ts` is the boundary. Everything below it participates in bulk snooze; P4 (Urgent) is protected from it.
+The `URGENT_PRIORITY` constant (value: 4) in `src/lib/priority.ts` is the boundary. Everything below it participates in bulk snooze — P0-2 on every pass, P3 once nothing lower is left; P4 (Urgent) is protected from it entirely.
 
 ## What This Means for Feature Design
 
