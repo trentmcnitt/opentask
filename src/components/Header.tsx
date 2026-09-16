@@ -84,6 +84,19 @@ interface HeaderProps {
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
   /** What the search bar searches, for its placeholder. Default: tasks. */
   searchSubject?: string
+  /**
+   * Stop centring the bar's contents at `xl`, and sit them flush left instead.
+   *
+   * The bar is normally `mx-auto max-w-2xl`, which lines its contents up
+   * exactly with a `mx-auto max-w-2xl` page column below it. The Tasks page
+   * stops centring that column at `xl` (it becomes the left column of the
+   * two-column Track layout — see `DashboardClient`), and a bar that kept
+   * centring would leave the logo and search floating several hundred pixels
+   * to the right of the list they belong to. Opt-in, because the other
+   * surfaces that use this bar (Reminders, Quotas) still centre their columns
+   * at every width and must keep their bars centred with them.
+   */
+  flushLeftAtXl?: boolean
 }
 
 export function Header({
@@ -107,6 +120,7 @@ export function Header({
   timezone,
   searchFocusRef,
   searchSubject,
+  flushLeftAtXl = false,
 }: HeaderProps) {
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -178,7 +192,13 @@ export function Header({
   return (
     <TooltipProvider delayDuration={300}>
       <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
-        <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
+        <div
+          className={cn(
+            'relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2',
+            // Same width, no longer centred — see `flushLeftAtXl`.
+            flushLeftAtXl && 'xl:mx-0',
+          )}
+        >
           {/* Back button (when navigating into a sub-page like project detail) */}
           {backHref && (
             <Link href={backHref}>

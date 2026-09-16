@@ -4,10 +4,27 @@ import { Fragment, useState } from 'react'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
-import { periodSuffix, trackStream, trackStripeClass, type TrackStreamItem } from '@/lib/track'
+import {
+  groupByLabel,
+  periodSuffix,
+  quotaGroupSummary,
+  trackStream,
+  trackStripeClass,
+  type TrackStreamItem,
+} from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
+import {
+  foldClass,
+  useResponsiveFold,
+  useResponsiveFolds,
+  FOLD_BODY_BLOCK,
+  FOLD_CHEVRON,
+  FOLD_SUMMARY,
+  type FoldClasses,
+  type FoldState,
+} from '@/hooks/useResponsiveFold'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useLabelConfig, useTrackPanelPreference } from '@/components/PreferencesProvider'
@@ -84,29 +101,154 @@ import type { LabelColor, Task } from '@/types'
  * and Projects lists too, wearing a "0 / 4" chip and no controls; the
  * dashboard now filters tracked rows out of every list, which is why this
  * panel is handed the unfiltered corpus rather than the list's own array.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * TWO NEW FOLDS, BOTH SHUT ON A PHONE (Trent, 2026-09-15: "I just need a way on
+ * mobile to be able to immediately see my tasks").
+ *
+ * The panel outgrew itself. At 22 quotas it is 350-500px tall, and on a phone —
+ * under a filter chip stack that wraps to a dozen rows — it put the first task
+ * of the day roughly three screens down. Neither fold changes anything a
+ * desktop user sees; both default to shut below `sm` and open at or above it,
+ * in CSS, so the first paint is already right (see `useResponsiveFold`).
+ *
+ * 1. THE SECTION FOLD hides the whole card, leaving one line: `TRACK · 8 of 22
+ *    left`. It is a SECOND header button, `sm:hidden`, sitting beside the
+ *    original one rather than replacing it. The original button means something
+ *    else entirely — chips versus full rows — and folding that meaning into a
+ *    single chevron would have made one control mean two things depending on
+ *    the width it was pressed at. The cost is that the rows view has no handle
+ *    on a phone, which is the view a phone has the least room for anyway.
+ * 2. THE GROUP FOLDS make each label cluster independently collapsible. A shut
+ *    cluster shows a 30×3 meter filled to met/count and "{n} left" — or "✓ all
+ *    met", at which point the whole header steps back in opacity so a finished
+ *    category stops competing for attention.
+ *
+ * "{n} left" COUNTS QUOTAS STILL SHORT, not items and not increments remaining
+ * (Trent picked it over both). It is the only one of the three that moves as he
+ * logs progress, and it answers the one question a shut header has to answer:
+ * is opening this worth it. `quotaGroupSummary` is the single source for it.
  */
+
+/**
+ * The card, folded away by the section fold.
+ *
+ * "Shut" only hides it BELOW `sm`, which is not a typo. The section fold is a
+ * phone affordance and its button is `sm:hidden`; a user who shuts the panel on
+ * a phone and then widens the window would otherwise be left with a hidden card
+ * and no control anywhere that reopens it.
+ */
+const SECTION_CARD: FoldClasses = {
+  open: 'block',
+  shut: 'hidden sm:block',
+  auto: 'hidden sm:block',
+}
+
+/** The one-line stand-in for the folded card. Mirrors `SECTION_CARD`. */
+const SECTION_SUMMARY: FoldClasses = {
+  open: 'hidden',
+  shut: 'flex sm:hidden',
+  auto: 'flex sm:hidden',
+}
+
+/**
+ * A cluster heading's width in the wrapping chip row.
+ *
+ * Open, it is auto — the whole point of the layout is that the chips flow after
+ * the heading on its line. Shut, there are no chips to flow, and the heading
+ * takes the full row so its meter and count can sit flush right.
+ */
+const CLUSTER_BASIS: FoldClasses = {
+  open: '',
+  shut: 'basis-full',
+  auto: 'basis-full sm:basis-auto',
+}
+
+/** A met cluster steps back — but only while it is shut and standing in for its chips. */
+const CLUSTER_MET_DIM: FoldClasses = {
+  open: '',
+  shut: 'opacity-60',
+  auto: 'opacity-60 sm:opacity-100',
+}
+
+/** A quota row in the open panel. As `FOLD_BODY_BLOCK`, for a row that is a flex line. */
+const CLUSTER_ROW: FoldClasses = {
+  open: 'flex',
+  shut: 'hidden',
+  auto: 'hidden sm:flex',
+}
+
 export function TrackPanel({ tasks }: { tasks: Task[] }) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
   // The quota whose detail sheet is showing. Held by id rather than by object
   // so a sync refresh replaces the rendered task underneath an open sheet.
   const [detailId, setDetailId] = useState<number | null>(null)
+  const section = useResponsiveFold()
+  const clusters = useResponsiveFolds()
   const quotas = trackedItems(tasks)
   const items = trackStream(quotas, labelConfig)
+
+  // What each cluster's shut header says. Keyed the same way the DOM is, so a
+  // heading and its summary can never be looking at different groups.
+  const summaries = new Map(
+    groupByLabel(quotas).map((g) => [clusterKey(g.label), quotaGroupSummary(g.tasks)]),
+  )
+
+  const stream = withClusters(items)
+
   if (quotas.length === 0) return null
+
+  const total = quotaGroupSummary(quotas)
+  const short = total.count - total.met
 
   return (
     <section aria-label="Track" data-track-panel className="mb-6">
+      {/* Phone: the section fold. One line when shut, and the line carries the
+          number that says whether opening it is worth it. */}
+      <button
+        type="button"
+        data-track-section-toggle
+        onClick={section.toggle}
+        aria-expanded={section.open}
+        aria-controls="track-card"
+        className="hover:text-foreground mb-2 flex min-h-7 w-full items-center gap-2 px-1 text-left transition-colors sm:hidden"
+      >
+        <span className="-mr-1.5 flex items-center justify-center p-0.5">
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
+              foldClass(section.state, FOLD_CHEVRON),
+            )}
+          />
+        </span>
+        <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+          Track
+        </span>
+        <span
+          data-track-section-summary
+          className={cn(
+            'text-muted-foreground ml-auto items-center text-xs whitespace-nowrap tabular-nums',
+            foldClass(section.state, SECTION_SUMMARY),
+          )}
+        >
+          {short} of {total.count} left
+        </span>
+      </button>
+
       {/* A plain group header, built exactly like "Early morning" below —
           same padding, chevron size and negative margin — so the carets and
           labels line up. The caret switches the card between chips and the
-          full rows. */}
+          full rows. `hidden … sm:flex` rather than a bare `flex`: this is the
+          desktop half of the header pair, and the two display utilities would
+          otherwise fight over which one wins. */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-label={open ? 'Collapse Track' : 'Expand Track'}
-        className="hover:text-foreground mb-2 flex min-h-7 w-full items-center gap-2 px-1 text-left transition-colors"
+        className="hover:text-foreground mb-2 hidden min-h-7 w-full items-center gap-2 px-1 text-left transition-colors sm:flex"
       >
         <span className="-mr-1.5 flex items-center justify-center p-0.5">
           <ChevronDown
@@ -122,18 +264,29 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         </span>
       </button>
 
-      <div className="bg-muted/30 rounded-2xl p-2">
+      <div
+        id="track-card"
+        className={cn('bg-muted/30 rounded-2xl p-2', foldClass(section.state, SECTION_CARD))}
+      >
         {open ? (
           <ul aria-label="Quotas">
-            {items.map((item) =>
+            {stream.map(({ item, cluster }) =>
               item.kind === 'title' ? (
                 <ClusterTitle
-                  key={`title-${clusterKey(item.label)}`}
+                  key={`title-${cluster}`}
                   item={item}
-                  className="flex items-center gap-1.5 px-2 pt-3 pb-1 first:pt-1"
+                  summary={summaries.get(cluster)}
+                  state={clusters.stateOf(cluster)}
+                  open={clusters.isOpen(cluster)}
+                  onToggle={() => clusters.toggle(cluster)}
+                  className="px-2 pt-3 pb-1 first:pt-1"
                 />
               ) : (
-                <TrackRow key={item.task.id} task={item.task} />
+                <TrackRow
+                  key={item.task.id}
+                  task={item.task}
+                  foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
+                />
               ),
             )}
           </ul>
@@ -141,9 +294,9 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
           // One wrapping row for the whole panel: titles and chips are peers in
           // it, which is the entire trick — see the block comment above.
           <ul className="flex flex-wrap items-center gap-1.5" aria-label="Quotas">
-            {items.map((item, i) =>
+            {stream.map(({ item, cluster }, i) =>
               item.kind === 'title' ? (
-                <Fragment key={`title-${clusterKey(item.label)}`}>
+                <Fragment key={`title-${cluster}`}>
                   {/* The wrap that puts this title at the start of a row. A
                       full-basis, zero-height item fills whatever is left of the
                       line above and takes no height of its own; the row gap on
@@ -152,7 +305,14 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
                   {i > 0 && <li aria-hidden="true" className="h-0 basis-full" />}
                   <ClusterTitle
                     item={item}
-                    className="flex max-w-full items-center gap-1.5 whitespace-nowrap"
+                    summary={summaries.get(cluster)}
+                    state={clusters.stateOf(cluster)}
+                    open={clusters.isOpen(cluster)}
+                    onToggle={() => clusters.toggle(cluster)}
+                    className={cn(
+                      'max-w-full',
+                      foldClass(clusters.stateOf(cluster), CLUSTER_BASIS),
+                    )}
                   />
                 </Fragment>
               ) : (
@@ -160,6 +320,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
                   key={item.task.id}
                   task={item.task}
                   color={item.color}
+                  foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
                   detailOpen={detailId === item.task.id}
                   onOpenDetail={(t) => setDetailId(t.id)}
                   onCloseDetail={() => setDetailId(null)}
@@ -171,6 +332,27 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
       </div>
     </section>
   )
+}
+
+/**
+ * Tag every item in the flat stream with the cluster it belongs to.
+ *
+ * The stream is title-then-its-chips by construction, so the last title seen
+ * names the current cluster. Done here rather than in `trackStream` because the
+ * cluster key is what the FOLDS are keyed by, and nothing outside this file
+ * needs it — `tr-track-stream.test.ts` pins the stream's shape, and a field
+ * only the panel reads has no business widening it.
+ *
+ * A module function, not a loop in the component: the React Compiler rejects
+ * reassigning a captured variable inside a callback in a render body, and the
+ * accumulator is exactly that.
+ */
+function withClusters(items: TrackStreamItem[]): { item: TrackStreamItem; cluster: string }[] {
+  let cluster = ''
+  return items.map((item) => {
+    if (item.kind === 'title') cluster = clusterKey(item.label)
+    return { item, cluster }
+  })
 }
 
 /**
@@ -187,26 +369,94 @@ function clusterKey(label: string | null): string {
 }
 
 /**
- * A cluster's heading. `whitespace-nowrap` so "job-hunt" never breaks at its
- * hyphen, with `max-w-full truncate` behind it so a very long label ellipsises
- * at the card's edge instead of pushing out of it.
+ * A cluster's heading, and the control that folds the cluster.
+ *
+ * `whitespace-nowrap` so "job-hunt" never breaks at its hyphen, with
+ * `max-w-full truncate` behind it so a very long label ellipsises at the card's
+ * edge instead of pushing out of it.
+ *
+ * The meter is `aria-hidden` and carries no `role`: it is a redraw of the "{n}
+ * left" text beside it, and a second `progressbar` here would be noise to a
+ * screen reader and a collision for anything counting the panel's real ones.
  */
 function ClusterTitle({
   item,
+  summary,
+  state,
+  open,
+  onToggle,
   className,
 }: {
   item: Extract<TrackStreamItem, { kind: 'title' }>
+  summary: { count: number; met: number } | undefined
+  state: FoldState
+  open: boolean
+  onToggle: () => void
   className: string
 }) {
+  const count = summary?.count ?? 0
+  const met = summary?.met ?? 0
+  const allMet = count > 0 && met === count
+
   return (
     <li data-track-cluster={clusterKey(item.label)} className={className}>
-      <span
-        aria-hidden="true"
-        className={cn('size-2 shrink-0 rounded-full', trackStripeClass(item.color))}
-      />
-      <span className="text-muted-foreground min-w-0 truncate text-[11px] font-semibold tracking-widest uppercase">
-        {item.name}
-      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={cn(
+          'hover:text-foreground flex w-full items-center gap-1.5 text-left transition-opacity',
+          allMet && foldClass(state, CLUSTER_MET_DIM),
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn('size-2 shrink-0 rounded-full', trackStripeClass(item.color))}
+        />
+        <span
+          data-track-cluster-name
+          className="text-muted-foreground min-w-0 truncate text-[11px] font-semibold tracking-widest uppercase"
+        >
+          {item.name}
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
+            foldClass(state, FOLD_CHEVRON),
+          )}
+        />
+
+        <span
+          data-track-cluster-summary
+          className={cn(
+            'ml-auto items-center gap-1.5 pl-2 text-[11px] whitespace-nowrap tabular-nums',
+            allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
+            foldClass(state, FOLD_SUMMARY),
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="bg-muted relative block h-[3px] w-[30px] overflow-hidden rounded-full"
+          >
+            <span
+              className={cn(
+                'block h-full rounded-full transition-[width] duration-300 ease-out',
+                allMet ? 'bg-green-600' : 'bg-foreground/60',
+              )}
+              style={{ width: `${count === 0 ? 0 : (met / count) * 100}%` }}
+            />
+          </span>
+          {allMet ? (
+            <span className="flex items-center gap-0.5">
+              <Check className="size-3" strokeWidth={3} aria-hidden="true" />
+              all met
+            </span>
+          ) : (
+            <span>{count - met} left</span>
+          )}
+        </span>
+      </button>
     </li>
   )
 }
@@ -229,6 +479,7 @@ function ClusterTitle({
 function TrackChip({
   task,
   color,
+  foldClassName,
   detailOpen,
   onOpenDetail,
   onCloseDetail,
@@ -236,6 +487,8 @@ function TrackChip({
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
   color: LabelColor | null
+  /** Display classes from the cluster's fold — see `FOLD_BODY_BLOCK`. */
+  foldClassName: string
   detailOpen: boolean
   onOpenDetail: (task: Task) => void
   onCloseDetail: () => void
@@ -246,7 +499,7 @@ function TrackChip({
   const suffix = period ? periodSuffix(period) : null
 
   return (
-    <li className="max-w-full">
+    <li className={cn('max-w-full', foldClassName)}>
       <TrackChipPopover
         task={task}
         state={state}
@@ -343,13 +596,16 @@ function TrackChip({
   )
 }
 
-function TrackRow({ task }: { task: Task }) {
+function TrackRow({ task, foldClassName }: { task: Task; foldClassName: string }) {
   const { state, period, log } = useTrackProgress(task)
 
   return (
     <li
       data-track-row={task.id}
-      className="hover:bg-background flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors"
+      className={cn(
+        'hover:bg-background flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors',
+        foldClassName,
+      )}
     >
       {/* The rows view is the keyboard-reachable route into a quota. The chips'
           press-and-hold has no keyboard equivalent, and the popover it opens is
