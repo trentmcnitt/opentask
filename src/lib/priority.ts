@@ -1,4 +1,13 @@
-/** Priority value at which tasks are considered high/urgent (3=High, 4=Urgent). P3+ tasks are excluded from bulk snooze — their due dates are real deadlines. */
+/**
+ * Priority value at which a due date stops being a reminder and becomes a
+ * deadline (3=High, 4=Urgent). It is the boundary for per-priority auto-snooze
+ * and for the HIGH/URGENT prefix on notifications.
+ *
+ * For bulk snooze it is the boundary of the FIRST sweep, not an exclusion: P3
+ * is bulk-snoozable once no lower-priority task in the batch is still eligible,
+ * so a list of nothing but overdue High tasks clears on the next press. P4 is
+ * never bulk-snoozable. See `filterForBulkSnooze` in `src/core/tasks/bulk.ts`.
+ */
 export const HIGH_PRIORITY_THRESHOLD = 3
 
 /** Priority value for Urgent (4). P4 gets critical-level notifications. */

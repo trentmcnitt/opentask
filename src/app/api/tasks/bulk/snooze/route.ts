@@ -44,6 +44,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_urgent: result.urgentSkipped,
+      // The High subset of `skipped_urgent`, so a client can name High and
+      // Urgent accurately. Additive: `skipped_urgent` keeps its old meaning of
+      // "skipped on priority" for the clients that already read it.
+      skipped_high: result.highSkipped,
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,
