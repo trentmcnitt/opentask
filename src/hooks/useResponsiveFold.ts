@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
+import { useFoldState } from '@/components/FoldStateProvider'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
 /**
@@ -8,15 +9,22 @@ import { useIsMobile } from '@/hooks/useIsMobile'
  * desktop — and whose override does not.
  *
  * WHY THREE STATES AND NOT TWO. `null` is "the user has not chosen yet", and it
- * is not the same as "shut". The dashboard is server-rendered with the user's
- * tasks already in it (`src/app/page.tsx`), so the Track panel is in the very
- * first paint. Resolving the viewport in JS — `useIsMobile`, which reads the
- * width in an effect — would paint the panel fully open on a phone and collapse
- * it a frame later, which is a 350-500px lurch on exactly the surface this fold
- * exists to keep short. Reading `matchMedia` in a lazy `useState` initialiser
- * instead swaps one bug for another: the server renders `false`, the client
- * renders `true`, and that is a hydration mismatch — a console error, on a
- * surface whose acceptance criteria include having none.
+ * is not the same as "shut".
+ *
+ * The dashboard is NOT in the server HTML, which an earlier version of this
+ * comment claimed — `SessionProvider` is given no session, so `useSession()` is
+ * still `loading` during SSR and `HomeContent` returns the "Loading…" gate
+ * instead of `<main>`. The design below is right anyway, for a different
+ * reason: the fold has to be correct in the FIRST CLIENT PAINT, and effects
+ * have not run at that point. `useIsMobile` reads `window.innerWidth` in a
+ * `useEffect` and returns `false` until it does, so a fold whose visuals came
+ * from JS would paint fully open on a phone and collapse a frame later — a
+ * 350-500px lurch on exactly the surface this fold exists to keep short.
+ * Reading `matchMedia` in a lazy `useState` initialiser instead swaps one bug
+ * for another as soon as any surface using these folds IS server-rendered: the
+ * server renders `false`, the client renders `true`, and that is a hydration
+ * mismatch — a console error, on a surface whose acceptance criteria include
+ * having none.
  *
  * So the DEFAULT is expressed in CSS (`hidden sm:block` and friends, via
  * `foldClass` below) and is therefore correct in the very first paint with no
@@ -28,13 +36,13 @@ import { useIsMobile } from '@/hooks/useIsMobile'
  * read by assistive tech long after hydration, and for the toggle handler,
  * which needs to know what it is toggling away from.
  *
- * NOT PERSISTED, deliberately, and this is a departure from the sibling it
- * sits next to: the Track panel's own chips/rows fold is a server preference
- * (`track_expanded` in `PreferencesProvider`). A stored boolean cannot express
- * "shut on the phone, open on the desktop" — it is one value for both — so
- * persisting these folds would overwrite the very default this hook exists to
- * provide the moment the user touched one. The in-app precedent for a
- * session-only group fold is `useCollapsedGroups`, which is what this matches.
+ * WHERE THE CHOICE LIVES, AND HOW LONG IT LASTS. In `FoldStateProvider`, up in
+ * the root layout, so it SURVIVES IN-APP NAVIGATION and is lost on reload. It
+ * used to be `useState` in the panel, which meant a trip to `/quotas` and back
+ * reopened every fold. It is deliberately not a server preference yet — see
+ * `FoldStateProvider` for why a `track_expanded`-shaped boolean cannot express
+ * "shut on the phone, open on the desktop", and what a persisted version would
+ * cost.
  */
 export type FoldState = boolean | null
 
@@ -88,30 +96,37 @@ export const FOLD_CHEVRON: FoldClasses = {
   auto: '-rotate-90 sm:rotate-0',
 }
 
-/** One fold. */
-export function useResponsiveFold() {
+/** One fold, identified by a globally unique `key` — see `FoldStateProvider`. */
+export function useResponsiveFold(key: string) {
   const isSmall = useIsMobile()
-  const [state, setState] = useState<FoldState>(null)
+  const { choices, toggleChoice } = useFoldState()
+  const state = choices.get(key) ?? null
   const open = state ?? !isSmall
-  const toggle = useCallback(() => setState((prev) => !(prev ?? !isSmall)), [isSmall])
+  const toggle = useCallback(() => toggleChoice(key, !isSmall), [key, isSmall, toggleChoice])
   return { state, open, toggle }
 }
 
-/** Many independent folds, keyed by name — the Track panel's label groups. */
-export function useResponsiveFolds() {
+/**
+ * Many independent folds — the Track panel's label groups.
+ *
+ * `namespace` prefixes every key on the way into the shared map, so two
+ * surfaces can both have a group called "health" without sharing its fold.
+ */
+export function useResponsiveFolds(namespace: string) {
   const isSmall = useIsMobile()
-  const [choices, setChoices] = useState<ReadonlyMap<string, boolean>>(() => new Map())
+  const { choices, toggleChoice } = useFoldState()
 
-  const stateOf = useCallback((key: string): FoldState => choices.get(key) ?? null, [choices])
-  const isOpen = useCallback((key: string) => choices.get(key) ?? !isSmall, [choices, isSmall])
+  const stateOf = useCallback(
+    (key: string): FoldState => choices.get(`${namespace}:${key}`) ?? null,
+    [choices, namespace],
+  )
+  const isOpen = useCallback(
+    (key: string) => choices.get(`${namespace}:${key}`) ?? !isSmall,
+    [choices, isSmall, namespace],
+  )
   const toggle = useCallback(
-    (key: string) =>
-      setChoices((prev) => {
-        const next = new Map(prev)
-        next.set(key, !(prev.get(key) ?? !isSmall))
-        return next
-      }),
-    [isSmall],
+    (key: string) => toggleChoice(`${namespace}:${key}`, !isSmall),
+    [isSmall, namespace, toggleChoice],
   )
 
   return { stateOf, isOpen, toggle }

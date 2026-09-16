@@ -1337,42 +1337,68 @@ function HomeContent({
 /**
  * `<main>`'s classes, and the reason the Tasks page has two shapes.
  *
- * THE TASKS PAGE IS TWO COLUMNS FROM `xl` UP (Trent, 2026-09-15).
+ * THE TASKS PAGE IS TWO EQUAL COLUMNS FROM `xl` UP (Trent, 2026-09-15).
  *
  * Below `xl` this is exactly what it has always been: one centred column,
- * `max-w-2xl`, with Track inline above the list. From 1280px the same column
- * stops centring and sits flush left, and Track moves into a second column
- * beside it. The reason is that Track had grown to 22 quotas — 350-500px of
- * panel wedged between the filters and the first task — while the window it was
- * drawn in had a wide empty gutter down BOTH sides.
+ * `max-w-2xl`, with Track inline above the list. From 1280px the page widens
+ * and Track moves into a second column beside the day. The reason is that Track
+ * had grown to 22 quotas — 350-500px of panel wedged between the filters and
+ * the first task — while the window it was drawn in had a wide empty gutter
+ * down BOTH sides.
  *
- * Three things here are load-bearing:
+ * Four things here are load-bearing:
  *
- * - THE TASK COLUMN IS 40rem, NOT `max-w-2xl`'s 42rem, and that is not a
- *   mistake. `max-w-2xl` is a width on `<main>`, which carries `px-4`, so the
- *   column the user actually sees has always been 42rem − 2×1rem = 40rem of
- *   content. The padding stays on `<main>` here, so the grid track has to be
- *   the CONTENT width or the column would come out 32px wider than before.
- *   Trent's constraint was that the filter chip rows must not reflow, and 32px
- *   is more than enough to reflow them: the task column has to stay
- *   pixel-identical, which `tests/e2e/dashboard-layout.spec.ts` measures.
- * - THE TRACK COLUMN IS UNCAPPED (`minmax(0, 1fr)`) and takes whatever is left.
- *   It is wider than the old inline strip on a large window, so the chips wrap
- *   several to a row and stop clipping their titles. On a window only just past
- *   1280 it is NARROWER than the strip was (the 224px sidebar eats into it) —
- *   which is fine, because the point was never Track's width. It was that Track
- *   stops pushing the day down.
+ * - THE TWO COLUMNS ARE THE SAME WIDTH (`xl:grid-cols-2`, i.e. two
+ *   `minmax(0, 1fr)` tracks). The first cut gave the task column a fixed 40rem
+ *   and let Track take everything left over, to keep the task column
+ *   pixel-identical so its filter chip rows could not reflow. On Trent's window
+ *   "uncapped" came out at roughly 1060px of Track against 570px of tasks —
+ *   the secondary panel nearly twice the primary one — and he rejected it:
+ *   "the left side is too skinny or the right too wide, it looks bizarre."
+ *   Equal columns supersede the no-reflow constraint; the chip rows reflowing
+ *   is expected and accepted.
+ * - THERE IS A REAL SIDE MARGIN AT `xl` (`xl:px-10`, 40px, against `px-4`'s 16).
+ *   The same complaint: with 16px the logo in the bar above sat hard against
+ *   the sidebar's border. The bar carries the identical padding and cap so its
+ *   contents stay lined up with the column beneath them — see `Header`'s
+ *   `wideAtXl`.
+ * - THE PAIR STOPS GROWING AT 86.5rem (`xl:max-w-[86.5rem]`), and the number is
+ *   arithmetic, not taste: 2 × 40rem of column + 1.5rem of `gap-x-6` +
+ *   2 × 2.5rem of `px-10` = 86.5rem. 40rem is the content width the single
+ *   column has always had (`max-w-2xl` less `px-4`) and the width every filter
+ *   chip row was tuned against, so each column tops out at exactly the column
+ *   the page has always shown and an ultrawide display gets margins rather than
+ *   two 900px columns. Below the cap `mx-auto` keeps centring, as it always has.
  * - THERE IS NO ROW GAP at any width. The vertical rhythm between the three
  *   blocks is still their own `mb-*`, exactly as when they were plain siblings;
  *   only the column gap is new, and it only exists at `xl`.
+ *
+ * `content-start` AND `xl:grid-rows-[auto_1fr]` ARE BOTH LOAD-BEARING, and a
+ * fix with only one of them looks right until the page is short. `<main>` is
+ * `flex-1` in a `min-h-screen` flex column, so it is always at least the
+ * viewport tall. As a block, leftover height sat harmlessly at the bottom. As a
+ * grid, `align-content` defaults to `normal`, which for a grid is STRETCH — the
+ * leftover gets divided equally between the auto rows, opening a blank band
+ * between the filters, Track and the list whenever the content is shorter than
+ * the viewport (a search with no results, or every group folded). `content-start`
+ * packs the rows at the top instead.
+ *
+ * That alone is not enough at `xl`, because Track is `row-span-2` there: a
+ * spanning item contributes its height to the tracks it spans during intrinsic
+ * sizing, so a tall Track inflates the filters row no matter what
+ * `align-content` or `self-start` say. The fix is the explicit row template —
+ * an item spanning a FLEXIBLE track is excluded from the intrinsic sizing of
+ * the auto tracks it also spans, so a tall Track lands in the `1fr` row, which
+ * is also where `flex-1`'s leftover goes. `items-start` keeps a short list from
+ * stretching down that now-tall row.
  *
  * The grid is a grid at EVERY width, single-column below `xl`. That is what
  * lets Track be one element in one place in the DOM — see `TrackColumn`.
  */
 function mainClass(twoColumn: boolean): string {
   return cn(
-    'mx-auto grid w-full max-w-2xl flex-1 grid-cols-1 px-4 py-6',
-    twoColumn && 'xl:mx-0 xl:max-w-none xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)] xl:gap-x-6',
+    'mx-auto grid w-full max-w-2xl flex-1 grid-cols-1 content-start items-start px-4 py-6',
+    twoColumn && 'xl:max-w-[86.5rem] xl:grid-cols-2 xl:grid-rows-[auto_1fr] xl:gap-x-6 xl:px-10',
   )
 }
 
@@ -1393,9 +1419,16 @@ function mainClass(twoColumn: boolean): string {
  * the width.
  *
  * Sticky needs `self-start`: a grid child stretches to the row's height by
- * default, and a full-height box has nothing to stick within. The top offset
- * clears the sticky header, and the max-height keeps a tall panel's bottom
- * reachable rather than stranded below the fold.
+ * default, and a full-height box has nothing to stick within. `<main>` now sets
+ * `items-start` for every child, so this repeats it rather than introducing it —
+ * kept explicit because it is this element that would silently stop sticking if
+ * the container's alignment ever changed. The top offset clears the sticky
+ * header, and the max-height keeps a tall panel's bottom reachable rather than
+ * stranded below the fold.
+ *
+ * It spans BOTH rows at `xl` (`row-span-2`), and the row template that makes
+ * that safe is on `<main>` — see `mainClass`, which explains why a spanning
+ * item and an `auto` row cannot be combined here.
  *
  * The column is RESERVED while a search is running rather than released, so
  * typing in the search box cannot re-centre the page under the user.
@@ -1708,7 +1741,7 @@ function DashboardView({
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
         searchFocusRef={searchFocusRef}
-        flushLeftAtXl={twoColumn}
+        wideAtXl={twoColumn}
       />
 
       <main className={mainClass(twoColumn)}>
