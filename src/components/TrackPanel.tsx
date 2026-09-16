@@ -8,6 +8,7 @@ import {
   groupByLabel,
   periodSuffix,
   quotaGroupSummary,
+  quotaShortfall,
   trackStream,
   trackStripeClass,
   type TrackStreamItem,
@@ -117,8 +118,16 @@ import type { LabelColor, Task } from '@/types'
  *    original one rather than replacing it. The original button means something
  *    else entirely — chips versus full rows — and folding that meaning into a
  *    single chevron would have made one control mean two things depending on
- *    the width it was pressed at. The cost is that the rows view has no handle
- *    on a phone, which is the view a phone has the least room for anyway.
+ *    the width it was pressed at.
+ *
+ *    That pair left the phone with no handle on chips-versus-rows at all, and
+ *    `track_expanded` is a SERVER preference: a user who switched to rows at a
+ *    desk arrived on his phone stuck in the taller view with nothing to press.
+ *    So the card carries its own `sm:hidden` "Show as chips / Show as rows"
+ *    link at its foot. Inside the card rather than beside the header, because
+ *    it is only worth offering once there is something to look at, and a word
+ *    rather than a chevron because the two folds on this panel already own
+ *    every chevron in sight.
  * 2. THE GROUP FOLDS make each label cluster independently collapsible. A shut
  *    cluster shows a 30×3 meter filled to met/count and "{n} left" — or "✓ all
  *    met", at which point the whole header steps back in opacity so a finished
@@ -184,8 +193,8 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   // The quota whose detail sheet is showing. Held by id rather than by object
   // so a sync refresh replaces the rendered task underneath an open sheet.
   const [detailId, setDetailId] = useState<number | null>(null)
-  const section = useResponsiveFold()
-  const clusters = useResponsiveFolds()
+  const section = useResponsiveFold('track-section')
+  const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
   const items = trackStream(quotas, labelConfig)
 
@@ -200,7 +209,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
   if (quotas.length === 0) return null
 
   const total = quotaGroupSummary(quotas)
-  const short = total.count - total.met
+  const shortfall = quotaShortfall(total)
 
   return (
     <section aria-label="Track" data-track-panel className="mb-6">
@@ -229,11 +238,13 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
         <span
           data-track-section-summary
           className={cn(
-            'text-muted-foreground ml-auto items-center text-xs whitespace-nowrap tabular-nums',
+            'ml-auto items-center gap-0.5 text-xs whitespace-nowrap tabular-nums',
+            shortfall.allMet ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
             foldClass(section.state, SECTION_SUMMARY),
           )}
         >
-          {short} of {total.count} left
+          {shortfall.allMet && <Check className="size-3" strokeWidth={3} aria-hidden="true" />}
+          {shortfall.full}
         </span>
       </button>
 
@@ -329,6 +340,22 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
             )}
           </ul>
         )}
+
+        {/* The phone's only route between chips and rows. See the block comment
+            above: the desktop header button that does this is `sm:hidden`'s
+            opposite number, and without this one a `track_expanded` pinned on a
+            desktop was unreachable on a phone. Right-aligned and muted — it is
+            a way out of a view, not a thing to press on the way in. */}
+        <div className="mt-1 flex justify-end sm:hidden">
+          <button
+            type="button"
+            data-track-view-toggle
+            onClick={() => setOpen(!open)}
+            className="text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
+          >
+            {open ? 'Show as chips' : 'Show as rows'}
+          </button>
+        </div>
       </div>
     </section>
   )
@@ -396,7 +423,8 @@ function ClusterTitle({
 }) {
   const count = summary?.count ?? 0
   const met = summary?.met ?? 0
-  const allMet = count > 0 && met === count
+  const shortfall = quotaShortfall({ count, met })
+  const allMet = shortfall.allMet
 
   return (
     <li data-track-cluster={clusterKey(item.label)} className={className}>
@@ -447,13 +475,13 @@ function ClusterTitle({
               style={{ width: `${count === 0 ? 0 : (met / count) * 100}%` }}
             />
           </span>
-          {allMet ? (
+          {shortfall.allMet ? (
             <span className="flex items-center gap-0.5">
               <Check className="size-3" strokeWidth={3} aria-hidden="true" />
-              all met
+              {shortfall.short}
             </span>
           ) : (
-            <span>{count - met} left</span>
+            <span>{shortfall.short}</span>
           )}
         </span>
       </button>

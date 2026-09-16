@@ -85,18 +85,23 @@ interface HeaderProps {
   /** What the search bar searches, for its placeholder. Default: tasks. */
   searchSubject?: string
   /**
-   * Stop centring the bar's contents at `xl`, and sit them flush left instead.
+   * Widen the bar at `xl` to match the two-column Tasks page beneath it.
    *
-   * The bar is normally `mx-auto max-w-2xl`, which lines its contents up
-   * exactly with a `mx-auto max-w-2xl` page column below it. The Tasks page
-   * stops centring that column at `xl` (it becomes the left column of the
-   * two-column Track layout — see `DashboardClient`), and a bar that kept
-   * centring would leave the logo and search floating several hundred pixels
-   * to the right of the list they belong to. Opt-in, because the other
-   * surfaces that use this bar (Reminders, Quotas) still centre their columns
-   * at every width and must keep their bars centred with them.
+   * The bar is normally `mx-auto max-w-2xl px-4`, which lines its contents up
+   * exactly with a `mx-auto max-w-2xl px-4` page column below it. At `xl` the
+   * Tasks page grows to two equal columns inside a wider, more generously
+   * padded box (`xl:max-w-[86.5rem] xl:px-10` — see `mainClass` in
+   * `DashboardClient`), and a bar that kept the narrow box would leave the logo
+   * hard against the sidebar with the column it belongs to starting 24px
+   * further in. The two values are deliberately duplicated rather than shared
+   * through a constant: Tailwind only emits classes it can see as literal text,
+   * so a computed string would generate no CSS at all. `dashboard-layout.spec.ts`
+   * measures that the two edges still agree.
+   *
+   * Opt-in, because the other surfaces that use this bar (Reminders, Quotas)
+   * stay one centred `max-w-2xl` column at every width.
    */
-  flushLeftAtXl?: boolean
+  wideAtXl?: boolean
 }
 
 export function Header({
@@ -120,7 +125,7 @@ export function Header({
   timezone,
   searchFocusRef,
   searchSubject,
-  flushLeftAtXl = false,
+  wideAtXl = false,
 }: HeaderProps) {
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -195,8 +200,8 @@ export function Header({
         <div
           className={cn(
             'relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2',
-            // Same width, no longer centred — see `flushLeftAtXl`.
-            flushLeftAtXl && 'xl:mx-0',
+            // The same box the page's own `<main>` gets — see `wideAtXl`.
+            wideAtXl && 'xl:max-w-[86.5rem] xl:px-10',
           )}
         >
           {/* Back button (when navigating into a sub-page like project detail) */}
