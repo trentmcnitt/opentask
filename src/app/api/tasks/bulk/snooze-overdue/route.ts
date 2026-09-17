@@ -73,11 +73,13 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         tasks_affected: 0,
         tasks_skipped: 0,
         skipped_urgent: 0,
+        skipped_high: 0,
       })
     }
 
-    // bulkSnooze handles priority filtering internally (P0-P2 eligible, P3/P4 excluded
-    // unless explicitly included via includeTaskIds)
+    // bulkSnooze handles priority filtering internally: P0-P2 always, P3 (High)
+    // once nothing lower is left in the batch, P4 never — unless explicitly
+    // included via includeTaskIds. See `filterForBulkSnooze`.
     const result = bulkSnooze({
       userId: user.id,
       userTimezone: user.timezone,
@@ -115,6 +117,10 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       tasks_skipped: result.tasksSkipped,
       skipped_urgent: result.urgentSkipped,
+      // The High subset of `skipped_urgent`, so a client can name High and
+      // Urgent accurately. Additive: `skipped_urgent` keeps its old meaning of
+      // "skipped on priority" for the clients that already read it.
+      skipped_high: result.highSkipped,
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,

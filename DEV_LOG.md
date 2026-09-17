@@ -4,6 +4,18 @@ Reverse chronological notes on the _why_ behind changes. For implementation deta
 
 ---
 
+## 09-15-26
+
+### Bulk snooze: the High tier joins in once nothing lower is left
+
+**This supersedes the 02-24-26 entry "Simplified bulk snooze" below, which is now history.** That entry describes a "P0-P3 eligible, P4 excluded" binary; P3 was pulled back out during the v0.3 work, and the rule shipped today is neither of those. Current rule, in one line: **P0-P2 always, P3 only when no lower-priority task in the same batch is still eligible, P4 never.** `docs/TASK-MODEL.md` is the reference; `filterForBulkSnooze` in `src/core/tasks/bulk.ts` is the implementation.
+
+Trent had four overdue P3 tasks and one sweep button, and the button reported "No snoozable tasks (4 urgent must be snoozed individually)" — wrong word (they were High, not Urgent, and the internal `urgentSkipped`, whose name is frozen by the public `skipped_urgent` field, had leaked into user copy) and, underneath it, a rule that left the only late thing on his list unmovable. Excluding High outright protects a deadline from a sweep the user did not read; a sweep aimed at a batch that is already nothing but deadlines is the user looking straight at them and pressing anyway. So: first press clears P0-P2, second press takes the High. Two presses, no mode, no second button.
+
+The "is anything lower still eligible" test deliberately ignores P4 — a P4 is never swept, so counting it would defer the High tier forever. `skipped_high` is additive on the API; `skipped_urgent` keeps its name and its High+Urgent meaning for the iOS client.
+
+---
+
 ## 02-24-26
 
 ### QuickActionPanel overflow in SelectionActionSheet dialog
