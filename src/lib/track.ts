@@ -159,6 +159,35 @@ export function quotaGroupSummary(tasks: Pick<Task, 'progress_target' | 'progres
   return { count: tasks.length, met: tasks.filter((t) => trackState(t).met).length }
 }
 
+/** What a folded Track header says about the group it is standing in for. */
+export interface QuotaShortfall {
+  /** Every quota in the group has hit its target. */
+  allMet: boolean
+  /** A label cluster's form: "3 left". */
+  short: string
+  /** The whole panel's form, which also carries the total: "3 of 22 left". */
+  full: string
+}
+
+/**
+ * The wording for a shut Track header, in the panel's form and a cluster's.
+ *
+ * ONE FUNCTION FOR BOTH so the "everything is done" case cannot drift between
+ * them again. It used to: a cluster read "all met" while the panel header
+ * beside it read "0 of 22 left", which is the same fact stated as a failure.
+ * The two forms differ only in whether the total is worth repeating — a cluster
+ * sits next to its own chips, the panel header stands in for all of them.
+ */
+export function quotaShortfall(summary: { count: number; met: number }): QuotaShortfall {
+  const allMet = summary.count > 0 && summary.met === summary.count
+  const left = summary.count - summary.met
+  return {
+    allMet,
+    short: allMet ? 'all met' : `${left} left`,
+    full: allMet ? 'all met' : `${left} of ${summary.count} left`,
+  }
+}
+
 /**
  * The one label a quota is filed under: the first MEANING it carries, or none.
  *

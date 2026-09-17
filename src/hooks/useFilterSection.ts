@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useFilterSectionPreference } from '@/components/PreferencesProvider'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 /**
  * Expand/collapse state for the dashboard's filter-chip section (REDESIGN-V03 §7.3).
@@ -28,9 +29,34 @@ import { useFilterSectionPreference } from '@/components/PreferencesProvider'
  *
  * The auto-expand is deliberately session state, not a preference: it describes
  * the current view, not what the user wants the dashboard to look like.
+ *
+ * 5. **The pin does not cross the breakpoint** (Trent, 2026-09-15: "I just need
+ *    a way on mobile to be able to immediately see my tasks"). Rule 2 was
+ *    written when the section was small. With Trent's filter set the chip stack
+ *    wraps to roughly a dozen rows on a phone, so a `filters_expanded` he pinned
+ *    at a desk put the first task of the day most of a screen down on the phone
+ *    in his pocket. Below `sm` the stored pin is therefore ignored and the
+ *    section starts shut.
+ *
+ *    A phone still gets to open it — but through a SESSION override rather than
+ *    the preference, and this is the part that is easy to get wrong. Simply
+ *    masking the preference (`filtersExpanded && !isMobile`) turns the toggle
+ *    into a dead button on a phone: it writes `true`, the mask eats it, nothing
+ *    moves. Writing through to the preference instead would be worse — opening
+ *    the filters once on a phone would silently unpin them on the desktop. So
+ *    the small-screen fold is session-only, and the server preference is only
+ *    ever written from a wide viewport.
+ *
+ *    Rule 3 is untouched. A filter that is active still expands the section at
+ *    every width, on a phone included: that is a guarantee about not hiding
+ *    state the user cannot otherwise see, not a default.
  */
 export function useFilterSection(activeFilterCount: number) {
   const { filtersExpanded, setFiltersExpanded } = useFilterSectionPreference()
+  const isMobile = useIsMobile()
+  // The phone's own answer to "is this pinned open", null until it is asked.
+  // Never persisted — see rule 5.
+  const [mobilePinned, setMobilePinned] = useState<boolean | null>(null)
   const hasActiveFilters = activeFilterCount > 0
   // Initialised from the first render's filter state so a filtered deep link
   // paints expanded rather than expanding a frame later.
@@ -40,18 +66,22 @@ export function useFilterSection(activeFilterCount: number) {
     setAutoExpanded(hasActiveFilters)
   }, [hasActiveFilters])
 
-  const expanded = filtersExpanded || autoExpanded
+  const pinned = isMobile ? (mobilePinned ?? false) : filtersExpanded
+  const expanded = pinned || autoExpanded
 
   const toggleExpanded = useCallback(() => {
-    if (expanded) {
+    const next = !expanded
+    if (!next) {
       // Collapsing has to drop both, or the auto-expand would immediately
       // re-open the section while filters are still active.
       setAutoExpanded(false)
-      setFiltersExpanded(false)
-    } else {
-      setFiltersExpanded(true)
     }
-  }, [expanded, setFiltersExpanded])
+    if (isMobile) {
+      setMobilePinned(next)
+    } else {
+      setFiltersExpanded(next)
+    }
+  }, [expanded, isMobile, setFiltersExpanded])
 
   return { expanded, toggleExpanded }
 }
