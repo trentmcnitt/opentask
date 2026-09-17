@@ -158,3 +158,52 @@ export function currentSlot(
   }
   return best
 }
+
+/** A group of items sitting in a slot (or the un-slotted bucket) — the minimal
+ * shape `naturalSlotIndex` needs, so it works on `ReminderGroup[]` (the
+ * Reminders hook's shape) without this module importing that type. */
+export interface SlotIndexed {
+  slot: TimeSlot | null
+}
+
+/**
+ * Which GROUP the day is naturally "in" right now, as an index into `groups`
+ * (in the order the caller already has them — the un-slotted bucket last, as
+ * `groupBySlot` always puts it).
+ *
+ * Mirrors `RemindersTimeline.naturalSlotIndex` in
+ * `ios/OpenTaskWidgets/RemindersWidget.swift` exactly, so the dashboard's
+ * Reminders panel opens on the same slot the widget would: the latest slot
+ * whose `start_time` is at or before the current local time, else the FIRST
+ * slotted group (never the trailing un-slotted one) if the day hasn't reached
+ * its first boundary yet — "here's what's coming" reads better at 5am than an
+ * empty un-slotted pile. `currentSlot` above answers a narrower question (is
+ * there a TimeSlot the clock is in right now) and returns null before the
+ * first boundary; this always resolves to an index because a pager has to
+ * land on something.
+ */
+export function naturalSlotIndex(
+  groups: SlotIndexed[],
+  timezone: string,
+  now: Date = new Date(),
+): number {
+  if (groups.length === 0) return 0
+
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const minutes = local.hour * 60 + local.minute
+
+  let best = -1
+  let bestStart = -1
+  groups.forEach((group, index) => {
+    const start = group.slot ? parseHHMM(group.slot.start_time) : null
+    if (start === null || start > minutes) return
+    if (start > bestStart) {
+      bestStart = start
+      best = index
+    }
+  })
+  if (best >= 0) return best
+
+  const firstSlotted = groups.findIndex((g) => g.slot !== null)
+  return firstSlotted >= 0 ? firstSlotted : 0
+}
