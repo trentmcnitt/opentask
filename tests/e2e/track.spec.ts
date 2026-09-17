@@ -358,7 +358,14 @@ test.describe('Track', () => {
       expect(order.indexOf('dev')).toBeLessThan(order.indexOf('work'))
       // The panel calls the no-label group "Other"; the Quotas page still says
       // "Unlabelled", which has a card header with room for the longer word.
-      await expect(stream.locator('[data-track-cluster=""]')).toHaveText('Other')
+      //
+      // Read off the name span, not the whole heading: the heading also carries
+      // the cluster's shut-state summary ("1 left"), which is in the DOM at
+      // every width — it is CSS, not React, that decides whether it shows, so
+      // that the fold's default needs no JavaScript to paint correctly.
+      await expect(stream.locator('[data-track-cluster=""] [data-track-cluster-name]')).toHaveText(
+        'Other',
+      )
       expect(order[order.length - 1]).toBe('')
 
       // EVERY title starts its own row (Trent, 2026-09-09): its left edge is

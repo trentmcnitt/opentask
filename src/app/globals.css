@@ -77,6 +77,14 @@
 }
 
 @theme inline {
+  /*
+   * The Tasks page's two-column split (DashboardClient.tsx's `mainClass`) rides
+   * the `xl` breakpoint. Default Tailwind `xl` is 80rem/1280px, where the two
+   * equal columns come out narrower (469px each) than today's single column
+   * (640px) — Trent, 2026-09-17: raise it so the split only kicks in once
+   * there's real room. 90.625rem = 1450px.
+   */
+  --breakpoint-xl: 90.625rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

@@ -60,7 +60,7 @@ import { useTaskCounts } from '@/hooks/useTaskCounts'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
-import { taskWord } from '@/lib/utils'
+import { cn, taskWord } from '@/lib/utils'
 import { useAiInsights, type UseAiInsightsReturn } from '@/hooks/useAiInsights'
 import { useAiMode, type AiMode } from '@/hooks/useAiMode'
 import { useInsightsData, type UseInsightsDataReturn } from '@/hooks/useInsightsData'
@@ -1334,6 +1334,127 @@ function HomeContent({
   )
 }
 
+/**
+ * `<main>`'s classes, and the reason the Tasks page has two shapes.
+ *
+ * THE TASKS PAGE IS TWO EQUAL COLUMNS FROM `xl` UP (Trent, 2026-09-15).
+ *
+ * Below `xl` this is exactly what it has always been: one centred column,
+ * `max-w-2xl`, with Track inline above the list. From 1280px the page widens
+ * and Track moves into a second column beside the day. The reason is that Track
+ * had grown to 22 quotas — 350-500px of panel wedged between the filters and
+ * the first task — while the window it was drawn in had a wide empty gutter
+ * down BOTH sides.
+ *
+ * Four things here are load-bearing:
+ *
+ * - THE TWO COLUMNS ARE THE SAME WIDTH (`xl:grid-cols-2`, i.e. two
+ *   `minmax(0, 1fr)` tracks). The first cut gave the task column a fixed 40rem
+ *   and let Track take everything left over, to keep the task column
+ *   pixel-identical so its filter chip rows could not reflow. On Trent's window
+ *   "uncapped" came out at roughly 1060px of Track against 570px of tasks —
+ *   the secondary panel nearly twice the primary one — and he rejected it:
+ *   "the left side is too skinny or the right too wide, it looks bizarre."
+ *   Equal columns supersede the no-reflow constraint; the chip rows reflowing
+ *   is expected and accepted.
+ * - THERE IS A REAL SIDE MARGIN AT `xl` (`xl:px-10`, 40px, against `px-4`'s 16).
+ *   The same complaint: with 16px the logo in the bar above sat hard against
+ *   the sidebar's border. The bar carries the identical padding and cap so its
+ *   contents stay lined up with the column beneath them — see `Header`'s
+ *   `wideAtXl`.
+ * - THE PAIR STOPS GROWING AT 86.5rem (`xl:max-w-[86.5rem]`), and the number is
+ *   arithmetic, not taste: 2 × 40rem of column + 1.5rem of `gap-x-6` +
+ *   2 × 2.5rem of `px-10` = 86.5rem. 40rem is the content width the single
+ *   column has always had (`max-w-2xl` less `px-4`) and the width every filter
+ *   chip row was tuned against, so each column tops out at exactly the column
+ *   the page has always shown and an ultrawide display gets margins rather than
+ *   two 900px columns. Below the cap `mx-auto` keeps centring, as it always has.
+ * - THERE IS NO ROW GAP at any width. The vertical rhythm between the three
+ *   blocks is still their own `mb-*`, exactly as when they were plain siblings;
+ *   only the column gap is new, and it only exists at `xl`.
+ *
+ * `content-start` AND `xl:grid-rows-[auto_1fr]` ARE BOTH LOAD-BEARING, and a
+ * fix with only one of them looks right until the page is short. `<main>` is
+ * `flex-1` in a `min-h-screen` flex column, so it is always at least the
+ * viewport tall. As a block, leftover height sat harmlessly at the bottom. As a
+ * grid, `align-content` defaults to `normal`, which for a grid is STRETCH — the
+ * leftover gets divided equally between the auto rows, opening a blank band
+ * between the filters, Track and the list whenever the content is shorter than
+ * the viewport (a search with no results, or every group folded). `content-start`
+ * packs the rows at the top instead.
+ *
+ * That alone is not enough at `xl`, because Track is `row-span-2` there: a
+ * spanning item contributes its height to the tracks it spans during intrinsic
+ * sizing, so a tall Track inflates the filters row no matter what
+ * `align-content` or `self-start` say. The fix is the explicit row template —
+ * an item spanning a FLEXIBLE track is excluded from the intrinsic sizing of
+ * the auto tracks it also spans, so a tall Track lands in the `1fr` row, which
+ * is also where `flex-1`'s leftover goes. `items-start` keeps a short list from
+ * stretching down that now-tall row.
+ *
+ * The grid is a grid at EVERY width, single-column below `xl`. That is what
+ * lets Track be one element in one place in the DOM — see `TrackColumn`.
+ */
+function mainClass(twoColumn: boolean): string {
+  return cn(
+    'mx-auto grid w-full max-w-2xl flex-1 grid-cols-1 content-start items-start px-4 py-6',
+    twoColumn && 'xl:max-w-[86.5rem] xl:grid-cols-2 xl:grid-rows-[auto_1fr] xl:gap-x-6 xl:px-10',
+  )
+}
+
+/**
+ * §5: the quotas' instrument panel — above the list on every view of the Tasks
+ * page ("wherever they go, it can't be buried"), unaffected by list filters.
+ * Hidden while searching so results stay results. Fed the UNFILTERED corpus,
+ * not `allTasks`: quotas are exactly what `allTasks` now drops, so passing it
+ * would empty this panel.
+ *
+ * ITS OWN GRID CHILD, RENDERED EXACTLY ONCE. Below `xl` the grid is a single
+ * column and this is simply the second of three blocks — the same place in the
+ * same order it has always been, between the filters and the list. At `xl` it is
+ * placed into column two spanning both rows. Placement, rather than a second
+ * copy behind a `xl:hidden`/`hidden xl:block` pair, is the whole trick: one
+ * instance means one set of fold state, one set of `data-track-chip` nodes for
+ * a test to find, and a DOM order for a screen reader that does not change with
+ * the width.
+ *
+ * Sticky needs `self-start`: a grid child stretches to the row's height by
+ * default, and a full-height box has nothing to stick within. `<main>` now sets
+ * `items-start` for every child, so this repeats it rather than introducing it —
+ * kept explicit because it is this element that would silently stop sticking if
+ * the container's alignment ever changed. The top offset clears the sticky
+ * header, and the max-height keeps a tall panel's bottom reachable rather than
+ * stranded below the fold.
+ *
+ * It spans BOTH rows at `xl` (`row-span-2`), and the row template that makes
+ * that safe is on `<main>` — see `mainClass`, which explains why a spanning
+ * item and an `auto` row cannot be combined here.
+ *
+ * The column is RESERVED while a search is running rather than released, so
+ * typing in the search box cannot re-centre the page under the user.
+ */
+function TrackColumn({
+  quotaSource,
+  twoColumn,
+  searching,
+}: {
+  quotaSource: Task[]
+  twoColumn: boolean
+  searching: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'min-w-0',
+        twoColumn &&
+          'xl:sticky xl:top-[4.5rem] xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto',
+      )}
+    >
+      {!searching && <TrackPanel tasks={quotaSource} />}
+    </div>
+  )
+}
+
 function DashboardView({
   tasks,
   allTasks,
@@ -1595,6 +1716,14 @@ function DashboardView({
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
+  // Whether the page splits into task column + Track column at `xl` (see the
+  // block comment on <main>). Gated on the user actually HAVING a quota: with
+  // nothing to put in it, the second column is dead space, and the only visible
+  // effect of the split would be that the task column stopped being centred.
+  // Deliberately NOT gated on `searchQuery` — the column stays reserved while a
+  // search runs, so typing cannot re-centre the page under the user.
+  const twoColumn = quotaSource.some(isTracked)
+
   return (
     <div className="flex flex-1 flex-col">
       <Header
@@ -1612,216 +1741,217 @@ function DashboardView({
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
         timezone={timezone}
         searchFocusRef={searchFocusRef}
+        wideAtXl={twoColumn}
       />
 
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
-        {/* Quick add + AI chip row */}
-        <div className="mb-4 flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <QuickAdd
-              onAdd={async (title) => {
-                await onQuickAdd(title)
-              }}
-              onOpenAddForm={(title) => {
-                window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
-              }}
-            />
+      <main className={mainClass(twoColumn)}>
+        <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+          {/* Quick add + AI chip row */}
+          <div className="mb-4 flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <QuickAdd
+                onAdd={async (title) => {
+                  await onQuickAdd(title)
+                }}
+                onOpenAddForm={(title) => {
+                  window.dispatchEvent(new CustomEvent('open-add-form', { detail: { title } }))
+                }}
+              />
+            </div>
+            {aiAvailable && (
+              <AiControlArea
+                mode={aiMode}
+                onModeChange={onAiModeChange}
+                wnCommentaryUnfiltered={wnCommentaryUnfiltered}
+                onWnCommentaryUnfilteredChange={onWnCommentaryUnfilteredChange}
+                wnHighlight={wnHighlight}
+                onWnHighlightChange={onWnHighlightChange}
+                insightsSignalChips={insightsSignalChips}
+                onInsightsSignalChipsChange={onInsightsSignalChipsChange}
+                insightsScoreChips={insightsScoreChips}
+                onInsightsScoreChipsChange={onInsightsScoreChipsChange}
+                annotationGeneratedAt={aiInsights.generatedAt}
+                annotationDurationMs={aiInsights.durationMs}
+                annotationFreshnessText={aiInsights.freshnessText}
+                annotationRefreshLoading={aiInsights.loading}
+                annotationError={aiInsights.error}
+                onRefreshAnnotations={onRefreshAnnotations}
+                insightsGeneratedAt={insightsData.generatedAt}
+                insightsDurationMs={insightsData.durationMs}
+                insightsGenerating={insightsData.generating}
+                insightsProgress={insightsData.progress}
+                insightsCompletedTasks={insightsData.completedTasks}
+                insightsTotalTasks={insightsData.totalTasks}
+                insightsSingleCall={insightsData.singleCall}
+                insightsGenerationStartedAt={insightsData.generationStartedAt}
+                insightsError={insightsData.error}
+                onRefreshInsights={onRefreshInsights}
+                enrichmentActive={enrichmentActive}
+                timezone={timezone}
+              />
+            )}
           </div>
-          {aiAvailable && (
-            <AiControlArea
-              mode={aiMode}
-              onModeChange={onAiModeChange}
-              wnCommentaryUnfiltered={wnCommentaryUnfiltered}
-              onWnCommentaryUnfilteredChange={onWnCommentaryUnfilteredChange}
-              wnHighlight={wnHighlight}
-              onWnHighlightChange={onWnHighlightChange}
-              insightsSignalChips={insightsSignalChips}
-              onInsightsSignalChipsChange={onInsightsSignalChipsChange}
-              insightsScoreChips={insightsScoreChips}
-              onInsightsScoreChipsChange={onInsightsScoreChipsChange}
-              annotationGeneratedAt={aiInsights.generatedAt}
-              annotationDurationMs={aiInsights.durationMs}
-              annotationFreshnessText={aiInsights.freshnessText}
-              annotationRefreshLoading={aiInsights.loading}
-              annotationError={aiInsights.error}
-              onRefreshAnnotations={onRefreshAnnotations}
-              insightsGeneratedAt={insightsData.generatedAt}
-              insightsDurationMs={insightsData.durationMs}
-              insightsGenerating={insightsData.generating}
-              insightsProgress={insightsData.progress}
-              insightsCompletedTasks={insightsData.completedTasks}
-              insightsTotalTasks={insightsData.totalTasks}
-              insightsSingleCall={insightsData.singleCall}
-              insightsGenerationStartedAt={insightsData.generationStartedAt}
-              insightsError={insightsData.error}
-              onRefreshInsights={onRefreshInsights}
-              enrichmentActive={enrichmentActive}
+
+          {aiAvailable && bannerState && (
+            <QuickTakeBanner
+              title={bannerState.title}
+              quickTakeText={bannerState.quickTakeText}
+              loading={bannerState.loading}
+              enrichment={bannerState.enrichment}
               timezone={timezone}
+              onDismiss={onQuickTakeDismiss}
+              onViewTask={onQuickTakeViewTask}
             />
+          )}
+
+          {/* §7.3: the front door is "Today", but the corpus stays reachable. */}
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+          </div>
+
+          <FilterBar
+            tasks={allTasks}
+            expanded={filtersExpanded}
+            onToggleExpanded={onToggleFilters}
+            activeFilterCount={activeFilterCount}
+            selectedPriorities={selectedPriorities}
+            selectedLabels={selectedLabels}
+            selectedDateFilters={selectedDateFilters}
+            onTogglePriority={onTogglePriority}
+            onExclusivePriority={onExclusivePriority}
+            onToggleLabel={onToggleLabel}
+            onExclusiveLabel={onExclusiveLabel}
+            onToggleDateFilter={onToggleDateFilter}
+            onExclusiveDateFilter={onExclusiveDateFilter}
+            attributeFilters={attributeFilters}
+            onToggleAttribute={onToggleAttribute}
+            onExclusiveAttribute={onExclusiveAttribute}
+            projects={projects}
+            selectedProjects={selectedProjects}
+            onToggleProject={onToggleProject}
+            onExclusiveProject={onExclusiveProject}
+            excludedPriorities={excludedPriorities}
+            excludedLabels={excludedLabels}
+            excludedDateFilters={excludedDateFilters}
+            excludedAttributes={excludedAttributes}
+            excludedProjects={excludedProjects}
+            onExcludePriority={onExcludePriority}
+            onExcludeLabel={onExcludeLabel}
+            onExcludeDateFilter={onExcludeDateFilter}
+            onExcludeAttribute={onExcludeAttribute}
+            onExcludeProject={onExcludeProject}
+            todayCounts={todayCounts}
+            timezone={timezone}
+            aiAvailable={aiAvailable}
+            aiMode={aiMode}
+            aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
+            aiFilterActive={aiFilterActive}
+            aiFilterLoading={aiInsights.loading}
+            onToggleAiFilter={onToggleAiFilter}
+            insightsActive={showInsights}
+            onToggleInsights={onToggleInsights}
+            hasInsightsData={insightsData.hasResults}
+            insightsGenerating={insightsData.generating}
+            insightsSignalChipsVisible={insightsSignalChips}
+            signalChips={
+              aiMode !== 'off' && insightsData.hasResults
+                ? insightsData.activeSignals.map((s) => ({
+                    key: s.key,
+                    label: s.label,
+                    count: insightsData.signalCounts[s.key] || 0,
+                    description: s.description,
+                  }))
+                : undefined
+            }
+            selectedSignals={selectedSignals}
+            onSignalClick={onSignalClick}
+            onSignalLongPress={onSignalLongPress}
+          />
+
+          {searchQuery && (
+            <div className="mb-4 text-sm text-zinc-500">
+              {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
+              {searchQuery}&rdquo;
+            </div>
+          )}
+
+          {anyFilterActive && (
+            <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
+              Showing {tasks.length} of {allTasks.length} tasks{' '}
+              <span className="mx-1">&middot;</span>
+              <button
+                onClick={onClearFilters}
+                className="text-foreground font-medium hover:underline"
+              >
+                Clear filter
+              </button>
+            </div>
           )}
         </div>
 
-        {aiAvailable && bannerState && (
-          <QuickTakeBanner
-            title={bannerState.title}
-            quickTakeText={bannerState.quickTakeText}
-            loading={bannerState.loading}
-            enrichment={bannerState.enrichment}
-            timezone={timezone}
-            onDismiss={onQuickTakeDismiss}
-            onViewTask={onQuickTakeViewTask}
+        <TrackColumn quotaSource={quotaSource} twoColumn={twoColumn} searching={!!searchQuery} />
+
+        <div className="min-w-0 xl:col-start-1 xl:row-start-2">
+          <TaskList
+            tasks={tasks}
+            projects={projects}
+            grouping={grouping}
+            timeSlots={timeSlots}
+            onDone={actions.handleDone}
+            onSnooze={actions.handleSnooze}
+            onLabelClick={onToggleLabel}
+            onTaskFocus={onTaskFocus}
+            keyboardFocusedId={keyboardFocusedId}
+            isKeyboardActive={isKeyboardActive}
+            onKeyDown={onKeyDown}
+            onListFocus={onListFocus}
+            onListBlur={onListBlur}
+            sortOption={sortOption}
+            reversed={reversed}
+            setSortOption={setSortOption}
+            isCollapsed={isCollapsed}
+            toggleCollapse={toggleCollapse}
+            onActivate={onActivate}
+            onDoubleClick={onDoubleClick}
+            annotationMap={effectiveAnnotationMap}
+            showAnnotations={showAnnotations}
+            wnTaskIds={aiInsights.aiTaskIds}
+            showWnHighlight={showWnHighlight}
+            onReprocess={onReprocess}
+            insightsScoreMap={
+              showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+            }
+            insightsSignalMap={
+              showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
+            }
+            insightsCommentaryMap={
+              effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
+            }
+            showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
+            aiScoreDisabled={!showInsights || aiMode === 'off'}
+            headerLeft={
+              tasks.length > 0 ? (
+                <button
+                  onClick={() => {
+                    const allSelected =
+                      tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                    if (allSelected) {
+                      selection.clear()
+                    } else {
+                      selection.selectAll(tasks.map((t) => t.id))
+                    }
+                  }}
+                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                >
+                  {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
+                    ? 'Select None'
+                    : 'Select All'}
+                </button>
+              ) : undefined
+            }
+            onUnifiedChange={onUnifiedChange}
           />
-        )}
-
-        {/* §7.3: the front door is "Today", but the corpus stays reachable. */}
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
         </div>
-
-        <FilterBar
-          tasks={allTasks}
-          expanded={filtersExpanded}
-          onToggleExpanded={onToggleFilters}
-          activeFilterCount={activeFilterCount}
-          selectedPriorities={selectedPriorities}
-          selectedLabels={selectedLabels}
-          selectedDateFilters={selectedDateFilters}
-          onTogglePriority={onTogglePriority}
-          onExclusivePriority={onExclusivePriority}
-          onToggleLabel={onToggleLabel}
-          onExclusiveLabel={onExclusiveLabel}
-          onToggleDateFilter={onToggleDateFilter}
-          onExclusiveDateFilter={onExclusiveDateFilter}
-          attributeFilters={attributeFilters}
-          onToggleAttribute={onToggleAttribute}
-          onExclusiveAttribute={onExclusiveAttribute}
-          projects={projects}
-          selectedProjects={selectedProjects}
-          onToggleProject={onToggleProject}
-          onExclusiveProject={onExclusiveProject}
-          excludedPriorities={excludedPriorities}
-          excludedLabels={excludedLabels}
-          excludedDateFilters={excludedDateFilters}
-          excludedAttributes={excludedAttributes}
-          excludedProjects={excludedProjects}
-          onExcludePriority={onExcludePriority}
-          onExcludeLabel={onExcludeLabel}
-          onExcludeDateFilter={onExcludeDateFilter}
-          onExcludeAttribute={onExcludeAttribute}
-          onExcludeProject={onExcludeProject}
-          todayCounts={todayCounts}
-          timezone={timezone}
-          aiAvailable={aiAvailable}
-          aiMode={aiMode}
-          aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
-          aiFilterActive={aiFilterActive}
-          aiFilterLoading={aiInsights.loading}
-          onToggleAiFilter={onToggleAiFilter}
-          insightsActive={showInsights}
-          onToggleInsights={onToggleInsights}
-          hasInsightsData={insightsData.hasResults}
-          insightsGenerating={insightsData.generating}
-          insightsSignalChipsVisible={insightsSignalChips}
-          signalChips={
-            aiMode !== 'off' && insightsData.hasResults
-              ? insightsData.activeSignals.map((s) => ({
-                  key: s.key,
-                  label: s.label,
-                  count: insightsData.signalCounts[s.key] || 0,
-                  description: s.description,
-                }))
-              : undefined
-          }
-          selectedSignals={selectedSignals}
-          onSignalClick={onSignalClick}
-          onSignalLongPress={onSignalLongPress}
-        />
-
-        {searchQuery && (
-          <div className="mb-4 text-sm text-zinc-500">
-            {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
-            {searchQuery}&rdquo;
-          </div>
-        )}
-
-        {anyFilterActive && (
-          <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
-            Showing {tasks.length} of {allTasks.length} tasks <span className="mx-1">&middot;</span>
-            <button
-              onClick={onClearFilters}
-              className="text-foreground font-medium hover:underline"
-            >
-              Clear filter
-            </button>
-          </div>
-        )}
-
-        {/* §5: the quotas' instrument panel — above the list on every view of
-            the Tasks page ("wherever they go, it can't be buried"), unaffected
-            by list filters. Hidden while searching so results stay results.
-            Fed the UNFILTERED corpus, not `allTasks`: quotas are exactly what
-            `allTasks` now drops, so passing it would empty this panel. */}
-        {!searchQuery && <TrackPanel tasks={quotaSource} />}
-
-        <TaskList
-          tasks={tasks}
-          projects={projects}
-          grouping={grouping}
-          timeSlots={timeSlots}
-          onDone={actions.handleDone}
-          onSnooze={actions.handleSnooze}
-          onLabelClick={onToggleLabel}
-          onTaskFocus={onTaskFocus}
-          keyboardFocusedId={keyboardFocusedId}
-          isKeyboardActive={isKeyboardActive}
-          onKeyDown={onKeyDown}
-          onListFocus={onListFocus}
-          onListBlur={onListBlur}
-          sortOption={sortOption}
-          reversed={reversed}
-          setSortOption={setSortOption}
-          isCollapsed={isCollapsed}
-          toggleCollapse={toggleCollapse}
-          onActivate={onActivate}
-          onDoubleClick={onDoubleClick}
-          annotationMap={effectiveAnnotationMap}
-          showAnnotations={showAnnotations}
-          wnTaskIds={aiInsights.aiTaskIds}
-          showWnHighlight={showWnHighlight}
-          onReprocess={onReprocess}
-          insightsScoreMap={
-            showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
-          }
-          insightsSignalMap={
-            showInsights && aiMode !== 'off' ? insightsData.insightsSignalMap : undefined
-          }
-          insightsCommentaryMap={
-            effectiveCommentaryMap.size > 0 ? effectiveCommentaryMap : undefined
-          }
-          showAiInsights={insightsData.hasResults && aiMode !== 'off' && showInsights}
-          aiScoreDisabled={!showInsights || aiMode === 'off'}
-          headerLeft={
-            tasks.length > 0 ? (
-              <button
-                onClick={() => {
-                  const allSelected =
-                    tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                  if (allSelected) {
-                    selection.clear()
-                  } else {
-                    selection.selectAll(tasks.map((t) => t.id))
-                  }
-                }}
-                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-              >
-                {tasks.length > 0 && tasks.every((t) => selection.selectedIds.has(t.id))
-                  ? 'Select None'
-                  : 'Select All'}
-              </button>
-            ) : undefined
-          }
-          onUnifiedChange={onUnifiedChange}
-        />
       </main>
 
       <SelectionActionSheet
