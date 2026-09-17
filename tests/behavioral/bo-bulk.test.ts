@@ -1194,8 +1194,10 @@ describe('Bulk Edit Labels (labels_add/labels_remove)', () => {
 /**
  * Bulk Snooze Priority Filter Tests (SP-001 through SP-008)
  *
- * P3 (High) and P4 (Urgent) tasks are excluded from bulk snooze. P0-P2 are
- * eligible. High and urgent tasks must be snoozed individually.
+ * P0-P2 are always eligible. P3 (High) sits out a batch that still has
+ * something lower in it — these tests all do — and P4 (Urgent) is never
+ * bulk-snoozed at all. The High tier's own rule, and the two-press sequence it
+ * produces, are covered in "Bulk Snooze — the High tier" below.
  */
 describe('Bulk Snooze Priority Filter', () => {
   beforeEach(() => {
@@ -1243,6 +1245,8 @@ describe('Bulk Snooze Priority Filter', () => {
     expect(result.tasksAffected).toBe(2)
     expect(result.tasksSkipped).toBe(2)
     expect(result.urgentSkipped).toBe(2)
+    // ...of which exactly one is High. `urgentSkipped` is the total.
+    expect(result.highSkipped).toBe(1)
 
     // P1 and P2 were snoozed
     expect(getTaskById(lowTask.id)!.due_at).toBe(localTime(18, 0))
@@ -1285,7 +1289,7 @@ describe('Bulk Snooze Priority Filter', () => {
   })
 
   /**
-   * SP-003: P0/P1/P2 snoozed; P3 skipped even with no P4 present
+   * SP-003: P0/P1/P2 snoozed; P3 deferred because something lower is still eligible
    */
   test('SP-003: P0-P2 mix snoozed — P3 skipped', () => {
     const unsetTask = createTask({
@@ -1799,5 +1803,162 @@ describe('Bulk Snooze High/Urgent Exclusion', () => {
     expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(p3included.id)!.due_at).toBe(localTime(18, 0))
     expect(getTaskById(p3excluded.id)!.due_at).toBe(localTime(10, 0))
+  })
+})
+
+/**
+ * Bulk Snooze — the High tier (BH-001 through BH-006)
+ *
+ * P3 (High) is bulk-snoozable, but only when no LOWER-priority task in the same
+ * batch is still eligible (Trent, 2026-09-15). He had four overdue High tasks
+ * and one button, and the button reported "no snoozable tasks" — the sweep
+ * could not touch the only thing that was late.
+ *
+ * The behaviour these pin, in one line each:
+ *
+ * - Something lower in the batch defers the High tier (BH-001).
+ * - Nothing lower, so the High tier goes (BH-002).
+ * - A P4 in the batch does NOT count as "something lower" (BH-003) — if it did,
+ *   one Urgent task would defer the High tier forever and the second press
+ *   would never come.
+ * - P4 alone still moves nothing (BH-004).
+ * - The two-press sequence, end to end, on one unchanged batch (BH-005).
+ * - A rescued P4 is not "something lower" either (BH-006).
+ */
+describe('Bulk Snooze — the High tier', () => {
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
+    setupTestDb()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  const make = (title: string, priority: number, hour: number) =>
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title, due_at: localTime(hour, 0), priority },
+    })
+
+  const sweep = (ids: number[], hour: number, includeTaskIds?: number[]) =>
+    bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: ids,
+      until: localTime(hour, 0),
+      includeTaskIds,
+    })
+
+  test('BH-001: a mixed batch leaves the High tasks where they are', () => {
+    const p2 = make('Medium', 2, 8)
+    const highA = make('High A', 3, 9)
+    const highB = make('High B', 3, 10)
+
+    const result = sweep([p2.id, highA.id, highB.id], 18)
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.urgentSkipped).toBe(2)
+    expect(result.highSkipped).toBe(2)
+
+    expect(getTaskById(p2.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(highA.id)!.due_at).toBe(localTime(9, 0))
+    expect(getTaskById(highB.id)!.due_at).toBe(localTime(10, 0))
+  })
+
+  test('BH-002: a High-only batch is snoozed', () => {
+    const highA = make('High A', 3, 8)
+    const highB = make('High B', 3, 9)
+
+    const result = sweep([highA.id, highB.id], 18)
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.tasksSkipped).toBe(0)
+    expect(result.urgentSkipped).toBe(0)
+    expect(result.highSkipped).toBe(0)
+
+    expect(getTaskById(highA.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(highB.id)!.due_at).toBe(localTime(18, 0))
+  })
+
+  test('BH-003: a P4 in the batch does not defer the High tier', () => {
+    const high = make('High', 3, 8)
+    const urgent = make('Urgent', 4, 9)
+
+    const result = sweep([high.id, urgent.id], 18)
+
+    expect(result.tasksAffected).toBe(1)
+    expect(result.tasksSkipped).toBe(1)
+    // The one skip is the Urgent, and none of it is High.
+    expect(result.urgentSkipped).toBe(1)
+    expect(result.highSkipped).toBe(0)
+
+    expect(getTaskById(high.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(urgent.id)!.due_at).toBe(localTime(9, 0))
+  })
+
+  test('BH-004: a P4-only batch still snoozes nothing', () => {
+    const urgentA = make('Urgent A', 4, 8)
+    const urgentB = make('Urgent B', 4, 9)
+
+    const result = sweep([urgentA.id, urgentB.id], 18)
+
+    expect(result.tasksAffected).toBe(0)
+    expect(result.urgentSkipped).toBe(2)
+    expect(result.highSkipped).toBe(0)
+
+    expect(getTaskById(urgentA.id)!.due_at).toBe(localTime(8, 0))
+    expect(getTaskById(urgentB.id)!.due_at).toBe(localTime(9, 0))
+  })
+
+  /**
+   * The whole point of the rule, in sequence. The BATCH IS THE SAME BOTH TIMES
+   * — the caller does not learn anything between presses and does not filter
+   * anything out. The only thing that changes is that the P2 is no longer
+   * eligible after the first press, because a sweep sends the ids it was given
+   * and the second press is a second press of the same button.
+   */
+  test('BH-005: two presses — the first clears P0-P2, the second takes the High', () => {
+    // All three before the frozen clock's 10am, so all three are overdue.
+    const p1 = make('Low', 1, 7)
+    const p2 = make('Medium', 2, 8)
+    const high = make('High', 3, 9)
+
+    // First press: the whole day is overdue, so the batch is all three.
+    const first = sweep([p1.id, p2.id, high.id], 18)
+    expect(first.tasksAffected).toBe(2)
+    expect(first.highSkipped).toBe(1)
+    expect(getTaskById(high.id)!.due_at).toBe(localTime(9, 0))
+
+    // Second press: the sweep is over what is STILL overdue, which is the High
+    // alone — the two it just moved are in the future now.
+    const stillOverdue = [p1, p2, high]
+      .map((t) => getTaskById(t.id)!)
+      .filter((t) => new Date(t.due_at!) < new Date())
+      .map((t) => t.id)
+    expect(stillOverdue).toEqual([high.id])
+
+    const second = sweep(stillOverdue, 20)
+    expect(second.tasksAffected).toBe(1)
+    expect(second.urgentSkipped).toBe(0)
+    expect(getTaskById(high.id)!.due_at).toBe(localTime(20, 0))
+  })
+
+  test('BH-006: a rescued P4 does not defer the High tier either', () => {
+    const high = make('High', 3, 8)
+    const urgent = make('Urgent', 4, 9)
+
+    // `include_task_ids` rescues the Urgent; it must not also make the batch
+    // look like it has something lower still to sweep.
+    const result = sweep([high.id, urgent.id], 18, [urgent.id])
+
+    expect(result.tasksAffected).toBe(2)
+    expect(result.urgentSkipped).toBe(0)
+    expect(result.highSkipped).toBe(0)
+
+    expect(getTaskById(high.id)!.due_at).toBe(localTime(18, 0))
+    expect(getTaskById(urgent.id)!.due_at).toBe(localTime(18, 0))
   })
 })

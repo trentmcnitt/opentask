@@ -433,7 +433,7 @@ See `CLAUDE.local.md` (gitignored) for environment-specific deployment details (
 
 See `docs/TASK-MODEL.md` for the complete task model reference: priority values, recurrence, completion behavior, snooze semantics, undo system API, and task access control.
 
-**Due Date Philosophy (critical for AI work):** Due dates for P0-2 tasks are reminders, not deadlines. P3 is a deadline. P4 (Urgent) is a hard deadline and is excluded from bulk snooze. See `docs/TASK-MODEL.md` for full details and implications for code/AI.
+**Due Date Philosophy (critical for AI work):** Due dates for P0-2 tasks are reminders, not deadlines. P3 is a deadline and is bulk-snoozed only when nothing lower is left in the batch. P4 (Urgent) is a hard deadline and is never bulk-snoozed. See `docs/TASK-MODEL.md` for full details and implications for code/AI.
 
 **Undo system:** See [Critical Requirements](#every-mutation-must-be-atomic-and-logged-for-undo) for the atomic mutation pattern and API, or `docs/TASK-MODEL.md` for the full undo reference.
 
