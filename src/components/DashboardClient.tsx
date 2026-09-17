@@ -9,6 +9,7 @@ import { UNDATED_LABEL } from '@/lib/slot-view'
 import { isTracked } from '@/lib/track'
 import { publishTaskCounts } from '@/hooks/useTaskNavCounts'
 import { TrackPanel } from '@/components/TrackPanel'
+import { DashboardRemindersPanel } from '@/components/DashboardRemindersPanel'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { SortOption } from '@/hooks/useGroupSort'
@@ -350,9 +351,17 @@ function HomeContent({
     setFocusedTask(task)
     setQuickActionOpen(true)
   }, [])
+  // Registered by DashboardRemindersPanel while it is mounted (same pattern as
+  // `refreshRef` on `/reminders` — see RemindersPage). The panel runs its own
+  // `useReminders` instance, entirely separate from `tasks`/`visibleTasks`
+  // above, so nothing else here refetches it: without this ref, undoing a
+  // completed reminder (or a completion arriving over the sync stream) would
+  // leave the panel showing stale data until a hard reload.
+  const remindersRefreshRef = useRef<(() => void) | null>(null)
   const refreshAll = useCallback(async () => {
     await fetchTasks()
     refreshProjects()
+    remindersRefreshRef.current?.()
   }, [fetchTasks, refreshProjects])
   // Banner state: combines quick take text, loading, title, and enrichment data
   interface QuickTakeBannerState {
@@ -1329,6 +1338,7 @@ function HomeContent({
           }
         }}
         searchFocusRef={searchFocusRef}
+        remindersRefreshRef={remindersRefreshRef}
       />
     </>
   )
@@ -1432,15 +1442,33 @@ function mainClass(twoColumn: boolean): string {
  *
  * The column is RESERVED while a search is running rather than released, so
  * typing in the search box cannot re-centre the page under the user.
+ *
+ * The Reminders panel (`DashboardRemindersPanel`) lives here too now, ABOVE
+ * `<TrackPanel>` — a second sibling INSIDE this same wrapper, not a second grid
+ * child. Same reasoning as Track's own placement: one instance, one DOM
+ * position, sticky and scrollable as part of this one column at every width.
+ * It shares Track's `!searching` gate for the same reason Track has it —
+ * "results stay results" while a task search is running — even though the
+ * Reminders panel's own data has nothing to do with that search.
  */
 function TrackColumn({
   quotaSource,
   twoColumn,
   searching,
+  onRemindersUndo,
+  onRemindersCompleted,
+  remindersRefreshRef,
+  timeSlots,
+  timezone,
 }: {
   quotaSource: Task[]
   twoColumn: boolean
   searching: boolean
+  onRemindersUndo: () => void
+  onRemindersCompleted: () => void
+  remindersRefreshRef: React.MutableRefObject<(() => void) | null>
+  timeSlots: TimeSlot[]
+  timezone: string
 }) {
   return (
     <div
@@ -1450,7 +1478,18 @@ function TrackColumn({
           'xl:sticky xl:top-[4.5rem] xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto',
       )}
     >
-      {!searching && <TrackPanel tasks={quotaSource} />}
+      {!searching && (
+        <>
+          <DashboardRemindersPanel
+            onUndo={onRemindersUndo}
+            onCompleted={onRemindersCompleted}
+            refreshRef={remindersRefreshRef}
+            timeSlots={timeSlots}
+            timezone={timezone}
+          />
+          <TrackPanel tasks={quotaSource} />
+        </>
+      )}
     </div>
   )
 }
@@ -1566,6 +1605,7 @@ function DashboardView({
   onQuickTakeDismiss,
   onQuickTakeViewTask,
   searchFocusRef,
+  remindersRefreshRef,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -1689,6 +1729,9 @@ function DashboardView({
   onQuickTakeDismiss: () => void
   onQuickTakeViewTask?: () => void
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
+  /** Threaded to `TrackColumn` → `DashboardRemindersPanel` — see the block
+   * comment on `remindersRefreshRef` in `HomeContent`. */
+  remindersRefreshRef: React.MutableRefObject<(() => void) | null>
 }) {
   // Filters that live inside the collapsible block (§7.3). Counted rather than
   // just flagged: the count is what the collapsed "Filters · 2" badge shows,
@@ -1889,7 +1932,16 @@ function DashboardView({
           )}
         </div>
 
-        <TrackColumn quotaSource={quotaSource} twoColumn={twoColumn} searching={!!searchQuery} />
+        <TrackColumn
+          quotaSource={quotaSource}
+          twoColumn={twoColumn}
+          searching={!!searchQuery}
+          onRemindersUndo={actions.handleUndo}
+          onRemindersCompleted={actions.bumpUndoCount}
+          remindersRefreshRef={remindersRefreshRef}
+          timeSlots={timeSlots}
+          timezone={timezone}
+        />
 
         <div className="min-w-0 xl:col-start-1 xl:row-start-2">
           <TaskList
