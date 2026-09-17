@@ -4,15 +4,17 @@
  * Used by both the dashboard and project detail pages. Sends overdue task IDs
  * to the bulk snooze endpoint and shows a toast with results.
  *
- * P0-P2 tasks are eligible for bulk snooze. P3 (High) and P4 (Urgent) are excluded.
+ * P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
+ * the batch, so a list of nothing but overdue High tasks takes two presses
+ * rather than refusing to move. P4 (Urgent) is never bulk-snoozed. The rule
+ * lives in `filterForBulkSnooze`; the server decides, this hook only reports.
  */
 
 import { useCallback } from 'react'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
-import { computeSnoozeTime } from '@/lib/snooze'
-import { taskWord } from '@/lib/utils'
+import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
 
 interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
@@ -28,7 +30,7 @@ interface UseSnoozeOverdueOptions {
  * Returns a callback that snoozes all overdue tasks from `displayTasks`.
  *
  * Sends all overdue task IDs to the server — the server handles priority
- * filtering (P0-P2 eligible, P3/P4 excluded). The optional `until` parameter
+ * filtering (see the block comment above). The optional `until` parameter
  * allows SnoozeAllFab long-press menu to override the default duration.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
@@ -71,18 +73,22 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         if (!res.ok) throw new Error('Snooze failed')
         const responseData = await res.json()
         const tasksAffected = responseData.data?.tasks_affected ?? 0
-        const skippedUrgent = responseData.data?.skipped_urgent ?? 0
+        // `skipped_urgent` is the TOTAL skipped on priority — its name is frozen
+        // by the iOS client that reads it — and `skipped_high` is the High
+        // subset, so Urgent alone is the difference. Falling back to the total
+        // when `skipped_high` is absent keeps an older server's response
+        // readable: it reports everything as Urgent, which is what that server
+        // meant by it.
+        const skippedByPriority = responseData.data?.skipped_urgent ?? 0
+        const skippedHigh = responseData.data?.skipped_high ?? 0
         if (tasksAffected > 0) onUndoCountBump?.()
         fetchTasks()
 
-        const skipSuffix = skippedUrgent > 0 ? ` (${skippedUrgent} urgent skipped)` : ''
-
-        let message: string
-        if (tasksAffected === 0) {
-          message = `No snoozable tasks (${skippedUrgent} urgent must be snoozed individually)`
-        } else {
-          message = `Snoozed ${tasksAffected} ${taskWord(tasksAffected)}${skipSuffix}`
-        }
+        const message = bulkSnoozeMessage({
+          affected: tasksAffected,
+          high: skippedHigh,
+          urgent: skippedByPriority - skippedHigh,
+        })
 
         showToast({
           message,
