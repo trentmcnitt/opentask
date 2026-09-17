@@ -100,6 +100,17 @@ test.describe('Dashboard filter section', () => {
   test('filter chips are collapsed by default and open in one click', async ({
     authenticatedPage: page,
   }) => {
+    // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT. `filters_expanded` is
+    // a server preference on the one user every spec in the run shares, so
+    // "collapsed by default" is only true here if nothing earlier in the run
+    // pinned it open — which made this test a hostage to file ordering, and it
+    // duly broke the first time a new spec sorted ahead of it.
+    const written = await page.request.patch('/api/user/preferences', {
+      data: { filters_expanded: false },
+    })
+    expect(written.ok()).toBeTruthy()
+    await page.reload()
+
     await expect(toggle(page)).toBeVisible({ timeout: 5000 })
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)

@@ -84,6 +84,24 @@ interface HeaderProps {
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
   /** What the search bar searches, for its placeholder. Default: tasks. */
   searchSubject?: string
+  /**
+   * Widen the bar at `xl` to match the two-column Tasks page beneath it.
+   *
+   * The bar is normally `mx-auto max-w-2xl px-4`, which lines its contents up
+   * exactly with a `mx-auto max-w-2xl px-4` page column below it. At `xl` the
+   * Tasks page grows to two equal columns inside a wider, more generously
+   * padded box (`xl:max-w-[86.5rem] xl:px-10` — see `mainClass` in
+   * `DashboardClient`), and a bar that kept the narrow box would leave the logo
+   * hard against the sidebar with the column it belongs to starting 24px
+   * further in. The two values are deliberately duplicated rather than shared
+   * through a constant: Tailwind only emits classes it can see as literal text,
+   * so a computed string would generate no CSS at all. `dashboard-layout.spec.ts`
+   * measures that the two edges still agree.
+   *
+   * Opt-in, because the other surfaces that use this bar (Reminders, Quotas)
+   * stay one centred `max-w-2xl` column at every width.
+   */
+  wideAtXl?: boolean
 }
 
 export function Header({
@@ -107,6 +125,7 @@ export function Header({
   timezone,
   searchFocusRef,
   searchSubject,
+  wideAtXl = false,
 }: HeaderProps) {
   const { data: session } = useSession()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -178,7 +197,13 @@ export function Header({
   return (
     <TooltipProvider delayDuration={300}>
       <header className="safe-top bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm select-none">
-        <div className="relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2">
+        <div
+          className={cn(
+            'relative mx-auto flex max-w-2xl items-center gap-1.5 px-4 py-3 md:gap-2',
+            // The same box the page's own `<main>` gets — see `wideAtXl`.
+            wideAtXl && 'xl:max-w-[86.5rem] xl:px-10',
+          )}
+        >
           {/* Back button (when navigating into a sub-page like project detail) */}
           {backHref && (
             <Link href={backHref}>
