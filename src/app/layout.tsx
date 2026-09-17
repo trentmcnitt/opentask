@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { SessionProvider } from '@/components/SessionProvider'
 import { PreferencesProvider } from '@/components/PreferencesProvider'
+import { FoldStateProvider } from '@/components/FoldStateProvider'
 import { ProjectsProvider } from '@/components/ProjectsProvider'
 import { NavigationGuardProvider } from '@/components/NavigationGuardProvider'
 import { AppLayoutWrapper } from '@/components/AppLayoutWrapper'
@@ -66,12 +67,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <SessionProvider>
             <PreferencesProvider>
-              <ProjectsProvider>
-                <NavigationGuardProvider>
-                  <AppLayoutWrapper>{children}</AppLayoutWrapper>
-                  <Toaster position="bottom-center" />
-                </NavigationGuardProvider>
-              </ProjectsProvider>
+              {/* Above the router on purpose: the responsive folds it holds
+                  must outlive a page segment — see `FoldStateProvider`. */}
+              <FoldStateProvider>
+                <ProjectsProvider>
+                  <NavigationGuardProvider>
+                    <AppLayoutWrapper>{children}</AppLayoutWrapper>
+                    <Toaster position="bottom-center" />
+                  </NavigationGuardProvider>
+                </ProjectsProvider>
+              </FoldStateProvider>
             </PreferencesProvider>
           </SessionProvider>
         </ThemeProvider>
