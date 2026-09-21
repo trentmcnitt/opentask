@@ -6,6 +6,7 @@
  * `reminders.spec.ts` (seeding reminders via `page.request.post`, the
  * `todayAt` helper). This spec owns neither surface — it only covers the
  * compact panel itself: default slot, paging, the row cap, and completion.
+ * The cap rule it pins: every row up to 13, and past that 9 behind "Show more".
  */
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -190,7 +191,7 @@ test.describe('Dashboard Reminders panel — wide', () => {
     }
   })
 
-  test('caps a slot to 4 rows, "Show more" uncaps it with a considered readout, and a tap completes a row', async ({
+  test('shows every row up to 13, and past that truncates to 9 behind "Show more"', async ({
     authenticatedPage: page,
   }) => {
     const slots = await fetchTimeSlots(page)
@@ -200,7 +201,9 @@ test.describe('Dashboard Reminders panel — wide', () => {
     const at = (offset: number) =>
       todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
 
-    const titles = Array.from({ length: 6 }, (_, i) => `Cap probe reminder ${i}`)
+    // 15 — comfortably past the 13 threshold, so the slot truncates to 9 with
+    // 6 held back. Completing one below still leaves 14, i.e. still truncatable.
+    const titles = Array.from({ length: 15 }, (_, i) => `Cap probe reminder ${i}`)
     const ids: number[] = []
     try {
       for (let i = 0; i < titles.length; i++) {
@@ -211,15 +214,14 @@ test.describe('Dashboard Reminders panel — wide', () => {
       await expect(panel(page)).toBeVisible()
       await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
 
-      // Capped: 4 of the 6 are on screen, titles clamped, a "Show more" button
-      // beneath them, and the readout counts the whole slot (0 considered of 6).
-      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(4)
-      await expect(panel(page).getByText('0', { exact: true })).toBeVisible()
-      await expect(panel(page).getByText('of 6')).toBeVisible()
+      // Truncated: 9 of the 15 on screen, a "Show more" beneath them, and the
+      // readout counting the whole slot (0 considered of 15).
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(9)
+      await expect(panel(page).getByText('of 15')).toBeVisible()
       const showMore = panel(page).getByRole('button', { name: /Show more/ })
       await expect(showMore).toBeVisible()
-      await expect(showMore).toContainText('2 more')
-      // No "Considered all" and no progress hint while capped.
+      await expect(showMore).toContainText('6 more')
+      // No "Considered all" and no progress hint while truncated.
       const considerAll = panel(page).getByRole('button', {
         name: /^Mark all in .+ as considered$/,
       })
@@ -228,8 +230,8 @@ test.describe('Dashboard Reminders panel — wide', () => {
 
       await showMore.click()
 
-      // Uncapped: all 6, the progress hint, and the quick action.
-      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(6)
+      // Uncapped: all 15, the progress hint, and the quick action.
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(15)
       await expect(panel(page).getByRole('button', { name: /Show less/ })).toBeVisible()
       await expect(panel(page).getByRole('progressbar')).toBeVisible()
       await expect(considerAll).toBeVisible()
@@ -246,9 +248,8 @@ test.describe('Dashboard Reminders panel — wide', () => {
         .click()
       await completion
       await expect(panel(page).getByText(titles[0])).toHaveCount(0)
-      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(5)
-      await expect(panel(page).getByText('1', { exact: true })).toBeVisible()
-      await expect(panel(page).getByText('of 6')).toBeVisible()
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(14)
+      await expect(panel(page).getByText('of 15')).toBeVisible()
 
       // The toast's Undo proves the dashboard's OWN undo pipeline is wired to
       // this panel end to end (`handleUndo` → `refreshAll` →
@@ -256,13 +257,50 @@ test.describe('Dashboard Reminders panel — wide', () => {
       // pipeline here would be a real bug (see DashboardClient.tsx), and this
       // is the one thing that could not be seen from the row disappearing.
       await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
-      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(6)
-      await expect(panel(page).getByText('0', { exact: true })).toBeVisible()
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(15)
       await expect(panel(page).getByText(titles[0])).toBeVisible()
 
-      // Show less returns to the 4-row cap (of the 6 again waiting).
+      // Show less returns to the 9-row truncation (of the 15 again waiting).
       await panel(page).getByRole('button', { name: 'Show less' }).click()
-      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(4)
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(9)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('a slot at the threshold shows all 13 with no "Show more" at all', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+
+    // Exactly the threshold: 13 is "show everyone", 14 would truncate.
+    const titles = Array.from({ length: 13 }, (_, i) => `Threshold probe ${i}`)
+    const ids: number[] = []
+    try {
+      for (let i = 0; i < titles.length; i++) {
+        ids.push(await createReminder(page, { title: titles[i], due_at: at(i + 1) }))
+      }
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+
+      // Every row on screen, and no toggle — there is nothing held back to
+      // press for.
+      await expect(panel(page).locator('li[data-reminder-id]')).toHaveCount(13)
+      await expect(panel(page).getByRole('button', { name: /Show more/ })).toHaveCount(0)
+      await expect(panel(page).getByRole('button', { name: /Show less/ })).toHaveCount(0)
+
+      // ...and because it IS fully visible, it gets the full presentation
+      // rather than the truncated one: the progress hint and "Considered all"
+      // are both reachable without a toggle that does not exist here.
+      await expect(panel(page).getByRole('progressbar')).toBeVisible()
+      await expect(
+        panel(page).getByRole('button', { name: /^Mark all in .+ as considered$/ }),
+      ).toBeVisible()
     } finally {
       await deleteTasks(page, ids)
     }
