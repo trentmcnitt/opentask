@@ -37,17 +37,22 @@ import type { Task } from '@/types'
  */
 
 /**
- * When a slot gets truncated, and how hard (Trent, 2026-09-21).
+ * How many rows a slot shows before "Show more" (Trent, 2026-09-21).
  *
- * A slot of 13 or fewer shows every row — hiding four thoughts behind a button
- * costs a tap and saves almost no height, so the button would be pure friction.
- * Past 13 the list is long enough that the panel starts burying Track and the
- * day beneath it, so the cut is deliberately well below the threshold rather
- * than just above it: it drops to 9, which is a visible enough change that
- * "Show more" reads as worth pressing.
+ * ONE number per width, serving as both the cap and the threshold: at or under
+ * it every row shows, past it you get exactly this many and a button. An
+ * earlier cut tried two numbers — show all up to 13, then drop to 9 — and
+ * Trent rejected it for the discontinuity that creates ("I don't like how it
+ * jumps around"): a slot of 14 showed FEWER rows than a slot of 13. With one
+ * number, adding a reminder never subtracts a visible row.
+ *
+ * Narrow gets the smaller cap because that is where the panel competes: it
+ * sits inline above Track and the day, so 9 rows of thoughts put the first
+ * task a full screen down (measured: 657px of panel, first task at 1.28
+ * screens). Wide has its own column beside the day and costs it nothing.
  */
-const SHOW_ALL_UP_TO = 13
-const TRUNCATED_ROWS = 9
+const WIDE_CAP = 9
+const NARROW_CAP = 5
 
 const UNSLOTTED_KEY = 'unslotted'
 
@@ -131,15 +136,24 @@ export function DashboardRemindersPanel({
   const label = group.slot?.label ?? 'Anytime'
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
   const total = group.reminders.length + group.considered
-  // `expanded` is the user's override; a short slot is fully visible without
-  // one. Everything about the richer presentation hangs off this rather than
-  // off `expanded` directly — otherwise a slot under the threshold, which has
-  // no "Show more" to press, would be stuck with one-line titles and no way to
-  // reach "Considered all".
-  const truncatable = group.reminders.length > SHOW_ALL_UP_TO
-  const fullyVisible = !truncatable || expanded
-  const visible = fullyVisible ? group.reminders : group.reminders.slice(0, TRUNCATED_ROWS)
-  const hiddenCount = group.reminders.length - visible.length
+  // WHICH ROWS ARE ON SCREEN IS DECIDED IN CSS, NOT HERE.
+  //
+  // The cap is per-width, and reading the width in JS is the one thing this
+  // codebase has already learned not to do on this page: `useIsMobile` only
+  // answers after an effect runs, so a phone would paint nine rows and then
+  // collapse to five a frame later — the same lurch `useResponsiveFold`'s
+  // docblock exists to explain. So render up to the WIDE cap and let a media
+  // query drop the overflow below `xl`, which is correct in the very first
+  // paint with no JS at all.
+  //
+  // `xl` is deliberately the same breakpoint the two-column layout uses (see
+  // `mainClass` in DashboardClient.tsx): it is exactly the width at which this
+  // panel stops sharing vertical space with the day and gets a column of its
+  // own, which is the whole reason the narrow cap is tighter.
+  const count = group.reminders.length
+  const visible = expanded ? group.reminders : group.reminders.slice(0, WIDE_CAP)
+  const hiddenWhenNarrow = count - NARROW_CAP
+  const hiddenWhenWide = count - WIDE_CAP
 
   return (
     <section
@@ -153,7 +167,7 @@ export function DashboardRemindersPanel({
         time={time}
         considered={group.considered}
         total={total}
-        expanded={fullyVisible}
+        expanded={expanded}
         canGoPrev={index > 0}
         canGoNext={index < groups.length - 1}
         onPrev={() => goTo(index - 1)}
@@ -161,7 +175,7 @@ export function DashboardRemindersPanel({
         onConsiderAll={() => void completeGroup(group)}
       />
 
-      {fullyVisible && (
+      {expanded && (
         <div
           className="bg-muted mx-3 mb-2 h-[3px] overflow-hidden rounded-full"
           role="progressbar"
@@ -181,21 +195,24 @@ export function DashboardRemindersPanel({
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (
         <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
-          {visible.map((reminder) => (
+          {visible.map((reminder, i) => (
             <PanelRow
               key={reminder.id}
               reminder={reminder}
-              clamped={!fullyVisible}
+              clamped={!expanded}
+              // Rendered, but not on screen until there is a column to spare.
+              hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
             />
           ))}
         </ul>
       )}
 
-      {truncatable && (
+      {hiddenWhenNarrow > 0 && (
         <RowCountToggle
           expanded={expanded}
-          hiddenCount={hiddenCount}
+          hiddenWhenNarrow={hiddenWhenNarrow}
+          hiddenWhenWide={hiddenWhenWide}
           onToggle={() => setExpanded(!expanded)}
         />
       )}
@@ -298,14 +315,23 @@ function SlotPagerHeader({
 function PanelRow({
   reminder,
   clamped,
+  hiddenWhenNarrow = false,
   onComplete,
 }: {
   reminder: Task
   clamped: boolean
+  /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
+  hiddenWhenNarrow?: boolean
   onComplete: () => void
 }) {
   return (
-    <li data-reminder-id={reminder.id} className="flex items-start gap-2.5 rounded-xl px-1 py-1.5">
+    <li
+      data-reminder-id={reminder.id}
+      className={cn(
+        'items-start gap-2.5 rounded-xl px-1 py-1.5',
+        hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
+      )}
+    >
       <button
         type="button"
         onClick={onComplete}
@@ -325,25 +351,46 @@ function PanelRow({
   )
 }
 
-/** "Show more N (M more)" / "Show less" below the row list — matches the
- * mockup's single full-width button, one of which can ever be showing since
- * only a capped list needs "more" and only an uncapped one needs "less". */
+/**
+ * "Show more (N more)" / "Show less" below the row list.
+ *
+ * Two counts, because the cap is per-width and the width is not known here
+ * (see the block comment on `visible`). Both are rendered and a media query
+ * picks one, so the number is right in the first paint. The button ITSELF is
+ * hidden below nothing and above `xl` when the wide cap hides nothing — a slot
+ * of 7 has two rows held back on a phone but is complete on a desktop, so
+ * there is nothing to press for there.
+ */
 function RowCountToggle({
   expanded,
-  hiddenCount,
+  hiddenWhenNarrow,
+  hiddenWhenWide,
   onToggle,
 }: {
   expanded: boolean
-  hiddenCount: number
+  hiddenWhenNarrow: number
+  hiddenWhenWide: number
   onToggle: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground w-full border-t px-3 py-2 text-center text-xs font-semibold transition-colors"
+      className={cn(
+        'text-muted-foreground hover:bg-foreground/5 hover:text-foreground w-full border-t px-3 py-2 text-center text-xs font-semibold transition-colors',
+        !expanded && hiddenWhenWide <= 0 && 'xl:hidden',
+      )}
     >
-      {expanded ? 'Show less' : `Show more${hiddenCount > 0 ? ` (${hiddenCount} more)` : ''}`}
+      {expanded ? (
+        'Show less'
+      ) : (
+        <>
+          <span className="xl:hidden">Show more ({hiddenWhenNarrow} more)</span>
+          <span className="hidden xl:inline">
+            Show more{hiddenWhenWide > 0 ? ` (${hiddenWhenWide} more)` : ''}
+          </span>
+        </>
+      )}
     </button>
   )
 }
