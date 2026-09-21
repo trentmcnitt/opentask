@@ -308,14 +308,15 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
   test.use({ viewport: { width: 1600, height: 900 } })
 
   /**
-   * Press-and-hold now opens the same editor `/reminders` uses (Trent,
+   * Press-and-hold opens the row's read-only bubble, and the bubble's Open
+   * reaches the same editor `/reminders` uses (Trent,
    * 2026-09-21: "whenever I do things with tasks it opens a modal... that's
    * how I like to work"), for that ONE reminder. The circle is "complete this
    * reminder" on a plain tap, so this pins the thing that must NOT happen: a
    * hold that starts anywhere on the row — including, implicitly, near the
    * circle — must never also fire the completion it takes to open the modal.
    */
-  test('press-and-hold a row opens its editor and does not complete it', async ({
+  test('press-and-hold opens the row\u2019s bubble, whose Open reaches the editor', async ({
     authenticatedPage: page,
   }) => {
     const slots = await fetchTimeSlots(page)
@@ -323,12 +324,16 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     const natural = slots[naturalIndex]
     const naturalStart = parseHHMM(natural.start_time) + 1
     const title = 'Reminders panel hold-to-edit probe'
+    // A note, because reading one from the dashboard is the whole reason the
+    // bubble exists — a panel row is one clamped line with no note indicator.
+    const notes = 'Only reachable from the bubble, not from the row.'
 
     const ids: number[] = []
     try {
       ids.push(
         await createReminder(page, {
           title,
+          notes,
           due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
         }),
       )
@@ -337,6 +342,8 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
       await expect(panel(page).getByText(title)).toBeVisible()
+      // The note is NOT on the row itself.
+      await expect(panel(page).getByText(notes)).toHaveCount(0)
 
       let doneRequests = 0
       page.on('request', (r) => {
@@ -347,7 +354,19 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       // and a click there would be testing the wrong control.
       await panel(page).getByText(title).click({ delay: 500 })
 
-      const editor = page.getByRole('dialog')
+      // A hold opens the READ-ONLY bubble, not the editor — and the note is
+      // legible there without opening anything further.
+      const bubble = page.locator(`[data-reminder-popover="${id}"]`)
+      await expect(bubble).toBeVisible()
+      await expect(bubble.getByText(notes)).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toHaveCount(0)
+      expect(doneRequests).toBe(0)
+
+      // Open is the second step, and only it reaches the editor.
+      await bubble.getByRole('button', { name: 'Open' }).click()
+      const editor = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('[data-reminder-detail]') })
       await expect(editor).toBeVisible()
       await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
       expect(doneRequests).toBe(0)
@@ -388,8 +407,14 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
       await panel(page).getByText(title).click({ delay: 500 })
+      await page
+        .locator(`[data-reminder-popover="${id}"]`)
+        .getByRole('button', { name: 'Open' })
+        .click()
 
-      const editor = page.getByRole('dialog')
+      const editor = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('[data-reminder-detail]') })
       await expect(editor).toBeVisible()
       await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
 
