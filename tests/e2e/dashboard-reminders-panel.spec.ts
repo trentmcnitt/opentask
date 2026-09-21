@@ -621,19 +621,20 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(toggle).toBeVisible()
       await expect(toggle).toContainText('1')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      // Weight is the whole affordance — no caret, no colour (Trent,
-      // 2026-09-21). Plain while hidden, bold while showing.
-      const weightWhenHidden = await toggle
-        .locator('span')
-        .first()
-        .evaluate((el) => getComputedStyle(el).fontWeight)
+      // No caret and no colour swap: the state is told by WEIGHT and by the
+      // hover box being held open (Trent, 2026-09-21). Both are asserted,
+      // because either alone was too quiet to read.
+      const readStyle = async () =>
+        toggle.evaluate((el) => ({
+          boxed: getComputedStyle(el).backgroundColor,
+          weight: getComputedStyle(el.querySelector('span')!).fontWeight,
+        }))
+      const hidden = await readStyle()
       await toggle.click()
       await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-      const weightWhenShown = await toggle
-        .locator('span')
-        .first()
-        .evaluate((el) => getComputedStyle(el).fontWeight)
-      expect(Number(weightWhenShown)).toBeGreaterThan(Number(weightWhenHidden))
+      const shown = await readStyle()
+      expect(Number(shown.weight)).toBeGreaterThan(Number(hidden.weight))
+      expect(shown.boxed).not.toBe(hidden.boxed)
       await expect(panel(page).locator(`[data-considered-id="${id}"]`)).toBeVisible()
       await expect(panel(page).getByText(title)).toBeVisible()
 
