@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
@@ -10,6 +10,7 @@ import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
+import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
@@ -36,7 +37,7 @@ import type { Task } from '@/types'
  *   asked for the parity on 2026-09-21 ("the same thing that we do for
  *   quotas... I feel like there are some times I'm going to want notes"),
  *   and the bubble is the only way to read a note from this panel, since a
- *   row is one clamped line with no note indicator on it. The editor remains
+ *   row carries no note indicator at all. The editor remains
  *   the only place this panel can edit or delete a reminder from. That, a
  *   tap, paging and Show more/less are the whole interaction set; multi-select
  *   and a floating action bar remain the real page's job.
@@ -186,7 +187,7 @@ export function DashboardRemindersPanel({
   timeSlots,
   timezone,
 }: DashboardRemindersPanelProps) {
-  const { groups, complete, completeMany, completeGroup, remove, refresh } = useReminders({
+  const { groups, complete, completeMany, completeGroup, putBack, remove, refresh } = useReminders({
     onUndo,
     onCompleted,
     timeSlots,
@@ -197,6 +198,10 @@ export function DashboardRemindersPanel({
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
   // a single `detailId` for its chips.
   const [peekId, setPeekId] = useState<number | null>(null)
+  // Whether this slot's already-considered thoughts are showing. Per-slot, and
+  // reset by paging, because "what did I already do here" is a question about
+  // one slot rather than a mode the panel sits in.
+  const [showConsidered, setShowConsidered] = useState(false)
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -221,7 +226,8 @@ export function DashboardRemindersPanel({
   // memoize it away as "pure in groups/timezone" and skip recomputing purely
   // because the wall clock moved — see the module docblock's "component state
   // that recomputes... on each render is sufficient" assumption.
-  const natural = naturalSlotIndex(groups, timezone, new Date())
+  const now = new Date()
+  const natural = naturalSlotIndex(groups, timezone, now)
   const overrideIndex = overrideKey ? groups.findIndex((g) => groupKey(g) === overrideKey) : -1
   const index = overrideIndex >= 0 ? overrideIndex : natural
   const group = groups[index]
@@ -231,6 +237,7 @@ export function DashboardRemindersPanel({
   const goTo = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groups.length) return
     setOverrideKey(groupKey(groups[nextIndex]))
+    setShowConsidered(false)
   }
   const setExpanded = (next: boolean) => {
     setExpandedKeys((prev) => {
@@ -282,23 +289,27 @@ export function DashboardRemindersPanel({
         onNext={() => goTo(index + 1)}
         onConsiderAll={() => void completeGroup(group)}
         onToggleExpanded={() => setExpanded(!expanded)}
+        showConsidered={showConsidered}
+        onToggleConsidered={() => setShowConsidered((v) => !v)}
       />
 
-      {expanded && (
-        <div
-          className="bg-muted mx-3 mb-2 h-[3px] overflow-hidden rounded-full"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={group.considered}
-          aria-label={`${group.considered} of ${total} considered in ${label}`}
-        >
-          <div
-            className="bg-foreground/50 h-full rounded-full transition-[width] duration-300 ease-out"
-            style={{ width: `${total > 0 ? Math.min(1, group.considered / total) * 100 : 0}%` }}
-          />
-        </div>
-      )}
+      {/* Replaces the per-slot hairline this panel used to show only while a
+          slot was expanded — which meant a short slot, the common case, showed
+          no progress at all (Trent, 2026-09-21: "I don't see any indication of
+          progress, which is a little disappointing"). The bar is always on
+          screen and covers every slot, so it answers that for the whole day
+          rather than for whichever one happens to be open. */}
+      <ReminderSlotBar
+        groups={groups}
+        currentIndex={index}
+        timezone={timezone}
+        now={now}
+        onJump={(next) => {
+          setOverrideKey(groupKey(groups[next]))
+          setPeekId(null)
+          setShowConsidered(false)
+        }}
+      />
 
       {group.reminders.length === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
@@ -308,7 +319,6 @@ export function DashboardRemindersPanel({
             <PanelRow
               key={reminder.id}
               reminder={reminder}
-              clamped={!expanded}
               // Rendered, but not on screen until there is a column to spare.
               hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
@@ -330,6 +340,14 @@ export function DashboardRemindersPanel({
             />
           ))}
         </ul>
+      )}
+
+      {showConsidered && group.consideredItems.length > 0 && (
+        <ConsideredList
+          items={group.consideredItems}
+          label={label}
+          onPutBack={(task) => void putBack(task)}
+        />
       )}
 
       {hiddenWhenNarrow > 0 && (
@@ -365,6 +383,8 @@ function SlotPagerHeader({
   onNext,
   onConsiderAll,
   onToggleExpanded,
+  showConsidered,
+  onToggleConsidered,
 }: {
   label: string
   time: string | null
@@ -378,6 +398,8 @@ function SlotPagerHeader({
   onConsiderAll: () => void
   /** Tapping the bar between the chevrons opens and shuts the slot. */
   onToggleExpanded: () => void
+  showConsidered: boolean
+  onToggleConsidered: () => void
 }) {
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
@@ -419,15 +441,53 @@ function SlotPagerHeader({
             </span>
           )}
         </span>
+      </button>
 
+      {/* The count IS the considered count, so tapping it is how you see what
+          those were (Trent, 2026-09-21, choosing this over a second full-width
+          bar in the footer: "Show Considered stacked on Show More looks like a
+          big UX no-no"). A button only when there is something behind it —
+          otherwise it is a plain readout and must not look pressable. */}
+      {considered > 0 ? (
+        <button
+          type="button"
+          onClick={onToggleConsidered}
+          aria-expanded={showConsidered}
+          data-considered-toggle
+          aria-label={`${considered} of ${total} considered — show what was considered`}
+          className={cn(
+            'hover:bg-foreground/5 flex shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
+            // highlight it there's a little box around the text. When the
+            // considered stuff is open there should still be a gray box
+            // around the X of Y text." A bolding was tried alongside it and
+            // cut the same day — "Don't bold the text... I like the box
+            // around it though" — so the text never changes weight and the
+            // held box says everything. It reuses the affordance the pointer
+            // already reveals rather than adding a new one.
+            showConsidered && 'bg-foreground/5',
+          )}
+        >
+          {/* ONE COLOUR ACROSS THE WHOLE COUNT, AND NO WEIGHT CHANGE. The
+              considered number sat a shade darker than "of N" for no reason
+              anyone could name — Trent, 2026-09-21: "Why is 1 darker than the
+              19?" It also briefly went bold while open, which he cut the same
+              day: "Don't bold the text... I like the box around it though."
+              So the box is the state and the text merely lifts out of muted. */}
+          <span className={cn(showConsidered ? 'text-foreground' : 'text-muted-foreground')}>
+            {considered} of {total}
+          </span>
+        </button>
+      ) : (
         <span
-          className="text-xs whitespace-nowrap tabular-nums"
+          className="px-1.5 text-xs whitespace-nowrap tabular-nums"
           aria-label={`${considered} of ${total} considered`}
         >
-          <span className="text-foreground font-medium">{considered}</span>
-          <span className="text-muted-foreground"> of {total}</span>
+          <span className="text-muted-foreground">
+            {considered} of {total}
+          </span>
         </span>
-      </button>
+      )}
 
       {expanded && total > 0 && (
         <button
@@ -473,7 +533,6 @@ function SlotPagerHeader({
  */
 function PanelRow({
   reminder,
-  clamped,
   hiddenWhenNarrow = false,
   onComplete,
   onPeek,
@@ -485,7 +544,6 @@ function PanelRow({
   timezone,
 }: {
   reminder: Task
-  clamped: boolean
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   onComplete: () => void
@@ -532,16 +590,21 @@ function PanelRow({
           onPointerDown={(e) => e.stopPropagation()}
           aria-label={`Mark "${reminder.title}" as considered`}
           title="Considered"
-          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+          // No top margin: the 19px circle and the 19.2px first line share a
+          // centre on their own. The `mt-0.5` this used to carry pushed the
+          // circle ~2px below it — Trent, 2026-09-21: "the text is a little
+          // higher than the center line of the circle."
+          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
         />
-        <p
-          className={cn(
-            'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
-            clamped && 'line-clamp-1',
-          )}
-        >
-          {reminder.title}
-        </p>
+        {/* NEVER TRUNCATED. Trent, 2026-09-21: "reminders can't be truncated.
+            They have to show the full thing... It needs to line wrap somehow."
+            Half a thought prompts nothing — the same reason the iOS widget
+            gives its rows two lines instead of one. The cap above still counts
+            ITEMS rather than lines, so a slot of long thoughts is simply a
+            taller panel; accepted deliberately ("maybe we should just not care
+            about it") over a height-based cap, which would make the number of
+            visible rows change with the length of their text. */}
+        <p className="min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">{reminder.title}</p>
       </li>
     </ReminderRowPopover>
   )
@@ -588,5 +651,54 @@ function RowCountToggle({
         </>
       )}
     </button>
+  )
+}
+
+/**
+ * What has already been considered in this slot.
+ *
+ * Trent, 2026-09-21: "I can't see the items that I considered for that day so
+ * we want to be able to see what's considered." It opens from the header's
+ * count rather than a footer button — the count already says how many were
+ * considered, so it is the natural thing to press, and a second full-width bar
+ * stacked under "Show more" was the thing he rejected ("a big UX no-no").
+ *
+ * A row here is checked, dim, and does ONE thing: its circle puts the thought
+ * back. No press-and-hold, no editor — a considered thought is done with, and
+ * the put-back is how you change your mind. (On `/reminders`, where a longer
+ * sitting happens, those rows DO reach the editor; this panel is a glance.)
+ */
+function ConsideredList({
+  items,
+  label,
+  onPutBack,
+}: {
+  items: Task[]
+  label: string
+  onPutBack: (task: Task) => void
+}) {
+  return (
+    <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
+      {items.map((reminder) => (
+        <li
+          key={reminder.id}
+          data-considered-id={reminder.id}
+          className="flex items-start gap-2.5 rounded-xl px-1 py-1.5"
+        >
+          <button
+            type="button"
+            onClick={() => onPutBack(reminder)}
+            aria-label={`Put back "${reminder.title}"`}
+            title="Put back"
+            className="flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+          >
+            <Check className="size-3" strokeWidth={3} />
+          </button>
+          <p className="text-muted-foreground min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
+            {reminder.title}
+          </p>
+        </li>
+      ))}
+    </ul>
   )
 }

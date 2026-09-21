@@ -16,12 +16,13 @@ import type { Task } from '@/types'
  * and then press Open to trigger the modal? I feel like there are some times
  * I'm going to want notes."
  *
- * NOTES ARE THE POINT. A panel row is one clamped line and carries no note
- * indicator at all, so before this the only way to read a thought's note from
- * the dashboard was to open the full editor and then close it again. This
- * reads and does not edit, exactly as the quota bubble does; Open is the way
- * through to `ReminderDetailModal`, and this component neither knows nor
- * decides what "open" means.
+ * NOTES ARE THE POINT. A panel row carries no note indicator at all, so
+ * before this the only way to read a thought's note from the dashboard was to
+ * open the full editor and then close it again. (Rows used to truncate too,
+ * which gave this a second job; they wrap in full as of 2026-09-21, so notes
+ * are now the whole reason it exists.) This reads and does not edit, exactly
+ * as the quota bubble does; Open is the way through to `ReminderDetailModal`,
+ * and this component neither knows nor decides what "open" means.
  *
  * `PopoverAnchor` rather than `PopoverTrigger`, for the same reason the quota
  * bubble uses it: the row already owns this pointer (a long press), and a
@@ -106,8 +107,6 @@ function ReminderSummary({
   return (
     <div className="space-y-3 p-3">
       <div>
-        {/* Unclamped: the row it points at is the clamped one, and reading the
-            whole thought is half of why this bubble exists. */}
         <p className="text-sm leading-snug font-medium">{reminder.title}</p>
         <p className="text-muted-foreground text-xs">
           {cadence}
