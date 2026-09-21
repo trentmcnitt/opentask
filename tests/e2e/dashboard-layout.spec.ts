@@ -293,7 +293,7 @@ test.describe('Tasks page layout — wide', () => {
 test.describe('Tasks page layout — phone', () => {
   test.use({ viewport: { width: 375, height: 812 } })
 
-  test('folds the filters, Track, and every label group by default', async ({
+  test('folds the filters, but leaves Track and its label groups open', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
@@ -304,7 +304,8 @@ test.describe('Tasks page layout — phone', () => {
       await withPreferences(page, { track_expanded: false, filters_expanded: true }, async () => {
         await page.goto('/')
 
-        // FILTERS: shut, and saying how many filters are active (none, here).
+        // FILTERS: still shut on a phone, and saying how many filters are
+        // active (none, here). Only Track's default changed.
         const filterToggle = page.getByRole('button', { name: /^Filters/ })
         await expect(filterToggle).toBeVisible()
         await expect(filterToggle).toHaveAttribute('aria-expanded', 'false')
@@ -315,51 +316,42 @@ test.describe('Tasks page layout — phone', () => {
         await filterToggle.click()
         await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
 
-        // TRACK: the card is folded away and the header carries the total.
+        // TRACK: open by default now, chips and all, so a quota can be checked
+        // off without opening anything first. Trent reversed this on
+        // 2026-09-21 ("Everything should be expanded for the track on mobile.
+        // Otherwise I can't check things off easily"), accepting that it
+        // pushes the day down.
         const card = page.locator('#track-card')
-        await expect(card).toBeHidden()
-        const sectionToggle = page.locator('[data-track-section-toggle]')
-        await expect(sectionToggle).toBeVisible()
-        await expect(sectionToggle).toContainText('of')
-        await expect(sectionToggle).toContainText('left')
-        // Two quotas made here, neither logged, so both are still short. Other
-        // specs share this user, so read the total off the DOM rather than
-        // assuming this file is the only thing that made a quota.
-        const summary = await page.locator('[data-track-section-summary]').textContent()
-        const [short, total] = (summary ?? '').match(/\d+/g)?.map(Number) ?? []
-        expect(short).toBeGreaterThanOrEqual(2)
-        expect(total).toBeGreaterThanOrEqual(short)
+        await expect(card).toBeVisible()
+        const group = page.locator('[data-track-cluster="zz-alpha"]')
+        await expect(group).toBeVisible()
+        await expect(group.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+        // The chips themselves are reachable — the point of the reversal.
+        await expect(page.locator(`[data-track-chip="${ids[0]}"]`)).toBeVisible()
+        await expect(page.locator(`[data-track-chip="${ids[1]}"]`)).toBeVisible()
+        // A group's shut-state summary stands aside while its chips show.
+        await expect(group.locator('[data-track-cluster-summary]')).toBeHidden()
 
         // The add-a-task row and the view tabs never fold.
         await expect(page.getByRole('textbox', { name: 'Quick add task' })).toBeVisible()
         await expect(page.getByRole('button', { name: 'Today', exact: true })).toBeVisible()
 
-        // Opening the section reveals the card — and its label groups, each
-        // folded in turn, so the card is a short list of headings not 22 chips.
-        await sectionToggle.click()
-        await expect(card).toBeVisible()
-
-        const group = page.locator('[data-track-cluster="zz-alpha"]')
-        await expect(group).toBeVisible()
-        const chip = page.locator(`[data-track-chip="${ids[0]}"]`)
-        await expect(chip).toBeHidden()
-        await expect(group.locator('[data-track-cluster-summary]')).toContainText('left')
-
+        // Shutting still works, and is still per-group — the default moved,
+        // the mechanism did not.
         const groupToggle = group.getByRole('button')
+        await groupToggle.click()
         await expect(groupToggle).toHaveAttribute('aria-expanded', 'false')
-        await groupToggle.click()
-        await expect(groupToggle).toHaveAttribute('aria-expanded', 'true')
-        await expect(chip).toBeVisible()
-        // Its summary steps aside once its chips are on screen.
-        await expect(group.locator('[data-track-cluster-summary]')).toBeHidden()
+        await expect(page.locator(`[data-track-chip="${ids[0]}"]`)).toBeHidden()
+        await expect(group.locator('[data-track-cluster-summary]')).toContainText('left')
+        // Its neighbour is untouched.
+        await expect(page.locator(`[data-track-chip="${ids[1]}"]`)).toBeVisible()
 
-        // Folding one group leaves its neighbour alone — they are independent.
-        const other = page.locator('[data-track-cluster="zz-beta"]')
-        await expect(other.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
-        await expect(page.locator(`[data-track-chip="${ids[1]}"]`)).toBeHidden()
-
-        await groupToggle.click()
-        await expect(chip).toBeHidden()
+        // And the whole section still folds from its header.
+        const sectionToggle = page.locator('[data-track-section-toggle]')
+        await expect(sectionToggle).toBeVisible()
+        await sectionToggle.click()
+        await expect(card).toBeHidden()
+        await expect(sectionToggle).toContainText('left')
       })
     } finally {
       await deleteTasks(page, ids)
@@ -413,13 +405,13 @@ test.describe('Tasks page layout — phone', () => {
       for (const q of QUOTAS) ids.push(await createQuota(page, { ...q, create_label: true }))
       await withPreferences(page, { track_expanded: true }, async () => {
         await page.goto('/')
-        await page.locator('[data-track-section-toggle]').click()
+        // No opening click: Track is open by default at every width as of
+        // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
         await expect(page.locator('#track-card')).toBeVisible()
 
-        // Rows, because the stored preference says so. Attached rather than
-        // visible: on a phone every label cluster is folded shut by default, so
-        // the rows are rendered but hidden until a cluster is opened. What this
-        // asserts is the VIEW — rows exist and chips do not.
+        // Rows, because the stored preference says so. Counted rather than
+        // checked for visibility, so this keeps asserting the VIEW (rows exist,
+        // chips do not) independently of whether a cluster happens to be open.
         await expect(page.locator(`[data-track-row="${ids[0]}"]`)).toHaveCount(1)
         await expect(page.locator('[data-track-chip]')).toHaveCount(0)
 
@@ -455,7 +447,8 @@ test.describe('Tasks page layout — phone', () => {
 
       await withPreferences(page, { track_expanded: false }, async () => {
         await page.goto('/')
-        await page.locator('[data-track-section-toggle]').click()
+        // No opening click: Track is open by default at every width as of
+        // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
         await expect(page.locator('#track-card')).toBeVisible()
 
         const summary = page.locator('[data-track-cluster="zz-met"] [data-track-cluster-summary]')

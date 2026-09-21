@@ -299,6 +299,229 @@ test.describe('Dashboard Reminders panel — wide', () => {
   })
 })
 
+/**
+ * Press-and-hold on a row: a separate describe from the cap/paging suite
+ * above so this file's per-describe line count stays under ESLint's
+ * `max-lines-per-function` rather than growing that one further.
+ */
+test.describe('Dashboard Reminders panel — press and hold', () => {
+  test.use({ viewport: { width: 1600, height: 900 } })
+
+  /**
+   * Press-and-hold opens the row's read-only bubble, and the bubble's Open
+   * reaches the same editor `/reminders` uses (Trent,
+   * 2026-09-21: "whenever I do things with tasks it opens a modal... that's
+   * how I like to work"), for that ONE reminder. The circle is "complete this
+   * reminder" on a plain tap, so this pins the thing that must NOT happen: a
+   * hold that starts anywhere on the row — including, implicitly, near the
+   * circle — must never also fire the completion it takes to open the modal.
+   */
+  test('press-and-hold opens the row\u2019s bubble, whose Open reaches the editor', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const natural = slots[naturalIndex]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Reminders panel hold-to-edit probe'
+    // A note, because reading one from the dashboard is the whole reason the
+    // bubble exists — a panel row is one clamped line with no note indicator.
+    const notes = 'Only reachable from the bubble, not from the row.'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          notes,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await expect(panel(page).getByText(title)).toBeVisible()
+      // The note is NOT on the row itself.
+      await expect(panel(page).getByText(notes)).toHaveCount(0)
+
+      let doneRequests = 0
+      page.on('request', (r) => {
+        if (r.method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/done`)) doneRequests++
+      })
+
+      // The title text, not the row's centre: the circle sits to its left,
+      // and a click there would be testing the wrong control.
+      await panel(page).getByText(title).click({ delay: 500 })
+
+      // A hold opens the READ-ONLY bubble, not the editor — and the note is
+      // legible there without opening anything further.
+      const bubble = page.locator(`[data-reminder-popover="${id}"]`)
+      await expect(bubble).toBeVisible()
+      await expect(bubble.getByText(notes)).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toHaveCount(0)
+      expect(doneRequests).toBe(0)
+
+      // Open is the second step, and only it reaches the editor.
+      await bubble.getByRole('button', { name: 'Open' }).click()
+      const editor = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('[data-reminder-detail]') })
+      await expect(editor).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
+      expect(doneRequests).toBe(0)
+
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      // Still there, still waiting — the hold neither completed it nor left
+      // it in some half-edited state.
+      await expect(panel(page).getByText(title)).toBeVisible()
+      expect(doneRequests).toBe(0)
+      const after = await (await page.request.get(`/api/tasks/${id}`)).json()
+      expect(after.data.done).toBe(false)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('deletes a reminder from its row’s editor, with an Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const natural = slots[naturalIndex]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Reminders panel hold-to-delete probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await panel(page).getByText(title).click({ delay: 500 })
+      await page
+        .locator(`[data-reminder-popover="${id}"]`)
+        .getByRole('button', { name: 'Open' })
+        .click()
+
+      const editor = page
+        .getByRole('dialog')
+        .filter({ has: page.locator('[data-reminder-detail]') })
+      await expect(editor).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
+
+      const deleted = page.waitForResponse(
+        (r) => r.url().includes('/api/tasks/bulk/delete') && r.request().method() === 'POST',
+      )
+      await editor.getByRole('button', { name: 'Move to Trash' }).click()
+      expect((await deleted).status()).toBe(200)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(panel(page).getByText(title)).toHaveCount(0)
+
+      // The same Undo every soft delete offers.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(panel(page).getByText(title)).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('tapping the slot header bar toggles the slot open and shut', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+
+    // Past the wide cap, so there is something to reveal.
+    const titles = Array.from({ length: 12 }, (_, i) => `Header toggle probe ${i}`)
+    const ids: number[] = []
+    try {
+      for (let i = 0; i < titles.length; i++) {
+        ids.push(await createReminder(page, { title: titles[i], due_at: at(i + 1) }))
+      }
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+
+      // Tapping the bar between the chevrons opens the slot (Trent,
+      // 2026-09-21) — the same thing "Show more" does, without hunting for it.
+      const header = panel(page).locator('[data-slot-header-toggle]')
+      await expect(header).toHaveAttribute('aria-expanded', 'false')
+      await header.click()
+      await expect(header).toHaveAttribute('aria-expanded', 'true')
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(12)
+
+      // ...and shuts it again.
+      await header.click()
+      await expect(header).toHaveAttribute('aria-expanded', 'false')
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+
+      // The chevrons keep their own job: paging, not toggling.
+      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
+      await expect(panel(page)).not.toHaveAttribute('data-reminders-slot', String(natural.id))
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('deletes a reminder straight from its bubble, with an Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Bubble trash probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await panel(page).getByText(title).click({ delay: 500 })
+
+      // The trash can sits beside Open, and asks nothing first — Trent,
+      // 2026-09-21: tasks have no confirmation either, and the Undo toast is
+      // "good enough or probably better because it reduces friction".
+      const bubble = page.locator(`[data-reminder-popover="${id}"]`)
+      await expect(bubble).toBeVisible()
+      const deleted = page.waitForResponse(
+        (r) => r.url().includes('/api/tasks/bulk/delete') && r.request().method() === 'POST',
+      )
+      await bubble.getByRole('button', { name: `Move "${title}" to Trash` }).click()
+      expect((await deleted).status()).toBe(200)
+
+      // Gone, and the bubble went with it rather than pointing at nothing.
+      await expect(panel(page).getByText(title)).toHaveCount(0)
+      await expect(page.locator(`[data-reminder-popover="${id}"]`)).toHaveCount(0)
+
+      // And it comes back.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(panel(page).getByText(title)).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})
+
 test.describe('Dashboard Reminders panel — phone', () => {
   test.use({ viewport: { width: 375, height: 812 } })
 

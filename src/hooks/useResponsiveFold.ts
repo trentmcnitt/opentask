@@ -2,7 +2,6 @@
 
 import { useCallback } from 'react'
 import { useFoldState } from '@/components/FoldStateProvider'
-import { useIsMobile } from '@/hooks/useIsMobile'
 
 /**
  * A fold whose DEFAULT depends on the viewport — shut on a phone, open on a
@@ -68,41 +67,59 @@ export function foldClass(state: FoldState, classes: FoldClasses): string {
   return state ? classes.open : classes.shut
 }
 
-/** Content that is there when open. Hidden below `sm` until the user says otherwise. */
+/**
+ * Content that is there when open — and open is now the DEFAULT at every
+ * width, phone included.
+ *
+ * This used to read `hidden sm:block`: shut on a phone, because Track had
+ * grown to 22 quotas and a panel that tall put the first task of the day
+ * roughly three screens down. Trent reversed it on 2026-09-21 after living
+ * with it: "The track should be expanded. Everything should be expanded for
+ * the track on mobile. Otherwise I can't check things off easily. I know it
+ * pushes the task stuff down but it's a price we have to pay for now."
+ * Checking a quota off is the thing the phone is FOR, and a fold that has to
+ * be opened first taxes every single one of those taps.
+ *
+ * `shut` still exists and still works — this changes only what happens before
+ * the user has expressed a preference.
+ */
 export const FOLD_BODY_BLOCK: FoldClasses = {
   open: 'block',
   shut: 'hidden',
-  auto: 'hidden sm:block',
+  auto: 'block',
 }
 
 /** As `FOLD_BODY_BLOCK`, for a body that lays its children out in a row. */
 export const FOLD_BODY_FLEX: FoldClasses = {
   open: 'flex',
   shut: 'hidden',
-  auto: 'hidden sm:flex',
+  auto: 'flex',
 }
 
 /** The summary that stands in for the content while it is folded away. */
 export const FOLD_SUMMARY: FoldClasses = {
   open: 'hidden',
   shut: 'flex',
-  auto: 'flex sm:hidden',
+  auto: 'hidden',
 }
 
 /** A disclosure chevron: down when open, pointing at the header when shut. */
 export const FOLD_CHEVRON: FoldClasses = {
   open: '',
   shut: '-rotate-90',
-  auto: '-rotate-90 sm:rotate-0',
+  auto: '',
 }
 
 /** One fold, identified by a globally unique `key` — see `FoldStateProvider`. */
 export function useResponsiveFold(key: string) {
-  const isSmall = useIsMobile()
   const { choices, toggleChoice } = useFoldState()
   const state = choices.get(key) ?? null
-  const open = state ?? !isSmall
-  const toggle = useCallback(() => toggleChoice(key, !isSmall), [key, isSmall, toggleChoice])
+  // Open before the user has chosen, at EVERY width — the same default the
+  // `auto` classes paint. These two have to agree or `aria-expanded` lies
+  // about what is on screen, and `useIsMobile` (which this used to consult)
+  // answers only after an effect, so it would also have lied for a frame.
+  const open = state ?? true
+  const toggle = useCallback(() => toggleChoice(key, true), [key, toggleChoice])
   return { state, open, toggle }
 }
 
@@ -113,20 +130,20 @@ export function useResponsiveFold(key: string) {
  * surfaces can both have a group called "health" without sharing its fold.
  */
 export function useResponsiveFolds(namespace: string) {
-  const isSmall = useIsMobile()
   const { choices, toggleChoice } = useFoldState()
 
   const stateOf = useCallback(
     (key: string): FoldState => choices.get(`${namespace}:${key}`) ?? null,
     [choices, namespace],
   )
+  // Open before the user has chosen — see `useResponsiveFold` above.
   const isOpen = useCallback(
-    (key: string) => choices.get(`${namespace}:${key}`) ?? !isSmall,
-    [choices, isSmall, namespace],
+    (key: string) => choices.get(`${namespace}:${key}`) ?? true,
+    [choices, namespace],
   )
   const toggle = useCallback(
-    (key: string) => toggleChoice(`${namespace}:${key}`, !isSmall),
-    [isSmall, namespace, toggleChoice],
+    (key: string) => toggleChoice(`${namespace}:${key}`, true),
+    [namespace, toggleChoice],
   )
 
   return { stateOf, isOpen, toggle }
