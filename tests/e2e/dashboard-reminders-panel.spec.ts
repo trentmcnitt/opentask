@@ -299,6 +299,117 @@ test.describe('Dashboard Reminders panel — wide', () => {
   })
 })
 
+/**
+ * Press-and-hold on a row: a separate describe from the cap/paging suite
+ * above so this file's per-describe line count stays under ESLint's
+ * `max-lines-per-function` rather than growing that one further.
+ */
+test.describe('Dashboard Reminders panel — press and hold', () => {
+  test.use({ viewport: { width: 1600, height: 900 } })
+
+  /**
+   * Press-and-hold now opens the same editor `/reminders` uses (Trent,
+   * 2026-09-21: "whenever I do things with tasks it opens a modal... that's
+   * how I like to work"), for that ONE reminder. The circle is "complete this
+   * reminder" on a plain tap, so this pins the thing that must NOT happen: a
+   * hold that starts anywhere on the row — including, implicitly, near the
+   * circle — must never also fire the completion it takes to open the modal.
+   */
+  test('press-and-hold a row opens its editor and does not complete it', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const natural = slots[naturalIndex]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Reminders panel hold-to-edit probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await expect(panel(page).getByText(title)).toBeVisible()
+
+      let doneRequests = 0
+      page.on('request', (r) => {
+        if (r.method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/done`)) doneRequests++
+      })
+
+      // The title text, not the row's centre: the circle sits to its left,
+      // and a click there would be testing the wrong control.
+      await panel(page).getByText(title).click({ delay: 500 })
+
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
+      expect(doneRequests).toBe(0)
+
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+
+      // Still there, still waiting — the hold neither completed it nor left
+      // it in some half-edited state.
+      await expect(panel(page).getByText(title)).toBeVisible()
+      expect(doneRequests).toBe(0)
+      const after = await (await page.request.get(`/api/tasks/${id}`)).json()
+      expect(after.data.done).toBe(false)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('deletes a reminder from its row’s editor, with an Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const natural = slots[naturalIndex]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Reminders panel hold-to-delete probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await panel(page).getByText(title).click({ delay: 500 })
+
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+      await expect(page.locator(`[data-reminder-detail="${id}"]`)).toBeVisible()
+
+      const deleted = page.waitForResponse(
+        (r) => r.url().includes('/api/tasks/bulk/delete') && r.request().method() === 'POST',
+      )
+      await editor.getByRole('button', { name: 'Move to Trash' }).click()
+      expect((await deleted).status()).toBe(200)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(panel(page).getByText(title)).toHaveCount(0)
+
+      // The same Undo every soft delete offers.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(panel(page).getByText(title)).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})
+
 test.describe('Dashboard Reminders panel — phone', () => {
   test.use({ viewport: { width: 375, height: 812 } })
 

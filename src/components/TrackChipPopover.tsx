@@ -1,7 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { periodLabel, type TrackState } from '@/lib/track'
@@ -21,16 +19,21 @@ import type { Task } from '@/types'
  * click is +1, and a trigger would fight it for the same gesture. The chip
  * stays a plain button and this is positioned against it.
  *
- * It reads and does not edit ("I don't want an editable field"). Editing lives
- * one tap away in the quota's editor, which is also the answer to "how do I
- * even edit the Track items" — a quota is an ordinary task and Open is the
- * route to it.
+ * It reads and does not edit ("I don't want an editable field"). Editing is
+ * one tap further in, behind the Open button — which opens `QuotaDetailModal`
+ * IN PLACE rather than navigating to the task page (Trent, 2026-09-21:
+ * "whenever I do things with tasks it opens a modal for me to do my work...
+ * that's how I like to work: with a modal"). This component only tells its
+ * caller the Open button was pressed; it does not know or decide what "open"
+ * means, which is also the answer to "how do I even edit the Track items" —
+ * a quota is an ordinary task, edited the same way any other one is.
  */
 export function TrackChipPopover({
   task,
   state,
   open,
   onOpenChange,
+  onOpen,
   children,
 }: {
   task: Task | null
@@ -39,12 +42,12 @@ export function TrackChipPopover({
   state: TrackState
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The popover's own "Open" button was pressed — the caller decides what
+   *  that means (opening `QuotaDetailModal`, as `TrackPanel` does it). */
+  onOpen: (task: Task) => void
   /** The chip this bubble points at. */
   children: React.ReactNode
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
-
   return (
     <Popover open={open && task !== null} onOpenChange={onOpenChange}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
@@ -60,14 +63,7 @@ export function TrackChipPopover({
           // handler and closes it in the same gesture that opened it.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <QuotaSummary
-            task={task}
-            state={state}
-            onOpen={() => {
-              // Through the guard, like every other route change in the app.
-              if (requestNavigation(`/tasks/${task.id}`)) router.push(`/tasks/${task.id}`)
-            }}
-          />
+          <QuotaSummary task={task} state={state} onOpen={() => onOpen(task)} />
         </PopoverContent>
       )}
     </Popover>

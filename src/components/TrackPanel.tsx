@@ -1,6 +1,7 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
@@ -16,6 +17,7 @@ import {
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
+import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import {
   foldClass,
   useResponsiveFold,
@@ -27,7 +29,9 @@ import {
   type FoldState,
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
+import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { GuardedLink } from '@/components/GuardedLink'
+import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useLabelConfig, useTrackPanelPreference } from '@/components/PreferencesProvider'
 import type { LabelColor, Task } from '@/types'
 
@@ -187,12 +191,87 @@ const CLUSTER_ROW: FoldClasses = {
   auto: 'hidden sm:flex',
 }
 
-export function TrackPanel({ tasks }: { tasks: Task[] }) {
+/** `useQuotaMutations`'s `clear` — there is no selection on this panel to clear. */
+const noop = () => {}
+
+/**
+ * All chip-level "detail" state for Track: which quota's popover bubble is
+ * open, and which (if any) is open in the full `QuotaDetailModal` editor —
+ * plumbed with the exact same mutations `QuotasView` uses
+ * (`useQuotaMutations`) and the exact same deep-link escape hatch
+ * (`requestNavigation` + `router.push`), so pressing a chip's "Open" button
+ * edits the same way `/quotas` does, just without leaving (Trent, 2026-09-21:
+ * "whenever I do things with tasks it opens a modal... that's how I like to
+ * work"). One hook rather than state split across `TrackPanel` and its
+ * chips' callers, so the panel's own render stays short — the same reason
+ * `useQuotaMutations` is its own file rather than inline in `QuotasView`.
+ */
+function useTrackChipDetail({
+  onUndo,
+  onCompleted,
+  onRefresh,
+}: {
+  onUndo: () => void
+  onCompleted: () => void
+  onRefresh: () => Promise<void>
+}) {
+  const router = useRouter()
+  const { requestNavigation } = useNavigationGuard()
+  // The quota whose popover bubble is showing. By id, not object, so a sync
+  // refresh can replace the rendered task underneath an open bubble.
+  const [openId, setOpenId] = useState<number | null>(null)
+  const [editing, setEditing] = useState<Task[]>([])
+  const { saveQuotas, createQuota, deleteQuotas } = useQuotaMutations({
+    refresh: onRefresh,
+    clear: noop,
+    onUndo,
+    onCompleted,
+  })
+
+  const openPopover = useCallback((task: Task) => setOpenId(task.id), [])
+  const closePopover = useCallback(() => setOpenId(null), [])
+  // The popover's own "Open" button: the bubble it was pressed from closes,
+  // the editor replaces it — never both open at once.
+  const openEditor = useCallback((task: Task) => {
+    setOpenId(null)
+    setEditing([task])
+  }, [])
+
+  const modal = (
+    <QuotaDetailModal
+      tasks={editing}
+      open={editing.length > 0}
+      onClose={() => setEditing([])}
+      onSave={saveQuotas}
+      onCreate={createQuota}
+      onDelete={(targets) => void deleteQuotas(targets)}
+      onOpenPage={(id) => {
+        // Through the guard, like every other route change in the app.
+        if (requestNavigation(`/tasks/${id}`)) router.push(`/tasks/${id}`)
+      }}
+    />
+  )
+
+  return { openId, openPopover, closePopover, openEditor, modal }
+}
+
+interface TrackPanelProps {
+  tasks: Task[]
+  /** Undo the last action — wired to the toasts, as `DashboardRemindersPanel`
+   *  is (this panel and that one share the dashboard's one undo pipeline). */
+  onUndo: () => void
+  /** Tell the host an undoable thing happened, so its Undo count is right. */
+  onCompleted: () => void
+  /** Refetch the dashboard's own task list after a save/create/delete — this
+   *  panel does not own its data the way `/quotas` owns its own fetch; `tasks`
+   *  is a prop, so the mutation's own success is not enough to update it. */
+  onRefresh: () => Promise<void>
+}
+
+export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanelProps) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
-  // The quota whose detail sheet is showing. Held by id rather than by object
-  // so a sync refresh replaces the rendered task underneath an open sheet.
-  const [detailId, setDetailId] = useState<number | null>(null)
+  const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh })
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
@@ -208,8 +287,7 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
 
   if (quotas.length === 0) return null
 
-  const total = quotaGroupSummary(quotas)
-  const shortfall = quotaShortfall(total)
+  const shortfall = quotaShortfall(quotaGroupSummary(quotas))
 
   return (
     <section aria-label="Track" data-track-panel className="mb-6">
@@ -332,9 +410,10 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
                   task={item.task}
                   color={item.color}
                   foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
-                  detailOpen={detailId === item.task.id}
-                  onOpenDetail={(t) => setDetailId(t.id)}
-                  onCloseDetail={() => setDetailId(null)}
+                  detailOpen={detail.openId === item.task.id}
+                  onOpenDetail={detail.openPopover}
+                  onCloseDetail={detail.closePopover}
+                  onEdit={detail.openEditor}
                 />
               ),
             )}
@@ -357,6 +436,8 @@ export function TrackPanel({ tasks }: { tasks: Task[] }) {
           </button>
         </div>
       </div>
+
+      {detail.modal}
     </section>
   )
 }
@@ -511,6 +592,7 @@ function TrackChip({
   detailOpen,
   onOpenDetail,
   onCloseDetail,
+  onEdit,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -520,6 +602,8 @@ function TrackChip({
   detailOpen: boolean
   onOpenDetail: (task: Task) => void
   onCloseDetail: () => void
+  /** The popover's "Open" button was pressed — opens `QuotaDetailModal`. */
+  onEdit: (task: Task) => void
 }) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
@@ -535,6 +619,7 @@ function TrackChip({
         onOpenChange={(next) => {
           if (!next) onCloseDetail()
         }}
+        onOpen={onEdit}
       >
         <button
           type="button"

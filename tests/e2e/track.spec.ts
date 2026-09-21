@@ -156,19 +156,27 @@ test.describe('Track', () => {
 
       // Open is the answer to "how do I even edit the Track items": a quota is
       // an ordinary task, and it gets its OWN editor — no due date, no snooze
-      // grid, no Done, none of which mean anything for "twice a week".
+      // grid, no Done, none of which mean anything for "twice a week". It
+      // opens AS A MODAL, in place — Trent, 2026-09-21: "whenever I do things
+      // with tasks it opens a modal... that's how I like to work: with a
+      // modal" — not a navigation, so the URL never changes.
+      const urlBeforeOpen = page.url()
       await pop.getByRole('button', { name: 'Open' }).click()
-      await page.waitForURL(`**/tasks/${id}`)
-      const editor = page.locator(`[data-quota-detail="${id}"]`)
+      const editor = page.getByRole('dialog')
       await expect(editor).toBeVisible()
+      expect(page.url()).toBe(urlBeforeOpen)
+      // The bubble it was pressed from is gone — the editor replaced it.
+      await expect(pop).toBeHidden()
       await expect(editor.getByRole('button', { name: 'Every week' })).toHaveAttribute(
         'aria-pressed',
         'true',
       )
-      await expect(page.getByRole('button', { name: '+1 hr' })).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0)
-
-      await page.goto('/')
+      await expect(editor.getByRole('button', { name: '+1 hr' })).toHaveCount(0)
+      await expect(editor.getByRole('button', { name: 'Done', exact: true })).toHaveCount(0)
+      // The full page is still one button away.
+      await expect(editor.getByRole('button', { name: 'Open full page' })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
 
       await openTrack(page)
       // The choice sticks across a reload.
@@ -232,6 +240,48 @@ test.describe('Track', () => {
     } finally {
       await closeTrack(page)
       await deleteTasks(page, [id, nightId])
+    }
+  })
+
+  /**
+   * The chip's popover Open button now opens `QuotaDetailModal` in place
+   * (see the test above) instead of navigating to the task page — this pins
+   * that its delete still goes through the same soft-delete-with-undo path
+   * the Quotas page and the full-page editor use.
+   */
+  test("deletes a quota from the chip's modal, with an Undo", async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Probe track modal delete',
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY',
+    })
+    try {
+      await page.goto('/')
+      const panel = page.getByRole('region', { name: 'Track' })
+      await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+      const chip = panel.locator(`[data-track-chip="${id}"]`)
+      await expect(chip).toBeVisible()
+
+      await chip.click({ delay: 500 })
+      await page.locator('[data-track-popover]').getByRole('button', { name: 'Open' }).click()
+      const editor = page.getByRole('dialog')
+      await expect(editor).toBeVisible()
+
+      const deleted = page.waitForResponse(
+        (r) => r.url().includes('/api/tasks/bulk/delete') && r.request().method() === 'POST',
+      )
+      await editor.getByRole('button', { name: 'Move to Trash' }).click()
+      expect((await deleted).status()).toBe(200)
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page.locator(`[data-track-chip="${id}"]`)).toHaveCount(0)
+
+      // The same Undo every soft delete offers.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(page.locator(`[data-track-chip="${id}"]`)).toBeVisible()
+    } finally {
+      await deleteTasks(page, [id])
     }
   })
 
