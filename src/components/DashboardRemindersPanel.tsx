@@ -281,6 +281,7 @@ export function DashboardRemindersPanel({
         onPrev={() => goTo(index - 1)}
         onNext={() => goTo(index + 1)}
         onConsiderAll={() => void completeGroup(group)}
+        onToggleExpanded={() => setExpanded(!expanded)}
       />
 
       {expanded && (
@@ -314,6 +315,10 @@ export function DashboardRemindersPanel({
               onPeek={() => setPeekId(reminder.id)}
               peekOpen={peekId === reminder.id}
               onPeekChange={(next) => setPeekId(next ? reminder.id : null)}
+              onDelete={(task) => {
+                setPeekId(null)
+                void remove([task])
+              }}
               onOpenEditor={(task) => {
                 // The bubble is done the moment the editor takes over —
                 // leaving it open would stack a popover behind a dialog.
@@ -359,6 +364,7 @@ function SlotPagerHeader({
   onPrev,
   onNext,
   onConsiderAll,
+  onToggleExpanded,
 }: {
   label: string
   time: string | null
@@ -370,6 +376,8 @@ function SlotPagerHeader({
   onPrev: () => void
   onNext: () => void
   onConsiderAll: () => void
+  /** Tapping the bar between the chevrons opens and shuts the slot. */
+  onToggleExpanded: () => void
 }) {
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
@@ -384,25 +392,42 @@ function SlotPagerHeader({
         <ChevronLeft className="size-4" strokeWidth={2} />
       </button>
 
-      <div className="min-w-0 flex-1">
-        <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-          {label}
-        </span>
-        {time && (
-          <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
-            {' '}
-            &middot; {time}
-          </span>
-        )}
-      </div>
+      {/* The whole bar between the chevrons toggles the slot open and shut.
+          Trent, 2026-09-21: "If you tap anywhere in there that's not on one of
+          the carrots, it'd be nice if that expanded and collapsed the
+          section." The chevrons page between slots and keep their own hit
+          areas; everything between them is one target.
 
-      <span
-        className="text-xs whitespace-nowrap tabular-nums"
-        aria-label={`${considered} of ${total} considered`}
+          It toggles even when no rows are held back, and that is deliberate:
+          a slot under the cap has no "Show more" button at all, so before this
+          there was no way to unclamp its titles or reach "Considered all". */}
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        aria-expanded={expanded}
+        data-slot-header-toggle
+        className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
-        <span className="text-foreground font-medium">{considered}</span>
-        <span className="text-muted-foreground"> of {total}</span>
-      </span>
+        <span className="min-w-0 flex-1">
+          <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+            {label}
+          </span>
+          {time && (
+            <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
+              {' '}
+              &middot; {time}
+            </span>
+          )}
+        </span>
+
+        <span
+          className="text-xs whitespace-nowrap tabular-nums"
+          aria-label={`${considered} of ${total} considered`}
+        >
+          <span className="text-foreground font-medium">{considered}</span>
+          <span className="text-muted-foreground"> of {total}</span>
+        </span>
+      </button>
 
       {expanded && total > 0 && (
         <button
@@ -455,6 +480,7 @@ function PanelRow({
   peekOpen,
   onPeekChange,
   onOpenEditor,
+  onDelete,
   timeSlots,
   timezone,
 }: {
@@ -471,6 +497,8 @@ function PanelRow({
   onPeekChange: (open: boolean) => void
   /** The bubble's Open was pressed. */
   onOpenEditor: (reminder: Task) => void
+  /** The bubble's trash can. Soft delete, with an Undo toast. */
+  onDelete: (reminder: Task) => void
   timeSlots: TimeSlot[]
   timezone: string
 }) {
@@ -484,6 +512,7 @@ function PanelRow({
       open={peekOpen}
       onOpenChange={onPeekChange}
       onOpen={onOpenEditor}
+      onDelete={onDelete}
     >
       <li
         data-reminder-id={reminder.id}

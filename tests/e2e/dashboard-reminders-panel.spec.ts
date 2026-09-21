@@ -433,6 +433,93 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await deleteTasks(page, ids)
     }
   })
+
+  test('tapping the slot header bar toggles the slot open and shut', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+
+    // Past the wide cap, so there is something to reveal.
+    const titles = Array.from({ length: 12 }, (_, i) => `Header toggle probe ${i}`)
+    const ids: number[] = []
+    try {
+      for (let i = 0; i < titles.length; i++) {
+        ids.push(await createReminder(page, { title: titles[i], due_at: at(i + 1) }))
+      }
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+
+      // Tapping the bar between the chevrons opens the slot (Trent,
+      // 2026-09-21) — the same thing "Show more" does, without hunting for it.
+      const header = panel(page).locator('[data-slot-header-toggle]')
+      await expect(header).toHaveAttribute('aria-expanded', 'false')
+      await header.click()
+      await expect(header).toHaveAttribute('aria-expanded', 'true')
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(12)
+
+      // ...and shuts it again.
+      await header.click()
+      await expect(header).toHaveAttribute('aria-expanded', 'false')
+      await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
+
+      // The chevrons keep their own job: paging, not toggling.
+      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
+      await expect(panel(page)).not.toHaveAttribute('data-reminders-slot', String(natural.id))
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('deletes a reminder straight from its bubble, with an Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Bubble trash probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+      await panel(page).getByText(title).click({ delay: 500 })
+
+      // The trash can sits beside Open, and asks nothing first — Trent,
+      // 2026-09-21: tasks have no confirmation either, and the Undo toast is
+      // "good enough or probably better because it reduces friction".
+      const bubble = page.locator(`[data-reminder-popover="${id}"]`)
+      await expect(bubble).toBeVisible()
+      const deleted = page.waitForResponse(
+        (r) => r.url().includes('/api/tasks/bulk/delete') && r.request().method() === 'POST',
+      )
+      await bubble.getByRole('button', { name: `Move "${title}" to Trash` }).click()
+      expect((await deleted).status()).toBe(200)
+
+      // Gone, and the bubble went with it rather than pointing at nothing.
+      await expect(panel(page).getByText(title)).toHaveCount(0)
+      await expect(page.locator(`[data-reminder-popover="${id}"]`)).toHaveCount(0)
+
+      // And it comes back.
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(panel(page).getByText(title)).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
 })
 
 test.describe('Dashboard Reminders panel — phone', () => {

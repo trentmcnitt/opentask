@@ -1,5 +1,6 @@
 'use client'
 
+import { Trash2 } from 'lucide-react'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { describeCadence, describeTimeOfDay, readSchedule } from '@/lib/reminder-rule'
@@ -37,6 +38,7 @@ export function ReminderRowPopover({
   open,
   onOpenChange,
   onOpen,
+  onDelete,
   children,
 }: {
   reminder: Task | null
@@ -47,6 +49,9 @@ export function ReminderRowPopover({
   /** The bubble's own "Open" button was pressed — the caller decides what that
    *  means (opening `ReminderDetailModal`, as the panel does it). */
   onOpen: (reminder: Task) => void
+  /** Move it to Trash. Soft, undoable, and asks nothing first — see
+   *  `PopoverFooter`. */
+  onDelete: (reminder: Task) => void
   /** The row this bubble points at. */
   children: React.ReactNode
 }) {
@@ -70,6 +75,7 @@ export function ReminderRowPopover({
             timeSlots={timeSlots}
             timezone={timezone}
             onOpen={() => onOpen(reminder)}
+            onDelete={() => onDelete(reminder)}
           />
         </PopoverContent>
       )}
@@ -82,11 +88,13 @@ function ReminderSummary({
   timeSlots,
   timezone,
   onOpen,
+  onDelete,
 }: {
   reminder: Task
   timeSlots: TimeSlot[]
   timezone: string
   onOpen: () => void
+  onDelete: () => void
 }) {
   // The same two halves the editor's own summary line is built from, so the
   // bubble and the editor behind it can never describe one schedule
@@ -117,8 +125,48 @@ function ReminderSummary({
         )}
       </div>
 
-      <Button size="sm" className="w-full" onClick={onOpen}>
+      <PopoverFooter
+        onOpen={onOpen}
+        onDelete={onDelete}
+        deleteLabel={`Move "${reminder.title}" to Trash`}
+      />
+    </div>
+  )
+}
+
+/**
+ * Open plus a trash can, side by side.
+ *
+ * No confirmation dialog, deliberately. Trent, 2026-09-21, after testing what
+ * tasks already do: "tasks do not have a confirmation but it does let you undo
+ * it, which is good enough or probably better because it reduces friction."
+ * Both deletes behind this are soft deletes that raise an Undo toast, so the
+ * cost of a mis-tap is one tap back, and the cost of a confirm dialog is a tap
+ * on every single intentional delete.
+ */
+export function PopoverFooter({
+  onOpen,
+  onDelete,
+  deleteLabel,
+}: {
+  onOpen: () => void
+  onDelete: () => void
+  deleteLabel: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" className="flex-1" onClick={onOpen}>
         Open
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onDelete}
+        aria-label={deleteLabel}
+        title="Move to Trash"
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive shrink-0 px-2"
+      >
+        <Trash2 className="size-4" />
       </Button>
     </div>
   )

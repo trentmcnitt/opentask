@@ -146,6 +146,18 @@ import type { LabelColor, Task } from '@/types'
 /**
  * The card, folded away by the section fold.
  *
+ * OPEN IS THE DEFAULT AT EVERY WIDTH as of 2026-09-21. These `auto` values
+ * used to fold the whole panel — card, clusters and rows — away below `sm`,
+ * because 22 quotas of Track pushed the first task of the day about three
+ * screens down a phone. Trent reversed it after living with it: "The track
+ * should be expanded. Everything should be expanded for the track on mobile.
+ * Otherwise I can't check things off easily. I know it pushes the task stuff
+ * down but it's a price we have to pay for now." Checking a quota off is what
+ * the phone is for, and a fold taxed every one of those taps.
+ *
+ * Only the pre-choice default moved; `shut` is untouched and the phone's
+ * section toggle still works exactly as it did.
+ *
  * "Shut" only hides it BELOW `sm`, which is not a typo. The section fold is a
  * phone affordance and its button is `sm:hidden`; a user who shuts the panel on
  * a phone and then widens the window would otherwise be left with a hidden card
@@ -154,14 +166,14 @@ import type { LabelColor, Task } from '@/types'
 const SECTION_CARD: FoldClasses = {
   open: 'block',
   shut: 'hidden sm:block',
-  auto: 'hidden sm:block',
+  auto: 'block',
 }
 
 /** The one-line stand-in for the folded card. Mirrors `SECTION_CARD`. */
 const SECTION_SUMMARY: FoldClasses = {
   open: 'hidden',
   shut: 'flex sm:hidden',
-  auto: 'flex sm:hidden',
+  auto: 'hidden',
 }
 
 /**
@@ -174,21 +186,21 @@ const SECTION_SUMMARY: FoldClasses = {
 const CLUSTER_BASIS: FoldClasses = {
   open: '',
   shut: 'basis-full',
-  auto: 'basis-full sm:basis-auto',
+  auto: '',
 }
 
 /** A met cluster steps back — but only while it is shut and standing in for its chips. */
 const CLUSTER_MET_DIM: FoldClasses = {
   open: '',
   shut: 'opacity-60',
-  auto: 'opacity-60 sm:opacity-100',
+  auto: '',
 }
 
 /** A quota row in the open panel. As `FOLD_BODY_BLOCK`, for a row that is a flex line. */
 const CLUSTER_ROW: FoldClasses = {
   open: 'flex',
   shut: 'hidden',
-  auto: 'hidden sm:flex',
+  auto: 'flex',
 }
 
 /** `useQuotaMutations`'s `clear` — there is no selection on this panel to clear. */
@@ -236,6 +248,14 @@ function useTrackChipDetail({
     setOpenId(null)
     setEditing([task])
   }, [])
+  // The bubble's trash can: the bubble it was pressed from goes with it.
+  const deleteFromPopover = useCallback(
+    (task: Task) => {
+      setOpenId(null)
+      void deleteQuotas([task])
+    },
+    [deleteQuotas],
+  )
 
   const modal = (
     <QuotaDetailModal
@@ -252,7 +272,7 @@ function useTrackChipDetail({
     />
   )
 
-  return { openId, openPopover, closePopover, openEditor, modal }
+  return { openId, openPopover, closePopover, openEditor, deleteFromPopover, modal }
 }
 
 interface TrackPanelProps {
@@ -414,6 +434,7 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
                   onOpenDetail={detail.openPopover}
                   onCloseDetail={detail.closePopover}
                   onEdit={detail.openEditor}
+                  onDeleteQuota={detail.deleteFromPopover}
                 />
               ),
             )}
@@ -593,6 +614,7 @@ function TrackChip({
   onOpenDetail,
   onCloseDetail,
   onEdit,
+  onDeleteQuota,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -604,6 +626,8 @@ function TrackChip({
   onCloseDetail: () => void
   /** The popover's "Open" button was pressed — opens `QuotaDetailModal`. */
   onEdit: (task: Task) => void
+  /** The bubble's trash can. Soft delete, with an Undo toast. */
+  onDeleteQuota: (task: Task) => void
 }) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
@@ -620,6 +644,7 @@ function TrackChip({
           if (!next) onCloseDetail()
         }}
         onOpen={onEdit}
+        onDelete={onDeleteQuota}
       >
         <button
           type="button"
