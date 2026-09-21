@@ -589,7 +589,7 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
 
-      // Nothing considered yet, so no toggle at all.
+      // Nothing considered yet, so the count is a plain readout, not a button.
       await expect(panel(page).locator('[data-considered-toggle]')).toHaveCount(0)
 
       // Consider it: it leaves the waiting list...
@@ -602,10 +602,14 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
 
       // ...but is no longer LOST, which is the point (Trent, 2026-09-21:
       // "I can't see the items that I considered for that day").
+      // The header's own count becomes the way in — chosen over a second
+      // full-width footer bar (Trent, 2026-09-21).
       const toggle = panel(page).locator('[data-considered-toggle]')
       await expect(toggle).toBeVisible()
-      await expect(toggle).toContainText('Show 1 considered')
+      await expect(toggle).toContainText('1')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
       await expect(panel(page).locator(`[data-considered-id="${id}"]`)).toBeVisible()
       await expect(panel(page).getByText(title)).toBeVisible()
 

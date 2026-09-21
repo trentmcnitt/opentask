@@ -22,9 +22,19 @@ import { DateTime } from 'luxon'
  * waiting; that is what "needs work" means here, and nothing else competes
  * with it for attention.
  *
- * The accent is the Reminders surface's own violet, never red or amber. §6:
- * a reminder is never overdue and carries no debt, so the bar may report that
- * a slot is unfinished but must never dress it as a failure.
+ * ONE HUE ONLY, AND IT IS GREEN. A first cut tinted the track violet for
+ * "behind" and filled it green for progress; Trent, 2026-09-21: "the purple
+ * background is not good. Green and purple don't seem to go together." He was
+ * right, and the reason is that it ran two colour languages at once — hue for
+ * state, fill for progress — so the two competed in the same 4px of bar. Now
+ * green is the only colour on the instrument and it means exactly what it
+ * means everywhere else in this app (considered, met, done). State is carried
+ * by the WEIGHT of the neutral track instead: present for a slot whose time
+ * has come, nearly invisible for one whose time has not.
+ *
+ * Nothing here is ever red or amber. §6: a reminder is never overdue and
+ * carries no debt, so the bar may report that a slot is unfinished but must
+ * never dress it as a failure.
  */
 
 /** What a segment is saying. */
@@ -111,10 +121,13 @@ export function ReminderSlotBar({
                 // The slot on screen is the taller one — position without a
                 // second colour, which the three states already spend.
                 current ? 'h-2' : 'h-1',
-                state === 'behind' && 'bg-badge-reminders/30',
-                state === 'done' && 'bg-green-600/25',
-                // Nothing has happened here yet, and that is not a problem.
-                state === 'upcoming' && 'bg-muted',
+                // Its time has come: a track with real presence, so the
+                // unfilled part reads as "still to do".
+                state === 'behind' && 'bg-foreground/20',
+                state === 'done' && 'bg-green-600/20',
+                // Nothing has happened here yet, and that is not a problem —
+                // barely there, so it never competes for attention.
+                state === 'upcoming' && 'bg-foreground/[0.06]',
                 'group-hover:brightness-125',
               )}
             >
