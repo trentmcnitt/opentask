@@ -38,7 +38,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   const taskCounts = useTaskNavCounts()
 
   const navItems = [
-    { href: '/', label: 'Tasks', icon: LayoutDashboard },
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/reminders', label: 'Reminders', icon: Lightbulb },
     // §5: quotas are a place, not only the instrument on the dashboard —
     // somewhere to make one, retire one, and see which have never been met.
