@@ -268,6 +268,55 @@ test.describe('Dashboard Reminders panel — wide', () => {
     }
   })
 
+  test('a long reminder wraps in full and is never truncated', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    // Long enough that one line cannot hold it at any sane panel width.
+    const title =
+      'Wrapping probe — a deliberately long thought that will not fit on a single line of the dashboard panel no matter how wide the column happens to be today'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+
+      const row = panel(page).locator(`li[data-reminder-id="${ids[0]}"]`)
+      await expect(row).toBeVisible()
+
+      // Trent, 2026-09-21: "reminders can't be truncated. They have to show
+      // the full thing... It needs to line wrap somehow."
+      const text = row.locator('p')
+      const metrics = await text.evaluate((el) => ({
+        clamp: getComputedStyle(el).webkitLineClamp,
+        overflow: getComputedStyle(el).textOverflow,
+        // Wrapped, not clipped: the rendered box is taller than one line and
+        // holds everything it was given.
+        scrollH: el.scrollHeight,
+        clientH: el.clientHeight,
+        lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+      }))
+      expect(metrics.clamp === 'none' || metrics.clamp === '').toBe(true)
+      expect(metrics.overflow).not.toBe('ellipsis')
+      // Nothing is hidden past the box...
+      expect(metrics.scrollH).toBeLessThanOrEqual(metrics.clientH + 1)
+      // ...and it genuinely took more than one line to say it.
+      expect(metrics.clientH).toBeGreaterThan(metrics.lineHeight * 1.5)
+      await expect(text).toHaveText(title)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('a slot inside the wide cap shows every row, with no toggle to press', async ({
     authenticatedPage: page,
   }) => {
@@ -621,9 +670,10 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(toggle).toBeVisible()
       await expect(toggle).toContainText('1')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      // No caret and no colour swap: the state is told by WEIGHT and by the
-      // hover box being held open (Trent, 2026-09-21). Both are asserted,
-      // because either alone was too quiet to read.
+      // No caret, no colour swap, and no weight change either — the held
+      // box is the entire signal (Trent, 2026-09-21: "Don't bold the text...
+      // I like the box around it though"). Asserting the weight HOLDS is the
+      // point: a future change that reaches for bold again should fail here.
       const readStyle = async () =>
         toggle.evaluate((el) => ({
           boxed: getComputedStyle(el).backgroundColor,
@@ -633,8 +683,8 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await toggle.click()
       await expect(toggle).toHaveAttribute('aria-expanded', 'true')
       const shown = await readStyle()
-      expect(Number(shown.weight)).toBeGreaterThan(Number(hidden.weight))
       expect(shown.boxed).not.toBe(hidden.boxed)
+      expect(shown.weight).toBe(hidden.weight)
       await expect(panel(page).locator(`[data-considered-id="${id}"]`)).toBeVisible()
       await expect(panel(page).getByText(title)).toBeVisible()
 
