@@ -580,16 +580,35 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     const at = (offset: number) =>
       todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
 
+    // A slot holding nothing gets no segment at all as of 2026-09-21, so the
+    // bar needs a SECOND populated slot to exist — seeding only the current
+    // one leaves a single segment, which is deliberately not drawn.
+    const later = slots.find((sl) => parseHHMM(sl.start_time)! > startMinutes)
+    const laterStart = later ? parseHHMM(later.start_time)! + 1 : null
+
     const ids: number[] = []
     try {
       ids.push(await createReminder(page, { title: 'Slot bar probe A', due_at: at(1) }))
       ids.push(await createReminder(page, { title: 'Slot bar probe B', due_at: at(2) }))
+      if (laterStart !== null) {
+        ids.push(
+          await createReminder(page, {
+            title: 'Slot bar probe later',
+            due_at: todayAt(Math.floor(laterStart / 60), laterStart % 60),
+          }),
+        )
+      }
 
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
 
       const bar = page.getByRole('group', { name: "Today's reminder slots" })
       await expect(bar).toBeVisible()
+
+      // Nothing empty is drawn: every segment on screen reports a real count.
+      for (const seg of await bar.getByRole('button').all()) {
+        expect(await seg.getAttribute('aria-label')).not.toContain('nothing today')
+      }
       // One segment per slot group, and the one on screen is marked.
       const segments = bar.getByRole('button')
       expect(await segments.count()).toBeGreaterThanOrEqual(2)
@@ -599,7 +618,6 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(currentSeg).toHaveAttribute('data-slot-state', 'behind')
 
       // A slot whose time has not come wears no colour — Trent's rule.
-      const later = slots.find((sl) => parseHHMM(sl.start_time)! > startMinutes)
       if (later) {
         await expect(bar.locator(`[data-slot-segment="${later.id}"]`)).toHaveAttribute(
           'data-slot-state',
