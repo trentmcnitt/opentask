@@ -1,7 +1,7 @@
 'use client'
 
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
+import { PopoverFooter } from '@/components/ReminderRowPopover'
 import { periodLabel, type TrackState } from '@/lib/track'
 import { formatRRule } from '@/lib/format-rrule'
 import type { Task } from '@/types'
@@ -34,6 +34,7 @@ export function TrackChipPopover({
   open,
   onOpenChange,
   onOpen,
+  onDelete,
   children,
 }: {
   task: Task | null
@@ -45,6 +46,9 @@ export function TrackChipPopover({
   /** The popover's own "Open" button was pressed — the caller decides what
    *  that means (opening `QuotaDetailModal`, as `TrackPanel` does it). */
   onOpen: (task: Task) => void
+  /** Move it to Trash. Soft, undoable, and asks nothing first — see
+   *  `PopoverFooter`. */
+  onDelete: (task: Task) => void
   /** The chip this bubble points at. */
   children: React.ReactNode
 }) {
@@ -63,7 +67,12 @@ export function TrackChipPopover({
           // handler and closes it in the same gesture that opened it.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <QuotaSummary task={task} state={state} onOpen={() => onOpen(task)} />
+          <QuotaSummary
+            task={task}
+            state={state}
+            onOpen={() => onOpen(task)}
+            onDelete={() => onDelete(task)}
+          />
         </PopoverContent>
       )}
     </Popover>
@@ -74,10 +83,12 @@ function QuotaSummary({
   task,
   state,
   onOpen,
+  onDelete,
 }: {
   task: Task
   state: TrackState
   onOpen: () => void
+  onDelete: () => void
 }) {
   const period = periodLabel(task.rrule)
   const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
@@ -117,9 +128,11 @@ function QuotaSummary({
         </div>
       </dl>
 
-      <Button size="sm" className="w-full" onClick={onOpen}>
-        Open
-      </Button>
+      <PopoverFooter
+        onOpen={onOpen}
+        onDelete={onDelete}
+        deleteLabel={`Move "${task.title}" to Trash`}
+      />
     </div>
   )
 }
