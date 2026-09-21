@@ -27,15 +27,27 @@ import type { Task } from '@/types'
  *   so a row can hold its place on screen while it collapses (so a fast
  *   double-tap doesn't land on whatever slid up under it) — this panel never
  *   calls either, so every id the hook completes is treated as "off screen"
- *   and removed from `groups` at once. That is fine here: a four-row capped
- *   list has nothing to double-tap into by accident.
+ *   and removed from `groups` at once. The accepted cost is that a fast
+ *   double-tap on one circle can consider the row that slides up into its
+ *   place; the toast's Undo is the recovery. `/reminders` is the surface that
+ *   pays for the animation, because it is where a long sitting is done.
  * - No confirmation dialog on "Considered all" (the real page's
  *   `ConsiderAllDialog` asks first). The toast's Undo covers a slip, and this
  *   panel's whole design is "glance and tap", not a place to pause and confirm.
  */
 
-/** Default row cap before "Show more" — the mockup's `CAP`. */
-const ROW_CAP = 4
+/**
+ * When a slot gets truncated, and how hard (Trent, 2026-09-21).
+ *
+ * A slot of 13 or fewer shows every row — hiding four thoughts behind a button
+ * costs a tap and saves almost no height, so the button would be pure friction.
+ * Past 13 the list is long enough that the panel starts burying Track and the
+ * day beneath it, so the cut is deliberately well below the threshold rather
+ * than just above it: it drops to 9, which is a visible enough change that
+ * "Show more" reads as worth pressing.
+ */
+const SHOW_ALL_UP_TO = 13
+const TRUNCATED_ROWS = 9
 
 const UNSLOTTED_KEY = 'unslotted'
 
@@ -119,7 +131,14 @@ export function DashboardRemindersPanel({
   const label = group.slot?.label ?? 'Anytime'
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
   const total = group.reminders.length + group.considered
-  const visible = expanded ? group.reminders : group.reminders.slice(0, ROW_CAP)
+  // `expanded` is the user's override; a short slot is fully visible without
+  // one. Everything about the richer presentation hangs off this rather than
+  // off `expanded` directly — otherwise a slot under the threshold, which has
+  // no "Show more" to press, would be stuck with one-line titles and no way to
+  // reach "Considered all".
+  const truncatable = group.reminders.length > SHOW_ALL_UP_TO
+  const fullyVisible = !truncatable || expanded
+  const visible = fullyVisible ? group.reminders : group.reminders.slice(0, TRUNCATED_ROWS)
   const hiddenCount = group.reminders.length - visible.length
 
   return (
@@ -134,7 +153,7 @@ export function DashboardRemindersPanel({
         time={time}
         considered={group.considered}
         total={total}
-        expanded={expanded}
+        expanded={fullyVisible}
         canGoPrev={index > 0}
         canGoNext={index < groups.length - 1}
         onPrev={() => goTo(index - 1)}
@@ -142,7 +161,7 @@ export function DashboardRemindersPanel({
         onConsiderAll={() => void completeGroup(group)}
       />
 
-      {expanded && (
+      {fullyVisible && (
         <div
           className="bg-muted mx-3 mb-2 h-[3px] overflow-hidden rounded-full"
           role="progressbar"
@@ -166,14 +185,14 @@ export function DashboardRemindersPanel({
             <PanelRow
               key={reminder.id}
               reminder={reminder}
-              clamped={!expanded}
+              clamped={!fullyVisible}
               onComplete={() => void complete(reminder)}
             />
           ))}
         </ul>
       )}
 
-      {group.reminders.length > ROW_CAP && (
+      {truncatable && (
         <RowCountToggle
           expanded={expanded}
           hiddenCount={hiddenCount}
