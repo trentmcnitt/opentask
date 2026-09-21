@@ -35,7 +35,25 @@ import { DateTime } from 'luxon'
  * Nothing here is ever red or amber. §6: a reminder is never overdue and
  * carries no debt, so the bar may report that a slot is unfinished but must
  * never dress it as a failure.
+ *
+ * SEGMENTS ARE PROPORTIONAL TO WHAT THEY HOLD. Equal widths were the first
+ * cut, on the reasoning that Trent's own slots happen to be evenly sized so
+ * proportion would buy little. He rejected the reasoning rather than the
+ * finding, 2026-09-21: "My slots are naturally even but that's not
+ * necessarily the case" — a layout should not depend on today's data staying
+ * shaped the way it is. So width keys off the slot's TOTAL (waiting plus
+ * considered), which is fixed for the day: checking things off moves the green
+ * fill inside a segment but never resizes it, so the bar never squirms while
+ * it is being used.
+ *
+ * `MIN_SEGMENT_PX` is what keeps that honest. His own worry: "Something that
+ * had 1 reminder out of 50 wouldn't be able to tap something that small."
+ * Flexbox honours the minimum first and shares what is left by weight, so a
+ * tiny slot stays hittable and only the surplus is distributed.
  */
+
+/** Small enough to stay roughly proportional, wide enough to hit. */
+const MIN_SEGMENT_PX = 28
 
 /** What a segment is saying. */
 type SlotState = 'done' | 'behind' | 'upcoming'
@@ -80,6 +98,10 @@ export function ReminderSlotBar({
 }) {
   if (groups.length < 2) return null
 
+  // With nothing anywhere, proportion is meaningless — share equally instead
+  // of letting every segment collapse to its minimum.
+  const anyContent = groups.some((g) => g.reminders.length + g.considered > 0)
+
   return (
     <div
       className="flex items-center gap-1 px-3 pb-2"
@@ -113,7 +135,15 @@ export function ReminderSlotBar({
                   }`
             }
             title={total === 0 ? label : `${label} — ${group.considered}/${total}`}
-            className="group flex min-w-0 flex-1 items-center py-1"
+            className="group flex items-center py-1"
+            style={{
+              // Weight by size, but never below a thumb. `flexBasis: 0` makes
+              // grow the only thing deciding width; an empty day (every total
+              // zero) falls back to equal shares rather than collapsing.
+              flexGrow: anyContent ? total : 1,
+              flexBasis: 0,
+              minWidth: MIN_SEGMENT_PX,
+            }}
           >
             <span
               className={cn(
