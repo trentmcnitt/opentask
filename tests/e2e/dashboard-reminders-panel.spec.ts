@@ -558,6 +558,19 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
         )
       }
 
+      // Width tracks how much a slot holds, not an equal share (Trent,
+      // 2026-09-21: "My slots are naturally even but that's not necessarily
+      // the case"). Both probes went into the natural slot, so it holds more
+      // than a slot seeded with nothing and must be at least as wide.
+      const currentBox = await currentSeg.boundingBox()
+      const emptyish = later ? bar.locator(`[data-slot-segment="${later.id}"]`) : null
+      if (emptyish && currentBox) {
+        const otherBox = await emptyish.boundingBox()
+        if (otherBox) expect(currentBox.width).toBeGreaterThanOrEqual(otherBox.width - 1)
+        // ...and nothing collapses below a thumb.
+        if (otherBox) expect(otherBox.width).toBeGreaterThanOrEqual(24)
+      }
+
       // A segment is a way to get there.
       const firstSeg = segments.first()
       const targetSlot = await firstSeg.getAttribute('data-slot-segment')
@@ -608,8 +621,19 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(toggle).toBeVisible()
       await expect(toggle).toContainText('1')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      // Weight is the whole affordance — no caret, no colour (Trent,
+      // 2026-09-21). Plain while hidden, bold while showing.
+      const weightWhenHidden = await toggle
+        .locator('span')
+        .first()
+        .evaluate((el) => getComputedStyle(el).fontWeight)
       await toggle.click()
       await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      const weightWhenShown = await toggle
+        .locator('span')
+        .first()
+        .evaluate((el) => getComputedStyle(el).fontWeight)
+      expect(Number(weightWhenShown)).toBeGreaterThan(Number(weightWhenHidden))
       await expect(panel(page).locator(`[data-considered-id="${id}"]`)).toBeVisible()
       await expect(panel(page).getByText(title)).toBeVisible()
 

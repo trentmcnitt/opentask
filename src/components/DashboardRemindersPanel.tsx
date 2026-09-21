@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
@@ -456,24 +456,32 @@ function SlotPagerHeader({
           aria-expanded={showConsidered}
           data-considered-toggle
           aria-label={`${considered} of ${total} considered — show what was considered`}
-          className="hover:bg-foreground/5 flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors"
+          className="hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors"
         >
-          <span className="text-foreground font-medium">{considered}</span>
-          <span className="text-muted-foreground">of {total}</span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn(
-              'text-muted-foreground/60 size-3 transition-transform duration-200',
-              !showConsidered && '-rotate-90',
-            )}
-          />
+          {/* WEIGHT IS THE STATE, and it is the only thing that changes.
+              Trent, 2026-09-21, rejecting both a chevron and a colour: "I
+              don't like having the caret... maybe we just make it bold and
+              then we can get rid of the bold one. The 1 doesn't need to be
+              bolded normally." So the count reads as plain text while the
+              considered list is hidden, and goes bold while it is showing —
+              an affordance made of the text itself, with nothing bolted on
+              beside it. The number was permanently semibold before, which
+              spent the one signal this now uses. */}
+          <span
+            className={cn(showConsidered ? 'text-foreground font-semibold' : 'text-foreground')}
+          >
+            {considered}
+          </span>
+          <span className={cn('text-muted-foreground', showConsidered && 'font-semibold')}>
+            of {total}
+          </span>
         </button>
       ) : (
         <span
           className="px-1.5 text-xs whitespace-nowrap tabular-nums"
           aria-label={`${considered} of ${total} considered`}
         >
-          <span className="text-foreground font-medium">{considered}</span>
+          <span className="text-foreground">{considered}</span>
           <span className="text-muted-foreground"> of {total}</span>
         </span>
       )}
