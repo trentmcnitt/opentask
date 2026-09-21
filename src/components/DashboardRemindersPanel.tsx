@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
@@ -289,6 +289,8 @@ export function DashboardRemindersPanel({
         onNext={() => goTo(index + 1)}
         onConsiderAll={() => void completeGroup(group)}
         onToggleExpanded={() => setExpanded(!expanded)}
+        showConsidered={showConsidered}
+        onToggleConsidered={() => setShowConsidered((v) => !v)}
       />
 
       {/* Replaces the per-slot hairline this panel used to show only while a
@@ -341,12 +343,10 @@ export function DashboardRemindersPanel({
         </ul>
       )}
 
-      {group.considered > 0 && (
-        <ConsideredDisclosure
+      {showConsidered && group.consideredItems.length > 0 && (
+        <ConsideredList
           items={group.consideredItems}
           label={label}
-          shown={showConsidered}
-          onToggle={() => setShowConsidered((v) => !v)}
           onPutBack={(task) => void putBack(task)}
         />
       )}
@@ -384,6 +384,8 @@ function SlotPagerHeader({
   onNext,
   onConsiderAll,
   onToggleExpanded,
+  showConsidered,
+  onToggleConsidered,
 }: {
   label: string
   time: string | null
@@ -397,6 +399,8 @@ function SlotPagerHeader({
   onConsiderAll: () => void
   /** Tapping the bar between the chevrons opens and shuts the slot. */
   onToggleExpanded: () => void
+  showConsidered: boolean
+  onToggleConsidered: () => void
 }) {
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
@@ -438,15 +442,41 @@ function SlotPagerHeader({
             </span>
           )}
         </span>
+      </button>
 
+      {/* The count IS the considered count, so tapping it is how you see what
+          those were (Trent, 2026-09-21, choosing this over a second full-width
+          bar in the footer: "Show Considered stacked on Show More looks like a
+          big UX no-no"). A button only when there is something behind it —
+          otherwise it is a plain readout and must not look pressable. */}
+      {considered > 0 ? (
+        <button
+          type="button"
+          onClick={onToggleConsidered}
+          aria-expanded={showConsidered}
+          data-considered-toggle
+          aria-label={`${considered} of ${total} considered — show what was considered`}
+          className="hover:bg-foreground/5 flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors"
+        >
+          <span className="text-foreground font-medium">{considered}</span>
+          <span className="text-muted-foreground">of {total}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              'text-muted-foreground/60 size-3 transition-transform duration-200',
+              !showConsidered && '-rotate-90',
+            )}
+          />
+        </button>
+      ) : (
         <span
-          className="text-xs whitespace-nowrap tabular-nums"
+          className="px-1.5 text-xs whitespace-nowrap tabular-nums"
           aria-label={`${considered} of ${total} considered`}
         >
           <span className="text-foreground font-medium">{considered}</span>
           <span className="text-muted-foreground"> of {total}</span>
         </span>
-      </button>
+      )}
 
       {expanded && total > 0 && (
         <button
@@ -611,66 +641,50 @@ function RowCountToggle({
 }
 
 /**
- * What has already been considered in this slot, behind one line.
+ * What has already been considered in this slot.
  *
  * Trent, 2026-09-21: "I can't see the items that I considered for that day so
- * we want to be able to see what's considered... if it's just a button at the
- * bottom, kind of like we had for Show All." That is exactly what `/reminders`
- * already does (`ConsideredDisclosure` there), so this is the same idea at
- * panel scale rather than a second vocabulary for the same thing.
+ * we want to be able to see what's considered." It opens from the header's
+ * count rather than a footer button — the count already says how many were
+ * considered, so it is the natural thing to press, and a second full-width bar
+ * stacked under "Show more" was the thing he rejected ("a big UX no-no").
  *
  * A row here is checked, dim, and does ONE thing: its circle puts the thought
  * back. No press-and-hold, no editor — a considered thought is done with, and
- * the put-back is the way to change your mind about that.
+ * the put-back is how you change your mind. (On `/reminders`, where a longer
+ * sitting happens, those rows DO reach the editor; this panel is a glance.)
  */
-function ConsideredDisclosure({
+function ConsideredList({
   items,
   label,
-  shown,
-  onToggle,
   onPutBack,
 }: {
   items: Task[]
   label: string
-  shown: boolean
-  onToggle: () => void
   onPutBack: (task: Task) => void
 }) {
   return (
-    <>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={shown}
-        data-considered-toggle
-        className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground w-full border-t px-3 py-2 text-center text-xs font-medium transition-colors"
-      >
-        {shown ? 'Hide' : 'Show'} {items.length} considered
-      </button>
-      {shown && (
-        <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
-          {items.map((reminder) => (
-            <li
-              key={reminder.id}
-              data-considered-id={reminder.id}
-              className="flex items-start gap-2.5 rounded-xl px-1 py-1.5"
-            >
-              <button
-                type="button"
-                onClick={() => onPutBack(reminder)}
-                aria-label={`Put back "${reminder.title}"`}
-                title="Put back"
-                className="mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
-              >
-                <Check className="size-3" strokeWidth={3} />
-              </button>
-              <p className="text-muted-foreground min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
-                {reminder.title}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
+    <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
+      {items.map((reminder) => (
+        <li
+          key={reminder.id}
+          data-considered-id={reminder.id}
+          className="flex items-start gap-2.5 rounded-xl px-1 py-1.5"
+        >
+          <button
+            type="button"
+            onClick={() => onPutBack(reminder)}
+            aria-label={`Put back "${reminder.title}"`}
+            title="Put back"
+            className="mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+          >
+            <Check className="size-3" strokeWidth={3} />
+          </button>
+          <p className="text-muted-foreground min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
+            {reminder.title}
+          </p>
+        </li>
+      ))}
+    </ul>
   )
 }
