@@ -37,7 +37,7 @@ import type { Task } from '@/types'
  *   asked for the parity on 2026-09-21 ("the same thing that we do for
  *   quotas... I feel like there are some times I'm going to want notes"),
  *   and the bubble is the only way to read a note from this panel, since a
- *   row is one clamped line with no note indicator on it. The editor remains
+ *   row carries no note indicator at all. The editor remains
  *   the only place this panel can edit or delete a reminder from. That, a
  *   tap, paging and Show more/less are the whole interaction set; multi-select
  *   and a floating action bar remain the real page's job.
@@ -319,7 +319,6 @@ export function DashboardRemindersPanel({
             <PanelRow
               key={reminder.id}
               reminder={reminder}
-              clamped={!expanded}
               // Rendered, but not on screen until there is a column to spare.
               hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
@@ -458,26 +457,24 @@ function SlotPagerHeader({
           aria-label={`${considered} of ${total} considered — show what was considered`}
           className={cn(
             'hover:bg-foreground/5 flex shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
-            // THE HOVER BOX, HELD OPEN. Trent, 2026-09-21: "when you highlight
-            // it there's a little box around the text. When the considered
-            // stuff is open there should still be a gray box around the X of Y
-            // text. That'll be a good indication of it being open." Weight
-            // alone was too quiet to carry the state by itself; this reuses
-            // the affordance the pointer already reveals rather than adding a
-            // new one, so nothing has to be learned.
+            // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
+            // highlight it there's a little box around the text. When the
+            // considered stuff is open there should still be a gray box
+            // around the X of Y text." A bolding was tried alongside it and
+            // cut the same day — "Don't bold the text... I like the box
+            // around it though" — so the text never changes weight and the
+            // held box says everything. It reuses the affordance the pointer
+            // already reveals rather than adding a new one.
             showConsidered && 'bg-foreground/5',
           )}
         >
-          {/* ONE COLOUR ACROSS THE WHOLE COUNT. The considered number sat a
-              shade darker than "of N" for no reason anyone could name — Trent,
-              2026-09-21: "Why is 1 darker than the 19?" Nothing in the count
-              outranks the rest of it, and its state is already told twice
-              over, by weight and by the box. */}
-          <span
-            className={cn(
-              showConsidered ? 'text-foreground font-semibold' : 'text-muted-foreground',
-            )}
-          >
+          {/* ONE COLOUR ACROSS THE WHOLE COUNT, AND NO WEIGHT CHANGE. The
+              considered number sat a shade darker than "of N" for no reason
+              anyone could name — Trent, 2026-09-21: "Why is 1 darker than the
+              19?" It also briefly went bold while open, which he cut the same
+              day: "Don't bold the text... I like the box around it though."
+              So the box is the state and the text merely lifts out of muted. */}
+          <span className={cn(showConsidered ? 'text-foreground' : 'text-muted-foreground')}>
             {considered} of {total}
           </span>
         </button>
@@ -536,7 +533,6 @@ function SlotPagerHeader({
  */
 function PanelRow({
   reminder,
-  clamped,
   hiddenWhenNarrow = false,
   onComplete,
   onPeek,
@@ -548,7 +544,6 @@ function PanelRow({
   timezone,
 }: {
   reminder: Task
-  clamped: boolean
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   onComplete: () => void
@@ -595,16 +590,21 @@ function PanelRow({
           onPointerDown={(e) => e.stopPropagation()}
           aria-label={`Mark "${reminder.title}" as considered`}
           title="Considered"
-          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+          // No top margin: the 19px circle and the 19.2px first line share a
+          // centre on their own. The `mt-0.5` this used to carry pushed the
+          // circle ~2px below it — Trent, 2026-09-21: "the text is a little
+          // higher than the center line of the circle."
+          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
         />
-        <p
-          className={cn(
-            'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
-            clamped && 'line-clamp-1',
-          )}
-        >
-          {reminder.title}
-        </p>
+        {/* NEVER TRUNCATED. Trent, 2026-09-21: "reminders can't be truncated.
+            They have to show the full thing... It needs to line wrap somehow."
+            Half a thought prompts nothing — the same reason the iOS widget
+            gives its rows two lines instead of one. The cap above still counts
+            ITEMS rather than lines, so a slot of long thoughts is simply a
+            taller panel; accepted deliberately ("maybe we should just not care
+            about it") over a height-based cap, which would make the number of
+            visible rows change with the length of their text. */}
+        <p className="min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">{reminder.title}</p>
       </li>
     </ReminderRowPopover>
   )
@@ -690,7 +690,7 @@ function ConsideredList({
             onClick={() => onPutBack(reminder)}
             aria-label={`Put back "${reminder.title}"`}
             title="Put back"
-            className="mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+            className="flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
           >
             <Check className="size-3" strokeWidth={3} />
           </button>
