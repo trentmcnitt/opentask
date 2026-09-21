@@ -221,19 +221,19 @@ test.describe('Dashboard Reminders panel — wide', () => {
       const showMore = panel(page).getByRole('button', { name: /Show more/ })
       await expect(showMore).toBeVisible()
       await expect(showMore).toContainText('6 more')
-      // No "Considered all" and no progress hint while capped.
+      // No "Considered all" while capped. (Progress is no longer gated on
+      // expansion: the slot bar above carries it for the whole day and is
+      // always on screen — see ReminderSlotBar.)
       const considerAll = panel(page).getByRole('button', {
         name: /^Mark all in .+ as considered$/,
       })
       await expect(considerAll).toHaveCount(0)
-      await expect(panel(page).getByRole('progressbar')).toHaveCount(0)
 
       await showMore.click()
 
-      // Uncapped: all 15, the progress hint, and the quick action.
+      // Uncapped: all 15 and the quick action.
       await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(15)
       await expect(panel(page).getByRole('button', { name: /Show less/ })).toBeVisible()
-      await expect(panel(page).getByRole('progressbar')).toBeVisible()
       await expect(considerAll).toBeVisible()
 
       // A tap on a row's circle completes it and it leaves the panel; the
@@ -515,6 +515,105 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
 
       // And it comes back.
       await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+      await expect(panel(page).getByText(title)).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('the slot bar marks done, behind and not-yet slots, and jumps between them', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const natural = slots[naturalIndex]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+
+    const ids: number[] = []
+    try {
+      ids.push(await createReminder(page, { title: 'Slot bar probe A', due_at: at(1) }))
+      ids.push(await createReminder(page, { title: 'Slot bar probe B', due_at: at(2) }))
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+
+      const bar = page.getByRole('group', { name: "Today's reminder slots" })
+      await expect(bar).toBeVisible()
+      // One segment per slot group, and the one on screen is marked.
+      const segments = bar.getByRole('button')
+      expect(await segments.count()).toBeGreaterThanOrEqual(2)
+      const currentSeg = bar.locator(`[data-slot-segment="${natural.id}"]`)
+      await expect(currentSeg).toHaveAttribute('aria-current', 'true')
+      // The current slot has started and still has two waiting.
+      await expect(currentSeg).toHaveAttribute('data-slot-state', 'behind')
+
+      // A slot whose time has not come wears no colour — Trent's rule.
+      const later = slots.find((sl) => parseHHMM(sl.start_time)! > startMinutes)
+      if (later) {
+        await expect(bar.locator(`[data-slot-segment="${later.id}"]`)).toHaveAttribute(
+          'data-slot-state',
+          'upcoming',
+        )
+      }
+
+      // A segment is a way to get there.
+      const firstSeg = segments.first()
+      const targetSlot = await firstSeg.getAttribute('data-slot-segment')
+      await firstSeg.click()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(targetSlot))
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('considered thoughts are reachable behind a Show/Hide toggle', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const naturalStart = parseHHMM(natural.start_time) + 1
+    const title = 'Considered disclosure probe'
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title,
+          due_at: todayAt(Math.floor(naturalStart / 60), naturalStart % 60),
+        }),
+      )
+      const id = ids[0]
+
+      await page.goto('/')
+      await expect(panel(page)).toBeVisible()
+
+      // Nothing considered yet, so no toggle at all.
+      await expect(panel(page).locator('[data-considered-toggle]')).toHaveCount(0)
+
+      // Consider it: it leaves the waiting list...
+      const done = page.waitForResponse((r) => r.url().includes(`/api/tasks/${id}/done`))
+      await panel(page)
+        .getByRole('button', { name: `Mark "${title}" as considered` })
+        .click()
+      await done
+      await expect(panel(page).getByText(title)).toHaveCount(0)
+
+      // ...but is no longer LOST, which is the point (Trent, 2026-09-21:
+      // "I can't see the items that I considered for that day").
+      const toggle = panel(page).locator('[data-considered-toggle]')
+      await expect(toggle).toBeVisible()
+      await expect(toggle).toContainText('Show 1 considered')
+      await toggle.click()
+      await expect(panel(page).locator(`[data-considered-id="${id}"]`)).toBeVisible()
+      await expect(panel(page).getByText(title)).toBeVisible()
+
+      // Its circle puts the thought back where it was.
+      await panel(page)
+        .getByRole('button', { name: `Put back "${title}"` })
+        .click()
+      await expect(panel(page).locator('[data-considered-toggle]')).toHaveCount(0)
       await expect(panel(page).getByText(title)).toBeVisible()
     } finally {
       await deleteTasks(page, ids)

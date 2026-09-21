@@ -622,6 +622,7 @@ export function RemindersView({
           isSelectionMode={actions.isSelectionMode}
           rowHandlers={rowHandlers}
           onPutBack={putBack}
+          onOpenDetail={openDetail}
         />
       ) : visibleGroups.length === 0 ? (
         <RemindersEmptyState allClear={consideredAny || hasAny} headingLevel={1} />
@@ -661,6 +662,7 @@ export function RemindersView({
                     rowHandlers={rowHandlers}
                     onCompleteGroup={considerAll.askSlot}
                     onPutBack={putBack}
+                    onOpenDetail={openDetail}
                   />
                 )
               })}
@@ -1056,6 +1058,7 @@ function ReminderSlotGroup({
   rowHandlers,
   onCompleteGroup,
   onPutBack,
+  onOpenDetail,
 }: {
   group: ReminderGroup
   started: boolean
@@ -1074,6 +1077,8 @@ function ReminderSlotGroup({
   rowHandlers: ReminderRowHandlers
   onCompleteGroup: (group: ReminderGroup) => void
   onPutBack: (task: Task) => void
+  /** Open one considered thought in the editor — see `ConsideredDisclosure`. */
+  onOpenDetail: (task: Task) => void
 }) {
   const label = group.slot?.label ?? UNSLOTTED_LABEL
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
@@ -1175,6 +1180,7 @@ function ReminderSlotGroup({
               items={group.consideredItems}
               label={label}
               onPutBack={onPutBack}
+              onOpenDetail={onOpenDetail}
             />
           )}
         </>
@@ -1296,15 +1302,27 @@ function SlotHairline({
  * thought back (Trent, 2026-09-05: "if I accidentally press it, undo is not
  * quite enough"). Rows here are not selectable — there is one thing to do
  * with them, and it is on the circle.
+ *
+ * AMENDED 2026-09-21. "One thing to do with them" turned out to be one thing
+ * too few: Trent hit a considered thought whose title he wanted to fix and
+ * found no way in — "it only lets me select uncompleted items so there's a
+ * bug there". It was not a bug, it was this rule, written when the only
+ * concern was an accidental tap (2026-09-05: "if I accidentally press it, undo
+ * is not quite enough") and never revisited for the case of simply editing
+ * one. So a considered row now takes the same press-and-hold a waiting row
+ * does — pointed straight at the editor rather than at a selection, since
+ * there is still nothing here worth selecting in bulk.
  */
 function ConsideredDisclosure({
   items,
   label,
   onPutBack,
+  onOpenDetail,
 }: {
   items: Task[]
   label: string
   onPutBack: (task: Task) => void
+  onOpenDetail: (task: Task) => void
 }) {
   const [shown, setShown] = useState(false)
   return (
@@ -1320,28 +1338,62 @@ function ConsideredDisclosure({
       {shown && (
         <ul className="space-y-0.5 px-1" aria-label={`Considered in ${label}`}>
           {items.map((reminder) => (
-            <li
+            <ConsideredRow
               key={reminder.id}
-              data-considered-id={reminder.id}
-              className="flex items-start gap-3 rounded-xl px-2 py-2.5"
-            >
-              <button
-                type="button"
-                onClick={() => onPutBack(reminder)}
-                aria-label={`Put back "${reminder.title}"`}
-                title="Put back"
-                className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
-              >
-                <Check className="size-3.5" strokeWidth={3} />
-              </button>
-              <p className="text-muted-foreground min-w-0 flex-1 text-[16px] leading-6">
-                <span className="text-pretty">{reminder.title}</span>
-              </p>
-            </li>
+              reminder={reminder}
+              onPutBack={onPutBack}
+              onOpenDetail={onOpenDetail}
+            />
           ))}
         </ul>
       )}
     </>
+  )
+}
+
+/**
+ * One already-considered thought: a circle that puts it back, and a title that
+ * opens the editor on a press-and-hold. Same 400ms gesture as a waiting row,
+ * so there is one thing to learn on this surface rather than two.
+ */
+function ConsideredRow({
+  reminder,
+  onPutBack,
+  onOpenDetail,
+}: {
+  reminder: Task
+  onPutBack: (task: Task) => void
+  onOpenDetail: (task: Task) => void
+}) {
+  const press = useLongPress({ onLongPress: () => onOpenDetail(reminder) })
+
+  return (
+    <li
+      data-considered-id={reminder.id}
+      className="flex items-start gap-3 rounded-xl px-2 py-2.5 select-none"
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerMove={press.onPointerMove}
+      onPointerLeave={press.onPointerLeave}
+      onPointerCancel={press.onPointerUp}
+    >
+      <button
+        type="button"
+        onClick={() => onPutBack(reminder)}
+        // The circle keeps its own pointer, so a hold that starts on it never
+        // also arms the row's long press — the same guard the dashboard
+        // panel's rows use.
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Put back "${reminder.title}"`}
+        title="Put back"
+        className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+      >
+        <Check className="size-3.5" strokeWidth={3} />
+      </button>
+      <p className="text-muted-foreground min-w-0 flex-1 text-[16px] leading-6">
+        <span className="text-pretty">{reminder.title}</span>
+      </p>
+    </li>
   )
 }
 
@@ -1793,6 +1845,7 @@ function SearchResults({
   isSelectionMode,
   rowHandlers,
   onPutBack,
+  onOpenDetail,
 }: {
   count: number
   query: string
@@ -1803,6 +1856,7 @@ function SearchResults({
   isSelectionMode: boolean
   rowHandlers: ReminderRowHandlers
   onPutBack: (task: Task) => void
+  onOpenDetail: (task: Task) => void
 }) {
   return (
     <>
@@ -1832,6 +1886,7 @@ function SearchResults({
               rowHandlers={rowHandlers}
               onCompleteGroup={NO_OP}
               onPutBack={onPutBack}
+              onOpenDetail={onOpenDetail}
             />
           ))}
           {notToday.length > 0 && (
