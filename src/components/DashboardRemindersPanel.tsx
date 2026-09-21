@@ -9,6 +9,7 @@ import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
+import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
@@ -28,13 +29,17 @@ import type { Task } from '@/types'
  *
  * DELIBERATELY SMALLER than `/reminders`' `RemindersView`:
  * - No SELECTION mode, no floating action bar, no multi-select, no create
- *   flow. A circle completes one reminder on a tap; press-and-hold now opens
- *   the same `ReminderDetailModal` editor `/reminders` uses, for that ONE
- *   reminder (Trent, 2026-09-21: "whenever I do things with tasks it opens a
- *   modal... that's how I like to work") — never a selection, and the editor
- *   itself is the only place this panel can edit or delete a reminder from.
- *   That, a tap, paging and Show more/less are the whole interaction set;
- *   multi-select and a floating action bar remain the real page's job.
+ *   flow. A circle completes one reminder on a tap; press-and-hold opens that
+ *   ONE reminder's read-only bubble (`ReminderRowPopover`), and the bubble's
+ *   Open is what reaches the `ReminderDetailModal` editor `/reminders` uses —
+ *   two steps, exactly as a quota chip has worked since 2026-09-06. Trent
+ *   asked for the parity on 2026-09-21 ("the same thing that we do for
+ *   quotas... I feel like there are some times I'm going to want notes"),
+ *   and the bubble is the only way to read a note from this panel, since a
+ *   row is one clamped line with no note indicator on it. The editor remains
+ *   the only place this panel can edit or delete a reminder from. That, a
+ *   tap, paging and Show more/less are the whole interaction set; multi-select
+ *   and a floating action bar remain the real page's job.
  * - No leaving animation. `useReminders`' `registerRow`/`rowLeft` pair exists
  *   so a row can hold its place on screen while it collapses (so a fast
  *   double-tap doesn't land on whatever slid up under it) — this panel never
@@ -188,6 +193,10 @@ export function DashboardRemindersPanel({
     timezone,
   })
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, refresh, completeMany, remove })
+  // Which row's read-only bubble is open, if any. One id rather than a flag
+  // per row: only ever one bubble at a time, the same way `TrackPanel` holds
+  // a single `detailId` for its chips.
+  const [peekId, setPeekId] = useState<number | null>(null)
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -302,7 +311,17 @@ export function DashboardRemindersPanel({
               // Rendered, but not on screen until there is a column to spare.
               hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
-              onOpenDetail={() => editor.open(reminder)}
+              onPeek={() => setPeekId(reminder.id)}
+              peekOpen={peekId === reminder.id}
+              onPeekChange={(next) => setPeekId(next ? reminder.id : null)}
+              onOpenEditor={(task) => {
+                // The bubble is done the moment the editor takes over —
+                // leaving it open would stack a popover behind a dialog.
+                setPeekId(null)
+                editor.open(task)
+              }}
+              timeSlots={timeSlots}
+              timezone={timezone}
             />
           ))}
         </ul>
@@ -432,47 +451,70 @@ function PanelRow({
   clamped,
   hiddenWhenNarrow = false,
   onComplete,
-  onOpenDetail,
+  onPeek,
+  peekOpen,
+  onPeekChange,
+  onOpenEditor,
+  timeSlots,
+  timezone,
 }: {
   reminder: Task
   clamped: boolean
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   onComplete: () => void
-  onOpenDetail: () => void
+  /** A hold opens the row's own read-only bubble — NOT the editor. Open, in
+   *  there, is what reaches the editor (Trent, 2026-09-21). */
+  onPeek: () => void
+  /** Whether THIS row's bubble is the open one. */
+  peekOpen: boolean
+  onPeekChange: (open: boolean) => void
+  /** The bubble's Open was pressed. */
+  onOpenEditor: (reminder: Task) => void
+  timeSlots: TimeSlot[]
+  timezone: string
 }) {
-  const press = useLongPress({ onLongPress: onOpenDetail })
+  const press = useLongPress({ onLongPress: onPeek })
 
   return (
-    <li
-      data-reminder-id={reminder.id}
-      className={cn(
-        'items-start gap-2.5 rounded-xl px-1 py-1.5 select-none',
-        hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-      )}
-      onPointerDown={press.onPointerDown}
-      onPointerUp={press.onPointerUp}
-      onPointerMove={press.onPointerMove}
-      onPointerLeave={press.onPointerLeave}
-      onPointerCancel={press.onPointerUp}
+    <ReminderRowPopover
+      reminder={reminder}
+      timeSlots={timeSlots}
+      timezone={timezone}
+      open={peekOpen}
+      onOpenChange={onPeekChange}
+      onOpen={onOpenEditor}
     >
-      <button
-        type="button"
-        onClick={onComplete}
-        onPointerDown={(e) => e.stopPropagation()}
-        aria-label={`Mark "${reminder.title}" as considered`}
-        title="Considered"
-        className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
-      />
-      <p
+      <li
+        data-reminder-id={reminder.id}
         className={cn(
-          'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
-          clamped && 'line-clamp-1',
+          'items-start gap-2.5 rounded-xl px-1 py-1.5 select-none',
+          hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         )}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerMove={press.onPointerMove}
+        onPointerLeave={press.onPointerLeave}
+        onPointerCancel={press.onPointerUp}
       >
-        {reminder.title}
-      </p>
-    </li>
+        <button
+          type="button"
+          onClick={onComplete}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={`Mark "${reminder.title}" as considered`}
+          title="Considered"
+          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+        />
+        <p
+          className={cn(
+            'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
+            clamped && 'line-clamp-1',
+          )}
+        >
+          {reminder.title}
+        </p>
+      </li>
+    </ReminderRowPopover>
   )
 }
 
