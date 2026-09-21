@@ -1323,6 +1323,7 @@ function HomeContent({
               }
             : undefined
         }
+        onTrackRefresh={refreshAll}
         onUnifiedChange={(unified) => {
           if (sortOption === 'ai_insights') {
             // During AI sort: only toggle local override, don't persist to DB
@@ -1457,6 +1458,9 @@ function TrackColumn({
   searching,
   onRemindersUndo,
   onRemindersCompleted,
+  onTrackUndo,
+  onTrackCompleted,
+  onTrackRefresh,
   remindersRefreshRef,
   timeSlots,
   timezone,
@@ -1466,6 +1470,16 @@ function TrackColumn({
   searching: boolean
   onRemindersUndo: () => void
   onRemindersCompleted: () => void
+  /** Same underlying pipeline as `onRemindersUndo`/`onRemindersCompleted`
+   *  (`actions.handleUndo`/`actions.bumpUndoCount`) — named for Track rather
+   *  than shared, since `TrackPanel` and `DashboardRemindersPanel` are
+   *  independent callers and one panel's props should not imply the other's. */
+  onTrackUndo: () => void
+  onTrackCompleted: () => void
+  /** `TrackPanel` does not own its data (`quotaSource` is a prop) the way
+   *  `DashboardRemindersPanel` owns its own `useReminders` fetch, so a save,
+   *  create or delete through its modal needs an explicit way to refresh it. */
+  onTrackRefresh: () => Promise<void>
   remindersRefreshRef: React.MutableRefObject<(() => void) | null>
   timeSlots: TimeSlot[]
   timezone: string
@@ -1487,7 +1501,12 @@ function TrackColumn({
             timeSlots={timeSlots}
             timezone={timezone}
           />
-          <TrackPanel tasks={quotaSource} />
+          <TrackPanel
+            tasks={quotaSource}
+            onUndo={onTrackUndo}
+            onCompleted={onTrackCompleted}
+            onRefresh={onTrackRefresh}
+          />
         </>
       )}
     </div>
@@ -1606,6 +1625,7 @@ function DashboardView({
   onQuickTakeViewTask,
   searchFocusRef,
   remindersRefreshRef,
+  onTrackRefresh,
 }: {
   tasks: Task[]
   allTasks: Task[]
@@ -1732,6 +1752,10 @@ function DashboardView({
   /** Threaded to `TrackColumn` → `DashboardRemindersPanel` — see the block
    * comment on `remindersRefreshRef` in `HomeContent`. */
   remindersRefreshRef: React.MutableRefObject<(() => void) | null>
+  /** Threaded to `TrackColumn` → `TrackPanel`'s chip-opened editor, which has
+   *  no fetch of its own to refresh after a save/create/delete — see
+   *  `TrackColumn`'s own `onTrackRefresh`. */
+  onTrackRefresh: () => Promise<void>
 }) {
   // Filters that live inside the collapsible block (§7.3). Counted rather than
   // just flagged: the count is what the collapsed "Filters · 2" badge shows,
@@ -1938,6 +1962,9 @@ function DashboardView({
           searching={!!searchQuery}
           onRemindersUndo={actions.handleUndo}
           onRemindersCompleted={actions.bumpUndoCount}
+          onTrackUndo={actions.handleUndo}
+          onTrackCompleted={actions.bumpUndoCount}
+          onTrackRefresh={onTrackRefresh}
           remindersRefreshRef={remindersRefreshRef}
           timeSlots={timeSlots}
           timezone={timezone}

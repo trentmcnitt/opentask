@@ -7,14 +7,14 @@ import { useRouter } from 'next/navigation'
 import { Gauge, Minus, Plus, Trash2, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import type { QuotaChanges, QuotaCreateDraft } from '@/components/QuotaDetail'
+import type { QuotaCreateDraft } from '@/components/QuotaDetail'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
+import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { quotaGroupSummary, groupByLabel, periodLabel, periodShort } from '@/lib/track'
 import { trackedItems } from '@/lib/slot-view'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import { showToast } from '@/lib/toast'
 import { log } from '@/lib/logger'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { cn, fromRowControl } from '@/lib/utils'
@@ -462,105 +462,4 @@ function QuotaSelectionBar({
       </Button>
     </SelectionBarShell>
   )
-}
-
-/**
- * The three writes this surface makes. A hook rather than three callbacks in
- * the component, so `QuotasView` stays layout — the same reason `useReminders`
- * exists next to `RemindersView`.
- */
-function useQuotaMutations({
-  refresh,
-  clear,
-  onUndo,
-  onCompleted,
-}: {
-  refresh: () => Promise<void>
-  clear: () => void
-  onUndo: () => void
-  onCompleted: () => void
-}) {
-  /** Every one of these goes through an undoable core mutation, so every one
-   *  offers the Undo — the same contract `useReminders` keeps. */
-  const undoAction = useCallback(() => ({ label: 'Undo', onClick: () => onUndo() }), [onUndo])
-  const saveQuotas = useCallback(
-    async (ids: number[], changes: QuotaChanges) => {
-      // One quota is a PATCH; several is the bulk endpoint — one request, one
-      // undo entry — exactly as the Reminders editor does it.
-      const res =
-        ids.length === 1
-          ? await fetch(`/api/tasks/${ids[0]}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(changes),
-            })
-          : await fetch('/api/tasks/bulk/edit', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ids, changes }),
-            })
-      if (!res.ok) {
-        showToast({ message: 'Could not save those quotas', type: 'error' })
-        throw new Error(`save quotas ${res.status}`)
-      }
-      showToast({
-        message: ids.length === 1 ? 'Quota updated' : `Updated ${ids.length} quotas`,
-        type: 'success',
-        action: undoAction(),
-      })
-      onCompleted()
-      clear()
-      await refresh()
-    },
-    [clear, refresh, undoAction, onCompleted],
-  )
-
-  const createQuota = useCallback(
-    async (changes: QuotaChanges) => {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(changes),
-      })
-      if (!res.ok) {
-        showToast({ message: 'Could not create the quota', type: 'error' })
-        throw new Error(`create quota ${res.status}`)
-      }
-      showToast({ message: 'Quota created', type: 'success', action: undoAction() })
-      onCompleted()
-      await refresh()
-    },
-    [refresh, undoAction, onCompleted],
-  )
-
-  const deleteQuotas = useCallback(
-    async (targets: Task[]) => {
-      const ids = targets.map((t) => t.id)
-      try {
-        const res = await fetch('/api/tasks/bulk/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids }),
-        })
-        if (!res.ok) throw new Error(`bulk/delete ${res.status}`)
-        showToast({
-          message:
-            targets.length === 1
-              ? `Moved \u201c${targets[0].title}\u201d to Trash`
-              : `Moved ${targets.length} quotas to Trash`,
-          type: 'success',
-          action: undoAction(),
-        })
-        onCompleted()
-        clear()
-        await refresh()
-      } catch (err) {
-        log.error('ui', 'Deleting quotas failed:', err)
-        showToast({ message: 'Could not move those to Trash', type: 'error' })
-      }
-    },
-    [clear, refresh, undoAction, onCompleted],
-  )
-
-  return { saveQuotas, createQuota, deleteQuotas }
 }

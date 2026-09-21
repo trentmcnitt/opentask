@@ -1,9 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
+import { PopoverFooter } from '@/components/ReminderRowPopover'
 import { periodLabel, type TrackState } from '@/lib/track'
 import { formatRRule } from '@/lib/format-rrule'
 import type { Task } from '@/types'
@@ -21,16 +19,22 @@ import type { Task } from '@/types'
  * click is +1, and a trigger would fight it for the same gesture. The chip
  * stays a plain button and this is positioned against it.
  *
- * It reads and does not edit ("I don't want an editable field"). Editing lives
- * one tap away in the quota's editor, which is also the answer to "how do I
- * even edit the Track items" — a quota is an ordinary task and Open is the
- * route to it.
+ * It reads and does not edit ("I don't want an editable field"). Editing is
+ * one tap further in, behind the Open button — which opens `QuotaDetailModal`
+ * IN PLACE rather than navigating to the task page (Trent, 2026-09-21:
+ * "whenever I do things with tasks it opens a modal for me to do my work...
+ * that's how I like to work: with a modal"). This component only tells its
+ * caller the Open button was pressed; it does not know or decide what "open"
+ * means, which is also the answer to "how do I even edit the Track items" —
+ * a quota is an ordinary task, edited the same way any other one is.
  */
 export function TrackChipPopover({
   task,
   state,
   open,
   onOpenChange,
+  onOpen,
+  onDelete,
   children,
 }: {
   task: Task | null
@@ -39,12 +43,15 @@ export function TrackChipPopover({
   state: TrackState
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The popover's own "Open" button was pressed — the caller decides what
+   *  that means (opening `QuotaDetailModal`, as `TrackPanel` does it). */
+  onOpen: (task: Task) => void
+  /** Move it to Trash. Soft, undoable, and asks nothing first — see
+   *  `PopoverFooter`. */
+  onDelete: (task: Task) => void
   /** The chip this bubble points at. */
   children: React.ReactNode
 }) {
-  const router = useRouter()
-  const { requestNavigation } = useNavigationGuard()
-
   return (
     <Popover open={open && task !== null} onOpenChange={onOpenChange}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
@@ -63,10 +70,8 @@ export function TrackChipPopover({
           <QuotaSummary
             task={task}
             state={state}
-            onOpen={() => {
-              // Through the guard, like every other route change in the app.
-              if (requestNavigation(`/tasks/${task.id}`)) router.push(`/tasks/${task.id}`)
-            }}
+            onOpen={() => onOpen(task)}
+            onDelete={() => onDelete(task)}
           />
         </PopoverContent>
       )}
@@ -78,10 +83,12 @@ function QuotaSummary({
   task,
   state,
   onOpen,
+  onDelete,
 }: {
   task: Task
   state: TrackState
   onOpen: () => void
+  onDelete: () => void
 }) {
   const period = periodLabel(task.rrule)
   const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
@@ -121,9 +128,11 @@ function QuotaSummary({
         </div>
       </dl>
 
-      <Button size="sm" className="w-full" onClick={onOpen}>
-        Open
-      </Button>
+      <PopoverFooter
+        onOpen={onOpen}
+        onDelete={onDelete}
+        deleteLabel={`Move "${task.title}" to Trash`}
+      />
     </div>
   )
 }

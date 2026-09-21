@@ -1,11 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
+import { useLongPress } from '@/hooks/useLongPress'
+import { ReminderDetailModal } from '@/components/ReminderDetailModal'
+import { ReminderRowPopover } from '@/components/ReminderRowPopover'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { saveTaskChanges } from '@/lib/save-task-changes'
+import { showToast } from '@/lib/toast'
+import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
 /**
@@ -20,9 +28,18 @@ import type { Task } from '@/types'
  * about elsewhere in this file).
  *
  * DELIBERATELY SMALLER than `/reminders`' `RemindersView`:
- * - No press-and-hold selection, no floating action bar, no multi-select. A
- *   circle completes one reminder; that is the only interaction besides
- *   paging and Show more/less. The full gesture set belongs to the real page.
+ * - No SELECTION mode, no floating action bar, no multi-select, no create
+ *   flow. A circle completes one reminder on a tap; press-and-hold opens that
+ *   ONE reminder's read-only bubble (`ReminderRowPopover`), and the bubble's
+ *   Open is what reaches the `ReminderDetailModal` editor `/reminders` uses —
+ *   two steps, exactly as a quota chip has worked since 2026-09-06. Trent
+ *   asked for the parity on 2026-09-21 ("the same thing that we do for
+ *   quotas... I feel like there are some times I'm going to want notes"),
+ *   and the bubble is the only way to read a note from this panel, since a
+ *   row is one clamped line with no note indicator on it. The editor remains
+ *   the only place this panel can edit or delete a reminder from. That, a
+ *   tap, paging and Show more/less are the whole interaction set; multi-select
+ *   and a floating action bar remain the real page's job.
  * - No leaving animation. `useReminders`' `registerRow`/`rowLeft` pair exists
  *   so a row can hold its place on screen while it collapses (so a fast
  *   double-tap doesn't land on whatever slid up under it) — this panel never
@@ -66,13 +83,91 @@ function formatSlotTime(startTime: string): string {
   return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
 }
 
-export function DashboardRemindersPanel({
+/**
+ * The row's press-and-hold editor: `ReminderDetailModal`, wired to the exact
+ * same writes `RemindersView`'s own Details editor uses for a single
+ * reminder — `saveTaskChanges` (same toast, same Undo), and `useReminders`'
+ * own `completeMany`/`remove` for Considered/delete (same soft-delete-with-
+ * undo everything else on this dashboard goes through). A local hook, not
+ * inline state in `DashboardRemindersPanel`, so the panel's own render stays
+ * short — the same reason `useQuotaMutations` is its own file rather than
+ * inline in `QuotasView`.
+ */
+function useRowEditor({
+  timeSlots,
   onUndo,
   onCompleted,
-  refreshRef,
-  timeSlots,
-  timezone,
+  refresh,
+  completeMany,
+  remove,
 }: {
+  timeSlots: TimeSlot[]
+  onUndo: () => void
+  onCompleted: () => void
+  refresh: () => Promise<void>
+  completeMany: (tasks: Task[]) => Promise<void>
+  remove: (tasks: Task[]) => Promise<void>
+}) {
+  const router = useRouter()
+  const [editing, setEditing] = useState<Task[]>([])
+  const open = useCallback((task: Task) => setEditing([task]), [])
+
+  const saveDetail = useCallback(
+    async (taskId: number, changes: QuickActionPanelChanges) => {
+      try {
+        // A schedule set by hand makes an earlier AI failure moot — the same
+        // rule RemindersView's own saveDetail applies (see its comment there
+        // for the "why"); duplicated here, in a few lines, rather than lifted
+        // out of that file, which this branch is not otherwise touching.
+        const failed = editing.find((t) => t.id === taskId)?.labels.includes('ai-failed')
+        const { description } = await saveTaskChanges(
+          taskId,
+          failed
+            ? { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
+            : changes,
+        )
+        showToast({
+          message: description || 'Reminder updated',
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted()
+        void refresh()
+      } catch (err) {
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Save failed',
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [editing, onUndo, onCompleted, refresh],
+  )
+
+  const modal = (
+    <ReminderDetailModal
+      tasks={editing}
+      open={editing.length > 0}
+      timeSlots={timeSlots}
+      onClose={() => setEditing([])}
+      onSaveAll={saveDetail}
+      // Never reached: this panel always opens the modal with exactly one
+      // reminder (no multi-select — see the module docblock) and never passes
+      // `create`, so the editor's bulk-save and new-reminder paths never
+      // mount. Logged rather than left empty in case that assumption is ever
+      // broken by a future change.
+      onSaveMany={async () => log.error('ui', 'DashboardRemindersPanel: unexpected bulk save')}
+      onCreate={async () => log.error('ui', 'DashboardRemindersPanel: unexpected create')}
+      onConsidered={(tasks) => void completeMany(tasks)}
+      onDelete={(tasks) => void remove(tasks)}
+      onOpenPage={(id) => router.push(`/tasks/${id}`)}
+    />
+  )
+
+  return { open, modal }
+}
+
+interface DashboardRemindersPanelProps {
   onUndo: () => void
   onCompleted: () => void
   /** Registers this panel's refetch with the dashboard's own refresh chain —
@@ -82,13 +177,26 @@ export function DashboardRemindersPanel({
   refreshRef: React.MutableRefObject<(() => void) | null>
   timeSlots: TimeSlot[]
   timezone: string
-}) {
-  const { groups, complete, completeGroup, refresh } = useReminders({
+}
+
+export function DashboardRemindersPanel({
+  onUndo,
+  onCompleted,
+  refreshRef,
+  timeSlots,
+  timezone,
+}: DashboardRemindersPanelProps) {
+  const { groups, complete, completeMany, completeGroup, remove, refresh } = useReminders({
     onUndo,
     onCompleted,
     timeSlots,
     timezone,
   })
+  const editor = useRowEditor({ timeSlots, onUndo, onCompleted, refresh, completeMany, remove })
+  // Which row's read-only bubble is open, if any. One id rather than a flag
+  // per row: only ever one bubble at a time, the same way `TrackPanel` holds
+  // a single `detailId` for its chips.
+  const [peekId, setPeekId] = useState<number | null>(null)
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -173,6 +281,7 @@ export function DashboardRemindersPanel({
         onPrev={() => goTo(index - 1)}
         onNext={() => goTo(index + 1)}
         onConsiderAll={() => void completeGroup(group)}
+        onToggleExpanded={() => setExpanded(!expanded)}
       />
 
       {expanded && (
@@ -203,6 +312,21 @@ export function DashboardRemindersPanel({
               // Rendered, but not on screen until there is a column to spare.
               hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
+              onPeek={() => setPeekId(reminder.id)}
+              peekOpen={peekId === reminder.id}
+              onPeekChange={(next) => setPeekId(next ? reminder.id : null)}
+              onDelete={(task) => {
+                setPeekId(null)
+                void remove([task])
+              }}
+              onOpenEditor={(task) => {
+                // The bubble is done the moment the editor takes over —
+                // leaving it open would stack a popover behind a dialog.
+                setPeekId(null)
+                editor.open(task)
+              }}
+              timeSlots={timeSlots}
+              timezone={timezone}
             />
           ))}
         </ul>
@@ -216,6 +340,8 @@ export function DashboardRemindersPanel({
           onToggle={() => setExpanded(!expanded)}
         />
       )}
+
+      {editor.modal}
     </section>
   )
 }
@@ -238,6 +364,7 @@ function SlotPagerHeader({
   onPrev,
   onNext,
   onConsiderAll,
+  onToggleExpanded,
 }: {
   label: string
   time: string | null
@@ -249,6 +376,8 @@ function SlotPagerHeader({
   onPrev: () => void
   onNext: () => void
   onConsiderAll: () => void
+  /** Tapping the bar between the chevrons opens and shuts the slot. */
+  onToggleExpanded: () => void
 }) {
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
@@ -263,25 +392,42 @@ function SlotPagerHeader({
         <ChevronLeft className="size-4" strokeWidth={2} />
       </button>
 
-      <div className="min-w-0 flex-1">
-        <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-          {label}
-        </span>
-        {time && (
-          <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
-            {' '}
-            &middot; {time}
-          </span>
-        )}
-      </div>
+      {/* The whole bar between the chevrons toggles the slot open and shut.
+          Trent, 2026-09-21: "If you tap anywhere in there that's not on one of
+          the carrots, it'd be nice if that expanded and collapsed the
+          section." The chevrons page between slots and keep their own hit
+          areas; everything between them is one target.
 
-      <span
-        className="text-xs whitespace-nowrap tabular-nums"
-        aria-label={`${considered} of ${total} considered`}
+          It toggles even when no rows are held back, and that is deliberate:
+          a slot under the cap has no "Show more" button at all, so before this
+          there was no way to unclamp its titles or reach "Considered all". */}
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        aria-expanded={expanded}
+        data-slot-header-toggle
+        className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
       >
-        <span className="text-foreground font-medium">{considered}</span>
-        <span className="text-muted-foreground"> of {total}</span>
-      </span>
+        <span className="min-w-0 flex-1">
+          <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
+            {label}
+          </span>
+          {time && (
+            <span className="text-muted-foreground/50 text-xs whitespace-nowrap">
+              {' '}
+              &middot; {time}
+            </span>
+          )}
+        </span>
+
+        <span
+          className="text-xs whitespace-nowrap tabular-nums"
+          aria-label={`${considered} of ${total} considered`}
+        >
+          <span className="text-foreground font-medium">{considered}</span>
+          <span className="text-muted-foreground"> of {total}</span>
+        </span>
+      </button>
 
       {expanded && total > 0 && (
         <button
@@ -309,45 +455,95 @@ function SlotPagerHeader({
   )
 }
 
-/** One reminder: a circle that completes it, and its title. Capped rows clamp
+/**
+ * One reminder: a circle that completes it, and its title. Capped rows clamp
  * their title to one line (the mockup's resting height); an uncapped slot
- * wraps it in full — never ellipsizes — the same as the real Reminders page. */
+ * wraps it in full — never ellipsizes — the same as the real Reminders page.
+ *
+ * Press-and-hold anywhere on the row opens `ReminderDetailModal` for this one
+ * reminder — the same `useLongPress` at the same 400ms `RemindersView`'s own
+ * rows use (see `useReminderRowGestures` there). CRITICAL: the circle is
+ * "complete this reminder" on a plain tap, and a hold must not ALSO complete
+ * it. `ReminderRow`'s marker solves this with `onPointerDown={(e) =>
+ * e.stopPropagation()}` on the circle, so the row's own long-press timer
+ * never starts for a press that began there — the same fix, here, rather
+ * than `didFire()`: this row (unlike that one) has no OTHER click handler for
+ * a trailing click to collide with, so there is nothing for `didFire()` to
+ * guard.
+ */
 function PanelRow({
   reminder,
   clamped,
   hiddenWhenNarrow = false,
   onComplete,
+  onPeek,
+  peekOpen,
+  onPeekChange,
+  onOpenEditor,
+  onDelete,
+  timeSlots,
+  timezone,
 }: {
   reminder: Task
   clamped: boolean
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   onComplete: () => void
+  /** A hold opens the row's own read-only bubble — NOT the editor. Open, in
+   *  there, is what reaches the editor (Trent, 2026-09-21). */
+  onPeek: () => void
+  /** Whether THIS row's bubble is the open one. */
+  peekOpen: boolean
+  onPeekChange: (open: boolean) => void
+  /** The bubble's Open was pressed. */
+  onOpenEditor: (reminder: Task) => void
+  /** The bubble's trash can. Soft delete, with an Undo toast. */
+  onDelete: (reminder: Task) => void
+  timeSlots: TimeSlot[]
+  timezone: string
 }) {
+  const press = useLongPress({ onLongPress: onPeek })
+
   return (
-    <li
-      data-reminder-id={reminder.id}
-      className={cn(
-        'items-start gap-2.5 rounded-xl px-1 py-1.5',
-        hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-      )}
+    <ReminderRowPopover
+      reminder={reminder}
+      timeSlots={timeSlots}
+      timezone={timezone}
+      open={peekOpen}
+      onOpenChange={onPeekChange}
+      onOpen={onOpenEditor}
+      onDelete={onDelete}
     >
-      <button
-        type="button"
-        onClick={onComplete}
-        aria-label={`Mark "${reminder.title}" as considered`}
-        title="Considered"
-        className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
-      />
-      <p
+      <li
+        data-reminder-id={reminder.id}
         className={cn(
-          'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
-          clamped && 'line-clamp-1',
+          'items-start gap-2.5 rounded-xl px-1 py-1.5 select-none',
+          hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         )}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerMove={press.onPointerMove}
+        onPointerLeave={press.onPointerLeave}
+        onPointerCancel={press.onPointerUp}
       >
-        {reminder.title}
-      </p>
-    </li>
+        <button
+          type="button"
+          onClick={onComplete}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={`Mark "${reminder.title}" as considered`}
+          title="Considered"
+          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
+        />
+        <p
+          className={cn(
+            'min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty',
+            clamped && 'line-clamp-1',
+          )}
+        >
+          {reminder.title}
+        </p>
+      </li>
+    </ReminderRowPopover>
   )
 }
 
