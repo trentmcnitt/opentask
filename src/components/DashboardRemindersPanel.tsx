@@ -1,11 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
+import { useLongPress } from '@/hooks/useLongPress'
+import { ReminderDetailModal } from '@/components/ReminderDetailModal'
+import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import { saveTaskChanges } from '@/lib/save-task-changes'
+import { showToast } from '@/lib/toast'
+import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
 /**
@@ -20,9 +27,14 @@ import type { Task } from '@/types'
  * about elsewhere in this file).
  *
  * DELIBERATELY SMALLER than `/reminders`' `RemindersView`:
- * - No press-and-hold selection, no floating action bar, no multi-select. A
- *   circle completes one reminder; that is the only interaction besides
- *   paging and Show more/less. The full gesture set belongs to the real page.
+ * - No SELECTION mode, no floating action bar, no multi-select, no create
+ *   flow. A circle completes one reminder on a tap; press-and-hold now opens
+ *   the same `ReminderDetailModal` editor `/reminders` uses, for that ONE
+ *   reminder (Trent, 2026-09-21: "whenever I do things with tasks it opens a
+ *   modal... that's how I like to work") — never a selection, and the editor
+ *   itself is the only place this panel can edit or delete a reminder from.
+ *   That, a tap, paging and Show more/less are the whole interaction set;
+ *   multi-select and a floating action bar remain the real page's job.
  * - No leaving animation. `useReminders`' `registerRow`/`rowLeft` pair exists
  *   so a row can hold its place on screen while it collapses (so a fast
  *   double-tap doesn't land on whatever slid up under it) — this panel never
@@ -66,13 +78,91 @@ function formatSlotTime(startTime: string): string {
   return parsed.isValid ? parsed.toFormat('h:mm a') : startTime
 }
 
-export function DashboardRemindersPanel({
+/**
+ * The row's press-and-hold editor: `ReminderDetailModal`, wired to the exact
+ * same writes `RemindersView`'s own Details editor uses for a single
+ * reminder — `saveTaskChanges` (same toast, same Undo), and `useReminders`'
+ * own `completeMany`/`remove` for Considered/delete (same soft-delete-with-
+ * undo everything else on this dashboard goes through). A local hook, not
+ * inline state in `DashboardRemindersPanel`, so the panel's own render stays
+ * short — the same reason `useQuotaMutations` is its own file rather than
+ * inline in `QuotasView`.
+ */
+function useRowEditor({
+  timeSlots,
   onUndo,
   onCompleted,
-  refreshRef,
-  timeSlots,
-  timezone,
+  refresh,
+  completeMany,
+  remove,
 }: {
+  timeSlots: TimeSlot[]
+  onUndo: () => void
+  onCompleted: () => void
+  refresh: () => Promise<void>
+  completeMany: (tasks: Task[]) => Promise<void>
+  remove: (tasks: Task[]) => Promise<void>
+}) {
+  const router = useRouter()
+  const [editing, setEditing] = useState<Task[]>([])
+  const open = useCallback((task: Task) => setEditing([task]), [])
+
+  const saveDetail = useCallback(
+    async (taskId: number, changes: QuickActionPanelChanges) => {
+      try {
+        // A schedule set by hand makes an earlier AI failure moot — the same
+        // rule RemindersView's own saveDetail applies (see its comment there
+        // for the "why"); duplicated here, in a few lines, rather than lifted
+        // out of that file, which this branch is not otherwise touching.
+        const failed = editing.find((t) => t.id === taskId)?.labels.includes('ai-failed')
+        const { description } = await saveTaskChanges(
+          taskId,
+          failed
+            ? { ...changes, labels_remove: [...(changes.labels_remove ?? []), 'ai-failed'] }
+            : changes,
+        )
+        showToast({
+          message: description || 'Reminder updated',
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted()
+        void refresh()
+      } catch (err) {
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Save failed',
+          type: 'error',
+        })
+        throw err
+      }
+    },
+    [editing, onUndo, onCompleted, refresh],
+  )
+
+  const modal = (
+    <ReminderDetailModal
+      tasks={editing}
+      open={editing.length > 0}
+      timeSlots={timeSlots}
+      onClose={() => setEditing([])}
+      onSaveAll={saveDetail}
+      // Never reached: this panel always opens the modal with exactly one
+      // reminder (no multi-select — see the module docblock) and never passes
+      // `create`, so the editor's bulk-save and new-reminder paths never
+      // mount. Logged rather than left empty in case that assumption is ever
+      // broken by a future change.
+      onSaveMany={async () => log.error('ui', 'DashboardRemindersPanel: unexpected bulk save')}
+      onCreate={async () => log.error('ui', 'DashboardRemindersPanel: unexpected create')}
+      onConsidered={(tasks) => void completeMany(tasks)}
+      onDelete={(tasks) => void remove(tasks)}
+      onOpenPage={(id) => router.push(`/tasks/${id}`)}
+    />
+  )
+
+  return { open, modal }
+}
+
+interface DashboardRemindersPanelProps {
   onUndo: () => void
   onCompleted: () => void
   /** Registers this panel's refetch with the dashboard's own refresh chain —
@@ -82,13 +172,22 @@ export function DashboardRemindersPanel({
   refreshRef: React.MutableRefObject<(() => void) | null>
   timeSlots: TimeSlot[]
   timezone: string
-}) {
-  const { groups, complete, completeGroup, refresh } = useReminders({
+}
+
+export function DashboardRemindersPanel({
+  onUndo,
+  onCompleted,
+  refreshRef,
+  timeSlots,
+  timezone,
+}: DashboardRemindersPanelProps) {
+  const { groups, complete, completeMany, completeGroup, remove, refresh } = useReminders({
     onUndo,
     onCompleted,
     timeSlots,
     timezone,
   })
+  const editor = useRowEditor({ timeSlots, onUndo, onCompleted, refresh, completeMany, remove })
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -203,6 +302,7 @@ export function DashboardRemindersPanel({
               // Rendered, but not on screen until there is a column to spare.
               hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
               onComplete={() => void complete(reminder)}
+              onOpenDetail={() => editor.open(reminder)}
             />
           ))}
         </ul>
@@ -216,6 +316,8 @@ export function DashboardRemindersPanel({
           onToggle={() => setExpanded(!expanded)}
         />
       )}
+
+      {editor.modal}
     </section>
   )
 }
@@ -309,32 +411,55 @@ function SlotPagerHeader({
   )
 }
 
-/** One reminder: a circle that completes it, and its title. Capped rows clamp
+/**
+ * One reminder: a circle that completes it, and its title. Capped rows clamp
  * their title to one line (the mockup's resting height); an uncapped slot
- * wraps it in full — never ellipsizes — the same as the real Reminders page. */
+ * wraps it in full — never ellipsizes — the same as the real Reminders page.
+ *
+ * Press-and-hold anywhere on the row opens `ReminderDetailModal` for this one
+ * reminder — the same `useLongPress` at the same 400ms `RemindersView`'s own
+ * rows use (see `useReminderRowGestures` there). CRITICAL: the circle is
+ * "complete this reminder" on a plain tap, and a hold must not ALSO complete
+ * it. `ReminderRow`'s marker solves this with `onPointerDown={(e) =>
+ * e.stopPropagation()}` on the circle, so the row's own long-press timer
+ * never starts for a press that began there — the same fix, here, rather
+ * than `didFire()`: this row (unlike that one) has no OTHER click handler for
+ * a trailing click to collide with, so there is nothing for `didFire()` to
+ * guard.
+ */
 function PanelRow({
   reminder,
   clamped,
   hiddenWhenNarrow = false,
   onComplete,
+  onOpenDetail,
 }: {
   reminder: Task
   clamped: boolean
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   onComplete: () => void
+  onOpenDetail: () => void
 }) {
+  const press = useLongPress({ onLongPress: onOpenDetail })
+
   return (
     <li
       data-reminder-id={reminder.id}
       className={cn(
-        'items-start gap-2.5 rounded-xl px-1 py-1.5',
+        'items-start gap-2.5 rounded-xl px-1 py-1.5 select-none',
         hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
       )}
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerMove={press.onPointerMove}
+      onPointerLeave={press.onPointerLeave}
+      onPointerCancel={press.onPointerUp}
     >
       <button
         type="button"
         onClick={onComplete}
+        onPointerDown={(e) => e.stopPropagation()}
         aria-label={`Mark "${reminder.title}" as considered`}
         title="Considered"
         className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors"
