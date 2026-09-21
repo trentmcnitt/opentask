@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
@@ -10,6 +10,7 @@ import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
+import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
@@ -186,7 +187,7 @@ export function DashboardRemindersPanel({
   timeSlots,
   timezone,
 }: DashboardRemindersPanelProps) {
-  const { groups, complete, completeMany, completeGroup, remove, refresh } = useReminders({
+  const { groups, complete, completeMany, completeGroup, putBack, remove, refresh } = useReminders({
     onUndo,
     onCompleted,
     timeSlots,
@@ -197,6 +198,10 @@ export function DashboardRemindersPanel({
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
   // a single `detailId` for its chips.
   const [peekId, setPeekId] = useState<number | null>(null)
+  // Whether this slot's already-considered thoughts are showing. Per-slot, and
+  // reset by paging, because "what did I already do here" is a question about
+  // one slot rather than a mode the panel sits in.
+  const [showConsidered, setShowConsidered] = useState(false)
 
   useEffect(() => {
     refreshRef.current = () => void refresh()
@@ -221,7 +226,8 @@ export function DashboardRemindersPanel({
   // memoize it away as "pure in groups/timezone" and skip recomputing purely
   // because the wall clock moved — see the module docblock's "component state
   // that recomputes... on each render is sufficient" assumption.
-  const natural = naturalSlotIndex(groups, timezone, new Date())
+  const now = new Date()
+  const natural = naturalSlotIndex(groups, timezone, now)
   const overrideIndex = overrideKey ? groups.findIndex((g) => groupKey(g) === overrideKey) : -1
   const index = overrideIndex >= 0 ? overrideIndex : natural
   const group = groups[index]
@@ -231,6 +237,7 @@ export function DashboardRemindersPanel({
   const goTo = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groups.length) return
     setOverrideKey(groupKey(groups[nextIndex]))
+    setShowConsidered(false)
   }
   const setExpanded = (next: boolean) => {
     setExpandedKeys((prev) => {
@@ -284,21 +291,23 @@ export function DashboardRemindersPanel({
         onToggleExpanded={() => setExpanded(!expanded)}
       />
 
-      {expanded && (
-        <div
-          className="bg-muted mx-3 mb-2 h-[3px] overflow-hidden rounded-full"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={group.considered}
-          aria-label={`${group.considered} of ${total} considered in ${label}`}
-        >
-          <div
-            className="bg-foreground/50 h-full rounded-full transition-[width] duration-300 ease-out"
-            style={{ width: `${total > 0 ? Math.min(1, group.considered / total) * 100 : 0}%` }}
-          />
-        </div>
-      )}
+      {/* Replaces the per-slot hairline this panel used to show only while a
+          slot was expanded — which meant a short slot, the common case, showed
+          no progress at all (Trent, 2026-09-21: "I don't see any indication of
+          progress, which is a little disappointing"). The bar is always on
+          screen and covers every slot, so it answers that for the whole day
+          rather than for whichever one happens to be open. */}
+      <ReminderSlotBar
+        groups={groups}
+        currentIndex={index}
+        timezone={timezone}
+        now={now}
+        onJump={(next) => {
+          setOverrideKey(groupKey(groups[next]))
+          setPeekId(null)
+          setShowConsidered(false)
+        }}
+      />
 
       {group.reminders.length === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
@@ -330,6 +339,16 @@ export function DashboardRemindersPanel({
             />
           ))}
         </ul>
+      )}
+
+      {group.considered > 0 && (
+        <ConsideredDisclosure
+          items={group.consideredItems}
+          label={label}
+          shown={showConsidered}
+          onToggle={() => setShowConsidered((v) => !v)}
+          onPutBack={(task) => void putBack(task)}
+        />
       )}
 
       {hiddenWhenNarrow > 0 && (
@@ -588,5 +607,70 @@ function RowCountToggle({
         </>
       )}
     </button>
+  )
+}
+
+/**
+ * What has already been considered in this slot, behind one line.
+ *
+ * Trent, 2026-09-21: "I can't see the items that I considered for that day so
+ * we want to be able to see what's considered... if it's just a button at the
+ * bottom, kind of like we had for Show All." That is exactly what `/reminders`
+ * already does (`ConsideredDisclosure` there), so this is the same idea at
+ * panel scale rather than a second vocabulary for the same thing.
+ *
+ * A row here is checked, dim, and does ONE thing: its circle puts the thought
+ * back. No press-and-hold, no editor — a considered thought is done with, and
+ * the put-back is the way to change your mind about that.
+ */
+function ConsideredDisclosure({
+  items,
+  label,
+  shown,
+  onToggle,
+  onPutBack,
+}: {
+  items: Task[]
+  label: string
+  shown: boolean
+  onToggle: () => void
+  onPutBack: (task: Task) => void
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={shown}
+        data-considered-toggle
+        className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground w-full border-t px-3 py-2 text-center text-xs font-medium transition-colors"
+      >
+        {shown ? 'Hide' : 'Show'} {items.length} considered
+      </button>
+      {shown && (
+        <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
+          {items.map((reminder) => (
+            <li
+              key={reminder.id}
+              data-considered-id={reminder.id}
+              className="flex items-start gap-2.5 rounded-xl px-1 py-1.5"
+            >
+              <button
+                type="button"
+                onClick={() => onPutBack(reminder)}
+                aria-label={`Put back "${reminder.title}"`}
+                title="Put back"
+                className="mt-0.5 flex size-[19px] shrink-0 items-center justify-center rounded-full bg-green-600 text-white transition-colors hover:bg-green-600/50"
+              >
+                <Check className="size-3" strokeWidth={3} />
+              </button>
+              <p className="text-muted-foreground min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
+                {reminder.title}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }
