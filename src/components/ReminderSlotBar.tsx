@@ -96,11 +96,20 @@ export function ReminderSlotBar({
   now: Date
   onJump: (index: number) => void
 }) {
-  if (groups.length < 2) return null
+  // AN EMPTY SECTION GETS NO SEGMENT. Trent, 2026-09-21: "for the 'anytime' if
+  // a section does not have anything in it, it doesn't need a segment." It
+  // came up for the un-slotted bucket, which is empty most days, but the rule
+  // is general: a segment is a claim that there is something there, and a
+  // slot holding nothing has nothing to report, nothing to finish and nothing
+  // worth paging to. The original index rides along so a tap still lands on
+  // the right slot after the empty ones are dropped.
+  const shown = groups
+    .map((group, index) => ({ group, index, total: group.reminders.length + group.considered }))
+    .filter((s) => s.total > 0)
 
-  // With nothing anywhere, proportion is meaningless — share equally instead
-  // of letting every segment collapse to its minimum.
-  const anyContent = groups.some((g) => g.reminders.length + g.considered > 0)
+  // One segment is not a bar — it would say only "everything is here", which
+  // the header already says better.
+  if (shown.length < 2) return null
 
   return (
     <div
@@ -108,11 +117,10 @@ export function ReminderSlotBar({
       role="group"
       aria-label="Today's reminder slots"
     >
-      {groups.map((group, i) => {
+      {shown.map(({ group, index: i, total }) => {
         const started = hasStarted(group, timezone, now)
         const state = slotState(group, started)
-        const total = group.reminders.length + group.considered
-        const fraction = total > 0 ? group.considered / total : 0
+        const fraction = group.considered / total
         const label = group.slot?.label ?? 'Anytime'
         const current = i === currentIndex
 
@@ -127,20 +135,16 @@ export function ReminderSlotBar({
             // The name carries what the colour cannot: which slot, and how far
             // through it is. A bar of five unlabelled segments is meaningless
             // to a screen reader otherwise.
-            aria-label={
-              total === 0
-                ? `${label}, nothing today`
-                : `${label}, ${group.considered} of ${total} considered${
-                    state === 'upcoming' ? ', not started yet' : ''
-                  }`
-            }
-            title={total === 0 ? label : `${label} — ${group.considered}/${total}`}
+            aria-label={`${label}, ${group.considered} of ${total} considered${
+              state === 'upcoming' ? ', not started yet' : ''
+            }`}
+            title={`${label} — ${group.considered}/${total}`}
             className="group flex items-center py-1"
             style={{
               // Weight by size, but never below a thumb. `flexBasis: 0` makes
-              // grow the only thing deciding width; an empty day (every total
-              // zero) falls back to equal shares rather than collapsing.
-              flexGrow: anyContent ? total : 1,
+              // grow the only thing deciding width, and every segment here
+              // holds at least one thought, so the weight is never zero.
+              flexGrow: total,
               flexBasis: 0,
               minWidth: MIN_SEGMENT_PX,
             }}
