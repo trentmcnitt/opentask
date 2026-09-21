@@ -456,24 +456,29 @@ function SlotPagerHeader({
           aria-expanded={showConsidered}
           data-considered-toggle
           aria-label={`${considered} of ${total} considered — show what was considered`}
-          className="hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors"
+          className={cn(
+            'hover:bg-foreground/5 flex shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            // THE HOVER BOX, HELD OPEN. Trent, 2026-09-21: "when you highlight
+            // it there's a little box around the text. When the considered
+            // stuff is open there should still be a gray box around the X of Y
+            // text. That'll be a good indication of it being open." Weight
+            // alone was too quiet to carry the state by itself; this reuses
+            // the affordance the pointer already reveals rather than adding a
+            // new one, so nothing has to be learned.
+            showConsidered && 'bg-foreground/5',
+          )}
         >
-          {/* WEIGHT IS THE STATE, and it is the only thing that changes.
-              Trent, 2026-09-21, rejecting both a chevron and a colour: "I
-              don't like having the caret... maybe we just make it bold and
-              then we can get rid of the bold one. The 1 doesn't need to be
-              bolded normally." So the count reads as plain text while the
-              considered list is hidden, and goes bold while it is showing —
-              an affordance made of the text itself, with nothing bolted on
-              beside it. The number was permanently semibold before, which
-              spent the one signal this now uses. */}
+          {/* ONE COLOUR ACROSS THE WHOLE COUNT. The considered number sat a
+              shade darker than "of N" for no reason anyone could name — Trent,
+              2026-09-21: "Why is 1 darker than the 19?" Nothing in the count
+              outranks the rest of it, and its state is already told twice
+              over, by weight and by the box. */}
           <span
-            className={cn(showConsidered ? 'text-foreground font-semibold' : 'text-foreground')}
+            className={cn(
+              showConsidered ? 'text-foreground font-semibold' : 'text-muted-foreground',
+            )}
           >
-            {considered}
-          </span>
-          <span className={cn('text-muted-foreground', showConsidered && 'font-semibold')}>
-            of {total}
+            {considered} of {total}
           </span>
         </button>
       ) : (
@@ -481,8 +486,9 @@ function SlotPagerHeader({
           className="px-1.5 text-xs whitespace-nowrap tabular-nums"
           aria-label={`${considered} of ${total} considered`}
         >
-          <span className="text-foreground">{considered}</span>
-          <span className="text-muted-foreground"> of {total}</span>
+          <span className="text-muted-foreground">
+            {considered} of {total}
+          </span>
         </span>
       )}
 
