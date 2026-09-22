@@ -161,8 +161,13 @@ private struct RemindersListView: View {
             // The candidates carry no Spacer — a flexible child would report
             // "fits" at every height and defeat the measurement — so the card
             // is pinned to the top here instead.
+            //
+            // No `.widgetURL` here (removed 2026-09-22, the misclick fix):
+            // systemMedium/Large used to make the WHOLE card one tap target,
+            // so a near-miss on a row's check-off circle deep-linked into the
+            // app instead of doing nothing. Now only the header (below) and
+            // each row's `Link` are tap targets — see `header`.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .widgetURL(WidgetLink.reminders)
         }
     }
 
@@ -199,16 +204,34 @@ private struct RemindersListView: View {
         }
     }
 
+    /// The header IS the card's tap target now that the whole-card link is
+    /// gone (see `RemindersListView.body`). Only the title/count block is a
+    /// `Link` — the `ChevronPager` stays a sibling outside it, because a
+    /// `Button(intent:)` nested inside a `Link` is a WidgetKit combination
+    /// this repo has no way to verify without a device. `.foregroundStyle` on
+    /// the title is explicit: `Link` tints an unstyled label with the accent
+    /// color, same reason `ReminderRow`'s title overrides it below.
+    ///
+    /// The tap target is sized to the text, not stretched to the 40pt floor
+    /// `ChevronButton` uses elsewhere — forcing a frame here would fight the
+    /// `.firstTextBaseline` alignment this header is tuned around, and on
+    /// systemMedium there is no headroom to spend on it (`WidgetTheme.
+    /// compactRowSpacing`'s comment). It reads as tappable because it is the
+    /// same headline text a user already reads as "the current view".
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.group?.label ?? "Reminders")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(countLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            Link(destination: WidgetLink.reminders) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.group?.label ?? "Reminders")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             ChevronPager(

@@ -53,9 +53,12 @@ struct OpenTaskMacApp: App {
 
         switch url.host {
         case "task":
+            // `&highlight=1`, not `navigateToTask(id)` — see the iOS
+            // counterpart's identical comment. `MacAppDelegate`'s notification
+            // handler still calls `navigateToTask` directly for the editor.
             let id = url.pathComponents.last.flatMap(Int.init)
             if let id {
-                WebViewManager.shared.navigateToTask(id)
+                WebViewManager.shared.navigate(path: "/?task=\(id)&highlight=1")
             } else {
                 WebViewManager.shared.navigate(path: "/")
             }
@@ -69,6 +72,8 @@ struct OpenTaskMacApp: App {
             }
         case "reminders":
             WebViewManager.shared.navigate(path: "/reminders")
+        case "quotas":
+            WebViewManager.shared.navigate(path: "/quotas")
         default:
             WebViewManager.shared.navigate(path: "/")
         }

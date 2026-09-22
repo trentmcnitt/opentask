@@ -99,7 +99,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified', is_demo: boolean }`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' | 'slot', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and the default a new/invalid value coerces to (`coerceGrouping` in `PreferencesProvider.tsx`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot".
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 

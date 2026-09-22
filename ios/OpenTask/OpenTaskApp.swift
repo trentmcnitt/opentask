@@ -62,9 +62,18 @@ struct OpenTaskApp: App {
 
         switch url.host {
         case "task":
+            // `&highlight=1`, not `navigateToTask(id)`: a widget tap means
+            // "bring it into view", the same thing a reminder tap means (see
+            // `reminder` below) — not "open the editor". A NOTIFICATION tap on
+            // a task (`AppDelegate.handleNotificationAction`) is the one place
+            // that still wants the editor, and it calls `navigateToTask`
+            // directly, bypassing this switch entirely — so the flag is the
+            // only thing that tells `DashboardClient`'s identical `/?task=`
+            // apart from the two callers. See `DashboardClient.tsx`'s
+            // `?task=` effect for the other half of this.
             let id = url.pathComponents.last.flatMap(Int.init)
             if let id {
-                WebViewManager.shared.navigateToTask(id)
+                WebViewManager.shared.navigate(path: "/?task=\(id)&highlight=1")
             } else {
                 WebViewManager.shared.navigate(path: "/")
             }
@@ -81,6 +90,8 @@ struct OpenTaskApp: App {
             }
         case "reminders":
             WebViewManager.shared.navigate(path: "/reminders")
+        case "quotas":
+            WebViewManager.shared.navigate(path: "/quotas")
         default:
             WebViewManager.shared.navigate(path: "/")
         }
