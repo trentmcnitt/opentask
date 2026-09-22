@@ -224,6 +224,11 @@ test.describe('Track', () => {
       // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
+      // Met quotas are put away by default (Trent, 2026-09-22): the chip goes
+      // with the tap that meets it, and "Show N met" brings it back in place.
+      await expect(chip).toHaveCount(0)
+      await panel.locator('[data-track-met-toggle]').click()
+      await expect(panel.locator('[data-track-met-toggle]')).toHaveText('Hide met')
       await expect(chipCount).toHaveText('2/2·wk')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('1/2·wk')
@@ -301,9 +306,13 @@ test.describe('Track', () => {
       await expect(count).toContainText('0 / 2')
       await expect(minus).toBeDisabled()
 
-      // Reaching the target is "met": a state, not an exit — the line stays.
+      // Reaching the target is "met": a state, not an exit. The row is hidden
+      // with the rest of the met ones (the reload above put them away again),
+      // and still there — with its count — when they are shown.
       await plus.click()
       await plus.click()
+      await expect(row).toHaveCount(0)
+      await panel.locator('[data-track-met-toggle]').click()
       await expect(count).toContainText('2 / 2')
       await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
       await expect(row).toBeVisible()
@@ -548,6 +557,60 @@ test.describe('Track', () => {
     await expect(panel.locator(`[data-track-row="${devId}"]`)).toBeVisible()
     await expect(panel.locator('[data-track-cluster="dev"]')).toBeVisible()
     await closeTrack(page)
+  })
+
+  test('met quotas are hidden, a met cluster goes whole, and "Show N met" brings them back', async ({
+    authenticatedPage: page,
+  }) => {
+    // A run-unique label, so this cluster holds exactly these two.
+    const label = `zz-hide-${Date.now()}`
+    const done = await createTask(page, {
+      title: 'Hide probe done',
+      progress_target: 1,
+      is_tracked: true,
+      rrule: 'FREQ=MONTHLY',
+      labels: [label],
+      create_label: true,
+    })
+    const open = await createTask(page, {
+      title: 'Hide probe open',
+      progress_target: 1,
+      is_tracked: true,
+      rrule: 'FREQ=MONTHLY',
+      labels: [label],
+    })
+    expect(
+      (await page.request.post(`/api/tasks/${done}/progress`, { data: { delta: 1 } })).ok(),
+    ).toBeTruthy()
+
+    await page.goto('/')
+    await closeTrack(page)
+    const panel = page.getByRole('region', { name: 'Track' })
+    const cluster = panel.locator(`[data-track-cluster="${label}"]`)
+    const doneChip = panel.locator(`[data-track-chip="${done}"]`)
+    const openChip = panel.locator(`[data-track-chip="${open}"]`)
+    const toggle = panel.locator('[data-track-met-toggle]')
+
+    // One met, one not: the cluster stays, holding only the unmet one.
+    await expect(openChip).toBeVisible()
+    await expect(cluster).toBeVisible()
+    await expect(doneChip).toHaveCount(0)
+    await expect(toggle).toHaveText(/^Show \d+ met$/)
+
+    // Meeting the last one: its chip goes with the tap, and the cluster's
+    // title follows once the refetch says the whole cluster is met.
+    await openChip.click()
+    await expect(openChip).toHaveCount(0)
+    await expect(cluster).toHaveCount(0)
+
+    // Shown again, both are back under their title, in title order.
+    await toggle.click()
+    await expect(toggle).toHaveText('Hide met')
+    await expect(cluster).toBeVisible()
+    await expect(doneChip).toBeVisible()
+    await expect(openChip).toBeVisible()
+    await toggle.click()
+    await expect(cluster).toHaveCount(0)
   })
 
   test('an ordinary task is a row in the day, not a line in the panel', async ({

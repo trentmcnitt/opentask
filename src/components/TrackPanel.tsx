@@ -15,6 +15,7 @@ import {
   type TrackStreamItem,
 } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
+import { useFoldState } from '@/components/FoldStateProvider'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
@@ -61,6 +62,23 @@ import type { LabelColor, Task } from '@/types'
  * - Order is by label then title, and never changes on a tap — the widget's
  *   "order jumps under your finger" complaint applied verbatim here.
  * - "Met" is a state, not an exit: green check, count keeps going (3/2).
+ *
+ * MET QUOTAS ARE HIDDEN BY DEFAULT (Trent, 2026-09-22: "alphabetical, hide the
+ * complete ones", after trying two ways of sorting by how many are left — live
+ * was "too jumpy", and an order re-decided on every load was no better). A
+ * finished quota is not something to look at until its period rolls over, and
+ * with 22 of them the met ones were most of what made the panel hard to scan.
+ *
+ * - A chip hides ITSELF the moment its own count reaches the target, from the
+ *   optimistic count — so it goes with the tap, the way a done task leaves a
+ *   list, not a sync round trip later. Its toast's Undo brings it back.
+ * - A label cluster whose every quota is met hides whole, title included,
+ *   rather than leaving a heading over nothing. That uses the server's counts,
+ *   so the title follows the last chip out a beat later.
+ * - "Show N met" at the card's foot brings them all back in place; "Hide met"
+ *   puts them away. The choice lives in the fold store (`FoldStateProvider`):
+ *   it survives navigating away and back, and a reload hides them again.
+ * - Nothing else moves. The order is still label then title.
  *
  * GROUPED BY LABEL, AS ONE STREAM (Trent, 2026-09-09, picking variation G of
  * the `track-by-label` mockup, with D's stripe). It used to be one card per
@@ -295,19 +313,20 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
-  const items = trackStream(quotas, labelConfig)
 
   // What each cluster's shut header says. Keyed the same way the DOM is, so a
   // heading and its summary can never be looking at different groups.
-  const summaries = new Map(
-    groupByLabel(quotas).map((g) => [clusterKey(g.label), quotaGroupSummary(g.tasks)]),
-  )
+  const summaries = clusterSummaries(quotas)
 
-  const stream = withClusters(items)
+  const showMet = useShowMet()
+  const stream = withClusters(trackStream(quotas, labelConfig)).filter(
+    ({ cluster }) => showMet.shown || !isAllMet(summaries.get(cluster)),
+  )
 
   if (quotas.length === 0) return null
 
-  const shortfall = quotaShortfall(quotaGroupSummary(quotas))
+  const overall = quotaGroupSummary(quotas)
+  const shortfall = quotaShortfall(overall)
 
   return (
     <section aria-label="Track" data-track-panel className="mb-6">
@@ -394,6 +413,7 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
                 <TrackRow
                   key={item.task.id}
                   task={item.task}
+                  hideMet={!showMet.shown}
                   foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
                 />
               ),
@@ -428,6 +448,7 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
                 <TrackChip
                   key={item.task.id}
                   task={item.task}
+                  hideMet={!showMet.shown}
                   color={item.color}
                   foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
                   detailOpen={detail.openId === item.task.id}
@@ -441,25 +462,90 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
           </ul>
         )}
 
-        {/* The phone's only route between chips and rows. See the block comment
-            above: the desktop header button that does this is `sm:hidden`'s
-            opposite number, and without this one a `track_expanded` pinned on a
-            desktop was unreachable on a phone. Right-aligned and muted — it is
-            a way out of a view, not a thing to press on the way in. */}
-        <div className="mt-1 flex justify-end sm:hidden">
-          <button
-            type="button"
-            data-track-view-toggle
-            onClick={() => setOpen(!open)}
-            className="text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors"
-          >
-            {open ? 'Show as chips' : 'Show as rows'}
-          </button>
-        </div>
+        <TrackCardFoot
+          metCount={overall.met}
+          nothingShown={stream.length === 0}
+          showMet={showMet}
+          open={open}
+          onToggleView={() => setOpen(!open)}
+        />
       </div>
 
       {detail.modal}
     </section>
+  )
+}
+
+function clusterSummaries(quotas: Task[]) {
+  return new Map(groupByLabel(quotas).map((g) => [clusterKey(g.label), quotaGroupSummary(g.tasks)]))
+}
+
+const SHOW_MET_KEY = 'track-show-met'
+
+/** Whether met quotas are on show — hidden until asked for. See the block comment above. */
+function useShowMet(): { shown: boolean; toggle: () => void } {
+  const { choices, toggleChoice } = useFoldState()
+  return {
+    shown: choices.get(SHOW_MET_KEY) ?? false,
+    toggle: () => toggleChoice(SHOW_MET_KEY, false),
+  }
+}
+
+function isAllMet(summary: { count: number; met: number } | undefined): boolean {
+  return summary !== undefined && quotaShortfall(summary).allMet
+}
+
+/**
+ * The card's foot: the met toggle, and the phone's chips/rows switch.
+ *
+ * "Show N met" only exists while something is met — no empty chrome. When
+ * every quota is met and hidden, it is the only thing in the card, so it says
+ * so rather than leaving a blank box with a link in the corner.
+ *
+ * The chips/rows switch is the phone's only route between the two views: the
+ * desktop header button that does this is `sm:hidden`'s opposite number, and
+ * without this one a `track_expanded` pinned on a desktop was unreachable on a
+ * phone. Right-aligned and muted, both of them — ways out of a view, not
+ * things to press on the way in.
+ */
+function TrackCardFoot({
+  metCount,
+  nothingShown,
+  showMet,
+  open,
+  onToggleView,
+}: {
+  metCount: number
+  /** Every quota is met and hidden, so this foot is all the card holds. */
+  nothingShown: boolean
+  showMet: { shown: boolean; toggle: () => void }
+  open: boolean
+  onToggleView: () => void
+}) {
+  const link =
+    'text-muted-foreground hover:text-foreground px-2 py-1 text-[11px] font-medium transition-colors'
+  return (
+    <div className="mt-1 flex items-center justify-end gap-1">
+      {nothingShown && (
+        <span className="mr-auto flex items-center gap-1 px-2 py-1 text-xs text-green-700 dark:text-green-400">
+          <Check className="size-3" strokeWidth={3} aria-hidden="true" />
+          All met
+        </span>
+      )}
+      {metCount > 0 && (
+        <button type="button" data-track-met-toggle onClick={showMet.toggle} className={link}>
+          {showMet.shown ? 'Hide met' : `Show ${metCount} met`}
+        </button>
+      )}
+      <button
+        type="button"
+        data-track-view-toggle
+        onClick={onToggleView}
+        className={cn(link, 'sm:hidden')}
+      >
+        {open ? 'Show as chips' : 'Show as rows'}
+      </button>
+    </div>
   )
 }
 
@@ -615,8 +701,11 @@ function TrackChip({
   onCloseDetail,
   onEdit,
   onDeleteQuota,
+  hideMet,
 }: {
   task: Task
+  /** Met quotas are put away — see "MET QUOTAS ARE HIDDEN" above. */
+  hideMet: boolean
   /** The cluster's colour; null paints the neutral stripe. */
   color: LabelColor | null
   /** Display classes from the cluster's fold — see `FOLD_BODY_BLOCK`. */
@@ -633,6 +722,10 @@ function TrackChip({
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
   const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
   const suffix = period ? periodSuffix(period) : null
+
+  // After every hook, so hiding and showing never changes the hook order. The
+  // component stays mounted, which keeps its log queue alive for the toast's Undo.
+  if (hideMet && state.met) return null
 
   return (
     <li className={cn('max-w-full', foldClassName)}>
@@ -734,8 +827,18 @@ function TrackChip({
   )
 }
 
-function TrackRow({ task, foldClassName }: { task: Task; foldClassName: string }) {
+function TrackRow({
+  task,
+  foldClassName,
+  hideMet,
+}: {
+  task: Task
+  foldClassName: string
+  hideMet: boolean
+}) {
   const { state, period, log } = useTrackProgress(task)
+  // As `TrackChip`: after the hook, and the row stays mounted for the Undo.
+  if (hideMet && state.met) return null
 
   return (
     <li
