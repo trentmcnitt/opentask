@@ -130,8 +130,9 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
 /// The server also sends a silent badge-update push, but it may not arrive
 /// reliably when the app is suspended (iOS throttles silent pushes). Updating
 /// locally ensures the badge reflects the action immediately.
-/// Only available on iOS — watchOS does not support setBadgeCount.
-#if os(iOS)
+/// iOS badges the app icon, macOS badges the Dock tile — same call, same
+/// meaning. watchOS has no app icon badge, so there it is a no-op.
+#if os(iOS) || os(macOS)
 func updateBadge(_ count: Int) {
     UNUserNotificationCenter.current().setBadgeCount(max(0, count))
 }
