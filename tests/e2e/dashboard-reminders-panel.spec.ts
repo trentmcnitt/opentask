@@ -12,8 +12,15 @@ import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
-/** The seeded test user's timezone — slot assignment is done in local time. */
-const TEST_TZ = 'America/Chicago'
+/**
+ * The seeded test user's timezone — slot assignment is done in local time.
+ * Must track `globalSetup.ts`'s `E2E_TZ` override (default America/Chicago):
+ * this constant and the seeded user's actual DB timezone have to agree, or
+ * "now" here and "now" as the app computes it diverge. Overriding both lets a
+ * specific point in the local day (just after midnight, just after the last
+ * slot) be reproduced without waiting for real Chicago time to reach it.
+ */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
 /** Today at HH:MM in the user's timezone, as a UTC ISO string. */
 function todayAt(hour: number, minute = 0): string {
@@ -517,8 +524,15 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       await expect(header).toHaveAttribute('aria-expanded', 'false')
       await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(9)
 
-      // The chevrons keep their own job: paging, not toggling.
-      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
+      // The chevrons keep their own job: paging, not toggling. "Next" rather
+      // than "Previous": `natural` is an index into `slots` (real slots
+      // only), and `groups` always has one more entry than that — the
+      // trailing "Anytime" bucket (see `groupBySlot`) — so Next is always
+      // enabled from the natural slot. Previous is not: before the first
+      // slot has started, `naturalSlotIndex` falls back to slot 0 (see its
+      // own docs), where Previous is disabled and a click on it would just
+      // sit waiting for an element that never becomes clickable.
+      await panel(page).getByRole('button', { name: 'Next time slot' }).click()
       await expect(panel(page)).not.toHaveAttribute('data-reminders-slot', String(natural.id))
     } finally {
       await deleteTasks(page, ids)
@@ -622,8 +636,18 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       expect(await segments.count()).toBeGreaterThanOrEqual(2)
       const currentSeg = bar.locator(`[data-slot-segment="${natural.id}"]`)
       await expect(currentSeg).toHaveAttribute('aria-current', 'true')
-      // The current slot has started and still has two waiting.
-      await expect(currentSeg).toHaveAttribute('data-slot-state', 'behind')
+      // The natural slot has two waiting, so it reads 'behind' once its own
+      // time has come — but `naturalSlotIndex` falls back to the FIRST slot
+      // when nothing has started yet (see its own docs), and before that
+      // slot's start time it genuinely has NOT started, which the bar must
+      // read as 'upcoming' (Trent's rule: nothing wears colour before its
+      // time). Mirrors `ReminderSlotBar.hasStarted`.
+      const localNow = DateTime.now().setZone(TEST_TZ)
+      const naturalStarted = parseHHMM(natural.start_time) <= localNow.hour * 60 + localNow.minute
+      await expect(currentSeg).toHaveAttribute(
+        'data-slot-state',
+        naturalStarted ? 'behind' : 'upcoming',
+      )
 
       // A slot whose time has not come wears no colour — Trent's rule. When
       // the run is late enough that the companion had to be an earlier slot,

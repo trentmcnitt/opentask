@@ -18,8 +18,15 @@ import { test, expect } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
-/** The seeded test user's timezone — slot assignment is done in local time. */
-const TEST_TZ = 'America/Chicago'
+/**
+ * The seeded test user's timezone — slot assignment is done in local time.
+ * Must track `globalSetup.ts`'s `E2E_TZ` override (default America/Chicago):
+ * this constant and the seeded user's actual DB timezone have to agree, or
+ * "now" here and "now" as the app computes it diverge. Overriding both lets a
+ * specific point in the local day (just after midnight, just after the last
+ * slot) be reproduced without waiting for real Chicago time to reach it.
+ */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
 /** Today at HH:MM in the user's timezone, as a UTC ISO string. */
 function todayAt(hour: number, minute = 0): string {
@@ -28,6 +35,40 @@ function todayAt(hour: number, minute = 0): string {
     .set({ hour, minute, second: 0, millisecond: 0 })
     .toUTC()
     .toISO() as string
+}
+
+/**
+ * A due time guaranteed to land in an already-started slot — or in the
+ * always-started "Anytime" bucket, if no slot has opened yet — used whenever
+ * a test's point is "this is in a slot whose time has come" and does not care
+ * which slot that is. A few minutes before "now" usually satisfies this: slot
+ * assignment (`assignSlot`) picks the latest slot boundary at or before a
+ * reminder's time of day, so whichever slot (or Anytime) a moment slightly
+ * before now falls into has, by that same rule, already started relative to
+ * now.
+ *
+ * USUALLY — not always: slot assignment reads only the time-of-day, with no
+ * concept of "yesterday". In the first few minutes after local midnight,
+ * `now.minus(minutesAgo)` wraps to ~23:5x *the previous calendar day*, which
+ * assignment reads as 23:5x TODAY and slots into Evening (20:30) — a slot
+ * that, at 00:0x, has very much not started. Guard it the same way this
+ * file's very first cut at this problem did (see git blame): if subtracting
+ * minutes crossed the local day boundary, fall back to a minute after local
+ * midnight instead, which precedes every real slot's start and so always
+ * lands in Anytime.
+ *
+ * Explicitly zoned in `TEST_TZ`. A bare `DateTime.now()` tracks the test
+ * PROCESS's own default zone (`TZ`, or the machine's), not the seeded user's
+ * — and the two can diverge (CI runs in UTC while the seeded user is
+ * America/Chicago by default), which silently breaks "started" slot
+ * assumptions built from it. This bit two tests in this file before being
+ * pulled out here — see `TEST_TZ`'s own docs for why they have to agree.
+ */
+function inStartedSlot(minutesAgo = 5): string {
+  const now = DateTime.now().setZone(TEST_TZ)
+  const passed = now.minus({ minutes: minutesAgo })
+  const safe = passed.hasSame(now, 'day') ? passed : now.startOf('day').plus({ minutes: 1 })
+  return safe.toUTC().toISO() as string
 }
 
 async function createReminder(page: Page, body: Record<string, unknown>): Promise<number> {
@@ -158,9 +199,19 @@ test.describe('Reminders surface', () => {
 
       // Priority is prominence: the higher-priority thought sits first inside
       // its slot. Nothing else about it shouts.
+      //
+      // Scoped to the Early morning card itself, not the page's first row
+      // overall: groups render started-slots-then-later-slots (see
+      // `summarizeReminders`), and before 7 AM local no real slot has
+      // started, so the always-started "Anytime" card — holding the
+      // unrelated "A thought with no hour" — would be first on the page
+      // instead. The ordering claim this assertion makes is about priority
+      // WITHIN a slot, which this scoping tests regardless of the hour.
       await openAllSlots(page)
-      const rows = page.locator('li[data-reminder-id]')
-      await expect(rows.first()).toContainText('Morning supplements')
+      const earlyMorning = page.locator('[data-slot-group="Early morning"]')
+      await expect(earlyMorning.locator('li[data-reminder-id]').first()).toContainText(
+        'Morning supplements',
+      )
 
       // A reminder row is a circle and a sentence — no snooze affordance, no
       // due chip, nothing that treats it as an obligation.
@@ -189,11 +240,15 @@ test.describe('Reminders surface', () => {
     await expect(counts).toBeVisible()
     const countsBefore = (await counts.textContent()) ?? ''
 
-    // Due earlier today: ordinary tasks with this date would be overdue and
-    // counted. A reminder never is — that is the §6 carve-out.
+    // Due a few minutes ago: ordinary tasks with this date would be overdue
+    // and counted. A reminder never is — that is the §6 carve-out. Both share
+    // one computed moment (rather than each calling `inStartedSlot()`) so
+    // they land in the very same slot regardless of a minute rolling over, or
+    // a slot boundary being crossed, between the two calls.
+    const dueAt = inStartedSlot()
     const ids = [
-      await createReminder(page, { title: 'Breathe before replying', due_at: todayAt(7) }),
-      await createReminder(page, { title: 'Stand up and stretch', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'Breathe before replying', due_at: dueAt }),
+      await createReminder(page, { title: 'Stand up and stretch', due_at: dueAt }),
     ]
 
     try {
@@ -360,9 +415,12 @@ test.describe('Reminders surface', () => {
     // into the gap. Measured on dev at the time: one double-click, two
     // reminders considered. The row now holds its place, struck through and
     // inert, until its collapse animation ends.
+    // One shared moment, not two `inStartedSlot()` calls, so both land in the
+    // same slot even if a minute (or a slot boundary) ticks over between them.
+    const dueAt = inStartedSlot()
     const ids = [
-      await createReminder(page, { title: 'One of a close pair', due_at: todayAt(7) }),
-      await createReminder(page, { title: 'The other of the pair', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'One of a close pair', due_at: dueAt }),
+      await createReminder(page, { title: 'The other of the pair', due_at: dueAt }),
     ]
     const completions = async (id: number) =>
       (await (await page.request.get(`/api/tasks/${id}`)).json()).data.completion_count
@@ -446,13 +504,10 @@ test.describe('Reminders surface', () => {
     // "Considered all so far" takes every started slot, folded ones included —
     // and a folded slot renders no rows, so nothing in it can report a collapse
     // finishing. Those ids have to leave at once instead of holding the screen.
-    const passed = DateTime.now().minus({ hours: 1 })
-    const soFar = passed.hasSame(DateTime.now(), 'day')
-      ? passed
-      : DateTime.now().startOf('day').plus({ minutes: 1 })
+    const soFar = inStartedSlot()
     const ids: number[] = [
-      await createReminder(page, { title: 'Folded thought one', due_at: soFar.toUTC().toISO() }),
-      await createReminder(page, { title: 'Folded thought two', due_at: soFar.toUTC().toISO() }),
+      await createReminder(page, { title: 'Folded thought one', due_at: soFar }),
+      await createReminder(page, { title: 'Folded thought two', due_at: soFar }),
     ]
     try {
       await openReminders(page)
@@ -482,7 +537,7 @@ test.describe('Reminders surface', () => {
       ids.push(
         await createReminder(page, {
           title: 'A thought after the sweep',
-          due_at: soFar.toUTC().toISO(),
+          due_at: soFar,
         }),
       )
       await expect(page.locator('[data-reminders-headline]')).toContainText('1 waiting so far', {
@@ -590,13 +645,10 @@ test.describe('Reminders surface', () => {
   }) => {
     // Two reminders whose time has already passed today — in a started slot
     // (or Anytime, before the first slot), so they count "so far".
-    const passed = DateTime.now().minus({ hours: 1 })
-    const soFar = passed.hasSame(DateTime.now(), 'day')
-      ? passed
-      : DateTime.now().startOf('day').plus({ minutes: 1 })
+    const soFar = inStartedSlot()
     const ids = [
-      await createReminder(page, { title: 'Earlier thought one', due_at: soFar.toUTC().toISO() }),
-      await createReminder(page, { title: 'Earlier thought two', due_at: soFar.toUTC().toISO() }),
+      await createReminder(page, { title: 'Earlier thought one', due_at: soFar }),
+      await createReminder(page, { title: 'Earlier thought two', due_at: soFar }),
     ]
 
     try {
@@ -726,9 +778,11 @@ test.describe('Reminders top bar', () => {
     authenticatedPage: page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
+    // In a started slot (see `inStartedSlot`) — the "Reminder counts" pill
+    // this test checks only appears once something counts toward "so far".
     const id = await createReminder(page, {
       title: 'A thought for the top bar',
-      due_at: todayAt(7),
+      due_at: inStartedSlot(),
     })
     try {
       await openReminders(page)
