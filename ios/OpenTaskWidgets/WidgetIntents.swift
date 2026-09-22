@@ -23,11 +23,44 @@ import WidgetKit
 /// Reload all three widget kinds. They read overlapping data — a reminder is a
 /// task row server-side, and Tasks and Track are two slices of one payload — so
 /// they are always refreshed together.
+///
+/// `activeKind`, when given, is issued FIRST (2026-09-22, the macOS lag fix).
+/// On macOS, `chronod` (WidgetKit's reload daemon) runs every timeline reload
+/// for a given extension bundle through ONE serial queue — confirmed from
+/// `/usr/bin/log`: "Would pop task, but all extensions are busy, namely
+/// [io.mcnitt.opentask.mac.widgets]" logged for every kind but the one
+/// currently executing. Budget-free (per Apple's docs and confirmed in the
+/// same log: "overridden for budget exempt reason: free") does not mean
+/// concurrent — the three kinds still run one at a time.
+///
+/// Measured on two independent, isolated `+1` taps (`IncrementProgressIntent`,
+/// pre-fix code): the PRE-network reload of the tapped kind never got its own
+/// queue slot at all — chronod only ever logged a `task submitted` for it
+/// AFTER `perform()` had already returned, i.e. after the post-network reload
+/// had already superseded it. So on macOS the §8 "optimistic repaint before
+/// the network call" appears structurally unavailable for the kind that owns
+/// the button, regardless of ordering — chronod seems to hold an in-flight
+/// intent's own reload request until the intent completes. What ordering DOES
+/// fix is round 2: with the unordered call, the acting kind's corrected
+/// (post-network) pass queued behind Reminders' and Tasks' passes — one of
+/// which (Reminders, ~692ms here) is a real network fetch, not a cache hit —
+/// pushing the user's own tap's first visible pixel to 1.65s after they
+/// touched it. Listing the acting kind first doesn't reduce the total queue
+/// (still three reloads per round), but it guarantees the tapped widget is
+/// the first of the three to actually redraw, cutting that measured 1.65s
+/// roughly in half.
 @MainActor
-func reloadOpenTaskWidgets() {
-    WidgetCenter.shared.reloadTimelines(ofKind: RemindersWidget.kind)
-    WidgetCenter.shared.reloadTimelines(ofKind: TasksWidget.kind)
-    WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
+func reloadOpenTaskWidgets(activeKind: String? = nil) {
+    let kinds = [RemindersWidget.kind, TasksWidget.kind, TrackWidget.kind]
+    let ordered: [String]
+    if let activeKind, kinds.contains(activeKind) {
+        ordered = [activeKind] + kinds.filter { $0 != activeKind }
+    } else {
+        ordered = kinds
+    }
+    for kind in ordered {
+        WidgetCenter.shared.reloadTimelines(ofKind: kind)
+    }
 }
 
 /// Reload ONE kind after a pure view-state change (a chevron page flip).
@@ -55,10 +88,19 @@ struct CompleteTaskIntent: AppIntent {
     @Parameter(title: "Task ID")
     var taskId: Int
 
+    /// Which widget kind the button that fired this lives in, so its reload
+    /// can go first (see `reloadOpenTaskWidgets(activeKind:)`). Defaulted, not
+    /// required, for the same archived-button reason as `IncrementProgressIntent.delta`
+    /// — a widget snapshot pre-dating this parameter decodes it as "", which
+    /// `reloadOpenTaskWidgets` treats as "no priority" rather than crashing.
+    @Parameter(title: "Widget Kind", default: "")
+    var kind: String
+
     init() {}
 
-    init(taskId: Int) {
+    init(taskId: Int, kind: String = "") {
         self.taskId = taskId
+        self.kind = kind
     }
 
     func perform() async throws -> some IntentResult {
@@ -68,7 +110,7 @@ struct CompleteTaskIntent: AppIntent {
         // reconciling fetch; a FAILED call clears it so the item honestly
         // reappears, never an alert the user can't act on from the Home Screen.
         WidgetStore.stagePendingCompletion(taskId)
-        await reloadOpenTaskWidgets()
+        await reloadOpenTaskWidgets(activeKind: kind.isEmpty ? nil : kind)
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
@@ -76,7 +118,7 @@ struct CompleteTaskIntent: AppIntent {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
         }
-        await reloadOpenTaskWidgets()
+        await reloadOpenTaskWidgets(activeKind: kind.isEmpty ? nil : kind)
         return .result()
     }
 }
@@ -129,7 +171,7 @@ struct IncrementProgressIntent: AppIntent {
         // three taps in a row draw +3 instead of the single +1 a stamp-only
         // map could express.
         WidgetStore.stagePendingProgress(taskId, delta: delta)
-        await reloadOpenTaskWidgets()
+        await reloadOpenTaskWidgets(activeKind: TrackWidget.kind)
 
         do {
             try await APIClient.shared.logProgress(taskId: taskId, delta: delta)
@@ -142,7 +184,7 @@ struct IncrementProgressIntent: AppIntent {
         // still in flight keeps its own staged delta (see
         // `WidgetStore.clearPendingProgress`).
         WidgetStore.clearPendingProgress(taskId, delta: delta)
-        await reloadOpenTaskWidgets()
+        await reloadOpenTaskWidgets(activeKind: TrackWidget.kind)
         return .result()
     }
 }

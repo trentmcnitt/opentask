@@ -276,7 +276,7 @@ private struct TaskRow: View {
         // .top, not .center: on a two-line row a centred dot floats down into
         // the gap between the lines, reading as if it belongs to neither.
         HStack(alignment: .top, spacing: 10) {
-            Button(intent: CompleteTaskIntent(taskId: task.id)) {
+            Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
                 Circle()
                     .fill(WidgetTheme.priorityColor(task.priority))
                     .frame(width: 9, height: 9)
