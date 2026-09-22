@@ -9,10 +9,9 @@ import WidgetKit
 ///   inert until authentication, which is why the Lock Screen accessory
 ///   families below are glanceable-only and carry no buttons at all.
 /// - Timeline reloads *triggered by a widget's own intent* are budget-free.
-///   Every mutating intent below reloads the ACTING kind alone before the
-///   server call, then all three (acting kind first) after — see the
-///   `reloadOpenTaskWidgets(activeKind:)` doc below for why the split isn't
-///   symmetric (2026-09-22, the macOS lag fix).
+///   Every mutating intent below reloads the ACTING kind alone, both rounds
+///   (2026-09-22, the macOS lag fix) — see `reloadOpenTaskWidget(kind:)`'s
+///   doc for the invariant that makes this correct, not just fast.
 /// - There are no swipe gestures in widgets, so paging between slots/projects
 ///   is done with explicit chevron intents rather than a gesture.
 ///
@@ -20,65 +19,73 @@ import WidgetKit
 /// a user should find in Shortcuts. Exposing "Move to next time slot" as a
 /// user-facing shortcut would promise app state it does not have.
 
-/// Reload all three widget kinds, acting kind first when given. Used for the
-/// POST-network round only (2026-09-22, round 2 of the macOS lag fix) — by
-/// then the server has genuinely changed state that any of the three kinds
-/// could reflect, so all three are worth refreshing, and the acting kind's
-/// corrected value goes first since it's the one the user is watching.
+/// Reload ONE kind. The primary reload path for every intent below —
+/// mutating and view-state alike (2026-09-22, the macOS lag fix).
 ///
-/// The PRE-network round does not call this — see each intent's `perform()`,
-/// which reloads ONLY the acting kind via `reloadOpenTaskWidget(kind:)`
-/// instead. Before the server has even been told about the change, the other
-/// two kinds have nothing new to draw (a progress delta never changes what
-/// Reminders/Tasks show; a completion's tombstone only affects the kind it's
-/// staged against), so reloading them pre-network was pure queue noise ahead
-/// of the one reload that could actually show something.
+/// It used to be that mutating intents reloaded all three kinds, on the
+/// theory that "a completion changes counts on one widget and can change the
+/// list on another." That theory is false for every mutation this file
+/// performs. The three kinds partition the open-task set with NO overlap:
 ///
-/// That noise mattered because, on macOS, `chronod` (WidgetKit's reload
-/// daemon) runs every timeline reload for one extension bundle through ONE
-/// SERIAL QUEUE — confirmed from `/usr/bin/log`: "Would pop task, but all
-/// extensions are busy, namely [io.mcnitt.opentask.mac.widgets]" logged for
-/// every kind but the one currently executing. Budget-free (also confirmed:
-/// "overridden for budget exempt reason: free") does not mean concurrent.
+/// - Reminders ⊆ tasks where `is_reminder = true`
+/// - Track ⊆ tasks where `isTracked` (`trackedFlag || progressTarget > 1`)
+/// - Tasks ⊆ tasks where NEITHER of the above (`TasksTimeline`,
+///   `.filter { !$0.isReminder && !$0.isTracked }`)
 ///
-/// Measured on two independent, isolated `+1` taps against the PRIOR code
-/// (three kinds, unordered, both rounds): the PRE-network reload of the
-/// tapped kind never got its own queue slot at all — chronod only logged a
-/// `task submitted` for it AFTER `perform()` had already returned, after the
-/// post-network reload had already superseded it. Whether narrowing round 1
-/// to a single kind (this change) is enough to win that queue slot before
-/// `perform()` returns, or whether chronod holds ANY reload from an
-/// in-flight interaction regardless of how many kinds it names, is not yet
-/// confirmed — needs a real, installed build and the same log-mining method
-/// against real taps. Either way, round 2's reordering measurably helped: the
-/// unordered post-network reload queued the acting kind behind Reminders'
-/// and Tasks' passes — one of which (Reminders, ~692ms) is a real network
-/// fetch, not a cache hit — pushing the user's own tap's first visible pixel
-/// to 1.65s after they touched it. Acting-kind-first alone (no round-1
-/// narrowing) was measured to roughly halve that.
-@MainActor
-func reloadOpenTaskWidgets(activeKind: String? = nil) {
-    let kinds = [RemindersWidget.kind, TasksWidget.kind, TrackWidget.kind]
-    let ordered: [String]
-    if let activeKind, kinds.contains(activeKind) {
-        ordered = [activeKind] + kinds.filter { $0 != activeKind }
-    } else {
-        ordered = kinds
-    }
-    for kind in ordered {
-        WidgetCenter.shared.reloadTimelines(ofKind: kind)
-    }
-}
-
-/// Reload ONE kind after a pure view-state change (a chevron page flip).
-///
-/// Data-mutating intents reload everything — a completion changes counts on
-/// every kind. But a page flip is local to the widget being paged, and
-/// reloading the other two kinds made every chevron tap pay for two unrelated
-/// provider passes.
+/// and reminder/tracked are mutually exclusive BY CONSTRUCTION, not by
+/// convention: `refuseTrackedReminder` in `src/core/validation/task.ts`
+/// rejects any create/update where both are true, with the comment "an item
+/// is tracked or it is a reminder, never both." A task's membership in this
+/// partition is also invariant under everything a widget button can do to
+/// it — completing or logging progress never flips `is_reminder` or
+/// `progress_target`. So completing a Reminders item can only change
+/// Reminders; completing a Tasks item can only change Tasks (and there is no
+/// Track call site for `CompleteTaskIntent` at all — grep confirms its only
+/// two `Button(intent:)` sites are `RemindersWidgetViews.swift` and
+/// `TasksWidgetViews.swift` — so "acting kind ∈ {Reminders, Tasks}" is
+/// structural, not assumed); logging progress can only change Track. Reloading
+/// the other two kinds was never keeping anything honest — it was queue
+/// noise, and on macOS that noise was the whole latency bug (see
+/// `reloadOpenTaskWidgets()` below for the measurement).
 @MainActor
 func reloadOpenTaskWidget(kind: String) {
     WidgetCenter.shared.reloadTimelines(ofKind: kind)
+}
+
+/// Reload all three widget kinds, unordered. NOT used by any mutating
+/// intent's normal path as of 2026-09-22 — see `reloadOpenTaskWidget(kind:)`.
+/// The one remaining caller is `CompleteTaskIntent`'s fallback for a button
+/// archived before it carried a `kind` parameter: without a known kind there
+/// is nothing to target, so it falls back to the old, safe-but-unoptimized
+/// "reload everything" rather than guessing.
+///
+/// This function has no other callers now, which is itself evidence for the
+/// fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
+/// reload for one extension bundle through ONE SERIAL QUEUE — confirmed from
+/// `/usr/bin/log`: "Would pop task, but all extensions are busy, namely
+/// [io.mcnitt.opentask.mac.widgets]" logged for every kind but the one
+/// currently executing. Budget-free (also confirmed: "overridden for budget
+/// exempt reason: free") does not mean concurrent, so every reload of a kind
+/// nothing can visibly change was pure contention against the one that
+/// mattered.
+///
+/// Measured, in order, against real taps from Trent:
+/// 1. Prior code (three kinds, unordered, both rounds): the PRE-network
+///    reload of the tapped kind never won a queue slot before `perform()`
+///    returned — first visible pixel 1.65s after the tap.
+/// 2. Acting-kind-first, still three kinds both rounds: split, ~0.62s when
+///    the queue was otherwise clear, ~1.66s when another reload of this
+///    extension — this tap's own round-2 Reminders/Tasks passes, or a
+///    scheduled refresh — was still draining ahead of it.
+/// 3. This change (single kind, both rounds — pending live confirmation):
+///    round 2 of any tap is now exactly one reload. A second `+1` landing
+///    within that one pass's runtime (~535ms observed) still queues behind
+///    it — that's the honest floor, one pass deep rather than two or three.
+@MainActor
+func reloadOpenTaskWidgets() {
+    WidgetCenter.shared.reloadTimelines(ofKind: RemindersWidget.kind)
+    WidgetCenter.shared.reloadTimelines(ofKind: TasksWidget.kind)
+    WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
 }
 
 // MARK: - Completion
@@ -95,11 +102,13 @@ struct CompleteTaskIntent: AppIntent {
     @Parameter(title: "Task ID")
     var taskId: Int
 
-    /// Which widget kind the button that fired this lives in, so its reload
-    /// can go first (see `reloadOpenTaskWidgets(activeKind:)`). Defaulted, not
-    /// required, for the same archived-button reason as `IncrementProgressIntent.delta`
-    /// — a widget snapshot pre-dating this parameter decodes it as "", which
-    /// `reloadOpenTaskWidgets` treats as "no priority" rather than crashing.
+    /// Which widget kind the button that fired this lives in — Reminders or
+    /// Tasks, never Track (see `reloadOpenTaskWidget(kind:)`'s partition
+    /// argument) — so only that kind gets reloaded. Defaulted, not required,
+    /// for the same archived-button reason as `IncrementProgressIntent.delta`:
+    /// a widget snapshot pre-dating this parameter decodes it as "", which
+    /// `reloadAffectedKind()` below reads as "unknown, reload everything"
+    /// rather than crashing or guessing wrong.
     @Parameter(title: "Widget Kind", default: "")
     var kind: String
 
@@ -110,6 +119,16 @@ struct CompleteTaskIntent: AppIntent {
         self.kind = kind
     }
 
+    /// `kind`-aware reload, shared by both rounds: the acting kind alone when
+    /// known, all three when not (an archived button — see `kind`'s doc).
+    private func reloadAffectedKind() async {
+        if kind.isEmpty {
+            await reloadOpenTaskWidgets()
+        } else {
+            await reloadOpenTaskWidget(kind: kind)
+        }
+    }
+
     func perform() async throws -> some IntentResult {
         // Optimistic (§8): tombstone the item and repaint from cache BEFORE the
         // server call — the round trip takes seconds and a delayed disappearance
@@ -117,20 +136,7 @@ struct CompleteTaskIntent: AppIntent {
         // reconciling fetch; a FAILED call clears it so the item honestly
         // reappears, never an alert the user can't act on from the Home Screen.
         WidgetStore.stagePendingCompletion(taskId)
-        // ONLY the acting kind, round 1 (2026-09-22, round 2 of the macOS lag
-        // fix — see `reloadOpenTaskWidgets(activeKind:)`). Reminders and Tasks
-        // have nothing new to draw yet: the server doesn't know about this
-        // completion until the call below returns, so their own reloads here
-        // were pure queue noise ahead of the one reload that could actually
-        // show something (the tombstone). Falls back to all three, unordered,
-        // when `kind` is unknown (an archived pre-`kind`-parameter button) —
-        // that case can't target just the acting kind, so it keeps the old,
-        // safe-but-unoptimized behavior rather than guessing.
-        if kind.isEmpty {
-            await reloadOpenTaskWidgets()
-        } else {
-            await reloadOpenTaskWidget(kind: kind)
-        }
+        await reloadAffectedKind()
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
@@ -138,10 +144,15 @@ struct CompleteTaskIntent: AppIntent {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
         }
-        // All three, round 2: the server now knows, so counts genuinely may
-        // have changed on the other kinds too, and the user isn't waiting on
-        // this repaint the way they were on round 1's.
-        await reloadOpenTaskWidgets(activeKind: kind.isEmpty ? nil : kind)
+        // Round 2 is the reconciling pass, and on failure it's the ONLY pass
+        // that draws the truth: `clearPendingCompletion` just ran above, so
+        // `hasRecentInteraction()` has no live stamp for this item, and the
+        // provider takes the network path — the item honestly reappears
+        // rather than staying hidden behind a tombstone the server rejected.
+        // On success the tombstone is still live (90s TTL, untouched here),
+        // so this pass fast-paths from cache and simply re-draws the same
+        // hidden state round 1 already showed.
+        await reloadAffectedKind()
         return .result()
     }
 }
@@ -194,14 +205,12 @@ struct IncrementProgressIntent: AppIntent {
         // three taps in a row draw +3 instead of the single +1 a stamp-only
         // map could express.
         WidgetStore.stagePendingProgress(taskId, delta: delta)
-        // ONLY Track, round 1 (2026-09-22, round 2 of the macOS lag fix — see
-        // `reloadOpenTaskWidgets(activeKind:)`). A progress delta never
-        // changes what Reminders or Tasks show — Tasks explicitly excludes
-        // tracked items (see the widgets table in ios/CLAUDE.md) — so their
-        // round-1 reloads were never anything but queue noise ahead of the one
-        // that draws the staged value. This is the reload that has to win a
-        // chronod queue slot before `perform()` returns for the optimistic
-        // repaint to exist at all.
+        // ONLY Track, both rounds (2026-09-22 — see `reloadOpenTaskWidget(kind:)`
+        // for the partition argument: a progress delta cannot change what
+        // Reminders or Tasks show, in either round, so this was never a
+        // latency-vs-correctness tradeoff). Round 1 is the reload that has to
+        // win a chronod queue slot before `perform()` returns for the
+        // optimistic repaint to exist at all.
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
 
         do {
@@ -215,19 +224,20 @@ struct IncrementProgressIntent: AppIntent {
         // still in flight keeps its own staged delta (see
         // `WidgetStore.clearPendingProgress`).
         WidgetStore.clearPendingProgress(taskId, delta: delta)
-        // All three, round 2, Track first. A progress delta alone never
-        // changes what Reminders or Tasks show — Tasks excludes anything
-        // `isTracked` regardless of progress (see `TasksTimeline`), and
-        // Reminders is an unrelated feed — so neither draws anything new
-        // here. Kept anyway for parity with `CompleteTaskIntent` and to stay
-        // inside the scope of this fix. Worth knowing for a follow-up: Tasks'
-        // pass has no stamp to fast-path on (only Track was staged), so it
-        // re-fetches `/api/tasks` on its own — a second fetch of the same
-        // endpoint `TaskFeed`'s doc says never to add. Dropping Reminders and
-        // Tasks from THIS intent's round 2 entirely would be correct and
-        // would remove that fetch, since nothing they show can change from a
-        // progress delta in either round.
-        await reloadOpenTaskWidgets(activeKind: TrackWidget.kind)
+        // Round 2, still Track only. This is the reconciling pass: the entry
+        // `clearPendingProgress` just removed was the ONLY thing keeping
+        // `hasRecentInteraction()` true for this task (this intent never
+        // calls `markInteraction()`), so this pass takes the network path —
+        // `/api/tasks` + `/api/projects` via `TaskFeed` — on both success and
+        // failure, landing the server's real count or reverting an optimistic
+        // one the call above rejected. Nothing to fast-path here even in
+        // principle: server truth is exactly what a failed call needs shown.
+        //
+        // Not fixed here, flagged for a follow-up: this fetch is real and
+        // unavoidable, but `logProgress` returns `Void` — if it returned the
+        // updated task, writing it straight into `WidgetStore.saveTasks`
+        // before this reload would turn round 2 into a cache hit instead.
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
         return .result()
     }
 }
