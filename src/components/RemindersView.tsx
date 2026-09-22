@@ -916,7 +916,7 @@ function RemindersHeadline({
                     // Blue while still filling, green the moment it's done —
                     // matches the dashboard's `ReminderSlotBar` (2026-09-22),
                     // so a slot reads the same way on both surfaces.
-                    done ? 'bg-green-600' : 'bg-blue-600',
+                    done ? 'bg-green-600' : 'bg-indigo-600',
                   )}
                   style={{ width: `${slotTotal > 0 ? (g.considered / slotTotal) * 100 : 0}%` }}
                 />
@@ -1297,7 +1297,7 @@ function SlotHairline({
           'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
           // Blue while still filling, green the moment it's done — matches
           // the dashboard's `ReminderSlotBar` (2026-09-22).
-          fraction >= 1 ? 'bg-green-600' : 'bg-blue-600',
+          fraction >= 1 ? 'bg-green-600' : 'bg-indigo-600',
         )}
         style={{ width: `${Math.min(1, fraction) * 100}%` }}
       />
