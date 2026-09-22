@@ -197,12 +197,14 @@ struct TasksWidget: Widget {
         .description("What's due today, with chevrons to page through your projects.")
         // systemLarge first: it is the primary layout (§8 — the user pointed
         // at a 4x4 Weather widget), and the gallery leads with the first entry.
-        .supportedFamilies([
-            .systemLarge,
-            .systemMedium,
-            .systemSmall,
-            .accessoryRectangular,
-            .accessoryCircular,
-        ])
+        // See RemindersWidget for why this is a closure rather than #if inside
+        // the array literal (the compiler rejects the latter).
+        .supportedFamilies({
+            var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
+            #if os(iOS)
+            families += [.accessoryRectangular, .accessoryCircular]
+            #endif
+            return families
+        }())
     }
 }

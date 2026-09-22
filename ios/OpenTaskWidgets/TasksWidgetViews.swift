@@ -28,10 +28,12 @@ struct TasksWidgetView: View {
     @ViewBuilder
     private var content: some View {
         switch family {
+        #if os(iOS)
         case .accessoryCircular:
             TasksCircularView(entry: entry)
         case .accessoryRectangular:
             TasksRectangularView(entry: entry)
+        #endif
         case .systemSmall:
             TasksSmallView(entry: entry)
         case .systemMedium:
@@ -303,6 +305,12 @@ private struct TaskRow: View {
 }
 
 // MARK: - Lock Screen
+//
+// Lock Screen accessory families don't exist on macOS — see the #if os(iOS)
+// guard on `content` above. AccessoryWidgetBackground below only compiles on
+// iOS, so these views are gated out entirely on macOS rather than left as
+// dead code.
+#if os(iOS)
 
 /// Glanceable only — see `RemindersRectangularView` for why there are no
 /// buttons on the Lock Screen families.
@@ -360,3 +368,5 @@ private struct TasksCircularView: View {
         .widgetURL(WidgetLink.dashboard)
     }
 }
+
+#endif

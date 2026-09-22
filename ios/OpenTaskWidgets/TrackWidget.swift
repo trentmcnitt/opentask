@@ -335,12 +335,14 @@ struct TrackWidget: Widget {
         // fraction perfectly, which a list of them does not. (Observed on iOS
         // 26 the gallery orders its cards small→large regardless of this array,
         // so the ordering is a statement of intent, not a lever.)
-        .supportedFamilies([
-            .systemSmall,
-            .systemLarge,
-            .systemMedium,
-            .accessoryRectangular,
-            .accessoryCircular,
-        ])
+        // See RemindersWidget for why this is a closure rather than #if inside
+        // the array literal (the compiler rejects the latter).
+        .supportedFamilies({
+            var families: [WidgetFamily] = [.systemSmall, .systemLarge, .systemMedium]
+            #if os(iOS)
+            families += [.accessoryRectangular, .accessoryCircular]
+            #endif
+            return families
+        }())
     }
 }

@@ -1,7 +1,11 @@
 import AppIntents
 import SwiftUI
-import UIKit
 import WidgetKit
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Visual vocabulary shared by both widget kinds.
 ///
@@ -110,11 +114,29 @@ enum WidgetTheme {
     ///    if nothing wrapped, the tallest was chosen, and the card then squeezed
     ///    the wrapping right back out of it. That was the truncation Trent saw.
     ///
-    /// Read from UIKit rather than hardcoded so it tracks the system text size,
-    /// and rounded UP so a reserved two lines is never a hair short of two real
-    /// ones (which would silently cost the second line).
+    /// Read from the platform's own font metrics rather than hardcoded so it
+    /// tracks the system text size, and rounded UP so a reserved two lines is
+    /// never a hair short of two real ones (which would silently cost the
+    /// second line).
+    ///
+    /// **macOS**: `NSFont` has no `.lineHeight` property the way `UIFont`
+    /// does — `NSLayoutManager().defaultLineHeight(for:)` is AppKit's
+    /// equivalent (the same value the layout system itself uses to lay out a
+    /// line of that font), so this stays the load-bearing value the PR #22
+    /// comment on `ReminderRow`/`TaskRow` describes: `ViewThatFits` compares
+    /// each row candidate's *ideal* height, and without a reserved height every
+    /// candidate measures as if nothing wrapped, so the tallest one "fits" and
+    /// the card squeezes every title back to one truncated line. Verified this
+    /// still holds on macOS by reading how it feeds `ReminderRow`/`TaskRow`
+    /// (`minHeight: CGFloat(titleLineLimit) * rowTitleLineHeight`) — same
+    /// consumer, same contract, only the font API differs.
     static var rowTitleLineHeight: CGFloat {
+        #if os(iOS)
         ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
+        #else
+        let font = NSFont.preferredFont(forTextStyle: .subheadline, options: [:])
+        return ceil(NSLayoutManager().defaultLineHeight(for: font))
+        #endif
     }
 
     /// Track's list rows are spaced tighter than everything else.

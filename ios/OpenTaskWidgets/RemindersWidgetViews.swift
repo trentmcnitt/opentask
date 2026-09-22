@@ -28,10 +28,12 @@ struct RemindersWidgetView: View {
     @ViewBuilder
     private var content: some View {
         switch family {
+        #if os(iOS)
         case .accessoryCircular:
             RemindersCircularView(entry: entry)
         case .accessoryRectangular:
             RemindersRectangularView(entry: entry)
+        #endif
         case .systemSmall:
             RemindersSmallView(entry: entry)
         case .systemMedium:
@@ -285,6 +287,13 @@ private struct ReminderRow: View {
 }
 
 // MARK: - Lock Screen
+//
+// Lock Screen accessory families don't exist on macOS (see the #if os(iOS)
+// guard on `content` above and on RemindersWidget's supportedFamilies), so
+// these two views — and AccessoryWidgetBackground, which only compiles on
+// iOS — are gated out of the macOS build entirely rather than left as dead
+// code that happens to still compile.
+#if os(iOS)
 
 /// Lock Screen rectangular: glanceable only.
 ///
@@ -344,3 +353,5 @@ private struct RemindersCircularView: View {
         .widgetURL(WidgetLink.reminders)
     }
 }
+
+#endif

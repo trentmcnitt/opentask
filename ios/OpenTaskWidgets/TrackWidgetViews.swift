@@ -34,10 +34,12 @@ struct TrackWidgetView: View {
     @ViewBuilder
     private var content: some View {
         switch family {
+        #if os(iOS)
         case .accessoryCircular:
             TrackCircularView(entry: entry)
         case .accessoryRectangular:
             TrackRectangularView(entry: entry)
+        #endif
         case .systemSmall:
             TrackSmallView(entry: entry)
         case .systemMedium:
@@ -275,6 +277,12 @@ private struct TrackRow: View {
 }
 
 // MARK: - Lock Screen
+//
+// Lock Screen accessory families don't exist on macOS — see the #if os(iOS)
+// guard on `content` above. TrackCircularView's `.gaugeStyle(.accessoryCircularCapacity)`
+// below only compiles on iOS, so both views are gated out of the macOS build
+// entirely rather than left as dead code.
+#if os(iOS)
 
 /// Glanceable only — §8: interactive widgets are inert on a locked device, so a
 /// `+1` (or `−`) button here would be a control that silently does nothing.
@@ -332,6 +340,8 @@ private struct TrackCircularView: View {
         .widgetURL(WidgetLink.dashboard)
     }
 }
+
+#endif
 
 // MARK: - Shared quota chrome
 
