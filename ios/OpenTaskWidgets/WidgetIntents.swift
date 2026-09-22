@@ -198,6 +198,13 @@ struct IncrementProgressIntent: AppIntent {
         // without the pin, tapping +1 could swap the 2×2 to a DIFFERENT quota
         // before the user sees their own count tick up (observed live: +1 on
         // Beef 0/4 flipped the widget to Broccoli).
+        //
+        // Deliberately NOT `WidgetStore.trackPageStart` too (2026-09-22, "Eggs
+        // moves to the top"): that second value is what the systemMedium/Large
+        // list window starts from, and only paging (`ShiftTrackItemIntent`)
+        // should move it. Pinning the 2×2 here is a correctness fix (the
+        // Broccoli bug above); rotating the list to match would just be the
+        // same disorientation Trent flagged, now happening on every `+1`.
         WidgetStore.trackSelection = taskId
 
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
@@ -324,10 +331,26 @@ struct ShiftProjectScopeIntent: AppIntent {
 
 /// Move the Track widget's selection one quota earlier or later.
 ///
-/// Paging wraps, like the other two rings. The selection is what the 2×2 and
-/// the Lock Screen families render, and — once there are more quotas than rows
-/// — where the systemMedium/Large list window starts, so one intent drives
-/// every family's notion of "which quota".
+/// Paging wraps, like the other two rings. It writes BOTH `trackSelection`
+/// (what the 2×2 and Lock Screen families render) and `trackPageStart` (where
+/// the systemMedium/Large list window starts) to the same stepped-to id —
+/// still one intent driving every family's notion of "which quota", even
+/// though the two are now separate sticky values (2026-09-22, "Eggs moves to
+/// the top" — see `WidgetStore.trackPageStart`'s doc). `IncrementProgressIntent`
+/// is the only thing that moves `trackSelection` without also moving
+/// `trackPageStart`; a chevron tap is explicitly a request to change what's
+/// displayed, so both moving together here is correct, not the bug that fix
+/// is about.
+///
+/// The step-from position is `selectedId` (the pin), not `pageStartId` —
+/// deliberately unchanged from before the two split: the small family's own
+/// chevrons have no window, only "the current quota", so they must keep
+/// stepping from whatever the 2×2 is actually showing. Kept identical for the
+/// list's chevron too rather than given a second stepping rule, since that
+/// would be new, unmeasured behavior; a list chevron tapped shortly after a
+/// `+1` elsewhere may jump further than one row as a result, but a chevron is
+/// an explicit "move" request, so a jump in response to it isn't the
+/// disorientation the pin/page-start split exists to prevent.
 ///
 /// The ordering it steps through is `TrackTimeline.orderedItems`' — the same
 /// stored, membership-stable order the provider rendered, recomputed here from
@@ -360,7 +383,9 @@ struct ShiftTrackItemIntent: AppIntent {
 
         let current = items.firstIndex { $0.id == TrackTimeline.selectedId(in: items) } ?? 0
         let count = items.count
-        WidgetStore.trackSelection = items[((current + offset) % count + count) % count].id
+        let steppedId = items[((current + offset) % count + count) % count].id
+        WidgetStore.trackSelection = steppedId
+        WidgetStore.trackPageStart = steppedId
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TrackWidget.kind)

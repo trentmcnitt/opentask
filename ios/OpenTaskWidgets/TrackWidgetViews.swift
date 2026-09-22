@@ -143,13 +143,19 @@ private struct TrackListView: View {
     /// The rows on screen.
     ///
     /// When everything fits, the list is simply the list — no window, no wrap,
-    /// no arithmetic. When it doesn't, the window starts at the selected item
-    /// and wraps, so the chevrons scroll it one row at a time and every quota is
-    /// reachable — the same selection the 2×2 pages through, just shown with its
-    /// neighbours.
+    /// no arithmetic. When it doesn't, the window starts at `pageStartIndex`
+    /// and wraps, so the chevrons scroll it one row at a time and every quota
+    /// is reachable.
+    ///
+    /// `pageStartIndex`, NOT `selectedIndex` (2026-09-22, "Eggs moves to the
+    /// top"): logging `+1` on a row pins the 2×2 to it (`selectedId`), and
+    /// this window used to start from that same pin — so every `+1` on a row
+    /// that wasn't already first rotated the whole list to put it there. The
+    /// two are now separate sticky values that paging keeps in sync and `+1`
+    /// does not — see `WidgetStore.trackPageStart`.
     private var window: [TrackItem] {
         guard canPage else { return entry.items }
-        let start = entry.selectedIndex ?? 0
+        let start = entry.pageStartIndex ?? 0
         return (0..<maxRows).map { entry.items[(start + $0) % entry.items.count] }
     }
 
