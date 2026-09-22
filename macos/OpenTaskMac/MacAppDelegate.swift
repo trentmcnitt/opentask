@@ -1,5 +1,6 @@
 import AppKit
 import UserNotifications
+import WidgetKit
 
 /// APNs registration, notification permission, and notification action handling.
 ///
@@ -76,6 +77,14 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     func applicationDidBecomeActive(_ notification: Notification) {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         updateBadge(0)
+
+        // Mirrors ios/OpenTask/OpenTaskApp.swift's scenePhase == .active case:
+        // reloads triggered by the app foregrounding don't count against the
+        // widget refresh budget, so OpenTaskMacWidgets is current again by the
+        // time the user glances at it — without this, a task completed or
+        // logged in the window would leave the widget showing stale data for
+        // up to 30 minutes (the unprompted-refresh budget interval).
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - Permission and registration

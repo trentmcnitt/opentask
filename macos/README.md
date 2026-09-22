@@ -34,19 +34,20 @@ bring an already-running instance to the front.
 Requires macOS 14, and Xcode with a macOS SDK. Nothing needs to be installed
 into `/Applications` to try it.
 
-## The one blocker: no macOS provisioning profile
+## Provisioning profile — RESOLVED (was: no macOS profile for this team)
 
-Two things need a macOS **development provisioning profile** for App ID
-`io.mcnitt.opentask.mac`, and no such profile exists for this team yet:
-
-| Needs a profile          | Why                                                                               |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| `aps-environment`        | APNs registration fails without it — no push, so no notifications from the server |
-| Data protection keychain | Without an `application-identifier` entitlement every call returns -34018         |
-
-Creating one requires a signed-in Apple ID, and on this Mac Xcode currently
-rejects the account (`Unable to log in with account 'misc_dev_work@pm.me'`).
-Sign in again under Xcode ▸ Settings ▸ Accounts, then:
+**Historical note, kept for context.** This section used to say there was no
+macOS development provisioning profile for App ID `io.mcnitt.opentask.mac`,
+blocked on a signed-out Apple ID. Both are resolved as of 2026-09-22:
+automatic signing now fetches a real "Mac Team Provisioning Profile" for this
+App ID without any manual step, `aps-environment` and the data protection
+keychain both work, and — confirmed while building `OpenTaskMacWidgets` — so
+does `com.apple.security.application-groups`, though not without a landmine
+(see the long comment on `OpenTaskMac`'s entitlements in `project.yml`: a
+Mac Team Provisioning Profile grants a wildcard `keychain-access-groups`
+until you request an explicit App Group, at which point Xcode stops
+synthesizing that wildcard and the Keychain briefly stops working until you
+list `keychain-access-groups` explicitly too).
 
 ```bash
 xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
@@ -55,16 +56,30 @@ xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
   CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements build
 ```
 
-`OpenTaskMac.entitlements` (sandbox + network client) is what XcodeGen writes
-and what the default build uses. `OpenTaskMac-Push.entitlements` is the same
-file plus `aps-environment`; keep the two in sync.
+`OpenTaskMac.entitlements` (sandbox + network client + App Group +
+`keychain-access-groups`) is what XcodeGen writes and what the default build
+uses. `OpenTaskMac-Push.entitlements` is the same file plus `aps-environment`;
+keep the two in sync. Both now build and run successfully — verified directly
+(2026-09-22): `xcodebuild ... build` with neither `CODE_SIGN_ENTITLEMENTS` nor
+`-allowProvisioningUpdates` also succeeds and signs the same App Group +
+Keychain grants, since only `aps-environment` genuinely needs the Push
+variant.
 
-Until then the app runs and works — it just cannot receive push. It falls back
-to the **legacy keychain**, which needs no entitlement (see the long comment in
-`ios/Shared/KeychainHelper.swift`). The switch is automatic and based on what
-the binary is actually signed with, so adding a profile needs no code change —
-but the two keychains do not share items, so the first launch after that will
-ask for the server URL once more.
+**One thing to know about that `CODE_SIGN_ENTITLEMENTS=...` build command**:
+it is a _scheme-wide_ xcodebuild override, so it also signs
+`OpenTaskMacWidgets` with the app's Push entitlements — the widget extension
+picks up `aps-environment` it has no use for (harmless: it never registers
+for push) and `-allowProvisioningUpdates` will have enabled Push
+Notifications on the App ID `io.mcnitt.opentask.mac.widgets` in the
+Developer Portal as a side effect. Worth knowing before assuming an
+entitlement only added to `OpenTaskMacWidgets`'s own `project.yml` block
+reaches a Push build — it doesn't; `OpenTaskMac-Push.entitlements` is
+hand-written per-target, not per-scheme.
+
+The two keychains (legacy vs. data protection) do not share items — a
+profile arriving after a legacy-keychain launch means the first launch after
+that asks for the server URL once more. See the long comment in
+`ios/Shared/KeychainHelper.swift` for the full mechanics of that switch.
 
 ### Notification permission
 
@@ -133,9 +148,32 @@ The table above is what the code does, not a test report. On the build machine
   sandbox; the legacy-keychain fallback saves and reads; `ios/` regenerates
   byte-identically and all four iOS targets still build.
 - **Not exercised:** the Connect button end to end, every notification action
-  handler, the session bootstrap and the /login rescue (both need a Bearer
-  token, which needs push), reopening the window after closing it, and what
-  the web app looks like in the window.
+  handler, reopening the window after closing it, and what the web app looks
+  like in the window.
+
+**Addendum, 2026-09-22 (widget extension session).** The session that added
+`OpenTaskMacWidgets` also exercised more of the above than previously listed,
+via the debug seed hook against `tasks-dev.tk11.mcnitt.io` (`.secrets`
+credentials, real server): the session bootstrap DOES run and recover from a
+bad seeded token (401 → the WKWebView loaded the real login page → a real
+Bearer token got provisioned via the JS bridge), and APNs registration
+succeeds cleanly on every build. Two operational cautions this surfaced that
+whoever tests next should know before assuming a clean slate:
+
+- **A stale APNs device registration likely exists on `tasks-dev` for this
+  Mac.** The seed-then-`OPENTASK_RESET=1` cycle used to test the Keychain fix
+  wipes the local Keychain but `AppConfig.reset()` does not call
+  `unregisterDevice` — the registration made during that test was never torn
+  down server-side.
+- **`~/Applications/OpenTaskMac.app` (same bundle ID, `io.mcnitt.opentask.mac`,
+  an earlier build without the App Group/Keychain work in this session) was
+  running throughout this session**, and every build here registered another
+  LaunchServices claim for that same bundle ID from the worktree's own
+  `build/` path. Before anyone tests on a real desktop: quit the
+  `~/Applications` copy, and expect to need the same LaunchServices cleanup
+  the 2026-09-16 Mac widget session documented for the iOS side (duplicate
+  claims for one bundle ID is exactly that class of problem) if the widget
+  gallery doesn't show a clean single entry.
 
 ## Reused from `ios/`
 
