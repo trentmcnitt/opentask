@@ -634,10 +634,28 @@ function HomeContent({
    * select-all and the clipboard.
    */
   const visibleTasks = useMemo(() => tasks.filter((t) => !t.is_reminder && !isTracked(t)), [tasks])
-  const visibleSearchResults = useMemo(
-    () => searchResults.filter((t) => !t.is_reminder && !isTracked(t)),
-    [searchResults],
-  )
+  /**
+   * The server decides what a search MATCHES (`/api/tasks?search=`), but the
+   * matches are RENDERED out of `tasks`, never out of the fetched copy. Every
+   * path that changes a task — the optimistic handlers in `useTaskActions`,
+   * the bulk actions, `refreshAll()`, the SSE sync stream — writes to `tasks`
+   * alone. A fetched copy held beside it goes stale the moment you act on a
+   * result: completing a task from a search left it sitting in the list until
+   * the query was re-run (Trent, 2026-09-16). Delete was the one handler that
+   * remembered to trim `searchResults` too, which is why only delete worked.
+   *
+   * So `searchResults` contributes just the hit set and the server's ordering;
+   * the row data always comes from `tasks`. A hit that is no longer in `tasks`
+   * has been completed, deleted or filtered away, and correctly drops out of
+   * the results as well.
+   */
+  const visibleSearchResults = useMemo(() => {
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    return searchResults.flatMap((hit) => {
+      const live = byId.get(hit.id)
+      return live && !live.is_reminder && !isTracked(live) ? [live] : []
+    })
+  }, [searchResults, tasks])
 
   const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
   const onLabelToggle = useCallback(() => selection.clear(), [selection])

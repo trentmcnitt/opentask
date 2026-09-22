@@ -583,21 +583,29 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     // A slot holding nothing gets no segment at all as of 2026-09-21, so the
     // bar needs a SECOND populated slot to exist — seeding only the current
     // one leaves a single segment, which is deliberately not drawn.
-    const later = slots.find((sl) => parseHHMM(sl.start_time)! > startMinutes)
-    const laterStart = later ? parseHHMM(later.start_time)! + 1 : null
+    //
+    // Prefer a LATER slot, because only a slot whose time has not come can
+    // prove the "not yet = no colour" rule. But after the last slot's start
+    // time there is no later one, and reaching for it regardless is what made
+    // this test pass all day and fail every evening. Fall back to the nearest
+    // EARLIER slot so the bar always has its second segment; the not-yet
+    // assertion is the only part that needs the companion to be in the future.
+    const later = slots.find((sl) => parseHHMM(sl.start_time) > startMinutes)
+    const earlier = [...slots].reverse().find((sl) => parseHHMM(sl.start_time) < startMinutes)
+    const companion = later ?? earlier
+    expect(companion, 'the seed must provide at least two time slots').toBeDefined()
+    const companionStart = parseHHMM(companion!.start_time) + 1
 
     const ids: number[] = []
     try {
       ids.push(await createReminder(page, { title: 'Slot bar probe A', due_at: at(1) }))
       ids.push(await createReminder(page, { title: 'Slot bar probe B', due_at: at(2) }))
-      if (laterStart !== null) {
-        ids.push(
-          await createReminder(page, {
-            title: 'Slot bar probe later',
-            due_at: todayAt(Math.floor(laterStart / 60), laterStart % 60),
-          }),
-        )
-      }
+      ids.push(
+        await createReminder(page, {
+          title: 'Slot bar probe companion',
+          due_at: todayAt(Math.floor(companionStart / 60), companionStart % 60),
+        }),
+      )
 
       await page.goto('/')
       await expect(panel(page)).toBeVisible()
@@ -617,21 +625,21 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
       // The current slot has started and still has two waiting.
       await expect(currentSeg).toHaveAttribute('data-slot-state', 'behind')
 
-      // A slot whose time has not come wears no colour — Trent's rule.
-      if (later) {
-        await expect(bar.locator(`[data-slot-segment="${later.id}"]`)).toHaveAttribute(
-          'data-slot-state',
-          'upcoming',
-        )
-      }
+      // A slot whose time has not come wears no colour — Trent's rule. When
+      // the run is late enough that the companion had to be an earlier slot,
+      // it has started and holds something undone, so it reads 'behind'.
+      await expect(bar.locator(`[data-slot-segment="${companion!.id}"]`)).toHaveAttribute(
+        'data-slot-state',
+        later ? 'upcoming' : 'behind',
+      )
 
       // Width tracks how much a slot holds, not an equal share (Trent,
       // 2026-09-21: "My slots are naturally even but that's not necessarily
       // the case"). Both probes went into the natural slot, so it holds more
       // than a slot seeded with nothing and must be at least as wide.
       const currentBox = await currentSeg.boundingBox()
-      const emptyish = later ? bar.locator(`[data-slot-segment="${later.id}"]`) : null
-      if (emptyish && currentBox) {
+      const emptyish = bar.locator(`[data-slot-segment="${companion!.id}"]`)
+      if (currentBox) {
         const otherBox = await emptyish.boundingBox()
         if (otherBox) expect(currentBox.width).toBeGreaterThanOrEqual(otherBox.width - 1)
         // ...and nothing collapses below a thumb.
