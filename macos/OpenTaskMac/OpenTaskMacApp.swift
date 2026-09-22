@@ -72,6 +72,14 @@ struct OpenTaskMacApp: App {
             }
         case "reminders":
             WebViewManager.shared.navigate(path: "/reminders")
+        case "quota":
+            // A quota opens ON the Quotas surface, and opens nothing — see
+            // the iOS counterpart's identical comment.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/quotas?quota=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/quotas")
+            }
         case "quotas":
             WebViewManager.shared.navigate(path: "/quotas")
         default:

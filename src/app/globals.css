@@ -211,9 +211,10 @@
 }
 
 /* A deep-linked row (?reminder=<id> on /reminders, ?task=<id>&highlight=1 on
-   /, both the iOS/macOS widget's links): a short flash that says "this one",
-   then nothing. It runs once on the element it lands on and is never cleared
-   in state, so a re-render cannot make it flash again.
+   /, ?quota=<id> on /quotas — all iOS/macOS widget links): a short flash
+   that says "this one", then nothing. It runs once on the element it lands
+   on and is never cleared in state, so a re-render cannot make it flash
+   again.
 
    The ring is INSET, not outset like a normal focus ring: TaskRow's row sits
    inside SwipeableRow, which clips outset shadows to its own overflow (see

@@ -205,6 +205,21 @@ enum WidgetLink {
     static func reminder(_ id: Int) -> URL {
         URL(string: "\(scheme)://reminder/\(id)") ?? reminders
     }
+
+    /// One quota, ON the Quotas surface.
+    ///
+    /// Deliberately NOT `task(_:)`: a quota is tracked (`is_tracked`), and
+    /// `task/<id>` sends a tracked id to `/tasks/<id>` — the full detail
+    /// page, not a highlight (Trent, 2026-09-22: "quota still opens up the
+    /// full detail menu when really it should just highlight it in the
+    /// Quotas tab"). This resolves to `/quotas?quota=<id>` instead, which
+    /// brings the row into view and highlights it, and opens nothing — the
+    /// same shape `reminder(_:)` and the dashboard's `task/<id>` give their
+    /// surfaces. Every Track widget row/card that links to a specific quota
+    /// (`TrackRow`, `TrackSmallView`) uses this, never `task(_:)`.
+    static func quota(_ id: Int) -> URL {
+        URL(string: "\(scheme)://quota/\(id)") ?? quotas
+    }
 }
 
 // MARK: - Shared chrome

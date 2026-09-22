@@ -189,10 +189,15 @@ private struct TasksListView: View {
                 // systemMedium drops the overflow line, as Track's does: at 4×2
                 // that band costs a whole row, and the header's count already
                 // states the total.
+                //
+                // A tap target, same as the header — see RemindersListView's
+                // identical comment.
                 if isLarge, entry.tasks.count > rows {
-                    Text("+\(entry.tasks.count - rows) more")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Link(destination: WidgetLink.dashboard) {
+                        Text("+\(entry.tasks.count - rows) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
 
