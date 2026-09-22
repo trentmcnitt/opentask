@@ -115,8 +115,11 @@ private struct TrackSmallView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            // Everything that isn't one of the three buttons opens the quota.
-            .widgetURL(WidgetLink.task(item.task.id))
+            // Everything that isn't one of the three buttons opens the quota
+            // — `.quota(_:)`, not `.task(_:)`: a quota is tracked, and
+            // `task/<id>` sends a tracked id to the full detail page instead
+            // of highlighting it on Quotas (see `WidgetLink.quota`'s doc).
+            .widgetURL(WidgetLink.quota(item.task.id))
         } else {
             WidgetEmptyView(symbol: "target", message: emptyTrackMessage, compact: true)
                 .widgetURL(WidgetLink.dashboard)
@@ -185,10 +188,14 @@ private struct TrackListView: View {
                             TrackRow(item: item)
                         }
                     }
+                    // A tap target, same as the header — see
+                    // `RemindersListView`'s identical comment.
                     if canPage, isLarge {
-                        Text("+\(entry.items.count - maxRows) more")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        Link(destination: WidgetLink.quotas) {
+                            Text("+\(entry.items.count - maxRows) more")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -268,7 +275,8 @@ private struct TrackRow: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            Link(destination: WidgetLink.task(item.task.id)) {
+            // `.quota(_:)`, not `.task(_:)` — see `WidgetLink.quota`'s doc.
+            Link(destination: WidgetLink.quota(item.task.id)) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.task.title)

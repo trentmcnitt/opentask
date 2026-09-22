@@ -728,6 +728,34 @@ test.describe('Quotas page', () => {
       await deleteTasks(page, [id])
     }
   })
+
+  /**
+   * `?quota=<id>` — the Track widget's deep link. Trent, 2026-09-22: "quota
+   * still opens up the full detail menu when really it should just
+   * highlight it in the Quotas tab." Mirrors `?reminder=<id>` on
+   * `/reminders` and `?task=<id>&highlight=1` on `/`.
+   */
+  test('?quota=<id> brings that quota into view without opening it', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Probe quota the widget links to',
+      progress_target: 3,
+      rrule: 'FREQ=WEEKLY',
+    })
+    try {
+      await page.goto(`/quotas?quota=${id}`)
+      const row = page.locator(`[data-quota-row="${id}"]`)
+      await expect(row).toHaveAttribute('data-quota-highlight', '')
+      await expect(row).toBeInViewport()
+      // A link is a place to look, not an edit. Nothing opens.
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      // The param is spent, so a reload does not flash the same row again.
+      await expect(page).toHaveURL('/quotas')
+    } finally {
+      await deleteTasks(page, [id])
+    }
+  })
 })
 
 test.describe('Quota labels', () => {

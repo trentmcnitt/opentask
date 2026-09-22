@@ -188,10 +188,18 @@ private struct RemindersListView: View {
                 // systemMedium drops the overflow line, as Track's does: at
                 // 4×2 that band costs a whole row, and the header's "N left"
                 // already states the total.
+                //
+                // A tap target, same as the header: someone reading "+N more"
+                // wants the rest, so it goes to the surface that has them
+                // (Trent, 2026-09-22). `.foregroundStyle` stays explicit
+                // inside the Link for the same reason the header's does — see
+                // `header`'s doc comment.
                 if isLarge, reminders.count > rows {
-                    Text("+\(reminders.count - rows) more")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Link(destination: WidgetLink.reminders) {
+                        Text("+\(reminders.count - rows) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
 

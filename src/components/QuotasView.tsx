@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useRouter } from 'next/navigation'
@@ -17,6 +17,7 @@ import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { log } from '@/lib/logger'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { cn, fromRowControl } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -105,6 +106,41 @@ export function QuotasView({
     }
   }, [refreshRef, refresh])
 
+  // `?quota=<id>` — the Track widget's deep link (`WidgetLink.quota` →
+  // `opentask://quota/<id>` → `/quotas?quota=<id>`, resolved in
+  // `OpenTaskApp.handleWidgetLink`). Brings that quota into view and flashes
+  // it once; opens nothing — mirrors RemindersView's `?reminder=<id>` and
+  // the dashboard's `?task=<id>&highlight=1`.
+  //
+  // Bare, no `highlight` flag: unlike `/?task=`, nothing else currently
+  // links into `/quotas` with a query param — no notification tap, no Web
+  // Push — so there is no second meaning `?quota=<id>` has to be told apart
+  // from. If that changes, match the flag convention rather than inventing
+  // a third one.
+  //
+  // Read from `window.location.search` directly rather than
+  // `useSearchParams()` — same reasoning as RemindersView's identical
+  // comment: it keeps this component out of a Suspense boundary it would
+  // otherwise need, and the param is stripped with a raw history rewrite
+  // below regardless of how it was read.
+  const [highlightId, setHighlightId] = useState<number | null>(null)
+  const clearHighlight = useCallback(() => setHighlightId(null), [])
+  const deepLinkDone = useRef(false)
+  useEffect(() => {
+    if (deepLinkDone.current || tasks === null) return
+    const raw = new URLSearchParams(window.location.search).get('quota')
+    if (!raw) {
+      deepLinkDone.current = true
+      return
+    }
+    deepLinkDone.current = true
+    const id = Number.parseInt(raw, 10)
+    if (!Number.isNaN(id) && tasks.some((t) => t.id === id)) {
+      setHighlightId(id)
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [tasks])
+
   // A quota is logged from the widget, the watch, a notification action and
   // other tabs. Every one of those emits a sync event, and this surface has to
   // hear them the way Reminders and the dashboard do.
@@ -182,6 +218,8 @@ export function QuotasView({
                 else selectOnly(task.id)
               }}
               onOpen={(task) => setEditing([task])}
+              highlightId={highlightId}
+              onHighlightDone={clearHighlight}
             />
           ))}
         </div>
@@ -248,12 +286,17 @@ function QuotaGroupCard({
   selectedIds,
   onSelect,
   onOpen,
+  highlightId,
+  onHighlightDone,
 }: {
   label: string | null
   tasks: Task[]
   selectedIds: Set<number>
   onSelect: (task: Task, e: React.MouseEvent) => void
   onOpen: (task: Task) => void
+  /** `?quota=<id>` — the one row to scroll to and flash. See `QuotasView`'s effect. */
+  highlightId?: number | null
+  onHighlightDone?: () => void
 }) {
   const { labelConfig } = useLabelConfig()
   // "Unlabelled" rather than "no label": it is a group of things, named the way
@@ -293,6 +336,8 @@ function QuotaGroupCard({
             selected={selectedIds.has(task.id)}
             onSelect={(e) => onSelect(task, e)}
             onOpen={() => onOpen(task)}
+            highlighted={highlightId === task.id}
+            onHighlightDone={onHighlightDone}
           />
         ))}
       </ul>
@@ -309,11 +354,26 @@ function QuotaRow({
   selected,
   onSelect,
   onOpen,
+  highlighted = false,
+  onHighlightDone,
 }: {
   task: Task
   selected: boolean
   onSelect: (e: React.MouseEvent) => void
   onOpen: () => void
+  /**
+   * Deep-linked from the Track widget (`?quota=<id>`): scroll to it and
+   * flash it once, mirroring `RemindersView`'s `ReminderRow`. A plain ref
+   * (via `scrollRowIntoView`), not the dashboard's `ResizeObserver` effect:
+   * this page has nothing that fetches and mounts content above a row
+   * AFTER it renders (no side panels, no AI annotations — see
+   * `TaskRow.tsx`'s identical decision point for the contrast), so there is
+   * nothing here that could push the row back off-screen the way the
+   * dashboard's panels do.
+   */
+  highlighted?: boolean
+  /** The deep link's flash has played; it must not play again on a remount. */
+  onHighlightDone?: () => void
 }) {
   // `state` already reflects the optimistic count — re-wrapping it in
   // trackState was a no-op.
@@ -323,6 +383,8 @@ function QuotaRow({
   return (
     <li
       data-quota-row={task.id}
+      data-quota-highlight={highlighted ? '' : undefined}
+      ref={highlighted ? scrollRowIntoView : undefined}
       role="option"
       aria-selected={selected}
       // No aria-label: the row's own content is its accessible name, so a
@@ -342,12 +404,21 @@ function QuotaRow({
         if (fromRowControl(e)) return
         onOpen()
       }}
+      onAnimationEnd={(e) => {
+        // Filtered the same way TaskRow's is: nothing else on this row
+        // animates today, but the guard is cheap and keeps the two rows'
+        // patterns identical.
+        if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
+          onHighlightDone?.()
+        }
+      }}
       className={cn(
         // Wraps like TrackRow: on a phone the title takes the whole first line
         // and the bar/count/buttons sit beneath it. Five fixed-width things on
         // one 375px line truncated every title to "Broc…".
         'flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors',
         selected ? 'bg-primary/10 ring-primary/40 ring-1' : 'hover:bg-background/60',
+        highlighted && 'animate-row-highlight',
       )}
     >
       <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">

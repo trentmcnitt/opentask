@@ -90,6 +90,16 @@ struct OpenTaskApp: App {
             }
         case "reminders":
             WebViewManager.shared.navigate(path: "/reminders")
+        case "quota":
+            // A quota opens ON the Quotas surface, and opens nothing — same
+            // shape as `reminder` above. Tapping a quota from Track means
+            // "show me that one", not "open its full detail page", which is
+            // where `task/<id>` would send a tracked id instead.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/quotas?quota=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/quotas")
+            }
         case "quotas":
             WebViewManager.shared.navigate(path: "/quotas")
         default:
