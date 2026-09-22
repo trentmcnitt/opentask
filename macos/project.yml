@@ -62,15 +62,52 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         #
-        # `aps-environment` is deliberately NOT here. It is the one entitlement
-        # that requires a provisioning profile, there is no macOS profile for
-        # this team yet, and creating one needs a signed-in Apple ID — which
-        # this Mac currently rejects ("Unable to log in with account ...").
-        # Adding it here fails the build outright, which would leave nothing
-        # runnable at all.
+        # App Group, shared with OpenTaskMacWidgets so the widget extension's
+        # timeline providers can read the same Keychain-stored credentials and
+        # WidgetStore cache the app writes. macOS App Group IDs need the
+        # team-ID prefix — unlike iOS's bare `group.io.mcnitt.opentask` — per
+        # Apple's docs on `kSecAttrAccessGroup`. Confirmed working empirically
+        # (2026-09-22): `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`
+        # resolves to a real, existing path and a `UserDefaults(suiteName:)`
+        # round-trip succeeds, even though the embedded "Mac Team Provisioning
+        # Profile" this team's automatic signing generates does not list
+        # `com.apple.security.application-groups` when its Entitlements dict is
+        # dumped directly (`security cms -D` on `embedded.provisionprofile`).
+        # That dict is not the full picture for an auto-managed profile — trust
+        # the runtime check (this one, or `codesign -d --entitlements -` on the
+        # built app), not the profile's own entitlement listing.
+        com.apple.security.application-groups:
+          - GEL3VGTUJX.group.io.mcnitt.opentask
         #
-        # The push build is the same app with one extra entitlement. Once the
-        # account is signed in again (Xcode ▸ Settings ▸ Accounts), build with:
+        # `keychain-access-groups`, explicit and required alongside the App Group
+        # above. Before `com.apple.security.application-groups` existed on this
+        # App ID, automatic signing silently synthesized a wildcard
+        # (`keychain-access-groups: [GEL3VGTUJX.*]`) into every build, which is
+        # why sharing the Bearer token worked without this key ever being
+        # written down. Requesting an explicit App Group made Xcode stop
+        # synthesizing that wildcard — the signed binary quietly lost
+        # `keychain-access-groups` entirely and every `SecItemAdd`/
+        # `SecItemCopyMatching` call using `kSecAttrAccessGroup` started failing
+        # with errSecMissingEntitlement (-34018), even though
+        # `com.apple.security.application-groups` itself kept working fine
+        # (confirmed via `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`).
+        # On iOS the App Group alone is sufficient for keychain access-group
+        # matching; on macOS it is not — verified empirically (2026-09-22) by
+        # adding this key back explicitly and watching the same seed-credential
+        # save go from -34018 to success.
+        # NOTE: bare key, no `com.apple.security.` prefix — matches what the
+        # provisioning profile itself uses (verified via `security cms -D` on
+        # the embedded profile before this was added).
+        keychain-access-groups:
+          - GEL3VGTUJX.group.io.mcnitt.opentask
+        #
+        # `aps-environment` is deliberately NOT here (see OpenTaskMac-Push.entitlements
+        # for the push variant). Historical note: this used to be blocked on a
+        # signed-out Apple ID and no macOS profile existing at all — both are
+        # resolved now (automatic signing fetches a real "Mac Team Provisioning
+        # Profile" for this App ID without issue as of 2026-09-22), but the
+        # split is kept because XcodeGen still needs one entitlements file it
+        # owns and one hand-written variant for CODE_SIGN_ENTITLEMENTS overrides.
         #
         #   xcodebuild ... CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements \
         #     -allowProvisioningUpdates

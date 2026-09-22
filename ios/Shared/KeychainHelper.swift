@@ -13,19 +13,30 @@ import Security
 ///
 /// **macOS (`OpenTaskMac`).** Two things differ on a genuinely native macOS process:
 ///
-///  1. No access group is applied. App Groups on macOS must be team-ID-prefixed and
-///     require a provisioning profile, and the Mac app currently ships without one (see
-///     `macos/project.yml`). Items therefore belong to the app alone, which is exactly
-///     right while the Mac app is the only process reading them. When a macOS extension
-///     arrives, give both targets `GEL3VGTUJX.group.io.mcnitt.opentask` and set
-///     `accessGroup` for macOS too — it will work, because a profile is a prerequisite
-///     for that app group anyway, and a profile is also what switches the code below to
-///     the data protection keychain, the only one where access groups mean anything.
+///  1. `kSecAttrAccessGroup` IS applied, same team-ID-prefixed group as iOS
+///     (`GEL3VGTUJX.group.io.mcnitt.opentask` — macOS App Group IDs must carry the
+///     team-ID prefix; iOS's is bare). This is what lets `OpenTaskMacWidgets` read the
+///     Bearer token the app saves without the app being active. Confirmed working
+///     empirically (2026-09-22): a `com.apple.security.application-groups` entitlement
+///     for this group resolves a real container via
+///     `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)` and a
+///     `UserDefaults(suiteName:)` round-trip succeeds on this team's automatic macOS
+///     signing — even though the embedded "Mac Team Provisioning Profile"'s own
+///     Entitlements dict (dumped via `security cms -D`) does not list
+///     `com.apple.security.application-groups` explicitly. Trust the runtime check, not
+///     that dict.
 ///  2. `kSecUseDataProtectionKeychain` is conditional rather than always true — see
-///     `hasKeychainEntitlement` below for why, and for what changes when the Mac app
-///     finally gets a provisioning profile.
+///     `hasKeychainEntitlement` below for why.
 enum KeychainHelper {
     private static let accessGroup = "group.io.mcnitt.opentask"
+    #if os(macOS)
+    // Team-ID-prefixed, unlike the bare iOS form above. Verified empirically
+    // (2026-09-22): the bare form fails SecItemAdd/SecItemCopyMatching with
+    // errSecMissingEntitlement (-34018) on macOS even under this team's
+    // wildcard `keychain-access-groups: [GEL3VGTUJX.*]` grant — only the
+    // fully-prefixed string matches.
+    private static let macAccessGroup = "GEL3VGTUJX.group.io.mcnitt.opentask"
+    #endif
     private static let service = "io.mcnitt.opentask"
 
     #if os(macOS)
@@ -80,6 +91,12 @@ enum KeychainHelper {
         ]
         #if os(macOS)
         query[kSecUseDataProtectionKeychain as String] = hasKeychainEntitlement
+        // Access group only makes sense once we're on the data protection keychain —
+        // the legacy keychain (used when hasKeychainEntitlement is false) has no
+        // concept of access groups, and setting one there would just fail to match.
+        if hasKeychainEntitlement {
+            query[kSecAttrAccessGroup as String] = macAccessGroup
+        }
         #else
         query[kSecUseDataProtectionKeychain as String] = true
         query[kSecAttrAccessGroup as String] = accessGroup
