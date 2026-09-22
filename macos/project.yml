@@ -119,6 +119,26 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac
+        # `PRODUCT_NAME` (defaults to the target name, "OpenTaskMac") is what
+        # actually names the .app FILE — Finder, Spotlight and Launchpad show
+        # the file name, not `CFBundleDisplayName` (already "OpenTask" above).
+        # `EXECUTABLE_NAME` and the wrapper extension both derive from
+        # `PRODUCT_NAME` too, so this also renames the binary inside the
+        # bundle to `OpenTask.app/Contents/MacOS/OpenTask`. Target name,
+        # scheme names, bundle IDs, entitlements and the App Group are all
+        # keyed off the TARGET name ("OpenTaskMac") or explicit settings
+        # above/below, not `PRODUCT_NAME`, so none of them move.
+        PRODUCT_NAME: OpenTask
+        # `PRODUCT_MODULE_NAME` defaults to `$(PRODUCT_NAME:c99extidentifier)`
+        # — without this it would silently follow `PRODUCT_NAME` above and
+        # the Swift module would become "OpenTask" instead of "OpenTaskMac".
+        # Nothing in this codebase currently imports that module name or
+        # references it by string, but pinning it is the least-disruptive
+        # choice: it keeps the module identity stable across this rename
+        # (derived data, module cache, any future `@testable import
+        # OpenTaskMac` all keep working) while only the FILE users see
+        # changes.
+        PRODUCT_MODULE_NAME: OpenTaskMac
         INFOPLIST_KEY_NSHumanReadableCopyright: ''
         # AppIcon (OpenTaskMac/Assets.xcassets/AppIcon.appiconset) is derived from
         # ios/OpenTask/Assets.xcassets/AppIcon.appiconset/icon-1024.png — the only

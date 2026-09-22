@@ -428,6 +428,8 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac;
+				PRODUCT_MODULE_NAME = OpenTaskMac;
+				PRODUCT_NAME = OpenTask;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -572,6 +574,8 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac;
+				PRODUCT_MODULE_NAME = OpenTaskMac;
+				PRODUCT_NAME = OpenTask;
 				SDKROOT = macosx;
 			};
 			name = Release;
