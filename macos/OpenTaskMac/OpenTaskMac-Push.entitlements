@@ -18,7 +18,15 @@
 -->
 <plist version="1.0">
 <dict>
-	<key>aps-environment</key>
+	<!--
+	  macOS spells this key with the `com.apple.developer.` prefix; iOS uses the
+	  bare `aps-environment`. A Mac provisioning profile grants only the
+	  prefixed form, and Xcode silently DROPS any entitlement the profile does
+	  not grant — so the bare key builds and signs cleanly and simply leaves the
+	  app without push, with no error anywhere. Verified against the profile
+	  embedded in this app, which grants com.apple.developer.aps-environment.
+	-->
+	<key>com.apple.developer.aps-environment</key>
 	<string>development</string>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
