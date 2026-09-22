@@ -168,6 +168,44 @@ while `target="_blank"` handling, `allowsMagnification` and `isInspectable` do.
 - **No `opentask://` URL scheme.** The Designed-for-iPad build currently owns
   it for widget taps, and registering it here could steal them.
 
+## Widget extension (`OpenTaskMacWidgets`)
+
+A genuinely native macOS `app-extension` target, not shared with `ios/` at
+the binary level — WidgetKit has no Mac Catalyst slice at all, verified from
+the SDK. It ports `ios/OpenTaskWidgets/` (all three kinds: Reminders, Tasks,
+Track) by referencing those `.swift` files directly from `project.yml` rather
+than copying them, so a future change to reminder/task/track behavior only
+has to happen once. Two platform-specific changes were needed in that shared
+code, both guarded with `#if os(iOS)` / `#if os(macOS)` so `ios/`'s own build
+is untouched: `WidgetTheme.rowTitleLineHeight` (UIKit's line-height call has
+no direct AppKit equivalent — see the doc comment on that property) and the
+Lock Screen accessory families (`.accessoryRectangular`/`.accessoryCircular`
+are `@available(macOS, unavailable)` — hard compile errors on native macOS,
+unlike the Designed-for-iPad build).
+
+Shares the App Group and `keychain-access-groups` entitlements with
+`OpenTaskMac` (see the long comment on the app target's entitlements in
+`project.yml`) so its timeline providers can read the same Bearer token and
+`WidgetStore` cache the app writes.
+
+**Verified:** the app and the extension both build and embed cleanly
+(`.appex` inside `OpenTaskMac.app/Contents/PlugIns/`), both binaries' signed
+entitlements carry the App Group + keychain-access-groups grants, `pluginkit
+-m -v -p com.apple.widgetkit-extension` shows it registered, running the
+`.appex` binary directly reports "An XPC Service cannot be run directly"
+(correct behavior for an XPC-backed extension, not a crash), and `ios/`
+still regenerates a byte-identical `project.pbxproj` with all its targets
+building.
+
+**Not verified without a human placing it on a desktop:** actual timeline
+rendering, the `+1`/check-off `AppIntent` buttons, and the `ChevronPager`.
+`chronod`'s unified-log trace on this dev-signed build shows it discovering
+the extension and requesting a reload, with some "purging... isApple? false"
+housekeeping and a FOREIGN KEY constraint message that read as normal for a
+not-yet-placed third-party extension — no `RBSRequestErrorDomain` launch
+failure, which is the known real bug pattern from earlier this week's iOS
+widget debugging (see the hub capability notes).
+
 ## Not in this pass
 
 - **Notification content extension** (the long-press snooze grid). A throwaway
@@ -176,10 +214,8 @@ while `target="_blank"` handling, `allowsMagnification` and `isInspectable` do.
   (which were all for older macOS). Whether buttons _inside_ its custom view
   work — `UNNotificationExtensionUserInteractionEnabled` — is still untested.
   The plain category action buttons work regardless, so the fallback is
-  graceful. Adding one means: a second `app-extension` target in `project.yml`
-  (keep it sandboxed), an App Group so it can read the Keychain, and switching
-  `KeychainHelper`'s macOS branch to the data protection keychain with an
-  access group.
-- **Widget extension.** Unchanged in cost from the Catalyst analysis: WidgetKit
-  needs a genuinely native macOS extension either way, 10-15h.
+  graceful. Adding one means a second `app-extension` target in `project.yml`
+  (keep it sandboxed) — the App Group and the Keychain access group it would
+  need already exist now, built for the widget extension above, so that part
+  is no longer new work.
 - **Dock menu, Spotlight, Focus filters.**
