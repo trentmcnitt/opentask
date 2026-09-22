@@ -16,7 +16,16 @@ import Foundation
 /// Everything is best-effort: if the App Group suite is unavailable the widget
 /// still renders, it just loses cache and navigation state.
 enum WidgetStore {
+    /// macOS App Group IDs need the team-ID prefix in the entitlement itself
+    /// (unlike iOS's bare form) — see `KeychainHelper.swift` for the same
+    /// split, confirmed empirically there (2026-09-22): a `UserDefaults`
+    /// suite name has to match one of the entitlement's strings exactly, and
+    /// this project's macOS entitlement lists only the prefixed form.
+    #if os(macOS)
+    static let appGroup = "GEL3VGTUJX.group.io.mcnitt.opentask"
+    #else
     static let appGroup = "group.io.mcnitt.opentask"
+    #endif
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: appGroup)

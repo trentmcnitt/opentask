@@ -114,7 +114,62 @@ targets:
         #
         # Without it the app runs normally and APNs registration fails loudly
         # in the log (see MacAppDelegate.didFailToRegisterForRemoteNotifications).
+    dependencies:
+      - target: OpenTaskMacWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac
         INFOPLIST_KEY_NSHumanReadableCopyright: ''
+
+  # Native macOS WidgetKit extension — porting ios/OpenTaskWidgets/, not sharing
+  # a binary with it. WidgetKit has NO Mac Catalyst slice at all (verified from
+  # the SDK), so this has to be a genuinely native macOS app-extension target
+  # regardless of what hosts it. The three widget kinds (Reminders, Tasks,
+  # Track), their timeline providers, WidgetStore caching, TaskFeed sharing and
+  # ChevronPager are all reused unmodified from ios/OpenTaskWidgets/ — only
+  # WidgetTheme.swift's UIKit line-height call and the six
+  # `.accessoryRectangular`/`.accessoryCircular` call sites (hard compile
+  # errors on native macOS, unlike the Designed-for-iPad build) needed
+  # `#if os(iOS)` branching, done in place so ios/'s own build is untouched.
+  OpenTaskMacWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: OpenTaskMacWidgets
+        excludes:
+          - '*.entitlements'
+          - Info.plist
+      # The whole widget extension, reused unmodified except for the platform
+      # guards described above. Referenced by path, not copied, so a future
+      # change to reminder/task/track behavior only has to happen once.
+      - path: ../ios/OpenTaskWidgets
+      # Same five files OpenTaskMac reuses (APIClient, KeychainHelper,
+      # DateHelpers, OpenTaskModels, NotificationConstants) — the widget
+      # extension is a second, separate process and needs its own copy of the
+      # code that reads the shared Keychain credentials, not a reference to
+      # the app's.
+      - path: ../ios/Shared
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: OpenTaskMacWidgets/OpenTaskMacWidgets.entitlements
+      properties:
+        # Same sandbox + App Group + keychain-access-groups triple as
+        # OpenTaskMac, and for the same reasons — see the long comment on that
+        # target's entitlements. A widget extension is its own process; it
+        # needs its own grant of both entitlements to read the App Group cache
+        # AND the Keychain-stored Bearer token the app saves, not just to be
+        # embedded in an app that has them.
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - GEL3VGTUJX.group.io.mcnitt.opentask
+        keychain-access-groups:
+          - GEL3VGTUJX.group.io.mcnitt.opentask
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac.widgets
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
+        GENERATE_INFOPLIST_FILE: false
