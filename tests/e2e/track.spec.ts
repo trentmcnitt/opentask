@@ -224,11 +224,9 @@ test.describe('Track', () => {
       // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
-      // Met quotas are put away by default (Trent, 2026-09-22): the chip goes
-      // with the tap that meets it, and "Show N met" brings it back in place.
-      await expect(chip).toHaveCount(0)
-      await panel.locator('[data-track-met-toggle]').click()
-      await expect(panel.locator('[data-track-met-toggle]')).toHaveText('Hide met')
+      // Met DURING the session, so it stays put, green — only what was met
+      // when the page loaded is put away (Trent, 2026-09-22: "things should
+      // not disappear until reload").
       await expect(chipCount).toHaveText('2/2·wk')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('1/2·wk')
@@ -306,13 +304,10 @@ test.describe('Track', () => {
       await expect(count).toContainText('0 / 2')
       await expect(minus).toBeDisabled()
 
-      // Reaching the target is "met": a state, not an exit. The row is hidden
-      // with the rest of the met ones (the reload above put them away again),
-      // and still there — with its count — when they are shown.
+      // Reaching the target is "met": a state, not an exit — the line stays
+      // until the next load puts it away.
       await plus.click()
       await plus.click()
-      await expect(row).toHaveCount(0)
-      await panel.locator('[data-track-met-toggle]').click()
       await expect(count).toContainText('2 / 2')
       await expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2')
       await expect(row).toBeVisible()
@@ -559,7 +554,7 @@ test.describe('Track', () => {
     await closeTrack(page)
   })
 
-  test('met quotas are hidden, a met cluster goes whole, and "Show N met" brings them back', async ({
+  test('what was met at load is put away; a finished label stacks at the foot; the count shows them', async ({
     authenticatedPage: page,
   }) => {
     // A run-unique label, so this cluster holds exactly these two.
@@ -589,28 +584,45 @@ test.describe('Track', () => {
     const cluster = panel.locator(`[data-track-cluster="${label}"]`)
     const doneChip = panel.locator(`[data-track-chip="${done}"]`)
     const openChip = panel.locator(`[data-track-chip="${open}"]`)
+    const finished = panel.locator(`[data-track-finished-cluster="${label}"]`)
     const toggle = panel.locator('[data-track-met-toggle]')
 
-    // One met, one not: the cluster stays, holding only the unmet one.
+    // Met at load: put away. The label stays for its unmet quota, and says
+    // how many it has closed beside its name.
+    await expect(openChip).toBeVisible()
+    await expect(doneChip).toHaveCount(0)
+    await expect(cluster.locator('[data-track-cluster-met]')).toHaveText('1')
+    await expect(finished).toHaveCount(0)
+    await expect(toggle).toHaveText(/^\d+ of \d+$/)
+
+    // Met now, mid-session: nothing disappears and nothing moves.
+    await openChip.click()
+    await expect(openChip.locator('[data-track-count]')).toHaveText('1/1·mo')
     await expect(openChip).toBeVisible()
     await expect(cluster).toBeVisible()
-    await expect(doneChip).toHaveCount(0)
-    await expect(toggle).toHaveText(/^Show \d+ met$/)
 
-    // Meeting the last one: its chip goes with the tap, and the cluster's
-    // title follows once the refetch says the whole cluster is met.
-    await openChip.click()
-    await expect(openChip).toHaveCount(0)
+    // The next load puts the whole label away, and it stacks at the foot as
+    // one finished chip carrying how many it closed.
+    await expect
+      .poll(async () => (await (await page.request.get(`/api/tasks/${open}`)).json()).data)
+      .toMatchObject({ progress_current: 1 })
+    await page.reload()
+    await expect(finished).toBeVisible()
+    await expect(finished).toContainText('2')
     await expect(cluster).toHaveCount(0)
+    await expect(openChip).toHaveCount(0)
 
-    // Shown again, both are back under their title, in title order.
-    await toggle.click()
-    await expect(toggle).toHaveText('Hide met')
+    // Tapping it — or the header count — shows them in place, and the count
+    // holds its box while they are showing.
+    await finished.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(cluster).toBeVisible()
     await expect(doneChip).toBeVisible()
     await expect(openChip).toBeVisible()
+    await expect(finished).toHaveCount(0)
     await toggle.click()
     await expect(cluster).toHaveCount(0)
+    await expect(finished).toBeVisible()
   })
 
   test('an ordinary task is a row in the day, not a line in the panel', async ({
