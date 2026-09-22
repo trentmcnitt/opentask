@@ -41,11 +41,21 @@ function todayAt(hour: number, minute = 0): string {
  * A due time guaranteed to land in an already-started slot — or in the
  * always-started "Anytime" bucket, if no slot has opened yet — used whenever
  * a test's point is "this is in a slot whose time has come" and does not care
- * which slot that is. A few minutes before "now" always satisfies this: slot
+ * which slot that is. A few minutes before "now" usually satisfies this: slot
  * assignment (`assignSlot`) picks the latest slot boundary at or before a
  * reminder's time of day, so whichever slot (or Anytime) a moment slightly
  * before now falls into has, by that same rule, already started relative to
  * now.
+ *
+ * USUALLY — not always: slot assignment reads only the time-of-day, with no
+ * concept of "yesterday". In the first few minutes after local midnight,
+ * `now.minus(minutesAgo)` wraps to ~23:5x *the previous calendar day*, which
+ * assignment reads as 23:5x TODAY and slots into Evening (20:30) — a slot
+ * that, at 00:0x, has very much not started. Guard it the same way this
+ * file's very first cut at this problem did (see git blame): if subtracting
+ * minutes crossed the local day boundary, fall back to a minute after local
+ * midnight instead, which precedes every real slot's start and so always
+ * lands in Anytime.
  *
  * Explicitly zoned in `TEST_TZ`. A bare `DateTime.now()` tracks the test
  * PROCESS's own default zone (`TZ`, or the machine's), not the seeded user's
@@ -55,7 +65,10 @@ function todayAt(hour: number, minute = 0): string {
  * pulled out here — see `TEST_TZ`'s own docs for why they have to agree.
  */
 function inStartedSlot(minutesAgo = 5): string {
-  return DateTime.now().setZone(TEST_TZ).minus({ minutes: minutesAgo }).toUTC().toISO() as string
+  const now = DateTime.now().setZone(TEST_TZ)
+  const passed = now.minus({ minutes: minutesAgo })
+  const safe = passed.hasSame(now, 'day') ? passed : now.startOf('day').plus({ minutes: 1 })
+  return safe.toUTC().toISO() as string
 }
 
 async function createReminder(page: Page, body: Record<string, unknown>): Promise<number> {
