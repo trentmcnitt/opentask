@@ -451,6 +451,12 @@ test.describe('Tasks page layout — phone', () => {
         // 2026-09-21 (see the fold spec above), so clicking here would SHUT it.
         await expect(page.locator('#track-card')).toBeVisible()
 
+        // An all-met cluster is hidden whole until met quotas are shown
+        // (Trent, 2026-09-22); its header is what this test is about.
+        const cluster = page.locator('[data-track-cluster="zz-met"]')
+        await expect(cluster).toHaveCount(0)
+        await page.locator('[data-track-met-toggle]').click()
+
         const summary = page.locator('[data-track-cluster="zz-met"] [data-track-cluster-summary]')
         await expect(summary).toContainText('all met')
         await expect(summary).not.toContainText('left')
