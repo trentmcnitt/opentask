@@ -22,19 +22,37 @@ import { DateTime } from 'luxon'
  * waiting; that is what "needs work" means here, and nothing else competes
  * with it for attention.
  *
- * ONE HUE ONLY, AND IT IS GREEN. A first cut tinted the track violet for
- * "behind" and filled it green for progress; Trent, 2026-09-21: "the purple
- * background is not good. Green and purple don't seem to go together." He was
- * right, and the reason is that it ran two colour languages at once — hue for
- * state, fill for progress — so the two competed in the same 4px of bar. Now
- * green is the only colour on the instrument and it means exactly what it
- * means everywhere else in this app (considered, met, done). State is carried
- * by the WEIGHT of the neutral track instead: present for a slot whose time
- * has come, nearly invisible for one whose time has not.
+ * ONE HUE ONLY, AND IT WAS GREEN — for a while. A first cut tinted the track
+ * violet for "behind" and filled it green for progress; Trent, 2026-09-21:
+ * "the purple background is not good. Green and purple don't seem to go
+ * together." He was right, and the reason is that it ran two colour languages
+ * at once — hue for state, fill for progress — so the two competed in the
+ * same 4px of bar to say the SAME thing. Green became the only colour on the
+ * instrument, meaning exactly what it means everywhere else in this app
+ * (considered, met, done), and state was carried by the WEIGHT of the neutral
+ * track instead: present for a slot whose time has come, nearly invisible for
+ * one whose time has not.
+ *
+ * REVISED 2026-09-22: TWO HUES, ON PURPOSE THIS TIME. That single-hue bar had
+ * a blind spot — "10 of 11" and "11 of 11" rendered almost identically, the
+ * only difference a sliver of grey track a few pixels wide. Trent: "it'd be
+ * nice if there was some indication when something was actually finished...
+ * it's hard to see the difference between a completed green segment and
+ * something that's nearly complete." His fix: "one color when it's filling,
+ * another color when it's finished." This is NOT the violet mistake come
+ * back — that cut ran two hues to express the same thing (state) in the same
+ * space, and they fought each other. This runs two hues to express two
+ * DIFFERENT things: blue means "time has come, still filling in"; green still
+ * means only what it always has here — fully considered. The fill is what
+ * changes hue now, gated on the numbers being equal (`considered === total`),
+ * not on `state`, so a slot fully considered before its own time has come
+ * (still `'upcoming'`) reads as finished rather than lying blue. The track
+ * underneath is untouched by any of this — still weight-only, still the tell
+ * for "behind" vs "upcoming".
  *
  * Nothing here is ever red or amber. §6: a reminder is never overdue and
  * carries no debt, so the bar may report that a slot is unfinished but must
- * never dress it as a failure.
+ * never dress it as a failure. Blue reads as "in progress", not "wrong".
  *
  * SEGMENTS ARE PROPORTIONAL TO WHAT THEY HOLD. Equal widths were the first
  * cut, on the reasoning that Trent's own slots happen to be evenly sized so
@@ -121,6 +139,11 @@ export function ReminderSlotBar({
         const started = hasStarted(group, timezone, now)
         const state = slotState(group, started)
         const fraction = group.considered / total
+        // Gated on the numbers, not on `state`: `state` only calls a slot
+        // 'done' once it has STARTED, but a slot can be fully considered
+        // ahead of its own start time (still 'upcoming') and the fill must
+        // not call that "still filling" — see the header comment.
+        const complete = group.considered >= total
         const label = group.slot?.label ?? 'Anytime'
         const current = i === currentIndex
 
@@ -167,7 +190,13 @@ export function ReminderSlotBar({
             >
               {fraction > 0 && (
                 <span
-                  className="block h-full rounded-full bg-green-600 transition-[width] duration-300 ease-out"
+                  className={cn(
+                    // Blue while there's still something waiting; green the
+                    // moment there isn't. A step change in colour, not an
+                    // increment in length — see the header comment.
+                    'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
+                    complete ? 'bg-green-600' : 'bg-blue-600',
+                  )}
                   style={{ width: `${Math.min(1, fraction) * 100}%` }}
                 />
               )}
