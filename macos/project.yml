@@ -184,3 +184,34 @@ targets:
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
         GENERATE_INFOPLIST_FILE: false
+
+# Shared schemes, generated rather than left to Xcode's autocreation.
+#
+# Without these, XcodeGen emits no scheme at all and Xcode silently
+# autocreates only whichever target it feels like — in practice just the
+# widget extension, which is why the app could be built from the command line
+# (`xcodebuild -scheme OpenTaskMac` resolves a target directly) while Xcode's
+# own scheme menu offered no way to RUN the app. A real Run does installation
+# and registration work a command-line build does not, so not being able to
+# reach it from the UI is a genuine blocker, not a cosmetic one.
+schemes:
+  OpenTaskMac:
+    build:
+      targets:
+        OpenTaskMac: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+  OpenTaskMacWidgets:
+    build:
+      targets:
+        OpenTaskMacWidgets: all
+    run:
+      config: Debug
+    archive:
+      config: Release
