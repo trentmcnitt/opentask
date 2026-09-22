@@ -120,6 +120,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac
         INFOPLIST_KEY_NSHumanReadableCopyright: ''
+        # AppIcon (OpenTaskMac/Assets.xcassets/AppIcon.appiconset) is derived from
+        # ios/OpenTask/Assets.xcassets/AppIcon.appiconset/icon-1024.png — the only
+        # 1024x1024 clean export available (assets/ and public/ only have the
+        # 548x548 logomark and the 1260x232 wordmark). That iOS source is a
+        # full-bleed square with no padding, which is the iOS convention, not the
+        # macOS one. To make a macOS-shaped icon: scaled the source to 824x824
+        # (~80.5%, matching Apple's Big Sur icon template), masked it with an
+        # n=5 superellipse ("squircle"), and centered it on a transparent
+        # 1024x1024 canvas. No artwork was redrawn or added — this only pads and
+        # masks the existing logo. Regenerate the same way if the iOS art changes.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
   # Native macOS WidgetKit extension — porting ios/OpenTaskWidgets/, not sharing
   # a binary with it. WidgetKit has NO Mac Catalyst slice at all (verified from

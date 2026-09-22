@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0397B213A2C11F51C7A2EBD2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3EBEF5EED37D51458C482AC4 /* Assets.xcassets */; };
 		0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */; };
 		0F675979F0E897179550119D /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DC8E1DC37D4F4C3C71A038 /* WebViewManager.swift */; };
 		10DB7856F371B70147038E72 /* MenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BA76FEFE40A03A2F3E709E /* MenuActions.swift */; };
@@ -78,6 +79,7 @@
 		2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
 		38BA76FEFE40A03A2F3E709E /* MenuActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuActions.swift; sourceTree = "<group>"; };
+		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		456B0402D3211FEEE9D56F67 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		54BBA7157D64D84DE2038504 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
@@ -205,6 +207,7 @@
 			isa = PBXGroup;
 			children = (
 				124940586D73E6C268F9E443 /* AppConfig.swift */,
+				3EBEF5EED37D51458C482AC4 /* Assets.xcassets */,
 				CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */,
 				C92C74F59E9D3BDE167E4172 /* Info.plist */,
 				7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */,
@@ -245,6 +248,7 @@
 			buildConfigurationList = DA003F5CED97FFED8E473286 /* Build configuration list for PBXNativeTarget "OpenTaskMac" */;
 			buildPhases = (
 				6F96D3D3E9C8ECA00DEE06CC /* Sources */,
+				AC9165F1DE137C4EFEF726D8 /* Resources */,
 				055037B31FB0BE62FF64CDD1 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -304,6 +308,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A957F5A3429D50204CAFBAB2 /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC9165F1DE137C4EFEF726D8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0397B213A2C11F51C7A2EBD2 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
