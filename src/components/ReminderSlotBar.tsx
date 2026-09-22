@@ -195,7 +195,7 @@ export function ReminderSlotBar({
                     // moment there isn't. A step change in colour, not an
                     // increment in length — see the header comment.
                     'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
-                    complete ? 'bg-green-600' : 'bg-blue-600',
+                    complete ? 'bg-green-600' : 'bg-indigo-600',
                   )}
                   style={{ width: `${Math.min(1, fraction) * 100}%` }}
                 />
