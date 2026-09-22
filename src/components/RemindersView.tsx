@@ -913,7 +913,10 @@ function RemindersHeadline({
                 <div
                   className={cn(
                     'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-                    done ? 'bg-green-600' : 'bg-foreground/50',
+                    // Blue while still filling, green the moment it's done —
+                    // matches the dashboard's `ReminderSlotBar` (2026-09-22),
+                    // so a slot reads the same way on both surfaces.
+                    done ? 'bg-green-600' : 'bg-blue-600',
                   )}
                   style={{ width: `${slotTotal > 0 ? (g.considered / slotTotal) * 100 : 0}%` }}
                 />
@@ -1193,8 +1196,9 @@ function ReminderSlotGroup({
  * The slot header's row: one shape whether the slot is open, folded, finished,
  * or not yet started — chevron box (so the label lands on the rows' x), label,
  * time, spacer, count. The count reads the same open or folded; a later slot
- * says "later"; a finished slot says so in green. Never a pill that changes
- * colour when the section folds.
+ * says "later"; a finished slot says so in green, with a check mark beside it
+ * (2026-09-22) — never a greyed-out one for a slot that isn't finished yet.
+ * Never a pill that changes colour when the section folds.
  */
 function SlotHeaderRow({
   label,
@@ -1220,8 +1224,11 @@ function SlotHeaderRow({
   // that hasn't started and has nothing considered yet just says how many
   // are ahead.
   const counter = finished ? (
-    <span className="text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
+    <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
       {considered} of {total}
+      {/* Same check mark as the dashboard's slot header (2026-09-22), so a
+          finished slot reads the same way on both surfaces. */}
+      <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
     </span>
   ) : !started && considered === 0 ? (
     <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
@@ -1288,7 +1295,9 @@ function SlotHairline({
       <div
         className={cn(
           'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-          fraction >= 1 ? 'bg-green-600' : 'bg-foreground/50',
+          // Blue while still filling, green the moment it's done — matches
+          // the dashboard's `ReminderSlotBar` (2026-09-22).
+          fraction >= 1 ? 'bg-green-600' : 'bg-blue-600',
         )}
         style={{ width: `${Math.min(1, fraction) * 100}%` }}
       />
