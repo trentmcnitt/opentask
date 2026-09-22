@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The push build's entitlements: identical to the XcodeGen-generated
+  OpenTaskMac.entitlements plus `aps-environment`, which is what APNs
+  registration needs and what forces a provisioning profile.
+
+  Hand-written and committed on purpose — XcodeGen owns OpenTaskMac.entitlements
+  and rewrites it on every `xcodegen generate`, so the push variant cannot live
+  there. Select it per build:
+
+    xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
+      -configuration Debug -destination 'generic/platform=macOS' \
+      -derivedDataPath build -allowProvisioningUpdates \
+      CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements build
+
+  Keep the two files in sync: every key added to the spec belongs here too.
+-->
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

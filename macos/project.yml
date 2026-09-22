@@ -1,0 +1,83 @@
+name: OpenTaskMac
+
+# Native macOS companion app. This is NOT a Mac Catalyst build of ios/ — it is a
+# separate, small AppKit/SwiftUI app that hosts the same PWA in a macOS WKWebView.
+# It deliberately lives in its own spec so `ios/project.yml` (iPhone + watch +
+# two extensions) is never touched by Mac work. See macos/README.md.
+
+options:
+  bundleIdPrefix: io.mcnitt
+  deploymentTarget:
+    # 14.0: @Observable (Observation) needs it, and the widget extension that may
+    # follow sets the same floor for interactive AppIntent buttons.
+    macOS: '14.0'
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: GEL3VGTUJX
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: '1.0.0'
+    CURRENT_PROJECT_VERSION: '1'
+    SWIFT_VERSION: '5.9'
+
+targets:
+  OpenTaskMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: OpenTaskMac
+        excludes:
+          - '*.entitlements'
+      # Reused verbatim from the iPhone app. These five files are platform-
+      # agnostic Foundation/UserNotifications code and compile unchanged on
+      # macOS; KeychainHelper carries the only macOS-aware branch.
+      - path: ../ios/Shared
+      # Not in Shared/ because Shared/ is compiled into the watchOS target too
+      # and WebKit does not exist on watchOS. Referenced by file instead of
+      # copied: it encodes the /api/auth/session-from-token contract, and two
+      # copies of that would drift. Foundation + WebKit only.
+      - path: ../ios/OpenTask/SessionBootstrapper.swift
+    info:
+      path: OpenTaskMac/Info.plist
+      properties:
+        CFBundleName: OpenTask
+        CFBundleDisplayName: OpenTask
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: ''
+        # Local-loopback exception only (http://localhost), same as the iPhone
+        # app: lets a dev server reached through an SSH tunnel load. Does NOT
+        # weaken ATS for any remote host.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: OpenTaskMac/OpenTaskMac.entitlements
+      properties:
+        # Sandboxed on purpose: an unsandboxed macOS app extension is a
+        # plausible silent non-load, and a notification content extension may
+        # follow. network.client is what lets a sandboxed app reach the server
+        # at all — without it both WKWebView and URLSession fail.
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        #
+        # `aps-environment` is deliberately NOT here. It is the one entitlement
+        # that requires a provisioning profile, there is no macOS profile for
+        # this team yet, and creating one needs a signed-in Apple ID — which
+        # this Mac currently rejects ("Unable to log in with account ...").
+        # Adding it here fails the build outright, which would leave nothing
+        # runnable at all.
+        #
+        # The push build is the same app with one extra entitlement. Once the
+        # account is signed in again (Xcode ▸ Settings ▸ Accounts), build with:
+        #
+        #   xcodebuild ... CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements \
+        #     -allowProvisioningUpdates
+        #
+        # Without it the app runs normally and APNs registration fails loudly
+        # in the log (see MacAppDelegate.didFailToRegisterForRemoteNotifications).
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac
+        INFOPLIST_KEY_NSHumanReadableCopyright: ''
