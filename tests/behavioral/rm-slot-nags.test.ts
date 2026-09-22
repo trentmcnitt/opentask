@@ -353,14 +353,13 @@ describe('Unfinished-slot nag — the daily allowance', () => {
     makeReminder(7)
     expect(MAX_NAGS_PER_DAY).toBe(3)
 
-    // Two spent, last at 08:00 — 13:00 clears the 5h gap, so only the cap is
-    // in question, and it permits this one.
+    // 21:00: past the 20:30 last slot, so the reserve is lifted, and well past
+    // the 5h gap — the cap is the only gate left in question.
     seedNagRow(2, 8)
-    expect(pendingSlotNags(at(13))).toHaveLength(1)
+    expect(pendingSlotNags(at(21))).toHaveLength(1)
 
-    // Three spent, same clear gap — now the cap alone silences it.
     seedNagRow(3, 8)
-    expect(pendingSlotNags(at(13))).toHaveLength(0)
+    expect(pendingSlotNags(at(21))).toHaveLength(0)
   })
 
   /**
@@ -388,12 +387,18 @@ describe('Unfinished-slot nag — the daily allowance', () => {
   test('RN-014c: a full default day spreads its three nags across the window', () => {
     makeReminder(7)
 
-    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+    // The third waits for the 20:30 Evening slot rather than going at 18:00.
+    expect(firingHours(7, 22)).toEqual([8, 13, 21])
   })
 
   /**
    * RN-014d: a short window keeps its FULL allowance at tighter spacing rather
    * than losing nags — floor(6h / 3) = 2h, and all three still fit in 09:00-15:00.
+   *
+   * This is also the case the reserve's guard exists for: the 20:30 Evening slot
+   * never opens inside a 09:00-15:00 window, so a reserve held for it could
+   * never be spent and would silently cost a nag every single day. The guard
+   * sees that the boundary is unreachable and keeps the full allowance.
    */
   test('RN-014d: a short waking window still spends its whole allowance', () => {
     makeReminder(7)
@@ -421,33 +426,83 @@ describe('Unfinished-slot nag — the daily allowance', () => {
   })
 
   /**
-   * RN-014g: where the three actually land when the evening is ALSO unfinished
-   * — the residual coverage gap, pinned so it is a known shape rather than a
-   * surprise.
+   * RN-014g: the reserve, end to end, on the day it exists for.
    *
-   * The last nag is at 18:00, which is before the 20:30 Evening slot opens, so
-   * the nags only ever speak for the morning; by 21:00 the allowance is spent.
-   * Evening is not unheard — its own slot-open push fires at 20:30 — but no NAG
-   * ever covers it on a day that starts with a miss. Closing that would take a
-   * different rule (reserving one for after the last slot opens), which was
-   * considered and deliberately not chosen.
+   * This test previously documented the OPPOSITE: with only the gap rule, a
+   * morning miss nagged at 08:00 / 13:00 / 18:00, every one of them about the
+   * morning, and the evening never got a nag at all because the allowance was
+   * gone by the time the Evening slot opened. Holding one back moves the third
+   * nag to 21:00, where it can finally speak for the evening.
    */
-  test('RN-014g: the nags speak for the morning; Evening is left to its own push', () => {
+  test("RN-014g: a morning miss no longer spends the evening's nag", () => {
     makeReminder(7)
     makeReminder(20, 30)
 
-    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+    expect(firingHours(7, 22)).toEqual([8, 13, 21])
 
-    // Every one of them named the morning, because Evening had not opened yet.
+    // ...and, crucially, WHAT each one said: two about the morning, the last
+    // about the evening that was still sitting there.
     resetNagRows()
-    for (const hour of [8, 13, 18]) {
+    const said = [8, 13, 21].map((hour) => {
       const [nag] = pendingSlotNags(at(hour))
-      expect(nag.slotLabel).toBe('Early morning')
       recordSlotNag(nag.userId, nag.localDate, nag.localHour)
-    }
+      return nag.slotLabel
+    })
+    expect(said).toEqual(['Early morning', 'Early morning', 'Evening'])
+  })
 
-    // 21:00: Evening is open and unfinished, but the allowance is gone.
-    expect(pendingSlotNags(at(21))).toHaveLength(0)
+  /**
+   * RN-014h: the reserve in isolation — two already spent, gap long cleared, so
+   * only the reserve can be deciding. Withheld at 18:00, released at 21:00.
+   */
+  test('RN-014h: the last nag waits for the last slot to open', () => {
+    makeReminder(7)
+    seedNagRow(2, 8)
+
+    expect(pendingSlotNags(at(18))).toHaveLength(0) // 20:30 has not opened
+    expect(pendingSlotNags(at(21))).toHaveLength(1) // it has
+  })
+
+  /**
+   * RN-014i: the reserve is a floor on when the LAST nag may fire, not a delay
+   * on the first. An evening-only miss speaks at the first opportunity.
+   */
+  test('RN-014i: an evening-only miss nags as soon as it can', () => {
+    makeReminder(20, 30)
+
+    expect(firingHours(7, 22)).toEqual([21])
+  })
+
+  /**
+   * RN-014j: a single configured slot must not deadlock the allowance. It
+   * cannot: a nag needs an OPENED unfinished slot, and with one slot "opened"
+   * and "the last slot has opened" are the same condition, so the reserve is
+   * satisfied whenever a nag is possible at all. No guard needed.
+   */
+  test('RN-014j: a single-slot configuration still spends its whole allowance', () => {
+    getDb().prepare('DELETE FROM time_slots WHERE start_time != ?').run('07:00')
+    makeReminder(7)
+
+    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+  })
+
+  /**
+   * RN-014k: an unspent reserve is the feature working. If the day is clear by
+   * the time the last slot opens, the third nag simply never happens — it is
+   * not owed, and nothing releases it early.
+   */
+  test('RN-014k: the reserved nag never fires when nothing is left undone', () => {
+    const reminder = makeReminder(7)
+
+    expect(firingHours(7, 19)).toEqual([8, 13])
+
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id })
+
+    expect(firingHours(20, 22)).toEqual([])
+    const row = getDb()
+      .prepare('SELECT sent_count FROM slot_nags WHERE user_id = ? AND local_date = ?')
+      .get(TEST_USER_ID, '2026-01-15') as { sent_count: number }
+    expect(row.sent_count).toBe(2)
   })
 
   /** RN-014f: the window length and the derived gap, across the shapes. */
@@ -499,13 +554,12 @@ describe('Unfinished-slot nag — the daily allowance', () => {
   test('RN-016: the allowance resets on the next local day', () => {
     makeReminder(7)
 
-    expect(firingHours(7, 22)).toEqual([8, 13, 18])
-    expect(sweep(at(21))).toHaveLength(0)
+    expect(firingHours(7, 22)).toEqual([8, 13, 21])
 
     // Next local day: the cap is clear again, and so is the gap — 08:00 the
-    // following morning is not measured against 18:00 the night before.
+    // following morning is not measured against 21:00 the night before.
     vi.setSystemTime(at(8, 0, 16))
-    expect(firingHours(7, 22, 16)).toEqual([8, 13, 18])
+    expect(firingHours(7, 22, 16)).toEqual([8, 13, 21])
   })
 
   /**

@@ -5,8 +5,9 @@
  * already opened today still has reminders waiting, send ONE notification. Not
  * one per slot — one, total, naming the most recent unfinished slot and
  * counting the rest. At most MAX_NAGS_PER_DAY a day, spaced out across the
- * user's waking window (see `minNagGapHours` — spacing is why the day's
- * allowance is not spent by mid-morning).
+ * user's waking window (`minNagGapHours`), with the last one held back until
+ * the day's final slot has opened (`allowanceSoFar`). Those two rules exist
+ * because firing as early as possible spent the whole day on the morning.
  *
  * WHY IT LOOKS LIKE A BUG: REDESIGN-V03 §6 says a reminder carries no debt, and
  * `slot-reminders.ts` states the principle outright — "a missed slot is a missed
@@ -151,10 +152,10 @@ interface UnfinishedSlot {
  */
 function unfinishedOpenedSlots(
   user: NaggableUser,
+  slots: TimeSlot[],
   now: Date,
   minuteOfDay: number,
 ): UnfinishedSlot[] {
-  const slots = listTimeSlots(user.id)
   if (slots.length === 0) return []
 
   const groups = getRemindersBySlot(user.id, user.timezone, now)
@@ -171,6 +172,44 @@ function unfinishedOpenedSlots(
   }
 
   return unfinished.sort((a, b) => b.start - a.start)
+}
+
+/**
+ * How many nags the day may have spent by now.
+ *
+ * THE RESERVE: one of the day's nags is held back until the LAST slot has
+ * opened, so a morning miss cannot spend the whole allowance before the evening
+ * exists. Without it the default window fired at 08:00 / 13:00 / 18:00 and went
+ * quiet — three nudges about the morning and none about the evening, on a
+ * feature whose entire job is "these are still sitting there" (Trent,
+ * 2026-09-21).
+ *
+ * The boundary is the greatest `start_time` among the user's slots, REGARDLESS
+ * of what is in it: this is a question about the time of day, not about
+ * content. The un-slotted group has no start time and stays excluded, as
+ * everywhere else here.
+ *
+ * IF THE RESERVED NAG NEVER GETS SPENT, THAT IS THE POINT. A day where nothing
+ * is undone once the last slot opens should end with an unspent nag — that is
+ * the feature working, not waste. Do not "fix" it by releasing the reserve
+ * early; releasing it early is precisely the behaviour this replaced.
+ *
+ * THE ONE GUARD: if the last slot starts at a time the user is never awake
+ * (sleep_time before the last slot's start), the reserve could never be spent
+ * at all, and holding it back would silently cost a real nag every day rather
+ * than deferring one. In that case there is no boundary to wait for, so the
+ * full allowance stays available.
+ */
+function allowanceSoFar(user: NaggableUser, slots: TimeSlot[], minuteOfDay: number): number {
+  const starts = slots
+    .map((slot) => parseHHMM(slot.start_time))
+    .filter((minutes): minutes is number => minutes !== null)
+  if (starts.length === 0) return MAX_NAGS_PER_DAY
+
+  const lastStart = Math.max(...starts)
+  if (!isAwake(lastStart, user.wake_time, user.sleep_time)) return MAX_NAGS_PER_DAY
+
+  return minuteOfDay >= lastStart ? MAX_NAGS_PER_DAY : MAX_NAGS_PER_DAY - 1
 }
 
 /**
@@ -242,14 +281,16 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     // Two in one minute is precisely the thing this feature must not cause.
     if (alreadyNotified.has(user.id)) continue
 
-    const unfinished = unfinishedOpenedSlots(user, now, minuteOfDay)
+    const slots = listTimeSlots(user.id)
+    const unfinished = unfinishedOpenedSlots(user, slots, now, minuteOfDay)
     if (unfinished.length === 0) continue
 
-    // The cap and the gap are independent gates and BOTH must pass: the cap
-    // bounds how many nags a day can hold, the gap bounds how fast they can be
-    // spent. Without the second, the first is exhausted by mid-morning.
+    // Three independent gates, ALL of which must pass. The cap bounds how many
+    // nags a day holds; the gap bounds how fast they are spent; the reserve
+    // bounds how many may be spent before the evening exists. Each one alone
+    // was insufficient — see `minNagGapHours` and `allowanceSoFar`.
     const sentToday = todaysNagRow(user.id, local.toISODate()!)
-    if (sentToday && sentToday.sent_count >= MAX_NAGS_PER_DAY) continue
+    if (sentToday && sentToday.sent_count >= allowanceSoFar(user, slots, minuteOfDay)) continue
     if (
       sentToday &&
       local.hour - sentToday.last_hour < minNagGapHours(user.wake_time, user.sleep_time)
