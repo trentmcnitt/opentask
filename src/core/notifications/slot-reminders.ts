@@ -14,6 +14,12 @@
  *
  * There is deliberately no roll-forward and no catch-up: a missed slot is a
  * missed thought, and the next occurrence arrives on its own (§6).
+ *
+ * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces an unfinished
+ * slot on the hour, at most three times a day, at Trent's request (2026-09-21).
+ * It still writes nothing, still never marks anything overdue or badged, and
+ * still never fires for a slot that has not opened. Read that module's header
+ * before concluding the "no catch-up" claim above has been violated.
  */
 
 import { getDb } from '@/core/db'

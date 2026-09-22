@@ -37,6 +37,20 @@ export default async function globalSetup() {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8')
   db.exec(schema)
 
+  // The seeded user's timezone. Slot/reminder assignment is done entirely in
+  // this zone (server-side via `user.timezone`, and in specs via each file's
+  // own `TEST_TZ` constant) — never via the process's `TZ` env var, which
+  // Luxon's explicit `.setZone(...)` calls ignore (verified: `TZ` has zero
+  // effect on `DateTime.fromJSDate(now).setZone('America/Chicago')`).
+  //
+  // Overridable via `E2E_TZ` so a real IANA zone that is CURRENTLY at the
+  // point in the day under test (just after local midnight, just after the
+  // last time slot, etc.) can be substituted without waiting for real
+  // America/Chicago wall-clock time to reach it — e.g.
+  // `E2E_TZ=Pacific/Kiritimati npm run test:e2e -- dashboard-reminders-panel`.
+  // Defaults to America/Chicago so an ordinary run is unaffected.
+  const seededUserTz = process.env.E2E_TZ || 'America/Chicago'
+
   // Create test user
   const passwordHash = await bcrypt.hash('testpass123', 4)
   db.prepare(
@@ -44,7 +58,7 @@ export default async function globalSetup() {
     INSERT INTO users (id, email, name, password_hash, timezone)
     VALUES (?, ?, ?, ?, ?)
   `,
-  ).run(1, 'test@opentask.local', 'Test User', passwordHash, 'America/Chicago')
+  ).run(1, 'test@opentask.local', 'Test User', passwordHash, seededUserTz)
 
   // Create projects
   db.prepare(
@@ -79,7 +93,7 @@ export default async function globalSetup() {
 
   // Create tasks with specific dates
   // All dates use future times to ensure tests are time-agnostic (pass at any time of day)
-  const tz = 'America/Chicago'
+  const tz = seededUserTz
   const tomorrow = DateTime.now()
     .setZone(tz)
     .plus({ days: 1 })
