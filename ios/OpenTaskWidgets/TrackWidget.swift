@@ -10,6 +10,12 @@ struct TrackEntry: TimelineEntry {
     /// Task id the small and accessory families render, or
     /// `WidgetStore.noTrackSelection` when there is nothing tracked.
     let selectedId: Int
+    /// Task id the LIST families' (4×2/4×4) window starts from. Independent
+    /// of `selectedId` (2026-09-22, "Eggs moves to the top") — see
+    /// `WidgetStore.trackPageStart`'s doc for why these are two values, not
+    /// one, and `TrackTimeline.pageStartId(in:)`'s for why its fallback
+    /// deliberately differs from `selectedId`'s.
+    let pageStartId: Int
     let staleSince: Date?
     let isSignedOut: Bool
 
@@ -17,9 +23,9 @@ struct TrackEntry: TimelineEntry {
         items.first { $0.id == selectedId } ?? items.first
     }
 
-    /// Position in the chevron ring — where the list's window starts.
-    var selectedIndex: Int? {
-        items.firstIndex { $0.id == selectedId }
+    /// Where the list window starts. NOT `selectedIndex` — see `pageStartId`.
+    var pageStartIndex: Int? {
+        items.firstIndex { $0.id == pageStartId }
     }
 }
 
@@ -262,6 +268,30 @@ enum TrackTimeline {
         // free to track pace exactly the way §8 defines it.
         return items.min(by: isMoreBehind)?.id ?? WidgetStore.noTrackSelection
     }
+
+    /// The item the LIST families' window starts from: the user's chevron
+    /// position while that item still exists, otherwise the FROZEN order's
+    /// first item (2026-09-22, "Eggs moves to the top").
+    ///
+    /// NOT a twin of `selectedId(in:)` — the two have the same shape (a
+    /// sticky pin over a fallback) but deliberately DIFFERENT fallbacks, for
+    /// the same reason they're different values at all. `selectedId(in:)`
+    /// falls back to live pace because its own comment says why: the 2×2 is
+    /// "a single card with nothing to shuffle under a finger". A list window
+    /// has plenty to shuffle — falling back to live pace here would mean a
+    /// chevron-free user (only ever tapping `+1`, which never sets
+    /// `trackPageStart`) gets a window that silently rotates on every
+    /// unprompted 30-minute refresh as pace drifts, which is exactly the kind
+    /// of unrequested movement this fix exists to remove. `items.first` is
+    /// `orderedItems`' frozen position 0 — as stable as that order already
+    /// is, re-anchoring only when membership genuinely changes.
+    static func pageStartId(in items: [TrackItem]) -> Int {
+        let stored = WidgetStore.trackPageStart
+        if stored != WidgetStore.noTrackSelection, items.contains(where: { $0.id == stored }) {
+            return stored
+        }
+        return items.first?.id ?? WidgetStore.noTrackSelection
+    }
 }
 
 // MARK: - Provider
@@ -304,6 +334,7 @@ struct TrackProvider: TimelineProvider {
         guard !snapshot.isSignedOut else {
             return TrackEntry(
                 date: now, items: [], selectedId: WidgetStore.noTrackSelection,
+                pageStartId: WidgetStore.noTrackSelection,
                 staleSince: nil, isSignedOut: true
             )
         }
@@ -313,6 +344,7 @@ struct TrackProvider: TimelineProvider {
             date: now,
             items: items,
             selectedId: TrackTimeline.selectedId(in: items),
+            pageStartId: TrackTimeline.pageStartId(in: items),
             staleSince: snapshot.staleSince,
             isSignedOut: false
         )
