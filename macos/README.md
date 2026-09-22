@@ -25,11 +25,15 @@ xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
   -derivedDataPath build build
 
 # Run it from the terminal — that is where its log goes (see Logging below)
-build/Build/Products/Debug/OpenTaskMac.app/Contents/MacOS/OpenTaskMac
+build/Build/Products/Debug/OpenTask.app/Contents/MacOS/OpenTask
 ```
 
-`open build/Build/Products/Debug/OpenTaskMac.app` also works and is how to
-bring an already-running instance to the front.
+`open build/Build/Products/Debug/OpenTask.app` also works and is how to
+bring an already-running instance to the front. The app FILE is
+`OpenTask.app` (2026-09-22: `PRODUCT_NAME` set explicitly in `project.yml` —
+it used to default to the target name, `OpenTaskMac.app`, even though
+`CFBundleDisplayName` was already "OpenTask"). The target name, scheme names
+(`OpenTaskMac`, `OpenTaskMacWidgets`) and bundle IDs are unchanged.
 
 Requires macOS 14, and Xcode with a macOS SDK. Nothing needs to be installed
 into `/Applications` to try it.
@@ -105,16 +109,16 @@ Debug builds only, mirroring the iPhone app's launch-environment seeding:
 ```bash
 # Configure without typing into the setup form
 OPENTASK_SEED_SERVER_URL=https://tasks-dev.example.com \
-  build/Build/Products/Debug/OpenTaskMac.app/Contents/MacOS/OpenTaskMac
+  build/Build/Products/Debug/OpenTask.app/Contents/MacOS/OpenTask
 
 # ... with a Bearer token too, which is otherwise only provisioned once APNs works
 OPENTASK_SEED_SERVER_URL=https://tasks-dev.example.com \
 OPENTASK_SEED_BEARER_TOKEN=<token> \
-  build/Build/Products/Debug/OpenTaskMac.app/Contents/MacOS/OpenTaskMac
+  build/Build/Products/Debug/OpenTask.app/Contents/MacOS/OpenTask
 
 # Back to a clean first run. The Keychain lives OUTSIDE the app container, so
 # deleting ~/Library/Containers/io.mcnitt.opentask.mac is not enough.
-OPENTASK_RESET=1 build/Build/Products/Debug/OpenTaskMac.app/Contents/MacOS/OpenTaskMac
+OPENTASK_RESET=1 build/Build/Products/Debug/OpenTask.app/Contents/MacOS/OpenTask
 ```
 
 ## What it does
