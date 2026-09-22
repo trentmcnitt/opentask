@@ -376,6 +376,25 @@ CREATE TABLE IF NOT EXISTS time_slots (
 );
 CREATE INDEX IF NOT EXISTS idx_time_slots_user ON time_slots(user_id, start_time);
 
+-- Slot nags — the ONLY state behind the hourly nag (see
+-- src/core/notifications/slot-nags.ts for why the nag exists at all).
+--
+-- Notification plumbing, deliberately NOT in `user_daily_stats`: that table is
+-- user-facing (completions, tasks created, snoozes) and a delivery counter is
+-- not a statistic about the user.
+--
+-- One row per user per LOCAL day. `last_hour` is the local hour of the most
+-- recent nag, which is what makes the claim idempotent: the minute sweep can
+-- run twice in the same minute without consuming two of the day's three.
+-- Rows are purged on the same weekly schedule as daily stats.
+CREATE TABLE IF NOT EXISTS slot_nags (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  local_date TEXT NOT NULL,              -- YYYY-MM-DD in the user's timezone
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  last_hour  INTEGER NOT NULL,           -- local hour (0-23) of the most recent nag
+  PRIMARY KEY (user_id, local_date)
+);
+
 -- Progress events (REDESIGN-V03 §5)
 --
 -- One row per +1 increment on a tracked task.
