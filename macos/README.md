@@ -213,13 +213,27 @@ the binary level — WidgetKit has no Mac Catalyst slice at all, verified from
 the SDK. It ports `ios/OpenTaskWidgets/` (all three kinds: Reminders, Tasks,
 Track) by referencing those `.swift` files directly from `project.yml` rather
 than copying them, so a future change to reminder/task/track behavior only
-has to happen once. Two platform-specific changes were needed in that shared
-code, both guarded with `#if os(iOS)` / `#if os(macOS)` so `ios/`'s own build
-is untouched: `WidgetTheme.rowTitleLineHeight` (UIKit's line-height call has
-no direct AppKit equivalent — see the doc comment on that property) and the
+has to happen once. Platform-specific differences in that shared code are all
+guarded with `#if os(iOS)` / `#if os(macOS)` so `ios/`'s own build is
+untouched: `WidgetTheme.rowTitleLineHeight` (UIKit's line-height call has
+no direct AppKit equivalent — see the doc comment on that property), the
 Lock Screen accessory families (`.accessoryRectangular`/`.accessoryCircular`
 are `@available(macOS, unavailable)` — hard compile errors on native macOS,
-unlike the Designed-for-iPad build).
+unlike the Designed-for-iPad build), and — added 2026-09-22, the vertical-space
+fix — how `RemindersListView`/`TasksListView` size a `systemLarge` row. iOS
+always reserves a flat 2 lines per title; on macOS that flat reservation
+turned out to be SMALLER than the row's own fixed 36pt check-off/dot hit
+target, so the hit target — not the text — was silently setting every row's
+height (a one-line title still cost the height of two empty lines). macOS
+instead measures each title's REAL line count with AppKit text APIs
+(`WidgetTheme.measuredLineCount`, fed a card width threaded down through a
+`GeometryReader` placed OUTSIDE `ViewThatFits`, never inside a candidate),
+uses that for both the hit target and the reservation, and never caps
+`lineLimit` — so nothing on macOS is ever truncated, and the row ceiling is
+raised from 6 to 10 to use the height that frees up. See the "macOS
+row-height truthing (2026-09-22)" comment block on `WidgetTheme.swift` for
+the full diagnosis. iOS's own behavior is unchanged — every `#else` branch is
+the original code.
 
 Shares the App Group and `keychain-access-groups` entitlements with
 `OpenTaskMac` (see the long comment on the app target's entitlements in

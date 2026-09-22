@@ -122,14 +122,15 @@ enum WidgetTheme {
     /// **macOS**: `NSFont` has no `.lineHeight` property the way `UIFont`
     /// does — `NSLayoutManager().defaultLineHeight(for:)` is AppKit's
     /// equivalent (the same value the layout system itself uses to lay out a
-    /// line of that font), so this stays the load-bearing value the PR #22
-    /// comment on `ReminderRow`/`TaskRow` describes: `ViewThatFits` compares
-    /// each row candidate's *ideal* height, and without a reserved height every
-    /// candidate measures as if nothing wrapped, so the tallest one "fits" and
-    /// the card squeezes every title back to one truncated line. Verified this
-    /// still holds on macOS by reading how it feeds `ReminderRow`/`TaskRow`
-    /// (`minHeight: CGFloat(titleLineLimit) * rowTitleLineHeight`) — same
-    /// consumer, same contract, only the font API differs.
+    /// line of that font). This is still the load-bearing per-LINE unit on
+    /// both platforms, but macOS no longer multiplies it by a flat
+    /// `titleLineLimit` the way iOS does — see the "2026-09-22, the macOS
+    /// vertical-space fix" note on `measuredLineCount(for:maxWidth:weight:)`
+    /// below for why iOS's fixed-2-lines contract doesn't carry over
+    /// unchanged. **Measured**: at the platform's default text size this is
+    /// 14pt on macOS vs. ~20pt on iOS — macOS's own metric is *smaller*, not
+    /// "too tall" as first suspected; see that note for what the real
+    /// macOS-specific bug turned out to be.
     static var rowTitleLineHeight: CGFloat {
         #if os(iOS)
         ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
@@ -138,6 +139,122 @@ enum WidgetTheme {
         return ceil(NSLayoutManager().defaultLineHeight(for: font))
         #endif
     }
+
+    #if os(macOS)
+
+    // MARK: - macOS row-height truthing (2026-09-22, the vertical-space fix)
+    //
+    // Trent, photographing the Mac desktop Large widget: single-line titles
+    // ("Kids kazoo") were taking the height of two lines, only 5 rows fit
+    // where the card had room for more, and one long title truncated with
+    // "…" — "We can't truncate the text" (a standing rule: reminders are
+    // never cut off). Diagnosis ruled out two of the candidate causes and
+    // confirmed a third that wasn't on the original suspect list:
+    //
+    // - `rowTitleLineHeight` "too tall on macOS": REFUTED. Measured 14pt on
+    //   macOS vs. ~20pt on iOS — macOS's own subheadline metric is smaller,
+    //   not larger.
+    // - The two-line reservation itself (`titleLineLimit`) is inherent to
+    //   how `ViewThatFits` works here (see `rowTitleLineHeight`'s doc) and
+    //   isn't macOS-specific.
+    // - CONFIRMED, macOS-only: `ReminderRow`/`TaskRow`'s marker column ends
+    //   in a flat `.frame(width: 36, height: 36, alignment: .top)` — a
+    //   finger-sized iOS touch target ("26pt missed too often", that frame's
+    //   own doc comment). `HStack(alignment: .top)` sizes to the TALLEST
+    //   child, and on iOS the text's own two-line reservation (2 × ~20pt =
+    //   40pt) is already taller than 36, so the marker never mattered there.
+    //   On macOS the text's two-line reservation (2 × 14pt = 28pt) is
+    //   SMALLER than 36 — so the marker, not the text, was silently setting
+    //   every row's height. Measured directly (`NSHostingView.fittingSize`
+    //   on `ReminderRow`, headless): a one-line and a two-line title both
+    //   came back exactly 36.0pt. That is the "roughly a blank line" Trent
+    //   saw under a one-line title.
+    //
+    // Fixing only the marker (matching it to the row's own 2-line
+    // reservation) gets macOS's row height down to 28pt — but 28pt is
+    // STILL two full lines' worth for a title that only needs one, so on
+    // its own that change doesn't reach "a one-line title takes one line."
+    // And neither change touches truncation: `lineLimit(2)` on a title that
+    // genuinely needs 3 real lines still ellipsizes, on either platform.
+    //
+    // So macOS additionally replaces the fixed "always reserve 2 lines"
+    // budget with a MEASURED one, per title: `measuredLineCount` asks
+    // AppKit directly how many lines this exact string needs at the row's
+    // real available width (no wrapping surprises — this is the same API
+    // family `NSString`/`UILabel` sizing has used for years), and the row
+    // uses that as both `lineLimit` (nil — never caps, so never ellipsizes)
+    // and the `minHeight` reservation (so `ViewThatFits` is measuring the
+    // truth, not a guess). A one-line title reserves one real line; a title
+    // that needs four gets four, and simply leaves less of the card for
+    // other rows — "as many rows as genuinely fit" already implies that.
+    //
+    // This needs the row's real width, which `ViewThatFits` candidates don't
+    // otherwise have — `RemindersListView`/`TasksListView` wrap their
+    // `ViewThatFits` in a `GeometryReader` OUTSIDE it (not inside; a
+    // `GeometryReader` inside a `ViewThatFits` candidate reports "fits" at
+    // every height and defeats the whole mechanism, the same class of bug
+    // the reservation above already exists to avoid) and thread the
+    // measured width down into each row.
+    //
+    // iOS is untouched: `titleLineLimit` stays a flat 2 (or 1 at
+    // systemMedium), `lineLimit` stays capped, and the marker stays a flat
+    // 36 — see the `#else` branches at each call site.
+    //
+    // Known imperfection, accepted deliberately: this measurement assumes
+    // the row's width (passed down from `GeometryReader`) is what AppKit
+    // will actually lay the `Text` out at. If that assumption is ever wrong
+    // by enough to matter, the failure mode is a row rendering slightly
+    // TALLER than `ViewThatFits` reserved for it (possible clipping at the
+    // card's bottom edge on that one refresh) — never an ellipsis. That is
+    // the trade Trent asked for ("we can't truncate the text"), not a
+    // theoretical guarantee that measurement and final layout always agree
+    // to the pixel.
+
+    /// How many lines `text` needs at `maxWidth`, in `font` — real AppKit
+    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd:
+    /// a fractional line still costs the row a whole line of height.
+    static func measuredLineCount(for text: String, maxWidth: CGFloat, font: NSFont) -> Int {
+        guard maxWidth > 0, !text.isEmpty else { return 1 }
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        return max(1, Int(ceil(bounds.height / rowTitleLineHeight)))
+    }
+
+    /// The single-line width `text` needs in `font` — used to reserve room
+    /// for `TaskRow`'s due-time label before measuring the title's own
+    /// wrap, since the title's real column is narrower whenever a due time
+    /// is shown beside it.
+    static func measuredWidth(for text: String, font: NSFont) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    /// The subheadline font at a given weight, matching what `.font(.subheadline)
+    /// .fontWeight(weight)` renders — weight has to match what's actually
+    /// drawn (P3/P4 titles render `.semibold`, which is measurably wider)
+    /// or a title near the wrap boundary undercounts its lines.
+    static func subheadlineFont(weight: Font.Weight) -> NSFont {
+        let pointSize = NSFont.preferredFont(forTextStyle: .subheadline, options: [:]).pointSize
+        return NSFont.systemFont(ofSize: pointSize, weight: nsWeight(weight))
+    }
+
+    /// The caption2 font, for measuring `TaskRow`'s due-time label.
+    static var caption2Font: NSFont {
+        NSFont.preferredFont(forTextStyle: .caption2, options: [:])
+    }
+
+    private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
+        switch weight {
+        case .semibold: return .semibold
+        case .medium: return .medium
+        default: return .regular
+        }
+    }
+
+    #endif
 
     /// Track's list rows are spaced tighter than everything else.
     ///
