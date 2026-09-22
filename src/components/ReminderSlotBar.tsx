@@ -44,7 +44,7 @@ import { DateTime } from 'luxon'
  * space, and they fought each other. This runs two hues to express two
  * DIFFERENT things: blue means "time has come, still filling in"; green still
  * means only what it always has here — fully considered. The fill is what
- * changes hue now, gated on the numbers being equal (`considered === total`),
+ * changes hue now, gated on nothing left waiting (`considered >= total`),
  * not on `state`, so a slot fully considered before its own time has come
  * (still `'upcoming'`) reads as finished rather than lying blue. The track
  * underneath is untouched by any of this — still weight-only, still the tell
