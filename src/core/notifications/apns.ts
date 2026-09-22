@@ -256,13 +256,23 @@ export interface ApnsSlotReminderPayload {
   slotId: number
   slotLabel: string
   count: number
+  /**
+   * Alert body override. Defaults to the plain "N reminders waiting".
+   *
+   * The hourly nag (`slot-nags.ts`) sends through this same function so it
+   * inherits the category, the checklist and the action buttons, but its body
+   * has to say more — it speaks for the other unfinished slots too.
+   */
+  body?: string
 }
 
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
 ): Promise<void> {
-  const body = payload.count === 1 ? '1 reminder waiting' : `${payload.count} reminders waiting`
+  const body =
+    payload.body ??
+    (payload.count === 1 ? '1 reminder waiting' : `${payload.count} reminders waiting`)
 
   await sendToAllDevices(
     userId,

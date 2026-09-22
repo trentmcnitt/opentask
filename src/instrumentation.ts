@@ -7,11 +7,13 @@
  * Cron schedule:
  * - Every 1 min: notification check (overdue tasks, all priorities)
  * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
+ * - Every 1 min: unfinished-slot nag (hourly in effect; see slot-nags.ts)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - 3:00 AM UTC daily: undo purge
  * - 3:30 AM UTC daily: trash purge
  * - 4:00 AM UTC daily: completions purge
  * - 4:30 AM UTC Sunday: stats purge
+ * - 4:45 AM UTC Sunday: slot nag purge
  * - 5:00 AM UTC daily: AI activity purge
  * - 5:30 AM UTC daily: webhook delivery purge
  * - 3:00 AM UTC daily: What's Next generation (§7.4)
@@ -27,6 +29,7 @@ export async function register() {
     const { notifyError } = await import('@/lib/error-notify')
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
     const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
+    const { checkSlotNags, purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
@@ -76,6 +79,11 @@ export async function register() {
         // §6: the time slot notifies, not the reminder. Same tick as the
         // overdue check because both are minute-boundary derived.
         await checkSlotReminders()
+        // The §6 exception: on the hour, one nag for slots still unfinished.
+        // AFTER checkSlotReminders on purpose — a slot opening on this exact
+        // minute sends its own push, and the nag stands down for that minute
+        // rather than putting a second banner beside it.
+        await checkSlotNags()
       } catch (err) {
         log.error('notifications', 'Notification check error:', err)
         notifyError(
@@ -135,6 +143,7 @@ export async function register() {
     cron.schedule('30 3 * * *', () => safeCronRun('trash purge', purgeOldTrash))
     cron.schedule('0 4 * * *', () => safeCronRun('completions purge', purgeOldCompletions))
     cron.schedule('30 4 * * 0', () => safeCronRun('daily stats purge', purgeOldStats))
+    cron.schedule('45 4 * * 0', () => safeCronRun('slot nag purge', purgeOldSlotNags))
     cron.schedule('0 5 * * *', () => safeCronRun('AI activity log purge', purgeOldAIActivity))
 
     const { purgeOldDeliveries } = await import('@/core/webhooks/purge')
@@ -142,7 +151,7 @@ export async function register() {
 
     log.info(
       'cron',
-      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), AI activity (5:00 AM daily), webhook deliveries (5:30 AM daily)',
+      'Scheduled cleanup jobs: undo (3:00 AM daily), trash (3:30 AM daily), completions (4:00 AM daily), stats (4:30 AM Sunday), slot nags (4:45 AM Sunday), AI activity (5:00 AM daily), webhook deliveries (5:30 AM daily)',
     )
 
     // --- AI subsystem ---
