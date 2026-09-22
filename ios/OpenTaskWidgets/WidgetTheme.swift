@@ -187,6 +187,9 @@ enum WidgetLink {
 
     static var dashboard: URL { URL(string: "\(scheme)://today")! }
     static var reminders: URL { URL(string: "\(scheme)://reminders")! }
+    /// The quotas surface (§5), for the Track widget's header — see
+    /// `TrackListView.header` in `TrackWidgetViews.swift`.
+    static var quotas: URL { URL(string: "\(scheme)://quotas")! }
 
     static func task(_ id: Int) -> URL {
         URL(string: "\(scheme)://task/\(id)") ?? dashboard

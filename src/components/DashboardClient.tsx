@@ -436,6 +436,11 @@ function HomeContent({
     },
     [expand],
   )
+  // `?task=<id>&highlight=1` — the widget's task deep link. Mirrors
+  // RemindersView's `highlightId`/`clearHighlight`; see the `?task=` effect
+  // below for the full rationale.
+  const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null)
+  const clearHighlight = useCallback(() => setHighlightTaskId(null), [])
   const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask, onCreated)
 
   const handleQuickAddWithQuickTake = useCallback(
@@ -590,7 +595,7 @@ function HomeContent({
     selectedCount: selection.selectedIds.size,
     openBulkSheet: () => bulkSheetOpenRef.current?.(),
   })
-  const { defaultGrouping, setDefaultGrouping } = useDefaultGrouping()
+  const { defaultGrouping, setDefaultGrouping, groupingLoaded } = useDefaultGrouping()
 
   // AI sort auto-switches to unified as a local override (not persisted to DB).
   // This preserves the user's real grouping preference for when AI sort is disabled.
@@ -674,47 +679,6 @@ function HomeContent({
       router.replace('/', { scroll: false })
     }
   }, [searchParams, router])
-
-  // Support ?task=<id> from notification taps — open QuickActionPanel modal for the task.
-  //
-  // The param is consumed (and stripped from the URL) only once resolution is
-  // DEFINITIVE: the task was found, or the list is non-empty and provably
-  // doesn't contain it. `loading === false` alone is not proof the list is
-  // ready — on WebKit (iOS webview, Safari) the initial fetch can fail
-  // transiently during hydration, flipping `loading` false with zero tasks;
-  // consuming the param then means a notification tap opens the app but never
-  // the task. With an empty list we leave the param in place and let the
-  // effect re-run when a retry/sync populates tasks.
-  const taskParamProcessed = useRef(false)
-  useEffect(() => {
-    if (taskParamProcessed.current || loading) return
-    const taskIdParam = searchParams.get('task')
-    if (!taskIdParam) return
-    const taskId = parseInt(taskIdParam, 10)
-    if (isNaN(taskId)) {
-      taskParamProcessed.current = true
-      window.history.replaceState(window.history.state, '', window.location.pathname)
-      return
-    }
-    const task = tasks.find((t) => t.id === taskId)
-    if (!task && tasks.length === 0) return
-    taskParamProcessed.current = true
-    if (task) {
-      // §5: a quota does not open in the dashboard's QuickActionPanel — that
-      // panel is a due date and a snooze grid, neither of which a quota has.
-      // Its own editor is on the detail route, which already renders
-      // QuotaDetail for a tracked row. This is the last path by which a quota
-      // could still reach the panel now that it is out of every list.
-      if (isTracked(task)) router.push(`/tasks/${task.id}`)
-      else handleViewTask(task)
-    }
-    // Strip the param with a raw history rewrite, NOT router.replace: a router
-    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
-    // this under flaky transport) Next falls back to a full page navigation
-    // that remounts this component and closes the just-opened panel. Same
-    // pattern as AppLayout's ?action=create handling.
-    window.history.replaceState(window.history.state, '', window.location.pathname)
-  }, [searchParams, loading, tasks, handleViewTask, router])
 
   const {
     selectedLabels,
@@ -928,6 +892,101 @@ function HomeContent({
     () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
     [tasks_, projects, grouping, timezone, timeSlots],
   )
+
+  /**
+   * Support `?task=<id>` — two shapes, sharing one URL so every existing
+   * producer keeps working:
+   *
+   * - `?task=<id>` alone: a notification tap (`AppDelegate`/`MacAppDelegate`
+   *   call `WebViewManager.navigateToTask` directly) or a Web Push click
+   *   (`overdue-checker.ts`, `notifications/test/route.ts`) — opens
+   *   QuickActionPanel, same as always.
+   * - `?task=<id>&highlight=1`: the widget's deep link
+   *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
+   *   view and flashes it once; opens nothing — mirrors RemindersView's
+   *   `?reminder=<id>` (see its `highlightId` effect for the identical
+   *   rationale: a tap from a list-like surface means "show me that one",
+   *   not "act on it").
+   *
+   * The flag is additive rather than a new param name so the URL SHAPE stays
+   * `?task=<id>` for every existing caller, per the login-redirect and
+   * dashboardPath() query-string passthrough (`src/lib/login-redirect.ts`,
+   * `src/app/page.tsx`) — neither needed to change.
+   *
+   * The param is consumed (and stripped from the URL) only once resolution is
+   * DEFINITIVE: the task was found, or the list is non-empty and provably
+   * doesn't contain it. `loading === false` alone is not proof the list is
+   * ready — on WebKit (iOS webview, Safari) the initial fetch can fail
+   * transiently during hydration, flipping `loading` false with zero tasks;
+   * consuming the param then means a notification tap opens the app but never
+   * the task. With an empty list we leave the param in place and let the
+   * effect re-run when a retry/sync populates tasks.
+   */
+  const taskParamProcessed = useRef(false)
+  useEffect(() => {
+    if (taskParamProcessed.current || loading) return
+    const taskIdParam = searchParams.get('task')
+    if (!taskIdParam) return
+    const taskId = parseInt(taskIdParam, 10)
+    if (isNaN(taskId)) {
+      taskParamProcessed.current = true
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      return
+    }
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task && tasks.length === 0) return
+    const isHighlightLink = searchParams.get('highlight') === '1'
+    // The highlight branch groups by `defaultGrouping` to find the row's
+    // group — but `defaultGrouping` starts at a hardcoded fallback
+    // ('project') until `PreferencesProvider`'s own fetch resolves (see
+    // `useDefaultGrouping`'s doc comment), same shape as the `tasks.length
+    // === 0` wait above: consuming the param against the fallback can expand
+    // the wrong group and never revisit it. Found by browser-verifying
+    // against Trent's dev account, whose real default is `slot`, not
+    // `project` — a `?task=&highlight=1` tap resolved against the fallback
+    // before this guard landed on the wrong group every time.
+    if (task && isHighlightLink && !isTracked(task) && !groupingLoaded) return
+    taskParamProcessed.current = true
+    if (task) {
+      // §5: a quota does not open in the dashboard's QuickActionPanel — that
+      // panel is a due date and a snooze grid, neither of which a quota has.
+      // Its own editor is on the detail route, which already renders
+      // QuotaDetail for a tracked row. This is the last path by which a quota
+      // could still reach the panel now that it is out of every list.
+      if (isTracked(task)) {
+        router.push(`/tasks/${task.id}`)
+      } else if (isHighlightLink) {
+        // `taskGroups` is built from the FILTERED list (`tasks_`), so an
+        // active filter/search hiding this task leaves no row to expand or
+        // flash — the same silent no-op RemindersView falls back to when a
+        // linked reminder isn't in the currently loaded view.
+        const group = taskGroups.find((g) => g.tasks.some((t) => t.id === task.id))
+        if (group) {
+          if (isCollapsed(group.label)) expand(group.label)
+          setHighlightTaskId(task.id)
+        }
+      } else {
+        handleViewTask(task)
+      }
+    }
+    // Strip the param with a raw history rewrite, NOT router.replace: a router
+    // navigation issues an RSC fetch, and if that fetch fails (WebKit does
+    // this under flaky transport) Next falls back to a full page navigation
+    // that remounts this component and closes the just-opened panel. Same
+    // pattern as AppLayout's ?action=create handling.
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [
+    searchParams,
+    loading,
+    tasks,
+    handleViewTask,
+    router,
+    taskGroups,
+    isCollapsed,
+    expand,
+    groupingLoaded,
+  ])
+
   // Apply per-group sorting to match the visual order in TaskList.
   // Exclude tasks in collapsed groups so keyboard navigation skips them.
   const orderedIds = useMemo(
@@ -1217,6 +1276,8 @@ function HomeContent({
         quotaSource={tasks}
         projects={projects}
         grouping={grouping}
+        highlightTaskId={highlightTaskId}
+        onHighlightDone={clearHighlight}
         onGroupingChange={(next) => {
           // Selecting a view explicitly turns off AI-sort's unified override —
           // otherwise the toggle would show a selection that isn't in effect.
@@ -1537,6 +1598,8 @@ function DashboardView({
   quotaSource,
   projects,
   grouping,
+  highlightTaskId,
+  onHighlightDone,
   onGroupingChange,
   timeSlots,
   searchQuery,
@@ -1655,6 +1718,9 @@ function DashboardView({
   quotaSource: Task[]
   projects: Project[]
   grouping: GroupingMode
+  /** `?task=<id>&highlight=1` — the widget's link. See `HomeContent`'s `?task=` effect. */
+  highlightTaskId: number | null
+  onHighlightDone: () => void
   onGroupingChange: (grouping: GroupingMode) => void
   /** §6.0 time slots, for `grouping === 'slot'`. Fetched once by the parent. */
   timeSlots: TimeSlot[]
@@ -1994,6 +2060,8 @@ function DashboardView({
             projects={projects}
             grouping={grouping}
             timeSlots={timeSlots}
+            highlightTaskId={highlightTaskId}
+            onHighlightDone={onHighlightDone}
             onDone={actions.handleDone}
             onSnooze={actions.handleSnooze}
             onLabelClick={onToggleLabel}

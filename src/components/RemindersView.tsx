@@ -9,6 +9,7 @@ import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { showToast } from '@/lib/toast'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useReminders, type ReminderCreateInput, type ReminderGroup } from '@/hooks/useReminders'
@@ -296,8 +297,11 @@ export function RemindersView({
    * The row is brought on screen and flashed once; nothing is opened. The
    * widget's user tapped a thought to SEE it, and an editor over the top of the
    * surface would hide the five thoughts around it that are the reason they
-   * looked. (The dashboard's `?task=` does open its panel — a task tapped from
-   * a notification is one thing to act on, not a place in a list.)
+   * looked. (The dashboard's widget-tapped `?task=<id>&highlight=1` now does
+   * the same thing for tasks — see `DashboardClient.tsx`'s `?task=` effect.
+   * The bare `?task=<id>`, with no flag, still opens the panel: that shape is
+   * reserved for a notification tap, where a task is one thing to act on, not
+   * a place in a list.)
    *
    * The id is looked up once the fetch has resolved. Found or not, that answer
    * is definitive — unlike the dashboard's list, an empty payload here is a
@@ -1395,19 +1399,6 @@ function ConsideredRow({
       </p>
     </li>
   )
-}
-
-/**
- * Bring a deep-linked row on screen (`?reminder=<id>`).
- *
- * A callback ref rather than an effect: the row may mount already highlighted
- * (inside the "Not today" fold, which the link opens) or become highlighted
- * while it is mounted, and React hands the node to a changed callback ref in
- * both cases — one code path instead of two. Module-level so its identity is
- * stable and it fires once.
- */
-const scrollRowIntoView = (el: HTMLElement | null) => {
-  el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
 /**

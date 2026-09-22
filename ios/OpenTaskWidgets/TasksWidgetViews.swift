@@ -164,8 +164,13 @@ private struct TasksListView: View {
             // The candidates carry no Spacer — a flexible child would report
             // "fits" at every height and defeat the measurement — so the card
             // is pinned to the top here instead.
+            //
+            // No `.widgetURL` here (removed 2026-09-22, the misclick fix):
+            // systemMedium/Large used to make the WHOLE card one tap target,
+            // so a near-miss on a row's check-off dot deep-linked into the
+            // app instead of doing nothing. Now only the header (below) and
+            // each row's `Link` are tap targets — see `header`.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .widgetURL(WidgetLink.dashboard)
         }
     }
 
@@ -200,23 +205,31 @@ private struct TasksListView: View {
         }
     }
 
+    /// The header IS the card's tap target now that the whole-card link is
+    /// gone (see `TasksListView.body`) — see `RemindersListView.header` for
+    /// why the `Link` wraps only the text and not the `ChevronPager`, and why
+    /// it isn't stretched to a 40pt frame.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    if entry.scope != WidgetStore.allProjects {
-                        Circle()
-                            .fill(entry.scopeColor)
-                            .frame(width: 7, height: 7)
+            Link(destination: WidgetLink.dashboard) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        if entry.scope != WidgetStore.allProjects {
+                            Circle()
+                                .fill(entry.scopeColor)
+                                .frame(width: 7, height: 7)
+                        }
+                        Text(entry.scopeLabel)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    Text(entry.scopeLabel)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                Text(countLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             ChevronPager(

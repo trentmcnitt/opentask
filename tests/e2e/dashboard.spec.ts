@@ -1,4 +1,9 @@
 import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
+import { DateTime } from 'luxon'
+
+/** The seeded test user's timezone — slot assignment is done in local time. */
+const TEST_TZ = 'America/Chicago'
 
 test.describe('Dashboard', () => {
   test('tasks are displayed on the dashboard', async ({ authenticatedPage: page }) => {
@@ -160,5 +165,145 @@ test.describe('Dashboard filter section', () => {
     // Auto-expand released, so the toggle is free to close again
     await toggle(page).click()
     await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+  })
+})
+
+/**
+ * `?task=<id>` has two shapes sharing one URL (Trent, 2026-09-22): the
+ * widget's deep link adds `&highlight=1` and brings the row into view without
+ * opening it (mirrors `/reminders?reminder=<id>`); the bare param — a
+ * notification tap or Web Push — still opens QuickActionPanel, unchanged.
+ * See `DashboardClient.tsx`'s `?task=` effect.
+ */
+test.describe('?task=<id> deep link', () => {
+  async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
+    const res = await page.request.post('/api/tasks', { data: body })
+    expect(res.ok()).toBeTruthy()
+    return (await res.json()).data.id as number
+  }
+
+  async function deleteTasks(page: Page, ids: number[]): Promise<void> {
+    for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+  }
+
+  // ESTABLISH THE PRECONDITION RATHER THAN INHERIT IT — see the filter
+  // section tests above: `default_grouping` is a server preference on the one
+  // test user every spec in the run shares, so "a Today/Overdue/Undated group
+  // exists to find the row in" is only true here if nothing earlier in the
+  // run left it on Projects/Unified. Restored in `finally`.
+  async function withGrouping(
+    page: Page,
+    grouping: 'time' | 'slot',
+    run: () => Promise<void>,
+  ): Promise<void> {
+    const before = (await (await page.request.get('/api/user/preferences')).json()).data
+      .default_grouping as string
+    const written = await page.request.patch('/api/user/preferences', {
+      data: { default_grouping: grouping },
+    })
+    expect(written.ok()).toBeTruthy()
+    try {
+      await run()
+    } finally {
+      await page.request.patch('/api/user/preferences', { data: { default_grouping: before } })
+    }
+  }
+  const withTimeGrouping = (page: Page, run: () => Promise<void>) => withGrouping(page, 'time', run)
+
+  test('&highlight=1 brings the row into view; the bare param still opens the editor', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withTimeGrouping(page, async () => {
+      try {
+        const id = await createTask(page, {
+          title: 'A task the widget links to',
+          due_at: new Date(Date.now() + 3600_000).toISOString(),
+        })
+        ids.push(id)
+
+        // The widget's link: brought on screen and flashed once; nothing opens.
+        await page.goto(`/?task=${id}&highlight=1`)
+        const row = page.locator(`#task-row-${id}`)
+        await expect(row).toHaveAttribute('data-task-highlight', '')
+        await expect(row).toBeInViewport()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        // The param is spent, so a reload does not flash the same row again.
+        await expect(page).toHaveURL('/')
+
+        // The bare shape (notification tap / Web Push): editor still opens.
+        await page.goto(`/?task=${id}`)
+        await expect(page.getByRole('dialog')).toBeVisible()
+        await expect(page).toHaveURL('/')
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
+  })
+
+  test('&highlight=1 opens a collapsed group to reach the row (Undated)', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withTimeGrouping(page, async () => {
+      try {
+        const id = await createTask(page, { title: 'An undated task the widget links to' })
+        ids.push(id)
+
+        await page.goto(`/?task=${id}&highlight=1`)
+        const row = page.locator(`#task-row-${id}`)
+        await expect(row).toHaveAttribute('data-task-highlight', '')
+        await expect(row).toBeInViewport()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
+  })
+
+  /**
+   * `grouping === 'slot'` — Trent's own default view (Today's tasks by time
+   * of day) — has a SECOND cap `&highlight=1` has to clear that `time`
+   * grouping doesn't: each slot only shows its first `GROUP_PREVIEW_COUNT`
+   * (5) tasks, expanded via a "Show all" button that lives entirely in
+   * `TaskList`'s own local state. A row past that cap is un-collapsed (the
+   * slot itself is open) but still not rendered, so a highlight that only
+   * cleared `isCollapsed` would resolve to nothing on screen. Caught live by
+   * browser-verifying against Trent's real dev account, which defaults to
+   * this grouping — the earlier `time`-grouping tests above cannot exercise
+   * this cap because `time` groups are never preview-capped.
+   */
+  test('&highlight=1 opens the "Show all" preview cap on a slot-grouped view', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    await withGrouping(page, 'slot', async () => {
+      try {
+        // Six in the same slot: GROUP_PREVIEW_COUNT (5) shows only the first
+        // five, so the sixth — staggered latest, sorts last by due date — is
+        // the one past the cap.
+        const base = DateTime.now().setZone(TEST_TZ).set({ hour: 13, minute: 0, second: 0 })
+        for (let i = 0; i < 6; i++) {
+          ids.push(
+            await createTask(page, {
+              title: `Widget-linked slot task ${i}`,
+              due_at: base.plus({ minutes: i }).toUTC().toISO(),
+            }),
+          )
+        }
+        const target = ids[5]
+
+        await page.goto(`/?task=${target}&highlight=1`)
+        const row = page.locator(`#task-row-${target}`)
+        await expect(row).toHaveAttribute('data-task-highlight', '')
+        await expect(row).toBeInViewport()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+      } finally {
+        await deleteTasks(page, ids)
+      }
+    })
   })
 })

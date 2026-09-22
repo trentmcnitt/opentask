@@ -200,21 +200,37 @@ private struct TrackListView: View {
                     }
                 }
             }
-            .widgetURL(WidgetLink.dashboard)
+            // No `.widgetURL` here (removed 2026-09-22, the misclick fix): the
+            // whole 4×4/4×2 used to be one tap target, so a near-miss on `+1`
+            // or `−` deep-linked to the dashboard instead of doing nothing.
+            // The header below is now the card's only non-row, non-button tap
+            // target.
         }
     }
 
     /// One line, not two: the title and the count sat stacked, and that second
     /// band cost a row of quotas the card would rather spend on content.
+    ///
+    /// Wrapped in a `Link` to the quotas surface (`WidgetLink.quotas`) — see
+    /// `RemindersListView.header` for why the pager stays a sibling outside
+    /// it. Deliberately NOT given a taller frame: this header is one line by
+    /// design (the comment above), and forcing a 40pt tap target here would
+    /// cost the row a whole 4×4 spends on an eighth quota.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Track")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            Text(countLabel)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            Link(destination: WidgetLink.quotas) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Track")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .contentShape(Rectangle())
+            }
             Spacer(minLength: 0)
             if canPage {
                 ChevronPager(
