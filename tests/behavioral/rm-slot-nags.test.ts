@@ -21,9 +21,12 @@ import {
   recordSlotNag,
   purgeOldSlotNags,
   isAwake,
+  wakingWindowMinutes,
+  minNagGapHours,
   slotNagBody,
   MAX_NAGS_PER_DAY,
 } from '@/core/notifications/slot-nags'
+import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
 import {
   setupTestDb,
   teardownTestDb,
@@ -74,6 +77,35 @@ function sweep(now: Date) {
   return pendingSlotNags(now).filter((nag) =>
     recordSlotNag(nag.userId, nag.localDate, nag.localHour),
   )
+}
+
+/**
+ * Run the sweep on every hour in [from, to] and report which local hours
+ * actually sent. This is how the day's SHAPE gets asserted rather than a
+ * handful of hand-picked instants.
+ */
+function firingHours(from: number, to: number, day = 15): number[] {
+  const fired: number[] = []
+  for (let hour = from; hour <= to; hour++) {
+    if (sweep(at(hour, 0, day)).length > 0) fired.push(hour)
+  }
+  return fired
+}
+
+/** Wipe the nag ledger so a scenario can be replayed from a clean day. */
+function resetNagRows() {
+  getDb().prepare('DELETE FROM slot_nags').run()
+}
+
+/** Put the user's day straight into a chosen state, to isolate one gate. */
+function seedNagRow(sentCount: number, lastHour: number, localDate = '2026-01-15') {
+  getDb()
+    .prepare(
+      `INSERT INTO slot_nags (user_id, local_date, sent_count, last_hour) VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, local_date)
+         DO UPDATE SET sent_count = excluded.sent_count, last_hour = excluded.last_hour`,
+    )
+    .run(TEST_USER_ID, localDate, sentCount, lastHour)
 }
 
 /** Every group freezes the clock the same way, before the DB is seeded. */
@@ -170,16 +202,34 @@ describe('Unfinished-slot nag — when it fires', () => {
   })
 
   /**
-   * RN-006: A slot opening on this exact minute sends its own push. Two banners
-   * in one minute is the single thing this feature must not cause.
+   * RN-006: A slot NOTIFYING on this exact minute puts its own banner up. Two
+   * banners in one minute is the single thing this feature must not cause.
    */
-  test('RN-006: silent on a minute when a slot opens', () => {
+  test('RN-006: silent on a minute when a slot actually notifies', () => {
     makeReminder(7)
+    makeReminder(9) // gives the 09:00 Morning slot something to notify about
 
-    // 09:00 is the Morning boundary — that slot notifies for itself.
     expect(pendingSlotNags(at(9))).toHaveLength(0)
-    // 10:00 is not a boundary.
+    // 10:00 is not a boundary, so the nag is free to speak.
     expect(pendingSlotNags(at(10))).toHaveLength(1)
+  })
+
+  /**
+   * RN-006b: ...but an EMPTY slot opening this minute sends nothing, so there is
+   * no banner to collide with and the nag must still fire.
+   *
+   * This is the coupling to watch: the suppression above is only justified
+   * because `pendingSlotNotifications` stays silent for an empty slot. If that
+   * ever changes, this test is the one that should start failing.
+   */
+  test('RN-006b: an empty slot opening this minute does not suppress the nag', () => {
+    makeReminder(7) // Early morning unfinished; Morning (09:00) is empty
+
+    // The slot-open path itself has nothing to say at 09:00...
+    expect(pendingSlotNotifications(at(9))).toHaveLength(0)
+    // ...so the nag is not competing with anything and should speak.
+    const [nag] = pendingSlotNags(at(9))
+    expect(nag).toMatchObject({ slotLabel: 'Early morning', count: 1 })
   })
 
   /**
@@ -293,24 +343,133 @@ describe('Unfinished-slot nag — what it sends', () => {
 describe('Unfinished-slot nag — the daily allowance', () => {
   freezeAndSeed()
 
-  /** RN-014: three a day, then quiet. */
+  /**
+   * RN-014: the cap, in isolation. Seeding the row directly is what isolates it:
+   * with the default window the gap is 5h, so a naturally-produced third nag
+   * leaves no gap-passing hour before sleep, and a sweep-based test could not
+   * tell the two gates apart.
+   */
   test('RN-014: the daily cap stops the fourth nag', () => {
     makeReminder(7)
-
-    expect(sweep(at(8))).toHaveLength(1)
-    expect(sweep(at(10))).toHaveLength(1)
-    expect(sweep(at(11))).toHaveLength(1)
     expect(MAX_NAGS_PER_DAY).toBe(3)
 
-    // Fourth eligible hour of the same day: still unfinished, still awake,
-    // still on the hour — and silent.
-    expect(sweep(at(13))).toHaveLength(0)
-    expect(pendingSlotNags(at(13))).toHaveLength(0)
+    // Two spent, last at 08:00 — 13:00 clears the 5h gap, so only the cap is
+    // in question, and it permits this one.
+    seedNagRow(2, 8)
+    expect(pendingSlotNags(at(13))).toHaveLength(1)
 
-    const row = getDb()
-      .prepare('SELECT sent_count FROM slot_nags WHERE user_id = ? AND local_date = ?')
-      .get(TEST_USER_ID, '2026-01-15') as { sent_count: number }
-    expect(row.sent_count).toBe(3)
+    // Three spent, same clear gap — now the cap alone silences it.
+    seedNagRow(3, 8)
+    expect(pendingSlotNags(at(13))).toHaveLength(0)
+  })
+
+  /**
+   * RN-014b: the gap, in isolation — one nag spent, cap nowhere near, so only
+   * the spacing can be doing the work. The boundary is inclusive: a gap of
+   * exactly minNagGapHours is allowed.
+   */
+  test('RN-014b: a second nag waits for the minimum gap, and fires on it', () => {
+    makeReminder(7)
+    expect(minNagGapHours('07:00', '22:00')).toBe(5)
+    seedNagRow(1, 8)
+
+    expect(pendingSlotNags(at(10))).toHaveLength(0) // 2h — too soon
+    expect(pendingSlotNags(at(12))).toHaveLength(0) // 4h — still too soon
+    expect(pendingSlotNags(at(13))).toHaveLength(1) // exactly 5h — allowed
+    expect(pendingSlotNags(at(14))).toHaveLength(1)
+  })
+
+  /**
+   * RN-014c: the whole point of the change, as a full day. Before spacing, a
+   * missed morning nagged at 08:00, 10:00 and 11:00 and was then silent for
+   * eleven hours. The day's three should instead land morning / midday /
+   * late-afternoon.
+   */
+  test('RN-014c: a full default day spreads its three nags across the window', () => {
+    makeReminder(7)
+
+    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+  })
+
+  /**
+   * RN-014d: a short window keeps its FULL allowance at tighter spacing rather
+   * than losing nags — floor(6h / 3) = 2h, and all three still fit in 09:00-15:00.
+   */
+  test('RN-014d: a short waking window still spends its whole allowance', () => {
+    makeReminder(7)
+    setWindow('09:00', '15:00')
+    expect(minNagGapHours('09:00', '15:00')).toBe(2)
+
+    expect(firingHours(0, 23)).toEqual([9, 11, 13])
+  })
+
+  /**
+   * RN-014e: a midnight-crossing window derives its gap from the REAL window
+   * length (19h), not a negative one — the bug this test exists to prevent is
+   * `sleep - wake` going negative and collapsing the gap to the 1h floor.
+   */
+  test('RN-014e: a midnight-crossing window computes a real gap, not a negative one', () => {
+    expect(wakingWindowMinutes('07:00', '02:00')).toBe(19 * 60)
+    expect(minNagGapHours('07:00', '02:00')).toBe(6)
+
+    makeReminder(7)
+    setWindow('07:00', '02:00')
+    seedNagRow(1, 8)
+
+    expect(pendingSlotNags(at(13))).toHaveLength(0) // 5h — under the 6h gap
+    expect(pendingSlotNags(at(14))).toHaveLength(1) // 6h — allowed
+  })
+
+  /**
+   * RN-014g: where the three actually land when the evening is ALSO unfinished
+   * — the residual coverage gap, pinned so it is a known shape rather than a
+   * surprise.
+   *
+   * The last nag is at 18:00, which is before the 20:30 Evening slot opens, so
+   * the nags only ever speak for the morning; by 21:00 the allowance is spent.
+   * Evening is not unheard — its own slot-open push fires at 20:30 — but no NAG
+   * ever covers it on a day that starts with a miss. Closing that would take a
+   * different rule (reserving one for after the last slot opens), which was
+   * considered and deliberately not chosen.
+   */
+  test('RN-014g: the nags speak for the morning; Evening is left to its own push', () => {
+    makeReminder(7)
+    makeReminder(20, 30)
+
+    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+
+    // Every one of them named the morning, because Evening had not opened yet.
+    resetNagRows()
+    for (const hour of [8, 13, 18]) {
+      const [nag] = pendingSlotNags(at(hour))
+      expect(nag.slotLabel).toBe('Early morning')
+      recordSlotNag(nag.userId, nag.localDate, nag.localHour)
+    }
+
+    // 21:00: Evening is open and unfinished, but the allowance is gone.
+    expect(pendingSlotNags(at(21))).toHaveLength(0)
+  })
+
+  /** RN-014f: the window length and the derived gap, across the shapes. */
+  test('RN-014f: the gap is derived from the waking window', () => {
+    expect(wakingWindowMinutes('07:00', '22:00')).toBe(15 * 60)
+    expect(minNagGapHours('07:00', '22:00')).toBe(5)
+
+    // Uneven division floors rather than rounding up.
+    expect(minNagGapHours('07:00', '22:30')).toBe(5)
+    expect(minNagGapHours('00:00', '23:00')).toBe(7)
+
+    // A degenerately short window still gets a 1h floor, never 0.
+    expect(minNagGapHours('09:00', '10:00')).toBe(1)
+    expect(minNagGapHours('09:00', '09:30')).toBe(1)
+
+    // wake == sleep reads as all day, matching isAwake.
+    expect(wakingWindowMinutes('07:00', '07:00')).toBe(24 * 60)
+    expect(minNagGapHours('07:00', '07:00')).toBe(8)
+
+    // Malformed times never fire anyway; a full day is the safe answer.
+    expect(wakingWindowMinutes('nonsense', '22:00')).toBeNull()
+    expect(minNagGapHours('nonsense', '22:00')).toBe(24)
   })
 
   /**
@@ -332,20 +491,21 @@ describe('Unfinished-slot nag — the daily allowance', () => {
     expect(row.last_hour).toBe(8)
 
     // A later hour is still available — the guard is per-hour, not a one-shot.
-    expect(sweep(at(10))).toHaveLength(1)
+    // 13:00 rather than 10:00 because the 5h spacing gate also has to clear.
+    expect(sweep(at(13))).toHaveLength(1)
   })
 
-  /** RN-016: the cap is per LOCAL day, so a new day starts fresh. */
-  test('RN-016: the cap resets on the next local day', () => {
+  /** RN-016: both gates are per LOCAL day, so a new day starts fresh. */
+  test('RN-016: the allowance resets on the next local day', () => {
     makeReminder(7)
 
-    sweep(at(8))
-    sweep(at(10))
-    sweep(at(11))
-    expect(sweep(at(13))).toHaveLength(0)
+    expect(firingHours(7, 22)).toEqual([8, 13, 18])
+    expect(sweep(at(21))).toHaveLength(0)
 
+    // Next local day: the cap is clear again, and so is the gap — 08:00 the
+    // following morning is not measured against 18:00 the night before.
     vi.setSystemTime(at(8, 0, 16))
-    expect(sweep(at(8, 0, 16))).toHaveLength(1)
+    expect(firingHours(7, 22, 16)).toEqual([8, 13, 18])
   })
 
   /**
