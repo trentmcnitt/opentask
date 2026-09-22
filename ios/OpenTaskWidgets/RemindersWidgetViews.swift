@@ -279,7 +279,7 @@ private struct ReminderRow: View {
         // .top, not .center: on a two-line row a centred circle floats down
         // into the gap between the lines, reading as if it belongs to neither.
         HStack(alignment: .top, spacing: 10) {
-            Button(intent: CompleteTaskIntent(taskId: reminder.id)) {
+            Button(intent: CompleteTaskIntent(taskId: reminder.id, kind: RemindersWidget.kind)) {
                 Image(systemName: "circle")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(WidgetTheme.priorityColor(reminder.priority))
