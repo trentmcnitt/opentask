@@ -13,6 +13,8 @@ export {
   recordSlotNag,
   purgeOldSlotNags,
   isAwake,
+  wakingWindowMinutes,
+  minNagGapHours,
   slotNagBody,
   MAX_NAGS_PER_DAY,
 } from './slot-nags'

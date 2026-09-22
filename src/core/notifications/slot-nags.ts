@@ -4,7 +4,9 @@
  * WHAT THIS IS: on the hour, while the user is awake, if any time slot that has
  * already opened today still has reminders waiting, send ONE notification. Not
  * one per slot — one, total, naming the most recent unfinished slot and
- * counting the rest.
+ * counting the rest. At most MAX_NAGS_PER_DAY a day, spaced out across the
+ * user's waking window (see `minNagGapHours` — spacing is why the day's
+ * allowance is not spent by mid-morning).
  *
  * WHY IT LOOKS LIKE A BUG: REDESIGN-V03 §6 says a reminder carries no debt, and
  * `slot-reminders.ts` states the principle outright — "a missed slot is a missed
@@ -36,13 +38,15 @@
  * DESIGN: mirrors `slot-reminders.ts` — a pure, read-only decision function
  * (`pendingSlotNags`) split from the sender (`checkSlotNags`), so the decision
  * is testable without APNs credentials. The one piece of state (`slot_nags`) is
- * the daily cap, because a cap is the only thing here a clock cannot derive.
+ * the daily count and the hour of the last nag, because how many have been sent
+ * and how long ago are the only two things here a clock cannot derive.
  */
 
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { isApnsConfigured, sendApnsSlotReminder } from '@/core/notifications/apns'
+import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
 import { getRemindersBySlot } from '@/core/tasks/reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
@@ -84,6 +88,52 @@ export function isAwake(minutes: number, wakeTime: string, sleepTime: string): b
   return minutes >= wake || minutes < sleep
 }
 
+const MINUTES_PER_DAY = 24 * 60
+
+/**
+ * How long the user is awake, in minutes. Null if either time is malformed.
+ *
+ * Same wrap rule as `isAwake`, from the same two fields, so the window the gap
+ * is derived from is by construction the window the nag is allowed to fire in.
+ */
+export function wakingWindowMinutes(wakeTime: string, sleepTime: string): number | null {
+  const wake = parseHHMM(wakeTime)
+  const sleep = parseHHMM(sleepTime)
+  if (wake === null || sleep === null) return null
+
+  return sleep > wake ? sleep - wake : MINUTES_PER_DAY - wake + sleep
+}
+
+/**
+ * The minimum gap between two nags on the same day, in whole hours.
+ *
+ * WHY THIS IS DERIVED AND NOT A CONSTANT: without a gap, the rules fire as
+ * early as they possibly can, and "as early as possible" spends the whole day's
+ * allowance in the first few hours. With the default 07:00-22:00 window and one
+ * unfinished morning slot, the un-spaced version nagged at 08:00, 10:00 and
+ * 11:00 and was then silent for the remaining eleven hours — three nudges about
+ * the morning, none about the rest of the day. That was the failure mode
+ * (Trent, 2026-09-21); do not replace this with a constant without re-reading
+ * that sentence.
+ *
+ * Spreading the allowance across the waking window instead means
+ * `floor(windowHours / MAX_NAGS_PER_DAY)`, which self-adjusts to whatever
+ * wake/sleep the user sets — a short window keeps its full allowance at a
+ * tighter spacing rather than losing nags. The floor of 1 hour keeps a
+ * degenerately short window from collapsing the gap to zero.
+ *
+ * Hour granularity is exact here, not a rounding: a nag can only ever fire at
+ * minute 0, so two nags on the same local day are always a whole number of
+ * hours apart and `hour - last_hour` has no boundary ambiguity.
+ */
+export function minNagGapHours(wakeTime: string, sleepTime: string): number {
+  const window = wakingWindowMinutes(wakeTime, sleepTime)
+  // Malformed times never pass `isAwake` anyway; a full day is the safe answer.
+  if (window === null) return 24
+
+  return Math.max(1, Math.floor(window / 60 / MAX_NAGS_PER_DAY))
+}
+
 interface UnfinishedSlot {
   slot: TimeSlot
   count: number
@@ -123,9 +173,27 @@ function unfinishedOpenedSlots(
   return unfinished.sort((a, b) => b.start - a.start)
 }
 
-/** Has a slot opened on this exact minute? Then it sends its own push — stay quiet. */
-function aSlotOpensThisMinute(userId: number, minuteOfDay: number): boolean {
-  return listTimeSlots(userId).some((slot) => parseHHMM(slot.start_time) === minuteOfDay)
+/**
+ * The users who are getting a slot-open push on this exact minute.
+ *
+ * WHY THIS ASKS `pendingSlotNotifications` RATHER THAN CHECKING START TIMES:
+ * the suppression exists for exactly one reason — a slot opening this minute
+ * sends its own banner, and two banners in one minute is the thing this feature
+ * must not cause. But the slot-open path deliberately stays SILENT for an empty
+ * slot ("an empty checklist is a notification that costs attention and returns
+ * nothing"). So a slot that opens this minute with nothing in it produces no
+ * competing banner, and suppressing the nag for it would cost a legitimate
+ * nudge and buy nothing — 09:00 with Morning empty and Early morning still
+ * unfinished should nag.
+ *
+ * That makes the condition "a slot would ACTUALLY notify now", not "a slot
+ * starts now". Asking the sender's own decision function is the only way to
+ * state that without re-deriving the emptiness rule here, where it could
+ * silently drift out of step. If the empty-slot rule in `slot-reminders.ts`
+ * ever changes, this follows it for free — which is the point.
+ */
+function usersNotifiedThisMinute(now: Date): Set<number> {
+  return new Set(pendingSlotNotifications(now).map((n) => n.userId))
 }
 
 export interface PendingSlotNag {
@@ -156,6 +224,9 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     .all() as NaggableUser[]
 
   const pending: PendingSlotNag[] = []
+  // Computed once rather than per user: it answers for every user at once, and
+  // asking it inside the loop would re-scan every user's slots N times.
+  const alreadyNotified = usersNotifiedThisMinute(now)
 
   for (const user of users) {
     const local = DateTime.fromJSDate(now).setZone(user.timezone)
@@ -167,14 +238,24 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     const minuteOfDay = local.hour * 60 + local.minute
     if (!isAwake(minuteOfDay, user.wake_time, user.sleep_time)) continue
 
-    // A slot opening on this exact minute already sends its own banner. Two in
-    // one minute is precisely the thing this feature must not cause.
-    if (aSlotOpensThisMinute(user.id, minuteOfDay)) continue
+    // A slot that is notifying on this exact minute already puts a banner up.
+    // Two in one minute is precisely the thing this feature must not cause.
+    if (alreadyNotified.has(user.id)) continue
 
     const unfinished = unfinishedOpenedSlots(user, now, minuteOfDay)
     if (unfinished.length === 0) continue
 
-    if (nagsSentToday(user.id, local.toISODate()!) >= MAX_NAGS_PER_DAY) continue
+    // The cap and the gap are independent gates and BOTH must pass: the cap
+    // bounds how many nags a day can hold, the gap bounds how fast they can be
+    // spent. Without the second, the first is exhausted by mid-morning.
+    const sentToday = todaysNagRow(user.id, local.toISODate()!)
+    if (sentToday && sentToday.sent_count >= MAX_NAGS_PER_DAY) continue
+    if (
+      sentToday &&
+      local.hour - sentToday.last_hour < minNagGapHours(user.wake_time, user.sleep_time)
+    ) {
+      continue
+    }
 
     const [target] = unfinished
     pending.push({
@@ -205,11 +286,23 @@ export function slotNagBody(count: number, otherSlots: number): string {
   return `${waiting}, and ${others}`
 }
 
-function nagsSentToday(userId: number, localDate: string): number {
-  const row = getDb()
-    .prepare('SELECT sent_count FROM slot_nags WHERE user_id = ? AND local_date = ?')
-    .get(userId, localDate) as { sent_count: number } | undefined
-  return row?.sent_count ?? 0
+/**
+ * Today's nag row for a user, or undefined if they have not been nagged today.
+ *
+ * NOTE ON A MIDNIGHT-CROSSING WINDOW: the row is keyed by LOCAL DATE, so a
+ * night-owl window (07:00-02:00) splits at midnight — a nag at 23:00 and one at
+ * 01:00 are different rows, and the 01:00 one is therefore neither gap-limited
+ * against the 23:00 one nor counted against its cap. That follows from "at most
+ * N per local day", which is the rule as specified; flagging it here because it
+ * is the one place the day boundary is visible.
+ */
+function todaysNagRow(
+  userId: number,
+  localDate: string,
+): { sent_count: number; last_hour: number } | undefined {
+  return getDb()
+    .prepare('SELECT sent_count, last_hour FROM slot_nags WHERE user_id = ? AND local_date = ?')
+    .get(userId, localDate) as { sent_count: number; last_hour: number } | undefined
 }
 
 /**
