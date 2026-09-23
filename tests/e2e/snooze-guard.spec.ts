@@ -123,7 +123,9 @@ test.describe('Snooze guards', () => {
 
     const menu = page.getByRole('menu', { name: 'Snooze options' })
     await expect(menu).toBeVisible({ timeout: 3000 })
-    await menu.getByRole('menuitem', { name: /^Tomorrow at/ }).click()
+    // "Tomorrow at 9:00 AM", or — when a time slot already lands there — that
+    // slot's "… · tomorrow 9:00 AM" in its place (see SnoozeMenu).
+    await menu.getByRole('menuitem', { name: /tomorrow( at)? 9:00 AM$/i }).click()
 
     const dialog = page.getByRole('alertdialog')
     await expect(dialog).toBeVisible({ timeout: 3000 })

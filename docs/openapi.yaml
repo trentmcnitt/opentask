@@ -797,21 +797,40 @@ paths:
         P3 (High) once no lower-priority task in the batch is still eligible,
         and P4 (Urgent) never. See `/api/tasks/bulk/snooze` for the full rule
         and for what `skipped_urgent` and `skipped_high` count.
+
+        The target is at most one of `until`, `delta_minutes` or `slot`; with
+        none, the user's default snooze option applies.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [until]
               properties:
                 until:
                   type: string
                   format: date-time
-                exclude_task_ids:
+                  description: Absolute snooze target.
+                delta_minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 525600
+                  description: Minutes from now (60 or more snaps to the hour).
+                slot:
+                  type: string
+                  pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|next)$'
+                  description: >-
+                    A time slot to snooze to, resolved in the user's timezone:
+                    a slot's start time ("HH:MM") snoozes to its next start
+                    (today if still ahead, otherwise tomorrow); "next" snoozes
+                    to the soonest upcoming slot start. 400 if "next" and the
+                    user has no time slots.
+                include_task_ids:
                   type: array
+                  maxItems: 10
                   items:
                     type: integer
+                  description: Tasks to include even if not currently due (e.g. the P4 being acted on).
       responses:
         '200':
           description: Bulk operation result
