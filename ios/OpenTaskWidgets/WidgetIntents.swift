@@ -139,6 +139,12 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // One instant for this whole action — shared by the auto-advance
+        // snapshot below and `recordMutation` on success, so the two are
+        // tagged with bit-identical timestamps (see WidgetStore's "Auto-
+        // advance's own undo" section for why that tagging matters).
+        let mutationInstant = Date()
+
         // Optimistic (§8): tombstone the item and repaint from cache BEFORE the
         // server call — the round trip takes seconds and a delayed disappearance
         // reads as a dead button. The tombstone hides the item through the
@@ -154,9 +160,15 @@ struct CompleteTaskIntent: AppIntent {
         // things off and automatically switch." Runs BEFORE the first reload
         // below, using the same cache `filterPending` will draw from, so the
         // very next repaint shows the slot switch and the hidden item
-        // together rather than as two separately visible steps.
-        if kind == RemindersWidget.kind, let cached = WidgetStore.loadReminders()?.value.groups {
-            RemindersTimeline.autoAdvanceSlot(after: taskId, in: cached)
+        // together rather than as two separately visible steps. Snapshotted
+        // first (unconditionally, even when `autoAdvanceSlot` turns out not
+        // to change anything — restoring an unchanged override is a no-op)
+        // so a failed completion below, or a later Undo, can put the display
+        // back — see WidgetStore's "Auto-advance's own undo" section.
+        let isReminders = kind == RemindersWidget.kind
+        if isReminders, let cached = WidgetStore.loadReminders()?.value.groups {
+            WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(after: taskId, in: cached, now: mutationInstant)
         }
         await reloadAffectedKind()
 
@@ -165,10 +177,16 @@ struct CompleteTaskIntent: AppIntent {
             WidgetStore.confirmCompletion(taskId, occurrence: occurrence)
             // §8-adjacent Undo affordance (2026-09-23) — see
             // WidgetStore.recordMutation's doc for the window this opens.
-            WidgetStore.recordMutation()
+            WidgetStore.recordMutation(now: mutationInstant)
         } catch {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
+            // The completion never happened — undo whatever `autoAdvanceSlot`
+            // did above so the display doesn't stay parked on a slot chosen
+            // for an action that failed.
+            if isReminders {
+                WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutationInstant)
+            }
         }
         // Round 2 is the reconciling pass, and on failure it's the ONLY pass
         // that draws the truth: `clearPendingCompletion` just ran above, so
@@ -464,11 +482,26 @@ struct UndoLastActionIntent: AppIntent {
             // optimistic/confirmed marker is cleared rather than one guessed
             // at. See WidgetStore.clearAllPendingState's doc.
             WidgetStore.clearAllPendingState()
+            // If the mutation just reversed was a Reminders completion that
+            // triggered `autoAdvanceSlot`, put the display back where it was
+            // before that side effect — the completed item reappears in its
+            // ORIGINAL slot, and the display should follow it there rather
+            // than staying parked on whatever slot the completion jumped to.
+            // A no-op when `mutatedAt` doesn't match any snapshot on file
+            // (the last action wasn't a Reminders completion, or didn't
+            // trigger an auto-advance) — see WidgetStore's "Auto-advance's
+            // own undo" section for why the match is required rather than
+            // restoring unconditionally.
+            WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutatedAt)
         } catch {
             print("[OpenTaskWidgets] Undo failed: \(error)")
             // Put the window back (at its ORIGINAL deadline, not a fresh 60s)
             // so a network blip is still retryable instead of silently
-            // leaving the action un-undoable with no visible way back.
+            // leaving the action un-undoable with no visible way back. The
+            // auto-advance snapshot, if any, is deliberately left in place
+            // too — the mutation didn't actually get reversed, so whatever
+            // slot it advanced to is still the correct state until a retry
+            // of THIS undo succeeds.
             WidgetStore.restoreMutation(at: mutatedAt)
         }
         // Round 2, the reconciling pass. `markInteraction()` is deliberately
