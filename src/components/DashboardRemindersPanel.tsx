@@ -262,8 +262,8 @@ export function DashboardRemindersPanel({
   const expanded = expandedKeys.has(key)
   const count = group.reminders.length
 
-  // FINISHING A PAST SLOT MOVES THE PAGER ON (Trent, 2026-09-22 — see
-  // `slotAfterFinishing` for the rule). Only a slot that went from something
+  // FINISHING A SLOT MOVES THE PAGER TO THE EARLIEST UNDONE ONE (Trent,
+  // 2026-09-22, refined 2026-09-23 — see `slotAfterFinishing` for the rule). Only a slot that went from something
   // waiting to nothing, while on screen, counts: paging to a slot that was
   // already done leaves you there to look at it. Last check-off and
   // "Considered all" both qualify. Set during render, not in an effect, so the
