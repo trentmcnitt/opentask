@@ -315,28 +315,52 @@ struct RemindersWidget: Widget {
     static let kind = "OpenTaskReminders"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: RemindersProvider()) { entry in
-            RemindersWidgetView(entry: entry)
+        // Server-pushed reloads (iOS 26 / macOS 26 — see WidgetPushHandler.swift
+        // and docs/NOTIFICATIONS.md § WidgetKit push) need `.pushHandler(...)`,
+        // gated here rather than raising this extension's deployment target
+        // (iOS 17 / macOS 14). See the doc comment in TasksWidget.swift for why
+        // this needs an EXPLICIT `return` in each branch (implicit return, or
+        // an `if` that isn't the body's sole statement, both fail to compile —
+        // `Widget.body` has no result builder to reconcile the two branches'
+        // different concrete types).
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return StaticConfiguration(kind: Self.kind, provider: RemindersProvider()) { entry in
+                RemindersWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Reminders")
+            .description("The current time slot's reminders, with tap-to-check-off.")
+            // systemLarge first: it is the primary layout (§8 — the user pointed
+            // at a 4x4 Weather widget), and the gallery leads with the first entry.
+            // .accessoryRectangular / .accessoryCircular are Lock Screen families,
+            // @available(macOS, unavailable) — hard compile errors on native macOS
+            // (unlike the Designed-for-iPad build, which the plain iOS SDK compile
+            // didn't reject). Lock Screen accessories simply don't exist on the Mac.
+            //
+            // Built with an immediately-invoked closure rather than #if inside the
+            // array literal itself — the compiler rejects #if/#endif as array
+            // *elements* ("expected expression in container literal"), even though
+            // #if is fine as a statement inside a closure body.
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
+            .pushHandler(OpenTaskWidgetPushHandler.self)
+        } else {
+            return StaticConfiguration(kind: Self.kind, provider: RemindersProvider()) { entry in
+                RemindersWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Reminders")
+            .description("The current time slot's reminders, with tap-to-check-off.")
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
         }
-        .configurationDisplayName("Reminders")
-        .description("The current time slot's reminders, with tap-to-check-off.")
-        // systemLarge first: it is the primary layout (§8 — the user pointed
-        // at a 4x4 Weather widget), and the gallery leads with the first entry.
-        // .accessoryRectangular / .accessoryCircular are Lock Screen families,
-        // @available(macOS, unavailable) — hard compile errors on native macOS
-        // (unlike the Designed-for-iPad build, which the plain iOS SDK compile
-        // didn't reject). Lock Screen accessories simply don't exist on the Mac.
-        //
-        // Built with an immediately-invoked closure rather than #if inside the
-        // array literal itself — the compiler rejects #if/#endif as array
-        // *elements* ("expected expression in container literal"), even though
-        // #if is fine as a statement inside a closure body.
-        .supportedFamilies({
-            var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
-            #if os(iOS)
-            families += [.accessoryRectangular, .accessoryCircular]
-            #endif
-            return families
-        }())
     }
 }

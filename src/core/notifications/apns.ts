@@ -10,7 +10,7 @@
  */
 
 import { ApnsClient, Host, Notification, SilentNotification, Errors } from 'apns2'
-import type { ApnsError } from 'apns2'
+import type { ApnsError, PushType } from 'apns2'
 import { readFileSync } from 'fs'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
@@ -377,4 +377,89 @@ export async function dismissAllApnsNotifications(userId: number): Promise<void>
       )
     },
   )
+}
+
+/**
+ * WidgetKit push updates (iOS 26 / macOS 26)
+ *
+ * A different notification shape from everything above: no alert, no badge,
+ * no category — just `{ aps: { "content-changed": true } }`, sent with
+ * `apns-push-type: widgets` to `<app bundle id>.push-type.widgets` (NOT the
+ * app's own topic, which is what `device.bundle_id`/`row.bundle_id` means
+ * everywhere else in this file). Tells WidgetKit to reload the widget
+ * extension's timelines on that device, same effect as `reloadAllTimelines()`
+ * but triggered from the server the moment data changes elsewhere. See
+ * https://developer.apple.com/documentation/widgetkit/updating-widgets-with-widgetkit-push-notifications
+ * and docs/NOTIFICATIONS.md. The debounce that calls `sendApnsWidgetReload`
+ * lives in `@/core/notifications/widget-push`.
+ *
+ * apns2@12.2.0's `PushType` union predates this iOS 26/macOS 26 push type, so
+ * the header value needs a cast below — the request itself is exactly what
+ * Apple's docs specify (topic suffix, `content-changed` flag); only the
+ * client library's type doesn't know the string "widgets" yet.
+ */
+class WidgetPushNotification extends Notification {
+  constructor(deviceToken: string, topic: string) {
+    super(deviceToken, { aps: { 'content-changed': true }, topic })
+  }
+  override get pushType(): PushType {
+    return 'widgets' as unknown as PushType
+  }
+}
+
+interface WidgetPushTokenRow {
+  id: number
+  push_token: string
+  bundle_id: string
+  environment: string
+}
+
+/**
+ * Send a WidgetKit "reload your timelines" push to every registered widget
+ * push token for a user. Never called for the demo user — see the is_demo
+ * guard in `@/core/notifications/widget-push`, which is the only caller.
+ */
+export async function sendApnsWidgetReload(userId: number): Promise<void> {
+  if (!isApnsConfigured()) return
+
+  const db = getDb()
+  const tokens = db
+    .prepare(
+      'SELECT id, push_token, bundle_id, environment FROM widget_push_tokens WHERE user_id = ?',
+    )
+    .all(userId) as WidgetPushTokenRow[]
+
+  if (tokens.length === 0) return
+
+  log.info(
+    'apns',
+    `Sending widget reload push to ${tokens.length} widget token(s) for user ${userId}`,
+  )
+
+  const results = await Promise.allSettled(
+    tokens.map(async (row) => {
+      const topic = `${row.bundle_id}.push-type.widgets`
+      const notification = new WidgetPushNotification(row.push_token, topic)
+      try {
+        const apns = getClient(row.environment)
+        await apns.send(notification)
+      } catch (err: unknown) {
+        if (isStaleTokenError(err)) {
+          db.prepare('DELETE FROM widget_push_tokens WHERE id = ?').run(row.id)
+          log.info('apns', `Removed stale widget push token ${row.id}`)
+        } else {
+          throw err
+        }
+      }
+    }),
+  )
+
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+  if (failures.length > 0) {
+    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
+    log.error(
+      'apns',
+      `Failed to send ${failures.length}/${tokens.length} widget reload pushes: ${reasons}`,
+    )
+  }
 }

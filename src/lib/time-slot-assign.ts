@@ -250,25 +250,28 @@ export function nextPeriodStart(
  * Where the Reminders pager goes when the slot on screen has just been
  * finished — its last reminder considered — or null to stay put.
  *
- * Trent, 2026-09-22: "if completing a reminder segment when there is a more
- * recent active segment (like I just did early morning, even though it's
- * evening), it should go to the next unfinished segment once all items are
- * completed." So only a slot BEFORE the natural one moves: finishing the slot
- * the day is in is finishing the day so far, and there is nowhere better to
- * be. The target is the first slot after the finished one, up to and
- * including the natural one, that still has something waiting — and the
- * natural slot itself when all of those are done, since that is where the
- * pager would have opened anyway. Never past it: a slot that hasn't started
- * is not "unfinished", it is not yet due.
+ * THE EARLIEST UNDONE SLOT (Trent, 2026-09-23, refining 2026-09-22's rule):
+ * "When you complete everything for the morning, let's say it's midday, it
+ * should take you to the earliest undone tab next. Once I finish morning, it
+ * should take me automatically back to early morning… so I can keep checking
+ * things off." The first version only ever moved FORWARD from a past slot, so
+ * finishing the slot the day was in left him there — pleased with himself,
+ * with early morning still waiting unseen.
+ *
+ * So: the first slot of the day, up to and including the natural one, that
+ * still has something waiting — whether the finished slot was earlier than
+ * now or the current one. Never a slot after the natural one: one that has not
+ * started is not undone, it is not yet due. Nothing waiting anywhere up to
+ * now: a finished past slot goes to the natural one (where the pager opens
+ * anyway); a finished current slot stays, and says it is done.
  */
 export function slotAfterFinishing(
   groups: { reminders: unknown[] }[],
   finished: number,
   natural: number,
 ): number | null {
-  if (finished >= natural) return null
-  for (let i = finished + 1; i <= natural; i++) {
-    if (groups[i].reminders.length > 0) return i
+  for (let i = 0; i <= natural && i < groups.length; i++) {
+    if (i !== finished && groups[i].reminders.length > 0) return i
   }
-  return natural
+  return finished < natural ? natural : null
 }

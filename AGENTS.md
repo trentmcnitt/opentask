@@ -463,6 +463,7 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 **Server API endpoints used by the iOS app** (changes to these require manual iOS testing):
 
 - `POST /api/push/apns/register`, `DELETE /api/push/apns/register` — device token registration
+- `POST /api/push/apns/widget-token`, `DELETE /api/push/apns/widget-token` — WidgetKit push token registration (iOS 26 / macOS 26, from the widget extension — see docs/NOTIFICATIONS.md)
 - `POST /api/notifications/actions` — done/snooze from notification actions
 - `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
 - `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action (+ `slot` body field: a slot's `start_time`, or `"next"` for the next slot to start — bulk-snooze-to-slot notification actions)

@@ -172,6 +172,45 @@ Requires the `remote-notification` background mode in the app's entitlements.
 
 Native apps can register up to 4 action buttons per notification category. OpenTask registers: Done, +1hr, All +1hr. The content extension (Phase 4) can dynamically replace these with a snooze grid.
 
+## WidgetKit push (widget sync)
+
+A third, narrower channel — not for user-facing notifications, for keeping the iOS/macOS home-screen and Lock Screen **widgets** in sync with data changed elsewhere (web app, other device). Uses Apple's WidgetKit push API (iOS 26 / macOS 26 —
+[Updating widgets with WidgetKit push notifications](https://developer.apple.com/documentation/widgetkit/updating-widgets-with-widgetkit-push-notifications)),
+which sits alongside APNs above but is a distinct token, topic, and push type.
+
+### Why
+
+Without this, a widget only refreshes on its own ~30 min timeline, when the app comes to foreground, or when the widget's own `AppIntent` runs (`docs` in `ios/CLAUDE.md` § Widgets). A change made anywhere else could take up to half an hour to reach a widget. WidgetKit push closes that gap opportunistically — Apple still budgets and may delay delivery, so it is an addition to the timeline policy, not a replacement for it.
+
+### How it works
+
+1. Each widget kind's `WidgetConfiguration` attaches a `WidgetPushHandler` conformance via the `.pushHandler(_:)` modifier (`ios/OpenTaskWidgets/TasksWidget.swift`, `RemindersWidget.swift`, `TrackWidget.swift` — one shared handler type, `OpenTaskWidgetPushHandler` in `WidgetPushHandler.swift`, reused across all three per Apple's docs: "If you have multiple widget configurations, you can choose to use the same push handler type").
+2. The system calls `pushTokenDidChange(_ pushInfo: WidgetPushInfo, widgets: [WidgetInfo])` — once for the first token, and again whenever it changes or the user adds/removes a widget. `pushInfo.token: Data` is the widget extension's own push token, hex-encoded (same `%02.2hhx` idiom as the main app's APNs token) before it goes over the wire.
+3. The handler POSTs to `POST /api/push/apns/widget-token` (`WidgetPushRegistrar` in `WidgetPushHandler.swift`) — same Keychain-shared Bearer token as the rest of the app, read directly rather than through `APIClient`'s private request helpers (that file was under parallel edit; see the doc comment in `WidgetPushHandler.swift`). If `widgets` comes back **empty** (the user removed the last OpenTask widget), the handler calls `DELETE /api/push/apns/widget-token` instead of registering a token nobody will read.
+4. The server stores the token in `widget_push_tokens` (`user_id`, `push_token` unique, `bundle_id`, `platform`, `widget_kind`, `environment`, timestamps — `src/core/db/schema.sql`).
+5. Whenever this user's data changes, the same `emitSyncEvent(userId)` that already drives the SSE stream for open browser tabs (`src/lib/sync-events.ts`) also schedules a widget push (`src/core/notifications/widget-push.ts`), **debounced 2s per user, trailing edge** — a bulk action or a burst of taps produces one push, not one per task, since Apple budgets these pushes and a burst would waste it.
+6. The debounced flush calls `sendApnsWidgetReload(userId)` (`src/core/notifications/apns.ts`), which sends one push per registered token: `apns-push-type: widgets`, topic `<app bundle id>.push-type.widgets` (computed from the stored `bundle_id`, NOT the widget extension's own bundle id — Apple's docs use the containing app's id), body `{"aps": {"content-changed": true}}`. WidgetKit reloads that extension's timelines on receipt, equivalent to a `reloadAllTimelines()` call triggered from the server.
+7. Stale tokens (`BadDeviceToken`/`Unregistered`, same reasons as `apns_devices`) are deleted automatically on send failure.
+
+### Never sent to the demo user
+
+`widget-push.ts` checks `is_demo` before every send — the demo account resets every 4 hours and nobody has a demo widget placed.
+
+### Entitlement
+
+Both widget extension targets need the capability Apple's docs describe as "Add the capability to use remote push notifications to your widget extension target" — a widget extension's own push entitlement, distinct from (and in addition to) the containing app's. The key itself differs by platform, and getting this wrong fails **silently** (the build succeeds; the entitlement is just missing from the signed binary, with no error anywhere):
+
+- **iOS** (`ios/OpenTaskWidgets/project.yml`): bare `aps-environment`, same key the main app and watch app already carry.
+- **macOS** (`macos/OpenTaskMacWidgets/project.yml`): `com.apple.developer.aps-environment` (prefixed) — confirmed empirically during this work: a Mac provisioning profile only grants the prefixed form, and Xcode silently drops any entitlement key the profile doesn't grant. The bare key signed and built cleanly while `codesign -d --entitlements -` showed it simply missing; switching to the prefixed key fixed it. This mirrors the existing landmine documented in `macos/OpenTaskMac/OpenTaskMac-Push.entitlements`, which already carries this exact prefix for the main Mac app's own push entitlement.
+
+Both were verified by building each widget extension target directly (`xcodebuild ... -scheme OpenTaskWidgets` / `-scheme OpenTaskMacWidgets`) and inspecting `codesign -d --entitlements -` on the built `.appex`.
+
+### Known gaps (unverified without a real device)
+
+- If a widget is placed before the user has connected the app (no Bearer token in the Keychain yet), `pushTokenDidChange`'s registration POST fails silently — `APIError.notConfigured` is caught and logged, not retried. The token is not durably lost: `pushTokenDidChange` fires again for "the first push token you receive" the next time WidgetKit decides to re-deliver it (e.g. next widget reload), which self-heals but on no guaranteed schedule.
+- Apple's docs say the topic is `<your bundleID>.push-type.widgets` without stating explicitly whether that is the containing app's bundle id or the extension's own. This implementation uses the **app's** bundle id (`io.mcnitt.opentask` / `io.mcnitt.opentask.mac`), inferred from Apple's own sample (`com.example.CaffeineTracker.push-type.widgets`, no extension suffix). A `BadTopic`/`TopicDisallowed` APNs error in the server log on a real send would mean this guess is wrong.
+- Actual delivery — a push landing on a device and a widget visibly reloading — needs a real device on iOS 26 / macOS 26 and cannot be verified in this environment.
+
 ## User settings
 
 Configured in Settings > Notifications:
