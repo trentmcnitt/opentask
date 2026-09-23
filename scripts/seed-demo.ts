@@ -5,6 +5,10 @@
  * - "Try It" project: interactive onboarding for visitors
  * - "Client Work" project: skill-signaling professional tasks
  * - Inbox: CTA task
+ * - Quotas (§5) and reminders (§6), so the Track panel, the dashboard's
+ *   Reminders panel and the Reminders page are populated rather than empty —
+ *   three of the most distinctive surfaces in the app read as broken when a
+ *   visitor finds nothing in them.
  *
  * Does NOT touch other users. Safe to run on a production database.
  *
@@ -17,20 +21,22 @@
 import bcrypt from 'bcrypt'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { seedSystemLabels } from '../src/core/labels'
+import { createLabel, seedSystemLabels } from '../src/core/labels'
 import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
 import { RRulePatterns, parseRRule } from '../src/core/recurrence/rrule-builder'
 import { localToUtcIso, daysUntilWeekday } from './seed-utils'
+import type { LabelColor } from '../src/types'
 
 const TIMEZONE = 'America/Chicago'
 const SALT_ROUNDS = 10
 
 // Day-of-week constants (0=Mon..6=Sun) used by RRulePatterns
 const MON = 0,
-  THU = 3
+  THU = 3,
+  SUN = 6
 
 // Priority constants
 const UNSET = 0,
@@ -241,6 +247,293 @@ function getDemoTasks(): DemoTaskDef[] {
   ]
 }
 
+// ── Quota definitions (Track, REDESIGN-V03 §5) ────────
+
+/**
+ * The labels quotas are filed under, with the colour each cluster is drawn in.
+ *
+ * Both the Track panel and the Quotas page group by label, so a quota with no
+ * label lands in an "Other" pile — five labels over eight quotas gives those
+ * surfaces something to actually group. The colours go into `label_config`,
+ * which is where every label colour in the app comes from.
+ *
+ * NEVER GREEN: green already means "met" on a Track chip, so `trackStripeClass`
+ * declines a green label and falls back to neutral (see `@/lib/track`).
+ */
+const QUOTA_LABELS: Record<string, LabelColor> = {
+  focus: 'blue',
+  health: 'orange',
+  learning: 'purple',
+  connection: 'pink',
+  admin: 'gray',
+}
+
+/**
+ * A quota's rule is a BARE PERIOD RULE — "FREQ=WEEKLY", no day and no hour. It
+ * names the period a count runs over rather than an occurrence to land on
+ * (`isPeriodRRule` in `@/core/recurrence/rrule-builder`; validation only lets a
+ * tracked task carry one). `RRulePatterns` has no builder for it on purpose —
+ * every pattern there produces a schedule, which is the opposite of what a
+ * quota wants.
+ */
+const QUOTA_RRULE = { week: 'FREQ=WEEKLY', month: 'FREQ=MONTHLY' } as const
+
+type QuotaPeriod = keyof typeof QUOTA_RRULE
+
+/**
+ * Where a quota sits against its target, as a state rather than a number.
+ *
+ * This seed re-runs every four hours, forever, so a hardcoded count would read
+ * as "ahead" on Monday and "hopeless" on Friday. The count is derived from how
+ * far through the period we actually are — see `quotaCurrent`.
+ */
+type QuotaState = 'on-pace' | 'behind' | 'met' | 'open'
+
+interface DemoQuotaDef {
+  title: string
+  project: ProjectName
+  label: keyof typeof QUOTA_LABELS
+  period: QuotaPeriod
+  /** How many times per period. 1 + `is_tracked` is the "once a month" case. */
+  target: number
+  state: QuotaState
+  notes?: string
+}
+
+/**
+ * Eight quotas over five labels, deliberately spread across every state the
+ * Track panel can draw: on pace, behind, met (with §5's observable overflow),
+ * and a target of one — the "date night, once a month" case the schema
+ * describes, which is a quota only because `is_tracked` says so.
+ *
+ * At least one BEHIND quota counts within a month rather than a week, because
+ * early in a period nothing can be behind: on a Monday morning a weekly quota
+ * has no shortfall to show yet, whichever way it is going. A month is far
+ * enough along, most days, to actually lag.
+ */
+const DEMO_QUOTAS: DemoQuotaDef[] = [
+  {
+    title: 'Deep work block, no meetings',
+    project: 'Client Work',
+    label: 'focus',
+    period: 'week',
+    target: 5,
+    state: 'on-pace',
+    notes:
+      'Ninety minutes, calendar blocked, notifications off. Counts only if nothing interrupts.',
+  },
+  {
+    title: 'Ship one small improvement',
+    project: 'Client Work',
+    label: 'focus',
+    period: 'week',
+    target: 3,
+    state: 'behind',
+  },
+  {
+    title: 'Strength training',
+    project: 'Personal',
+    label: 'health',
+    period: 'week',
+    target: 3,
+    state: 'on-pace',
+  },
+  {
+    title: 'Walk after lunch',
+    project: 'Personal',
+    label: 'health',
+    period: 'week',
+    target: 5,
+    state: 'behind',
+  },
+  {
+    title: 'Read something outside work',
+    project: 'Personal',
+    label: 'learning',
+    period: 'week',
+    target: 2,
+    state: 'on-pace',
+  },
+  {
+    title: 'Write up what I learned',
+    project: 'Personal',
+    label: 'learning',
+    period: 'month',
+    target: 2,
+    state: 'met',
+    notes:
+      'A page is plenty. Writing it down is what turns a week of work into something reusable.',
+  },
+  {
+    title: 'Coffee with someone outside the team',
+    project: 'Client Work',
+    label: 'connection',
+    period: 'month',
+    target: 3,
+    state: 'behind',
+    notes: 'Anyone whose work you do not already understand. Half an hour, no agenda.',
+  },
+  {
+    title: 'Review the monthly numbers',
+    project: 'Client Work',
+    label: 'admin',
+    period: 'month',
+    target: 1,
+    state: 'open',
+    notes:
+      'Once a month is the whole target — tracked so it is counted, not scheduled as a deadline.',
+  },
+]
+
+// ── Reminder definitions (the Reminders surface, §6) ──
+
+/**
+ * A reminder is a prompted THOUGHT, not a chore: completing one means "I
+ * considered it", and that is its whole completion (§6). It carries no debt —
+ * a missed one is simply not re-shown until its next occurrence — so these are
+ * written as questions and principles rather than as things to tick off.
+ */
+interface DemoReminderDef {
+  title: string
+  project: ProjectName
+  /** Local time of day. Decides which time slot it lands in (§6.0). */
+  hour: number
+  min: number
+  priority?: number
+  notes?: string
+  /**
+   * Whether this one is usually considered once its moment has passed.
+   *
+   * The considered set is computed against the clock at seed time rather than
+   * baked in: at 3pm the morning thoughts read as considered and the evening
+   * ones as still waiting, which is what makes the slot bar show progress
+   * instead of one flat state. A few are deliberately left waiting all day so
+   * that a slot whose time has come still has something in it — that is the
+   * bar's third state, and without it nothing ever wears the accent.
+   */
+  considerWhenPast?: boolean
+  /** ISO-agnostic day (0=Mon..6=Sun) for a weekly reminder; daily when omitted. */
+  dow?: number
+}
+
+/**
+ * Thirteen daily reminders over five slots, in uneven counts (2 / 4 / 2 / 2 / 3)
+ * because the day bar renders proportional segments and even counts make it
+ * look like a placeholder. One weekly reminder sits on Sunday so the Reminders
+ * page's "other days" section has something in it six days out of seven.
+ */
+const DEMO_REMINDERS: DemoReminderDef[] = [
+  // Early morning (07:00)
+  {
+    title: 'Name the one thing that would make today count',
+    project: 'Personal',
+    hour: 7,
+    min: 10,
+    considerWhenPast: true,
+    notes:
+      'If everything else slides, this is the thing that still has to happen. Pick it before the day picks for you.',
+  },
+  {
+    title: 'Move before the first screen',
+    project: 'Personal',
+    hour: 7,
+    min: 40,
+    considerWhenPast: true,
+  },
+  // Morning (09:00)
+  {
+    title: 'Hardest thing first — the inbox can wait',
+    project: 'Client Work',
+    hour: 9,
+    min: 0,
+    priority: HIGH,
+    considerWhenPast: true,
+    notes:
+      'Attention is at its cheapest right now. Spend it on the thing you would otherwise avoid until 4pm.',
+  },
+  {
+    title: 'Is this mine to do, or mine to hand off?',
+    project: 'Client Work',
+    hour: 9,
+    min: 30,
+    considerWhenPast: true,
+  },
+  {
+    title: 'What is the client actually asking for?',
+    project: 'Client Work',
+    hour: 10,
+    min: 15,
+    notes:
+      'The request and the need are rarely the same sentence. Restate it in your own words before building anything.',
+  },
+  {
+    title: 'Say the hard thing early, while it is still small',
+    project: 'Client Work',
+    hour: 11,
+    min: 15,
+    considerWhenPast: true,
+  },
+  // Midday (12:00)
+  {
+    title: 'Eat away from the desk',
+    project: 'Personal',
+    hour: 12,
+    min: 30,
+    considerWhenPast: true,
+  },
+  {
+    title: 'Half the day is gone — is the plan still the plan?',
+    project: 'Client Work',
+    hour: 14,
+    min: 0,
+    notes: 'If the morning changed things, change the afternoon on purpose rather than by drift.',
+  },
+  // Afternoon (16:00)
+  {
+    title: 'Leave tomorrow a note about where you stopped',
+    project: 'Client Work',
+    hour: 16,
+    min: 30,
+    considerWhenPast: true,
+    notes:
+      "Two lines is enough: what you were doing, and the next concrete move. You are buying tomorrow's first ten minutes.",
+  },
+  { title: 'Close the laptop — the day is allowed to end', project: 'Personal', hour: 17, min: 30 },
+  // Evening (20:30)
+  {
+    title: 'What went well today? Name one thing',
+    project: 'Personal',
+    hour: 20,
+    min: 45,
+    considerWhenPast: true,
+    notes:
+      'Not a review and not a metric — one thing that worked. A day gets remembered the way it is rehearsed.',
+  },
+  {
+    title: "Tomorrow's first move, decided tonight",
+    project: 'Personal',
+    hour: 21,
+    min: 15,
+    priority: MED,
+  },
+  {
+    title: "Put tomorrow's worry down — it will still be there, and you'll be sharper",
+    project: 'Personal',
+    hour: 22,
+    min: 0,
+    considerWhenPast: true,
+  },
+  // Weekly — off-day on six days out of seven, so "other days" is never empty
+  {
+    title: 'Look at the week as a whole before it starts',
+    project: 'Personal',
+    hour: 20,
+    min: 45,
+    dow: SUN,
+    notes: 'Where does the week already have no room? Decide now what gives, not on Wednesday.',
+  },
+]
+
 interface SeededTask {
   id: number
   title: string
@@ -338,6 +631,261 @@ function seedDemoTasks(
   }
 
   return seededTasks
+}
+
+// ── Quota seeding helper ────────────────────
+
+/**
+ * Where the current period started, and how far through it we are.
+ *
+ * The start MUST match `unitStart()` in `src/core/tasks/period-rollover.ts`
+ * exactly — the rollover cron compares `progress_period_start` against the
+ * start of the calendar unit by the user's clock, so an anchor that disagrees
+ * would make the job close a period the moment it next runs, wiping the
+ * curated counts minutes after a reset.
+ */
+function quotaPeriodBounds(
+  period: QuotaPeriod,
+  now: DateTime,
+): { startIso: string; elapsed: number } {
+  const start = period === 'week' ? now.startOf('week') : now.startOf('month')
+  const end = period === 'week' ? start.plus({ weeks: 1 }) : start.plus({ months: 1 })
+  const elapsed = (now.toMillis() - start.toMillis()) / (end.toMillis() - start.toMillis())
+  return { startIso: start.toUTC().toISO()!, elapsed }
+}
+
+/**
+ * The count a quota should be showing right now, from its state and how far
+ * through the period we are.
+ *
+ * The thresholds mirror `computePace` in `src/core/tasks/progress.ts`, which
+ * calls a quota behind when `current + 1 <= target * periodElapsed`:
+ * - on-pace clears that comparison with one in hand, and stays below target;
+ * - behind sits one under what the elapsed time expects.
+ *
+ * `behind` keeps a FLOOR OF ONE, which is the one place this bends away from
+ * the pace maths. Early in a period the shortfall it wants to show does not
+ * exist yet — the expectation is still below 1, so nothing is behind on a
+ * Monday morning however you count it — and the unbent formula put a bare 0/5
+ * chip on the panel for the first day or two of every week. An empty chip is
+ * the very thing this seed exists to prevent, and one logged on Monday is the
+ * more believable state anyway. By midweek the shortfall is real and the chip
+ * reads behind on its own.
+ */
+function quotaCurrent(def: DemoQuotaDef, elapsed: number): number {
+  switch (def.state) {
+    case 'met':
+      // Past halfway, one extra shows §5's observable overflow — a met quota
+      // reads 3/2 rather than vanishing. Before halfway an overflowing count
+      // would just look implausible.
+      return def.target + (elapsed > 0.5 ? 1 : 0)
+    case 'on-pace':
+      return Math.min(def.target - 1, Math.round(def.target * elapsed) + 1)
+    case 'behind':
+      return Math.max(1, Math.floor(def.target * elapsed) - 1)
+    case 'open':
+      return 0
+  }
+}
+
+/**
+ * Quotas, with a real `progress_events` row behind every point of every count.
+ *
+ * A bare integer in `progress_current` would render identically today and be a
+ * lie the moment anything reads the log — the events are what the count is
+ * made of. They are spread evenly across the part of the period that has
+ * already happened, so none is stamped in the future.
+ *
+ * Note what a quota does NOT get: a due date. §5 — "a quota is not a task" —
+ * and the core rejects one outright; the period is carried by the rrule's FREQ
+ * and by `progress_period_start`.
+ */
+function seedDemoQuotas(db: Database.Database, userId: number, projectMap: ProjectMap): number {
+  const insertQuota = db.prepare(`
+    INSERT INTO tasks (
+      user_id, project_id, title, priority, due_at, rrule,
+      anchor_time, anchor_dow, anchor_dom, labels, notes,
+      progress_target, progress_current, progress_period_start, is_tracked,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `)
+  const insertEvent = db.prepare(
+    'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, 1, ?)',
+  )
+
+  const nowUtc = DateTime.utc().toISO()!
+  const nowLocal = DateTime.now().setZone(TIMEZONE)
+
+  for (const def of DEMO_QUOTAS) {
+    const rrule = QUOTA_RRULE[def.period]
+    const { startIso, elapsed } = quotaPeriodBounds(def.period, nowLocal)
+    const current = quotaCurrent(def, elapsed)
+    // A bare period rule carries no BYHOUR and no BYDAY, so every anchor comes
+    // back null — which is right: a quota has no time of day to be at.
+    const anchors = deriveAnchorFields(rrule, null, TIMEZONE)
+    // Two months back, so a monthly quota's current period always began well
+    // after the quota itself existed.
+    const createdAt = localToUtcIso(-60, 9, 0)
+
+    const result = insertQuota.run(
+      userId,
+      projectMap[def.project],
+      def.title,
+      UNSET,
+      rrule,
+      anchors.anchor_time,
+      anchors.anchor_dow,
+      anchors.anchor_dom,
+      JSON.stringify([def.label]),
+      def.notes ?? null,
+      def.target,
+      current,
+      startIso,
+      createdAt,
+      nowUtc,
+    )
+
+    const taskId = Number(result.lastInsertRowid)
+    const periodStart = DateTime.fromISO(startIso, { zone: 'utc' }).toMillis()
+    const span = nowLocal.toMillis() - periodStart
+    for (let i = 0; i < current; i++) {
+      // Evenly through the elapsed part of the period: with 3 logged that is
+      // a quarter, a half and three quarters of the way to now.
+      const at = periodStart + (span * (i + 1)) / (current + 1)
+      insertEvent.run(taskId, userId, DateTime.fromMillis(at, { zone: 'utc' }).toISO()!)
+    }
+  }
+
+  return DEMO_QUOTAS.length
+}
+
+// ── Reminder seeding helper ─────────────────
+
+/**
+ * Reminders, some already considered today.
+ *
+ * WHICH ONES ARE CONSIDERED IS DECIDED AGAINST THE CLOCK, not baked in. A
+ * reminder marked `considerWhenPast` is completed shortly after its moment
+ * passes, so a visitor at 3pm sees the morning thoughts behind the counter and
+ * the evening ones still waiting — the day bar reads as progress rather than as
+ * one flat state. The demo re-seeds every four hours, so the considered set is
+ * never more than that stale.
+ *
+ * A CONSIDERED RECURRING REMINDER IS NOT `done`. Completing one advances it to
+ * its next occurrence and leaves `last_completed_at` behind; `done = 1` would
+ * retire the thought permanently. Today-ness comes from the schedule (§4.6),
+ * and `getConsideredToday` finds these by their completion falling on today's
+ * local date — which is why `due_at` moves to tomorrow while `anchor_time`
+ * stays put and keeps the row in the slot it belongs to.
+ */
+function seedDemoReminders(db: Database.Database, userId: number, projectMap: ProjectMap): number {
+  const insertReminder = db.prepare(`
+    INSERT INTO tasks (
+      user_id, project_id, title, priority, due_at, rrule,
+      anchor_time, anchor_dow, anchor_dom, original_due_at, labels, notes,
+      is_reminder, completion_count, first_completed_at, last_completed_at,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 1, ?, ?, ?, ?, ?)
+  `)
+
+  /**
+   * Completing a recurring task writes a `completions` row remembering the due
+   * date it advanced FROM and TO, and put-back reads that row back:
+   * `putBackLatestOccurrence` throws "Nothing to put back" without one, and
+   * throws again if the task's `due_at` no longer equals `due_at_next`. Undo is
+   * offered on every considered reminder (`RemindersView`, and the dashboard
+   * panel), so a considered row seeded without this looks perfectly right and
+   * then fails the moment a visitor tries to take it back. Written here exactly
+   * as `executeRecurringMarkDone` writes it.
+   */
+  const insertCompletion = db.prepare(`
+    INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
+    VALUES (?, ?, ?, ?, ?)
+  `)
+
+  const nowUtc = DateTime.utc().toISO()!
+  const nowLocal = DateTime.now().setZone(TIMEZONE)
+  let considered = 0
+
+  DEMO_REMINDERS.forEach((def, index) => {
+    const rrule =
+      def.dow === undefined
+        ? RRulePatterns.daily(def.hour, def.min)
+        : RRulePatterns.weekly([def.dow], def.hour, def.min)
+
+    // When it was considered, if it has been: a plausible few minutes after the
+    // moment itself, varied per reminder so the completions aren't a rank of
+    // identical timestamps. A weekly reminder is left alone — its occurrence is
+    // not today six days out of seven.
+    const moment = nowLocal.set({ hour: def.hour, minute: def.min, second: 0, millisecond: 0 })
+    const consideredAt = moment.plus({ minutes: 9 + ((index * 7) % 31) })
+    const isConsidered =
+      def.considerWhenPast === true && def.dow === undefined && consideredAt < nowLocal
+
+    // EVERY DATE HERE HAS TO BE ONE THIS REMINDER'S OWN RULE COULD PRODUCE.
+    // A daily thought can land on the day the seed happens to run; a weekly one
+    // cannot, and six days out of seven "today" is the wrong weekday for it.
+    // So the weekly reminder's dates are measured from its own occurrences —
+    // which also keeps `deriveAnchorFields` honest, since it reads the weekday
+    // back off `due_at`.
+    const weeklyIn = def.dow === undefined ? null : daysUntilWeekday(def.dow + 1, 0, TIMEZONE)
+
+    // Considered ones point at tomorrow's occurrence, exactly as completing one
+    // would leave them; the rest are due at their next one.
+    const dueAt = localToUtcIso(isConsidered ? 1 : (weeklyIn ?? 0), def.hour, def.min)
+    const anchors = deriveAnchorFields(rrule, dueAt, TIMEZONE)
+
+    // A thought in rotation for weeks has a history behind it — but no more of
+    // one than its cadence allows. A weekly rule cannot have fired 30 times in
+    // the 45 days its first completion claims; it gets one per week instead.
+    // For the daily ones left waiting all day, the previous completion is a few
+    // days back rather than yesterday: those are the thoughts this demo user
+    // tends to pass over, and "considered yesterday" would contradict the fact
+    // that it is still sitting there now.
+    const historyWeeks = 6
+    const lastOccurrenceIn = weeklyIn !== null ? weeklyIn - 7 : null
+    const completionCount = weeklyIn !== null ? historyWeeks + 1 : 11 + ((index * 5) % 23)
+    const firstCompletedIn = lastOccurrenceIn !== null ? lastOccurrenceIn - historyWeeks * 7 : -45
+    const previousDaysBack = def.considerWhenPast === true ? 1 : 3
+    const lastCompletedAt = isConsidered
+      ? consideredAt.toUTC().toISO()!
+      : localToUtcIso(lastOccurrenceIn ?? -previousDaysBack, def.hour, def.min)
+
+    const inserted = insertReminder.run(
+      userId,
+      projectMap[def.project],
+      def.title,
+      def.priority ?? UNSET,
+      dueAt,
+      rrule,
+      anchors.anchor_time,
+      anchors.anchor_dow,
+      anchors.anchor_dom,
+      dueAt, // original_due_at — matches createTask() behavior
+      def.notes ?? null,
+      completionCount,
+      localToUtcIso(firstCompletedIn, def.hour, def.min), // first_completed_at
+      lastCompletedAt,
+      // Created BEFORE its first completion, whatever time of day it fires at:
+      // an 07:10 thought first considered 45 days ago cannot have been made at
+      // 09:00 that same morning.
+      localToUtcIso(-60, 8, 0),
+      nowUtc,
+    )
+
+    if (isConsidered) {
+      insertCompletion.run(
+        Number(inserted.lastInsertRowid),
+        userId,
+        lastCompletedAt,
+        localToUtcIso(0, def.hour, def.min), // due_at_was — today's occurrence
+        dueAt, // due_at_next — exactly what the row now carries, or put-back refuses
+      )
+      considered++
+    }
+  })
+
+  return considered
 }
 
 // ── Pre-baked AI data ─────────────────────────
@@ -516,9 +1064,34 @@ export function seedDemoData(
   ).run(userId)
   console.log(`  AI features set to API mode`)
 
+  // Register the labels the quotas are filed under, and colour them.
+  //
+  // Here rather than in seedDemoUser() because a reset re-runs only this
+  // function — and it never deletes the `labels` rows, so both calls have to
+  // be idempotent. createLabel() returns the existing row for a name it
+  // already has, and label_config is an overwrite.
+  for (const name of Object.keys(QUOTA_LABELS)) createLabel(userId, name)
+  const labelConfig = Object.entries(QUOTA_LABELS).map(([name, color]) => ({ name, color }))
+  db.prepare('UPDATE users SET label_config = ? WHERE id = ?').run(
+    JSON.stringify(labelConfig),
+    userId,
+  )
+  console.log(`  Registered ${labelConfig.length} quota labels`)
+
   // Seed tasks
   const seededTasks = seedDemoTasks(db, userId, projectMap)
   console.log(`  Inserted ${seededTasks.length} tasks`)
+
+  // Quotas (§5) and reminders (§6). Deliberately NOT part of `seededTasks`:
+  // they are not tasks, they never appear in the dashboard's lists, and giving
+  // them a pre-baked insight would hang "Onboarding step — complete at your
+  // own pace" off a quota.
+  const quotaCount = seedDemoQuotas(db, userId, projectMap)
+  console.log(`  Inserted ${quotaCount} quotas`)
+  const consideredCount = seedDemoReminders(db, userId, projectMap)
+  console.log(
+    `  Inserted ${DEMO_REMINDERS.length} reminders (${consideredCount} already considered today)`,
+  )
 
   // Pre-bake AI data so demo user sees insights and What's Next without triggering AI
   seedDemoInsights(db, userId, seededTasks)
