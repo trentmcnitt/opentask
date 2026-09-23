@@ -284,11 +284,87 @@ enum WidgetStore {
         (defaults?.dictionary(forKey: key) as? [String: Double]) ?? [:]
     }
 
-    /// Remove tombstoned items from a fetched or cached payload.
+    // MARK: - Confirmed completions (the check-off that came back, 2026-09-23)
+    //
+    // The tombstone above lives 90s and was the ONLY thing hiding a completed
+    // item, while the cached payload it filters kept that item forever. Tapping
+    // through a slot keeps `hasRecentInteraction()` true, so every repaint came
+    // from that stale cache — and 90s after a tap its tombstone expired and the
+    // item was drawn again. Trent, 2026-09-23: "the reminders started popping
+    // back up. When I'd complete one, one would replace it." He re-tapped
+    // "Check GitHub issues" and, the server having already advanced it, that
+    // second completion skipped tomorrow's occurrence.
+    //
+    // So a completion the SERVER CONFIRMED is remembered for 15 minutes, keyed
+    // to the occurrence that was done — its `due_at` when it was tapped. An item
+    // is hidden only while it still shows THAT occurrence: the next occurrence
+    // of a recurring task (same id, later `due_at`) is real and still drawn.
+    // When the item was not in any cache at tap time there is no occurrence to
+    // match, so the id alone is hidden for the window.
+
+    private static let confirmedCompletionsKey = "widget.confirmedCompletions"
+    private static let confirmedTTL: TimeInterval = 15 * 60
+
+    private struct ConfirmedCompletion: Codable {
+        let at: Double
+        /// The occurrence completed. nil with `matchAny` when it was unknown.
+        let dueAt: String?
+        let matchAny: Bool
+    }
+
+    /// The `due_at` the widget is currently showing for `id`, from whichever
+    /// cache holds it. Read at TAP time, before any fetch replaces the cache
+    /// with the advanced occurrence. `.none` when no cache has the item.
+    static func cachedOccurrence(of id: Int) -> String?? {
+        let reminders = loadReminders()?.value.groups.flatMap(\.reminders) ?? []
+        let tasks = loadTasks()?.value.tasks ?? []
+        if let hit = (reminders + tasks).first(where: { $0.id == id }) { return .some(hit.dueAt) }
+        return .none
+    }
+
+    /// The server confirmed `id`'s completion of `occurrence` (from
+    /// `cachedOccurrence(of:)`); hide that occurrence for `confirmedTTL`.
+    static func confirmCompletion(_ id: Int, occurrence: String??, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = confirmedMap(now: now)
+        switch occurrence {
+        case .some(let dueAt):
+            map[String(id)] = ConfirmedCompletion(
+                at: now.timeIntervalSince1970, dueAt: dueAt, matchAny: false)
+        case .none:
+            map[String(id)] = ConfirmedCompletion(
+                at: now.timeIntervalSince1970, dueAt: nil, matchAny: true)
+        }
+        if let data = try? JSONEncoder().encode(map) {
+            defaults?.set(data, forKey: confirmedCompletionsKey)
+        }
+    }
+
+    /// Live entries only; expired ones are dropped on read.
+    private static func confirmedMap(now: Date) -> [String: ConfirmedCompletion] {
+        guard let data = defaults?.data(forKey: confirmedCompletionsKey),
+              let map = try? JSONDecoder().decode([String: ConfirmedCompletion].self, from: data)
+        else { return [:] }
+        let cutoff = now.timeIntervalSince1970 - confirmedTTL
+        return map.filter { $0.value.at >= cutoff }
+    }
+
+    private static func isConfirmedDone(
+        _ task: TaskDTO, in map: [String: ConfirmedCompletion]
+    ) -> Bool {
+        guard let done = map[String(task.id)] else { return false }
+        return done.matchAny || done.dueAt == task.dueAt
+    }
+
+    /// Remove tombstoned items, and confirmed completions of the occurrence
+    /// shown, from a fetched or cached payload. Every widget draws through
+    /// this, so it is the one place both rules live.
     static func filterPending(_ tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
         let pending = pendingCompletions(now: now)
-        guard !pending.isEmpty else { return tasks }
-        return tasks.filter { !pending.contains($0.id) }
+        let confirmed = confirmedMap(now: now)
+        guard !pending.isEmpty || !confirmed.isEmpty else { return tasks }
+        return tasks.filter { !pending.contains($0.id) && !isConfirmedDone($0, in: confirmed) }
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -308,13 +384,8 @@ enum WidgetStore {
     }
 
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
-        let pending = pendingCompletions(now: now)
-        guard !pending.isEmpty else { return groups }
-        return groups.map { group in
-            ReminderGroupDTO(
-                slot: group.slot,
-                reminders: group.reminders.filter { !pending.contains($0.id) }
-            )
+        groups.map { group in
+            ReminderGroupDTO(slot: group.slot, reminders: filterPending(group.reminders, now: now))
         }
     }
 
