@@ -1793,6 +1793,14 @@ components:
           type: string
           nullable: true
           description: Raw input text before AI enrichment
+        short_title:
+          type: string
+          nullable: true
+          maxLength: 24
+          description: >
+            Optional short label for the quota widget chip (§5). Only
+            meaningful on a quota (progress_target > 1 or is_tracked), but not
+            rejected on an ordinary task.
         done:
           type: boolean
         done_at:
@@ -1905,6 +1913,13 @@ components:
       properties:
         title:
           type: string
+        short_title:
+          type: string
+          nullable: true
+          maxLength: 24
+          description: >
+            Optional short label for the quota widget chip (§5). Trimmed;
+            empty string is stored as null.
         due_at:
           type: string
           format: date-time
@@ -2013,6 +2028,13 @@ components:
       properties:
         title:
           type: string
+        short_title:
+          type: string
+          nullable: true
+          maxLength: 24
+          description: >
+            Optional short label for the quota widget chip (§5). Trimmed;
+            empty string is stored as null.
         due_at:
           type: string
           format: date-time

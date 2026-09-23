@@ -229,4 +229,96 @@ describe('Task clear due date', () => {
     expect(restored.due_at).toBe(originalDueAt)
     expect(restored.rrule).toBe(originalRrule)
   })
+
+  // §5: the quota widget chip's optional short label.
+  describe('short_title', () => {
+    test('POST create then GET back — round-trips, trimmed', async () => {
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Eat beef', short_title: '  Beef  ', project_id: 1 },
+      })
+      expect(createRes.status).toBe(201)
+      const created = (await createRes.json()).data
+      expect(created.short_title).toBe('Beef')
+
+      const fetched = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+      expect(fetched.short_title).toBe('Beef')
+    })
+
+    test('omitted on create defaults to null', async () => {
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'No short name', project_id: 1 },
+      })
+      const created = (await createRes.json()).data
+      expect(created.short_title).toBeNull()
+    })
+
+    test('PATCH round-trips it, and an empty string clears it to null', async () => {
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Kids all blow up balloon', project_id: 1 },
+      })
+      const created = (await createRes.json()).data
+      expect(created.short_title).toBeNull()
+
+      const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
+        method: 'PATCH',
+        body: { short_title: 'Balloon' },
+      })
+      expect(patchRes.status).toBe(200)
+      const patched = (await patchRes.json()).data
+      expect(patched.short_title).toBe('Balloon')
+
+      const cleared = await apiFetch(`/api/tasks/${created.id}`, {
+        method: 'PATCH',
+        body: { short_title: '' },
+      })
+      expect(cleared.status).toBe(200)
+      expect((await cleared.json()).data.short_title).toBeNull()
+    })
+
+    test('400 over 24 characters, on both create and update', async () => {
+      const tooLong = 'A'.repeat(25)
+
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Too long', short_title: tooLong, project_id: 1 },
+      })
+      expect(createRes.status).toBe(400)
+
+      const createOk = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Fine for now', project_id: 1 },
+      })
+      const created = (await createOk.json()).data
+
+      const patchRes = await apiFetch(`/api/tasks/${created.id}`, {
+        method: 'PATCH',
+        body: { short_title: tooLong },
+      })
+      expect(patchRes.status).toBe(400)
+    })
+
+    test('undo restores the previous short_title', async () => {
+      const createRes = await apiFetch('/api/tasks', {
+        method: 'POST',
+        body: { title: 'Eat beef', short_title: 'Beef', project_id: 1 },
+      })
+      const created = (await createRes.json()).data
+
+      await apiFetch(`/api/tasks/${created.id}`, {
+        method: 'PATCH',
+        body: { short_title: 'New name' },
+      })
+      const changed = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+      expect(changed.short_title).toBe('New name')
+
+      const undoRes = await apiFetch('/api/undo', { method: 'POST' })
+      expect(undoRes.status).toBe(200)
+
+      const restored = (await apiFetch(`/api/tasks/${created.id}`).then((r) => r.json())).data
+      expect(restored.short_title).toBe('Beef')
+    })
+  })
 })
