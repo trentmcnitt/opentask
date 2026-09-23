@@ -73,4 +73,20 @@ describe('bulkSnoozeMessage', () => {
   test('SM-007: nothing moved and nothing skipped says just that', () => {
     expect(bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 })).toBe('No snoozable tasks')
   })
+
+  test('names High when every task it moved was High — the second press of a double snooze', () => {
+    expect(bulkSnoozeMessage({ affected: 3, highAffected: 3, high: 0, urgent: 0 })).toBe(
+      'Snoozed 3 high-priority tasks',
+    )
+    expect(bulkSnoozeMessage({ affected: 1, highAffected: 1, high: 0, urgent: 2 })).toBe(
+      'Snoozed 1 high-priority task (2 urgent skipped)',
+    )
+  })
+
+  test('a mixed batch, or no High count at all, says plain "tasks"', () => {
+    expect(bulkSnoozeMessage({ affected: 3, highAffected: 1, high: 0, urgent: 0 })).toBe(
+      'Snoozed 3 tasks',
+    )
+    expect(bulkSnoozeMessage({ affected: 2, high: 0, urgent: 0 })).toBe('Snoozed 2 tasks')
+  })
 })
