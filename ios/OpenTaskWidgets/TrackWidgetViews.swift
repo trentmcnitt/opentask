@@ -245,6 +245,11 @@ private struct TrackListView: View {
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
+            // Right-aligned, before the chevrons (2026-09-23) — see
+            // `UndoButton`'s doc.
+            if entry.canUndo {
+                UndoButton()
+            }
             if canPage {
                 ChevronPager(
                     previous: ShiftTrackItemIntent(offset: -1),

@@ -39,17 +39,13 @@ struct TasksWidgetView: View {
         case .systemMedium:
             TasksListView(entry: entry, maxRows: 3, isLarge: false)
         default:
-            // 6 was tuned against iOS's per-row cost (2 lines always
-            // reserved, ~40pt). On macOS rows are now sized to their real
-            // content (see WidgetTheme's "macOS row-height truthing" note) —
-            // often under half that — so 6 stops being "as many as fit"
-            // well before the card is full. `listContent`'s candidate list
-            // is extended to match on macOS; iOS keeps the original 6.
-            #if os(macOS)
+            // 6 was tuned against the OLD flat per-row cost (2 lines always
+            // reserved). Both platforms now size rows to their real content
+            // (see WidgetTheme's "row-height truthing" note — macOS since
+            // 2026-09-22, iOS since 2026-09-23), so 6 stops being "as many
+            // as fit" well before the card is full on either one. Raised to
+            // 10 on both — `listContent`'s candidate list matches.
             TasksListView(entry: entry, maxRows: 10, isLarge: true)
-            #else
-            TasksListView(entry: entry, maxRows: 6, isLarge: true)
-            #endif
         }
     }
 }
@@ -156,21 +152,31 @@ private struct TasksListView: View {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
     }
 
+    /// See `RemindersListView.shouldMeasureRealWidth` — identical rule,
+    /// mirrored here rather than shared because the two `List` types have no
+    /// common protocol to hang a shared implementation off of.
+    private var shouldMeasureRealWidth: Bool {
+        #if os(macOS)
+        true
+        #else
+        isLarge
+        #endif
+    }
+
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
-        } else {
-            #if os(macOS)
+        } else if shouldMeasureRealWidth {
             // GeometryReader OUTSIDE ViewThatFits — never inside a candidate,
             // which would report "fits" at every height and defeat the whole
-            // mechanism (see WidgetTheme's "macOS row-height truthing" note).
+            // mechanism (see WidgetTheme's "row-height truthing" note).
             // Reports the card's real width so each row can measure its own
-            // title instead of assuming a flat two-line budget.
+            // title instead of assuming a flat budget.
             GeometryReader { geo in
                 listContent(width: geo.size.width)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            #else
+        } else {
             listContent(width: nil)
                 // The candidates carry no Spacer — a flexible child would report
                 // "fits" at every height and defeat the measurement — so the card
@@ -182,21 +188,16 @@ private struct TasksListView: View {
                 // app instead of doing nothing. Now only the header (below) and
                 // each row's `Link` are tap targets — see `header`.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            #endif
         }
     }
 
-    /// `width`: the row's real available width — non-nil only on macOS (see
-    /// `body`); always `nil` on iOS, where rows never consult it.
-    @ViewBuilder
+    /// `width`: the row's real available width when `shouldMeasureRealWidth`
+    /// is true, else `nil` (rows fall back to their flat per-family budget).
     private func listContent(width: CGFloat?) -> some View {
         // Tallest first — ViewThatFits renders the first that fits. Written
         // out rather than looped: ViewThatFits has to see each candidate as
-        // its own child, and a ForEach would hand it one.
-        #if os(macOS)
-        // Extended to match macOS's raised `maxRows` ceiling (see `content`
-        // above) — `min(N, maxRows)` still no-ops harmlessly if maxRows is
-        // ever lower than 10.
+        // its own child, and a ForEach would hand it one. 10, on both
+        // platforms now — see `content`'s comment.
         ViewThatFits(in: .vertical) {
             card(rows: min(10, maxRows), width: width)
             card(rows: min(9, maxRows), width: width)
@@ -209,16 +210,6 @@ private struct TasksListView: View {
             card(rows: min(2, maxRows), width: width)
             card(rows: 1, width: width)
         }
-        #else
-        ViewThatFits(in: .vertical) {
-            card(rows: min(6, maxRows), width: width)
-            card(rows: min(5, maxRows), width: width)
-            card(rows: min(4, maxRows), width: width)
-            card(rows: min(3, maxRows), width: width)
-            card(rows: min(2, maxRows), width: width)
-            card(rows: 1, width: width)
-        }
-        #endif
     }
 
     private func card(rows: Int, width: CGFloat?) -> some View {
@@ -232,7 +223,7 @@ private struct TasksListView: View {
                     ForEach(entry.tasks.prefix(rows)) { task in
                         TaskRow(
                             task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1,
-                            availableWidth: width
+                            availableWidth: width, projectColor: entry.projectColor(for: task)
                         )
                     }
                 }
@@ -287,6 +278,11 @@ private struct TasksListView: View {
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
+            // Right-aligned, before the chevrons (2026-09-23) — see
+            // `UndoButton`'s doc.
+            if entry.canUndo {
+                UndoButton()
+            }
             ChevronPager(
                 previous: ShiftProjectScopeIntent(offset: -1),
                 next: ShiftProjectScopeIntent(offset: 1),
@@ -310,31 +306,48 @@ private struct TasksListView: View {
     }
 }
 
-/// An ordinary task row: check off on the left, open on the title.
+/// An ordinary task row: a tappable title (with its due time just before the
+/// checkbox) and, at the row's trailing edge, a square check-off.
 ///
-/// In systemLarge the title wraps to two lines. A task cut at one line
-/// ("Register for the fall choir tryo…") is a task you have to open the app to
-/// identify, which is the one thing the widget exists to save you.
+/// In systemLarge the title wraps rather than truncating at one line
+/// ("Register for the fall choir tryo…" is a task you have to open the app to
+/// identify, which is the one thing the widget exists to save you), capped
+/// at `WidgetTheme.iOSMaxTitleLines` on iOS and unbounded on macOS.
+///
+/// 2026-09-23: the check-off moved from a leading priority-colored DOT to a
+/// trailing PROJECT-colored SQUARE — see this type's `projectColor` and
+/// `ReminderRow`'s doc for why moving the control to the trailing edge needs
+/// no overlap handling (plain `HStack` siblings). Priority is no longer drawn
+/// here at all: it already reads through the title's font weight
+/// (`WidgetTheme.priorityWeight`), and doubling it as a dot color was
+/// redundant once the dot's color slot was needed for something the title
+/// can't express — which project a row belongs to. That matters most on the
+/// unified "Up next" scope (`TasksEntry.scopeLabel`), where rows from every
+/// project sit in one list and only the checkbox says which is which.
 private struct TaskRow: View {
     let task: TaskDTO
     let now: Date
     var titleLineLimit = 2
     /// The row's real available width, threaded down from `TasksListView`'s
-    /// `GeometryReader` — macOS only; always `nil` on iOS. See WidgetTheme's
-    /// "macOS row-height truthing" note.
+    /// `GeometryReader`. `nil` whenever the card isn't measuring real widths
+    /// (iOS systemMedium) — see `TasksListView.shouldMeasureRealWidth`.
     var availableWidth: CGFloat? = nil
+    /// This task's project's color (`TasksEntry.projectColor(for:)`), reused
+    /// from wherever the widget already resolves one — the same
+    /// `WidgetTheme.projectColor(_:)` the "Personal" project header dot uses.
+    var projectColor: Color = WidgetTheme.projectColor(nil)
 
     private var isOverdue: Bool { task.isOverdue(now: now) }
 
-    #if os(macOS)
     /// Real per-title line count at this row's actual text column: the card
-    /// width minus the 36pt marker, its 10pt `HStack` spacing, and — when a
+    /// width minus the marker column, its 10pt `HStack` spacing, and — when a
     /// due time shows — that label's own measured width plus its 8pt
     /// spacing. The title's column is narrower whenever a due time sits
-    /// beside it, so the due time has to be measured first.
+    /// beside it, so the due time has to be measured first. Capped on iOS —
+    /// see WidgetTheme's "row-height truthing" note, the 2026-09-23 addendum.
     private var measuredLines: Int {
         guard let availableWidth else { return titleLineLimit }
-        var textWidth = availableWidth - 36 - 10
+        var textWidth = availableWidth - WidgetTheme.rowMarkerSize - 10
         if let due = task.dueDate {
             let dueWidth = WidgetTheme.measuredWidth(
                 for: WidgetTheme.shortTime(due), font: WidgetTheme.caption2Font
@@ -342,59 +355,51 @@ private struct TaskRow: View {
             textWidth -= dueWidth + 8
         }
         let font = WidgetTheme.subheadlineFont(weight: WidgetTheme.priorityWeight(task.priority))
-        return WidgetTheme.measuredLineCount(for: task.title, maxWidth: textWidth, font: font)
-    }
-    #endif
-
-    /// The row's reserved text height — macOS: the title's REAL measured
-    /// line count; iOS: unchanged, the flat `titleLineLimit` budget (same
-    /// formula this always used).
-    private var reservedHeight: CGFloat {
-        #if os(macOS)
-        CGFloat(measuredLines) * WidgetTheme.rowTitleLineHeight
+        let real = WidgetTheme.measuredLineCount(for: task.title, maxWidth: textWidth, font: font)
+        #if os(iOS)
+        return min(real, WidgetTheme.iOSMaxTitleLines)
         #else
-        CGFloat(titleLineLimit) * WidgetTheme.rowTitleLineHeight
+        return real
         #endif
     }
 
-    /// `nil` (unlimited) on macOS — `reservedHeight` above already reserves
-    /// the title's real line count, so nothing needs to cap and ellipsize
-    /// it. iOS keeps the flat cap unchanged.
-    private var lineLimitValue: Int? {
-        #if os(macOS)
-        nil
+    /// The row's reserved text height: the title's real measured line count
+    /// where it's known, else the flat `titleLineLimit` budget.
+    private var reservedHeight: CGFloat {
+        CGFloat(measuredLines) * WidgetTheme.rowTitleLineHeight
+    }
+
+    /// See `ReminderRow.markerHeight` — identical iOS floor / macOS no-floor
+    /// rule, mirrored here rather than shared for the same reason
+    /// `shouldMeasureRealWidth` is duplicated on `TasksListView`.
+    private var markerHeight: CGFloat {
+        #if os(iOS)
+        max(reservedHeight, WidgetTheme.rowMarkerSize)
         #else
-        titleLineLimit
+        reservedHeight
+        #endif
+    }
+
+    private var lineLimitValue: Int? {
+        guard availableWidth != nil else { return titleLineLimit }
+        #if os(iOS)
+        return WidgetTheme.iOSMaxTitleLines
+        #else
+        return nil
         #endif
     }
 
     var body: some View {
-        // .top, not .center: on a two-line row a centred dot floats down into
-        // the gap between the lines, reading as if it belongs to neither.
+        // .top, not .center: on a two-line row a centred marker floats down
+        // into the gap between the lines, reading as if it belongs to neither.
         HStack(alignment: .top, spacing: 10) {
-            Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
-                Circle()
-                    .fill(WidgetTheme.priorityColor(task.priority))
-                    .frame(width: 9, height: 9)
-                    // The dot centres on the title's first line; the hit
-                    // target then hangs below it (26pt missed too often,
-                    // iOS's finger-sized floor). macOS matches the row's own
-                    // reserved height instead of that flat 36 — see
-                    // WidgetTheme's "macOS row-height truthing" note.
-                    .frame(width: 36, height: WidgetTheme.rowTitleLineHeight)
-                    #if os(macOS)
-                    .frame(width: 36, height: reservedHeight, alignment: .top)
-                    #else
-                    .frame(width: 36, height: 36, alignment: .top)
-                    #endif
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
             Link(destination: WidgetLink.task(task.id)) {
                 // .firstTextBaseline keeps the due time on the title's first
                 // line when the title wraps, rather than drifting down beside
-                // the second.
+                // the second. The due time sits at the END of this HStack —
+                // "just left of the checkbox" (Trent, 2026-09-23), which falls
+                // out naturally once the checkbox itself moved to the row's
+                // trailing edge below.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(task.title)
                         .font(.subheadline)
@@ -421,6 +426,18 @@ private struct TaskRow: View {
                 }
                 .contentShape(Rectangle())
             }
+
+            Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(projectColor, lineWidth: 1.5)
+                    .frame(width: 16, height: 16)
+                    // The square centres on the title's first line; the hit
+                    // target then hangs below it (26pt missed too often,
+                    // iOS's finger-sized floor — see `markerHeight`).
+                    .frame(width: WidgetTheme.rowMarkerSize, height: markerHeight, alignment: .top)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

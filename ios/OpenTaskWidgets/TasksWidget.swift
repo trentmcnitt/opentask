@@ -13,15 +13,39 @@ struct TasksEntry: TimelineEntry {
     let scope: Int
     let staleSince: Date?
     let isSignedOut: Bool
+    /// Whether the header should show "Undo" at THIS entry's `date` — see
+    /// `WidgetStore.canUndo(at:)` and `UndoButton`.
+    let canUndo: Bool
 
+    /// "Up next" (2026-09-23), not "Today" — Trent: "I don't want it to say
+    /// 'today.' I'm saying 'up next' ... which is just all projects unified
+    /// and organized by due soonest." That description is exactly what the
+    /// `allProjects` scope already renders: `TasksTimeline.todaysTasks` sorts
+    /// soonest-due (most-overdue) first regardless of scope, and
+    /// `TasksTimeline.apply(scope: allProjects, to:)` is a no-op — every
+    /// project's tasks, unified, in that same order. So this scope's
+    /// FILTERING is unchanged; only what it's called changed. It is also
+    /// already the FIRST page in the ring (`ShiftProjectScopeIntent`'s
+    /// `[allProjects] + projects`), so no reordering was needed either.
     var scopeLabel: String {
-        guard scope != WidgetStore.allProjects else { return "Today" }
-        return projects.first(where: { $0.id == scope })?.name ?? "Today"
+        guard scope != WidgetStore.allProjects else { return "Up next" }
+        return projects.first(where: { $0.id == scope })?.name ?? "Up next"
     }
 
     var scopeColor: Color {
         guard scope != WidgetStore.allProjects else { return .secondary }
         return WidgetTheme.projectColor(projects.first(where: { $0.id == scope })?.color)
+    }
+
+    /// A task's own project color, for `TaskRow`'s trailing checkbox
+    /// (2026-09-23, §3) — every row shows its OWN project's color regardless
+    /// of which scope page is on screen, "Up next" included (that's the
+    /// whole point: it's how a unified list still tells projects apart).
+    /// Falls back to `WidgetTheme.projectColor(nil)` (neutral secondary) if a
+    /// task's project has somehow dropped out of `projects` (a project
+    /// deleted between fetches, say) rather than crashing or guessing a color.
+    func projectColor(for task: TaskDTO) -> Color {
+        WidgetTheme.projectColor(projects.first(where: { $0.id == task.projectId })?.color)
     }
 
     func overdueCount(now: Date = Date()) -> Int {
@@ -131,10 +155,29 @@ struct TasksProvider: TimelineProvider {
                         projects: entry.projects,
                         scope: entry.scope,
                         staleSince: entry.staleSince,
-                        isSignedOut: false
+                        isSignedOut: false,
+                        canUndo: WidgetStore.canUndo(at: due)
                     )
                 )
             }
+            // The explicit "Undo" expiry (2026-09-23) — see RemindersProvider's
+            // identical block for why this needs its own dated entry rather
+            // than relying on `canUndo(at:)` alone.
+            if !entry.isSignedOut, entry.canUndo, let expiry = WidgetStore.undoExpiry(),
+                expiry > entry.date {
+                entries.append(
+                    TasksEntry(
+                        date: expiry,
+                        tasks: entry.tasks,
+                        projects: entry.projects,
+                        scope: entry.scope,
+                        staleSince: entry.staleSince,
+                        isSignedOut: false,
+                        canUndo: false
+                    )
+                )
+            }
+            entries.sort { $0.date < $1.date }
 
             let next = Date().addingTimeInterval(Self.refreshInterval)
             completion(Timeline(entries: entries, policy: .after(next)))
@@ -151,7 +194,7 @@ struct TasksProvider: TimelineProvider {
         guard !snapshot.isSignedOut else {
             return TasksEntry(
                 date: now, tasks: [], projects: [], scope: WidgetStore.allProjects,
-                staleSince: nil, isSignedOut: true
+                staleSince: nil, isSignedOut: true, canUndo: false
             )
         }
         return makeEntry(snapshot, now: now)
@@ -179,7 +222,8 @@ struct TasksProvider: TimelineProvider {
             projects: ringProjects,
             scope: scope,
             staleSince: snapshot.staleSince,
-            isSignedOut: false
+            isSignedOut: false,
+            canUndo: WidgetStore.canUndo(at: now)
         )
     }
 }
