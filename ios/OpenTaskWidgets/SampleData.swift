@@ -70,7 +70,9 @@ enum SampleData {
             slotIndex: RemindersTimeline.naturalSlotIndex(in: groups),
             staleSince: nil,
             isSignedOut: false,
-            canUndo: false
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 
@@ -101,7 +103,9 @@ enum SampleData {
             scope: WidgetStore.allProjects,
             staleSince: nil,
             isSignedOut: false,
-            canUndo: false
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 
@@ -154,7 +158,9 @@ enum SampleData {
             pageStartId: items.first?.id ?? WidgetStore.noTrackSelection,
             staleSince: nil,
             isSignedOut: false,
-            canUndo: false
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 }

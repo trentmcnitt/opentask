@@ -98,7 +98,24 @@ struct OpenTaskApp: App {
                 WebViewManager.shared.navigate(path: "/reminders")
             }
         case "reminders":
-            WebViewManager.shared.navigate(path: "/reminders")
+            // `/slot/<id>` (2026-09-23, item 2) scopes the header title Link
+            // to bring that slot into view — see `WidgetLink.reminders(slot:)`.
+            // Bare `reminders` (2×2, Lock Screen, "+N more"/background tap)
+            // still opens the surface unscoped.
+            if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
+               let slotId = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
+            } else {
+                WebViewManager.shared.navigate(path: "/reminders")
+            }
+        case "project":
+            // A project-scoped Tasks header link (2026-09-23, item 2) — see
+            // `WidgetLink.project(_:)`.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/?project=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/")
+            }
         case "quota":
             // A quota opens ON the Quotas surface, and opens nothing — same
             // shape as `reminder` above. Tapping a quota from Track means
