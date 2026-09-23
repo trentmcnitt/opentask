@@ -546,6 +546,84 @@ enum WidgetStore {
         defaults?.removeObject(forKey: slotOverrideAnchorKey)
     }
 
+    // MARK: - Auto-advance's own undo (2026-09-23)
+    //
+    // `RemindersTimeline.autoAdvanceSlot` writes a slot override as a SIDE
+    // EFFECT of completing a reminder — moving the display to wherever the
+    // day's earliest still-waiting slot is. That side effect needs its own
+    // undo path, separate from the completion it rode in on, for two
+    // distinct reasons:
+    //
+    // 1. **A completion that fails.** `autoAdvanceSlot` runs OPTIMISTICALLY,
+    //    before the server confirms anything (same reasoning as the
+    //    completion tombstone itself — waiting for the network read as a
+    //    dead button). If `markDone` then fails, `clearPendingCompletion`
+    //    un-hides the item, but nothing else reverted the slot the display
+    //    jumped to — the widget was left parked on a slot chosen for a
+    //    completion that never actually happened.
+    // 2. **A completion that succeeds, then gets Undone.** The reminder
+    //    reappears (via the server's own state once `/api/undo` runs), but
+    //    it reappears in the slot it was ORIGINALLY in — which is exactly
+    //    the slot `autoAdvanceSlot` moved the display AWAY from. Undo that
+    //    doesn't also revert the display leaves the user looking at a slot
+    //    the item they just restored isn't even in.
+    //
+    // Both share one mechanism: snapshot whatever the override was
+    // immediately before `autoAdvanceSlot` runs, tagged with the SAME
+    // instant `recordMutation(now:)` stamps if the completion goes on to
+    // succeed. Only a `restoreSlotOverrideBeforeAutoAdvance` call whose
+    // `mutatedAt` matches that tag actually restores anything — an
+    // unrelated action (a Track `+1`, a later Reminders completion) leaves
+    // an intervening but non-matching snapshot alone rather than
+    // misapplying an older side effect to the wrong undo.
+
+    private static let autoAdvanceSnapshotKey = "widget.reminders.autoAdvanceSnapshot"
+
+    private struct SlotOverrideSnapshot: Codable {
+        let at: Double
+        let hadOverride: Bool
+        let slotKey: Int
+        let naturalSlotKey: Int
+    }
+
+    /// Record the override as it stood immediately before `autoAdvanceSlot`
+    /// is about to (possibly) change it. `at` should be the SAME `Date`
+    /// instance the caller will also pass to `recordMutation(now:)` if the
+    /// action succeeds, so the two are tagged with bit-identical timestamps.
+    /// Overwrites any earlier snapshot — only the most recent auto-advance's
+    /// prior state is ever worth restoring, matching "undo reverses the last
+    /// action" semantics.
+    static func snapshotSlotOverrideBeforeAutoAdvance(at now: Date) {
+        let existing = slotOverride()
+        let snapshot = SlotOverrideSnapshot(
+            at: now.timeIntervalSince1970,
+            hadOverride: existing != nil,
+            slotKey: existing?.slotKey ?? 0,
+            naturalSlotKey: existing?.naturalSlotKey ?? 0
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults?.set(data, forKey: autoAdvanceSnapshotKey)
+    }
+
+    /// Undo the auto-advance side effect — but ONLY if the snapshot on file
+    /// was tagged for exactly `mutatedAt` (see this section's header
+    /// comment). Consumes the snapshot either way once it matches, so a
+    /// second call for the same `mutatedAt` (there is none in practice —
+    /// each of the two call sites reaches at most one outcome per action —
+    /// but nothing here relies on that) is a safe no-op.
+    static func restoreSlotOverrideBeforeAutoAdvance(ifMatches mutatedAt: Date) {
+        guard let data = defaults?.data(forKey: autoAdvanceSnapshotKey),
+              let snapshot = try? JSONDecoder().decode(SlotOverrideSnapshot.self, from: data),
+              abs(snapshot.at - mutatedAt.timeIntervalSince1970) < 0.001
+        else { return }
+        if snapshot.hadOverride {
+            setSlotOverride(slotKey: snapshot.slotKey, naturalSlotKey: snapshot.naturalSlotKey)
+        } else {
+            clearSlotOverride()
+        }
+        defaults?.removeObject(forKey: autoAdvanceSnapshotKey)
+    }
+
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
