@@ -444,14 +444,25 @@ private struct ReminderSlotStrip: View {
     }
 
     /// Half of `WidgetTheme.rowSpacing` — the same bleed `ReminderRow`'s
-    /// check-off button uses (see its `markerBleed` doc for the mechanics: a
-    /// taller inner frame so the tap area is bigger than the drawn content,
-    /// then negative padding on the OUTER view so the parent `VStack` still
-    /// only counts the original short height). The strip sits between the
-    /// header and the first row, both separated by a full `rowSpacing`, so
-    /// this is exactly what's free to bleed into on each side without
-    /// touching either neighbor or costing a row.
+    /// check-off button uses for its TAP target (see its `markerBleed` doc
+    /// for the mechanics: a taller invisible `contentShape`, then negative
+    /// padding on the OUTER view so the parent `VStack` doesn't see that
+    /// extra height). Hit-testing reads the layout tree's geometry, so this
+    /// bleed is safe — unlike bleeding the ring's PAINTED pixels this way
+    /// (see `segmentBar`'s doc for why that part doesn't get the same
+    /// trick). The strip sits between the header and the first row, both
+    /// separated by a full `rowSpacing`, so this is exactly what's free to
+    /// bleed the tap area into on each side without touching either
+    /// neighbor.
     private var segmentBleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
+    /// The tallest a segment is ever drawn — the on-screen slot's ring (see
+    /// `segmentBar`). Every segment reserves this much real height (even the
+    /// plain 3pt bars, centered within it) because the `HStack`'s reported
+    /// height is the max of its children's, so this is what the strip
+    /// actually costs the card — 2pt more than before the ring, on top of
+    /// what the pre-existing height bump already cost.
+    private var maxSegmentHeight: CGFloat { 6 }
 
     var body: some View {
         // One segment is not a strip — same rule as the web's ReminderSlotBar
@@ -463,9 +474,13 @@ private struct ReminderSlotStrip: View {
                 ForEach(shown) { segment in
                     Button(intent: JumpToReminderSlotIntent(slotKey: segment.slotKey)) {
                         segmentBar(for: segment)
-                            // Taller than the visual bar — see `segmentBleed`'s
-                            // doc for why the parent doesn't see this height.
-                            .frame(height: 4 + 2 * segmentBleed)
+                            // Real visual size — nothing painted beyond this
+                            // frame, so nothing for WidgetKit's renderer to
+                            // clip (see `segmentBar`'s doc).
+                            .frame(height: maxSegmentHeight)
+                            // THEN a taller invisible frame purely for the
+                            // tap target — see `segmentBleed`'s doc.
+                            .frame(height: maxSegmentHeight + 2 * segmentBleed)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -477,21 +492,43 @@ private struct ReminderSlotStrip: View {
         }
     }
 
-    /// One segment's fill, plus — only for the on-screen slot — a ring drawn
-    /// OUTSIDE the bar (`padding(-2)`, not a `.stroke` layered directly on
-    /// the 3-4pt capsule) so a stroke thin enough to read at this size
-    /// doesn't eat into the fill and blur the color it's reporting.
-    /// `.primary` rather than a fixed color so it holds contrast against the
-    /// widget background in both light and dark.
+    /// One segment's fill, plus — only for the on-screen slot — a ring.
+    ///
+    /// NOT a `.stroke` layered on the bar itself via `.overlay(...).padding
+    /// (-N)`: that visually extends past the bar's own reported frame the
+    /// same way the row check-off's tap target does (see `ReminderRow.
+    /// markerBleed`), and it measures correctly, but WidgetKit's snapshot
+    /// renderer clips a view's PAINTED content to its own reported frame —
+    /// unlike a live app window — so the overflowing ring pixels never
+    /// actually appeared (confirmed by sampling the rendered widget: no
+    /// pixel brighter than the fill color anywhere near the current
+    /// segment, despite the height bump measuring correctly). That
+    /// overflow trick stays fine for HIT-TESTING (`segmentBleed` below) —
+    /// tap dispatch reads the layout tree's geometry, not the rasterized
+    /// image — it just can't be reused for drawing.
+    ///
+    /// So the ring is a SEPARATE, taller capsule stroked entirely within
+    /// its OWN frame (`strokeBorder`, inset rather than centered on the
+    /// path, so the 1pt line stays inside the 6pt ring capsule with no
+    /// overflow to clip), with the fill capsule centered on top of it in a
+    /// `ZStack` — both shapes size themselves, nothing draws outside either
+    /// one's own bounds. `.primary` rather than a fixed color so the ring
+    /// holds contrast against the widget background in both light and dark.
     @ViewBuilder
     private func segmentBar(for segment: Segment) -> some View {
-        let bar = Capsule()
-            .fill(color(for: segment.state))
-            .frame(height: segment.isCurrent ? 4 : 3)
         if segment.isCurrent {
-            bar.overlay(Capsule().stroke(Color.primary, lineWidth: 1).padding(-2))
+            ZStack {
+                Capsule()
+                    .strokeBorder(Color.primary, lineWidth: 1)
+                    .frame(height: 6)
+                Capsule()
+                    .fill(color(for: segment.state))
+                    .frame(height: 4)
+            }
         } else {
-            bar
+            Capsule()
+                .fill(color(for: segment.state))
+                .frame(height: 3)
         }
     }
 
