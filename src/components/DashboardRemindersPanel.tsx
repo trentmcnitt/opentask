@@ -633,12 +633,27 @@ function PanelRow({
       onOpen={onOpenEditor}
       onDelete={onDelete}
     >
+      {/* THE WHOLE ROW CONSIDERS, not just the circle (Trent, 2026-09-22:
+          "we need to be able to tap the actual text to finish the reminder
+          (like is already the case on the reminders tab). It's annoying having
+          to tap the little circle."). The same rule as the Reminders surface's
+          row: a tap considers, the click a hold leaves behind is swallowed
+          (the hold opened the bubble), and the circle keeps its own click so
+          it is not counted twice. The circle stays the keyboard's way in. */}
       <li
         data-reminder-id={reminder.id}
         className={cn(
-          'items-start gap-2.5 rounded-xl px-1 py-1.5 select-none',
+          'hover:bg-foreground/5 cursor-pointer items-start gap-2.5 rounded-xl px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
         )}
+        onClick={(e) => {
+          if (press.didFire()) {
+            e.preventDefault()
+            return
+          }
+          if ((e.target as HTMLElement).closest('button')) return
+          onComplete()
+        }}
         onPointerDown={press.onPointerDown}
         onPointerUp={press.onPointerUp}
         onPointerMove={press.onPointerMove}

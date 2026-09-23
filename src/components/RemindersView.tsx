@@ -274,22 +274,7 @@ export function RemindersView({
     [visibleGroups, timezone],
   )
 
-  // The slot the day is currently in — no longer "the one that opens", since
-  // every slot now opens (see useSlotDisclosure). It is the scroll target, and
-  // it is still the honest answer to "where am I in the day".
-  const currentKey = useMemo(() => {
-    const withWaiting = visibleGroups.filter((g) => g.reminders.length > 0)
-    const slots = withWaiting.flatMap((g) => (g.slot ? [g.slot] : []))
-    const now = currentSlot(slots, timezone)
-    if (now) return String(now.id)
-    return withWaiting.length > 0 ? groupKey(withWaiting[0]) : null
-  }, [visibleGroups, timezone])
-
   const { isOpen, toggleOpen, expandedKeys, setOpen, setExpanded } = useSlotDisclosure()
-
-  // Claimed by whichever of the two effects below gets to it first: a deep
-  // link is a place the user asked for, and it outranks the current slot.
-  const scrolledRef = useRef(false)
 
   /**
    * `?reminder=<id>` — the deep link the iOS widget opens.
@@ -345,33 +330,20 @@ export function RemindersView({
       setOpen(key, true)
       setExpanded(key, true)
       setHighlightId(id)
-      scrolledRef.current = true
     } else if (!Number.isNaN(id) && notToday.some((t) => t.id === id)) {
       setOpenNotToday(true)
       setHighlightId(id)
-      scrolledRef.current = true
     }
     window.history.replaceState(window.history.state, '', window.location.pathname)
   }, [hydrated, error, groups, notToday, setOpen, setExpanded])
 
-  // Land on the slot the day is actually in.
-  //
-  // With every slot open, an earlier slot's unfinished items push the current
-  // one below the fold, and the user arrives looking at breakfast at four in
-  // the afternoon. Scrolling puts them where they are while leaving everything
-  // above reachable by scrolling up — which is the point of opening them all.
-  //
-  // Once per load, never during a search (the results are the subject then),
-  // and never if the current slot is already the first thing on screen.
-  useEffect(() => {
-    if (searching || scrolledRef.current || !currentKey) return
-    const el = document.querySelector(`[data-slot-key="${CSS.escape(currentKey)}"]`)
-    if (!el) return
-    scrolledRef.current = true
-    // The first paint of a slot is its header; rows arrive with it, so there is
-    // no second layout pass to fight here.
-    el.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }, [currentKey, searching, visibleGroups])
+  // NO SCROLL ON LOAD (Trent, 2026-09-22). The surface used to scroll to the
+  // slot the day was in, so the afternoon did not open on breakfast — but at
+  // night that is the last slot, and he read the jump to the bottom as a bug:
+  // "when I tap on Reminders, it scrolls me to the bottom." Offered the
+  // earliest unfinished slot as the landing instead, he chose the top, always.
+  // A `?reminder=<id>` deep link still brings its row into view (the row's own
+  // `scrollRowIntoView` ref).
 
   // Rows actually rendered, in DOM order — the universe for range selection.
   const renderedRows = useMemo(() => {
