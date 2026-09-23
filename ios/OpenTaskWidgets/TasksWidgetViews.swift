@@ -237,6 +237,13 @@ private struct TasksListView: View {
                 // `RemindersListView.card`'s identical comment; tapping
                 // "+N more" used to open the app, paging in place replaces it.
                 if isLarge, window.totalPages > 1 {
+                    // Pinned to the card's bottom edge (Trent, 2026-09-23: "the
+                    // page switcher should not move"): a short last page used to
+                    // pull it up under its one row. A Spacer's ideal height is its
+                    // minLength, 0, so `ViewThatFits` still measures each candidate
+                    // at its content height and picks the same row count; only the
+                    // chosen card, laid out in the full widget height, stretches.
+                    Spacer(minLength: 0)
                     ListPager(
                         page: window.page,
                         totalPages: window.totalPages,
