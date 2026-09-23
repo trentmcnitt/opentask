@@ -608,3 +608,26 @@ struct StalenessNote: View {
         .foregroundStyle(.tertiary)
     }
 }
+
+extension View {
+    /// Where a tap on a Medium/Large widget's BACKGROUND goes — its own
+    /// section, not wherever the app happened to be left.
+    ///
+    /// iOS always opens the app for a tap that lands on no Link or Button;
+    /// there is no way to make it do nothing. With no `.widgetURL` the app
+    /// simply came forward on its last tab, so a background tap on Reminders
+    /// could land on the dashboard (Trent, 2026-09-23: "If we can't stop
+    /// tapping on the widget from opening the app, can we at least make it so
+    /// that each widget… takes you to the correct tab?"). So on iOS the
+    /// background opens the widget's own section — the same place its header
+    /// title links to. macOS gets nothing: there a background click really is
+    /// inert, which is what he asked for first.
+    @ViewBuilder
+    func backgroundTapOpens(_ url: URL) -> some View {
+        #if os(iOS)
+        self.widgetURL(url)
+        #else
+        self
+        #endif
+    }
+}

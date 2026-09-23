@@ -22,6 +22,15 @@ struct OpenTaskApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // Leaving the app refreshes the widgets too (Trent, 2026-09-23: "I
+            // uncompleted a couple of reminders… swiped back to the home screen
+            // and it did not update"). Whatever he just did in the app is
+            // what the Home Screen should show; a reload asked for by the app
+            // as it leaves doesn't wait on the 30-minute timeline or on a
+            // widget push arriving.
+            if phase == .background {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             if phase == .active {
                 // Reloads triggered by the foregrounded app don't count against
                 // the widget refresh budget, so the widgets are always current
