@@ -34,10 +34,12 @@ struct TrackWidgetView: View {
     @ViewBuilder
     private var content: some View {
         switch family {
+        #if os(iOS)
         case .accessoryCircular:
             TrackCircularView(entry: entry)
         case .accessoryRectangular:
             TrackRectangularView(entry: entry)
+        #endif
         case .systemSmall:
             TrackSmallView(entry: entry)
         case .systemMedium:
@@ -113,8 +115,11 @@ private struct TrackSmallView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            // Everything that isn't one of the three buttons opens the quota.
-            .widgetURL(WidgetLink.task(item.task.id))
+            // Everything that isn't one of the three buttons opens the quota
+            // — `.quota(_:)`, not `.task(_:)`: a quota is tracked, and
+            // `task/<id>` sends a tracked id to the full detail page instead
+            // of highlighting it on Quotas (see `WidgetLink.quota`'s doc).
+            .widgetURL(WidgetLink.quota(item.task.id))
         } else {
             WidgetEmptyView(symbol: "target", message: emptyTrackMessage, compact: true)
                 .widgetURL(WidgetLink.dashboard)
@@ -138,13 +143,19 @@ private struct TrackListView: View {
     /// The rows on screen.
     ///
     /// When everything fits, the list is simply the list — no window, no wrap,
-    /// no arithmetic. When it doesn't, the window starts at the selected item
-    /// and wraps, so the chevrons scroll it one row at a time and every quota is
-    /// reachable — the same selection the 2×2 pages through, just shown with its
-    /// neighbours.
+    /// no arithmetic. When it doesn't, the window starts at `pageStartIndex`
+    /// and wraps, so the chevrons scroll it one row at a time and every quota
+    /// is reachable.
+    ///
+    /// `pageStartIndex`, NOT `selectedIndex` (2026-09-22, "Eggs moves to the
+    /// top"): logging `+1` on a row pins the 2×2 to it (`selectedId`), and
+    /// this window used to start from that same pin — so every `+1` on a row
+    /// that wasn't already first rotated the whole list to put it there. The
+    /// two are now separate sticky values that paging keeps in sync and `+1`
+    /// does not — see `WidgetStore.trackPageStart`.
     private var window: [TrackItem] {
         guard canPage else { return entry.items }
-        let start = entry.selectedIndex ?? 0
+        let start = entry.pageStartIndex ?? 0
         return (0..<maxRows).map { entry.items[(start + $0) % entry.items.count] }
     }
 
@@ -183,10 +194,14 @@ private struct TrackListView: View {
                             TrackRow(item: item)
                         }
                     }
+                    // A tap target, same as the header — see
+                    // `RemindersListView`'s identical comment.
                     if canPage, isLarge {
-                        Text("+\(entry.items.count - maxRows) more")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        Link(destination: WidgetLink.quotas) {
+                            Text("+\(entry.items.count - maxRows) more")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -198,21 +213,37 @@ private struct TrackListView: View {
                     }
                 }
             }
-            .widgetURL(WidgetLink.dashboard)
+            // No `.widgetURL` here (removed 2026-09-22, the misclick fix): the
+            // whole 4×4/4×2 used to be one tap target, so a near-miss on `+1`
+            // or `−` deep-linked to the dashboard instead of doing nothing.
+            // The header below is now the card's only non-row, non-button tap
+            // target.
         }
     }
 
     /// One line, not two: the title and the count sat stacked, and that second
     /// band cost a row of quotas the card would rather spend on content.
+    ///
+    /// Wrapped in a `Link` to the quotas surface (`WidgetLink.quotas`) — see
+    /// `RemindersListView.header` for why the pager stays a sibling outside
+    /// it. Deliberately NOT given a taller frame: this header is one line by
+    /// design (the comment above), and forcing a 40pt tap target here would
+    /// cost the row a whole 4×4 spends on an eighth quota.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Track")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            Text(countLabel)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            Link(destination: WidgetLink.quotas) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Track")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .contentShape(Rectangle())
+            }
             Spacer(minLength: 0)
             if canPage {
                 ChevronPager(
@@ -250,7 +281,8 @@ private struct TrackRow: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            Link(destination: WidgetLink.task(item.task.id)) {
+            // `.quota(_:)`, not `.task(_:)` — see `WidgetLink.quota`'s doc.
+            Link(destination: WidgetLink.quota(item.task.id)) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(item.task.title)
@@ -275,6 +307,12 @@ private struct TrackRow: View {
 }
 
 // MARK: - Lock Screen
+//
+// Lock Screen accessory families don't exist on macOS — see the #if os(iOS)
+// guard on `content` above. TrackCircularView's `.gaugeStyle(.accessoryCircularCapacity)`
+// below only compiles on iOS, so both views are gated out of the macOS build
+// entirely rather than left as dead code.
+#if os(iOS)
 
 /// Glanceable only — §8: interactive widgets are inert on a locked device, so a
 /// `+1` (or `−`) button here would be a control that silently does nothing.
@@ -332,6 +370,8 @@ private struct TrackCircularView: View {
         .widgetURL(WidgetLink.dashboard)
     }
 }
+
+#endif
 
 // MARK: - Shared quota chrome
 

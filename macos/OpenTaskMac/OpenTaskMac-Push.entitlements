@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The push build's entitlements: identical to the XcodeGen-generated
+  OpenTaskMac.entitlements plus `aps-environment`, which is what APNs
+  registration needs and what forces a provisioning profile.
+
+  Hand-written and committed on purpose — XcodeGen owns OpenTaskMac.entitlements
+  and rewrites it on every `xcodegen generate`, so the push variant cannot live
+  there. Select it per build:
+
+    xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
+      -configuration Debug -destination 'generic/platform=macOS' \
+      -derivedDataPath build -allowProvisioningUpdates \
+      CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements build
+
+  Keep the two files in sync: every key added to the spec belongs here too.
+-->
+<plist version="1.0">
+<dict>
+	<!--
+	  macOS spells this key with the `com.apple.developer.` prefix; iOS uses the
+	  bare `aps-environment`. A Mac provisioning profile grants only the
+	  prefixed form, and Xcode silently DROPS any entitlement the profile does
+	  not grant — so the bare key builds and signs cleanly and simply leaves the
+	  app without push, with no error anywhere. Verified against the profile
+	  embedded in this app, which grants com.apple.developer.aps-environment.
+	-->
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- App Group, shared with OpenTaskMacWidgets. See project.yml for the full
+	     explanation, including the empirical confirmation that this works. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>GEL3VGTUJX.group.io.mcnitt.opentask</string>
+	</array>
+	<!-- Explicit and required alongside application-groups above — see
+	     project.yml for why (macOS does not treat App Group membership as
+	     sufficient for keychain access-group matching the way iOS does). -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>GEL3VGTUJX.group.io.mcnitt.opentask</string>
+	</array>
+</dict>
+</plist>

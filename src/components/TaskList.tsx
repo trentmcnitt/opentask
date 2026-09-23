@@ -125,6 +125,15 @@ interface TaskListProps {
   insightsCommentaryMap?: Map<number, string>
   /** Whether unified view is active (toggle callback) */
   onUnifiedChange?: (unified: boolean) => void
+  /**
+   * Deep-linked from the widget (`?task=<id>&highlight=1`): the one row to
+   * scroll to and flash. Group expansion for it is the caller's job (see
+   * `DashboardClient`'s `?task=` effect) — `TaskList` only forwards it to the
+   * matching `TaskRow`.
+   */
+  highlightTaskId?: number | null
+  /** The deep link's flash has played; it must not play again on a remount. */
+  onHighlightDone?: () => void
 }
 
 // Sort tasks within a group - exported for use by keyboard navigation
@@ -258,6 +267,8 @@ export function TaskList({
   hideSortControl = false,
   insightsCommentaryMap,
   onUnifiedChange,
+  highlightTaskId,
+  onHighlightDone,
 }: TaskListProps) {
   // Use props if provided (lifted state), otherwise use internal hook
   const internalSort = useGroupSort()
@@ -303,6 +314,33 @@ export function TaskList({
       return next
     })
   }, [])
+
+  // `highlightTaskId` (the widget's `?task=<id>&highlight=1` link) can land
+  // on a row past the slot preview cap — `grouping === 'slot'` is Trent's own
+  // default view, and a 12-item slot only shows its first 5. The caller
+  // (`DashboardClient`) already un-collapses the group's HEADER via
+  // `isCollapsed`/`expand`; this is the second, independent cap — the
+  // preview — that only this component's own `expandedGroups` controls.
+  //
+  // Adjusted during render, not in an effect: this is pure derived state (no
+  // external system involved, just `tasks`/`grouping`/etc that are already
+  // props), and the lint rule that would otherwise flag it
+  // (`react-hooks/set-state-in-effect`) exists precisely to push that case out
+  // of `useEffect` — see https://react.dev/learn/you-might-not-need-an-effect
+  // ("Adjusting state when a prop changes"). `prevHighlightTaskId` is the
+  // guard: without it this would call `setExpandedGroups` on every render.
+  const [prevHighlightTaskId, setPrevHighlightTaskId] = useState<number | null>(null)
+  if (highlightTaskId !== undefined && highlightTaskId !== prevHighlightTaskId) {
+    setPrevHighlightTaskId(highlightTaskId ?? null)
+    if (highlightTaskId) {
+      const group = buildTaskGroups(tasks, projects, grouping, timezone, timeSlots).find((g) =>
+        g.tasks.some((t) => t.id === highlightTaskId),
+      )
+      if (group && !expandedGroups.has(group.label)) {
+        setExpandedGroups((prev) => new Set(prev).add(group.label))
+      }
+    }
+  }
 
   const handleSwipeLeft = useCallback(
     (task: Task) => {
@@ -520,6 +558,8 @@ export function TaskList({
                           insightsCommentary={insightsCommentaryMap?.get(task.id)}
                           projectName={projectNameMap?.get(task.project_id)}
                           projectColor={projectColorMap?.get(task.project_id)}
+                          highlighted={highlightTaskId === task.id}
+                          onHighlightDone={onHighlightDone}
                         />
                       </SwipeableRow>
                     )
