@@ -13,7 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { Task, Project } from '@/types'
+import type { Task, Project, LabelColor } from '@/types'
+import { LABEL_COLORS } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
@@ -384,7 +385,7 @@ export function TaskList({
   const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const groups = isUnified
+  const groups: TaskGroup[] = isUnified
     ? [{ label: '_unified', tasks }]
     : grouping === 'project'
       ? groupByProject(tasks, projects)
@@ -518,7 +519,26 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      {group.label}
+                      {/* A PROJECT heading is a tag in its project's color
+                          (Trent, 2026-09-23, option C of four rendered: "I
+                          lose track of what color is for what"). The same
+                          tinted pair labels use, so it reads the same in
+                          light and dark. A project with no color, and every
+                          non-project grouping, keeps the plain heading. */}
+                      {group.color ? (
+                        <span
+                          data-project-heading-tag
+                          className={cn(
+                            'rounded-md px-2 py-0.5',
+                            LABEL_COLORS[group.color].bg,
+                            LABEL_COLORS[group.color].text,
+                          )}
+                        >
+                          {group.label}
+                        </span>
+                      ) : (
+                        group.label
+                      )}
                       <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
                     </button>
                   </div>
@@ -612,6 +632,8 @@ export function isTaskOverdue(task: Task): boolean {
 export interface TaskGroup {
   label: string
   tasks: Task[]
+  /** The project's color, on project groups — drawn as the heading's tag. */
+  color?: LabelColor | null
 }
 
 function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
@@ -734,6 +756,7 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     groups.push({
       label: project?.name || `Project ${projectId}`,
       tasks: projectTasks,
+      color: project?.color ?? null,
     })
   }
 
