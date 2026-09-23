@@ -307,3 +307,149 @@ test.describe('?task=<id> deep link', () => {
     })
   })
 })
+
+/**
+ * Faceted filter counts (Trent 2026-09-23): a filter row's chips must count
+ * over every OTHER active filter group, not the whole corpus — otherwise the
+ * "Work" project filter active still shows "Today N" even though Work has
+ * nothing due today. See `applyTaskFilters` (src/hooks/useFilterState.ts) and
+ * its behavioral test (tests/behavioral/filter-facets.test.ts) for the pure
+ * logic; this reproduces the same scenario end-to-end.
+ */
+test.describe('Dashboard filter facets', () => {
+  const toggle = (page: Page) => page.getByRole('button', { name: /^Filters/ })
+
+  async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
+    const res = await page.request.post('/api/tasks', { data: body })
+    expect(res.ok()).toBeTruthy()
+    return (await res.json()).data.id as number
+  }
+
+  async function deleteTasks(page: Page, ids: number[]): Promise<void> {
+    for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+  }
+
+  test("a project filter narrows the Today chip's count to that project", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    const todayAt = (hour: number) =>
+      DateTime.now()
+        .setZone(TEST_TZ)
+        .set({ hour, minute: 0, second: 0, millisecond: 0 })
+        .toUTC()
+        .toISO()!
+
+    await toggle(page).click()
+    const chips = page.locator('#dashboard-filter-chips')
+    const todayChip = chips.locator('[data-date-chip="today"]')
+    const workChip = chips.locator('[data-project-chip="3"]')
+    // A chip whose facet count is 0 (and isn't itself selected/excluded)
+    // doesn't render at all — correct faceting (see DueDateFilterBar), and
+    // exactly what should happen to the Today chip once Work is selected if
+    // Work has nothing due today. Treat "not present" as a count of 0 rather
+    // than waiting for an element that may legitimately never appear.
+    const countOf = async (chip: typeof todayChip) => {
+      if ((await chip.count()) === 0) return 0
+      const text = (await chip.innerText()).trim()
+      const match = text.match(/(\d+)\s*$/)
+      return match ? Number(match[1]) : NaN
+    }
+
+    // "Clear filter" (not re-clicking the chip) restores the unfiltered
+    // state below: the chip's own interaction model treats two clicks within
+    // 300ms as a double-click (toggles EXCLUDE, not deselect — see
+    // useChipInteraction.ts), which a select-then-immediately-deselect from
+    // a test can trip.
+    const clearFilter = page.getByRole('button', { name: 'Clear filter' })
+
+    // Read baselines first rather than assume a pristine corpus — the seed
+    // deliberately includes an overdue-and-due-today task (globalSetup.ts's
+    // "Reply to email", in Inbox) so this test stays correct however the
+    // seed evolves, rather than hardcoding "today = 3".
+    await expect(todayChip).toBeVisible()
+    const baselineToday = await countOf(todayChip)
+    await expect(workChip).toBeVisible()
+    await workChip.click() // select Work exclusively, facet Today over it
+    const baselineWorkToday = await countOf(todayChip)
+    await clearFilter.click() // back to unfiltered
+
+    try {
+      // Project 1 = Inbox, 3 = Work (scripts/seed-test.ts / globalSetup.ts).
+      // Two due-today in Inbox, one due-today in Work.
+      ids.push(
+        await createTask(page, {
+          title: 'Facet test — Inbox today A',
+          project_id: 1,
+          due_at: todayAt(23),
+        }),
+      )
+      ids.push(
+        await createTask(page, {
+          title: 'Facet test — Inbox today B',
+          project_id: 1,
+          due_at: todayAt(22),
+        }),
+      )
+      ids.push(
+        await createTask(page, {
+          title: 'Facet test — Work today',
+          project_id: 3,
+          due_at: todayAt(21),
+        }),
+      )
+
+      // `filters_expanded` is a server preference the earlier click already
+      // flipped on, so a reload comes back already expanded — clicking again
+      // would toggle it back closed.
+      await page.reload()
+      await expect(toggle(page)).toBeVisible({ timeout: 5000 })
+      if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
+        await toggle(page).click()
+      }
+
+      // Unfiltered: baseline plus all 3 newly created "today" tasks.
+      await expect.poll(() => countOf(todayChip)).toBe(baselineToday + 3)
+
+      // Select the Work project chip — the Today row must now facet over
+      // "everything else applies, dateFilters skipped", i.e. Work only.
+      await expect(workChip).toBeVisible()
+      await workChip.click()
+
+      await expect.poll(() => countOf(todayChip)).toBe(baselineWorkToday + 1)
+
+      // Clearing the project filter restores the corpus-wide count.
+      await clearFilter.click()
+      await expect.poll(() => countOf(todayChip)).toBe(baselineToday + 3)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})
+
+/**
+ * `/?project=<id>` — the widget's dashboard-header deep link (native side
+ * built separately, ios/CLAUDE.md). Applies the project filter exclusively
+ * and scrolls to top; consumes the param. See `DashboardClient.tsx`'s
+ * `?project=` effect.
+ */
+test.describe('?project=<id> deep link', () => {
+  test('applies the project filter exclusively and scrolls to top', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    // Project 3 = Work (scripts/seed-test.ts / globalSetup.ts). Seeded task 5
+    // ("Review PRs") is in Work; seeded task 1 ("Buy groceries") is in Inbox.
+    await page.goto('/?project=3')
+
+    await expect(page.getByText('Review PRs')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Buy groceries')).toHaveCount(0)
+
+    // The param is consumed.
+    await expect(page).toHaveURL('/')
+
+    // The scroll effect fires — the page lands at (or animates smoothly to) the top.
+    await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 2000 }).toBe(0)
+  })
+})
