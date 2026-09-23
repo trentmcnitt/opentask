@@ -47,6 +47,9 @@ test('the Projects view shows 10 per project, with the rest behind "Show all"', 
     const section = page.locator('section', {
       has: page.getByText(tag.toUpperCase(), { exact: false }),
     })
+    // The heading is a tag in the project's color (2026-09-23): a new
+    // project is always given a color, so this one has a tag.
+    await expect(page.locator('[data-project-heading-tag]', { hasText: tag })).toBeVisible()
     const rows = page.getByText(new RegExp(`^${tag} task`))
     await expect(rows).toHaveCount(10)
     const more = page.getByRole('button', { name: /Show all 12/ })
