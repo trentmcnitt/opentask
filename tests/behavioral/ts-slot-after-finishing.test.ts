@@ -1,7 +1,7 @@
 /**
- * The Reminders pager moving on after a past slot is finished (Trent,
- * 2026-09-22). Pure index arithmetic — the panel supplies which slot was just
- * finished and which one the clock is in.
+ * The Reminders pager moving on after a slot is finished (Trent, 2026-09-22,
+ * refined 2026-09-23 to "the earliest undone"). Pure index arithmetic — the
+ * panel supplies which slot was just finished and which one the clock is in.
  */
 import { describe, expect, test } from 'vitest'
 import { slotAfterFinishing } from '@/lib/time-slot-assign'
@@ -10,23 +10,28 @@ import { slotAfterFinishing } from '@/lib/time-slot-assign'
 const day = (...waiting: number[]) => waiting.map((n) => ({ reminders: Array(n).fill(0) }))
 
 describe('slotAfterFinishing', () => {
-  test('a past slot finished: the next one after it with something waiting', () => {
-    // early morning (just finished), morning (done), midday (2 left), afternoon, evening (now)
-    expect(slotAfterFinishing(day(0, 0, 2, 1, 3), 0, 4)).toBe(2)
+  test('finishing the current slot goes back to the earliest undone one', () => {
+    // early morning (3 left), morning (just finished, and it is morning now)
+    expect(slotAfterFinishing(day(3, 0, 2, 1), 1, 1)).toBe(0)
   })
 
-  test('everything between is done: the slot the day is in', () => {
-    expect(slotAfterFinishing(day(0, 0, 0, 0, 3), 0, 4)).toBe(4)
-    // …even when that one is finished too — it is where the pager opens anyway.
-    expect(slotAfterFinishing(day(0, 0, 0), 0, 2)).toBe(2)
+  test('finishing a past slot goes to the earliest undone, not just the next one', () => {
+    // it is evening; early morning still waits; morning just finished
+    expect(slotAfterFinishing(day(2, 0, 0, 1, 3), 1, 4)).toBe(0)
+    // everything before is done: the next undone after it
+    expect(slotAfterFinishing(day(0, 0, 2, 1, 3), 1, 4)).toBe(2)
   })
 
-  test('never past the slot the day is in: a slot that has not started is not due', () => {
-    expect(slotAfterFinishing(day(0, 0, 0, 5), 0, 2)).toBe(2)
+  test('everything up to now done: a finished past slot lands on the current one', () => {
+    expect(slotAfterFinishing(day(0, 0, 0, 0, 0), 0, 4)).toBe(4)
   })
 
-  test('finishing the current slot, or a later one, stays put', () => {
-    expect(slotAfterFinishing(day(1, 0, 2), 1, 1)).toBeNull()
-    expect(slotAfterFinishing(day(1, 0, 0), 2, 1)).toBeNull()
+  test('everything up to now done and the current slot finished: stay put', () => {
+    expect(slotAfterFinishing(day(0, 0, 0), 2, 2)).toBeNull()
+  })
+
+  test('never a slot that has not started', () => {
+    expect(slotAfterFinishing(day(0, 0, 0, 5), 1, 2)).toBe(2)
+    expect(slotAfterFinishing(day(0, 0, 0, 5), 2, 2)).toBeNull()
   })
 })

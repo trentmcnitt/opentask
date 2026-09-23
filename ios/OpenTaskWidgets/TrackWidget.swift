@@ -379,24 +379,48 @@ struct TrackWidget: Widget {
     static let kind = "OpenTaskTrack"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: TrackProvider()) { entry in
-            TrackWidgetView(entry: entry)
+        // Server-pushed reloads (iOS 26 / macOS 26 — see WidgetPushHandler.swift
+        // and docs/NOTIFICATIONS.md § WidgetKit push) need `.pushHandler(...)`,
+        // gated here rather than raising this extension's deployment target
+        // (iOS 17 / macOS 14). See the doc comment in TasksWidget.swift for why
+        // this needs an EXPLICIT `return` in each branch (implicit return, or
+        // an `if` that isn't the body's sole statement, both fail to compile —
+        // `Widget.body` has no result builder to reconcile the two branches'
+        // different concrete types).
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return StaticConfiguration(kind: Self.kind, provider: TrackProvider()) { entry in
+                TrackWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Track")
+            .description("Your quotas, with +1 to log one. The 2×2 shows a single ring.")
+            // systemSmall FIRST here, alone among the three kinds: §8 calls the 2×2
+            // the flagship Track layout — a quota compresses to a ring and a
+            // fraction perfectly, which a list of them does not. (Observed on iOS
+            // 26 the gallery orders its cards small→large regardless of this array,
+            // so the ordering is a statement of intent, not a lever.)
+            // See RemindersWidget for why this is a closure rather than #if inside
+            // the array literal (the compiler rejects the latter).
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemSmall, .systemLarge, .systemMedium]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
+            .pushHandler(OpenTaskWidgetPushHandler.self)
+        } else {
+            return StaticConfiguration(kind: Self.kind, provider: TrackProvider()) { entry in
+                TrackWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Track")
+            .description("Your quotas, with +1 to log one. The 2×2 shows a single ring.")
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemSmall, .systemLarge, .systemMedium]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
         }
-        .configurationDisplayName("Track")
-        .description("Your quotas, with +1 to log one. The 2×2 shows a single ring.")
-        // systemSmall FIRST here, alone among the three kinds: §8 calls the 2×2
-        // the flagship Track layout — a quota compresses to a ring and a
-        // fraction perfectly, which a list of them does not. (Observed on iOS
-        // 26 the gallery orders its cards small→large regardless of this array,
-        // so the ordering is a statement of intent, not a lever.)
-        // See RemindersWidget for why this is a closure rather than #if inside
-        // the array literal (the compiler rejects the latter).
-        .supportedFamilies({
-            var families: [WidgetFamily] = [.systemSmall, .systemLarge, .systemMedium]
-            #if os(iOS)
-            families += [.accessoryRectangular, .accessoryCircular]
-            #endif
-            return families
-        }())
     }
 }

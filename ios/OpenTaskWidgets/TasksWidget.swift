@@ -234,21 +234,52 @@ struct TasksWidget: Widget {
     static let kind = "OpenTaskTasks"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: TasksProvider()) { entry in
-            TasksWidgetView(entry: entry)
+        // Server-pushed reloads (iOS 26 / macOS 26 — see WidgetPushHandler.swift
+        // and docs/NOTIFICATIONS.md § WidgetKit push) need `.pushHandler(...)`,
+        // which only exists on iOS 26+, gated here rather than raising this
+        // extension's deployment target (iOS 17 / macOS 14). `Widget.body` has
+        // no result builder (`@WidgetConfigurationBuilder` does not exist,
+        // unlike `View.body`'s `@ViewBuilder`), so an implicit-return `if
+        // #available {...} else {...}` — or a `let base = ...; if #available {
+        // base.pushHandler(...) } else { base }` form — fails to compile
+        // ("branches have mismatching types" / "no return statements ... from
+        // which to infer an underlying type"). EXPLICIT `return` in each
+        // branch of a `#available`-gated if/else compiles fine even though the
+        // two branches are different concrete `WidgetConfiguration` types —
+        // that combination is a Swift compiler special case for opaque return
+        // types (verified with `swiftc -typecheck` against a minimal
+        // reproduction before applying it here).
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return StaticConfiguration(kind: Self.kind, provider: TasksProvider()) { entry in
+                TasksWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Today's Tasks")
+            .description("What's due today, with chevrons to page through your projects.")
+            // systemLarge first: it is the primary layout (§8 — the user pointed
+            // at a 4x4 Weather widget), and the gallery leads with the first entry.
+            // See RemindersWidget for why this is a closure rather than #if inside
+            // the array literal (the compiler rejects the latter).
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
+            .pushHandler(OpenTaskWidgetPushHandler.self)
+        } else {
+            return StaticConfiguration(kind: Self.kind, provider: TasksProvider()) { entry in
+                TasksWidgetView(entry: entry)
+            }
+            .configurationDisplayName("Today's Tasks")
+            .description("What's due today, with chevrons to page through your projects.")
+            .supportedFamilies({
+                var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
+                #if os(iOS)
+                families += [.accessoryRectangular, .accessoryCircular]
+                #endif
+                return families
+            }())
         }
-        .configurationDisplayName("Today's Tasks")
-        .description("What's due today, with chevrons to page through your projects.")
-        // systemLarge first: it is the primary layout (§8 — the user pointed
-        // at a 4x4 Weather widget), and the gallery leads with the first entry.
-        // See RemindersWidget for why this is a closure rather than #if inside
-        // the array literal (the compiler rejects the latter).
-        .supportedFamilies({
-            var families: [WidgetFamily] = [.systemLarge, .systemMedium, .systemSmall]
-            #if os(iOS)
-            families += [.accessoryRectangular, .accessoryCircular]
-            #endif
-            return families
-        }())
     }
 }

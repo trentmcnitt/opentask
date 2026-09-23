@@ -296,6 +296,31 @@ CREATE TABLE IF NOT EXISTS apns_devices (
 );
 CREATE INDEX IF NOT EXISTS idx_apns_devices_user_id ON apns_devices(user_id);
 
+-- WidgetKit push tokens (iOS 26 / macOS 26 WidgetPushHandler — server-pushed
+-- widget reloads, distinct from apns_devices above). A widget push token
+-- belongs to the WIDGET EXTENSION process, not the app: it is registered by
+-- `WidgetPushHandler.pushTokenDidChange` from inside the extension, and sent
+-- with `apns-push-type: widgets` to the topic `<app bundle id>.push-type.widgets`
+-- (computed from bundle_id at send time, not stored) rather than the app's
+-- normal notification topic. See docs/NOTIFICATIONS.md.
+--
+-- widget_kind is informational (comma-joined kinds the token currently backs,
+-- e.g. "OpenTaskReminders,OpenTaskTasks") — sends go to every token for a
+-- user regardless of kind, since a WidgetKit push reloads all of that
+-- extension's timelines, not one kind at a time.
+CREATE TABLE IF NOT EXISTS widget_push_tokens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  push_token   TEXT NOT NULL UNIQUE,
+  bundle_id    TEXT NOT NULL,
+  platform     TEXT NOT NULL,
+  widget_kind  TEXT,
+  environment  TEXT NOT NULL DEFAULT 'production',
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_widget_push_tokens_user_id ON widget_push_tokens(user_id);
+
 -- AI insights sessions (tracks generation progress for polling)
 CREATE TABLE IF NOT EXISTS ai_insights_sessions (
   id           TEXT PRIMARY KEY,
