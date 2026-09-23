@@ -239,19 +239,20 @@ private struct TrackListView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(countLabel)
+                    // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
+                    // see `RemindersListView.header`'s identical comment.
+                    Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             // Right-aligned, before the chevrons (2026-09-23) — see
-            // `UndoButton`'s doc.
-            if entry.canUndo {
-                UndoButton()
-            }
+            // `UndoRedoButtons`' doc.
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
             if canPage {
                 ChevronPager(
                     previous: ShiftTrackItemIntent(offset: -1),

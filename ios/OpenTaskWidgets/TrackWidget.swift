@@ -18,9 +18,15 @@ struct TrackEntry: TimelineEntry {
     let pageStartId: Int
     let staleSince: Date?
     let isSignedOut: Bool
-    /// Whether the header should show "Undo" at THIS entry's `date` — see
-    /// `WidgetStore.canUndo(at:)` and `UndoButton`.
+    /// Whether the header's Undo/Redo buttons should be enabled at THIS
+    /// entry's `date` — see `WidgetStore.canUndo`/`canRedo` and
+    /// `UndoRedoButtons`. Not time-windowed (2026-09-23) — see
+    /// `RemindersEntry`'s identical doc.
     let canUndo: Bool
+    let canRedo: Bool
+    /// The header subtitle's "Undid: …" / "Redid: …" indication — see
+    /// `RemindersEntry.actionDescription`'s doc.
+    let actionDescription: String?
 
     var selected: TrackItem? {
         items.first { $0.id == selectedId } ?? items.first
@@ -322,13 +328,14 @@ struct TrackProvider: TimelineProvider {
             // boundary resets `progress_current` server-side, which no
             // pre-scheduled local entry could know about — so there is nothing
             // to pre-schedule and the 30-minute refresh carries it. The
-            // "Undo" expiry (2026-09-23) is the one exception: still a real
-            // moment this provider has to know about ahead of the 30-minute
-            // refresh — see RemindersProvider's identical block.
+            // The "Undid: …" indication expiry (2026-09-23) is the one
+            // exception: still a real moment this provider has to know about
+            // ahead of the 30-minute refresh — see RemindersProvider's
+            // identical block.
             let entry = await currentEntry()
             var entries = [entry]
-            if !entry.isSignedOut, entry.canUndo, let expiry = WidgetStore.undoExpiry(),
-                expiry > entry.date {
+            if !entry.isSignedOut, entry.actionDescription != nil,
+                let expiry = WidgetStore.lastActionExpiry(), expiry > entry.date {
                 entries.append(
                     TrackEntry(
                         date: expiry,
@@ -337,7 +344,9 @@ struct TrackProvider: TimelineProvider {
                         pageStartId: entry.pageStartId,
                         staleSince: entry.staleSince,
                         isSignedOut: false,
-                        canUndo: false
+                        canUndo: entry.canUndo,
+                        canRedo: entry.canRedo,
+                        actionDescription: nil
                     )
                 )
             }
@@ -347,7 +356,8 @@ struct TrackProvider: TimelineProvider {
     }
 
     /// Shares `TaskFeed` with the Tasks widget — same endpoint, same cache,
-    /// same §8 optimistic staging, different slice.
+    /// same §8 optimistic staging, different slice. `TaskFeed` also
+    /// piggybacks the undo/redo counts fetch (2026-09-23) — see its doc.
     private func currentEntry() async -> TrackEntry {
         let now = Date()
         let snapshot = await TaskFeed.snapshot(now: now)
@@ -356,7 +366,8 @@ struct TrackProvider: TimelineProvider {
             return TrackEntry(
                 date: now, items: [], selectedId: WidgetStore.noTrackSelection,
                 pageStartId: WidgetStore.noTrackSelection,
-                staleSince: nil, isSignedOut: true, canUndo: false
+                staleSince: nil, isSignedOut: true, canUndo: false, canRedo: false,
+                actionDescription: nil
             )
         }
 
@@ -368,7 +379,9 @@ struct TrackProvider: TimelineProvider {
             pageStartId: TrackTimeline.pageStartId(in: items),
             staleSince: snapshot.staleSince,
             isSignedOut: false,
-            canUndo: WidgetStore.canUndo(at: now)
+            canUndo: WidgetStore.canUndo,
+            canRedo: WidgetStore.canRedo,
+            actionDescription: WidgetStore.lastActionDescription(at: now)
         )
     }
 }

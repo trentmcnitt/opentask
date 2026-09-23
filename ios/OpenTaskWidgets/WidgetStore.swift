@@ -344,92 +344,208 @@ enum WidgetStore {
         return tasks.filter { !pending.contains($0.id) }
     }
 
-    // MARK: - Undo window (2026-09-23, the accidental-tap fix)
+    // MARK: - Undo/redo counts (2026-09-23, replaces the 60s Undo window)
     //
-    // Trent: "I need some way to ... undo the accidental tap." Every
-    // successful check-off / `+1` / `−1` (`CompleteTaskIntent`,
-    // `IncrementProgressIntent`) stamps `recordMutation()`. Whichever kind's
-    // header next reloads within `undoWindow` seconds of that stamp shows
-    // "Undo" (`UndoButton`, `canUndo(at:)`) — see `RemindersProvider`/
-    // `TasksProvider`/`TrackProvider`'s `getTimeline` for the explicit
-    // expiry entry that turns it back off (WidgetKit has no "expire after N
-    // seconds" primitive, only entries dated for a specific moment).
+    // Trent: "The undo button on the segment I was working on disappeared
+    // and then it said 'Morning done.' The undo should not disappear like
+    // that... undoing it should still be allowed with some indication about
+    // what was undone." and "For undo and redo I think we want undo and
+    // redo, ideally with an icon."
+    //
+    // The old design showed a single "Undo" button for 60s after THIS
+    // widget extension's own last mutation, gated by a local clock
+    // (`recordMutation`/`canUndo(at:)`/`undoWindow`, now removed). That
+    // meant the button vanished the moment the window closed even though
+    // the server still had the action queued, and it never existed for
+    // Redo at all. The replacement is the SERVER's own undoable/redoable
+    // counts (`GET /api/undo/status`, `POST /api/undo`/`/api/redo`'s own
+    // response) — `undoableCount`/`redoableCount` below — so the buttons
+    // are always present and reflect the real, un-windowed state: enabled
+    // whenever there is genuinely something to undo/redo, dimmed when
+    // there isn't, exactly like every other affordance in this file.
+
+    private static let undoableCountKey = "widget.undoRedo.undoableCount"
+    private static let redoableCountKey = "widget.undoRedo.redoableCount"
+
+    /// Cached from the last successful `GET /api/undo/status` (piggybacked
+    /// on every widget fetch — see `RemindersProvider`/`TaskFeed`) or the
+    /// last mutating `/api/undo`/`/api/redo`/completion/progress response,
+    /// whichever is freshest. `-1` (never set) reads as "enabled" via
+    /// `canUndo`/`canRedo` below — before the first fetch ever lands there
+    /// is no reason to start the buttons dimmed on a guess.
+    static var undoableCount: Int {
+        get { defaults?.object(forKey: undoableCountKey) as? Int ?? -1 }
+        set { defaults?.set(newValue, forKey: undoableCountKey) }
+    }
+
+    static var redoableCount: Int {
+        get { defaults?.object(forKey: redoableCountKey) as? Int ?? -1 }
+        set { defaults?.set(newValue, forKey: redoableCountKey) }
+    }
+
+    /// Whether the header's Undo/Redo icon buttons should be enabled RIGHT
+    /// NOW. Read live at entry-build time by every provider — unlike the
+    /// old design there is no time window to expire, so a pre-scheduled
+    /// FUTURE timeline entry simply carries forward whatever was true when
+    /// it was built (same limitation `staleSince` already accepts).
+    static var canUndo: Bool { undoableCount != 0 }
+    static var canRedo: Bool { redoableCount != 0 }
+
+    /// Overwrite both counts with server truth — from `GET /api/undo/status`
+    /// or an `/api/undo`/`/api/redo` response, both exact.
+    static func setUndoRedoCounts(undoable: Int, redoable: Int) {
+        undoableCount = undoable
+        redoableCount = redoable
+    }
+
+    /// Optimistically reflect a just-SUCCEEDED local mutation
+    /// (`CompleteTaskIntent`, `IncrementProgressIntent`) in the cached
+    /// counts, without waiting for the next piggybacked `GET
+    /// /api/undo/status`. Exact, not a guess: every mutation calls
+    /// `logAction()` server-side (AGENTS.md's "every mutation must be
+    /// atomic and logged for undo"), which adds exactly one new undoable
+    /// entry AND clears the redo stack (`logAction`'s own "new action
+    /// clears redo" comment, `src/core/undo/log-action.ts`) — so this is
+    /// what the next fetch will confirm anyway, just shown immediately so
+    /// Undo doesn't sit dimmed for up to 30 minutes after the very first
+    /// action a fresh install ever makes.
+    static func recordLocalMutationForUndoCount() {
+        undoableCount = max(undoableCount, 0) + 1
+        redoableCount = 0
+    }
+
+    // MARK: - Undo/redo in-flight claim
+    //
+    // The buttons are now ALWAYS tappable (no window to naturally throttle
+    // a double-tap), so a genuine double-tap — or a second `perform()`
+    // invoked while the first's network call is still in flight — could
+    // fire two server calls for what the user meant as one undo/redo.
+    // `/api/undo` and `/api/redo` each walk back/forward exactly ONE
+    // action, so a second concurrent call would act on the WRONG action.
+    // Undo and redo share one claim: firing both at once is meaningless
+    // (and racy — whichever lands second would act on a stack the first
+    // already changed), so at most one of either fires at a time.
+
+    private static let undoRedoInFlightKey = "widget.undoRedo.inFlightAt"
+    /// Crash backstop only, matching this file's existing TTL idiom
+    /// (`pendingTTL`, the old `undoWindow`): the widget extension process
+    /// can be suspended mid-network-call, which would otherwise leave a
+    /// claim permanently stuck and the buttons permanently inert. Generous
+    /// relative to `APIClient`'s own 15s request timeout so a real in-flight
+    /// call is never pre-empted by its own backstop.
+    private static let undoRedoInFlightTTL: TimeInterval = 20
+
+    static func tryClaimUndoRedo(now: Date = Date()) -> Bool {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let stamp = defaults?.object(forKey: undoRedoInFlightKey) as? Double,
+            now.timeIntervalSince1970 - stamp < undoRedoInFlightTTL {
+            return false
+        }
+        defaults?.set(now.timeIntervalSince1970, forKey: undoRedoInFlightKey)
+        return true
+    }
+
+    static func releaseUndoRedoClaim() {
+        defaults?.removeObject(forKey: undoRedoInFlightKey)
+    }
+
+    // MARK: - Last-action indication (2026-09-23)
+    //
+    // "Even if you're not on that segment, undoing it should still be
+    // allowed with some indication about what was undone." The header
+    // subtitle shows `description` from the `/api/undo`/`/api/redo`
+    // response ("Undid: Marked 'X' done") for `lastActionWindow` seconds —
+    // see `RemindersEntry`/`TasksEntry`/`TrackEntry`'s `actionDescription`
+    // and each provider's `getTimeline` for the explicit expiry entry
+    // (WidgetKit has no "expire after N seconds" primitive). Deliberately
+    // NOT scoped to a slot/project/quota: undo/redo act on "whatever
+    // changed last" server-wide (see `UndoLastActionIntent`'s doc), so the
+    // indication has to read the same "whichever slot/page is on screen" —
+    // it is header-level state, not per-row.
+
+    private static let lastActionDescriptionKey = "widget.undoRedo.lastDescription"
+    private static let lastActionAtKey = "widget.undoRedo.lastAt"
+    static let lastActionWindow: TimeInterval = 60
+
+    static func recordLastAction(description: String, at now: Date = Date()) {
+        defaults?.set(description, forKey: lastActionDescriptionKey)
+        defaults?.set(now.timeIntervalSince1970, forKey: lastActionAtKey)
+    }
+
+    /// The indication text to show at `date`, or `nil` once
+    /// `lastActionWindow` has passed. Used both for "right now" and for a
+    /// scheduled future entry, exactly like the old `canUndo(at:)`.
+    static func lastActionDescription(at date: Date = Date()) -> String? {
+        guard let stamp = defaults?.object(forKey: lastActionAtKey) as? Double else { return nil }
+        let elapsed = date.timeIntervalSince1970 - stamp
+        guard elapsed >= 0, elapsed < lastActionWindow else { return nil }
+        return defaults?.string(forKey: lastActionDescriptionKey)
+    }
+
+    /// The exact moment the indication should turn back off, for scheduling
+    /// the explicit expiry timeline entry. `nil` when there is no live
+    /// indication to expire.
+    static func lastActionExpiry() -> Date? {
+        guard let stamp = defaults?.object(forKey: lastActionAtKey) as? Double else { return nil }
+        return Date(timeIntervalSince1970: stamp).addingTimeInterval(lastActionWindow)
+    }
+
+    // MARK: - Last mutation instant (auto-advance correlation only)
+    //
+    // Narrowed 2026-09-23: this used to ALSO gate the old Undo button's 60s
+    // visibility window (any mutation, including a Track `+1`/`−1`, stamped
+    // it). Now it exists for exactly one thing — telling
+    // `UndoLastActionIntent` whether the action `/api/undo` just reversed
+    // is LIKELY the same Reminders completion that triggered
+    // `RemindersTimeline.autoAdvanceSlot`, so it knows whether to restore
+    // the pre-advance slot override (see "Auto-advance's own undo" below).
+    // Only `CompleteTaskIntent` stamps it now — a progress `+1`/`−1` never
+    // triggers auto-advance, so it has nothing here to correlate.
 
     private static let lastMutationAtKey = "widget.lastMutationAt"
-    static let undoWindow: TimeInterval = 60
 
-    /// Stamp "a mutation just happened, undo-able from right now."
+    /// Stamp "this device just completed a task, at this instant" — passed
+    /// through to `snapshotSlotOverrideBeforeAutoAdvance(at:)` by the SAME
+    /// `Date` value, so the two are tagged with bit-identical timestamps.
     static func recordMutation(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: lastMutationAtKey)
     }
 
-    private static func lastMutationAt() -> Date? {
+    /// Claim (and clear) the last recorded mutation instant. Consumed only
+    /// on a SUCCESSFUL undo (see `UndoLastActionIntent`) so a later,
+    /// unrelated undo can't reuse a stale value, but left untouched on
+    /// failure so a retry can still correlate correctly. No TTL: unlike the
+    /// old design this is not a visibility window, and the auto-advance
+    /// snapshot it pairs with (`restoreSlotOverrideBeforeAutoAdvance`) is
+    /// itself the thing that actually validates the match, by exact
+    /// timestamp equality — a stale value here just fails that match and
+    /// restores nothing, which is the correct behavior for an unrelated
+    /// undo anyway.
+    static func consumeLastMutation() -> Date? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
         guard let stamp = defaults?.object(forKey: lastMutationAtKey) as? Double else { return nil }
+        defaults?.removeObject(forKey: lastMutationAtKey)
         return Date(timeIntervalSince1970: stamp)
     }
 
-    /// Whether a header shown AT `date` should carry the Undo button. Used
-    /// both for "right now" (the entry a provider builds live) and for a
-    /// scheduled FUTURE entry (a Reminders/Tasks boundary that happens to
-    /// fall inside the window) — see the providers' `getTimeline`.
-    static func canUndo(at date: Date = Date()) -> Bool {
-        guard let at = lastMutationAt() else { return false }
-        let elapsed = date.timeIntervalSince(at)
-        return elapsed >= 0 && elapsed < undoWindow
-    }
-
-    /// The exact moment the window closes, for scheduling the explicit
-    /// "turn Undo back off" timeline entry. `nil` when there is no live
-    /// mutation to expire.
-    static func undoExpiry() -> Date? {
-        lastMutationAt().map { $0.addingTimeInterval(undoWindow) }
-    }
-
-    /// Atomically consume the undo window: returns the mutation's original
-    /// timestamp (still live, now cleared) or `nil` (already expired, or a
-    /// concurrent tap already claimed it). `UndoLastActionIntent` uses this
-    /// instead of a plain `canUndo` check plus a separate clear so two
-    /// overlapping taps — a real double-tap, or a second `perform()` invoked
-    /// while the first's network call is still in flight — cannot both fire
-    /// a server undo: `/api/undo` walks back ONE action at a time, and a
-    /// second call would undo the action BEFORE the one the user meant to
-    /// reverse. The returned timestamp lets a FAILED undo put the window
-    /// back (`restoreMutation(at:)`) without extending it past its original
-    /// deadline.
-    static func consumeUndo(now: Date = Date()) -> Date? {
-        pendingLock.lock()
-        defer { pendingLock.unlock() }
-        guard let at = lastMutationAt(), now.timeIntervalSince(at) < undoWindow else { return nil }
-        defaults?.removeObject(forKey: lastMutationAtKey)
-        return at
-    }
-
-    /// Restore the window after a FAILED `/api/undo` call, so a retry is
-    /// still possible — otherwise a network blip silently leaves the item
-    /// done with no way back short of reopening the app. Re-stamped at the
-    /// ORIGINAL mutation instant (from `consumeUndo`'s return value), not
-    /// "now", so a failed attempt doesn't extend the total window the user
-    /// gets.
-    static func restoreMutation(at date: Date) {
-        pendingLock.lock()
-        defer { pendingLock.unlock() }
-        defaults?.set(date.timeIntervalSince1970, forKey: lastMutationAtKey)
-    }
-
     /// Wipe every optimistic/confirmed marker this store holds. Called after
-    /// a successful `/api/undo` (`UndoLastActionIntent`): the response
-    /// carries no task id (`{undone_action, description, tasks_affected}` —
-    /// see `src/app/api/undo/route.ts`), so there is no way to know which
-    /// ONE entry — a completion tombstone, a confirmed completion (see the
-    /// 2026-09-23 note above), or a staged progress delta — belongs to the
-    /// action that was just reversed. Clearing all three maps is the honest
-    /// alternative: an undone completion must not stay hidden behind either
-    /// the 90s tombstone OR the 15-minute confirmed-completion window, and a
-    /// staged progress delta must not double-count against a server value
-    /// the undo just changed. The reload that follows re-fetches server
-    /// truth for whatever the acted-on widgets show, so nothing genuinely in
-    /// flight is lost — only the brief optimistic guess is, which the undo
-    /// itself already invalidated.
+    /// a successful `/api/undo` or `/api/redo` (`UndoLastActionIntent`,
+    /// `RedoLastActionIntent`): the response carries no task id
+    /// (`{undone_action/redone_action, description, tasks_affected}` — see
+    /// `src/app/api/undo/route.ts` / `redo/route.ts`), so there is no way to
+    /// know which ONE entry — a completion tombstone, a confirmed completion
+    /// (see the 2026-09-23 note above), or a staged progress delta —
+    /// belongs to the action that was just reversed/replayed. Clearing all
+    /// three maps is the honest alternative: an undone completion must not
+    /// stay hidden behind either the 90s tombstone OR the 15-minute
+    /// confirmed-completion window, and a staged progress delta must not
+    /// double-count against a server value the call just changed. The
+    /// reload that follows re-fetches server truth for whatever the
+    /// acted-on widgets show, so nothing genuinely in flight is lost — only
+    /// the brief optimistic guess is, which the call itself already
+    /// invalidated.
     static func clearAllPendingState() {
         defaults?.removeObject(forKey: pendingCompletionsKey)
         defaults?.removeObject(forKey: pendingProgressKey)
@@ -600,14 +716,65 @@ enum WidgetStore {
         defaults?.removeObject(forKey: autoAdvanceSnapshotKey)
     }
 
+    // MARK: - Reminders list paging (2026-09-23, "page through things that
+    // are too long to fit")
+    //
+    // Trent: "It'd be nice to be able to page through things that are too
+    // long to fit on the widget screen." Replaces the old "+N more" Link
+    // (which just opened the app) with a `‹ 1/3 ›` pager — see
+    // `RemindersListView.card`/`ListPager` in `RemindersWidgetViews.swift`.
+    //
+    // Paired with the slot it was paged within, the same "pair a value with
+    // the state it was set against" trick `slotOverride()` above uses to
+    // self-expire: reading with a DIFFERENT slot than the one last written
+    // returns page 0. That covers "reset to 0 whenever the slot on screen
+    // changes" for every way the slot can change — a chevron tap, a jump, an
+    // auto-advance, AND simply the clock crossing into a new natural
+    // slot — without any of those call sites needing to remember to call a
+    // separate reset function, because none of them are really "the same
+    // list" any more once the slot has moved.
+    //
+    // NOT bounded to the list's actual page count here: the list itself is
+    // the only thing that knows how many rows currently fit (`ViewThatFits`'s
+    // winning candidate, which nothing outside that view's own body can
+    // observe — see `RemindersListView`'s doc), so it clamps this value live
+    // on every render instead ("clamp it when the list shrinks"). This store
+    // only ever needs to move it.
+
+    private static let remindersPageKey = "widget.reminders.page"
+    private static let remindersPageSlotKey = "widget.reminders.page.slotKey"
+
+    static func remindersPage(for slotKey: Int) -> Int {
+        guard let defaults, defaults.object(forKey: remindersPageSlotKey) != nil,
+            defaults.integer(forKey: remindersPageSlotKey) == slotKey
+        else {
+            return 0
+        }
+        return defaults.integer(forKey: remindersPageKey)
+    }
+
+    static func setRemindersPage(_ page: Int, for slotKey: Int) {
+        defaults?.set(max(0, page), forKey: remindersPageKey)
+        defaults?.set(slotKey, forKey: remindersPageSlotKey)
+    }
+
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
 
-    /// Project id the Tasks widget is scoped to, or `allProjects` for no scope.
-    /// Persisted as an id rather than an index so renaming or reordering
-    /// projects doesn't silently move the user to a different one.
+    /// Project id the Tasks widget is scoped to, or `allProjects`/`upNextScope`
+    /// for one of the two unified pages. Persisted as an id rather than an
+    /// index so renaming or reordering projects doesn't silently move the
+    /// user to a different one.
     static let allProjects = -1
+
+    /// The "Up next" unified page (2026-09-23, item 4) — see
+    /// `TasksTimeline.upNextTasks`'s doc. `allProjects` above is the OTHER
+    /// unified page ("Today"), kept at its original value/name since that is
+    /// exactly what it always meant (`TasksTimeline.todaysTasks` was always
+    /// the `allProjects` scope's content). Both are project-less; only this
+    /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
+    static let upNextScope = -2
 
     static var projectScope: Int {
         get {
@@ -617,6 +784,30 @@ enum WidgetStore {
             return defaults.integer(forKey: projectScopeKey)
         }
         set { defaults?.set(newValue, forKey: projectScopeKey) }
+    }
+
+    // MARK: - Tasks list paging
+    //
+    // The Tasks twin of "Reminders list paging" above — same pairing trick,
+    // scoped to the project (or `allProjects`) on screen instead of a slot
+    // key, so paging resets whenever `ShiftProjectScopeIntent` moves the
+    // scope.
+
+    private static let tasksPageKey = "widget.tasks.page"
+    private static let tasksPageScopeKey = "widget.tasks.page.scope"
+
+    static func tasksPage(for scope: Int) -> Int {
+        guard let defaults, defaults.object(forKey: tasksPageScopeKey) != nil,
+            defaults.integer(forKey: tasksPageScopeKey) == scope
+        else {
+            return 0
+        }
+        return defaults.integer(forKey: tasksPageKey)
+    }
+
+    static func setTasksPage(_ page: Int, for scope: Int) {
+        defaults?.set(max(0, page), forKey: tasksPageKey)
+        defaults?.set(scope, forKey: tasksPageScopeKey)
     }
 
     // MARK: - Track selection

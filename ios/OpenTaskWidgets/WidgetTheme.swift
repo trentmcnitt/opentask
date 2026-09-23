@@ -345,6 +345,13 @@ enum WidgetTheme {
     /// bare `36`s could.
     static let rowMarkerSize: CGFloat = 36
 
+    /// `TaskRow`'s project chip (2026-09-23, item 5) — a fixed reservation
+    /// rather than the chip's own real measured width, so a long project name
+    /// shrinks (via `minimumScaleFactor`) into this budget instead of the
+    /// title's reserved column having to be recomputed per-name. About four
+    /// average characters at caption2 before the text starts scaling down.
+    static let projectChipWidth: CGFloat = 46
+
     // MARK: - Formatting
 
     private static let timeFormatter: DateFormatter = {
@@ -384,6 +391,32 @@ enum WidgetLink {
 
     static func task(_ id: Int) -> URL {
         URL(string: "\(scheme)://task/\(id)") ?? dashboard
+    }
+
+    /// The Reminders header title link (2026-09-23) — Trent: "If you tap on
+    /// the header, like the thing that says 'afternoon,' it should scroll
+    /// down to the actual afternoon section." `slotId` is the on-screen
+    /// group's `slotKey` (`TimeSlotDTO.id`, or -1 for the un-slotted
+    /// "Anytime" group — the same sentinel `ReminderGroupDTO.slotKey` and
+    /// `APIClient.fetchSlotReminders` already use). Resolves to
+    /// `/reminders?slot=<slotId>`, which brings that slot into view rather
+    /// than just opening the surface at the top. Deliberately separate from
+    /// the bare `reminders` above: the 2×2, Lock Screen families, and the
+    /// systemMedium/Large background tap all still mean "open Reminders",
+    /// not "open Reminders AT this slot" — only the header title Link uses
+    /// this.
+    static func reminders(slot slotId: Int) -> URL {
+        URL(string: "\(scheme)://reminders/slot/\(slotId)") ?? reminders
+    }
+
+    /// The Tasks header title link when scoped to one project (2026-09-23) —
+    /// the project-page twin of `reminders(slot:)`. "Up next" (the unified
+    /// `allProjects` scope) still links to the bare `dashboard` above; only a
+    /// project-scoped header uses this, resolving to `/?project=<id>` so the
+    /// app opens scoped to that project instead of landing back on the
+    /// unified list.
+    static func project(_ id: Int) -> URL {
+        URL(string: "\(scheme)://project/\(id)") ?? dashboard
     }
 
     /// One reminder, ON the Reminders surface.
@@ -486,37 +519,121 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
     }
 }
 
-/// The post-mutation "Undo" affordance (Trent, 2026-09-23: "I need some way
-/// ... to undo the accidental tap"). Shown in a list header for ~60s after a
-/// check-off / `+1` / `−1` — see `WidgetStore.recordMutation`/`canUndo(at:)`
-/// for the window and `UndoLastActionIntent` for what a tap does.
+/// The always-present Undo/Redo pair (2026-09-23), replacing the old
+/// time-windowed single "Undo" text button. Trent: "The undo button on the
+/// segment I was working on disappeared... undoing it should still be
+/// allowed" and "For undo and redo I think we want undo and redo, ideally
+/// with an icon… like a U-turn left and U-turn right."
 ///
-/// One intent shared by all three kinds: it calls the same `/api/undo` the
-/// web app's toast Undo button does (`useTaskActions.handleUndo`), which
-/// undoes the single most recent action for the signed-in user — "whatever
-/// changed last", not "whatever this specific header's row was". That is
-/// also why this only ever appears on the header of the kind that JUST
-/// mutated (the one `reloadOpenTaskWidget(kind:)` reloaded) rather than on
-/// all three at once — a kind that hasn't reloaded since the tap has no way
-/// to know a mutation happened at all.
+/// `canUndo`/`canRedo` come from the server's own undoable/redoable counts
+/// (`WidgetStore.canUndo`/`canRedo`, refreshed on every widget fetch via
+/// `GET /api/undo/status` — see `RemindersProvider`/`TaskFeed`), not from
+/// "did THIS kind just mutate": both buttons are shown in every one of the
+/// three kinds' headers, because `/api/undo`/`/api/redo` act on "whatever
+/// changed last" server-wide, exactly like the old single button did (see
+/// `UndoLastActionIntent`'s doc) — there was never a kind-specific version
+/// of this to preserve.
 ///
-/// Sized to its text, like the header's own title `Link`, rather than
+/// Sized to its content, like the header's own title `Link`, rather than
 /// stretched to `ChevronButton`'s 40pt floor: it sits in the SAME header row
 /// as the chevrons, which have no spare height to give up (see
 /// `ChevronButton`'s comment on why a systemMedium header can't afford
 /// more), so widening this vertically would only shrink something else on
-/// the same line.
-struct UndoButton: View {
+/// the same line. Dims/disables exactly like `ChevronButton` when there is
+/// nothing to undo/redo, rather than hiding — a vanishing button here would
+/// reintroduce the same disappearing-affordance complaint that killed the
+/// old 60s window.
+struct UndoRedoButtons: View {
+    let canUndo: Bool
+    let canRedo: Bool
+
     var body: some View {
-        Button(intent: UndoLastActionIntent()) {
-            Text("Undo")
+        HStack(spacing: 2) {
+            iconButton(intent: UndoLastActionIntent(), symbol: "arrow.uturn.backward", enabled: canUndo, label: "Undo")
+            iconButton(intent: RedoLastActionIntent(), symbol: "arrow.uturn.forward", enabled: canRedo, label: "Redo")
+        }
+    }
+
+    private func iconButton<I: AppIntent>(
+        intent: I, symbol: String, enabled: Bool, label: String
+    ) -> some View {
+        Button(intent: intent) {
+            Image(systemName: symbol)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 5)
                 .padding(.vertical, 4)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// The bottom-of-card pager (2026-09-23) — Trent: "It'd be nice to be able
+/// to page through things that are too long to fit on the widget screen. It
+/// should be a number/number to show what page you're on… maybe at the
+/// bottom." Replaces "+N more" on the Reminders and Tasks systemLarge lists
+/// once a card's real content outgrows even the tallest `ViewThatFits`
+/// candidate (`RemindersListView.card`/`TasksListView.card`).
+///
+/// `page`/`totalPages` are 0-based internally, shown 1-based, and computed
+/// by the CALLER from whichever candidate actually won — this view is dumb
+/// chrome, the same division of labor as `ChevronPager`.
+///
+/// Dims at the ends like every other pager in this file rather than
+/// wrapping (see `ChevronButton`'s doc): a reader paging through a long list
+/// has an actual first/last page, unlike the small fixed rings (slots,
+/// projects, quotas) that wrap because there is no meaningful "end" to one
+/// of a handful of pages.
+///
+/// Each glyph reuses `ReminderSlotStrip.segmentBleed`'s trick for its own
+/// tap target: a caption-sized "‹ 1/3 ›" row would be a poor target at its
+/// visual size alone, so it gets a taller invisible `contentShape` and
+/// negative vertical padding to bleed into the row gap above/below without
+/// costing the card any extra height (see that struct's `segmentBleed` doc
+/// for the mechanics).
+struct ListPager<Previous: AppIntent, Next: AppIntent>: View {
+    let page: Int
+    let totalPages: Int
+    let previous: Previous
+    let next: Next
+
+    private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 0)
+            glyphButton(intent: previous, symbol: "chevron.left", enabled: page > 0, label: "Previous page")
+            Text("\(page + 1)/\(totalPages)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+            glyphButton(intent: next, symbol: "chevron.right", enabled: page < totalPages - 1, label: "Next page")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func glyphButton<I: AppIntent>(
+        intent: I, symbol: String, enabled: Bool, label: String
+    ) -> some View {
+        Button(intent: intent) {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.semibold))
+                // Real visual size, then a taller invisible frame purely for
+                // the tap target — see `segmentBleed`'s doc.
+                .frame(width: 26, height: 18)
+                .frame(width: 26, height: 18 + 2 * bleed)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -bleed)
+        .foregroundStyle(.secondary)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        .accessibilityLabel(Text(label))
     }
 }
 
