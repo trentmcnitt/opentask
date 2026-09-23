@@ -515,6 +515,20 @@ struct UndoLastActionIntent: AppIntent {
             // optimistic/confirmed marker is cleared rather than one guessed
             // at. See WidgetStore.clearAllPendingState's doc.
             WidgetStore.clearAllPendingState()
+            // The cache no longer holds what was undone — a confirmed
+            // completion is taken OUT of it (see WidgetStore). Refetch before
+            // redrawing, and clear the interaction stamp so the providers take
+            // the network path, or the undone item never comes back (Trent,
+            // 2026-09-23: "I pressed undo and nothing actually undid it" —
+            // the server had undone it).
+            WidgetStore.clearInteraction()
+            if let payload = try? await APIClient.shared.fetchReminders() {
+                WidgetStore.saveReminders(payload.groups)
+            }
+            if let tasks = try? await APIClient.shared.fetchOpenTasks(),
+               let projects = try? await APIClient.shared.fetchProjects() {
+                WidgetStore.saveTasks(tasks, projects: projects)
+            }
             // If the mutation just reversed was a Reminders completion that
             // triggered `autoAdvanceSlot`, put the display back where it was
             // before that side effect — the completed item reappears in its
