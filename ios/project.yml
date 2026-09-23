@@ -125,6 +125,12 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
+        # WidgetKit push (iOS 26 — see WidgetPushHandler.swift). Apple's docs:
+        # "Add the capability to use remote push notifications to your widget
+        # extension target" — this is that capability. Same key the OpenTask
+        # and OpenTaskWatch targets already carry below; a widget extension
+        # needs its own grant, separate from the app's.
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
