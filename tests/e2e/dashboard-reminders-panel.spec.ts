@@ -680,6 +680,65 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     }
   })
 
+  test('finishing a past slot moves on to the next unfinished one; paging back to it stays', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-09-22: doing early morning's reminders in the evening, the
+    // panel should move on once that slot is finished. That needs a slot
+    // BEFORE the one the day is in, which does not exist until the second
+    // slot of the day has started — `E2E_TZ` can put any run there.
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const localNow = DateTime.now().setZone(TEST_TZ)
+    const started =
+      parseHHMM(slots[naturalIndex].start_time) <= localNow.hour * 60 + localNow.minute
+    test.skip(
+      naturalIndex === 0 || !started,
+      'no slot of the day has passed yet; set E2E_TZ to a later local time',
+    )
+    const past = slots[naturalIndex - 1]
+    const natural = slots[naturalIndex]
+    const pastAt = parseHHMM(past.start_time) + 1
+    const naturalAt = parseHHMM(natural.start_time) + 1
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title: 'Finish-past probe',
+          due_at: todayAt(Math.floor(pastAt / 60), pastAt % 60),
+        }),
+      )
+      ids.push(
+        await createReminder(page, {
+          title: 'Finish-past probe (now)',
+          due_at: todayAt(Math.floor(naturalAt / 60), naturalAt % 60),
+        }),
+      )
+
+      await page.goto('/')
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(past.id))
+
+      // The past slot's last reminder, considered: the pager moves on to the
+      // next slot with something waiting, which here is the current one.
+      await panel(page)
+        .getByRole('button', { name: 'Mark "Finish-past probe" as considered' })
+        .click()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+
+      // Paging back to a slot that is ALREADY finished is a choice to look
+      // at it — the pager stays there.
+      await panel(page).getByRole('button', { name: 'Previous time slot' }).click()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(past.id))
+      await expect(panel(page).locator('[data-considered-toggle]')).toBeVisible()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(past.id))
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('considered thoughts are reachable behind a Show/Hide toggle', async ({
     authenticatedPage: page,
   }) => {
