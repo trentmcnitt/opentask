@@ -828,18 +828,15 @@ test.describe('Quotas page', () => {
       progress_target: 3,
       rrule: 'FREQ=WEEKLY',
     })
-    try {
-      await page.goto(`/quotas?quota=${id}`)
-      const row = page.locator(`[data-quota-row="${id}"]`)
-      await expect(row).toHaveAttribute('data-quota-highlight', '')
-      await expect(row).toBeInViewport()
-      // A link is a place to look, not an edit. Nothing opens.
-      await expect(page.getByRole('dialog')).toHaveCount(0)
-      // The param is spent, so a reload does not flash the same row again.
-      await expect(page).toHaveURL('/quotas')
-    } finally {
-      await deleteTasks(page, [id])
-    }
+    // `createTask` registers it for the afterEach cleanup.
+    await page.goto(`/quotas?quota=${id}`)
+    const row = page.locator(`[data-quota-row="${id}"]`)
+    await expect(row).toHaveAttribute('data-quota-highlight', '')
+    await expect(row).toBeInViewport()
+    // A link is a place to look, not an edit. Nothing opens.
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // The param is spent, so a reload does not flash the same row again.
+    await expect(page).toHaveURL('/quotas')
   })
 })
 
