@@ -15,6 +15,8 @@ import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
+import { nextPeriodStart, type TimeSlot } from '@/lib/time-slot-assign'
+import type { BulkSnoozeDefault } from '@/components/PreferencesProvider'
 
 interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
@@ -23,6 +25,9 @@ interface UseSnoozeOverdueOptions {
   onUndoCountBump?: () => void
   timezone: string
   defaultSnoozeOption: string
+  /** What a plain press does: the next time slot, or `defaultSnoozeOption`. */
+  bulkSnoozeDefault: BulkSnoozeDefault
+  timeSlots: TimeSlot[]
   morningTime: string
 }
 
@@ -41,6 +46,8 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
     onUndoCountBump,
     timezone,
     defaultSnoozeOption,
+    bulkSnoozeDefault,
+    timeSlots,
     morningTime,
   } = options
 
@@ -59,7 +66,14 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         return
       }
 
-      const snoozeUntil = until ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
+      // A plain press goes to the NEXT PERIOD by default (Trent, 2026-09-22:
+      // "I want the default bulk snooze... to default to next period"), with a
+      // setting to flip back to the default snooze option. With no slots there
+      // is no next period, so the option is the fallback either way.
+      const nextPeriod =
+        bulkSnoozeDefault === 'next_period' ? nextPeriodStart(timeSlots, timezone, now) : null
+      const snoozeUntil =
+        until ?? nextPeriod ?? computeSnoozeTime(defaultSnoozeOption, timezone, morningTime)
 
       try {
         const res = await fetch('/api/tasks/bulk/snooze', {
@@ -81,11 +95,13 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         // meant by it.
         const skippedByPriority = responseData.data?.skipped_urgent ?? 0
         const skippedHigh = responseData.data?.skipped_high ?? 0
+        const snoozedHigh = responseData.data?.snoozed_high ?? 0
         if (tasksAffected > 0) onUndoCountBump?.()
         fetchTasks()
 
         const message = bulkSnoozeMessage({
           affected: tasksAffected,
+          highAffected: snoozedHigh,
           high: skippedHigh,
           urgent: skippedByPriority - skippedHigh,
         })
@@ -106,6 +122,8 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       onUndoCountBump,
       timezone,
       defaultSnoozeOption,
+      bulkSnoozeDefault,
+      timeSlots,
       morningTime,
     ],
   )

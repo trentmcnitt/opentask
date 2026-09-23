@@ -739,6 +739,39 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     }
   })
 
+  test('tapping a reminder’s text considers it; a hold still only opens its bubble', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-09-22: "we need to be able to tap the actual text to finish
+    // the reminder... It's annoying having to tap the little circle."
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const at = parseHHMM(natural.start_time) + 1
+    const due = todayAt(Math.floor(at / 60), at % 60)
+    const ids: number[] = []
+    try {
+      ids.push(await createReminder(page, { title: 'Tap-the-text probe', due_at: due }))
+      ids.push(await createReminder(page, { title: 'Hold-the-text probe', due_at: due }))
+      await page.goto('/')
+      const row = (title: string) => panel(page).locator('li[data-reminder-id]', { hasText: title })
+      await expect(row('Tap-the-text probe')).toBeVisible()
+
+      // A hold opens the read-only bubble and does NOT consider: the click the
+      // release leaves behind is swallowed.
+      await row('Hold-the-text probe').getByText('Hold-the-text probe').click({ delay: 500 })
+      await expect(page.locator('[data-reminder-popover]')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(row('Hold-the-text probe')).toBeVisible()
+
+      // A plain tap on the words considers it, with the same toast the circle gives.
+      await row('Tap-the-text probe').getByText('Tap-the-text probe').click()
+      await expect(row('Tap-the-text probe')).toHaveCount(0)
+      await expect(page.getByText('Considered \u201cTap-the-text probe\u201d')).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('considered thoughts are reachable behind a Show/Hide toggle', async ({
     authenticatedPage: page,
   }) => {
