@@ -39,6 +39,7 @@
 		6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
 		64E6410CDCE13D1F7BB429EC /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99D9B9B9BF27B9E628E6BDF /* WidgetStore.swift */; };
 		67BBCD29E3F75D5609165FFA /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
+		6AD63E5A68DDF99138643374 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 906FC514032DCB93B73BE724 /* WidgetPushHandler.swift */; };
 		7429BAC05E3C53F944D56312 /* WatchAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC3579E8F57FB1C23A5ADE1 /* WatchAppDelegate.swift */; };
 		7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B872742B2A8BD9EA4734A7 /* QuickActionHandler.swift */; };
 		904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */; };
@@ -143,6 +144,7 @@
 		6B4551ACAEF40F8906C15079 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeGridView.swift; sourceTree = "<group>"; };
 		7FDC88D2C994B50C6D67D763 /* UserNotificationsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotificationsUI.framework; path = System/Library/Frameworks/UserNotificationsUI.framework; sourceTree = SDKROOT; };
+		906FC514032DCB93B73BE724 /* WidgetPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushHandler.swift; sourceTree = "<group>"; };
 		955351AED16FD834316AB1EA /* OpenTaskApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskApp.swift; sourceTree = "<group>"; };
 		A44BF1E5D3EAA30D3259E9BE /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
 		A5CC8E2443EB8CFC907A4983 /* OpenTaskWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWatchApp.swift; sourceTree = "<group>"; };
@@ -266,6 +268,7 @@
 				683C420F16089F7B2D99FED2 /* TrackWidget.swift */,
 				67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */,
 				C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */,
+				906FC514032DCB93B73BE724 /* WidgetPushHandler.swift */,
 				F99D9B9B9BF27B9E628E6BDF /* WidgetStore.swift */,
 				6670206D951705CAC891F28F /* WidgetTheme.swift */,
 			);
@@ -503,6 +506,7 @@
 				F2B9CE2AC5E93952233D893B /* TrackWidget.swift in Sources */,
 				05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */,
 				4A4BDDB42FF8A951E3F4BE4B /* WidgetIntents.swift in Sources */,
+				6AD63E5A68DDF99138643374 /* WidgetPushHandler.swift in Sources */,
 				64E6410CDCE13D1F7BB429EC /* WidgetStore.swift in Sources */,
 				C8ED22076295A99579AB4702 /* WidgetTheme.swift in Sources */,
 			);

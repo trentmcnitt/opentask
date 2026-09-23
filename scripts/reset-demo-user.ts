@@ -42,6 +42,7 @@ function resetUser(username: string, empty: boolean, aiContext: string | null): 
     { name: 'undo_log', col: 'user_id' },
     { name: 'push_subscriptions', col: 'user_id' },
     { name: 'apns_devices', col: 'user_id' },
+    { name: 'widget_push_tokens', col: 'user_id' },
     { name: 'user_daily_stats', col: 'user_id' },
     { name: 'webhooks', col: 'user_id' },
     { name: 'tasks', col: 'user_id' },
