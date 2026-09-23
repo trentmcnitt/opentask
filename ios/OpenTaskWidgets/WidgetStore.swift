@@ -129,6 +129,12 @@ enum WidgetStore {
 
     /// Record that a non-mutating interaction (a chevron) just happened, so the
     /// next provider pass takes the cache-only fast path.
+    /// Forget the last interaction, so the next provider pass fetches from
+    /// the server instead of repainting from cache.
+    static func clearInteraction() {
+        defaults?.removeObject(forKey: lastInteractionKey)
+    }
+
     static func markInteraction(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: lastInteractionKey)
     }
@@ -291,80 +297,258 @@ enum WidgetStore {
     // through a slot keeps `hasRecentInteraction()` true, so every repaint came
     // from that stale cache — and 90s after a tap its tombstone expired and the
     // item was drawn again. Trent, 2026-09-23: "the reminders started popping
-    // back up. When I'd complete one, one would replace it." He re-tapped
-    // "Check GitHub issues" and, the server having already advanced it, that
-    // second completion skipped tomorrow's occurrence.
+    // back up. When I'd complete one, one would replace it."
     //
-    // So a completion the SERVER CONFIRMED is remembered for 15 minutes, keyed
-    // to the occurrence that was done — its `due_at` when it was tapped. An item
-    // is hidden only while it still shows THAT occurrence: the next occurrence
-    // of a recurring task (same id, later `due_at`) is real and still drawn.
-    // When the item was not in any cache at tap time there is no occurrence to
-    // match, so the id alone is hidden for the window.
+    // So a completion the SERVER CONFIRMED is taken out of the cached payload
+    // itself — the cache stops claiming the item is waiting, and nothing else
+    // has to remember it. A fresh fetch then replaces the cache wholesale and
+    // is always believed.
+    //
+    // The first version kept a separate 15-minute "hide this occurrence" list
+    // instead, and it outranked the server: un-checking a reminder in the app
+    // brings it back with the SAME due_at, so the widget went on hiding it
+    // (Trent, the same afternoon: "I unchecked… but they're not showing on my
+    // widget"). Editing the cache has no such case — there is nothing left to
+    // disagree with the next fetch.
 
-    private static let confirmedCompletionsKey = "widget.confirmedCompletions"
-    private static let confirmedTTL: TimeInterval = 15 * 60
-
-    private struct ConfirmedCompletion: Codable {
-        let at: Double
-        /// The occurrence completed. nil with `matchAny` when it was unknown.
-        let dueAt: String?
-        let matchAny: Bool
-    }
-
-    /// The `due_at` the widget is currently showing for `id`, from whichever
-    /// cache holds it. Read at TAP time, before any fetch replaces the cache
-    /// with the advanced occurrence. `.none` when no cache has the item.
-    static func cachedOccurrence(of id: Int) -> String?? {
-        let reminders = loadReminders()?.value.groups.flatMap(\.reminders) ?? []
-        let tasks = loadTasks()?.value.tasks ?? []
-        if let hit = (reminders + tasks).first(where: { $0.id == id }) { return .some(hit.dueAt) }
-        return .none
-    }
-
-    /// The server confirmed `id`'s completion of `occurrence` (from
-    /// `cachedOccurrence(of:)`); hide that occurrence for `confirmedTTL`.
-    static func confirmCompletion(_ id: Int, occurrence: String??, now: Date = Date()) {
+    /// The server confirmed `id`'s completion: drop it from both cached
+    /// payloads. In Reminders it moves to its slot's `considered` count, so
+    /// the slot strip and the "done" states read it straight away.
+    static func confirmCompletion(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
-        var map = confirmedMap(now: now)
-        switch occurrence {
-        case .some(let dueAt):
-            map[String(id)] = ConfirmedCompletion(
-                at: now.timeIntervalSince1970, dueAt: dueAt, matchAny: false)
-        case .none:
-            map[String(id)] = ConfirmedCompletion(
-                at: now.timeIntervalSince1970, dueAt: nil, matchAny: true)
+        if let cached = loadReminders() {
+            let groups = cached.value.groups.map { group -> ReminderGroupDTO in
+                let remaining = group.reminders.filter { $0.id != id }
+                return ReminderGroupDTO(
+                    slot: group.slot,
+                    reminders: remaining,
+                    considered: group.considered + (group.reminders.count - remaining.count)
+                )
+            }
+            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
         }
-        if let data = try? JSONEncoder().encode(map) {
-            defaults?.set(data, forKey: confirmedCompletionsKey)
+        if let cached = loadTasks() {
+            let tasks = cached.value.tasks.filter { $0.id != id }
+            save(
+                TasksCache(tasks: tasks, projects: cached.value.projects),
+                forKey: tasksKey, at: cached.fetchedAt)
         }
     }
 
-    /// Live entries only; expired ones are dropped on read.
-    private static func confirmedMap(now: Date) -> [String: ConfirmedCompletion] {
-        guard let data = defaults?.data(forKey: confirmedCompletionsKey),
-              let map = try? JSONDecoder().decode([String: ConfirmedCompletion].self, from: data)
-        else { return [:] }
-        let cutoff = now.timeIntervalSince1970 - confirmedTTL
-        return map.filter { $0.value.at >= cutoff }
-    }
-
-    private static func isConfirmedDone(
-        _ task: TaskDTO, in map: [String: ConfirmedCompletion]
-    ) -> Bool {
-        guard let done = map[String(task.id)] else { return false }
-        return done.matchAny || done.dueAt == task.dueAt
-    }
-
-    /// Remove tombstoned items, and confirmed completions of the occurrence
-    /// shown, from a fetched or cached payload. Every widget draws through
-    /// this, so it is the one place both rules live.
+    /// Remove tombstoned (in-flight) completions from a fetched or cached
+    /// payload. Every widget draws through this.
     static func filterPending(_ tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
         let pending = pendingCompletions(now: now)
-        let confirmed = confirmedMap(now: now)
-        guard !pending.isEmpty || !confirmed.isEmpty else { return tasks }
-        return tasks.filter { !pending.contains($0.id) && !isConfirmedDone($0, in: confirmed) }
+        guard !pending.isEmpty else { return tasks }
+        return tasks.filter { !pending.contains($0.id) }
+    }
+
+    // MARK: - Undo/redo counts (2026-09-23, replaces the 60s Undo window)
+    //
+    // Trent: "The undo button on the segment I was working on disappeared
+    // and then it said 'Morning done.' The undo should not disappear like
+    // that... undoing it should still be allowed with some indication about
+    // what was undone." and "For undo and redo I think we want undo and
+    // redo, ideally with an icon."
+    //
+    // The old design showed a single "Undo" button for 60s after THIS
+    // widget extension's own last mutation, gated by a local clock
+    // (`recordMutation`/`canUndo(at:)`/`undoWindow`, now removed). That
+    // meant the button vanished the moment the window closed even though
+    // the server still had the action queued, and it never existed for
+    // Redo at all. The replacement is the SERVER's own undoable/redoable
+    // counts (`GET /api/undo/status`, `POST /api/undo`/`/api/redo`'s own
+    // response) — `undoableCount`/`redoableCount` below — so the buttons
+    // are always present and reflect the real, un-windowed state: enabled
+    // whenever there is genuinely something to undo/redo, dimmed when
+    // there isn't, exactly like every other affordance in this file.
+
+    private static let undoableCountKey = "widget.undoRedo.undoableCount"
+    private static let redoableCountKey = "widget.undoRedo.redoableCount"
+
+    /// Cached from the last successful `GET /api/undo/status` (piggybacked
+    /// on every widget fetch — see `RemindersProvider`/`TaskFeed`) or the
+    /// last mutating `/api/undo`/`/api/redo`/completion/progress response,
+    /// whichever is freshest. `-1` (never set) reads as "enabled" via
+    /// `canUndo`/`canRedo` below — before the first fetch ever lands there
+    /// is no reason to start the buttons dimmed on a guess.
+    static var undoableCount: Int {
+        get { defaults?.object(forKey: undoableCountKey) as? Int ?? -1 }
+        set { defaults?.set(newValue, forKey: undoableCountKey) }
+    }
+
+    static var redoableCount: Int {
+        get { defaults?.object(forKey: redoableCountKey) as? Int ?? -1 }
+        set { defaults?.set(newValue, forKey: redoableCountKey) }
+    }
+
+    /// Whether the header's Undo/Redo icon buttons should be enabled RIGHT
+    /// NOW. Read live at entry-build time by every provider — unlike the
+    /// old design there is no time window to expire, so a pre-scheduled
+    /// FUTURE timeline entry simply carries forward whatever was true when
+    /// it was built (same limitation `staleSince` already accepts).
+    static var canUndo: Bool { undoableCount != 0 }
+    static var canRedo: Bool { redoableCount != 0 }
+
+    /// Overwrite both counts with server truth — from `GET /api/undo/status`
+    /// or an `/api/undo`/`/api/redo` response, both exact.
+    static func setUndoRedoCounts(undoable: Int, redoable: Int) {
+        undoableCount = undoable
+        redoableCount = redoable
+    }
+
+    /// Optimistically reflect a just-SUCCEEDED local mutation
+    /// (`CompleteTaskIntent`, `IncrementProgressIntent`) in the cached
+    /// counts, without waiting for the next piggybacked `GET
+    /// /api/undo/status`. Exact, not a guess: every mutation calls
+    /// `logAction()` server-side (AGENTS.md's "every mutation must be
+    /// atomic and logged for undo"), which adds exactly one new undoable
+    /// entry AND clears the redo stack (`logAction`'s own "new action
+    /// clears redo" comment, `src/core/undo/log-action.ts`) — so this is
+    /// what the next fetch will confirm anyway, just shown immediately so
+    /// Undo doesn't sit dimmed for up to 30 minutes after the very first
+    /// action a fresh install ever makes.
+    static func recordLocalMutationForUndoCount() {
+        undoableCount = max(undoableCount, 0) + 1
+        redoableCount = 0
+    }
+
+    // MARK: - Undo/redo in-flight claim
+    //
+    // The buttons are now ALWAYS tappable (no window to naturally throttle
+    // a double-tap), so a genuine double-tap — or a second `perform()`
+    // invoked while the first's network call is still in flight — could
+    // fire two server calls for what the user meant as one undo/redo.
+    // `/api/undo` and `/api/redo` each walk back/forward exactly ONE
+    // action, so a second concurrent call would act on the WRONG action.
+    // Undo and redo share one claim: firing both at once is meaningless
+    // (and racy — whichever lands second would act on a stack the first
+    // already changed), so at most one of either fires at a time.
+
+    private static let undoRedoInFlightKey = "widget.undoRedo.inFlightAt"
+    /// Crash backstop only, matching this file's existing TTL idiom
+    /// (`pendingTTL`, the old `undoWindow`): the widget extension process
+    /// can be suspended mid-network-call, which would otherwise leave a
+    /// claim permanently stuck and the buttons permanently inert. Generous
+    /// relative to `APIClient`'s own 15s request timeout so a real in-flight
+    /// call is never pre-empted by its own backstop.
+    private static let undoRedoInFlightTTL: TimeInterval = 20
+
+    static func tryClaimUndoRedo(now: Date = Date()) -> Bool {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let stamp = defaults?.object(forKey: undoRedoInFlightKey) as? Double,
+            now.timeIntervalSince1970 - stamp < undoRedoInFlightTTL {
+            return false
+        }
+        defaults?.set(now.timeIntervalSince1970, forKey: undoRedoInFlightKey)
+        return true
+    }
+
+    static func releaseUndoRedoClaim() {
+        defaults?.removeObject(forKey: undoRedoInFlightKey)
+    }
+
+    // MARK: - Last-action indication (2026-09-23)
+    //
+    // "Even if you're not on that segment, undoing it should still be
+    // allowed with some indication about what was undone." The header
+    // subtitle shows `description` from the `/api/undo`/`/api/redo`
+    // response ("Undid: Marked 'X' done") for `lastActionWindow` seconds —
+    // see `RemindersEntry`/`TasksEntry`/`TrackEntry`'s `actionDescription`
+    // and each provider's `getTimeline` for the explicit expiry entry
+    // (WidgetKit has no "expire after N seconds" primitive). Deliberately
+    // NOT scoped to a slot/project/quota: undo/redo act on "whatever
+    // changed last" server-wide (see `UndoLastActionIntent`'s doc), so the
+    // indication has to read the same "whichever slot/page is on screen" —
+    // it is header-level state, not per-row.
+
+    private static let lastActionDescriptionKey = "widget.undoRedo.lastDescription"
+    private static let lastActionAtKey = "widget.undoRedo.lastAt"
+    static let lastActionWindow: TimeInterval = 60
+
+    static func recordLastAction(description: String, at now: Date = Date()) {
+        defaults?.set(description, forKey: lastActionDescriptionKey)
+        defaults?.set(now.timeIntervalSince1970, forKey: lastActionAtKey)
+    }
+
+    /// The indication text to show at `date`, or `nil` once
+    /// `lastActionWindow` has passed. Used both for "right now" and for a
+    /// scheduled future entry, exactly like the old `canUndo(at:)`.
+    static func lastActionDescription(at date: Date = Date()) -> String? {
+        guard let stamp = defaults?.object(forKey: lastActionAtKey) as? Double else { return nil }
+        let elapsed = date.timeIntervalSince1970 - stamp
+        guard elapsed >= 0, elapsed < lastActionWindow else { return nil }
+        return defaults?.string(forKey: lastActionDescriptionKey)
+    }
+
+    /// The exact moment the indication should turn back off, for scheduling
+    /// the explicit expiry timeline entry. `nil` when there is no live
+    /// indication to expire.
+    static func lastActionExpiry() -> Date? {
+        guard let stamp = defaults?.object(forKey: lastActionAtKey) as? Double else { return nil }
+        return Date(timeIntervalSince1970: stamp).addingTimeInterval(lastActionWindow)
+    }
+
+    // MARK: - Last mutation instant (auto-advance correlation only)
+    //
+    // Narrowed 2026-09-23: this used to ALSO gate the old Undo button's 60s
+    // visibility window (any mutation, including a Track `+1`/`−1`, stamped
+    // it). Now it exists for exactly one thing — telling
+    // `UndoLastActionIntent` whether the action `/api/undo` just reversed
+    // is LIKELY the same Reminders completion that triggered
+    // `RemindersTimeline.autoAdvanceSlot`, so it knows whether to restore
+    // the pre-advance slot override (see "Auto-advance's own undo" below).
+    // Only `CompleteTaskIntent` stamps it now — a progress `+1`/`−1` never
+    // triggers auto-advance, so it has nothing here to correlate.
+
+    private static let lastMutationAtKey = "widget.lastMutationAt"
+
+    /// Stamp "this device just completed a task, at this instant" — passed
+    /// through to `snapshotSlotOverrideBeforeAutoAdvance(at:)` by the SAME
+    /// `Date` value, so the two are tagged with bit-identical timestamps.
+    static func recordMutation(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: lastMutationAtKey)
+    }
+
+    /// Claim (and clear) the last recorded mutation instant. Consumed only
+    /// on a SUCCESSFUL undo (see `UndoLastActionIntent`) so a later,
+    /// unrelated undo can't reuse a stale value, but left untouched on
+    /// failure so a retry can still correlate correctly. No TTL: unlike the
+    /// old design this is not a visibility window, and the auto-advance
+    /// snapshot it pairs with (`restoreSlotOverrideBeforeAutoAdvance`) is
+    /// itself the thing that actually validates the match, by exact
+    /// timestamp equality — a stale value here just fails that match and
+    /// restores nothing, which is the correct behavior for an unrelated
+    /// undo anyway.
+    static func consumeLastMutation() -> Date? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let stamp = defaults?.object(forKey: lastMutationAtKey) as? Double else { return nil }
+        defaults?.removeObject(forKey: lastMutationAtKey)
+        return Date(timeIntervalSince1970: stamp)
+    }
+
+    /// Wipe every optimistic/confirmed marker this store holds. Called after
+    /// a successful `/api/undo` or `/api/redo` (`UndoLastActionIntent`,
+    /// `RedoLastActionIntent`): the response carries no task id
+    /// (`{undone_action/redone_action, description, tasks_affected}` — see
+    /// `src/app/api/undo/route.ts` / `redo/route.ts`), so there is no way to
+    /// know which ONE entry — a completion tombstone, a confirmed completion
+    /// (see the 2026-09-23 note above), or a staged progress delta —
+    /// belongs to the action that was just reversed/replayed. Clearing all
+    /// three maps is the honest alternative: an undone completion must not
+    /// stay hidden behind either the 90s tombstone OR the 15-minute
+    /// confirmed-completion window, and a staged progress delta must not
+    /// double-count against a server value the call just changed. The
+    /// reload that follows re-fetches server truth for whatever the
+    /// acted-on widgets show, so nothing genuinely in flight is lost — only
+    /// the brief optimistic guess is, which the call itself already
+    /// invalidated.
+    static func clearAllPendingState() {
+        defaults?.removeObject(forKey: pendingCompletionsKey)
+        defaults?.removeObject(forKey: pendingProgressKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -383,9 +567,34 @@ enum WidgetStore {
         }
     }
 
+    /// Every filtered-out reminder is credited to `considered` — otherwise a
+    /// slot's `total` (`waiting + considered`, what `ReminderSlotStrip` and
+    /// `RemindersListView.allCaughtUp` are built on, 2026-09-23) would shrink
+    /// every time an item is hidden here, instead of staying fixed while only
+    /// the split between waiting and done moves — the same invariant the
+    /// web's `ReminderSlotBar` comment insists on ("checking things off
+    /// moves the fill but never resizes it"). Without this, `considered`
+    /// silently read 0 forever: this function is the ONE place that ever
+    /// constructs a `ReminderGroupDTO` from a decoded/cached payload once
+    /// tombstones or confirmed completions are in play, and the memberwise
+    /// init defaults `considered` to 0 when it isn't passed explicitly — a
+    /// default that made the bug compile clean and the sample-data gallery
+    /// (which never calls this) look fine while every real render showed
+    /// "Nothing left here" instead of "All caught up" / "<Slot> done".
+    ///
+    /// Safe against double-counting a SERVER-confirmed completion on a fresh
+    /// fetch: the server's own payload already omits it from `reminders`
+    /// there (a recurring task's next occurrence carries a different
+    /// `due_at` and is a different entry, not a re-inclusion of this one),
+    /// so this only ever adds what THIS pass actually removed.
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
         groups.map { group in
-            ReminderGroupDTO(slot: group.slot, reminders: filterPending(group.reminders, now: now))
+            let remaining = filterPending(group.reminders, now: now)
+            return ReminderGroupDTO(
+                slot: group.slot,
+                reminders: remaining,
+                considered: group.considered + (group.reminders.count - remaining.count)
+            )
         }
     }
 
@@ -429,14 +638,143 @@ enum WidgetStore {
         defaults?.removeObject(forKey: slotOverrideAnchorKey)
     }
 
+    // MARK: - Auto-advance's own undo (2026-09-23)
+    //
+    // `RemindersTimeline.autoAdvanceSlot` writes a slot override as a SIDE
+    // EFFECT of completing a reminder — moving the display to wherever the
+    // day's earliest still-waiting slot is. That side effect needs its own
+    // undo path, separate from the completion it rode in on, for two
+    // distinct reasons:
+    //
+    // 1. **A completion that fails.** `autoAdvanceSlot` runs OPTIMISTICALLY,
+    //    before the server confirms anything (same reasoning as the
+    //    completion tombstone itself — waiting for the network read as a
+    //    dead button). If `markDone` then fails, `clearPendingCompletion`
+    //    un-hides the item, but nothing else reverted the slot the display
+    //    jumped to — the widget was left parked on a slot chosen for a
+    //    completion that never actually happened.
+    // 2. **A completion that succeeds, then gets Undone.** The reminder
+    //    reappears (via the server's own state once `/api/undo` runs), but
+    //    it reappears in the slot it was ORIGINALLY in — which is exactly
+    //    the slot `autoAdvanceSlot` moved the display AWAY from. Undo that
+    //    doesn't also revert the display leaves the user looking at a slot
+    //    the item they just restored isn't even in.
+    //
+    // Both share one mechanism: snapshot whatever the override was
+    // immediately before `autoAdvanceSlot` runs, tagged with the SAME
+    // instant `recordMutation(now:)` stamps if the completion goes on to
+    // succeed. Only a `restoreSlotOverrideBeforeAutoAdvance` call whose
+    // `mutatedAt` matches that tag actually restores anything — an
+    // unrelated action (a Track `+1`, a later Reminders completion) leaves
+    // an intervening but non-matching snapshot alone rather than
+    // misapplying an older side effect to the wrong undo.
+
+    private static let autoAdvanceSnapshotKey = "widget.reminders.autoAdvanceSnapshot"
+
+    private struct SlotOverrideSnapshot: Codable {
+        let at: Double
+        let hadOverride: Bool
+        let slotKey: Int
+        let naturalSlotKey: Int
+    }
+
+    /// Record the override as it stood immediately before `autoAdvanceSlot`
+    /// is about to (possibly) change it. `at` should be the SAME `Date`
+    /// instance the caller will also pass to `recordMutation(now:)` if the
+    /// action succeeds, so the two are tagged with bit-identical timestamps.
+    /// Overwrites any earlier snapshot — only the most recent auto-advance's
+    /// prior state is ever worth restoring, matching "undo reverses the last
+    /// action" semantics.
+    static func snapshotSlotOverrideBeforeAutoAdvance(at now: Date) {
+        let existing = slotOverride()
+        let snapshot = SlotOverrideSnapshot(
+            at: now.timeIntervalSince1970,
+            hadOverride: existing != nil,
+            slotKey: existing?.slotKey ?? 0,
+            naturalSlotKey: existing?.naturalSlotKey ?? 0
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults?.set(data, forKey: autoAdvanceSnapshotKey)
+    }
+
+    /// Undo the auto-advance side effect — but ONLY if the snapshot on file
+    /// was tagged for exactly `mutatedAt` (see this section's header
+    /// comment). Consumes the snapshot either way once it matches, so a
+    /// second call for the same `mutatedAt` (there is none in practice —
+    /// each of the two call sites reaches at most one outcome per action —
+    /// but nothing here relies on that) is a safe no-op.
+    static func restoreSlotOverrideBeforeAutoAdvance(ifMatches mutatedAt: Date) {
+        guard let data = defaults?.data(forKey: autoAdvanceSnapshotKey),
+              let snapshot = try? JSONDecoder().decode(SlotOverrideSnapshot.self, from: data),
+              abs(snapshot.at - mutatedAt.timeIntervalSince1970) < 0.001
+        else { return }
+        if snapshot.hadOverride {
+            setSlotOverride(slotKey: snapshot.slotKey, naturalSlotKey: snapshot.naturalSlotKey)
+        } else {
+            clearSlotOverride()
+        }
+        defaults?.removeObject(forKey: autoAdvanceSnapshotKey)
+    }
+
+    // MARK: - Reminders list paging (2026-09-23, "page through things that
+    // are too long to fit")
+    //
+    // Trent: "It'd be nice to be able to page through things that are too
+    // long to fit on the widget screen." Replaces the old "+N more" Link
+    // (which just opened the app) with a `‹ 1/3 ›` pager — see
+    // `RemindersListView.card`/`ListPager` in `RemindersWidgetViews.swift`.
+    //
+    // Paired with the slot it was paged within, the same "pair a value with
+    // the state it was set against" trick `slotOverride()` above uses to
+    // self-expire: reading with a DIFFERENT slot than the one last written
+    // returns page 0. That covers "reset to 0 whenever the slot on screen
+    // changes" for every way the slot can change — a chevron tap, a jump, an
+    // auto-advance, AND simply the clock crossing into a new natural
+    // slot — without any of those call sites needing to remember to call a
+    // separate reset function, because none of them are really "the same
+    // list" any more once the slot has moved.
+    //
+    // NOT bounded to the list's actual page count here: the list itself is
+    // the only thing that knows how many rows currently fit (`ViewThatFits`'s
+    // winning candidate, which nothing outside that view's own body can
+    // observe — see `RemindersListView`'s doc), so it clamps this value live
+    // on every render instead ("clamp it when the list shrinks"). This store
+    // only ever needs to move it.
+
+    private static let remindersPageKey = "widget.reminders.page"
+    private static let remindersPageSlotKey = "widget.reminders.page.slotKey"
+
+    static func remindersPage(for slotKey: Int) -> Int {
+        guard let defaults, defaults.object(forKey: remindersPageSlotKey) != nil,
+            defaults.integer(forKey: remindersPageSlotKey) == slotKey
+        else {
+            return 0
+        }
+        return defaults.integer(forKey: remindersPageKey)
+    }
+
+    static func setRemindersPage(_ page: Int, for slotKey: Int) {
+        defaults?.set(max(0, page), forKey: remindersPageKey)
+        defaults?.set(slotKey, forKey: remindersPageSlotKey)
+    }
+
     // MARK: - Tasks project scope
 
     private static let projectScopeKey = "widget.tasks.projectId"
 
-    /// Project id the Tasks widget is scoped to, or `allProjects` for no scope.
-    /// Persisted as an id rather than an index so renaming or reordering
-    /// projects doesn't silently move the user to a different one.
+    /// Project id the Tasks widget is scoped to, or `allProjects`/`upNextScope`
+    /// for one of the two unified pages. Persisted as an id rather than an
+    /// index so renaming or reordering projects doesn't silently move the
+    /// user to a different one.
     static let allProjects = -1
+
+    /// The "Up next" unified page (2026-09-23, item 4) — see
+    /// `TasksTimeline.upNextTasks`'s doc. `allProjects` above is the OTHER
+    /// unified page ("Today"), kept at its original value/name since that is
+    /// exactly what it always meant (`TasksTimeline.todaysTasks` was always
+    /// the `allProjects` scope's content). Both are project-less; only this
+    /// sentinel additionally drops `todaysTasks`' end-of-day cutoff.
+    static let upNextScope = -2
 
     static var projectScope: Int {
         get {
@@ -446,6 +784,30 @@ enum WidgetStore {
             return defaults.integer(forKey: projectScopeKey)
         }
         set { defaults?.set(newValue, forKey: projectScopeKey) }
+    }
+
+    // MARK: - Tasks list paging
+    //
+    // The Tasks twin of "Reminders list paging" above — same pairing trick,
+    // scoped to the project (or `allProjects`) on screen instead of a slot
+    // key, so paging resets whenever `ShiftProjectScopeIntent` moves the
+    // scope.
+
+    private static let tasksPageKey = "widget.tasks.page"
+    private static let tasksPageScopeKey = "widget.tasks.page.scope"
+
+    static func tasksPage(for scope: Int) -> Int {
+        guard let defaults, defaults.object(forKey: tasksPageScopeKey) != nil,
+            defaults.integer(forKey: tasksPageScopeKey) == scope
+        else {
+            return 0
+        }
+        return defaults.integer(forKey: tasksPageKey)
+    }
+
+    static func setTasksPage(_ page: Int, for scope: Int) {
+        defaults?.set(max(0, page), forKey: tasksPageKey)
+        defaults?.set(scope, forKey: tasksPageScopeKey)
     }
 
     // MARK: - Track selection

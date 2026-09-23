@@ -123,14 +123,13 @@ enum WidgetTheme {
     /// does — `NSLayoutManager().defaultLineHeight(for:)` is AppKit's
     /// equivalent (the same value the layout system itself uses to lay out a
     /// line of that font). This is still the load-bearing per-LINE unit on
-    /// both platforms, but macOS no longer multiplies it by a flat
-    /// `titleLineLimit` the way iOS does — see the "2026-09-22, the macOS
-    /// vertical-space fix" note on `measuredLineCount(for:maxWidth:weight:)`
-    /// below for why iOS's fixed-2-lines contract doesn't carry over
-    /// unchanged. **Measured**: at the platform's default text size this is
-    /// 14pt on macOS vs. ~20pt on iOS — macOS's own metric is *smaller*, not
-    /// "too tall" as first suspected; see that note for what the real
-    /// macOS-specific bug turned out to be.
+    /// both platforms; neither multiplies it by a flat `titleLineLimit`
+    /// anymore — see the "row-height truthing" note on `measuredLineCount`
+    /// below. **Measured**: at the platform's default text size this is
+    /// 14pt on macOS vs. 18pt on iOS (an iPhone 17 Pro simulator, default
+    /// Dynamic Type size — see the 2026-09-23 addendum below for why that
+    /// number, not the ~20pt first assumed, is what actually matters for
+    /// row height on iOS).
     static var rowTitleLineHeight: CGFloat {
         #if os(iOS)
         ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
@@ -140,16 +139,15 @@ enum WidgetTheme {
         #endif
     }
 
-    #if os(macOS)
-
-    // MARK: - macOS row-height truthing (2026-09-22, the vertical-space fix)
+    // MARK: - Row-height truthing (macOS 2026-09-22, iOS 2026-09-23)
     //
-    // Trent, photographing the Mac desktop Large widget: single-line titles
-    // ("Kids kazoo") were taking the height of two lines, only 5 rows fit
-    // where the card had room for more, and one long title truncated with
-    // "…" — "We can't truncate the text" (a standing rule: reminders are
-    // never cut off). Diagnosis ruled out two of the candidate causes and
-    // confirmed a third that wasn't on the original suspect list:
+    // Trent, photographing the Mac desktop Large widget (2026-09-22):
+    // single-line titles ("Kids kazoo") were taking the height of two
+    // lines, only 5 rows fit where the card had room for more, and one long
+    // title truncated with "…" — "We can't truncate the text" (a standing
+    // rule: reminders are never cut off). Diagnosis ruled out two of the
+    // candidate causes and confirmed a third that wasn't on the original
+    // suspect list:
     //
     // - `rowTitleLineHeight` "too tall on macOS": REFUTED. Measured 14pt on
     //   macOS vs. ~20pt on iOS — macOS's own subheadline metric is smaller,
@@ -157,18 +155,18 @@ enum WidgetTheme {
     // - The two-line reservation itself (`titleLineLimit`) is inherent to
     //   how `ViewThatFits` works here (see `rowTitleLineHeight`'s doc) and
     //   isn't macOS-specific.
-    // - CONFIRMED, macOS-only: `ReminderRow`/`TaskRow`'s marker column ends
-    //   in a flat `.frame(width: 36, height: 36, alignment: .top)` — a
-    //   finger-sized iOS touch target ("26pt missed too often", that frame's
-    //   own doc comment). `HStack(alignment: .top)` sizes to the TALLEST
-    //   child, and on iOS the text's own two-line reservation (2 × ~20pt =
-    //   40pt) is already taller than 36, so the marker never mattered there.
-    //   On macOS the text's two-line reservation (2 × 14pt = 28pt) is
-    //   SMALLER than 36 — so the marker, not the text, was silently setting
-    //   every row's height. Measured directly (`NSHostingView.fittingSize`
-    //   on `ReminderRow`, headless): a one-line and a two-line title both
-    //   came back exactly 36.0pt. That is the "roughly a blank line" Trent
-    //   saw under a one-line title.
+    // - CONFIRMED, macOS-only AT THE TIME: `ReminderRow`/`TaskRow`'s marker
+    //   column ended in a flat `.frame(width: 36, height: 36, alignment:
+    //   .top)` — a finger-sized iOS touch target ("26pt missed too often",
+    //   that frame's own doc comment). `HStack(alignment: .top)` sizes to
+    //   the TALLEST child, and on iOS the text's own two-line reservation
+    //   (2 × ~20pt = 40pt) was already taller than 36, so the marker never
+    //   mattered there. On macOS the text's two-line reservation (2 × 14pt
+    //   = 28pt) was SMALLER than 36 — so the marker, not the text, was
+    //   silently setting every row's height. Measured directly
+    //   (`NSHostingView.fittingSize` on `ReminderRow`, headless): a
+    //   one-line and a two-line title both came back exactly 36.0pt. That
+    //   is the "roughly a blank line" Trent saw under a one-line title.
     //
     // Fixing only the marker (matching it to the row's own 2-line
     // reservation) gets macOS's row height down to 28pt — but 28pt is
@@ -177,16 +175,16 @@ enum WidgetTheme {
     // And neither change touches truncation: `lineLimit(2)` on a title that
     // genuinely needs 3 real lines still ellipsizes, on either platform.
     //
-    // So macOS additionally replaces the fixed "always reserve 2 lines"
-    // budget with a MEASURED one, per title: `measuredLineCount` asks
-    // AppKit directly how many lines this exact string needs at the row's
-    // real available width (no wrapping surprises — this is the same API
-    // family `NSString`/`UILabel` sizing has used for years), and the row
-    // uses that as both `lineLimit` (nil — never caps, so never ellipsizes)
-    // and the `minHeight` reservation (so `ViewThatFits` is measuring the
-    // truth, not a guess). A one-line title reserves one real line; a title
-    // that needs four gets four, and simply leaves less of the card for
-    // other rows — "as many rows as genuinely fit" already implies that.
+    // So the fix replaces the fixed "always reserve 2 lines" budget with a
+    // MEASURED one, per title: `measuredLineCount` asks the platform's own
+    // text-layout API directly how many lines this exact string needs at
+    // the row's real available width (no wrapping surprises — this is the
+    // same API family `NSString`/`UILabel`/`UITextView` sizing has used for
+    // years), and the row uses that as both `lineLimit` and the `minHeight`
+    // reservation (so `ViewThatFits` is measuring the truth, not a guess).
+    // A one-line title reserves one real line; a title that needs more
+    // simply leaves less of the card for other rows — "as many rows as
+    // genuinely fit" already implies that.
     //
     // This needs the row's real width, which `ViewThatFits` candidates don't
     // otherwise have — `RemindersListView`/`TasksListView` wrap their
@@ -196,29 +194,80 @@ enum WidgetTheme {
     // the reservation above already exists to avoid) and thread the
     // measured width down into each row.
     //
-    // iOS is untouched: `titleLineLimit` stays a flat 2 (or 1 at
-    // systemMedium), `lineLimit` stays capped, and the marker stays a flat
-    // 36 — see the `#else` branches at each call site.
-    //
     // Known imperfection, accepted deliberately: this measurement assumes
-    // the row's width (passed down from `GeometryReader`) is what AppKit
-    // will actually lay the `Text` out at. If that assumption is ever wrong
-    // by enough to matter, the failure mode is a row rendering slightly
-    // TALLER than `ViewThatFits` reserved for it (possible clipping at the
-    // card's bottom edge on that one refresh) — never an ellipsis. That is
-    // the trade Trent asked for ("we can't truncate the text"), not a
-    // theoretical guarantee that measurement and final layout always agree
-    // to the pixel.
+    // the row's width (passed down from `GeometryReader`) is what the text
+    // engine will actually lay the `Text` out at. If that assumption is
+    // ever wrong by enough to matter, the failure mode is a row rendering
+    // slightly TALLER than `ViewThatFits` reserved for it (possible
+    // clipping at the card's bottom edge on that one refresh) — never an
+    // ellipsis. That is the trade Trent asked for ("we can't truncate the
+    // text"), not a theoretical guarantee that measurement and final layout
+    // always agree to the pixel.
+    //
+    // ADDENDUM, 2026-09-23 (iOS gets the same measurement, capped): Trent's
+    // iPhone screenshots showed the same family of complaints on the Home
+    // Screen Large widgets — a visible gap between one-line titles ("Check
+    // GitHub issues" / "Do my PRI"), and text truncating at TWO lines when
+    // he wanted three before an ellipsis, plus "at least one or two more"
+    // reminders visible at once. `measuredLineCount`/`measuredWidth`/
+    // `subheadlineFont`/`caption2Font` below, previously macOS-only, are now
+    // shared — `PlatformFont` resolves to `UIFont` or `NSFont` per platform,
+    // and `NSString.boundingRect` takes the SAME four-argument call on both
+    // (confirmed by compiling each standalone: iOS's Swift overlay has no
+    // default for `context`, unlike macOS's, so the call passes `context:
+    // nil` explicitly — harmless on macOS, required on iOS). Two things stay
+    // platform-specific, on purpose:
+    //
+    // 1. **The cap.** iOS still caps a title at `iOSMaxTitleLines` (3) —
+    //    macOS stays unbounded. A reminder is "a thought, not an errand",
+    //    but a phone's Home Screen has far less room than a desktop widget,
+    //    and an unbounded title on iOS could still eat the whole card for
+    //    one row. 3 lines, not macOS's "never", is the compromise: "I don't
+    //    want to truncate the text until three lines" (Trent, 2026-09-23).
+    // 2. **The marker floor.** iOS's 36pt marker (`rowMarkerSize`) is a
+    //    FINGER touch target and stays a hard floor —
+    //    `max(measuredHeight, rowMarkerSize)` — where macOS's marker simply
+    //    matches the measured height with no floor (a mouse pointer needs no
+    //    minimum). This is why the per-row height win on iOS is smaller than
+    //    macOS's was: measured directly on an iPhone 17 Pro simulator
+    //    (iOS 26.5, default Dynamic Type), `rowTitleLineHeight` is 18pt, so
+    //    the OLD flat two-line budget (2 × 18 = 36) already exactly equals
+    //    the marker floor for a one-line title — there is no wasted line to
+    //    reclaim from THAT title alone once the 36pt floor is kept. Where
+    //    this fix actually earns its keep on iOS: (a) genuinely 3-line
+    //    titles no longer truncate (a real, previously-invisible bug — see
+    //    `RemindersWidgetView`'s doc for the measured before/after), and (b)
+    //    critically, `ViewThatFits`'s candidate ceiling is raised from 6 to
+    //    10 to match macOS (`RemindersListView`/`TasksListView`'s `content`)
+    //    — THAT is what lets "one or two more" rows actually render when
+    //    they fit; the old ceiling of 6 could never offer ViewThatFits a
+    //    7th-or-later-row candidate no matter how much vertical room a
+    //    device had. At a LARGER Dynamic Type size than the simulator's
+    //    default, `rowTitleLineHeight` grows past 18pt and the per-title
+    //    measurement starts winning back real space from the marker floor
+    //    too, the same way it always did on macOS.
 
-    /// How many lines `text` needs at `maxWidth`, in `font` — real AppKit
-    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd:
-    /// a fractional line still costs the row a whole line of height.
-    static func measuredLineCount(for text: String, maxWidth: CGFloat, font: NSFont) -> Int {
+    #if os(iOS)
+    typealias PlatformFont = UIFont
+    #else
+    typealias PlatformFont = NSFont
+    #endif
+
+    /// Reminders never truncate on iOS until they need a 4th line — see the
+    /// "2026-09-23" addendum above. macOS has no equivalent constant: it
+    /// never caps at all.
+    static let iOSMaxTitleLines = 3
+
+    /// How many lines `text` needs at `maxWidth`, in `font` — real platform
+    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd: a
+    /// fractional line still costs the row a whole line of height.
+    static func measuredLineCount(for text: String, maxWidth: CGFloat, font: PlatformFont) -> Int {
         guard maxWidth > 0, !text.isEmpty else { return 1 }
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
+            attributes: [.font: font],
+            context: nil
         )
         return max(1, Int(ceil(bounds.height / rowTitleLineHeight)))
     }
@@ -227,7 +276,7 @@ enum WidgetTheme {
     /// for `TaskRow`'s due-time label before measuring the title's own
     /// wrap, since the title's real column is narrower whenever a due time
     /// is shown beside it.
-    static func measuredWidth(for text: String, font: NSFont) -> CGFloat {
+    static func measuredWidth(for text: String, font: PlatformFont) -> CGFloat {
         guard !text.isEmpty else { return 0 }
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
@@ -236,16 +285,34 @@ enum WidgetTheme {
     /// .fontWeight(weight)` renders — weight has to match what's actually
     /// drawn (P3/P4 titles render `.semibold`, which is measurably wider)
     /// or a title near the wrap boundary undercounts its lines.
-    static func subheadlineFont(weight: Font.Weight) -> NSFont {
+    static func subheadlineFont(weight: Font.Weight) -> PlatformFont {
+        #if os(iOS)
+        let pointSize = UIFont.preferredFont(forTextStyle: .subheadline).pointSize
+        return UIFont.systemFont(ofSize: pointSize, weight: uiWeight(weight))
+        #else
         let pointSize = NSFont.preferredFont(forTextStyle: .subheadline, options: [:]).pointSize
         return NSFont.systemFont(ofSize: pointSize, weight: nsWeight(weight))
+        #endif
     }
 
     /// The caption2 font, for measuring `TaskRow`'s due-time label.
-    static var caption2Font: NSFont {
+    static var caption2Font: PlatformFont {
+        #if os(iOS)
+        UIFont.preferredFont(forTextStyle: .caption2)
+        #else
         NSFont.preferredFont(forTextStyle: .caption2, options: [:])
+        #endif
     }
 
+    #if os(iOS)
+    private static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
+        switch weight {
+        case .semibold: return .semibold
+        case .medium: return .medium
+        default: return .regular
+        }
+    }
+    #else
     private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
         case .semibold: return .semibold
@@ -253,7 +320,6 @@ enum WidgetTheme {
         default: return .regular
         }
     }
-
     #endif
 
     /// Track's list rows are spaced tighter than everything else.
@@ -270,6 +336,21 @@ enum WidgetTheme {
     /// Floor for the `+1` / `−` targets, matching the check-off circles. Chrome
     /// gets compacted to fit more rows; touch targets never do.
     static let progressButtonSize: CGFloat = 36
+
+    /// `ReminderRow`/`TaskRow`'s trailing marker column (the check-off
+    /// circle / square) — width always, and iOS's height FLOOR (macOS has
+    /// no floor; see the "row-height truthing" note above). Named so the two
+    /// rows and their line-count measurement (which has to subtract this
+    /// same column back out of the card width) can't drift apart the way two
+    /// bare `36`s could.
+    static let rowMarkerSize: CGFloat = 36
+
+    /// `TaskRow`'s project chip (2026-09-23, item 5) — a fixed reservation
+    /// rather than the chip's own real measured width, so a long project name
+    /// shrinks (via `minimumScaleFactor`) into this budget instead of the
+    /// title's reserved column having to be recomputed per-name. About four
+    /// average characters at caption2 before the text starts scaling down.
+    static let projectChipWidth: CGFloat = 46
 
     // MARK: - Formatting
 
@@ -310,6 +391,32 @@ enum WidgetLink {
 
     static func task(_ id: Int) -> URL {
         URL(string: "\(scheme)://task/\(id)") ?? dashboard
+    }
+
+    /// The Reminders header title link (2026-09-23) — Trent: "If you tap on
+    /// the header, like the thing that says 'afternoon,' it should scroll
+    /// down to the actual afternoon section." `slotId` is the on-screen
+    /// group's `slotKey` (`TimeSlotDTO.id`, or -1 for the un-slotted
+    /// "Anytime" group — the same sentinel `ReminderGroupDTO.slotKey` and
+    /// `APIClient.fetchSlotReminders` already use). Resolves to
+    /// `/reminders?slot=<slotId>`, which brings that slot into view rather
+    /// than just opening the surface at the top. Deliberately separate from
+    /// the bare `reminders` above: the 2×2, Lock Screen families, and the
+    /// systemMedium/Large background tap all still mean "open Reminders",
+    /// not "open Reminders AT this slot" — only the header title Link uses
+    /// this.
+    static func reminders(slot slotId: Int) -> URL {
+        URL(string: "\(scheme)://reminders/slot/\(slotId)") ?? reminders
+    }
+
+    /// The Tasks header title link when scoped to one project (2026-09-23) —
+    /// the project-page twin of `reminders(slot:)`. "Up next" (the unified
+    /// `allProjects` scope) still links to the bare `dashboard` above; only a
+    /// project-scoped header uses this, resolving to `/?project=<id>` so the
+    /// app opens scoped to that project instead of landing back on the
+    /// unified list.
+    static func project(_ id: Int) -> URL {
+        URL(string: "\(scheme)://project/\(id)") ?? dashboard
     }
 
     /// One reminder, ON the Reminders surface.
@@ -412,26 +519,173 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
     }
 }
 
+/// The always-present Undo/Redo pair (2026-09-23), replacing the old
+/// time-windowed single "Undo" text button. Trent: "The undo button on the
+/// segment I was working on disappeared... undoing it should still be
+/// allowed" and "For undo and redo I think we want undo and redo, ideally
+/// with an icon… like a U-turn left and U-turn right."
+///
+/// `canUndo`/`canRedo` come from the server's own undoable/redoable counts
+/// (`WidgetStore.canUndo`/`canRedo`, refreshed on every widget fetch via
+/// `GET /api/undo/status` — see `RemindersProvider`/`TaskFeed`), not from
+/// "did THIS kind just mutate": both buttons are shown in every one of the
+/// three kinds' headers, because `/api/undo`/`/api/redo` act on "whatever
+/// changed last" server-wide, exactly like the old single button did (see
+/// `UndoLastActionIntent`'s doc) — there was never a kind-specific version
+/// of this to preserve.
+///
+/// Sized to its content, like the header's own title `Link`, rather than
+/// stretched to `ChevronButton`'s 40pt floor: it sits in the SAME header row
+/// as the chevrons, which have no spare height to give up (see
+/// `ChevronButton`'s comment on why a systemMedium header can't afford
+/// more), so widening this vertically would only shrink something else on
+/// the same line. Dims/disables exactly like `ChevronButton` when there is
+/// nothing to undo/redo, rather than hiding — a vanishing button here would
+/// reintroduce the same disappearing-affordance complaint that killed the
+/// old 60s window.
+struct UndoRedoButtons: View {
+    let canUndo: Bool
+    let canRedo: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            iconButton(intent: UndoLastActionIntent(), symbol: "arrow.uturn.backward", enabled: canUndo, label: "Undo")
+            iconButton(intent: RedoLastActionIntent(), symbol: "arrow.uturn.forward", enabled: canRedo, label: "Redo")
+        }
+    }
+
+    private func iconButton<I: AppIntent>(
+        intent: I, symbol: String, enabled: Bool, label: String
+    ) -> some View {
+        Button(intent: intent) {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// The bottom-of-card pager (2026-09-23) — Trent: "It'd be nice to be able
+/// to page through things that are too long to fit on the widget screen. It
+/// should be a number/number to show what page you're on… maybe at the
+/// bottom." Replaces "+N more" on the Reminders and Tasks systemLarge lists
+/// once a card's real content outgrows even the tallest `ViewThatFits`
+/// candidate (`RemindersListView.card`/`TasksListView.card`).
+///
+/// `page`/`totalPages` are 0-based internally, shown 1-based, and computed
+/// by the CALLER from whichever candidate actually won — this view is dumb
+/// chrome, the same division of labor as `ChevronPager`.
+///
+/// Dims at the ends like every other pager in this file rather than
+/// wrapping (see `ChevronButton`'s doc): a reader paging through a long list
+/// has an actual first/last page, unlike the small fixed rings (slots,
+/// projects, quotas) that wrap because there is no meaningful "end" to one
+/// of a handful of pages.
+///
+/// Each glyph reuses `ReminderSlotStrip.segmentBleed`'s trick for its own
+/// tap target: a caption-sized "‹ 1/3 ›" row would be a poor target at its
+/// visual size alone, so it gets a taller invisible `contentShape` and
+/// negative vertical padding to bleed into the row gap above/below without
+/// costing the card any extra height (see that struct's `segmentBleed` doc
+/// for the mechanics).
+struct ListPager<Previous: AppIntent, Next: AppIntent>: View {
+    let page: Int
+    let totalPages: Int
+    let previous: Previous
+    let next: Next
+
+    private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 0)
+            glyphButton(intent: previous, symbol: "chevron.left", enabled: page > 0, label: "Previous page")
+            Text("\(page + 1)/\(totalPages)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+            glyphButton(intent: next, symbol: "chevron.right", enabled: page < totalPages - 1, label: "Next page")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func glyphButton<I: AppIntent>(
+        intent: I, symbol: String, enabled: Bool, label: String
+    ) -> some View {
+        Button(intent: intent) {
+            Image(systemName: symbol)
+                .font(.caption2.weight(.semibold))
+                // Real visual size, then a taller invisible frame purely for
+                // the tap target — see `segmentBleed`'s doc.
+                .frame(width: 26, height: 18)
+                .frame(width: 26, height: 18 + 2 * bleed)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -bleed)
+        .foregroundStyle(.secondary)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        .accessibilityLabel(Text(label))
+    }
+}
+
 /// The state shown when the Keychain has no server URL / token.
 ///
 /// Never a spinner and never an error dump: an unconfigured widget is a setup
 /// problem, and the only useful thing it can say is where to go fix it.
+///
+/// Tap target follows the same family split as everywhere else (2026-09-23,
+/// the background-tap fix — see `ios/CLAUDE.md`'s tap-targets note):
+/// `compact` (systemSmall, and the Lock Screen families' own custom signed-out
+/// text) is glanceable-only with nothing else to hit, so the whole card stays
+/// a `.widgetURL`. Non-compact (systemMedium/systemLarge's signed-out state,
+/// used by all three list views) drops the card-wide link — the message TEXT
+/// itself becomes a `Link` instead, mirroring the header title `Link` every
+/// other systemMedium/systemLarge state uses. Found via the same audit as the
+/// rest of that fix: this struct was the one remaining background tap target
+/// on those two families, only reachable while signed out.
 struct WidgetSignedOutView: View {
     var compact = false
 
     var body: some View {
+        if compact {
+            content.widgetURL(WidgetLink.dashboard)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         VStack(spacing: compact ? 4 : 8) {
             Image(systemName: "person.crop.circle.badge.questionmark")
                 .font(compact ? .body : .title2)
                 .foregroundStyle(.secondary)
-            Text("Open OpenTask to sign in")
-                .font(compact ? .caption2 : .footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.8)
+            if compact {
+                Text("Open OpenTask to sign in")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+            } else {
+                Link(destination: WidgetLink.dashboard) {
+                    Text("Open OpenTask to sign in")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.8)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(WidgetLink.dashboard)
     }
 }
 
@@ -469,5 +723,28 @@ struct StalenessNote: View {
                 .font(.system(size: 9))
         }
         .foregroundStyle(.tertiary)
+    }
+}
+
+extension View {
+    /// Where a tap on a Medium/Large widget's BACKGROUND goes — its own
+    /// section, not wherever the app happened to be left.
+    ///
+    /// iOS always opens the app for a tap that lands on no Link or Button;
+    /// there is no way to make it do nothing. With no `.widgetURL` the app
+    /// simply came forward on its last tab, so a background tap on Reminders
+    /// could land on the dashboard (Trent, 2026-09-23: "If we can't stop
+    /// tapping on the widget from opening the app, can we at least make it so
+    /// that each widget… takes you to the correct tab?"). So on iOS the
+    /// background opens the widget's own section — the same place its header
+    /// title links to. macOS gets nothing: there a background click really is
+    /// inert, which is what he asked for first.
+    @ViewBuilder
+    func backgroundTapOpens(_ url: URL) -> some View {
+        #if os(iOS)
+        self.widgetURL(url)
+        #else
+        self
+        #endif
     }
 }

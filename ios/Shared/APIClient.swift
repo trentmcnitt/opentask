@@ -194,6 +194,72 @@ final class APIClient {
         try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
     }
 
+    /// Undo the most recent action for the signed-in user (2026-09-23,
+    /// widgets' Undo/Redo affordance) — the same endpoint the web app's
+    /// toast Undo button calls (`useTaskActions.handleUndo`,
+    /// `src/app/api/undo/route.ts`). No body: the web client optionally sends
+    /// `session_start_id` to scope its undo/redo COUNTS to the page's
+    /// session, but the undo itself always targets "the last action", and a
+    /// widget has no session watermark to send in the first place — its
+    /// counts are always all-time (see `fetchUndoStatus`).
+    @discardableResult
+    func undoLastAction() async throws -> UndoRedoResult {
+        let data = try await post(path: "/api/undo", body: [:])
+        return try parseUndoRedoResult(data)
+    }
+
+    /// Redo the most recently undone action (2026-09-23) — the twin of
+    /// `undoLastAction`, hitting `POST /api/redo`
+    /// (`src/app/api/redo/route.ts`). Same no-session-watermark reasoning.
+    @discardableResult
+    func redoLastAction() async throws -> UndoRedoResult {
+        let data = try await post(path: "/api/redo", body: [:])
+        return try parseUndoRedoResult(data)
+    }
+
+    /// The shared response shape of `/api/undo` and `/api/redo`: a
+    /// human-readable description of what just happened (shown in the
+    /// widget header's subtitle for ~60s — see `WidgetStore.
+    /// recordLastAction`), and the resulting all-time counts (the server is
+    /// the source of truth for whether the buttons should still be enabled
+    /// after this call).
+    struct UndoRedoResult {
+        let description: String
+        let tasksAffected: Int
+        let undoableCount: Int
+        let redoableCount: Int
+    }
+
+    private func parseUndoRedoResult(_ data: Data) throws -> UndoRedoResult {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let responseData = json["data"] as? [String: Any],
+              let description = responseData["description"] as? String
+        else {
+            throw APIError.invalidResponse
+        }
+        return UndoRedoResult(
+            description: description,
+            tasksAffected: responseData["tasks_affected"] as? Int ?? 0,
+            undoableCount: responseData["undoable_count"] as? Int ?? 0,
+            redoableCount: responseData["redoable_count"] as? Int ?? 0
+        )
+    }
+
+    /// All-time undo/redo counts (`GET /api/undo/status`), piggybacked on
+    /// every widget data fetch (`RemindersProvider`, `TaskFeed`) so the
+    /// always-present Undo/Redo buttons' enabled state reflects the server
+    /// even when the last change came from the web app or another device,
+    /// not just this widget's own taps.
+    struct UndoStatus {
+        let undoableCount: Int
+        let redoableCount: Int
+    }
+
+    func fetchUndoStatus() async throws -> UndoStatus {
+        let page = try await get(path: "/api/undo/status", as: UndoStatusPage.self)
+        return UndoStatus(undoableCount: page.undoableCount, redoableCount: page.redoableCount)
+    }
+
     // MARK: - Widget Data
 
     /// Today's incomplete reminders grouped by time slot (§6).
