@@ -443,6 +443,11 @@ function SlotPagerHeader({
   showConsidered: boolean
   onToggleConsidered: () => void
 }) {
+  // Same numbers the slot bar fills with — no parallel notion of "finished".
+  // `total > 0` matters here: an empty slot reading "0 of 0" is not complete,
+  // it's empty, and gets no check mark (no chrome for something that isn't
+  // there).
+  const complete = total > 0 && considered >= total
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
       <button
@@ -498,7 +503,7 @@ function SlotPagerHeader({
           data-considered-toggle
           aria-label={`${considered} of ${total} considered — show what was considered`}
           className={cn(
-            'hover:bg-foreground/5 flex shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
             // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
             // highlight it there's a little box around the text. When the
             // considered stuff is open there should still be a gray box
@@ -519,6 +524,20 @@ function SlotPagerHeader({
           <span className={cn(showConsidered ? 'text-foreground' : 'text-muted-foreground')}>
             {considered} of {total}
           </span>
+          {/* THE CHECK REPORTS STATUS, NOT AN AFFORDANCE — unlike the caret
+              and the bolding cut from this same element (2026-09-21), this
+              earns its place: it is the only thing on the panel that answers
+              "is this slot actually finished?" without asking the reader to
+              compare a fill's length to the end of its track. Small, quiet,
+              and only ever present when true — never a greyed-out
+              placeholder for "not yet". */}
+          {complete && (
+            <Check
+              className="size-3.5 text-green-700 dark:text-green-400"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          )}
         </button>
       ) : (
         <span
