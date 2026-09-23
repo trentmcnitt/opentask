@@ -431,9 +431,20 @@ private struct TaskRow: View {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .strokeBorder(projectColor, lineWidth: 1.5)
                     .frame(width: 16, height: 16)
-                    // The square centres on the title's first line; the hit
-                    // target then hangs below it (26pt missed too often,
-                    // iOS's finger-sized floor — see `markerHeight`).
+                    // THREE frames — see `ReminderRow`'s identical trick for
+                    // the full explanation. The 16×16 square is sized here,
+                    // then centred within one line's height (default
+                    // alignment), and only THEN is that already-centred
+                    // result pinned to the top of the full `markerHeight` —
+                    // so the square centres on the title's FIRST line, and
+                    // the hit target hangs below it for a wrapped title
+                    // (26pt missed too often, iOS's finger-sized floor — see
+                    // `markerHeight`). Collapsing the last two frames into
+                    // one `alignment: .top` would instead pin the square
+                    // itself to the marker's top edge, floating it above
+                    // where the first line of text actually sits once a
+                    // title wraps to 2+ lines.
+                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
                     .frame(width: WidgetTheme.rowMarkerSize, height: markerHeight, alignment: .top)
                     .contentShape(Rectangle())
             }
