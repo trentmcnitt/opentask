@@ -103,11 +103,15 @@ private enum WidgetPushRegistrar {
     #endif
 
     static func register(token: String, widgetKind: String) async throws {
-        #if DEBUG
+        // The APNs environment a token belongs to is fixed by the SIGNING
+        // entitlement (`aps-environment`), not the build configuration. Both
+        // project.yml files grant `development` to every build, Release
+        // included — the Mac app is installed as a Release build — so a
+        // `#if DEBUG` switch registered Release tokens as "production", whose
+        // pushes APNs rejects (BadDeviceToken), and the server then deleted
+        // them. Change this together with `aps-environment` if the apps are
+        // ever distributed with a production entitlement.
         let environment = "development"
-        #else
-        let environment = "production"
-        #endif
 
         try await send(method: "POST", body: [
             "push_token": token,
