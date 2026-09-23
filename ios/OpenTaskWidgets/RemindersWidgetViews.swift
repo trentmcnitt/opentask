@@ -517,9 +517,26 @@ private struct ReminderRow: View {
     /// per-row space than macOS did at the default text size.
     private var markerHeight: CGFloat {
         #if os(iOS)
-        max(reservedHeight, WidgetTheme.rowMarkerSize)
+        guard availableWidth == nil else { return reservedHeight + 2 * markerBleed }
+        return max(reservedHeight, WidgetTheme.rowMarkerSize)
         #else
         reservedHeight
+        #endif
+    }
+
+    /// How far the check-off's tap area reaches into the gap above and below
+    /// its row, without taking layout space (Trent, 2026-09-23: the gap under
+    /// a one-line title). On iOS systemLarge the row is exactly as tall as its
+    /// text, and the finger target instead stretches half a `rowSpacing` into
+    /// each neighbouring gap — applied as negative vertical padding on the
+    /// Button, so adjacent targets meet but never overlap, and a one-line
+    /// row's pitch drops from 46pt (the old 36pt floor + 10) to 28pt. Zero
+    /// elsewhere: systemMedium keeps the 36pt floor, macOS needs none.
+    private var markerBleed: CGFloat {
+        #if os(iOS)
+        availableWidth == nil ? 0 : WidgetTheme.rowSpacing / 2
+        #else
+        0
         #endif
     }
 
@@ -586,10 +603,14 @@ private struct ReminderRow: View {
                     // reading as if it belongs to neither" failure this
                     // struct's own doc comment warns about avoiding.
                     .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
+                    // The bleed above is part of the target, not the glyph's
+                    // offset: pad it back so the glyph stays on line 1.
+                    .padding(.top, markerBleed)
                     .frame(width: WidgetTheme.rowMarkerSize, height: markerHeight, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.vertical, -markerBleed)
         }
     }
 }
