@@ -1,12 +1,12 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Check } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
-import { computeCompletionFill, type CompletionFill } from '@/lib/completion-fill'
+import { countChipDueBadges } from '@/lib/chip-due-badges'
+import { ChipDueBadges, describeChipDueBadges } from '@/components/ChipDueBadges'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
 
@@ -20,19 +20,6 @@ interface DueDateFilterBarProps {
   timezone: string
   onExclusiveDateFilter?: (filter: DueDateFilter) => void
   onExcludeDateFilter?: (filter: DueDateFilter) => void
-  /**
-   * Today chip completion fill (§ITEM 2). Deliberately NOT derived from
-   * `tasks` (which is already faceted — see FilterBar's facet computation):
-   * the chip's own count narrows with whatever else is filtered (a Work
-   * project filter shrinks "Today N"), but the fill answers "is my whole day
-   * done" and must not — it stays lit at the real day-wide fraction
-   * regardless of which chips happen to be active. `remainingToday` is the
-   * true due-today-not-done count across every project; `doneToday` is
-   * today's real completions (reminders/quotas excluded — see
-   * `useTodayCompletions`).
-   */
-  remainingToday?: number
-  doneToday?: number
 }
 
 const FILTER_LABELS: Record<DueDateFilter, string> = {
@@ -101,25 +88,34 @@ export function DueDateFilterBar({
   timezone,
   onExclusiveDateFilter,
   onExcludeDateFilter,
-  remainingToday,
-  doneToday,
 }: DueDateFilterBarProps) {
-  const filterCounts = useMemo(() => {
+  const { filterCounts, todayOverdueCount } = useMemo(() => {
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
     const counts = new Map<DueDateFilter, number>()
+    const todaysTasks: Task[] = []
 
     for (const task of tasks) {
       const buckets = classifyTaskDueDate(task, now, boundaries)
       for (const bucket of buckets) {
         counts.set(bucket, (counts.get(bucket) || 0) + 1)
       }
+      if (buckets.includes('today')) todaysTasks.push(task)
     }
 
     // Include any filter that has tasks OR is actively selected/excluded
-    return FILTER_ORDER.filter(
+    const filterCounts = FILTER_ORDER.filter(
       (f) => counts.has(f) || selectedDateFilters.includes(f) || excludedDateFilters.includes(f),
     ).map((f) => [f, counts.get(f) ?? 0] as [DueDateFilter, number])
+
+    // The Today chip's own overdue pill (feat/chip-due-badges): how many of
+    // ITS total (the 'today' bucket above) are also overdue, NOT the
+    // corpus-wide overdue count — that's the separate "Overdue" chip.
+    // Reuses the same overdue split the project chips use rather than a
+    // bespoke comparison here.
+    const todayOverdueCount = countChipDueBadges(todaysTasks, now, boundaries).overdue
+
+    return { filterCounts, todayOverdueCount }
   }, [tasks, timezone, selectedDateFilters, excludedDateFilters])
 
   const hasActiveFilter = selectedDateFilters.length > 0 || excludedDateFilters.length > 0
@@ -133,12 +129,6 @@ export function DueDateFilterBar({
           : selectedDateFilters.includes(filter)
             ? 'included'
             : 'unselected'
-        // Only the Today chip gets a completion fill — the others (Overdue,
-        // Soon, This Week...) aren't a "today is done" question.
-        const fill =
-          filter === 'today' && chipState !== 'excluded'
-            ? computeCompletionFill(doneToday, remainingToday)
-            : null
         return (
           <DateChipBadge
             key={filter}
@@ -146,7 +136,9 @@ export function DueDateFilterBar({
             label={FILTER_LABELS[filter]}
             count={count}
             chipState={chipState}
-            fill={fill}
+            // Only the Today chip gets an overdue pill — the others
+            // (Overdue, Soon, This Week...) keep their plain total.
+            overdueCount={filter === 'today' ? todayOverdueCount : 0}
             onToggle={onToggleDateFilter}
             onExclusive={onExclusiveDateFilter}
             onExclude={onExcludeDateFilter}
@@ -162,7 +154,7 @@ function DateChipBadge({
   label,
   count,
   chipState,
-  fill,
+  overdueCount,
   onToggle,
   onExclusive,
   onExclude,
@@ -171,8 +163,8 @@ function DateChipBadge({
   label: string
   count: number
   chipState: ChipState
-  /** Today chip only — see `DueDateFilterBarProps.remainingToday`. */
-  fill?: CompletionFill | null
+  /** Today chip only (feat/chip-due-badges) — 0 for every other date filter. */
+  overdueCount: number
   onToggle: (filter: DueDateFilter) => void
   onExclusive?: (filter: DueDateFilter) => void
   onExclude?: (filter: DueDateFilter) => void
@@ -184,12 +176,26 @@ function DateChipBadge({
     onExclusive,
     onExclude,
   })
+  const showBadge = filter === 'today' && chipState !== 'excluded'
+  // No `totalLabel`: the Today chip's total already means "due today" (unlike
+  // a project chip's total, which is every open task), so the accessible
+  // name doesn't repeat it as a separate "due today" clause.
+  const accessibleLabel = showBadge
+    ? describeChipDueBadges({
+        name: label,
+        total: count,
+        totalLabel: null,
+        dueToday: 0,
+        overdue: overdueCount,
+      })
+    : undefined
 
   return (
     <Badge
       variant="outline"
       data-date-chip={filter}
-      data-date-chip-finished={fill?.finished ? '' : undefined}
+      title={accessibleLabel}
+      aria-label={accessibleLabel}
       className={cn(
         'relative flex-shrink-0 cursor-pointer rounded-sm transition-colors select-none',
         chipState === 'excluded'
@@ -204,40 +210,9 @@ function DateChipBadge({
       onPointerMove={handlers.onPointerMove}
       onPointerLeave={handlers.onPointerLeave}
     >
-      {/* Fill sits behind the text, like the Track quota chips (TrackChip in
-          TrackPanel.tsx). Teal, not indigo — indigo means reminders/AI
-          Insights on this app's other surfaces. The "included" (selected)
-          chip's own background is `bg-foreground` (inverted light/dark), so
-          its overlay uses `bg-background` — the token that always contrasts
-          against it — instead of teal, or the fill would vanish into it. */}
-      {fill && (
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
-            chipState === 'included'
-              ? fill.finished
-                ? 'bg-green-400/30'
-                : 'bg-background/20'
-              : fill.finished
-                ? 'bg-green-500/25 dark:bg-green-400/25'
-                : 'bg-teal-500/25 dark:bg-teal-400/25',
-          )}
-          style={{ width: `${fill.fraction * 100}%` }}
-        />
-      )}
       <span className="relative leading-none">{label}</span>
       <span className="relative ml-1 text-[10px] leading-none opacity-60">{count}</span>
-      {fill?.finished && (
-        <Check
-          aria-hidden="true"
-          className={cn(
-            'relative size-3',
-            chipState === 'included' ? 'opacity-90' : 'text-green-600 dark:text-green-400',
-          )}
-          strokeWidth={2.5}
-        />
-      )}
+      {showBadge && <ChipDueBadges dueToday={0} overdue={overdueCount} showDueToday={false} />}
     </Badge>
   )
 }

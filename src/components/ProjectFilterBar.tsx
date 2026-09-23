@@ -1,11 +1,13 @@
 'use client'
 
 import { useMemo } from 'react'
-import { FolderOpen, Check } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
 import { cn } from '@/lib/utils'
-import { computeCompletionFill, type CompletionFill } from '@/lib/completion-fill'
+import { getTimezoneDayBoundaries } from '@/lib/format-date'
+import { classifyChipDueBadge } from '@/lib/chip-due-badges'
+import { ChipDueBadges, describeChipDueBadges } from '@/components/ChipDueBadges'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task, Project } from '@/types'
 
@@ -17,10 +19,12 @@ interface ProjectFilterBarProps {
   onToggleProject: (projectId: number) => void
   onExclusiveProject?: (projectId: number) => void
   onExcludeProject?: (projectId: number) => void
-  /** Due-today, not-yet-done per project — completion fill denominator (§ITEM 2). */
-  todayCounts?: Map<number, number>
-  /** Completed today per project — completion fill numerator (§ITEM 2). */
-  doneTodayByProject?: Map<number, number>
+  /**
+   * User's IANA timezone — needed to bucket each project's tasks into the
+   * due-today/overdue pills (feat/chip-due-badges). Pills simply don't render
+   * without it (same defensive fallback `filterByDateFilters` uses).
+   */
+  timezone?: string
 }
 
 /**
@@ -42,52 +46,54 @@ export function ProjectFilterBar({
   onToggleProject,
   onExclusiveProject,
   onExcludeProject,
-  todayCounts,
-  doneTodayByProject,
+  timezone,
 }: ProjectFilterBarProps) {
   const projectCounts = useMemo(() => {
+    const now = new Date()
+    const boundaries = timezone ? getTimezoneDayBoundaries(timezone, now) : null
     const counts = new Map<number, number>()
+    const dueTodayCounts = new Map<number, number>()
+    const overdueCounts = new Map<number, number>()
     for (const task of tasks) {
       counts.set(task.project_id, (counts.get(task.project_id) || 0) + 1)
+      // Same faceted `tasks` the total above counts over, so the pills always
+      // agree with a project chip's own total about which tasks are "in" it.
+      const badge = boundaries ? classifyChipDueBadge(task, now, boundaries) : null
+      if (badge === 'due_today') {
+        dueTodayCounts.set(task.project_id, (dueTodayCounts.get(task.project_id) ?? 0) + 1)
+      } else if (badge === 'overdue') {
+        overdueCounts.set(task.project_id, (overdueCounts.get(task.project_id) ?? 0) + 1)
+      }
     }
     return projects
       .filter(
         (p) =>
           counts.has(p.id) || selectedProjects.includes(p.id) || excludedProjects.includes(p.id),
       )
-      .map((p) => ({ project: p, count: counts.get(p.id) ?? 0 }))
+      .map((p) => ({
+        project: p,
+        count: counts.get(p.id) ?? 0,
+        dueToday: dueTodayCounts.get(p.id) ?? 0,
+        overdue: overdueCounts.get(p.id) ?? 0,
+      }))
       .sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count
         return a.project.sort_order - b.project.sort_order
       })
-  }, [projects, tasks, selectedProjects, excludedProjects])
+  }, [projects, tasks, selectedProjects, excludedProjects, timezone])
 
   const hasActiveProjectFilter = selectedProjects.length > 0 || excludedProjects.length > 0
   if (projectCounts.length < 2 && !hasActiveProjectFilter) return null
 
   return (
     <div className="flex flex-wrap gap-2">
-      {projectCounts.map(({ project, count }) => {
+      {projectCounts.map(({ project, count, dueToday, overdue }) => {
         const chipState: ChipState = excludedProjects.includes(project.id)
           ? 'excluded'
           : selectedProjects.includes(project.id)
             ? 'included'
             : 'unselected'
         const colorDef = project.color ? LABEL_COLORS[project.color] : null
-        const overdueCount = project.overdue_count ?? 0
-        // Excluded reads as "not this" — a fill would fight that message.
-        //
-        // A missing MAP (undefined) means the caller didn't wire completion
-        // data at all — pass that through as "no fill" (computeCompletionFill
-        // treats undefined as "no data yet"). A missing KEY in a map that DOES
-        // exist means this project simply has zero for that count (it never
-        // gets an entry when it has nothing due today, or nothing done today)
-        // — that must coalesce to 0, or a fully-finished project (0 remaining)
-        // reads as "no data" and never shows its green fill.
-        const doneToday = doneTodayByProject ? (doneTodayByProject.get(project.id) ?? 0) : undefined
-        const remainingToday = todayCounts ? (todayCounts.get(project.id) ?? 0) : undefined
-        const fill =
-          chipState === 'excluded' ? null : computeCompletionFill(doneToday, remainingToday)
 
         return (
           <ProjectChip
@@ -95,10 +101,10 @@ export function ProjectFilterBar({
             projectId={project.id}
             name={project.name}
             totalCount={count}
-            overdueCount={overdueCount}
+            dueToday={dueToday}
+            overdue={overdue}
             chipState={chipState}
             colorDef={colorDef}
-            fill={fill}
             onToggle={onToggleProject}
             onExclusive={onExclusiveProject}
             onExclude={onExcludeProject}
@@ -113,10 +119,10 @@ function ProjectChip({
   projectId,
   name,
   totalCount,
-  overdueCount,
+  dueToday,
+  overdue,
   chipState,
   colorDef,
-  fill,
   onToggle,
   onExclusive,
   onExclude,
@@ -124,11 +130,11 @@ function ProjectChip({
   projectId: number
   name: string
   totalCount: number
-  overdueCount: number
+  /** Faceted "due later today, not yet due" count (feat/chip-due-badges). Excluded chips suppress both pills — see `showBadges` below. */
+  dueToday: number
+  overdue: number
   chipState: ChipState
   colorDef: { bg: string; text: string; dot: string; border: string } | null
-  /** Completion fill (§ITEM 2) — null for the excluded state. */
-  fill?: CompletionFill | null
   onToggle: (projectId: number) => void
   onExclusive?: (projectId: number) => void
   onExclude?: (projectId: number) => void
@@ -140,21 +146,16 @@ function ProjectChip({
     onExclusive,
     onExclude,
   })
-  // The "included" chip's own background is a light/pastel colour in light
-  // mode and a dark translucent one in dark mode (LABEL_COLORS, or the
-  // neutral gray-200/gray-700 fallback below) — the inverse of most chips —
-  // so its fill overlay is a plain shade (dark in light mode, light in dark
-  // mode) rather than teal, which would barely register against a pastel and
-  // would clash with the project's own colour either way.
-  const fillClass = fill
-    ? chipState === 'included'
-      ? fill.finished
-        ? 'bg-green-500/30 dark:bg-green-400/30'
-        : 'bg-black/10 dark:bg-white/15'
-      : fill.finished
-        ? 'bg-green-500/25 dark:bg-green-400/25'
-        : 'bg-teal-500/25 dark:bg-teal-400/25'
-    : null
+  // Excluded reads as "not this" — badges would fight that message, same
+  // reasoning the removed completion fill used.
+  const showBadges = chipState !== 'excluded'
+  const label = describeChipDueBadges({
+    name,
+    total: totalCount,
+    totalLabel: 'open',
+    dueToday,
+    overdue,
+  })
 
   return (
     <button
@@ -164,7 +165,8 @@ function ProjectChip({
       onPointerMove={handlers.onPointerMove}
       onPointerLeave={handlers.onPointerLeave}
       data-project-chip={projectId}
-      data-project-chip-finished={fill?.finished ? '' : undefined}
+      title={label}
+      aria-label={label}
       className={cn(
         'relative flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors select-none',
         chipState === 'excluded'
@@ -176,23 +178,6 @@ function ProjectChip({
             : 'border-border text-muted-foreground hover:bg-muted',
       )}
     >
-      {/* Clipped to its own wrapper (not the button) so the overdue badge
-          below, which deliberately hangs outside the button's border box,
-          never gets cut off by the fill's own overflow-hidden. */}
-      {fillClass && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg"
-        >
-          <span
-            className={cn(
-              'absolute inset-y-0 left-0 transition-[width] duration-300 ease-out',
-              fillClass,
-            )}
-            style={{ width: `${fill!.fraction * 100}%` }}
-          />
-        </span>
-      )}
       <span
         className={cn(
           'relative flex items-center gap-1',
@@ -203,21 +188,7 @@ function ProjectChip({
         <span className="max-w-[8rem] truncate">{name}</span>
       </span>
       <span className="relative text-[10px] leading-none opacity-60">{totalCount}</span>
-      {fill?.finished && (
-        <Check
-          aria-hidden="true"
-          className={cn(
-            'relative size-3',
-            chipState === 'included' ? 'opacity-90' : 'text-green-600 dark:text-green-400',
-          )}
-          strokeWidth={2.5}
-        />
-      )}
-      {overdueCount > 0 && (
-        <span className="bg-badge-destructive absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold text-white">
-          {overdueCount}
-        </span>
-      )}
+      {showBadges && <ChipDueBadges dueToday={dueToday} overdue={overdue} />}
     </button>
   )
 }
