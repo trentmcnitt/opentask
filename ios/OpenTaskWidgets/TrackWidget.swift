@@ -323,6 +323,9 @@ struct TrackProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TrackEntry>) -> Void) {
         Task {
+            // A widget push token the server never confirmed — see
+            // `WidgetPushRegistration` in WidgetPushHandler.swift.
+            await WidgetPushRegistration.retryIfNeeded()
             // One entry, unlike the other two kinds: a quota has no moment in
             // the day that flips it. Pace drifts continuously and the period
             // boundary resets `progress_current` server-side, which no
