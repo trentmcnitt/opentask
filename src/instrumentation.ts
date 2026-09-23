@@ -18,6 +18,9 @@
  * - 5:30 AM UTC daily: webhook delivery purge
  * - 3:00 AM UTC daily: What's Next generation (§7.4)
  * - 3:30 AM UTC daily: Insights generation (§7.4)
+ *
+ * Also registers the WidgetKit push sync listener (not a cron — reacts to
+ * emitSyncEvent, debounced 2s per user). See src/core/notifications/widget-push.ts.
  */
 
 import { log } from '@/lib/logger'
@@ -30,6 +33,7 @@ export async function register() {
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
     const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
     const { checkSlotNags, purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
+    const { initWidgetPushSync } = await import('@/core/notifications/widget-push')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
     const { purgeOldCompletions } = await import('@/core/tasks/purge-completions')
@@ -96,6 +100,9 @@ export async function register() {
       }
     })
     log.info('cron', 'Notification cron started (every 1 min)')
+
+    // --- WidgetKit push sync (event-driven, not a cron) ---
+    initWidgetPushSync()
 
     // --- Enrichment cron (independent of notifications) ---
     let isEnrichmentRunning = false

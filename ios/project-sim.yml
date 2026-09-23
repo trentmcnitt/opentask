@@ -110,6 +110,7 @@ targets:
       properties:
         com.apple.security.application-groups:
         - group.io.mcnitt.opentask
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets

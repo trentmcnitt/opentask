@@ -198,6 +198,18 @@ targets:
           - GEL3VGTUJX.group.io.mcnitt.opentask
         keychain-access-groups:
           - GEL3VGTUJX.group.io.mcnitt.opentask
+        # WidgetKit push (macOS 26 — see ../ios/OpenTaskWidgets/WidgetPushHandler.swift,
+        # shared into this target above). Apple's docs: "Add the capability to
+        # use remote push notifications to your widget extension target" —
+        # this is that capability. macOS spells it with the
+        # `com.apple.developer.` prefix (iOS uses the bare `aps-environment`)
+        # — see the long comment in OpenTaskMac/OpenTaskMac-Push.entitlements:
+        # a Mac provisioning profile only grants the prefixed form, and Xcode
+        # silently DROPS any entitlement key the profile doesn't grant, with
+        # no build error. Confirmed empirically here too: the bare key signed
+        # and built cleanly while silently missing from the signed binary
+        # (`codesign -d --entitlements -`) until switched to the prefixed key.
+        com.apple.developer.aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac.widgets
