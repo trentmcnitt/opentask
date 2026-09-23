@@ -38,7 +38,15 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * content — §1.1's founding constraint is that the harness adapts to the scale,
  * so nothing is ever hidden permanently, just collapsed behind one tap.
  */
-const GROUP_PREVIEW_COUNT = 5
+/** Today's time slots show this many before "Show more" (§7.3). */
+const SLOT_PREVIEW_COUNT = 5
+/**
+ * Every other grouped view (Projects, and time grouping) shows this many per
+ * group before "Show more" (Trent, 2026-09-23: "cap the number of to-dos that
+ * are shown at 10… otherwise it's too hard to scroll through the projects
+ * when it's not in unified mode"). Unified is one flat list and is not capped.
+ */
+const GROUP_PREVIEW_COUNT = 10
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
@@ -448,12 +456,14 @@ export function TaskList({
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
           // harness adapts to the scale, so a 40-item slot stays fully
-          // reachable while the day still reads at a glance. Only applies to
-          // slot grouping; the other views keep their existing behaviour.
-          const previewed = grouping === 'slot' && !isUnified
+          // reachable while the day still reads at a glance. Every grouped view
+          // previews — Today's slots at 5, the rest at 10 — and only the
+          // unified flat list shows everything.
+          const previewed = !isUnified
+          const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
-            previewed && !isExpanded ? sortedTasks.slice(0, GROUP_PREVIEW_COUNT) : sortedTasks
+            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
           const hiddenCount = sortedTasks.length - visibleTasks.length
 
           return (
@@ -574,7 +584,7 @@ export function TaskList({
                       <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
                     </button>
                   )}
-                  {isExpanded && sortedTasks.length > GROUP_PREVIEW_COUNT && (
+                  {isExpanded && sortedTasks.length > previewCount && (
                     <button
                       type="button"
                       onClick={() => toggleGroupExpanded(group.label)}
@@ -684,11 +694,19 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     byProject.set(task.project_id, list)
   }
 
-  // Sort projects by sort_order
+  // The order Settings shows: sort_order, then NAME — the same rule as the
+  // server's project list (`ORDER BY sort_order, name` in core/projects). It
+  // used to break ties by Map insertion order, which follows the tasks'
+  // soonest-first sort: several projects sharing sort_order 0 then swapped
+  // places whenever a project's soonest task was completed (Trent,
+  // 2026-09-23: completing an Inbox task made the Inbox section jump away).
   const sortedProjectIds = [...byProject.keys()].sort((a, b) => {
     const pa = projectMap.get(a)
     const pb = projectMap.get(b)
-    return (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999)
+    return (
+      (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999) ||
+      (pa?.name ?? '').localeCompare(pb?.name ?? '')
+    )
   })
 
   const groups: TaskGroup[] = []

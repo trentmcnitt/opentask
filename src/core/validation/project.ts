@@ -9,7 +9,8 @@ const colorEnum = z.enum(['red', 'orange', 'yellow', 'green', 'blue', 'purple', 
 export const projectCreateSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(200, 'Project name too long'),
   shared: z.boolean().default(false),
-  sort_order: z.number().int().default(0),
+  // Absent means "at the end" — resolved by the route, which knows the max.
+  sort_order: z.number().int().optional(),
   color: colorEnum.nullable().optional(),
 })
 
