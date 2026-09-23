@@ -245,3 +245,30 @@ export function nextPeriodStart(
   const starts = slots.map((s) => nextSlotStart(s.start_time, timezone, now)).sort()
   return starts[0] ?? null
 }
+
+/**
+ * Where the Reminders pager goes when the slot on screen has just been
+ * finished — its last reminder considered — or null to stay put.
+ *
+ * Trent, 2026-09-22: "if completing a reminder segment when there is a more
+ * recent active segment (like I just did early morning, even though it's
+ * evening), it should go to the next unfinished segment once all items are
+ * completed." So only a slot BEFORE the natural one moves: finishing the slot
+ * the day is in is finishing the day so far, and there is nowhere better to
+ * be. The target is the first slot after the finished one, up to and
+ * including the natural one, that still has something waiting — and the
+ * natural slot itself when all of those are done, since that is where the
+ * pager would have opened anyway. Never past it: a slot that hasn't started
+ * is not "unfinished", it is not yet due.
+ */
+export function slotAfterFinishing(
+  groups: { reminders: unknown[] }[],
+  finished: number,
+  natural: number,
+): number | null {
+  if (finished >= natural) return null
+  for (let i = finished + 1; i <= natural; i++) {
+    if (groups[i].reminders.length > 0) return i
+  }
+  return natural
+}

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
-import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
+import { naturalSlotIndex, slotAfterFinishing, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
@@ -168,6 +168,29 @@ function useRowEditor({
   return { open, modal }
 }
 
+/**
+ * What changed about the slot on screen since the last render, and whether
+ * that was finishing it: the new `seen` to record (null when nothing changed)
+ * and the slot key to move to, if finishing a past slot means moving on.
+ */
+function afterFinishing(
+  seen: { key: string; waiting: number } | null,
+  groups: ReminderGroup[],
+  index: number,
+  natural: number,
+): { seen: { key: string; waiting: number }; to: string | null } | null {
+  const key = groupKey(groups[index])
+  const waiting = groups[index].reminders.length
+  if (seen?.key === key && seen.waiting === waiting) return null
+  const finished = seen?.key === key && seen.waiting > 0 && waiting === 0
+  const target = finished ? slotAfterFinishing(groups, index, natural) : null
+  const landing = groups[target ?? index]
+  return {
+    seen: { key: groupKey(landing), waiting: landing.reminders.length },
+    to: target === null ? null : groupKey(landing),
+  }
+}
+
 interface DashboardRemindersPanelProps {
   onUndo: () => void
   onCompleted: () => void
@@ -215,6 +238,10 @@ export function DashboardRemindersPanel({
   const [overrideKey, setOverrideKey] = useState<string | null>(null)
   // Per-slot uncapped state — a Set so paging away and back remembers it.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
+  // The slot on screen and how many were waiting in it at the last render —
+  // how finishing it is told apart from paging to one already finished. See
+  // `slotAfterFinishing`.
+  const [seen, setSeen] = useState<{ key: string; waiting: number } | null>(null)
 
   // Nothing anywhere today (no reminders waiting, none considered) — nothing
   // to show, the same way `TrackPanel` returns null with no quotas.
@@ -233,6 +260,22 @@ export function DashboardRemindersPanel({
   const group = groups[index]
   const key = groupKey(group)
   const expanded = expandedKeys.has(key)
+  const count = group.reminders.length
+
+  // FINISHING A PAST SLOT MOVES THE PAGER ON (Trent, 2026-09-22 — see
+  // `slotAfterFinishing` for the rule). Only a slot that went from something
+  // waiting to nothing, while on screen, counts: paging to a slot that was
+  // already done leaves you there to look at it. Last check-off and
+  // "Considered all" both qualify. Set during render, not in an effect, so the
+  // emptied slot is never painted before the move.
+  const move = afterFinishing(seen, groups, index, natural)
+  if (move) {
+    setSeen(move.seen)
+    if (move.to) {
+      setOverrideKey(move.to)
+      setShowConsidered(false)
+    }
+  }
 
   const goTo = (nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= groups.length) return
@@ -265,7 +308,6 @@ export function DashboardRemindersPanel({
   // `mainClass` in DashboardClient.tsx): it is exactly the width at which this
   // panel stops sharing vertical space with the day and gets a column of its
   // own, which is the whole reason the narrow cap is tighter.
-  const count = group.reminders.length
   const visible = expanded ? group.reminders : group.reminders.slice(0, WIDE_CAP)
   const hiddenWhenNarrow = count - NARROW_CAP
   const hiddenWhenWide = count - WIDE_CAP
