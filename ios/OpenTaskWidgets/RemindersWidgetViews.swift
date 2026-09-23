@@ -426,6 +426,8 @@ private struct ReminderSlotStrip: View {
         let slotKey: Int
         let state: SlotState
         let isCurrent: Bool
+        /// Considered over the slot's total — how far the indigo has filled.
+        let fraction: Double
     }
 
     private var segments: [Segment] {
@@ -438,7 +440,8 @@ private struct ReminderSlotStrip: View {
                 state = .upcoming
             }
             return Segment(
-                id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex
+                id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex,
+                fraction: Double(group.considered) / Double(waiting + group.considered)
             )
         }
     }
@@ -492,44 +495,30 @@ private struct ReminderSlotStrip: View {
         }
     }
 
-    /// One segment's fill, plus — only for the on-screen slot — a ring.
+    /// One slot: a faint track, filled INDIGO as far as it has been considered
+    /// and GREEN end to end once it is done — the web's `ReminderSlotBar`
+    /// (Trent, 2026-09-23: "when it's partially full, it's either showing full
+    /// indigo or full green when really the indigo should be filling up"). A
+    /// slot whose time has not come shows only the track.
     ///
-    /// NOT a `.stroke` layered on the bar itself via `.overlay(...).padding
-    /// (-N)`: that visually extends past the bar's own reported frame the
-    /// same way the row check-off's tap target does (see `ReminderRow.
-    /// markerBleed`), and it measures correctly, but WidgetKit's snapshot
-    /// renderer clips a view's PAINTED content to its own reported frame —
-    /// unlike a live app window — so the overflowing ring pixels never
-    /// actually appeared (confirmed by sampling the rendered widget: no
-    /// pixel brighter than the fill color anywhere near the current
-    /// segment, despite the height bump measuring correctly). That
-    /// overflow trick stays fine for HIT-TESTING (`segmentBleed` below) —
-    /// tap dispatch reads the layout tree's geometry, not the rasterized
-    /// image — it just can't be reused for drawing.
-    ///
-    /// So the ring is a SEPARATE, taller capsule stroked entirely within
-    /// its OWN frame (`strokeBorder`, inset rather than centered on the
-    /// path, so the 1pt line stays inside the 6pt ring capsule with no
-    /// overflow to clip), with the fill capsule centered on top of it in a
-    /// `ZStack` — both shapes size themselves, nothing draws outside either
-    /// one's own bounds. `.primary` rather than a fixed color so the ring
-    /// holds contrast against the widget background in both light and dark.
-    @ViewBuilder
+    /// THE CURRENT SLOT IS THE ONE AT FULL STRENGTH; every other segment is
+    /// dimmed (option B of five he was shown, rendered side by side). This
+    /// replaced a 1pt white ring he found hard to look at, which the widget
+    /// also clipped at both rounded ends. Nothing is drawn outside the bar's
+    /// own frame, so nothing can be clipped.
     private func segmentBar(for segment: Segment) -> some View {
-        if segment.isCurrent {
-            ZStack {
-                Capsule()
-                    .strokeBorder(Color.primary, lineWidth: 1)
-                    .frame(height: 6)
-                Capsule()
-                    .fill(color(for: segment.state))
-                    .frame(height: 4)
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.13))
+                if segment.state != .upcoming, segment.fraction > 0 {
+                    Capsule()
+                        .fill(color(for: segment.state))
+                        .frame(width: max(geo.size.height, geo.size.width * segment.fraction))
+                }
             }
-        } else {
-            Capsule()
-                .fill(color(for: segment.state))
-                .frame(height: 3)
         }
+        .frame(height: 4)
+        .opacity(segment.isCurrent ? 1 : 0.4)
     }
 
     private func color(for state: SlotState) -> Color {
