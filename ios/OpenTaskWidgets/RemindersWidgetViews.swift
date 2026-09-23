@@ -38,6 +38,7 @@ struct RemindersWidgetView: View {
             RemindersSmallView(entry: entry)
         case .systemMedium:
             RemindersListView(entry: entry, maxRows: 3, isLarge: false)
+                .backgroundTapOpens(WidgetLink.reminders)
         default:
             // 6 was tuned against the OLD flat per-row cost (2 lines always
             // reserved). Both platforms now size rows to their real content
@@ -46,6 +47,7 @@ struct RemindersWidgetView: View {
             // as fit" well before the card is full on either one. Raised to
             // 10 on both — `listContent`'s candidate list matches.
             RemindersListView(entry: entry, maxRows: 10, isLarge: true)
+                .backgroundTapOpens(WidgetLink.reminders)
         }
     }
 }

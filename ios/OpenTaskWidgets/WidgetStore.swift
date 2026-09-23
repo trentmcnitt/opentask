@@ -291,80 +291,51 @@ enum WidgetStore {
     // through a slot keeps `hasRecentInteraction()` true, so every repaint came
     // from that stale cache — and 90s after a tap its tombstone expired and the
     // item was drawn again. Trent, 2026-09-23: "the reminders started popping
-    // back up. When I'd complete one, one would replace it." He re-tapped
-    // "Check GitHub issues" and, the server having already advanced it, that
-    // second completion skipped tomorrow's occurrence.
+    // back up. When I'd complete one, one would replace it."
     //
-    // So a completion the SERVER CONFIRMED is remembered for 15 minutes, keyed
-    // to the occurrence that was done — its `due_at` when it was tapped. An item
-    // is hidden only while it still shows THAT occurrence: the next occurrence
-    // of a recurring task (same id, later `due_at`) is real and still drawn.
-    // When the item was not in any cache at tap time there is no occurrence to
-    // match, so the id alone is hidden for the window.
+    // So a completion the SERVER CONFIRMED is taken out of the cached payload
+    // itself — the cache stops claiming the item is waiting, and nothing else
+    // has to remember it. A fresh fetch then replaces the cache wholesale and
+    // is always believed.
+    //
+    // The first version kept a separate 15-minute "hide this occurrence" list
+    // instead, and it outranked the server: un-checking a reminder in the app
+    // brings it back with the SAME due_at, so the widget went on hiding it
+    // (Trent, the same afternoon: "I unchecked… but they're not showing on my
+    // widget"). Editing the cache has no such case — there is nothing left to
+    // disagree with the next fetch.
 
-    private static let confirmedCompletionsKey = "widget.confirmedCompletions"
-    private static let confirmedTTL: TimeInterval = 15 * 60
-
-    private struct ConfirmedCompletion: Codable {
-        let at: Double
-        /// The occurrence completed. nil with `matchAny` when it was unknown.
-        let dueAt: String?
-        let matchAny: Bool
-    }
-
-    /// The `due_at` the widget is currently showing for `id`, from whichever
-    /// cache holds it. Read at TAP time, before any fetch replaces the cache
-    /// with the advanced occurrence. `.none` when no cache has the item.
-    static func cachedOccurrence(of id: Int) -> String?? {
-        let reminders = loadReminders()?.value.groups.flatMap(\.reminders) ?? []
-        let tasks = loadTasks()?.value.tasks ?? []
-        if let hit = (reminders + tasks).first(where: { $0.id == id }) { return .some(hit.dueAt) }
-        return .none
-    }
-
-    /// The server confirmed `id`'s completion of `occurrence` (from
-    /// `cachedOccurrence(of:)`); hide that occurrence for `confirmedTTL`.
-    static func confirmCompletion(_ id: Int, occurrence: String??, now: Date = Date()) {
+    /// The server confirmed `id`'s completion: drop it from both cached
+    /// payloads. In Reminders it moves to its slot's `considered` count, so
+    /// the slot strip and the "done" states read it straight away.
+    static func confirmCompletion(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
-        var map = confirmedMap(now: now)
-        switch occurrence {
-        case .some(let dueAt):
-            map[String(id)] = ConfirmedCompletion(
-                at: now.timeIntervalSince1970, dueAt: dueAt, matchAny: false)
-        case .none:
-            map[String(id)] = ConfirmedCompletion(
-                at: now.timeIntervalSince1970, dueAt: nil, matchAny: true)
+        if let cached = loadReminders() {
+            let groups = cached.value.groups.map { group -> ReminderGroupDTO in
+                let remaining = group.reminders.filter { $0.id != id }
+                return ReminderGroupDTO(
+                    slot: group.slot,
+                    reminders: remaining,
+                    considered: group.considered + (group.reminders.count - remaining.count)
+                )
+            }
+            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
         }
-        if let data = try? JSONEncoder().encode(map) {
-            defaults?.set(data, forKey: confirmedCompletionsKey)
+        if let cached = loadTasks() {
+            let tasks = cached.value.tasks.filter { $0.id != id }
+            save(
+                TasksCache(tasks: tasks, projects: cached.value.projects),
+                forKey: tasksKey, at: cached.fetchedAt)
         }
     }
 
-    /// Live entries only; expired ones are dropped on read.
-    private static func confirmedMap(now: Date) -> [String: ConfirmedCompletion] {
-        guard let data = defaults?.data(forKey: confirmedCompletionsKey),
-              let map = try? JSONDecoder().decode([String: ConfirmedCompletion].self, from: data)
-        else { return [:] }
-        let cutoff = now.timeIntervalSince1970 - confirmedTTL
-        return map.filter { $0.value.at >= cutoff }
-    }
-
-    private static func isConfirmedDone(
-        _ task: TaskDTO, in map: [String: ConfirmedCompletion]
-    ) -> Bool {
-        guard let done = map[String(task.id)] else { return false }
-        return done.matchAny || done.dueAt == task.dueAt
-    }
-
-    /// Remove tombstoned items, and confirmed completions of the occurrence
-    /// shown, from a fetched or cached payload. Every widget draws through
-    /// this, so it is the one place both rules live.
+    /// Remove tombstoned (in-flight) completions from a fetched or cached
+    /// payload. Every widget draws through this.
     static func filterPending(_ tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
         let pending = pendingCompletions(now: now)
-        let confirmed = confirmedMap(now: now)
-        guard !pending.isEmpty || !confirmed.isEmpty else { return tasks }
-        return tasks.filter { !pending.contains($0.id) && !isConfirmedDone($0, in: confirmed) }
+        guard !pending.isEmpty else { return tasks }
+        return tasks.filter { !pending.contains($0.id) }
     }
 
     // MARK: - Undo window (2026-09-23, the accidental-tap fix)
@@ -456,7 +427,6 @@ enum WidgetStore {
     static func clearAllPendingState() {
         defaults?.removeObject(forKey: pendingCompletionsKey)
         defaults?.removeObject(forKey: pendingProgressKey)
-        defaults?.removeObject(forKey: confirmedCompletionsKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads

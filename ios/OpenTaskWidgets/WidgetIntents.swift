@@ -150,9 +150,6 @@ struct CompleteTaskIntent: AppIntent {
         // reads as a dead button. The tombstone hides the item through the
         // reconciling fetch; a FAILED call clears it so the item honestly
         // reappears, never an alert the user can't act on from the Home Screen.
-        // The occurrence on screen, read before anything can refresh the cache
-        // with the advanced one — see "Confirmed completions" in WidgetStore.
-        let occurrence = WidgetStore.cachedOccurrence(of: taskId)
         WidgetStore.stagePendingCompletion(taskId)
         // Reminders only (§6/§7 — Tasks has no slot concept to advance
         // through): Trent, 2026-09-23, "once I finish morning it should take
@@ -174,7 +171,7 @@ struct CompleteTaskIntent: AppIntent {
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
-            WidgetStore.confirmCompletion(taskId, occurrence: occurrence)
+            WidgetStore.confirmCompletion(taskId)
             // §8-adjacent Undo affordance (2026-09-23) — see
             // WidgetStore.recordMutation's doc for the window this opens.
             WidgetStore.recordMutation(now: mutationInstant)

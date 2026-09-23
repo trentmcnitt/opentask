@@ -44,6 +44,7 @@ struct TrackWidgetView: View {
             TrackSmallView(entry: entry)
         case .systemMedium:
             TrackListView(entry: entry, capacity: 3, isLarge: false)
+                .backgroundTapOpens(WidgetLink.quotas)
         default:
             // Eight, not six: a real quota corpus is around eight items, and at
             // six the 4×4 was paging a list that would have fit — the user read
@@ -51,6 +52,7 @@ struct TrackWidgetView: View {
             // Home Screen list should never need. See `TrackRow` for what got
             // compacted to buy the two extra rows.
             TrackListView(entry: entry, capacity: 8, isLarge: true)
+                .backgroundTapOpens(WidgetLink.quotas)
         }
     }
 }
