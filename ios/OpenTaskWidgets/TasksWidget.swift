@@ -25,6 +25,13 @@ struct TasksEntry: TimelineEntry {
     /// The header subtitle's "Undid: …" / "Redid: …" indication — see
     /// `RemindersEntry.actionDescription`'s doc.
     let actionDescription: String?
+    /// EVERY project, for color lookups — `projects` above is only the ones
+    /// with something due today (it is the chevrons' ring). Up next shows
+    /// tasks from any project, so looking colors up in the ring painted a
+    /// project with nothing due today gray: Trent's red Work tasks
+    /// (2026-09-23). Defaulted so sample entries needn't pass it; empty
+    /// falls back to `projects`.
+    var colorProjects: [ProjectDTO] = []
 
     /// Two unified pages up front (2026-09-23, item 4) — Trent: "Instead of
     /// Up Next I'd also like to have just a Today one… We need a Today one
@@ -62,7 +69,8 @@ struct TasksEntry: TimelineEntry {
     /// task's project has somehow dropped out of `projects` (a project
     /// deleted between fetches, say) rather than crashing or guessing a color.
     func projectColor(for task: TaskDTO) -> Color {
-        WidgetTheme.projectColor(projects.first(where: { $0.id == task.projectId })?.color)
+        let all = colorProjects.isEmpty ? projects : colorProjects
+        return WidgetTheme.projectColor(all.first(where: { $0.id == task.projectId })?.color)
     }
 
     func overdueCount(now: Date = Date()) -> Int {
@@ -193,7 +201,8 @@ struct TasksProvider: TimelineProvider {
                         isSignedOut: false,
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
-                        actionDescription: WidgetStore.lastActionDescription(at: due)
+                        actionDescription: WidgetStore.lastActionDescription(at: due),
+                        colorProjects: entry.colorProjects
                     )
                 )
             }
@@ -212,7 +221,8 @@ struct TasksProvider: TimelineProvider {
                         isSignedOut: false,
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
-                        actionDescription: nil
+                        actionDescription: nil,
+                        colorProjects: entry.colorProjects
                     )
                 )
             }
@@ -281,7 +291,8 @@ struct TasksProvider: TimelineProvider {
             isSignedOut: false,
             canUndo: WidgetStore.canUndo,
             canRedo: WidgetStore.canRedo,
-            actionDescription: WidgetStore.lastActionDescription(at: now)
+            actionDescription: WidgetStore.lastActionDescription(at: now),
+            colorProjects: snapshot.projects
         )
     }
 }
