@@ -725,7 +725,7 @@ test.describe('Reminders surface', () => {
     }
   })
 
-  test('every slot starts open, later ones included, and lands on the current slot', async ({
+  test('every slot starts open, later ones included, and the page opens at the top', async ({
     authenticatedPage: page,
   }) => {
     // One thought in the first slot of the day and one in the last, so the
@@ -745,6 +745,9 @@ test.describe('Reminders surface', () => {
       await expect(surface.getByRole('button', { expanded: false })).toHaveCount(0)
       await expect(page.getByRole('option', { name: 'An early unfinished thought' })).toBeVisible()
       await expect(page.getByRole('option', { name: 'A thought for much later' })).toBeVisible()
+      // No scroll on arrival (Trent, 2026-09-22): it used to jump to the slot
+      // the day was in, which at night is the bottom of the page.
+      expect(await page.evaluate(() => window.scrollY)).toBe(0)
 
       // A later slot is dimmed rather than closed, and its items still act.
       const later = page.locator('[data-slot-group][data-slot-started="false"]').first()
