@@ -1,21 +1,24 @@
 'use client'
 
-import { Fragment, useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, ChevronDown, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { trackedItems } from '@/lib/slot-view'
 import {
   groupByLabel,
-  periodSuffix,
   quotaGroupSummary,
   quotaShortfall,
+  trackSections,
   trackState,
   trackStream,
   trackStripeClass,
+  TRACK_NOTCH_CLASS,
+  type TrackSection,
   type TrackStreamItem,
 } from '@/lib/track'
 import { useTrackProgress } from '@/hooks/useTrackProgress'
+import { useTimezone } from '@/hooks/useTimezone'
 import { useFoldState } from '@/components/FoldStateProvider'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useHorizontalSwipe } from '@/hooks/useHorizontalSwipe'
@@ -36,7 +39,7 @@ import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useLabelConfig, useTrackPanelPreference } from '@/components/PreferencesProvider'
-import type { LabelColor, Task } from '@/types'
+import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
  * Track (REDESIGN-V03 §5): the quotas' home on the Tasks page.
@@ -72,54 +75,70 @@ import type { LabelColor, Task } from '@/types'
  *
  * - The quotas already met when the panel LOADS are put away (`useMetAtLoad`).
  *   One met during the session stays where it is, green, until the next load.
- * - A label whose every quota was put away leaves the stream, title and all,
- *   and stacks at the card's foot as one green chip — "✓ HOUSE 2" — so a
- *   finished category is seen to be finished (`FinishedClusters`).
+ * - A label whose every quota was put away leaves its section, title and all
+ *   — nothing stands in for it (see `finishedClusterInSection`, below the
+ *   period redesign, for why and what used to be there).
  * - A label that is partly done says how many, beside its name (`✓ 2`).
  * - The header's top right carries "3 of 19" — met of total — and tapping it
  *   shows the met ones in place, copying the Reminders slot's "X of Y"
  *   exactly (`TrackHeader`). The choice lives in the fold store: it survives
- *   navigating away and back, and a reload puts them away again.
- * - The order is still label then title. Nothing moves on a tap.
+ *   navigating away and back, and a reload puts them away again. This count
+ *   is panel-wide, across every period — unaffected by the grouping below.
+ * - The order is still label then title within a period. Nothing moves on a tap.
  *
- * GROUPED BY LABEL, AS ONE STREAM (Trent, 2026-09-09, picking variation G of
- * the `track-by-label` mockup, with D's stripe). It used to be one card per
- * period — DAY / WEEK / MONTH, each with a summed progress bar. The label is
- * the question a quota answers to ("there's a bunch of stuff for the kids and
- * there are other things"), and the period is answered by two letters on the
- * chip, so:
+ * GROUPED BY PERIOD, THEN LABEL (Trent, 2026-09-23, choosing `mock4` — a
+ * period-first mock — over the label-first design this panel shipped with
+ * from 2026-09-09). A quota is answerable to two questions — "what is it
+ * about" (the label) and "what clock is it on" (the period) — and Trent tried
+ * the label first, with the period a muted two-letter suffix on the chip
+ * ("0/3·wk"). Living with it, the suffix read as an afterthought and a week's
+ * worth of "how am I doing" had no single number to look at. The period comes
+ * back as the outer grouping; the label clusters from the 09-09 design move
+ * inside it, unchanged in spirit — the change is what wraps them.
  *
- * - ONE card, holding ONE wrapping row. A cluster opens with its label in the
- *   panel's own small uppercase run — a plain flex item, so its chips flow
- *   after it on the same line and wrap with everything else.
- * - A TITLE ALWAYS STARTS ITS OWN ROW (Trent, 2026-09-09, on the dev build).
- *   The mockup let a title attach after the previous cluster's last chip, which
- *   is what made variation G the shortest of the seven drawn — but "house"
- *   landing mid-row after a health chip read as confusing rather than compact.
- *   A zero-height full-width `<li>` before each title after the first forces
- *   the wrap; the title itself keeps no left margin, so it sits flush with the
- *   card's left edge and the chips follow it across. The break is layout only,
- *   which is why it lives here and not in `trackStream`.
- * - NO summed bar. A bar across a group that mixes days, weeks and months is
- *   "2 a day + 3 a week + 1 a month = 7", a number nobody can act on. The
- *   Quotas page dropped it for the same reason when it moved to labels.
- * - The period lives on the chip instead, as a muted suffix: 0/2·d, 0/3·wk.
- * - A 3px stripe down the chip's left edge in the label's colour, and the same
- *   colour as a dot on the title (variation D). The chip's radius drops from a
- *   full pill to 10px so the stripe reads as a stripe rather than a crescent.
- *   Colour comes from `label_config`, the same place every other label colour
- *   in the app comes from; a label nobody has coloured, and the unlabelled
- *   cluster, get a neutral one rather than a palette invented in code. Green is
- *   reserved for "met", so `trackStripeClass` declines it: a label the user
- *   coloured green gets a neutral stripe HERE, and keeps its green chips
- *   everywhere else.
+ * - One `<li data-quota-period>` per period — Today, This week, This month,
+ *   This year, then a period-less "No period" bucket last — built by
+ *   `trackSections`, which also does the period's math (elapsed fraction,
+ *   days left, the summed bar). Ordered day-to-year and empty periods are
+ *   omitted, both `groupByPeriod`'s doing (`@/lib/track`).
+ * - EACH SECTION'S HEADING IS ONE LINE (`PeriodHeading`): the period name,
+ *   bold and full-strength — not muted, unlike a label's — so it outranks the
+ *   clusters under it; a muted "ends tonight" / "N days left"; an inline bar
+ *   that flexes to fill whatever room is left; "**M** of N" quotas met. A
+ *   THIN DIVIDER (a top border) sits between sections, never before the first.
+ * - THE BAR IS HONEST NOW BECAUSE A SECTION SHARES ONE CLOCK. The 09-09 design
+ *   dropped the summed bar because a label group mixes days, weeks and months
+ *   — "2 a day + 3 a week + 1 a month = 7" meant nothing. A period section
+ *   cannot mix: every quota in it shares one period, so
+ *   `sum(min(current,target)) / sum(target)` (partial credit, capped per
+ *   quota — `trackSummary`) is a real number again. Indigo while short of the
+ *   target, green when every quota in the section is met.
+ * - THE NOTCH marks how much of the period has already run — a 2px line
+ *   inside the bar, clipped by its `overflow-hidden`, never sticking out. ONE
+ *   flat, faint tone at every fraction, on the fill or off it (Trent,
+ *   2026-09-23: it must not switch shade by what it sits over) — see
+ *   `TRACK_NOTCH_CLASS`, tuned in that one place. No notch on the no-period
+ *   section: there is no clock to mark. The bar carries its own accessible
+ *   description (`aria-valuetext`, e.g. "67% done, 43% of the week gone") —
+ *   the notch itself is decorative and `aria-hidden`.
+ * - THE PERIOD SUFFIX IS GONE FROM THE CHIP ("0/2·wk" → "0/2"). The section it
+ *   sits in already says the period; repeating it on every chip was the
+ *   afterthought that started this redesign. The chip's `aria-label` still
+ *   spells the period out for a screen reader, since nothing else there does.
+ * - INSIDE A SECTION, the label clusters are exactly the 09-09 design:
+ *   `trackStream`, called per section rather than once over the whole panel
+ *   (a "kids" label with both weekly and monthly quotas now gets a cluster in
+ *   EACH section, which is correct — a cluster spanning periods could not
+ *   carry one honest bar either). A LABEL NOW GETS ITS OWN LINE, chips
+ *   wrapping in below it (`mock4`'s `.lab-own` + `.flow`, not the 09-09 mock's
+ *   title-as-a-peer) — a cluster title's flex item is `basis-full` at every
+ *   fold state now, where it used to share its row with chips while open. The
+ *   3px label-colour stripe, the neutral fallback, and green's exclusion for
+ *   "met" (`trackStripeClass`) are unchanged.
  *
- * OPEN, the same clusters in the same order become headings over the full
- * rows. Not drawn in the mockup — that was about the folded state, which is how
- * the panel ships — but the alternative was for the grouping to vanish the
- * moment the panel is expanded, and for the rows to be a flat list of 19 with
- * no organising idea at all. The stripe stays on the chips only: a row already
- * carries its own bar down that side of the panel.
+ * OPEN, the same sections and clusters become headings over the full rows —
+ * unchanged in spirit from the 09-09 design, just nested inside a period
+ * section now instead of standing alone.
  *
  * This panel and the Quotas page are the ONLY places a quota appears (Trent,
  * 2026-09-08: "a quota is not a task"). It used to be a plain row in the All
@@ -197,17 +216,15 @@ const SECTION_SUMMARY: FoldClasses = {
 }
 
 /**
- * A cluster heading's width in the wrapping chip row.
- *
- * Open, it is auto — the whole point of the layout is that the chips flow after
- * the heading on its line. Shut, there are no chips to flow, and the heading
- * takes the full row so its meter and count can sit flush right.
+ * A cluster heading's width in the wrapping chip row: always the full row now
+ * (`mock4`, 2026-09-23), open or shut — a label gets its own line and its
+ * chips wrap in below it, where the 09-09 design let an open cluster's chips
+ * flow onto the title's own line. Unlike `CLUSTER_MET_DIM` and the fold
+ * classes below, this does not vary by fold state, so it is a plain string
+ * rather than a `FoldClasses` — there is nothing left for `foldClass` to pick
+ * between.
  */
-const CLUSTER_BASIS: FoldClasses = {
-  open: '',
-  shut: 'basis-full',
-  auto: '',
-}
+const CLUSTER_TITLE_ROW = 'max-w-full basis-full mt-1.5 mb-1 first:mt-0'
 
 /** A met cluster steps back — but only while it is shut and standing in for its chips. */
 const CLUSTER_MET_DIM: FoldClasses = {
@@ -308,24 +325,41 @@ interface TrackPanelProps {
   onRefresh: () => Promise<void>
 }
 
+/**
+ * "Now," for the period sections' math — refreshed every minute, not the 15s
+ * convention elsewhere in the app (`useQuickSelectDate`, `QuickActionPanel`).
+ * Those redraw a relative time like "in 3 mins"; the fastest thing a period
+ * section shows is the DAILY notch, which moves by whole minutes at best, so
+ * a 15s tick would just spend renders nobody can see move.
+ */
+function useTrackNow(): Date {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  return now
+}
+
 export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanelProps) {
   const { trackExpanded: open, setTrackExpanded: setOpen } = useTrackPanelPreference()
   const { labelConfig } = useLabelConfig()
+  const timezone = useTimezone()
+  const now = useTrackNow()
   const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh })
   const section = useResponsiveFold('track-section')
   const clusters = useResponsiveFolds('track-cluster')
   const quotas = trackedItems(tasks)
 
-  // What each cluster's shut header says. Keyed the same way the DOM is, so a
-  // heading and its summary can never be looking at different groups.
-  const summaries = clusterSummaries(quotas)
+  const sections = trackSections(quotas, timezone, now)
+  // What each cluster's shut header says. Keyed the same way the DOM is (one
+  // key per period+label), so a heading and its summary can never be looking
+  // at different groups.
+  const summaries = clusterSummaries(sections)
 
   const showMet = useShowMet()
   const metAtLoad = useMetAtLoad(quotas)
-  const { stream, finished } = putAwayMet(
-    withClusters(trackStream(quotas, labelConfig)),
-    (task) => !showMet.shown && metAtLoad.has(task.id) && trackState(task).met,
-  )
+  const isPutAway = (task: Task) => !showMet.shown && metAtLoad.has(task.id) && trackState(task).met
 
   if (quotas.length === 0) return null
 
@@ -345,71 +379,15 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
         id="track-card"
         className={cn('bg-muted/30 rounded-2xl p-2', foldClass(section.state, SECTION_CARD))}
       >
-        {open ? (
-          <ul aria-label="Quotas">
-            {stream.map(({ item, cluster }) =>
-              item.kind === 'title' ? (
-                <ClusterTitle
-                  key={`title-${cluster}`}
-                  item={item}
-                  summary={summaries.get(cluster)}
-                  state={clusters.stateOf(cluster)}
-                  open={clusters.isOpen(cluster)}
-                  onToggle={() => clusters.toggle(cluster)}
-                  className="px-2 pt-3 pb-1 first:pt-1"
-                />
-              ) : (
-                <TrackRow
-                  key={item.task.id}
-                  task={item.task}
-                  foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
-                />
-              ),
-            )}
-          </ul>
-        ) : (
-          // One wrapping row for the whole panel: titles and chips are peers in
-          // it, which is the entire trick — see the block comment above.
-          <ul className="flex flex-wrap items-center gap-1.5" aria-label="Quotas">
-            {stream.map(({ item, cluster }, i) =>
-              item.kind === 'title' ? (
-                <Fragment key={`title-${cluster}`}>
-                  {/* The wrap that puts this title at the start of a row. A
-                      full-basis, zero-height item fills whatever is left of the
-                      line above and takes no height of its own; the row gap on
-                      either side of it is the space between clusters. Not
-                      before the first title, which already starts row one. */}
-                  {i > 0 && <li aria-hidden="true" className="h-0 basis-full" />}
-                  <ClusterTitle
-                    item={item}
-                    summary={summaries.get(cluster)}
-                    state={clusters.stateOf(cluster)}
-                    open={clusters.isOpen(cluster)}
-                    onToggle={() => clusters.toggle(cluster)}
-                    className={cn(
-                      'max-w-full',
-                      foldClass(clusters.stateOf(cluster), CLUSTER_BASIS),
-                    )}
-                  />
-                </Fragment>
-              ) : (
-                <TrackChip
-                  key={item.task.id}
-                  task={item.task}
-                  color={item.color}
-                  foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
-                  detailOpen={detail.openId === item.task.id}
-                  onOpenDetail={detail.openPopover}
-                  onCloseDetail={detail.closePopover}
-                  onEdit={detail.openEditor}
-                  onDeleteQuota={detail.deleteFromPopover}
-                />
-              ),
-            )}
-          </ul>
-        )}
-
-        <FinishedClusters finished={finished} spaced={stream.length > 0} onShow={showMet.toggle} />
+        <TrackSectionsList
+          sections={sections}
+          open={open}
+          labelConfig={labelConfig}
+          isPutAway={isPutAway}
+          summaries={summaries}
+          clusters={clusters}
+          detail={detail}
+        />
 
         {/* The phone's only route between chips and rows. See the block comment
             above: the desktop header button that does this is `sm:hidden`'s
@@ -433,8 +411,20 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
   )
 }
 
-function clusterSummaries(quotas: Task[]) {
-  return new Map(groupByLabel(quotas).map((g) => [clusterKey(g.label), quotaGroupSummary(g.tasks)]))
+/**
+ * What each period+label cluster's shut header says — `quotaGroupSummary`
+ * over that section's slice of the corpus, keyed the same way the DOM and the
+ * fold store are (`sectionClusterKey`), so a "kids" cluster under This week
+ * and a "kids" cluster under This month never share a summary or a fold.
+ */
+function clusterSummaries(sections: TrackSection[]): Map<string, { count: number; met: number }> {
+  const out = new Map<string, { count: number; met: number }>()
+  for (const s of sections) {
+    for (const g of groupByLabel(s.tasks)) {
+      out.set(sectionClusterKey(s.key, g.label), quotaGroupSummary(g.tasks))
+    }
+  }
+  return out
 }
 
 const SHOW_MET_KEY = 'track-show-met'
@@ -474,7 +464,11 @@ function useMetAtLoad(quotas: Task[]): ReadonlySet<number> {
   return ids ?? new Set()
 }
 
-/** A label whose every quota was put away: it becomes one chip at the foot. */
+/**
+ * A label cluster whose every quota was put away, inside one period section.
+ * See `finishedClusterInSection`, right below `putAwayMet`, for what becomes
+ * of it.
+ */
 interface FinishedCluster {
   cluster: string
   name: string
@@ -514,58 +508,212 @@ function putAwayMet(
 }
 
 /**
- * The finished labels, stacked at the foot of the card as chips.
+ * How a period section marks a label cluster it put away in full.
  *
- * Trent, 2026-09-22: "If we finish everything for a given category, I want to
- * see that that category was finished. The category can maybe be moved to the
- * bottom. They can kind of stack up like chips, with maybe the count of how
- * many things got completed." So each is the label's name, a check, and how
- * many quotas it closed — green, because green is this panel's word for met.
- * Tapping one shows the met quotas, which is where you would go to see what
- * those were.
- *
- * Only labels finished AT LOAD land here (see `useMetAtLoad`). One finished
- * during the session stays in place until the next load.
+ * STILL BEING DECIDED (Trent, 2026-09-23, mid-`mock4`). Before the period
+ * redesign, a fully-put-away label stacked as a green "✓ HOUSE 2" chip at the
+ * card's foot — `FinishedClusters`, which this replaced (Trent, 2026-09-22:
+ * "the category can maybe be moved to the bottom... stack up like chips").
+ * Trent disliked that box specifically INSIDE a period section, where the
+ * section's own heading already says "M of M" once everything in it is done,
+ * so for now this is a no-op: the cluster simply leaves the section, like any
+ * other put-away item, with nothing standing in for it. Isolated as its own
+ * function, fed the real data either way, so the eventual answer replaces
+ * only this — not `sectionBodyItems` or the section layout around it.
  */
-function FinishedClusters({
-  finished,
-  spaced,
-  onShow,
+function finishedClusterInSection(_finished: FinishedCluster[]): null {
+  return null
+}
+
+/**
+ * The fold-state and DOM key for one period section's one label cluster —
+ * `${period}:${label}`, so "kids" under This week and "kids" under This month
+ * never share a fold or a summary. See `clusterKey` for the label half.
+ */
+function sectionClusterKey(sectionKey: string, label: string | null): string {
+  return `${sectionKey}:${clusterKey(label)}`
+}
+
+/**
+ * One section's title/chip stream: `trackStream` scoped to that section's
+ * quotas, cluster-tagged, with quotas met at load put away — the same
+ * `putAwayMet` the pre-period panel used, run once per section so a cluster
+ * spanning periods (a label with both weekly and monthly quotas) is judged,
+ * and put away, independently in each.
+ */
+function sectionBodyItems(
+  section: TrackSection,
+  labelConfig: LabelConfig[],
+  isPutAway: (task: Task) => boolean,
+): { item: TrackStreamItem; cluster: string }[] {
+  const tagged = withClusters(trackStream(section.tasks, labelConfig), section.key)
+  const { stream, finished } = putAwayMet(tagged, isPutAway)
+  finishedClusterInSection(finished)
+  return stream
+}
+
+/** A thin divider between period sections — never before the first. */
+const SECTION_DIVIDER = 'border-foreground/10 mt-3 border-t pt-3'
+
+/**
+ * The panel's body: one `<li data-quota-period>` per section, each holding its
+ * heading and — unless every quota in it was put away (`sectionBodyItems`
+ * returns empty) — its label clusters, as chips or as rows depending on
+ * `open`. A fully met section renders ONLY its heading (Trent, 2026-09-23: no
+ * body text once a section says "M of M") — that is this length check, not a
+ * separate case, since `putAwayMet` only ever empties a section by putting
+ * away everything in it.
+ *
+ * ONE outer `<ul aria-label="Quotas">` — sections are `<li>`s inside it,
+ * rather than one list per section, so `getByRole('list', { name: 'Quotas' })`
+ * still finds exactly one list, as it always has.
+ */
+function TrackSectionsList({
+  sections,
+  open,
+  labelConfig,
+  isPutAway,
+  summaries,
+  clusters,
+  detail,
 }: {
-  finished: FinishedCluster[]
-  /** There are quotas above, so leave a gap. */
-  spaced: boolean
-  onShow: () => void
+  sections: TrackSection[]
+  open: boolean
+  labelConfig: LabelConfig[]
+  isPutAway: (task: Task) => boolean
+  summaries: Map<string, { count: number; met: number }>
+  clusters: ReturnType<typeof useResponsiveFolds>
+  detail: ReturnType<typeof useTrackChipDetail>
 }) {
-  if (finished.length === 0) return null
   return (
-    <ul
-      aria-label="Finished"
-      data-track-finished
-      className={cn('flex flex-wrap items-center gap-1.5', spaced && 'mt-3')}
-    >
-      {finished.map((f) => (
-        <li key={f.cluster}>
-          <button
-            type="button"
-            data-track-finished-cluster={f.cluster}
-            onClick={onShow}
-            aria-label={`${f.name}: all ${f.count} met — show them`}
-            className="flex h-7 items-center gap-1.5 rounded-[10px] border border-green-600/30 bg-green-600/10 px-2.5 text-[11px] font-semibold tracking-widest text-green-700 uppercase transition-colors hover:bg-green-600/15 dark:text-green-400"
-          >
-            <span
-              aria-hidden="true"
-              className={cn('size-2 shrink-0 rounded-full', trackStripeClass(f.color))}
-            />
-            {f.name}
-            <span className="flex items-center gap-0.5 tracking-normal tabular-nums">
-              <Check className="size-3" strokeWidth={3} aria-hidden="true" />
-              {f.count}
-            </span>
-          </button>
-        </li>
-      ))}
+    <ul aria-label="Quotas">
+      {sections.map((s, i) => {
+        const bodyItems = sectionBodyItems(s, labelConfig, isPutAway)
+        return (
+          <li key={s.key} data-quota-period={s.key} className={cn(i > 0 && SECTION_DIVIDER)}>
+            <PeriodHeading section={s} />
+            {bodyItems.length > 0 &&
+              (open ? (
+                <ul>
+                  {bodyItems.map(({ item, cluster }) =>
+                    item.kind === 'title' ? (
+                      <ClusterTitle
+                        key={`title-${cluster}`}
+                        item={item}
+                        summary={summaries.get(cluster)}
+                        state={clusters.stateOf(cluster)}
+                        open={clusters.isOpen(cluster)}
+                        onToggle={() => clusters.toggle(cluster)}
+                        className="px-2 pt-3 pb-1 first:pt-1"
+                      />
+                    ) : (
+                      <TrackRow
+                        key={item.task.id}
+                        task={item.task}
+                        foldClassName={foldClass(clusters.stateOf(cluster), CLUSTER_ROW)}
+                      />
+                    ),
+                  )}
+                </ul>
+              ) : (
+                // One wrapping row per section: titles and chips are peers in
+                // it, the section's own trick inherited from the label-first
+                // panel — see the block comment above.
+                <ul className="flex flex-wrap items-center gap-1.5">
+                  {bodyItems.map(({ item, cluster }) =>
+                    item.kind === 'title' ? (
+                      <ClusterTitle
+                        key={`title-${cluster}`}
+                        item={item}
+                        summary={summaries.get(cluster)}
+                        state={clusters.stateOf(cluster)}
+                        open={clusters.isOpen(cluster)}
+                        onToggle={() => clusters.toggle(cluster)}
+                        className={CLUSTER_TITLE_ROW}
+                      />
+                    ) : (
+                      <TrackChip
+                        key={item.task.id}
+                        task={item.task}
+                        color={item.color}
+                        foldClassName={foldClass(clusters.stateOf(cluster), FOLD_BODY_BLOCK)}
+                        detailOpen={detail.openId === item.task.id}
+                        onOpenDetail={detail.openPopover}
+                        onCloseDetail={detail.closePopover}
+                        onEdit={detail.openEditor}
+                        onDeleteQuota={detail.deleteFromPopover}
+                      />
+                    ),
+                  )}
+                </ul>
+              ))}
+          </li>
+        )
+      })}
     </ul>
+  )
+}
+
+/**
+ * A period section's heading — period first, bold and full-strength ink so it
+ * outranks the muted label headings beneath it (`mock4`: "TODAY" reads darker
+ * than "HEALTH"). One line: the period name · a muted "ends tonight" / "N days
+ * left" (omitted for the no-period section, which has no clock) · a bar that
+ * flexes to fill whatever room is left · "**M** of N" quotas met.
+ *
+ * Not a button — nothing here folds. Only the label clusters inside a section
+ * (`ClusterTitle`) and the mobile section card (`TrackHeader`) do.
+ */
+function PeriodHeading({ section }: { section: TrackSection }) {
+  const fillPct = Math.round(section.barFraction * 100)
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      <span className="text-foreground shrink-0 text-[11px] font-bold tracking-widest whitespace-nowrap uppercase">
+        {section.heading}
+      </span>
+      {section.timeLeft && (
+        <span className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap">
+          {section.timeLeft}
+        </span>
+      )}
+      <span
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={fillPct}
+        aria-valuetext={section.barAriaLabel}
+        data-track-period-bar
+        className="bg-muted relative h-[5px] min-w-[40px] flex-1 overflow-hidden rounded-full"
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-y-0 left-0 h-full rounded-full transition-[width] duration-300 ease-out',
+            section.allMet ? 'bg-green-600' : 'bg-indigo-600 dark:bg-indigo-500',
+          )}
+          style={{ width: `${section.barFraction * 100}%` }}
+        />
+        {/* The notch: how much of the period's clock has already run. ONE
+            tone at every fraction, whether it sits on the fill or off it
+            (Trent, 2026-09-23 — it must not switch shade by what it covers) —
+            see `TRACK_NOTCH_CLASS`, tuned in that one place. The bar's own
+            `overflow-hidden` clips it to the bar's height, so it never sticks
+            out top or bottom; its description lives on the bar's
+            `aria-valuetext` above, since the notch itself is decorative. */}
+        {section.elapsedFraction !== null && (
+          <span
+            aria-hidden="true"
+            data-track-period-notch
+            className={cn('absolute inset-y-0 -ml-px w-[2px]', TRACK_NOTCH_CLASS)}
+            style={{ left: `${section.elapsedFraction * 100}%` }}
+          />
+        )}
+      </span>
+      <span className="text-muted-foreground shrink-0 text-[11px] whitespace-nowrap tabular-nums">
+        <span className="text-foreground font-semibold">{section.summary.met}</span> of{' '}
+        {section.summary.count}
+      </span>
+    </div>
   )
 }
 
@@ -700,22 +848,29 @@ function TrackHeader({
 }
 
 /**
- * Tag every item in the flat stream with the cluster it belongs to.
+ * Tag every item in one section's stream with the (period+label) cluster it
+ * belongs to.
  *
  * The stream is title-then-its-chips by construction, so the last title seen
  * names the current cluster. Done here rather than in `trackStream` because the
  * cluster key is what the FOLDS are keyed by, and nothing outside this file
  * needs it — `tr-track-stream.test.ts` pins the stream's shape, and a field
- * only the panel reads has no business widening it.
+ * only the panel reads has no business widening it. `sectionKey` scopes it to
+ * ONE section (`sectionClusterKey`): a "kids" title in This week and a "kids"
+ * title in This month must tag their chips with different clusters, or the
+ * two would share one fold and one put-away decision.
  *
  * A module function, not a loop in the component: the React Compiler rejects
  * reassigning a captured variable inside a callback in a render body, and the
  * accumulator is exactly that.
  */
-function withClusters(items: TrackStreamItem[]): { item: TrackStreamItem; cluster: string }[] {
+function withClusters(
+  items: TrackStreamItem[],
+  sectionKey: string,
+): { item: TrackStreamItem; cluster: string }[] {
   let cluster = ''
   return items.map((item) => {
-    if (item.kind === 'title') cluster = clusterKey(item.label)
+    if (item.kind === 'title') cluster = sectionClusterKey(sectionKey, item.label)
     return { item, cluster }
   })
 }
@@ -887,7 +1042,6 @@ function TrackChip({
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
   const swipe = useHorizontalSwipe({ onSwipeLeft: () => void log(-1) })
-  const suffix = period ? periodSuffix(period) : null
 
   return (
     <li className={cn('max-w-full', foldClassName)}>
@@ -975,13 +1129,13 @@ function TrackChip({
               state.met ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground',
             )}
           >
+            {/* No period suffix as of the 2026-09-23 redesign — the section
+                this chip sits in already says the period (`PeriodHeading`),
+                so repeating it on every chip was the afterthought that
+                started the redesign. Sighted-only either way: the button's
+                `aria-label` below still spells the period out in full for a
+                screen reader, since nothing else on the chip does. */}
             <span className="text-foreground font-medium">{state.current}</span>/{state.target}
-            {/* The period, two letters, always muted — even on a met chip,
-                where the count beside it goes green. It is which clock this
-                counts against, not part of the score. Sighted-only by
-                construction: the button's `aria-label` spells the period out
-                in full. */}
-            {suffix && <span className="text-muted-foreground">·{suffix}</span>}
           </span>
         </button>
       </TrackChipPopover>
