@@ -345,13 +345,6 @@ enum WidgetTheme {
     /// bare `36`s could.
     static let rowMarkerSize: CGFloat = 36
 
-    /// `TaskRow`'s project chip (2026-09-23, item 5) — a fixed reservation
-    /// rather than the chip's own real measured width, so a long project name
-    /// shrinks (via `minimumScaleFactor`) into this budget instead of the
-    /// title's reserved column having to be recomputed per-name. About four
-    /// average characters at caption2 before the text starts scaling down.
-    static let projectChipWidth: CGFloat = 46
-
     // MARK: - Formatting
 
     private static let timeFormatter: DateFormatter = {

@@ -43,8 +43,8 @@ struct TasksEntry: TimelineEntry {
 
     /// Whether this is one of the two unified pages (Today / Up next) rather
     /// than a single project — gates the header's project dot (shown only on
-    /// a real project page) and each row's project CHIP (item 5, shown only
-    /// on a unified page — see `TaskRow.projectChip`'s doc).
+    /// a real project page) and each row's project-colored EDGE (shown only
+    /// on a unified page — see `TaskRow.showsProjectEdge`).
     var isUnifiedScope: Bool {
         scope == WidgetStore.allProjects || scope == WidgetStore.upNextScope
     }
@@ -63,13 +63,6 @@ struct TasksEntry: TimelineEntry {
     /// deleted between fetches, say) rather than crashing or guessing a color.
     func projectColor(for task: TaskDTO) -> Color {
         WidgetTheme.projectColor(projects.first(where: { $0.id == task.projectId })?.color)
-    }
-
-    /// A task's own project NAME, for `TaskRow`'s project chip (2026-09-23,
-    /// item 5) — same lookup and same "dropped out of `projects`" fallback
-    /// (here, simply no chip) as `projectColor(for:)`.
-    func projectName(for task: TaskDTO) -> String? {
-        projects.first(where: { $0.id == task.projectId })?.name
     }
 
     func overdueCount(now: Date = Date()) -> Int {

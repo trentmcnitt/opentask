@@ -223,10 +223,9 @@ private struct TasksListView: View {
                         TaskRow(
                             task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1,
                             availableWidth: width, projectColor: entry.projectColor(for: task),
-                            // Project chip (2026-09-23, item 5): systemLarge,
-                            // unified pages only — see `TaskRow.projectChip`'s
-                            // doc for why systemMedium is excluded.
-                            projectChip: (isLarge && entry.isUnifiedScope) ? entry.projectName(for: task) : nil
+                            // Project edge: systemLarge, unified pages only —
+                            // see `TaskRow.showsProjectEdge`.
+                            showsProjectEdge: isLarge && entry.isUnifiedScope
                         )
                     }
                 }
@@ -375,14 +374,20 @@ private struct TaskRow: View {
     /// measurement to keep the reservation below honest, and a 4×2's rows are
     /// already `lineLimit(1)` with no `minimumScaleFactor` to protect the
     /// title if the row got any tighter).
-    var projectChip: String? = nil
+    ///
+    /// SHOWN AS A COLORED EDGE, NOT A NAME (Trent, 2026-09-23, option B of
+    /// three rendered for him). The first version printed the project's name
+    /// beside the due time, in a fixed-width column reserved on every row —
+    /// which halved every title's width and wrapped them after three words.
+    /// A 3pt bar in the project's color costs 11pt, and the checkbox already
+    /// carries the same color.
+    var showsProjectEdge = false
 
     private var isOverdue: Bool { task.isOverdue(now: now) }
 
     /// Real per-title line count at this row's actual text column: the card
-    /// width minus the marker column, its 10pt `HStack` spacing, the chip's
-    /// reserved budget (`WidgetTheme.projectChipWidth`, when shown) plus its
-    /// own spacing, and — when a due time shows — that label's own measured
+    /// width minus the marker column, its 10pt `HStack` spacing, the project
+    /// edge (3pt plus its 8pt spacing, when shown), and — when a due time shows — that label's own measured
     /// width plus its 8pt spacing. The title's column is narrower whenever a
     /// due time or chip sits beside it, so both are measured/reserved first.
     /// Capped on iOS — see WidgetTheme's "row-height truthing" note, the
@@ -390,8 +395,8 @@ private struct TaskRow: View {
     private var measuredLines: Int {
         guard let availableWidth else { return titleLineLimit }
         var textWidth = availableWidth - WidgetTheme.rowMarkerSize - 10
-        if projectChip != nil {
-            textWidth -= WidgetTheme.projectChipWidth + 8
+        if showsProjectEdge {
+            textWidth -= 3 + 8
         }
         if let due = task.dueDate {
             let dueWidth = WidgetTheme.measuredWidth(
@@ -463,6 +468,14 @@ private struct TaskRow: View {
                 // out naturally once the checkbox itself moved to the row's
                 // trailing edge below.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if showsProjectEdge {
+                        Capsule()
+                            .fill(projectColor)
+                            .frame(width: 3, height: max(reservedHeight - 2, 10))
+                            // Its bottom sits on the title's first baseline
+                            // otherwise; this lines its top up with the text.
+                            .alignmentGuide(.firstTextBaseline) { $0[.top] + WidgetTheme.rowTitleLineHeight * 0.75 }
+                    }
                     Text(task.title)
                         .font(.subheadline)
                         .fontWeight(WidgetTheme.priorityWeight(task.priority))
@@ -478,24 +491,6 @@ private struct TaskRow: View {
                             minHeight: reservedHeight,
                             alignment: .topLeading
                         )
-
-                    // Project chip (2026-09-23, item 5) — "put it where the
-                    // time already sits": same metadata line, same trailing
-                    // cluster, not a row of its own. Fixed-width budget, not
-                    // the chip's real measured text — `minimumScaleFactor`
-                    // shrinks a longer name to fit instead of truncating it,
-                    // which is the "abbreviate the project name, never the
-                    // task title" Trent asked for: the one label allowed to
-                    // give ground gives it visually, while the reserved-width
-                    // math `measuredLines` depends on stays a simple constant.
-                    if let projectChip {
-                        Text(projectChip)
-                            .font(.caption2)
-                            .foregroundStyle(projectColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                            .frame(width: WidgetTheme.projectChipWidth, alignment: .trailing)
-                    }
 
                     if let due = task.dueDate {
                         Text(WidgetTheme.shortTime(due))
