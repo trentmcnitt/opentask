@@ -135,11 +135,15 @@ struct CompleteTaskIntent: AppIntent {
         // reads as a dead button. The tombstone hides the item through the
         // reconciling fetch; a FAILED call clears it so the item honestly
         // reappears, never an alert the user can't act on from the Home Screen.
+        // The occurrence on screen, read before anything can refresh the cache
+        // with the advanced one — see "Confirmed completions" in WidgetStore.
+        let occurrence = WidgetStore.cachedOccurrence(of: taskId)
         WidgetStore.stagePendingCompletion(taskId)
         await reloadAffectedKind()
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
+            WidgetStore.confirmCompletion(taskId, occurrence: occurrence)
         } catch {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
