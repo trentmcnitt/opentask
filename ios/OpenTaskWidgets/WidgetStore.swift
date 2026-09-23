@@ -129,6 +129,12 @@ enum WidgetStore {
 
     /// Record that a non-mutating interaction (a chevron) just happened, so the
     /// next provider pass takes the cache-only fast path.
+    /// Forget the last interaction, so the next provider pass fetches from
+    /// the server instead of repainting from cache.
+    static func clearInteraction() {
+        defaults?.removeObject(forKey: lastInteractionKey)
+    }
+
     static func markInteraction(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: lastInteractionKey)
     }
