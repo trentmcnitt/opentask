@@ -291,3 +291,22 @@ struct TimeSlotsPage: Decodable {
         case timeSlots = "time_slots"
     }
 }
+
+/// `GET /api/undo/status` → `{"data":{"latest_id":..., "undoable_count":...,
+/// "redoable_count":...}}` (`src/app/api/undo/status/route.ts`) — the same
+/// endpoint the web Header's undo badge calls on mount. All-time counts, no
+/// session scoping: a widget has no session watermark to send (see
+/// `APIClient.undoLastAction`'s doc), and "is there anything to undo/redo at
+/// all" is exactly what the always-present widget buttons need
+/// (2026-09-23 — see `WidgetStore`'s "Undo/redo counts" section).
+struct UndoStatusPage: Decodable {
+    let latestId: Int?
+    let undoableCount: Int
+    let redoableCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case latestId = "latest_id"
+        case undoableCount = "undoable_count"
+        case redoableCount = "redoable_count"
+    }
+}

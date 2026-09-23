@@ -13,9 +13,19 @@ struct RemindersEntry: TimelineEntry {
     let staleSince: Date?
     /// No server URL / token in the Keychain — the app has not been set up.
     let isSignedOut: Bool
-    /// Whether the header should show "Undo" at THIS entry's `date` — see
-    /// `WidgetStore.canUndo(at:)` and `UndoButton`.
+    /// Whether the header's Undo/Redo buttons should be enabled at THIS
+    /// entry's `date` — see `WidgetStore.canUndo`/`canRedo` and
+    /// `UndoRedoButtons`. Not time-windowed (2026-09-23): these simply carry
+    /// forward whatever the server's own counts were when the entry was
+    /// built, the same limitation `staleSince` already accepts for a
+    /// pre-scheduled future entry.
     let canUndo: Bool
+    let canRedo: Bool
+    /// The header subtitle's "Undid: …" / "Redid: …" indication, live for
+    /// `WidgetStore.lastActionWindow` seconds after an undo/redo — see
+    /// `WidgetStore.lastActionDescription(at:)`. `nil` shows the ordinary
+    /// count subtitle instead.
+    let actionDescription: String?
 
     var group: ReminderGroupDTO? {
         guard groups.indices.contains(slotIndex) else { return nil }
@@ -205,30 +215,34 @@ struct RemindersProvider: TimelineProvider {
                             slotIndex: boundary.index,
                             staleSince: entry.staleSince,
                             isSignedOut: false,
-                            canUndo: WidgetStore.canUndo(at: boundary.date)
+                            canUndo: entry.canUndo,
+                            canRedo: entry.canRedo,
+                            actionDescription: WidgetStore.lastActionDescription(at: boundary.date)
                         )
                     )
                 }
-                // The explicit "Undo" expiry (2026-09-23) — WidgetKit has no
-                // "expire after N seconds" primitive, only entries dated for a
-                // specific moment, so the guaranteed-off state needs its own
-                // entry rather than something `canUndo` could infer between
-                // reloads. Guarded by `expiry > entry.date`: `canUndo` on the
-                // primary entry already implies this, but stated explicitly
-                // so a future reordering of these blocks can't schedule an
-                // entry dated at or before `now`.
-                if entry.canUndo, let expiry = WidgetStore.undoExpiry(), expiry > entry.date {
-                    // Which slot should still be on screen once Undo turns
-                    // off: whichever entry built above is dated latest at or
-                    // before `expiry` — almost always `entry` itself, but if
-                    // a slot boundary happens to fall inside this 60s window,
-                    // that boundary's NATURAL slot is what should still be
-                    // showing at expiry, not the slot Undo originally
-                    // appeared under. Deliberately NOT
-                    // `RemindersTimeline.displayedSlotIndex(now: expiry)` —
-                    // that has the side effect of clearing a stale override,
-                    // which must only happen against the REAL clock, not a
-                    // hypothetical future timestamp being pre-computed here.
+                // The explicit "Undid: …" expiry (2026-09-23) — WidgetKit has
+                // no "expire after N seconds" primitive, only entries dated
+                // for a specific moment, so the guaranteed-off state needs
+                // its own entry rather than something inferred between
+                // reloads. Guarded by `expiry > entry.date`: a live
+                // `actionDescription` on the primary entry already implies
+                // this, but stated explicitly so a future reordering of
+                // these blocks can't schedule an entry dated at or before
+                // `now`.
+                if entry.actionDescription != nil, let expiry = WidgetStore.lastActionExpiry(),
+                    expiry > entry.date {
+                    // Which slot should still be on screen once the
+                    // indication turns off: whichever entry built above is
+                    // dated latest at or before `expiry` — almost always
+                    // `entry` itself, but if a slot boundary happens to fall
+                    // inside this 60s window, that boundary's NATURAL slot is
+                    // what should still be showing at expiry. Deliberately
+                    // NOT `RemindersTimeline.displayedSlotIndex(now: expiry)`
+                    // — that has the side effect of clearing a stale
+                    // override, which must only happen against the REAL
+                    // clock, not a hypothetical future timestamp being
+                    // pre-computed here.
                     let slotAtExpiry =
                         entries.filter { $0.date <= expiry }.max { $0.date < $1.date }?.slotIndex
                         ?? entry.slotIndex
@@ -239,7 +253,9 @@ struct RemindersProvider: TimelineProvider {
                             slotIndex: slotAtExpiry,
                             staleSince: entry.staleSince,
                             isSignedOut: false,
-                            canUndo: false
+                            canUndo: entry.canUndo,
+                            canRedo: entry.canRedo,
+                            actionDescription: nil
                         )
                     )
                 }
@@ -258,7 +274,8 @@ struct RemindersProvider: TimelineProvider {
 
         guard APIClient.shared.isConfigured else {
             return RemindersEntry(
-                date: now, groups: [], slotIndex: 0, staleSince: nil, isSignedOut: true, canUndo: false
+                date: now, groups: [], slotIndex: 0, staleSince: nil, isSignedOut: true,
+                canUndo: false, canRedo: false, actionDescription: nil
             )
         }
 
@@ -274,13 +291,26 @@ struct RemindersProvider: TimelineProvider {
                 slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
                 staleSince: nil,
                 isSignedOut: false,
-                canUndo: WidgetStore.canUndo(at: now)
+                canUndo: WidgetStore.canUndo,
+                canRedo: WidgetStore.canRedo,
+                actionDescription: WidgetStore.lastActionDescription(at: now)
             )
         }
 
         do {
-            let payload = try await APIClient.shared.fetchReminders()
+            // Concurrent with the reminders fetch — piggybacked undo/redo
+            // counts (2026-09-23) so the always-present buttons reflect the
+            // server even when the last change came from the web app or
+            // another device. Best-effort: `try?` so a flaky
+            // `/api/undo/status` never fails the reminders fetch it rides
+            // along with.
+            async let reminders = APIClient.shared.fetchReminders()
+            async let undoStatus: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
+            let (payload, status) = try await (reminders, undoStatus)
             WidgetStore.saveReminders(payload.groups)
+            if let status {
+                WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
+            }
             // Filter even the fresh fetch: a tombstoned completion may not have
             // committed server-side yet, and resurrecting it for one refresh
             // cycle would look like the check-off didn't take.
@@ -291,7 +321,9 @@ struct RemindersProvider: TimelineProvider {
                 slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
                 staleSince: nil,
                 isSignedOut: false,
-                canUndo: WidgetStore.canUndo(at: now)
+                canUndo: WidgetStore.canUndo,
+                canRedo: WidgetStore.canRedo,
+                actionDescription: WidgetStore.lastActionDescription(at: now)
             )
         } catch {
             print("[OpenTaskWidgets] Reminders fetch failed: \(error)")
@@ -303,7 +335,9 @@ struct RemindersProvider: TimelineProvider {
                 slotIndex: RemindersTimeline.displayedSlotIndex(in: groups, now: now),
                 staleSince: cached?.fetchedAt,
                 isSignedOut: false,
-                canUndo: WidgetStore.canUndo(at: now)
+                canUndo: WidgetStore.canUndo,
+                canRedo: WidgetStore.canRedo,
+                actionDescription: WidgetStore.lastActionDescription(at: now)
             )
         }
     }

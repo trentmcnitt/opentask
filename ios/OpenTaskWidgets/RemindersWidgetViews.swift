@@ -219,7 +219,8 @@ private struct RemindersListView: View {
     }
 
     private func card(rows: Int, width: CGFloat?) -> some View {
-        VStack(alignment: .leading, spacing: rowSpacing) {
+        let window = pagedReminders(rows: rows)
+        return VStack(alignment: .leading, spacing: rowSpacing) {
             header
 
             // systemLarge only — see `ReminderSlotStrip`'s doc for why
@@ -235,27 +236,28 @@ private struct RemindersListView: View {
                 emptySlotView
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(reminders.prefix(rows)) { reminder in
+                    ForEach(window.items) { reminder in
                         ReminderRow(
                             reminder: reminder, titleLineLimit: isLarge ? 2 : 1, availableWidth: width
                         )
                     }
                 }
-                // systemMedium drops the overflow line, as Track's does: at
-                // 4×2 that band costs a whole row, and the header's "N left"
-                // already states the total.
+                // systemMedium drops this band, as Track's does: at 4×2 it
+                // costs a whole row, and the header's "N left" already
+                // states the total — there is no pager at that size.
                 //
-                // A tap target, same as the header: someone reading "+N more"
-                // wants the rest, so it goes to the surface that has them
-                // (Trent, 2026-09-22). `.foregroundStyle` stays explicit
-                // inside the Link for the same reason the header's does — see
-                // `header`'s doc comment.
-                if isLarge, reminders.count > rows {
-                    Link(destination: WidgetLink.reminders) {
-                        Text("+\(reminders.count - rows) more")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                // The bottom pager (2026-09-23) replacing "+N more" — Trent:
+                // "It'd be nice to be able to page through things that are
+                // too long to fit... maybe at the bottom." Tapping "+N more"
+                // used to open the app; paging through the list in place is
+                // strictly more useful, so nothing here is a `Link` anymore.
+                if isLarge, window.totalPages > 1 {
+                    ListPager(
+                        page: window.page,
+                        totalPages: window.totalPages,
+                        previous: ShiftReminderPageIntent(offset: -1),
+                        next: ShiftReminderPageIntent(offset: 1)
+                    )
                 }
             }
 
@@ -266,6 +268,37 @@ private struct RemindersListView: View {
                 }
             }
         }
+    }
+
+    /// A page window into `reminders`, sized to `rows` — the row count of
+    /// WHICHEVER `ViewThatFits` candidate is asking (2026-09-23, "page
+    /// through things that are too long to fit"). `page` is read from
+    /// `WidgetStore.remindersPage(for:)`, keyed to the on-screen slot so it
+    /// self-resets whenever the slot changes (see that function's doc), and
+    /// clamped here to `0..<totalPages` so a list that shrank out from under
+    /// a stale page (a check-off) never renders an empty window instead of
+    /// snapping back into range.
+    ///
+    /// Known imperfection, accepted deliberately: each `ViewThatFits`
+    /// candidate resolves its OWN `rows`/`totalPages` from only the items
+    /// its own page slices out, not from the full list — there is no way to
+    /// ask ViewThatFits "which candidate won" from outside its own body (see
+    /// `RemindersListView`'s "row-height truthing" reference), so a
+    /// differently-sized page 2 could in principle resolve a different `rows`
+    /// than page 1 did. In practice reminder titles in one list are usually
+    /// similar lengths, and the property that matters most — the page
+    /// actually shown is always the one THAT candidate verified fits, never
+    /// squeezed — holds regardless.
+    private func pagedReminders(rows: Int) -> (items: [TaskDTO], page: Int, totalPages: Int) {
+        guard rows > 0, !reminders.isEmpty else {
+            return (reminders, 0, 1)
+        }
+        let totalPages = max(1, Int(ceil(Double(reminders.count) / Double(rows))))
+        let slotKey = entry.group?.slotKey ?? -1
+        let page = min(max(WidgetStore.remindersPage(for: slotKey), 0), totalPages - 1)
+        let start = page * rows
+        let end = min(start + rows, reminders.count)
+        return (Array(reminders[start..<end]), page, totalPages)
     }
 
     /// The on-screen slot has nothing waiting — three readings, not one
@@ -329,26 +362,31 @@ private struct RemindersListView: View {
     /// same headline text a user already reads as "the current view".
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            Link(destination: WidgetLink.reminders) {
+            Link(destination: headerDestination) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.group?.label ?? "Reminders")
                         .font(.headline)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                    Text(countLabel)
+                    // "Undid: …" / "Redid: …" for ~60s after an undo/redo
+                    // (2026-09-23) — see `WidgetStore`'s "Last-action
+                    // indication" doc. Replaces the ordinary count subtitle
+                    // rather than sitting beside it: the header has no
+                    // spare height for a third line on systemMedium.
+                    Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             // Right-aligned, before the chevrons (2026-09-23) — see
-            // `UndoButton`'s doc for why this only ever appears on the kind
-            // that just mutated, not all three at once.
-            if entry.canUndo {
-                UndoButton()
-            }
+            // `UndoRedoButtons`' doc: always present, dimmed when there is
+            // nothing to undo/redo.
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
             ChevronPager(
                 previous: ShiftReminderSlotIntent(offset: -1),
                 next: ShiftReminderSlotIntent(offset: 1),
@@ -361,6 +399,15 @@ private struct RemindersListView: View {
         // and a row of content beats a comfortable title every time. The 4×2's
         // breathing room is WidgetKit's own content margin.
         .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+    }
+
+    /// The header title `Link`'s destination (2026-09-23) — Trent: "it
+    /// should scroll down to the actual afternoon section." The on-screen
+    /// slot's key, or the bare `reminders` link when there is no group at
+    /// all (nothing configured today) for this entry to scope to.
+    private var headerDestination: URL {
+        guard let group = entry.group else { return WidgetLink.reminders }
+        return WidgetLink.reminders(slot: group.slotKey)
     }
 
     private var countLabel: String {

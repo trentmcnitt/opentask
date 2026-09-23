@@ -70,7 +70,7 @@ private struct TasksSmallView: View {
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    if entry.scope != WidgetStore.allProjects {
+                    if !entry.isUnifiedScope {
                         Circle()
                             .fill(entry.scopeColor)
                             .frame(width: 6, height: 6)
@@ -140,15 +140,11 @@ private struct TasksListView: View {
     /// line — the three things a 4×2 has no height for.
     let isLarge: Bool
 
-    /// The scope ring is All + every project with something due, and it wraps
-    /// (`ShiftProjectScopeIntent`), so both chevrons stay live as long as there
-    /// is somewhere else to be. One project and nothing pages.
-    private var canPage: Bool { ringLabels.count > 1 }
-
-    /// Ring labels in scope order: "All" first, then the projects.
-    private var ringLabels: [(id: Int, name: String)] {
-        [(WidgetStore.allProjects, "All")] + entry.projects.map { ($0.id, $0.name) }
-    }
+    /// The scope ring is Today + Up next + every project with something due
+    /// (2026-09-23, item 4), and it wraps (`ShiftProjectScopeIntent`) — the
+    /// two unified pages always exist, so the ring never has fewer than 2
+    /// entries and the chevrons are always live.
+    private var canPage: Bool { true }
 
     private var rowSpacing: CGFloat {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
@@ -215,32 +211,39 @@ private struct TasksListView: View {
     }
 
     private func card(rows: Int, width: CGFloat?) -> some View {
-        VStack(alignment: .leading, spacing: rowSpacing) {
+        let window = pagedTasks(rows: rows)
+        return VStack(alignment: .leading, spacing: rowSpacing) {
             header
 
             if entry.tasks.isEmpty {
                 WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(entry.tasks.prefix(rows)) { task in
+                    ForEach(window.items) { task in
                         TaskRow(
                             task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1,
-                            availableWidth: width, projectColor: entry.projectColor(for: task)
+                            availableWidth: width, projectColor: entry.projectColor(for: task),
+                            // Project chip (2026-09-23, item 5): systemLarge,
+                            // unified pages only — see `TaskRow.projectChip`'s
+                            // doc for why systemMedium is excluded.
+                            projectChip: (isLarge && entry.isUnifiedScope) ? entry.projectName(for: task) : nil
                         )
                     }
                 }
-                // systemMedium drops the overflow line, as Track's does: at 4×2
-                // that band costs a whole row, and the header's count already
-                // states the total.
+                // systemMedium drops this band, as Track's does: at 4×2 it
+                // costs a whole row, and the header's count already states
+                // the total — there is no pager at that size.
                 //
-                // A tap target, same as the header — see RemindersListView's
-                // identical comment.
-                if isLarge, entry.tasks.count > rows {
-                    Link(destination: WidgetLink.dashboard) {
-                        Text("+\(entry.tasks.count - rows) more")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                // The bottom pager (2026-09-23) replacing "+N more" — see
+                // `RemindersListView.card`'s identical comment; tapping
+                // "+N more" used to open the app, paging in place replaces it.
+                if isLarge, window.totalPages > 1 {
+                    ListPager(
+                        page: window.page,
+                        totalPages: window.totalPages,
+                        previous: ShiftTasksPageIntent(offset: -1),
+                        next: ShiftTasksPageIntent(offset: 1)
+                    )
                 }
             }
 
@@ -253,16 +256,30 @@ private struct TasksListView: View {
         }
     }
 
+    /// A page window into `entry.tasks`, the Tasks twin of
+    /// `RemindersListView.pagedReminders` — see that function's doc for the
+    /// paging math and its accepted imperfection.
+    private func pagedTasks(rows: Int) -> (items: [TaskDTO], page: Int, totalPages: Int) {
+        guard rows > 0, !entry.tasks.isEmpty else {
+            return (entry.tasks, 0, 1)
+        }
+        let totalPages = max(1, Int(ceil(Double(entry.tasks.count) / Double(rows))))
+        let page = min(max(WidgetStore.tasksPage(for: entry.scope), 0), totalPages - 1)
+        let start = page * rows
+        let end = min(start + rows, entry.tasks.count)
+        return (Array(entry.tasks[start..<end]), page, totalPages)
+    }
+
     /// The header IS the card's tap target now that the whole-card link is
     /// gone (see `TasksListView.body`) — see `RemindersListView.header` for
     /// why the `Link` wraps only the text and not the `ChevronPager`, and why
     /// it isn't stretched to a 40pt frame.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            Link(destination: WidgetLink.dashboard) {
+            Link(destination: headerDestination) {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
-                        if entry.scope != WidgetStore.allProjects {
+                        if !entry.isUnifiedScope {
                             Circle()
                                 .fill(entry.scopeColor)
                                 .frame(width: 7, height: 7)
@@ -273,18 +290,20 @@ private struct TasksListView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
-                    Text(countLabel)
+                    // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
+                    // see `RemindersListView.header`'s identical comment.
+                    Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             // Right-aligned, before the chevrons (2026-09-23) — see
-            // `UndoButton`'s doc.
-            if entry.canUndo {
-                UndoButton()
-            }
+            // `UndoRedoButtons`' doc.
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
             ChevronPager(
                 previous: ShiftProjectScopeIntent(offset: -1),
                 next: ShiftProjectScopeIntent(offset: 1),
@@ -295,6 +314,15 @@ private struct TasksListView: View {
         // systemMedium gets none — see `RemindersListView`: on a 128pt card
         // those 6pt cost a whole row.
         .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+    }
+
+    /// The header title `Link`'s destination (2026-09-23, item 2) — Trent:
+    /// "the header ... should scroll down to the actual afternoon section,"
+    /// applied here to Tasks: "Up next" (the unified scope) → `/`, a
+    /// project page → `/?project=<id>`.
+    private var headerDestination: URL {
+        guard !entry.isUnifiedScope else { return WidgetLink.dashboard }
+        return WidgetLink.project(entry.scope)
     }
 
     private var countLabel: String {
@@ -338,18 +366,33 @@ private struct TaskRow: View {
     /// from wherever the widget already resolves one — the same
     /// `WidgetTheme.projectColor(_:)` the "Personal" project header dot uses.
     var projectColor: Color = WidgetTheme.projectColor(nil)
+    /// The project identity chip (2026-09-23, item 5) — Trent: "Up Next and
+    /// Today should both have some indication, like a chip or something next
+    /// to the tasks, that shows what project they're from because it's hard
+    /// to tell." `nil` on a single-project page (redundant there — the whole
+    /// card is already one project) and, deliberately, on systemMedium (see
+    /// `TasksListView.card`'s call site: that family has no real-width
+    /// measurement to keep the reservation below honest, and a 4×2's rows are
+    /// already `lineLimit(1)` with no `minimumScaleFactor` to protect the
+    /// title if the row got any tighter).
+    var projectChip: String? = nil
 
     private var isOverdue: Bool { task.isOverdue(now: now) }
 
     /// Real per-title line count at this row's actual text column: the card
-    /// width minus the marker column, its 10pt `HStack` spacing, and — when a
-    /// due time shows — that label's own measured width plus its 8pt
-    /// spacing. The title's column is narrower whenever a due time sits
-    /// beside it, so the due time has to be measured first. Capped on iOS —
-    /// see WidgetTheme's "row-height truthing" note, the 2026-09-23 addendum.
+    /// width minus the marker column, its 10pt `HStack` spacing, the chip's
+    /// reserved budget (`WidgetTheme.projectChipWidth`, when shown) plus its
+    /// own spacing, and — when a due time shows — that label's own measured
+    /// width plus its 8pt spacing. The title's column is narrower whenever a
+    /// due time or chip sits beside it, so both are measured/reserved first.
+    /// Capped on iOS — see WidgetTheme's "row-height truthing" note, the
+    /// 2026-09-23 addendum.
     private var measuredLines: Int {
         guard let availableWidth else { return titleLineLimit }
         var textWidth = availableWidth - WidgetTheme.rowMarkerSize - 10
+        if projectChip != nil {
+            textWidth -= WidgetTheme.projectChipWidth + 8
+        }
         if let due = task.dueDate {
             let dueWidth = WidgetTheme.measuredWidth(
                 for: WidgetTheme.shortTime(due), font: WidgetTheme.caption2Font
@@ -435,6 +478,24 @@ private struct TaskRow: View {
                             minHeight: reservedHeight,
                             alignment: .topLeading
                         )
+
+                    // Project chip (2026-09-23, item 5) — "put it where the
+                    // time already sits": same metadata line, same trailing
+                    // cluster, not a row of its own. Fixed-width budget, not
+                    // the chip's real measured text — `minimumScaleFactor`
+                    // shrinks a longer name to fit instead of truncating it,
+                    // which is the "abbreviate the project name, never the
+                    // task title" Trent asked for: the one label allowed to
+                    // give ground gives it visually, while the reserved-width
+                    // math `measuredLines` depends on stays a simple constant.
+                    if let projectChip {
+                        Text(projectChip)
+                            .font(.caption2)
+                            .foregroundStyle(projectColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(width: WidgetTheme.projectChipWidth, alignment: .trailing)
+                    }
 
                     if let due = task.dueDate {
                         Text(WidgetTheme.shortTime(due))
