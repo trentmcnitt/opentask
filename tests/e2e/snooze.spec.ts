@@ -56,7 +56,17 @@ test.describe('Snooze', () => {
     // Verify menu items
     await expect(menu.getByRole('menuitem', { name: '1 hour' })).toBeVisible()
     await expect(menu.getByRole('menuitem', { name: '2 hours' })).toBeVisible()
-    await expect(menu.getByRole('menuitem', { name: /Tomorrow at/ })).toBeVisible()
+    // The user's time slots are targets too (Trent, 2026-09-22), each labelled
+    // with where it lands: "Midday · 12:00 PM", or "… · tomorrow …" once begun.
+    await expect(
+      menu.getByRole('menuitem', { name: /^Midday · (tomorrow )?12:00 PM$/ }),
+    ).toBeVisible()
+    await expect(
+      menu.getByRole('menuitem', { name: /^Evening · (tomorrow )?8:30 PM$/ }),
+    ).toBeVisible()
+    // Tomorrow morning is always offered: as "Tomorrow at 9:00 AM", or as the
+    // time slot that already lands there.
+    await expect(menu.getByRole('menuitem', { name: /tomorrow( at)? 9:00 AM$/i })).toBeVisible()
 
     // Dismiss the menu by dispatching keydown Escape directly on document.
     // The component registers its keydown listener in setTimeout(0), so wait first.
