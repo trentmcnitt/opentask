@@ -94,10 +94,6 @@ export function FilterBar({
   selectedProjects = [],
   onToggleProject,
   onExclusiveProject,
-  todayCounts,
-  remainingToday,
-  doneToday,
-  doneTodayByProject,
   // Exclude filters
   excludedPriorities = [],
   excludedLabels = [],
@@ -152,14 +148,6 @@ export function FilterBar({
   selectedProjects?: number[]
   onToggleProject?: (projectId: number) => void
   onExclusiveProject?: (projectId: number) => void
-  /** Due-today, not-yet-done count per project — completion fill denominator (§ITEM 2). */
-  todayCounts?: Map<number, number>
-  /** Due-today, not-yet-done count overall — the Today chip's fill denominator. */
-  remainingToday?: number
-  /** Completed today overall — the Today chip's fill numerator. */
-  doneToday?: number
-  /** Completed today per project — each project chip's fill numerator. */
-  doneTodayByProject?: Map<number, number>
   // Exclude filters
   excludedPriorities?: number[]
   excludedLabels?: string[]
@@ -326,8 +314,7 @@ export function FilterBar({
                   onToggleProject={onToggleProject}
                   onExclusiveProject={onExclusiveProject}
                   onExcludeProject={onExcludeProject}
-                  todayCounts={todayCounts}
-                  doneTodayByProject={doneTodayByProject}
+                  timezone={timezone}
                 />
               </div>
             )}
@@ -343,8 +330,6 @@ export function FilterBar({
                   timezone={timezone!}
                   onExclusiveDateFilter={onExclusiveDateFilter}
                   onExcludeDateFilter={onExcludeDateFilter}
-                  remainingToday={remainingToday}
-                  doneToday={doneToday}
                 />
               </div>
             )}
