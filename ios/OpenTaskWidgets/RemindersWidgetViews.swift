@@ -465,7 +465,7 @@ private struct ReminderSlotStrip: View {
     /// height is the max of its children's, so this is what the strip
     /// actually costs the card — 2pt more than before the ring, on top of
     /// what the pre-existing height bump already cost.
-    private var maxSegmentHeight: CGFloat { 6 }
+    private var maxSegmentHeight: CGFloat { 8 }
 
     var body: some View {
         // One segment is not a strip — same rule as the web's ReminderSlotBar
@@ -501,11 +501,14 @@ private struct ReminderSlotStrip: View {
     /// indigo or full green when really the indigo should be filling up"). A
     /// slot whose time has not come shows only the track.
     ///
-    /// THE CURRENT SLOT IS THE ONE AT FULL STRENGTH; every other segment is
-    /// dimmed (option B of five he was shown, rendered side by side). This
-    /// replaced a 1pt white ring he found hard to look at, which the widget
-    /// also clipped at both rounded ends. Nothing is drawn outside the bar's
-    /// own frame, so nothing can be clipped.
+    /// THE CURRENT SLOT IS TWICE AS THICK (option A of five he was shown,
+    /// rendered side by side). Option B — current at full strength, the rest
+    /// dimmed — was tried first and dropped the same day: "I'm not a huge fan
+    /// of the dimness", and a current slot with nothing considered is a gray
+    /// track that barely stood out from dimmed gray ones. Thickness reads the
+    /// same whatever the fill. Both replaced a 1pt white ring he found hard to
+    /// look at, which the widget also clipped at both rounded ends. Nothing is
+    /// drawn outside the bar's own frame, so nothing can be clipped.
     private func segmentBar(for segment: Segment) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -517,8 +520,7 @@ private struct ReminderSlotStrip: View {
                 }
             }
         }
-        .frame(height: 4)
-        .opacity(segment.isCurrent ? 1 : 0.4)
+        .frame(height: segment.isCurrent ? 8 : 4)
     }
 
     private func color(for state: SlotState) -> Color {
