@@ -356,11 +356,12 @@ struct WebViewHost: NSViewRepresentable {
 
         static func deviceInfoJS(token: String) -> String {
             let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask.mac"
-            #if DEBUG
+            // Follows the signing entitlement, not the build configuration:
+            // `com.apple.developer.aps-environment` is `development` in
+            // project.yml for every build, and the app is installed as a
+            // Release build. `#if DEBUG` registered it as "production", so
+            // every push to the Mac was rejected and its token deleted.
             let environment = "development"
-            #else
-            let environment = "production"
-            #endif
             return "window.__OPENTASK_DEVICE_INFO = { token: '\(token)', "
                 + "bundleId: '\(bundleId)', environment: '\(environment)' };"
         }
