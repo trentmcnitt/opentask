@@ -112,6 +112,26 @@ final class APIClient {
         return parseBulkSnoozeResult(data)
     }
 
+    /// Bulk snooze all overdue tasks to a time slot, from a notification's
+    /// slot-snooze action (`NotificationAction.parseSnoozeAllSlot`).
+    ///
+    /// `slot` is sent verbatim as the value parsed from the action identifier
+    /// — a slot's `start_time` ("07:00") or the literal "next". The server
+    /// resolves that to an actual instant in the user's timezone (a named
+    /// slot: its next start, today if it hasn't started yet else tomorrow;
+    /// "next": the first slot to start at all, wrapping to tomorrow past the
+    /// last one today) — the device never computes the time itself.
+    /// P3 (High) and P4 (Urgent) excluded unless their ID is passed as `includeTaskId`.
+    @discardableResult
+    func snoozeOverdue(slot: String, includeTaskId: Int? = nil) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = ["slot": slot]
+        if let id = includeTaskId {
+            body["include_task_ids"] = [id]
+        }
+        let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
+        return parseBulkSnoozeResult(data)
+    }
+
     private func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
@@ -192,6 +212,13 @@ final class APIClient {
     /// hardcoded on the client — whatever the server returns is what cycles.
     func fetchProjects() async throws -> [ProjectDTO] {
         try await get(path: "/api/projects", as: ProjectsPage.self).projects
+    }
+
+    /// The user's time slots (§6.0), for the notification slot-snooze actions
+    /// (`TimeSlotStore`, `refreshSlotActions()`). User-configurable — nothing
+    /// about the slot list is hardcoded on the client.
+    func fetchTimeSlots() async throws -> [TimeSlotDTO] {
+        try await get(path: "/api/time-slots", as: TimeSlotsPage.self).timeSlots
     }
 
     // MARK: - Notification Dismiss

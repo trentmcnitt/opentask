@@ -28,6 +28,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         registerNotificationCategories()
         requestNotificationPermission(application)
         activateWatchSession()
+
+        // Refresh the cached time slots (fire-and-forget) so the slot-snooze
+        // notification actions catch up to any change made elsewhere, without
+        // blocking the initial (cache-only) category registration above on a
+        // network round trip.
+        Task { await refreshSlotActions() }
+
         return true
     }
 
@@ -141,6 +148,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func applicationDidBecomeActive(_ application: UIApplication) {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         application.applicationIconBadgeNumber = 0
+
+        // Refresh the slot-snooze action list on every foreground too, not
+        // just launch — slots are user-configurable and this app can stay
+        // backgrounded for a long time.
+        Task { await refreshSlotActions() }
 
         // Tell the server to dismiss notifications on all other devices (fire-and-forget)
         guard APIClient.shared.isConfigured else { return }
@@ -314,7 +326,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                         WebViewManager.shared.navigate(path: "/")
 
                     default:
-                        break
+                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
+                            if result.tasksAffected > 0 {
+                                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
+                            }
+                            updateBadge(result.skippedUrgent)
+                        }
                     }
                 } catch {
                     print("[OpenTask] Summary action handler error: \(error)")
@@ -413,7 +431,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     WebViewManager.shared.navigateToTask(taskId)
 
                 default:
-                    break
+                    if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                        let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
+                        if result.tasksAffected > 0 {
+                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
+                        }
+                        updateBadge(result.skippedUrgent)
+                    }
                 }
             } catch {
                 print("[OpenTask] Action handler error: \(error)")

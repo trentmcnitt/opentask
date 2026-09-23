@@ -123,15 +123,16 @@ OPENTASK_RESET=1 build/Build/Products/Debug/OpenTask.app/Contents/MacOS/OpenTask
 
 ## What it does
 
-| Surface       | Behaviour                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| Window        | One `Window` scene (not `WindowGroup`) hosting a WKWebView on the configured server         |
-| Setup         | Server URL entry, validated against `/login`; `https://` is assumed when no scheme is typed |
-| Menu ▸ File   | New Task (⌘N)                                                                               |
-| Menu ▸ Tasks  | Reload (⌘R), Snooze All +1hr (⌃⌘1), +2hr (⌃⌘2), to Tomorrow (⌃⌘3)                           |
-| Notifications | `TASK_REMINDER`, `TASK_SUMMARY`, `SLOT_REMINDER` categories with Done / +1hr / All +1hr /   |
-|               | Complete all, plus the silent `dismiss` / `dismiss-all` / `badge-update` pushes             |
-| Dock          | Badge count; closing the window parks the app instead of quitting it                        |
+| Surface       | Behaviour                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------- |
+| Window        | One `Window` scene (not `WindowGroup`) hosting a WKWebView on the configured server          |
+| Setup         | Server URL entry, validated against `/login`; `https://` is assumed when no scheme is typed  |
+| Menu ▸ File   | New Task (⌘N)                                                                                |
+| Menu ▸ Tasks  | Reload (⌘R), Snooze All +1hr (⌃⌘1), +2hr (⌃⌘2), to Tomorrow (⌃⌘3)                            |
+| Notifications | `TASK_REMINDER`, `TASK_SUMMARY`, `SLOT_REMINDER` categories with Done / +1hr / All +1hr /    |
+|               | All → \<time slot\> (cached from `GET /api/time-slots`, "Next period" first) / Complete all, |
+|               | plus the silent `dismiss` / `dismiss-all` / `badge-update` pushes                            |
+| Dock          | Badge count; closing the window parks the app instead of quitting it                         |
 
 **The chain to know about:** the web app only provisions the Bearer token when
 it sees an APNs device token (`PreferencesProvider.provisionBearerToken`). So

@@ -35,6 +35,7 @@
 		A957F5A3429D50204CAFBAB2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 607A3ED0E07D6E9308774294 /* Info.plist */; };
 		AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
 		B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
+		B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		BE415267934330FE86282F6C /* OpenTaskCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
@@ -43,6 +44,7 @@
 		DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		ED82B81A737BC79D08FFE378 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		EEE628E522E5DF619FD5B933 /* OpenTaskMacWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -80,6 +82,7 @@
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
 		38BA76FEFE40A03A2F3E709E /* MenuActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuActions.swift; sourceTree = "<group>"; };
 		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeSlotStore.swift; sourceTree = "<group>"; };
 		456B0402D3211FEEE9D56F67 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		54BBA7157D64D84DE2038504 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidget.swift; sourceTree = "<group>"; };
@@ -129,6 +132,7 @@
 				D48B4A75163FF407F49D160B /* KeychainHelper.swift */,
 				606B27B10869F5EC627043D9 /* NotificationConstants.swift */,
 				7F814F05408288A5A627F9CC /* OpenTaskModels.swift */,
+				432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */,
 			);
 			name = Shared;
 			path = ../ios/Shared;
@@ -339,6 +343,7 @@
 				6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */,
 				86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */,
 				16E01EEDD0FF0DD9247D3962 /* SetupView.swift in Sources */,
+				F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */,
 				0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */,
 				0F675979F0E897179550119D /* WebViewManager.swift in Sources */,
 			);
@@ -360,6 +365,7 @@
 				B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */,
 				33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */,
 				1A1131E268CC52CAA6F32234 /* TasksWidgetViews.swift in Sources */,
+				B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */,
 				8465F733F4E375E70C51CEA8 /* TrackWidget.swift in Sources */,
 				44C5A3993A906B44D2AD2CE7 /* TrackWidgetViews.swift in Sources */,
 				D473788D4B4379B10D45B709 /* WidgetIntents.swift in Sources */,

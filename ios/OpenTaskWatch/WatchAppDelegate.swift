@@ -28,6 +28,20 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         registerNotificationCategories()
         activateWatchSession()
         requestNotificationPermission()
+
+        // Refresh the cached time slots (fire-and-forget) so the slot-snooze
+        // notification actions catch up to any change made elsewhere, without
+        // blocking the initial (cache-only) category registration above on a
+        // network round trip.
+        Task { await refreshSlotActions() }
+    }
+
+    /// Refresh the slot-snooze action list on every foreground too, not just
+    /// launch — slots are user-configurable and the Watch app can stay
+    /// backgrounded for a long time. Mirrors AppDelegate's iOS counterpart;
+    /// unlike iOS there is no delivered-notification cleanup to do here.
+    func applicationDidBecomeActive() {
+        Task { await refreshSlotActions() }
     }
 
     // MARK: - APNs Registration
@@ -203,7 +217,15 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                         center.removeAllDeliveredNotifications()
 
                     default:
-                        break
+                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
+                            print("[OpenTaskWatch] Summary: snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
+                            if result.tasksAffected > 0 {
+                                await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
+                            }
+                            updateBadge(result.skippedUrgent)
+                            playHaptic(.success)
+                        }
                     }
                 } catch {
                     print("[OpenTaskWatch] Summary action failed: \(error)")
@@ -297,7 +319,15 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     center.removeAllDeliveredNotifications()
 
                 default:
-                    break
+                    if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                        let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
+                        print("[OpenTaskWatch] Snoozed all to slot \(slot) (\(result.tasksAffected) tasks)")
+                        if result.tasksAffected > 0 {
+                            await dismissNotifications(atOrBelowPriority: bulkSnoozeMaxPriority)
+                        }
+                        updateBadge(result.skippedUrgent)
+                        playHaptic(.success)
+                    }
                 }
             } catch {
                 print("[OpenTaskWatch] Action failed: \(error)")

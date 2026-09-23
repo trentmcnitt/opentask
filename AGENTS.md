@@ -465,7 +465,8 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 - `POST /api/push/apns/register`, `DELETE /api/push/apns/register` — device token registration
 - `POST /api/notifications/actions` — done/snooze from notification actions
 - `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
-- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action
+- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action (+ `slot` body field: a slot's `start_time`, or `"next"` for the next slot to start — bulk-snooze-to-slot notification actions)
 - `GET /api/user/preferences` — connection validation during setup
+- `GET /api/time-slots` — cached in the App Group (`TimeSlotStore`) to build the slot-snooze notification actions offline
 
 See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.
