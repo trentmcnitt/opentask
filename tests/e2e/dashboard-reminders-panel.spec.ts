@@ -739,6 +739,53 @@ test.describe('Dashboard Reminders panel — press and hold', () => {
     }
   })
 
+  test('finishing the current slot goes back to the earliest one still waiting', async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-09-23: "Once I finish morning, it should take me
+    // automatically back to early morning." Needs a slot before the current
+    // one — see the test above for why and how `E2E_TZ` provides it.
+    const slots = await fetchTimeSlots(page)
+    const naturalIndex = naturalSlotIndex(slots)
+    const localNow = DateTime.now().setZone(TEST_TZ)
+    const started =
+      parseHHMM(slots[naturalIndex].start_time) <= localNow.hour * 60 + localNow.minute
+    test.skip(
+      naturalIndex === 0 || !started,
+      'no slot of the day has passed yet; set E2E_TZ to a later local time',
+    )
+    const earliest = slots[0]
+    const natural = slots[naturalIndex]
+    const earliestAt = parseHHMM(earliest.start_time) + 1
+    const naturalAt = parseHHMM(natural.start_time) + 1
+
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title: 'Earliest-undone probe (early)',
+          due_at: todayAt(Math.floor(earliestAt / 60), earliestAt % 60),
+        }),
+      )
+      ids.push(
+        await createReminder(page, {
+          title: 'Earliest-undone probe (now)',
+          due_at: todayAt(Math.floor(naturalAt / 60), naturalAt % 60),
+        }),
+      )
+
+      await page.goto('/')
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+      await panel(page)
+        .getByRole('button', { name: 'Mark "Earliest-undone probe (now)" as considered' })
+        .click()
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(earliest.id))
+      await expect(panel(page).getByText('Earliest-undone probe (early)')).toBeVisible()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('tapping a reminder’s text considers it; a hold still only opens its bubble', async ({
     authenticatedPage: page,
   }) => {
