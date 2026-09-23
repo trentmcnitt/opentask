@@ -18,7 +18,9 @@ describe('Project order on create', () => {
   })
 
   test('a project created without sort_order goes after every existing one', async () => {
-    const before = (await (await apiFetch('/api/projects')).json()).data as { sort_order: number }[]
+    const before = (await (await apiFetch('/api/projects')).json()).data.projects as {
+      sort_order: number
+    }[]
     const max = Math.max(...before.map((p) => p.sort_order))
     const first = await create({ name: `Order probe A ${Date.now()}` })
     expect(first.sort_order).toBe(max + 1)
