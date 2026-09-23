@@ -18,6 +18,9 @@ struct TrackEntry: TimelineEntry {
     let pageStartId: Int
     let staleSince: Date?
     let isSignedOut: Bool
+    /// Whether the header should show "Undo" at THIS entry's `date` — see
+    /// `WidgetStore.canUndo(at:)` and `UndoButton`.
+    let canUndo: Bool
 
     var selected: TrackItem? {
         items.first { $0.id == selectedId } ?? items.first
@@ -318,10 +321,28 @@ struct TrackProvider: TimelineProvider {
             // the day that flips it. Pace drifts continuously and the period
             // boundary resets `progress_current` server-side, which no
             // pre-scheduled local entry could know about — so there is nothing
-            // to pre-schedule and the 30-minute refresh carries it.
+            // to pre-schedule and the 30-minute refresh carries it. The
+            // "Undo" expiry (2026-09-23) is the one exception: still a real
+            // moment this provider has to know about ahead of the 30-minute
+            // refresh — see RemindersProvider's identical block.
             let entry = await currentEntry()
+            var entries = [entry]
+            if !entry.isSignedOut, entry.canUndo, let expiry = WidgetStore.undoExpiry(),
+                expiry > entry.date {
+                entries.append(
+                    TrackEntry(
+                        date: expiry,
+                        items: entry.items,
+                        selectedId: entry.selectedId,
+                        pageStartId: entry.pageStartId,
+                        staleSince: entry.staleSince,
+                        isSignedOut: false,
+                        canUndo: false
+                    )
+                )
+            }
             let next = Date().addingTimeInterval(Self.refreshInterval)
-            completion(Timeline(entries: [entry], policy: .after(next)))
+            completion(Timeline(entries: entries, policy: .after(next)))
         }
     }
 
@@ -335,7 +356,7 @@ struct TrackProvider: TimelineProvider {
             return TrackEntry(
                 date: now, items: [], selectedId: WidgetStore.noTrackSelection,
                 pageStartId: WidgetStore.noTrackSelection,
-                staleSince: nil, isSignedOut: true
+                staleSince: nil, isSignedOut: true, canUndo: false
             )
         }
 
@@ -346,7 +367,8 @@ struct TrackProvider: TimelineProvider {
             selectedId: TrackTimeline.selectedId(in: items),
             pageStartId: TrackTimeline.pageStartId(in: items),
             staleSince: snapshot.staleSince,
-            isSignedOut: false
+            isSignedOut: false,
+            canUndo: WidgetStore.canUndo(at: now)
         )
     }
 }

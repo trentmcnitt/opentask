@@ -367,6 +367,98 @@ enum WidgetStore {
         return tasks.filter { !pending.contains($0.id) && !isConfirmedDone($0, in: confirmed) }
     }
 
+    // MARK: - Undo window (2026-09-23, the accidental-tap fix)
+    //
+    // Trent: "I need some way to ... undo the accidental tap." Every
+    // successful check-off / `+1` / `−1` (`CompleteTaskIntent`,
+    // `IncrementProgressIntent`) stamps `recordMutation()`. Whichever kind's
+    // header next reloads within `undoWindow` seconds of that stamp shows
+    // "Undo" (`UndoButton`, `canUndo(at:)`) — see `RemindersProvider`/
+    // `TasksProvider`/`TrackProvider`'s `getTimeline` for the explicit
+    // expiry entry that turns it back off (WidgetKit has no "expire after N
+    // seconds" primitive, only entries dated for a specific moment).
+
+    private static let lastMutationAtKey = "widget.lastMutationAt"
+    static let undoWindow: TimeInterval = 60
+
+    /// Stamp "a mutation just happened, undo-able from right now."
+    static func recordMutation(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: lastMutationAtKey)
+    }
+
+    private static func lastMutationAt() -> Date? {
+        guard let stamp = defaults?.object(forKey: lastMutationAtKey) as? Double else { return nil }
+        return Date(timeIntervalSince1970: stamp)
+    }
+
+    /// Whether a header shown AT `date` should carry the Undo button. Used
+    /// both for "right now" (the entry a provider builds live) and for a
+    /// scheduled FUTURE entry (a Reminders/Tasks boundary that happens to
+    /// fall inside the window) — see the providers' `getTimeline`.
+    static func canUndo(at date: Date = Date()) -> Bool {
+        guard let at = lastMutationAt() else { return false }
+        let elapsed = date.timeIntervalSince(at)
+        return elapsed >= 0 && elapsed < undoWindow
+    }
+
+    /// The exact moment the window closes, for scheduling the explicit
+    /// "turn Undo back off" timeline entry. `nil` when there is no live
+    /// mutation to expire.
+    static func undoExpiry() -> Date? {
+        lastMutationAt().map { $0.addingTimeInterval(undoWindow) }
+    }
+
+    /// Atomically consume the undo window: returns the mutation's original
+    /// timestamp (still live, now cleared) or `nil` (already expired, or a
+    /// concurrent tap already claimed it). `UndoLastActionIntent` uses this
+    /// instead of a plain `canUndo` check plus a separate clear so two
+    /// overlapping taps — a real double-tap, or a second `perform()` invoked
+    /// while the first's network call is still in flight — cannot both fire
+    /// a server undo: `/api/undo` walks back ONE action at a time, and a
+    /// second call would undo the action BEFORE the one the user meant to
+    /// reverse. The returned timestamp lets a FAILED undo put the window
+    /// back (`restoreMutation(at:)`) without extending it past its original
+    /// deadline.
+    static func consumeUndo(now: Date = Date()) -> Date? {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let at = lastMutationAt(), now.timeIntervalSince(at) < undoWindow else { return nil }
+        defaults?.removeObject(forKey: lastMutationAtKey)
+        return at
+    }
+
+    /// Restore the window after a FAILED `/api/undo` call, so a retry is
+    /// still possible — otherwise a network blip silently leaves the item
+    /// done with no way back short of reopening the app. Re-stamped at the
+    /// ORIGINAL mutation instant (from `consumeUndo`'s return value), not
+    /// "now", so a failed attempt doesn't extend the total window the user
+    /// gets.
+    static func restoreMutation(at date: Date) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        defaults?.set(date.timeIntervalSince1970, forKey: lastMutationAtKey)
+    }
+
+    /// Wipe every optimistic/confirmed marker this store holds. Called after
+    /// a successful `/api/undo` (`UndoLastActionIntent`): the response
+    /// carries no task id (`{undone_action, description, tasks_affected}` —
+    /// see `src/app/api/undo/route.ts`), so there is no way to know which
+    /// ONE entry — a completion tombstone, a confirmed completion (see the
+    /// 2026-09-23 note above), or a staged progress delta — belongs to the
+    /// action that was just reversed. Clearing all three maps is the honest
+    /// alternative: an undone completion must not stay hidden behind either
+    /// the 90s tombstone OR the 15-minute confirmed-completion window, and a
+    /// staged progress delta must not double-count against a server value
+    /// the undo just changed. The reload that follows re-fetches server
+    /// truth for whatever the acted-on widgets show, so nothing genuinely in
+    /// flight is lost — only the brief optimistic guess is, which the undo
+    /// itself already invalidated.
+    static func clearAllPendingState() {
+        defaults?.removeObject(forKey: pendingCompletionsKey)
+        defaults?.removeObject(forKey: pendingProgressKey)
+        defaults?.removeObject(forKey: confirmedCompletionsKey)
+    }
+
     /// Draw staged progress: while an entry is live the item reads
     /// `progress_current + net delta`, floored at 0 to match the server.
     ///

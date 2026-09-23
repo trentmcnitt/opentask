@@ -226,14 +226,32 @@ struct TimeSlotDTO: Codable, Identifiable, Hashable {
 struct ReminderGroupDTO: Codable, Hashable {
     let slot: TimeSlotDTO?
     let reminders: [TaskDTO]
+    /// How many reminders in this slot were considered (checked off) today —
+    /// `g.considered` from `GET /api/reminders` (`src/app/api/reminders/
+    /// route.ts`). Feeds `ReminderSlotStrip` (2026-09-23): a slot with
+    /// `considered > 0` and nothing left in `reminders` reads as "finished",
+    /// distinct from a slot that never had anything to begin with. Mirrors
+    /// the web's `ReminderSlotBar`, which uses the same field
+    /// (`src/components/ReminderSlotBar.tsx`). Decoded with a default so an
+    /// older cached payload (written before this field existed) still
+    /// parses — see the file header's "partial decode" note.
+    let considered: Int
 
     enum CodingKeys: String, CodingKey {
-        case slot, reminders
+        case slot, reminders, considered
     }
 
-    init(slot: TimeSlotDTO?, reminders: [TaskDTO]) {
+    init(slot: TimeSlotDTO?, reminders: [TaskDTO], considered: Int = 0) {
         self.slot = slot
         self.reminders = reminders
+        self.considered = considered
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        slot = try c.decodeIfPresent(TimeSlotDTO.self, forKey: .slot)
+        reminders = try c.decodeIfPresent([TaskDTO].self, forKey: .reminders) ?? []
+        considered = try c.decodeIfPresent(Int.self, forKey: .considered) ?? 0
     }
 
     /// Stable identity for the App Group override key. -1 stands in for the

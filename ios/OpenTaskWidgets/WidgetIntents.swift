@@ -52,15 +52,24 @@ func reloadOpenTaskWidget(kind: String) {
     WidgetCenter.shared.reloadTimelines(ofKind: kind)
 }
 
-/// Reload all three widget kinds, unordered. NOT used by any mutating
+/// Reload all three widget kinds, unordered. NOT used by any ROUTINE mutating
 /// intent's normal path as of 2026-09-22 — see `reloadOpenTaskWidget(kind:)`.
-/// The one remaining caller is `CompleteTaskIntent`'s fallback for a button
-/// archived before it carried a `kind` parameter: without a known kind there
-/// is nothing to target, so it falls back to the old, safe-but-unoptimized
-/// "reload everything" rather than guessing.
+/// Two callers remain, both deliberate exceptions to "reload only the acting
+/// kind":
 ///
-/// This function has no other callers now, which is itself evidence for the
-/// fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
+/// - `CompleteTaskIntent`'s fallback for a button archived before it carried
+///   a `kind` parameter: without a known kind there is nothing to target, so
+///   it falls back to the old, safe-but-unoptimized "reload everything"
+///   rather than guessing.
+/// - `UndoLastActionIntent` (2026-09-23), unconditionally: `/api/undo`'s
+///   response carries no task id or kind (see its own doc), so which kind
+///   the undone action belongs to is never knowable, and undo is rare enough
+///   that the chronod queue-contention cost this function exists to avoid
+///   for routine taps (see the measurements below) is not the relevant
+///   tradeoff for an action a user fires a few times a day at most.
+///
+/// Otherwise this function has no other callers, which is itself evidence for
+/// the fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
 /// reload for one extension bundle through ONE SERIAL QUEUE — confirmed from
 /// `/usr/bin/log`: "Would pop task, but all extensions are busy, namely
 /// [io.mcnitt.opentask.mac.widgets]" logged for every kind but the one
@@ -139,11 +148,24 @@ struct CompleteTaskIntent: AppIntent {
         // with the advanced one — see "Confirmed completions" in WidgetStore.
         let occurrence = WidgetStore.cachedOccurrence(of: taskId)
         WidgetStore.stagePendingCompletion(taskId)
+        // Reminders only (§6/§7 — Tasks has no slot concept to advance
+        // through): Trent, 2026-09-23, "once I finish morning it should take
+        // me automatically back to early morning ... so I can keep checking
+        // things off and automatically switch." Runs BEFORE the first reload
+        // below, using the same cache `filterPending` will draw from, so the
+        // very next repaint shows the slot switch and the hidden item
+        // together rather than as two separately visible steps.
+        if kind == RemindersWidget.kind, let cached = WidgetStore.loadReminders()?.value.groups {
+            RemindersTimeline.autoAdvanceSlot(after: taskId, in: cached)
+        }
         await reloadAffectedKind()
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
             WidgetStore.confirmCompletion(taskId, occurrence: occurrence)
+            // §8-adjacent Undo affordance (2026-09-23) — see
+            // WidgetStore.recordMutation's doc for the window this opens.
+            WidgetStore.recordMutation()
         } catch {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
@@ -226,6 +248,10 @@ struct IncrementProgressIntent: AppIntent {
 
         do {
             try await APIClient.shared.logProgress(taskId: taskId, delta: delta)
+            // §8-adjacent Undo affordance (2026-09-23) — see
+            // WidgetStore.recordMutation's doc. A `−1` correction is just as
+            // capable of being the accidental tap as a `+1`, so both stamp.
+            WidgetStore.recordMutation()
         } catch {
             print("[OpenTaskWidgets] Progress \(taskId) \(delta > 0 ? "+" : "")\(delta) failed: \(error)")
         }
@@ -393,6 +419,67 @@ struct ShiftTrackItemIntent: AppIntent {
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        return .result()
+    }
+}
+
+// MARK: - Undo (2026-09-23, the accidental-tap fix)
+
+/// Undo the most recent action from ANY of the three widget kinds. Trent:
+/// "I need some way to ... undo the accidental tap." Shown as `UndoButton`
+/// in a list header for `WidgetStore.undoWindow` seconds after a successful
+/// check-off / `+1` / `−1` — see `WidgetStore.recordMutation`/`canUndo(at:)`.
+///
+/// Calls the SAME `/api/undo` the web app's toast Undo button does
+/// (`useTaskActions.handleUndo`, `src/app/api/undo/route.ts`): it undoes the
+/// single most recent action for the signed-in user, with no task id in the
+/// request or response. That means this intent cannot target "the task THIS
+/// header's row was for" — only "whatever changed last" — exactly like the
+/// web toast, and exactly why `WidgetStore.clearAllPendingState()` below
+/// clears every optimistic marker rather than one.
+struct UndoLastActionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Undo"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        // Atomic claim (see WidgetStore.consumeUndo's doc): a concurrent tap
+        // — a real double-tap, or a second perform() while this one's
+        // network call is still in flight — gets nil and does nothing here,
+        // so at most one server undo ever fires per mutation.
+        guard let mutatedAt = WidgetStore.consumeUndo() else { return .result() }
+
+        // Round 1: ALL THREE kinds, unlike a routine check-off/+1 — see
+        // reloadOpenTaskWidgets()'s doc for why undo is the deliberate
+        // exception. This is what makes the button disappear everywhere
+        // right away rather than only wherever this tap happened to land,
+        // and it runs before the network call for the same "don't make a
+        // dead-looking button" reason CompleteTaskIntent stages first.
+        await reloadOpenTaskWidgets()
+
+        do {
+            try await APIClient.shared.undoLastAction()
+            // No task id to target — see this type's doc — so every
+            // optimistic/confirmed marker is cleared rather than one guessed
+            // at. See WidgetStore.clearAllPendingState's doc.
+            WidgetStore.clearAllPendingState()
+        } catch {
+            print("[OpenTaskWidgets] Undo failed: \(error)")
+            // Put the window back (at its ORIGINAL deadline, not a fresh 60s)
+            // so a network blip is still retryable instead of silently
+            // leaving the action un-undoable with no visible way back.
+            WidgetStore.restoreMutation(at: mutatedAt)
+        }
+        // Round 2, the reconciling pass. `markInteraction()` is deliberately
+        // never called here, so this takes the NETWORK path on both success
+        // (server truth for whatever an undone task changed) and failure
+        // (the window restored above re-shows "Undo"). One caveat, self-
+        // healing: a chevron tapped under 10s before this would still leave
+        // `hasRecentInteraction()` true, which fast-paths this ONE pass from
+        // cache instead — the next scheduled or interaction-triggered reload
+        // corrects it.
+        await reloadOpenTaskWidgets()
         return .result()
     }
 }

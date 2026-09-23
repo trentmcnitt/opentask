@@ -194,6 +194,17 @@ final class APIClient {
         try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
     }
 
+    /// Undo the most recent action for the signed-in user (2026-09-23,
+    /// widgets' Undo affordance) — the same endpoint the web app's toast
+    /// Undo button calls (`useTaskActions.handleUndo`,
+    /// `src/app/api/undo/route.ts`). No body: the web client optionally sends
+    /// `session_start_id` to scope its undo/redo COUNTS to the page's
+    /// session, but the undo itself always targets "the last action", and a
+    /// widget has no session watermark to send in the first place.
+    func undoLastAction() async throws {
+        try await post(path: "/api/undo", body: [:])
+    }
+
     // MARK: - Widget Data
 
     /// Today's incomplete reminders grouped by time slot (§6).

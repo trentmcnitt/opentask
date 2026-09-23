@@ -123,14 +123,13 @@ enum WidgetTheme {
     /// does — `NSLayoutManager().defaultLineHeight(for:)` is AppKit's
     /// equivalent (the same value the layout system itself uses to lay out a
     /// line of that font). This is still the load-bearing per-LINE unit on
-    /// both platforms, but macOS no longer multiplies it by a flat
-    /// `titleLineLimit` the way iOS does — see the "2026-09-22, the macOS
-    /// vertical-space fix" note on `measuredLineCount(for:maxWidth:weight:)`
-    /// below for why iOS's fixed-2-lines contract doesn't carry over
-    /// unchanged. **Measured**: at the platform's default text size this is
-    /// 14pt on macOS vs. ~20pt on iOS — macOS's own metric is *smaller*, not
-    /// "too tall" as first suspected; see that note for what the real
-    /// macOS-specific bug turned out to be.
+    /// both platforms; neither multiplies it by a flat `titleLineLimit`
+    /// anymore — see the "row-height truthing" note on `measuredLineCount`
+    /// below. **Measured**: at the platform's default text size this is
+    /// 14pt on macOS vs. 18pt on iOS (an iPhone 17 Pro simulator, default
+    /// Dynamic Type size — see the 2026-09-23 addendum below for why that
+    /// number, not the ~20pt first assumed, is what actually matters for
+    /// row height on iOS).
     static var rowTitleLineHeight: CGFloat {
         #if os(iOS)
         ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
@@ -140,16 +139,15 @@ enum WidgetTheme {
         #endif
     }
 
-    #if os(macOS)
-
-    // MARK: - macOS row-height truthing (2026-09-22, the vertical-space fix)
+    // MARK: - Row-height truthing (macOS 2026-09-22, iOS 2026-09-23)
     //
-    // Trent, photographing the Mac desktop Large widget: single-line titles
-    // ("Kids kazoo") were taking the height of two lines, only 5 rows fit
-    // where the card had room for more, and one long title truncated with
-    // "…" — "We can't truncate the text" (a standing rule: reminders are
-    // never cut off). Diagnosis ruled out two of the candidate causes and
-    // confirmed a third that wasn't on the original suspect list:
+    // Trent, photographing the Mac desktop Large widget (2026-09-22):
+    // single-line titles ("Kids kazoo") were taking the height of two
+    // lines, only 5 rows fit where the card had room for more, and one long
+    // title truncated with "…" — "We can't truncate the text" (a standing
+    // rule: reminders are never cut off). Diagnosis ruled out two of the
+    // candidate causes and confirmed a third that wasn't on the original
+    // suspect list:
     //
     // - `rowTitleLineHeight` "too tall on macOS": REFUTED. Measured 14pt on
     //   macOS vs. ~20pt on iOS — macOS's own subheadline metric is smaller,
@@ -157,18 +155,18 @@ enum WidgetTheme {
     // - The two-line reservation itself (`titleLineLimit`) is inherent to
     //   how `ViewThatFits` works here (see `rowTitleLineHeight`'s doc) and
     //   isn't macOS-specific.
-    // - CONFIRMED, macOS-only: `ReminderRow`/`TaskRow`'s marker column ends
-    //   in a flat `.frame(width: 36, height: 36, alignment: .top)` — a
-    //   finger-sized iOS touch target ("26pt missed too often", that frame's
-    //   own doc comment). `HStack(alignment: .top)` sizes to the TALLEST
-    //   child, and on iOS the text's own two-line reservation (2 × ~20pt =
-    //   40pt) is already taller than 36, so the marker never mattered there.
-    //   On macOS the text's two-line reservation (2 × 14pt = 28pt) is
-    //   SMALLER than 36 — so the marker, not the text, was silently setting
-    //   every row's height. Measured directly (`NSHostingView.fittingSize`
-    //   on `ReminderRow`, headless): a one-line and a two-line title both
-    //   came back exactly 36.0pt. That is the "roughly a blank line" Trent
-    //   saw under a one-line title.
+    // - CONFIRMED, macOS-only AT THE TIME: `ReminderRow`/`TaskRow`'s marker
+    //   column ended in a flat `.frame(width: 36, height: 36, alignment:
+    //   .top)` — a finger-sized iOS touch target ("26pt missed too often",
+    //   that frame's own doc comment). `HStack(alignment: .top)` sizes to
+    //   the TALLEST child, and on iOS the text's own two-line reservation
+    //   (2 × ~20pt = 40pt) was already taller than 36, so the marker never
+    //   mattered there. On macOS the text's two-line reservation (2 × 14pt
+    //   = 28pt) was SMALLER than 36 — so the marker, not the text, was
+    //   silently setting every row's height. Measured directly
+    //   (`NSHostingView.fittingSize` on `ReminderRow`, headless): a
+    //   one-line and a two-line title both came back exactly 36.0pt. That
+    //   is the "roughly a blank line" Trent saw under a one-line title.
     //
     // Fixing only the marker (matching it to the row's own 2-line
     // reservation) gets macOS's row height down to 28pt — but 28pt is
@@ -177,16 +175,16 @@ enum WidgetTheme {
     // And neither change touches truncation: `lineLimit(2)` on a title that
     // genuinely needs 3 real lines still ellipsizes, on either platform.
     //
-    // So macOS additionally replaces the fixed "always reserve 2 lines"
-    // budget with a MEASURED one, per title: `measuredLineCount` asks
-    // AppKit directly how many lines this exact string needs at the row's
-    // real available width (no wrapping surprises — this is the same API
-    // family `NSString`/`UILabel` sizing has used for years), and the row
-    // uses that as both `lineLimit` (nil — never caps, so never ellipsizes)
-    // and the `minHeight` reservation (so `ViewThatFits` is measuring the
-    // truth, not a guess). A one-line title reserves one real line; a title
-    // that needs four gets four, and simply leaves less of the card for
-    // other rows — "as many rows as genuinely fit" already implies that.
+    // So the fix replaces the fixed "always reserve 2 lines" budget with a
+    // MEASURED one, per title: `measuredLineCount` asks the platform's own
+    // text-layout API directly how many lines this exact string needs at
+    // the row's real available width (no wrapping surprises — this is the
+    // same API family `NSString`/`UILabel`/`UITextView` sizing has used for
+    // years), and the row uses that as both `lineLimit` and the `minHeight`
+    // reservation (so `ViewThatFits` is measuring the truth, not a guess).
+    // A one-line title reserves one real line; a title that needs more
+    // simply leaves less of the card for other rows — "as many rows as
+    // genuinely fit" already implies that.
     //
     // This needs the row's real width, which `ViewThatFits` candidates don't
     // otherwise have — `RemindersListView`/`TasksListView` wrap their
@@ -196,29 +194,80 @@ enum WidgetTheme {
     // the reservation above already exists to avoid) and thread the
     // measured width down into each row.
     //
-    // iOS is untouched: `titleLineLimit` stays a flat 2 (or 1 at
-    // systemMedium), `lineLimit` stays capped, and the marker stays a flat
-    // 36 — see the `#else` branches at each call site.
-    //
     // Known imperfection, accepted deliberately: this measurement assumes
-    // the row's width (passed down from `GeometryReader`) is what AppKit
-    // will actually lay the `Text` out at. If that assumption is ever wrong
-    // by enough to matter, the failure mode is a row rendering slightly
-    // TALLER than `ViewThatFits` reserved for it (possible clipping at the
-    // card's bottom edge on that one refresh) — never an ellipsis. That is
-    // the trade Trent asked for ("we can't truncate the text"), not a
-    // theoretical guarantee that measurement and final layout always agree
-    // to the pixel.
+    // the row's width (passed down from `GeometryReader`) is what the text
+    // engine will actually lay the `Text` out at. If that assumption is
+    // ever wrong by enough to matter, the failure mode is a row rendering
+    // slightly TALLER than `ViewThatFits` reserved for it (possible
+    // clipping at the card's bottom edge on that one refresh) — never an
+    // ellipsis. That is the trade Trent asked for ("we can't truncate the
+    // text"), not a theoretical guarantee that measurement and final layout
+    // always agree to the pixel.
+    //
+    // ADDENDUM, 2026-09-23 (iOS gets the same measurement, capped): Trent's
+    // iPhone screenshots showed the same family of complaints on the Home
+    // Screen Large widgets — a visible gap between one-line titles ("Check
+    // GitHub issues" / "Do my PRI"), and text truncating at TWO lines when
+    // he wanted three before an ellipsis, plus "at least one or two more"
+    // reminders visible at once. `measuredLineCount`/`measuredWidth`/
+    // `subheadlineFont`/`caption2Font` below, previously macOS-only, are now
+    // shared — `PlatformFont` resolves to `UIFont` or `NSFont` per platform,
+    // and `NSString.boundingRect` takes the SAME four-argument call on both
+    // (confirmed by compiling each standalone: iOS's Swift overlay has no
+    // default for `context`, unlike macOS's, so the call passes `context:
+    // nil` explicitly — harmless on macOS, required on iOS). Two things stay
+    // platform-specific, on purpose:
+    //
+    // 1. **The cap.** iOS still caps a title at `iOSMaxTitleLines` (3) —
+    //    macOS stays unbounded. A reminder is "a thought, not an errand",
+    //    but a phone's Home Screen has far less room than a desktop widget,
+    //    and an unbounded title on iOS could still eat the whole card for
+    //    one row. 3 lines, not macOS's "never", is the compromise: "I don't
+    //    want to truncate the text until three lines" (Trent, 2026-09-23).
+    // 2. **The marker floor.** iOS's 36pt marker (`rowMarkerSize`) is a
+    //    FINGER touch target and stays a hard floor —
+    //    `max(measuredHeight, rowMarkerSize)` — where macOS's marker simply
+    //    matches the measured height with no floor (a mouse pointer needs no
+    //    minimum). This is why the per-row height win on iOS is smaller than
+    //    macOS's was: measured directly on an iPhone 17 Pro simulator
+    //    (iOS 26.5, default Dynamic Type), `rowTitleLineHeight` is 18pt, so
+    //    the OLD flat two-line budget (2 × 18 = 36) already exactly equals
+    //    the marker floor for a one-line title — there is no wasted line to
+    //    reclaim from THAT title alone once the 36pt floor is kept. Where
+    //    this fix actually earns its keep on iOS: (a) genuinely 3-line
+    //    titles no longer truncate (a real, previously-invisible bug — see
+    //    `RemindersWidgetView`'s doc for the measured before/after), and (b)
+    //    critically, `ViewThatFits`'s candidate ceiling is raised from 6 to
+    //    10 to match macOS (`RemindersListView`/`TasksListView`'s `content`)
+    //    — THAT is what lets "one or two more" rows actually render when
+    //    they fit; the old ceiling of 6 could never offer ViewThatFits a
+    //    7th-or-later-row candidate no matter how much vertical room a
+    //    device had. At a LARGER Dynamic Type size than the simulator's
+    //    default, `rowTitleLineHeight` grows past 18pt and the per-title
+    //    measurement starts winning back real space from the marker floor
+    //    too, the same way it always did on macOS.
 
-    /// How many lines `text` needs at `maxWidth`, in `font` — real AppKit
-    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd:
-    /// a fractional line still costs the row a whole line of height.
-    static func measuredLineCount(for text: String, maxWidth: CGFloat, font: NSFont) -> Int {
+    #if os(iOS)
+    typealias PlatformFont = UIFont
+    #else
+    typealias PlatformFont = NSFont
+    #endif
+
+    /// Reminders never truncate on iOS until they need a 4th line — see the
+    /// "2026-09-23" addendum above. macOS has no equivalent constant: it
+    /// never caps at all.
+    static let iOSMaxTitleLines = 3
+
+    /// How many lines `text` needs at `maxWidth`, in `font` — real platform
+    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd: a
+    /// fractional line still costs the row a whole line of height.
+    static func measuredLineCount(for text: String, maxWidth: CGFloat, font: PlatformFont) -> Int {
         guard maxWidth > 0, !text.isEmpty else { return 1 }
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
+            attributes: [.font: font],
+            context: nil
         )
         return max(1, Int(ceil(bounds.height / rowTitleLineHeight)))
     }
@@ -227,7 +276,7 @@ enum WidgetTheme {
     /// for `TaskRow`'s due-time label before measuring the title's own
     /// wrap, since the title's real column is narrower whenever a due time
     /// is shown beside it.
-    static func measuredWidth(for text: String, font: NSFont) -> CGFloat {
+    static func measuredWidth(for text: String, font: PlatformFont) -> CGFloat {
         guard !text.isEmpty else { return 0 }
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
@@ -236,16 +285,34 @@ enum WidgetTheme {
     /// .fontWeight(weight)` renders — weight has to match what's actually
     /// drawn (P3/P4 titles render `.semibold`, which is measurably wider)
     /// or a title near the wrap boundary undercounts its lines.
-    static func subheadlineFont(weight: Font.Weight) -> NSFont {
+    static func subheadlineFont(weight: Font.Weight) -> PlatformFont {
+        #if os(iOS)
+        let pointSize = UIFont.preferredFont(forTextStyle: .subheadline).pointSize
+        return UIFont.systemFont(ofSize: pointSize, weight: uiWeight(weight))
+        #else
         let pointSize = NSFont.preferredFont(forTextStyle: .subheadline, options: [:]).pointSize
         return NSFont.systemFont(ofSize: pointSize, weight: nsWeight(weight))
+        #endif
     }
 
     /// The caption2 font, for measuring `TaskRow`'s due-time label.
-    static var caption2Font: NSFont {
+    static var caption2Font: PlatformFont {
+        #if os(iOS)
+        UIFont.preferredFont(forTextStyle: .caption2)
+        #else
         NSFont.preferredFont(forTextStyle: .caption2, options: [:])
+        #endif
     }
 
+    #if os(iOS)
+    private static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
+        switch weight {
+        case .semibold: return .semibold
+        case .medium: return .medium
+        default: return .regular
+        }
+    }
+    #else
     private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
         case .semibold: return .semibold
@@ -253,7 +320,6 @@ enum WidgetTheme {
         default: return .regular
         }
     }
-
     #endif
 
     /// Track's list rows are spaced tighter than everything else.
@@ -270,6 +336,14 @@ enum WidgetTheme {
     /// Floor for the `+1` / `−` targets, matching the check-off circles. Chrome
     /// gets compacted to fit more rows; touch targets never do.
     static let progressButtonSize: CGFloat = 36
+
+    /// `ReminderRow`/`TaskRow`'s trailing marker column (the check-off
+    /// circle / square) — width always, and iOS's height FLOOR (macOS has
+    /// no floor; see the "row-height truthing" note above). Named so the two
+    /// rows and their line-count measurement (which has to subtract this
+    /// same column back out of the card width) can't drift apart the way two
+    /// bare `36`s could.
+    static let rowMarkerSize: CGFloat = 36
 
     // MARK: - Formatting
 
@@ -409,6 +483,40 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
             ChevronButton(intent: previous, direction: .previous, enabled: hasPrevious)
             ChevronButton(intent: next, direction: .next, enabled: hasNext)
         }
+    }
+}
+
+/// The post-mutation "Undo" affordance (Trent, 2026-09-23: "I need some way
+/// ... to undo the accidental tap"). Shown in a list header for ~60s after a
+/// check-off / `+1` / `−1` — see `WidgetStore.recordMutation`/`canUndo(at:)`
+/// for the window and `UndoLastActionIntent` for what a tap does.
+///
+/// One intent shared by all three kinds: it calls the same `/api/undo` the
+/// web app's toast Undo button does (`useTaskActions.handleUndo`), which
+/// undoes the single most recent action for the signed-in user — "whatever
+/// changed last", not "whatever this specific header's row was". That is
+/// also why this only ever appears on the header of the kind that JUST
+/// mutated (the one `reloadOpenTaskWidget(kind:)` reloaded) rather than on
+/// all three at once — a kind that hasn't reloaded since the tap has no way
+/// to know a mutation happened at all.
+///
+/// Sized to its text, like the header's own title `Link`, rather than
+/// stretched to `ChevronButton`'s 40pt floor: it sits in the SAME header row
+/// as the chevrons, which have no spare height to give up (see
+/// `ChevronButton`'s comment on why a systemMedium header can't afford
+/// more), so widening this vertically would only shrink something else on
+/// the same line.
+struct UndoButton: View {
+    var body: some View {
+        Button(intent: UndoLastActionIntent()) {
+            Text("Undo")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
