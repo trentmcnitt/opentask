@@ -121,19 +121,19 @@ async function switchView(page: Page, v: View) {
 
 /** The panel starts folded; open it (the choice persists, so tests close it again). */
 async function openTrack(page: Page) {
-  const panel = page.getByRole('region', { name: 'Track' })
+  const panel = page.getByRole('region', { name: 'Quotas' })
   await expect(panel).toBeVisible()
-  const fold = panel.getByRole('button', { name: 'Expand Track' })
+  const fold = panel.getByRole('button', { name: 'Expand Quotas' })
   if (await fold.isVisible()) {
     // The choice is saved fire-and-forget; wait for it so a reload can't race it.
     const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
     await fold.click()
     await saved
   }
-  await expect(panel.getByRole('button', { name: 'Collapse Track' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Collapse Quotas' })).toBeVisible()
 }
 async function closeTrack(page: Page) {
-  const fold = page.getByRole('button', { name: 'Collapse Track' })
+  const fold = page.getByRole('button', { name: 'Collapse Quotas' })
   if (await fold.isVisible()) {
     const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
     await fold.click()
@@ -162,10 +162,10 @@ test.describe('Track', () => {
 
     try {
       await page.goto('/')
-      const panel = page.getByRole('region', { name: 'Track' })
+      const panel = page.getByRole('region', { name: 'Quotas' })
       await expect(panel).toBeVisible()
       // Folded by default: the header's total, and the quota as a chip.
-      await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+      await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
       // The period is two letters on the chip's own count, since the panel
@@ -179,7 +179,7 @@ test.describe('Track', () => {
       await expect(stream).toContainText('Date night')
       await expect(stream).toContainText('Eggs for the kids')
       await expect(panel.getByRole('progressbar')).toHaveCount(0)
-      await expect(panel.getByRole('button', { name: 'Expand Track' })).not.toContainText('this')
+      await expect(panel.getByRole('button', { name: 'Expand Quotas' })).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
@@ -270,7 +270,7 @@ test.describe('Track', () => {
       await openTrack(page)
       // The choice sticks across a reload.
       await page.reload()
-      await expect(panel.getByRole('button', { name: 'Collapse Track' })).toBeVisible()
+      await expect(panel.getByRole('button', { name: 'Collapse Quotas' })).toBeVisible()
       const row = panel.locator(`[data-track-row="${id}"]`)
       await expect(row).toBeVisible()
       // On the Today view it is not also a row in the day's groups: the panel
@@ -347,8 +347,8 @@ test.describe('Track', () => {
       rrule: 'FREQ=WEEKLY',
     })
     await page.goto('/')
-    const panel = page.getByRole('region', { name: 'Track' })
-    await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+    const panel = page.getByRole('region', { name: 'Quotas' })
+    await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
     const chip = panel.locator(`[data-track-chip="${id}"]`)
     await expect(chip).toBeVisible()
 
@@ -447,8 +447,8 @@ test.describe('Track', () => {
     ids.push(devId, workId, bareId)
 
     await page.goto('/')
-    const panel = page.getByRole('region', { name: 'Track' })
-    await expect(panel.getByRole('button', { name: 'Expand Track' })).toBeVisible()
+    const panel = page.getByRole('region', { name: 'Quotas' })
+    await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
     const stream = panel.getByRole('list', { name: 'Quotas' })
 
     // One list holds every cluster: no card, no sub-list, per label.
@@ -580,7 +580,7 @@ test.describe('Track', () => {
 
     await page.goto('/')
     await closeTrack(page)
-    const panel = page.getByRole('region', { name: 'Track' })
+    const panel = page.getByRole('region', { name: 'Quotas' })
     const cluster = panel.locator(`[data-track-cluster="${label}"]`)
     const doneChip = panel.locator(`[data-track-chip="${done}"]`)
     const openChip = panel.locator(`[data-track-chip="${open}"]`)
