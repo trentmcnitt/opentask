@@ -168,22 +168,46 @@ test.describe('Track', () => {
       await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
-      // The period is two letters on the chip's own count, since the panel
-      // groups by LABEL now and a label group mixes days, weeks and months.
-      await expect(night.locator('[data-track-count]')).toHaveText('0/1·mo')
-      // One card, one list: no period cards and no summed bar (a bar across
-      // mixed periods is meaningless — §5, Trent 2026-09-09).
-      await expect(panel.locator('[data-track-period]')).toHaveCount(0)
+      // No period suffix on the chip's own count — the section it sits in
+      // says the period now (Trent, 2026-09-23, the period-first redesign).
+      await expect(night.locator('[data-track-count]')).toHaveText('0/1')
+      // Each quota sits in ITS OWN period's section, not a shared one — a
+      // monthly quota and a weekly quota never share a `data-quota-period`.
+      // Scoped assertions rather than exact panel-wide counts throughout this
+      // test: the shared E2E database may hold other quotas in other periods
+      // (this file's own comments document that leakage risk above).
+      const weekSection = panel.locator('[data-quota-period="WEEKLY"]')
+      const monthSection = panel.locator('[data-quota-period="MONTHLY"]')
+      await expect(weekSection).toBeVisible()
+      await expect(monthSection).toBeVisible()
+      await expect(weekSection.locator(`[data-track-chip="${id}"]`)).toHaveCount(1)
+      await expect(monthSection.locator(`[data-track-chip="${nightId}"]`)).toHaveCount(1)
+      await expect(monthSection.locator(`[data-track-chip="${id}"]`)).toHaveCount(0)
+      // Each section's bar carries an accessible description combining fill
+      // and elapsed time — never a specific number, since "how much of the
+      // week is gone" depends on when the suite happens to run.
+      await expect(weekSection.locator('[data-track-period-bar]')).toHaveAttribute(
+        'aria-valuetext',
+        /^\d+% done, \d+% of the week gone$/,
+      )
+      await expect(monthSection.locator('[data-track-period-bar]')).toHaveAttribute(
+        'aria-valuetext',
+        /^\d+% done, \d+% of the month gone$/,
+      )
+      // ...and the muted time-left clause reads one of its two shapes.
+      // `toContainText` with a RegExp is a substring search, so no `^`/`$`
+      // anchors here — the section holds plenty of other text around it.
+      await expect(weekSection).toContainText(/\d+ days? left/)
+      await expect(monthSection).toContainText(/\d+ days? left/)
       const stream = panel.getByRole('list', { name: 'Quotas' })
       await expect(stream).toHaveCount(1)
       await expect(stream).toContainText('Date night')
       await expect(stream).toContainText('Eggs for the kids')
-      await expect(panel.getByRole('progressbar')).toHaveCount(0)
       await expect(panel.getByRole('button', { name: 'Expand Quotas' })).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
-      await expect(chipCount).toHaveText('0/2·wk')
+      await expect(chipCount).toHaveText('0/2')
 
       // Tap: +1, with a toast whose Undo takes it back — and the server ends
       // where the chip says it does.
@@ -207,13 +231,13 @@ test.describe('Track', () => {
       }
       page.on('response', countLogs)
       await chip.click()
-      await expect(chipCount).toHaveText('1/2·wk')
+      await expect(chipCount).toHaveText('1/2')
       const toast = page
         .locator('[data-sonner-toast]')
         .filter({ hasText: 'Logged one for \u201cEggs for the kids\u201d \u00b7 1/2' })
       await expect(toast).toBeVisible()
       await toast.getByRole('button', { name: 'Undo' }).click()
-      await expect(chipCount).toHaveText('0/2·wk')
+      await expect(chipCount).toHaveText('0/2')
       await expect.poll(() => settledLogs).toBe(2)
       page.off('response', countLogs)
       expect(
@@ -227,11 +251,11 @@ test.describe('Track', () => {
       // Met DURING the session, so it stays put, green — only what was met
       // when the page loaded is put away (Trent, 2026-09-22: "things should
       // not disappear until reload").
-      await expect(chipCount).toHaveText('2/2·wk')
+      await expect(chipCount).toHaveText('2/2')
       await chip.click({ modifiers: ['Shift'] })
-      await expect(chipCount).toHaveText('1/2·wk')
+      await expect(chipCount).toHaveText('1/2')
       await chip.click({ button: 'right' })
-      await expect(chipCount).toHaveText('0/2·wk')
+      await expect(chipCount).toHaveText('0/2')
 
       // A hold opens a popover anchored to the chip — the shape Trent asked
       // for on 2026-09-06 ("still the same concept but not hover"). It reads,
@@ -241,7 +265,7 @@ test.describe('Track', () => {
       await expect(pop).toBeVisible()
       await expect(pop).toContainText('Never yet')
       await expect(pop.getByRole('textbox')).toHaveCount(0)
-      await expect(chipCount).toHaveText('0/2·wk')
+      await expect(chipCount).toHaveText('0/2')
 
       // Open is the answer to "how do I even edit the Track items": a quota is
       // an ordinary task, and it gets its OWN editor — no due date, no snooze
@@ -410,20 +434,29 @@ test.describe('Track', () => {
 
   /**
    * §5, Trent 2026-09-09, choosing variation G of the `track-by-label` mockup:
-   * the panel groups by LABEL and draws the whole thing as one wrapping row,
-   * so a cluster's heading is a PEER of the chips rather than a box around
-   * them — asserted as DOM shape (same flex parent, one wrapping list).
+   * a cluster's heading is a PEER of its chips rather than a box around them
+   * — asserted as DOM shape (same flex parent, one wrapping list).
    *
-   * Amended the same day, after Trent saw it on dev: a title landing mid-row
-   * after the previous cluster's last chip read as confusing rather than
-   * compact, so every title now starts its own row. That is measured as an
-   * equality — the title's left edge IS the list's left edge — not a tolerance.
+   * Amended the same day, on the dev build: a title landing mid-row after the
+   * previous cluster's last chip read as confusing rather than compact, so
+   * every title started its own row from then on.
+   *
+   * REDESIGNED 2026-09-23 (`mock4`): the panel now groups by PERIOD first —
+   * this cluster stream lives INSIDE one period's section
+   * (`[data-quota-period]`), not the whole panel — and a title's row is now
+   * its OWN, full stop: chips wrap in below it rather than sharing its line
+   * while open, where the 09-09 design let them. Both are measured as
+   * equalities, not tolerances: the title's left edge IS its section's left
+   * edge, and zero chips overlap its row on EITHER side.
    */
-  test('each label title starts a row, in label order, the no-label cluster last', async ({
+  test('each label title starts a row, in label order, the no-label cluster last — inside one period section', async ({
     authenticatedPage: page,
   }) => {
     const ids: number[] = []
     // "dev" and "work" are registered by the seed, and sort in that order.
+    // All three WEEKLY, so all three land in one section and its label
+    // ordering is the thing under test — different periods would put each in
+    // its own single-cluster section, with nothing left to order.
     const devId = await createTask(page, {
       title: 'Probe stream dev quota',
       progress_target: 2,
@@ -434,7 +467,7 @@ test.describe('Track', () => {
     const workId = await createTask(page, {
       title: 'Probe stream work quota',
       progress_target: 3,
-      rrule: 'FREQ=DAILY',
+      rrule: 'FREQ=WEEKLY',
       labels: ['work'],
       create_label: true,
     })
@@ -442,16 +475,34 @@ test.describe('Track', () => {
       title: 'Probe stream bare quota',
       progress_target: 1,
       is_tracked: true,
-      rrule: 'FREQ=MONTHLY',
+      rrule: 'FREQ=WEEKLY',
     })
-    ids.push(devId, workId, bareId)
+    // A different period, so the section-scoping half of this test has
+    // something to prove: this quota must stay OUT of the WEEKLY section.
+    const monthlyId = await createTask(page, {
+      title: 'Probe stream monthly quota',
+      progress_target: 1,
+      is_tracked: true,
+      rrule: 'FREQ=MONTHLY',
+      labels: ['dev'],
+    })
+    ids.push(devId, workId, bareId, monthlyId)
 
     await page.goto('/')
     const panel = page.getByRole('region', { name: 'Quotas' })
     await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
-    const stream = panel.getByRole('list', { name: 'Quotas' })
 
-    // One list holds every cluster: no card, no sub-list, per label.
+    // Exactly one WEEKLY section for the whole panel, however many weekly
+    // quotas exist — `groupByPeriod` merges them into one group — so this
+    // locator resolves to one element regardless of what the shared E2E
+    // database otherwise holds.
+    const weekSection = panel.locator('[data-quota-period="WEEKLY"]')
+    const monthSection = panel.locator('[data-quota-period="MONTHLY"]')
+    await expect(weekSection).toBeVisible()
+    const stream = weekSection.locator(':scope > ul')
+
+    // One list holds every cluster in this section: no card, no sub-list,
+    // per label.
     await expect(stream).toHaveCount(1)
     // '' is the no-label cluster's key: a label name is validated non-empty,
     // so it is the one key no real label can collide with.
@@ -460,8 +511,7 @@ test.describe('Track', () => {
     }
 
     // A title and the chips it introduces are siblings — direct children of
-    // the same wrapping list — which is what lets the title attach after the
-    // previous cluster's last chip instead of forcing a break.
+    // the same wrapping list.
     for (const [key, id] of [
       ['dev', devId],
       ['work', workId],
@@ -471,8 +521,7 @@ test.describe('Track', () => {
       await expect(stream.locator(`:scope > li:has([data-track-chip="${id}"])`)).toHaveCount(1)
     }
 
-    // ...and that parent is the wrapping flex row itself, so a title can
-    // never be pushed onto a line of its own.
+    // ...and that parent is the wrapping flex row itself.
     expect(
       await stream.evaluate((el) => {
         const s = getComputedStyle(el)
@@ -498,11 +547,10 @@ test.describe('Track', () => {
     )
     expect(order[order.length - 1]).toBe('')
 
-    // EVERY title starts its own row (Trent, 2026-09-09): its left edge is
-    // the list's own left edge, and no chip shares that row to its left. A
-    // zero-height full-basis <li> before each title is what forces the wrap.
-    // Measured as equalities, not tolerances: an offset of exactly 0, and a
-    // count of exactly 0 chips overlapping the title's band to its left.
+    // EVERY title starts its own row AND ends it (Trent, 2026-09-23: a
+    // label's chips wrap in below it now, never beside it): its left edge is
+    // the section's own left edge, and no chip overlaps its row at all — not
+    // just to the left, which is all the 09-09 layout needed to rule out.
     const rowStarts = await stream.evaluate((ul) => {
       const listLeft = ul.getBoundingClientRect().left
       const chips = [...ul.querySelectorAll('[data-track-chip]')].map((c) =>
@@ -513,11 +561,9 @@ test.describe('Track', () => {
         return {
           cluster: el.getAttribute('data-track-cluster'),
           offsetFromListLeft: r.left - listLeft,
-          // Vertical overlap, not centre equality — a boolean about boxes,
-          // with no pixel slack in it.
-          chipsLeftOfItOnItsRow: chips.filter(
-            (c) => c.bottom > r.top && c.top < r.bottom && c.right <= r.left,
-          ).length,
+          // Vertical overlap only, no left/right split — a boolean about
+          // boxes, with no pixel slack in it.
+          chipsOnItsRow: chips.filter((c) => c.bottom > r.top && c.top < r.bottom).length,
         }
       })
     })
@@ -527,34 +573,50 @@ test.describe('Track', () => {
         cluster: t.cluster,
         offset: 0,
       })
-      expect({ cluster: t.cluster, chipsBefore: t.chipsLeftOfItOnItsRow }).toEqual({
+      expect({ cluster: t.cluster, chipsOnItsRow: t.chipsOnItsRow }).toEqual({
         cluster: t.cluster,
-        chipsBefore: 0,
+        chipsOnItsRow: 0,
       })
     }
 
-    // Each quota is in the stream exactly once, and carries its own period
-    // as a suffix now that no card names one.
-    for (const id of ids) await expect(stream.locator(`[data-track-chip="${id}"]`)).toHaveCount(1)
+    // Each WEEKLY quota is in this section's stream exactly once, with no
+    // period suffix on its chip any more — the section already says it. The
+    // MONTHLY quota is elsewhere: a section holds only its own period.
+    for (const id of [devId, workId, bareId]) {
+      await expect(stream.locator(`[data-track-chip="${id}"]`)).toHaveCount(1)
+    }
+    await expect(weekSection.locator(`[data-track-chip="${monthlyId}"]`)).toHaveCount(0)
+    await expect(monthSection.locator(`[data-track-chip="${monthlyId}"]`)).toBeVisible()
     await expect(stream.locator(`[data-track-chip="${devId}"] [data-track-count]`)).toHaveText(
-      '0/2\u00b7wk',
+      '0/2',
     )
     await expect(stream.locator(`[data-track-chip="${workId}"] [data-track-count]`)).toHaveText(
-      '0/3\u00b7d',
+      '0/3',
     )
     await expect(stream.locator(`[data-track-chip="${bareId}"] [data-track-count]`)).toHaveText(
-      '0/1\u00b7mo',
+      '0/1',
     )
 
     // Expanded, the same clusters become headings over the full rows — the
     // grouping does not vanish when the panel opens.
     await openTrack(page)
     await expect(panel.locator(`[data-track-row="${devId}"]`)).toBeVisible()
-    await expect(panel.locator('[data-track-cluster="dev"]')).toBeVisible()
+    await expect(weekSection.locator('[data-track-cluster="dev"]')).toBeVisible()
     await closeTrack(page)
   })
 
-  test('what was met at load is put away; a finished label stacks at the foot; the count shows them', async ({
+  /**
+   * Was "…a finished label stacks at the foot…" — that chip stack
+   * (`FinishedClusters`) does not exist inside a period section (Trent,
+   * 2026-09-23: disliked the green box specifically there; the section's own
+   * heading already says "M of M"). What replaces it is STILL BEING DECIDED
+   * (see `finishedClusterInSection`), so for now a fully put-away cluster
+   * simply leaves the section with nothing standing in for it — which is what
+   * this test now pins, alongside the parts that did not change: put-away
+   * happens at load, not mid-session, and the header's "X of Y" toggle is
+   * still the only way back.
+   */
+  test('what was met at load is put away, with nothing standing in for a finished cluster', async ({
     authenticatedPage: page,
   }) => {
     // A run-unique label, so this cluster holds exactly these two.
@@ -581,48 +643,48 @@ test.describe('Track', () => {
     await page.goto('/')
     await closeTrack(page)
     const panel = page.getByRole('region', { name: 'Quotas' })
-    const cluster = panel.locator(`[data-track-cluster="${label}"]`)
+    const monthSection = panel.locator('[data-quota-period="MONTHLY"]')
+    const cluster = monthSection.locator(`[data-track-cluster="${label}"]`)
     const doneChip = panel.locator(`[data-track-chip="${done}"]`)
     const openChip = panel.locator(`[data-track-chip="${open}"]`)
-    const finished = panel.locator(`[data-track-finished-cluster="${label}"]`)
     const toggle = panel.locator('[data-track-met-toggle]')
 
-    // Met at load: put away. The label stays for its unmet quota, and says
-    // how many it has closed beside its name.
+    // Met at load: put away. The label stays for its unmet quota, inside its
+    // period's own section, and says how many it has closed beside its name.
+    await expect(monthSection).toBeVisible()
     await expect(openChip).toBeVisible()
     await expect(doneChip).toHaveCount(0)
     await expect(cluster.locator('[data-track-cluster-met]')).toHaveText('1')
-    await expect(finished).toHaveCount(0)
     await expect(toggle).toHaveText(/^\d+ of \d+$/)
 
     // Met now, mid-session: nothing disappears and nothing moves.
     await openChip.click()
-    await expect(openChip.locator('[data-track-count]')).toHaveText('1/1·mo')
+    await expect(openChip.locator('[data-track-count]')).toHaveText('1/1')
     await expect(openChip).toBeVisible()
     await expect(cluster).toBeVisible()
 
-    // The next load puts the whole label away, and it stacks at the foot as
-    // one finished chip carrying how many it closed.
+    // The next load puts the whole label away — no chip, no box, nothing else
+    // takes its place. The section's own heading still counts it (asserted
+    // via the header's toggle below): the panel's period math runs over
+    // every quota, not just the ones still on screen.
     await expect
       .poll(async () => (await (await page.request.get(`/api/tasks/${open}`)).json()).data)
       .toMatchObject({ progress_current: 1 })
     await page.reload()
-    await expect(finished).toBeVisible()
-    await expect(finished).toContainText('2')
     await expect(cluster).toHaveCount(0)
     await expect(openChip).toHaveCount(0)
+    await expect(doneChip).toHaveCount(0)
 
-    // Tapping it — or the header count — shows them in place, and the count
-    // holds its box while they are showing.
-    await finished.click()
+    // The header count is still the only way back — panel-wide, unaffected
+    // by which section a quota happens to sit in.
+    await expect(toggle).toBeVisible()
+    await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(cluster).toBeVisible()
     await expect(doneChip).toBeVisible()
     await expect(openChip).toBeVisible()
-    await expect(finished).toHaveCount(0)
     await toggle.click()
     await expect(cluster).toHaveCount(0)
-    await expect(finished).toBeVisible()
   })
 
   test('an ordinary task is a row in the day, not a line in the panel', async ({

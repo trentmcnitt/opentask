@@ -13,6 +13,10 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Agent worktrees and their build output live under here — `npm run lint`
+    // was walking other agents' `.next` bundles inside `.claude/worktrees/*`
+    // and failing on generated code nobody asked it to check.
+    '.claude/**',
   ]),
   {
     rules: {

@@ -5,6 +5,7 @@
  * row component runs in the browser and only needs to read a task's tracked
  * state and name its period. Kept here so a client bundle never pulls core.
  */
+import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import type { LabelColor, LabelConfig, Task } from '@/types'
@@ -48,10 +49,38 @@ export function trackState(
  * Anything that needs to know about periods reads this.
  */
 export const QUOTA_PERIODS = [
-  { freq: 'DAILY', label: 'today', short: 'day', suffix: 'd', editor: 'Every day' },
-  { freq: 'WEEKLY', label: 'this week', short: 'week', suffix: 'wk', editor: 'Every week' },
-  { freq: 'MONTHLY', label: 'this month', short: 'month', suffix: 'mo', editor: 'Every month' },
-  { freq: 'YEARLY', label: 'this year', short: 'year', suffix: 'yr', editor: 'Every year' },
+  {
+    freq: 'DAILY',
+    label: 'today',
+    short: 'day',
+    suffix: 'd',
+    editor: 'Every day',
+    noun: 'the day',
+  },
+  {
+    freq: 'WEEKLY',
+    label: 'this week',
+    short: 'week',
+    suffix: 'wk',
+    editor: 'Every week',
+    noun: 'the week',
+  },
+  {
+    freq: 'MONTHLY',
+    label: 'this month',
+    short: 'month',
+    suffix: 'mo',
+    editor: 'Every month',
+    noun: 'the month',
+  },
+  {
+    freq: 'YEARLY',
+    label: 'this year',
+    short: 'year',
+    suffix: 'yr',
+    editor: 'Every year',
+    noun: 'the year',
+  },
 ] as const
 
 export type QuotaFreq = (typeof QUOTA_PERIODS)[number]['freq']
@@ -101,11 +130,12 @@ export interface TrackSummary {
 /**
  * Capped progress over summed targets: "2 of 23 this week".
  *
- * CURRENTLY UNCALLED in src/. It was the Track panel's period-card number until
- * the panel moved to label clusters (2026-09-09), and a label group mixes
- * periods, so adding its targets up would be meaningless — see
- * `quotaGroupSummary`, which counts quotas instead. Kept, with its tests, for a
- * future surface that groups by period again, where the sum is honest.
+ * It was the Track panel's period-card number until the panel moved to label
+ * clusters (2026-09-09) — a label group mixes periods, so adding its targets
+ * up would have been meaningless there (see `quotaGroupSummary`, which counts
+ * quotas instead). The panel groups by period again as of 2026-09-23
+ * (`trackSections`), where every quota in a group shares one clock and the sum
+ * is honest — this is that section's bar fill.
  */
 export function trackSummary(
   tasks: Pick<Task, 'progress_target' | 'progress_current'>[],
@@ -123,8 +153,9 @@ export function trackSummary(
 /**
  * Quotas by period, day-to-year, each group keeping the order it was given.
  *
- * CURRENTLY UNCALLED in src/, for the same reason as `trackSummary`: the Track
- * panel groups by label now. Kept, with its tests, for a future period view.
+ * The Track panel's top-level grouping again as of 2026-09-23 (`trackSections`
+ * builds its sections on this); label clusters live INSIDE each period now,
+ * where `trackStream` used to be the panel's only grouping.
  *
  * Ordered by QUOTA_PERIODS rather than a hand-written list, so a period added
  * to the table cannot be silently dropped from the grouping — and the
@@ -287,16 +318,22 @@ export interface TrackStreamChip {
 export type TrackStreamItem = TrackStreamTitle | TrackStreamChip
 
 /**
- * The Track panel's quotas as ONE flat stream: a title, its quotas, the next
+ * ONE period section's quotas as a flat stream: a title, its quotas, the next
  * title, its quotas (Trent, 2026-09-09, choosing variation G from the mockup).
  *
  * Flat, rather than the nested `{ label, tasks }[]` `groupByLabel` returns,
- * because the panel renders it as a single wrapping flex row in which a title
- * is just another item. That is the whole point of the layout: the heading
- * attaches after the previous cluster's last chip and wraps with everything
- * else, so it can never force a line break and the panel costs the least
- * height of the seven variations drawn. Nesting the clusters in their own
- * elements would put a wrap boundary between them and undo that.
+ * because a section renders it as a single wrapping flex row in which a title
+ * is just another item — chips wrap in after it, and the row costs the least
+ * height of the variations drawn. Nesting the clusters in their own elements
+ * would put a wrap boundary between them and undo that.
+ *
+ * SCOPED TO ONE PERIOD as of 2026-09-23. This used to be the whole panel's
+ * only grouping — one call over every quota the user had. `trackSections`
+ * groups by period first now (Trent, choosing the period-first mock over the
+ * label-first one this had been drawing since 09-09), and calls this once per
+ * section, over just that section's quotas, so a label like "kids" that has
+ * both weekly and monthly quotas gets a cluster in EACH section rather than
+ * one cluster spanning periods a bar could not honestly summarise.
  *
  * Order is `groupByLabel`'s — alphabetical, case-insensitive, the unlabelled
  * cluster last — and within a cluster the frozen alphabetical order `trackedItems`
@@ -335,4 +372,165 @@ export function trackStream(quotas: Task[], labelConfig: LabelConfig[]): TrackSt
     for (const task of group.tasks) out.push({ kind: 'chip', task, color })
   }
   return out
+}
+
+/**
+ * A period's [start, end) window in the user's timezone — the boundaries every
+ * function below measures against. `end` is exclusive and always
+ * `start.plus({ <unit>: 1 })`: a CALENDAR addition, not 24/168/etc. hours, so a
+ * DST day of 23 or 25 real hours is still exactly "one day" here and the
+ * fraction below comes out right without a special case for it.
+ */
+function periodBounds(
+  freq: QuotaFreq,
+  timezone: string,
+  now: Date,
+): { start: DateTime; end: DateTime } {
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  switch (freq) {
+    case 'DAILY': {
+      const start = local.startOf('day')
+      return { start, end: start.plus({ days: 1 }) }
+    }
+    case 'WEEKLY': {
+      // Luxon's week starts Monday (ISO 8601) — no option to set, and none
+      // needed: that is the week the app already shows everywhere else.
+      const start = local.startOf('week')
+      return { start, end: start.plus({ weeks: 1 }) }
+    }
+    case 'MONTHLY': {
+      const start = local.startOf('month')
+      return { start, end: start.plus({ months: 1 }) }
+    }
+    case 'YEARLY': {
+      const start = local.startOf('year')
+      return { start, end: start.plus({ years: 1 }) }
+    }
+  }
+}
+
+/**
+ * How much of a quota's period has already run, 0..1 — the Track panel's
+ * notch sits at this fraction along the period's bar.
+ *
+ * The fraction is a ratio of two REAL durations (`end.diff(start)`, both
+ * absolute instants), not a ratio of calendar units — which is what makes it
+ * DST-safe. A 23-hour spring-forward day divides `now - start` by 23 real
+ * hours here, not by a hard-coded 24, so the notch lands at the same clock
+ * time it would on any other day rather than drifting an hour off on the one
+ * day a naive `hoursSinceMidnight / 24` would get wrong.
+ */
+export function periodElapsedFraction(
+  freq: QuotaFreq,
+  timezone: string,
+  now: Date = new Date(),
+): number {
+  const { start, end } = periodBounds(freq, timezone, now)
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const total = end.diff(start).as('milliseconds')
+  if (total <= 0) return 0
+  const elapsed = local.diff(start).as('milliseconds')
+  return Math.min(1, Math.max(0, elapsed / total))
+}
+
+/**
+ * Calendar days left in a quota's period, TODAY COUNTED (Trent's mock:
+ * Wednesday with 5 days left in a Monday-start week — Wed, Thu, Fri, Sat, Sun).
+ *
+ * Measured from the start of TODAY to the period's end, not from `now` itself,
+ * so the number does not tick down at the moment `now`'s clock passes; it only
+ * changes at midnight, the way a person reading "5 days left" expects.
+ */
+export function periodDaysLeft(freq: QuotaFreq, timezone: string, now: Date = new Date()): number {
+  const { end } = periodBounds(freq, timezone, now)
+  const startOfToday = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  return Math.ceil(end.diff(startOfToday, 'days').days)
+}
+
+/**
+ * The section heading's muted clause: "ends tonight" for a day, "N days left"
+ * for anything longer. DAILY is worded separately rather than routed through
+ * `periodDaysLeft` (which would say "1 day left" today and "0 days left" a
+ * minute before midnight) — a day quota has no days to count, only the one
+ * it is already in.
+ */
+export function periodTimeLeftText(
+  freq: QuotaFreq,
+  timezone: string,
+  now: Date = new Date(),
+): string {
+  if (freq === 'DAILY') return 'ends tonight'
+  const days = periodDaysLeft(freq, timezone, now)
+  return `${days} day${days === 1 ? '' : 's'} left`
+}
+
+/** The Track panel's period bar: one darker tone, everywhere, no matter what it sits over. */
+export const TRACK_NOTCH_CLASS = 'bg-black/14 dark:bg-white/14'
+
+/**
+ * A period section's math and quotas, ready for the panel to draw a section
+ * from — see the Quotas panel's own top-of-file comment for the 2026-09-23
+ * period-first redesign this exists for.
+ */
+export interface TrackSection {
+  /** The FREQ, or `'NONE'` for the period-less bucket — the section's DOM/order key. */
+  key: QuotaFreq | 'NONE'
+  freq: QuotaFreq | null
+  /** As `periodLabel` would say it — 'today' … 'this year' — or 'no period'. */
+  heading: string
+  /** "ends tonight" / "N days left" — null for the no-period section, which has no clock. */
+  timeLeft: string | null
+  /** 0..1, where the notch sits — null for the no-period section (no notch). */
+  elapsedFraction: number | null
+  /** sum(min(current,target)) / sum(target) over the section's quotas — partial credit, capped per quota. */
+  barFraction: number
+  /** The bar's accessible description: "67% done, 43% of the week gone" — no elapsed clause with no period. */
+  barAriaLabel: string
+  /** Quotas met vs. total in this section — a count of quotas, not a sum of targets. */
+  summary: { count: number; met: number }
+  allMet: boolean
+  tasks: Task[]
+}
+
+/**
+ * The Track panel's quotas, grouped by period and ready to draw — the
+ * section-summary helper the panel builds its heading and bar from.
+ *
+ * Built on `groupByPeriod` (day-to-year order, period-less last, empty
+ * sections omitted) plus `trackSummary`/`quotaGroupSummary` for the numbers.
+ * The panel resolves each section's label clusters separately, with
+ * `trackStream(section.tasks, labelConfig)` — see that function's comment for
+ * why a cluster is scoped to one section rather than spanning periods.
+ */
+export function trackSections(
+  quotas: Task[],
+  timezone: string,
+  now: Date = new Date(),
+): TrackSection[] {
+  return groupByPeriod(quotas).map(({ period, tasks }) => {
+    const freq =
+      period === null ? null : (QUOTA_PERIODS.find((p) => p.label === period)?.freq ?? null)
+    const summary = quotaGroupSummary(tasks)
+    const { done, total } = trackSummary(tasks)
+    const barFraction = total === 0 ? 0 : done / total
+    const elapsedFraction = freq ? periodElapsedFraction(freq, timezone, now) : null
+    const fillPct = Math.round(barFraction * 100)
+    const elapsedPct = elapsedFraction === null ? null : Math.round(elapsedFraction * 100)
+    const noun = freq ? QUOTA_PERIODS.find((p) => p.freq === freq)?.noun : null
+    return {
+      key: freq ?? 'NONE',
+      freq,
+      heading: period ?? 'no period',
+      timeLeft: freq ? periodTimeLeftText(freq, timezone, now) : null,
+      elapsedFraction,
+      barFraction,
+      barAriaLabel:
+        elapsedPct === null
+          ? `${fillPct}% done`
+          : `${fillPct}% done, ${elapsedPct}% of ${noun} gone`,
+      summary,
+      allMet: summary.count > 0 && summary.met === summary.count,
+      tasks,
+    }
+  })
 }
