@@ -353,7 +353,11 @@ test.describe('Dashboard filter facets', () => {
     const countOf = async (chip: typeof todayChip) => {
       if ((await chip.count()) === 0) return 0
       const text = (await chip.innerText()).trim()
-      const match = text.match(/(\d+)\s*$/)
+      // The chip's own total is the FIRST number (label, then total, then
+      // optionally a due-today/overdue pill — feat/chip-due-badges) — not the
+      // last, now that a chip with something due today or overdue renders
+      // trailing pill numbers after its total.
+      const match = text.match(/(\d+)/)
       return match ? Number(match[1]) : NaN
     }
 
@@ -422,6 +426,86 @@ test.describe('Dashboard filter facets', () => {
       // Clearing the project filter restores the corpus-wide count.
       await clearFilter.click()
       await expect.poll(() => countOf(todayChip)).toBe(baselineToday + 3)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  /**
+   * feat/chip-due-badges (Trent 2026-09-23): the teal completion fill behind
+   * these chips is gone, replaced by two little pills after the total — a
+   * soft indigo "due later today" pill and a solid red "overdue" pill.
+   */
+  test('project and Today chips show due-today/overdue pills with faceted counts', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+
+    // `filters_expanded` is a server preference shared by every spec in this
+    // run (see the previous test's own note) — a blind click can CLOSE an
+    // already-open panel left that way by whichever test ran before this one.
+    await expect(toggle(page)).toBeVisible({ timeout: 5000 })
+    if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
+      await toggle(page).click()
+    }
+    const chips = page.locator('#dashboard-filter-chips')
+    const workChip = chips.locator('[data-project-chip="3"]')
+    const todayChip = chips.locator('[data-date-chip="today"]')
+
+    // Pill attributes carry the count as their value (like `data-project-chip`
+    // carries the project id) — absent entirely when that count is 0.
+    const pillCount = async (chip: typeof workChip, attr: string) => {
+      const pill = chip.locator(`[${attr}]`)
+      if ((await pill.count()) === 0) return 0
+      return Number(await pill.getAttribute(attr))
+    }
+
+    await expect(workChip).toBeVisible()
+    const baselineWorkDueToday = await pillCount(workChip, 'data-chip-due-today')
+    const baselineWorkOverdue = await pillCount(workChip, 'data-chip-overdue')
+    const baselineTodayOverdue = await pillCount(todayChip, 'data-chip-overdue')
+
+    try {
+      // Project 3 = Work (scripts/seed-test.ts / globalSetup.ts).
+      ids.push(
+        await createTask(page, {
+          title: 'Chip badge test — Work due later today',
+          project_id: 3,
+          due_at: DateTime.now().setZone(TEST_TZ).plus({ minutes: 10 }).toUTC().toISO(),
+        }),
+      )
+      ids.push(
+        await createTask(page, {
+          title: 'Chip badge test — Work overdue today',
+          project_id: 3,
+          due_at: DateTime.now().setZone(TEST_TZ).minus({ minutes: 10 }).toUTC().toISO(),
+        }),
+      )
+
+      await page.reload()
+      await expect(toggle(page)).toBeVisible({ timeout: 5000 })
+      if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
+        await toggle(page).click()
+      }
+
+      await expect(workChip).toBeVisible()
+      await expect
+        .poll(() => pillCount(workChip, 'data-chip-due-today'))
+        .toBe(baselineWorkDueToday + 1)
+      await expect
+        .poll(() => pillCount(workChip, 'data-chip-overdue'))
+        .toBe(baselineWorkOverdue + 1)
+      // Spelled out for screen readers, not just carried by color.
+      await expect(workChip).toHaveAttribute('aria-label', /due today/)
+      await expect(workChip).toHaveAttribute('aria-label', /overdue/)
+
+      // The Today chip's own total already means "due today" — it gets the
+      // overdue pill (this task is both) but never a due-today pill.
+      await expect
+        .poll(() => pillCount(todayChip, 'data-chip-overdue'))
+        .toBe(baselineTodayOverdue + 1)
+      await expect(todayChip.locator('[data-chip-due-today]')).toHaveCount(0)
     } finally {
       await deleteTasks(page, ids)
     }
