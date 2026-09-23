@@ -465,6 +465,45 @@ describe('Bulk Snooze Relative Mode', () => {
     expect(result.snoozedIds).toHaveLength(result.tasksAffected)
   })
 
+  /**
+   * The double snooze (Trent, 2026-09-22): High is swept only once nothing
+   * lower is left, so the first press moves the ordinary task and skips High,
+   * and the second moves High alone — which `highSnoozed` reports, so the
+   * toast can say "Snoozed 1 high-priority task".
+   */
+  test('BS-002d: highSnoozed counts the High tasks moved — none on press one, all on press two', () => {
+    const ordinary = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Ordinary for the double snooze', due_at: localTime(9, 0), priority: 1 },
+    })
+    const high = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'High for the double snooze', due_at: localTime(9, 0), priority: 3 },
+    })
+
+    const first = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [ordinary.id, high.id],
+      deltaMinutes: 60,
+    })
+    expect(first.snoozedIds).toEqual([ordinary.id])
+    expect(first.highSkipped).toBe(1)
+    expect(first.highSnoozed).toBe(0)
+
+    const second = bulkSnooze({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskIds: [high.id],
+      deltaMinutes: 60,
+    })
+    expect(second.snoozedIds).toEqual([high.id])
+    expect(second.highSnoozed).toBe(1)
+    expect(second.highSnoozed).toBe(second.tasksAffected)
+  })
+
   /** Nothing eligible means nothing claimed. */
   test('BS-002c: snoozedIds is empty when every task is skipped', () => {
     const urgent = createTask({

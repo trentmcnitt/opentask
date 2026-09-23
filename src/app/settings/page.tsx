@@ -34,7 +34,7 @@ import {
   useAiAvailable,
   useAiFeatureInfo,
 } from '@/components/PreferencesProvider'
-import type { FeatureMode, FeatureInfo } from '@/components/PreferencesProvider'
+import type { BulkSnoozeDefault, FeatureMode, FeatureInfo } from '@/components/PreferencesProvider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
@@ -66,8 +66,14 @@ export default function SettingsPage() {
     autoSnoozeMedium,
     setAutoSnoozeMedium,
   } = useAutoSnoozeDefault()
-  const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
-    useSnoozePreferences()
+  const {
+    defaultSnoozeOption,
+    setDefaultSnoozeOption,
+    bulkSnoozeDefault,
+    setBulkSnoozeDefault,
+    morningTime,
+    setMorningTime,
+  } = useSnoozePreferences()
   const { wakeTime, setWakeTime, sleepTime, setSleepTime } = useSchedulePreferences()
   const {
     notificationsEnabled,
@@ -275,6 +281,23 @@ export default function SettingsPage() {
       showToast({ message: 'Preference saved', type: 'success' })
     } catch {
       setDefaultSnoozeOption(prev)
+      showToast({ message: 'Failed to save preference', type: 'error' })
+    }
+  }
+
+  const handleBulkSnoozeDefaultChange = async (value: BulkSnoozeDefault) => {
+    const prev = bulkSnoozeDefault
+    setBulkSnoozeDefault(value)
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulk_snooze_default: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      showToast({ message: 'Preference saved', type: 'success' })
+    } catch {
+      setBulkSnoozeDefault(prev)
       showToast({ message: 'Failed to save preference', type: 'error' })
     }
   }
@@ -1008,6 +1031,27 @@ export default function SettingsPage() {
                   <option value="custom">Custom...</option>
                 </select>
               )}
+            </div>
+            {/* Trent, 2026-09-22: the clock press defaults to the next
+                period, with this to flip back while he decides. */}
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm">Snooze-all button</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Where a tap of the clock sends every overdue task
+                </div>
+              </div>
+              <select
+                aria-label="Snooze-all button"
+                value={bulkSnoozeDefault}
+                onChange={(e) =>
+                  void handleBulkSnoozeDefaultChange(e.target.value as BulkSnoozeDefault)
+                }
+                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="next_period">Next period</option>
+                <option value="default_option">Default snooze</option>
+              </select>
             </div>
             <div className="flex items-center justify-between">
               <div>

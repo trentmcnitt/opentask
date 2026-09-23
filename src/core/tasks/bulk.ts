@@ -288,6 +288,13 @@ export interface BulkSnoozeResult {
   urgentSkipped: number
   /** The High (P3) subset of `urgentSkipped`. Urgent alone is the difference. */
   highSkipped: number
+  /**
+   * How many of the tasks actually moved were High (P3). A bulk press sweeps
+   * High only once nothing lower is left, so the second press of a "double
+   * snooze" moves High alone — and its toast should say so (Trent,
+   * 2026-09-22).
+   */
+  highSnoozed: number
   /** §6: reminders excluded because they are bucket-locked. */
   reminderSkipped: number
   noDueDateSkipped: number
@@ -324,6 +331,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksSkipped: 0,
       urgentSkipped: 0,
       highSkipped: 0,
+      highSnoozed: 0,
       reminderSkipped: 0,
       noDueDateSkipped: 0,
       snoozedIds: [],
@@ -379,6 +387,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksSkipped: skippedCount,
       urgentSkipped,
       highSkipped,
+      highSnoozed: 0,
       reminderSkipped,
       noDueDateSkipped,
       snoozedIds: [],
@@ -471,6 +480,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
       tasksSkipped: skippedCount,
       urgentSkipped,
       highSkipped,
+      highSnoozed: snoozeable.filter((t) => t.priority === 3).length,
       reminderSkipped,
       noDueDateSkipped,
       snoozedIds: snoozeable.map((t) => t.id),

@@ -237,6 +237,14 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'users', 'track_expanded')) {
     database.exec('ALTER TABLE users ADD COLUMN track_expanded INTEGER NOT NULL DEFAULT 0')
   }
+  // What a plain press of the bulk-snooze clock does (Trent, 2026-09-22): to
+  // the next time slot by default, or the user's default snooze option. A
+  // setting so he can flip between the two while deciding.
+  if (!hasColumn(database, 'users', 'bulk_snooze_default')) {
+    database.exec(
+      "ALTER TABLE users ADD COLUMN bulk_snooze_default TEXT NOT NULL DEFAULT 'next_period'",
+    )
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)

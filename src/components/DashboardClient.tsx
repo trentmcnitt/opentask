@@ -557,7 +557,7 @@ function HomeContent({
     [setTasks, fetchTasks],
   )
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
-  const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
+  const { defaultSnoozeOption, bulkSnoozeDefault, morningTime } = useSnoozePreferences()
 
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [focusedTask, setFocusedTask] = useState<Task | null>(null)
@@ -1108,6 +1108,8 @@ function HomeContent({
     onUndoCountBump: actions.bumpUndoCount,
     timezone,
     defaultSnoozeOption,
+    bulkSnoozeDefault,
+    timeSlots,
     morningTime,
   })
 

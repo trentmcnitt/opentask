@@ -20,6 +20,14 @@ const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
   colorCheckbox: true,
 }
 
+/**
+ * What a plain press of the bulk-snooze clock does (Trent, 2026-09-22).
+ * `next_period`, the default: snooze to the next time slot to start.
+ * `default_option`: the user's default snooze option (+1h unless changed) —
+ * the old behaviour, kept as a setting so he can flip between them.
+ */
+export type BulkSnoozeDefault = 'next_period' | 'default_option'
+
 interface PreferencesContextValue {
   aiAvailable: boolean
   labelConfig: LabelConfig[]
@@ -39,6 +47,9 @@ interface PreferencesContextValue {
   setAutoSnoozeMedium: (minutes: number) => void
   defaultSnoozeOption: string
   setDefaultSnoozeOption: (option: string) => void
+  /** What a plain press of the bulk-snooze clock does — see `BulkSnoozeDefault`. */
+  bulkSnoozeDefault: BulkSnoozeDefault
+  setBulkSnoozeDefault: (value: BulkSnoozeDefault) => void
   morningTime: string
   setMorningTime: (time: string) => void
   wakeTime: string
@@ -139,6 +150,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAutoSnoozeMedium: () => {},
   defaultSnoozeOption: '60',
   setDefaultSnoozeOption: () => {},
+  bulkSnoozeDefault: 'next_period',
+  setBulkSnoozeDefault: () => {},
   morningTime: '09:00',
   setMorningTime: () => {},
   wakeTime: '07:00',
@@ -201,6 +214,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [autoSnoozeLow, setAutoSnoozeLowState] = useState(240)
   const [autoSnoozeMedium, setAutoSnoozeMediumState] = useState(60)
   const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
+  const [bulkSnoozeDefault, setBulkSnoozeDefaultState] = useState<BulkSnoozeDefault>('next_period')
   const [morningTime, setMorningTimeState] = useState('09:00')
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
@@ -330,6 +344,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (data?.data?.default_snooze_option) {
           setDefaultSnoozeOptionState(data.data.default_snooze_option)
         }
+        if (data?.data?.bulk_snooze_default === 'default_option') {
+          setBulkSnoozeDefaultState('default_option')
+        }
         if (data?.data?.morning_time) {
           setMorningTimeState(data.data.morning_time)
         }
@@ -452,6 +469,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setAutoSnoozeMedium: setAutoSnoozeMediumState,
         defaultSnoozeOption,
         setDefaultSnoozeOption: setDefaultSnoozeOptionState,
+        bulkSnoozeDefault,
+        setBulkSnoozeDefault: setBulkSnoozeDefaultState,
         morningTime,
         setMorningTime: setMorningTimeState,
         wakeTime,
@@ -576,9 +595,22 @@ export function useAutoSnoozeDefault() {
 }
 
 export function useSnoozePreferences() {
-  const { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime } =
-    useContext(PreferencesContext)
-  return { defaultSnoozeOption, setDefaultSnoozeOption, morningTime, setMorningTime }
+  const {
+    defaultSnoozeOption,
+    setDefaultSnoozeOption,
+    bulkSnoozeDefault,
+    setBulkSnoozeDefault,
+    morningTime,
+    setMorningTime,
+  } = useContext(PreferencesContext)
+  return {
+    defaultSnoozeOption,
+    setDefaultSnoozeOption,
+    bulkSnoozeDefault,
+    setBulkSnoozeDefault,
+    morningTime,
+    setMorningTime,
+  }
 }
 
 export function useSchedulePreferences() {
