@@ -13,11 +13,11 @@ Detailed development reference for the OpenTask iOS companion app. See the main 
 
 WidgetKit extension (`io.mcnitt.opentask.widgets`, iOS 17, App Group `group.io.mcnitt.opentask`) with three independent widget kinds — `OpenTaskReminders`, `OpenTaskTasks`, `OpenTaskTrack`. Separate kinds, not one configurable widget, so each gets its own refresh budget (REDESIGN-V03 §8).
 
-| Kind                | Shows                                                                 | Primary size                                       |
-| ------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
+| Kind                | Shows                                                                                     | Primary size                                       |
+| ------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `OpenTaskReminders` | Current time slot's reminders, trailing check-off buttons (§6), a per-slot progress strip | `systemLarge`                                      |
-| `OpenTaskTasks`     | Today's dated tasks by project — reminders AND tracked items excluded | `systemLarge`                                      |
-| `OpenTaskTrack`     | Every `progress_target > 1` quota, `+1` buttons (§5)                  | `systemSmall` (ring + fraction, §8's flagship 2×2) |
+| `OpenTaskTasks`     | Today's dated tasks by project — reminders AND tracked items excluded                     | `systemLarge`                                      |
+| `OpenTaskTrack`     | Every `progress_target > 1` quota, `+1` buttons (§5)                                      | `systemSmall` (ring + fraction, §8's flagship 2×2) |
 
 All three support `systemSmall` / `systemMedium` / `systemLarge` / `accessoryRectangular` / `accessoryCircular`. The Reminders and Tasks 2×2s are glanceable-only (a headline number, one item, whole-card deep link) — at ~126pt across, per-item buttons would be mis-tap machines.
 
