@@ -25,6 +25,13 @@ struct TasksEntry: TimelineEntry {
     /// The header subtitle's "Undid: …" / "Redid: …" indication — see
     /// `RemindersEntry.actionDescription`'s doc.
     let actionDescription: String?
+    /// EVERY project, for color lookups — `projects` above is only the ones
+    /// with something due today (it is the chevrons' ring). Up next shows
+    /// tasks from any project, so looking colors up in the ring painted a
+    /// project with nothing due today gray: Trent's red Work tasks
+    /// (2026-09-23). Defaulted so sample entries needn't pass it; empty
+    /// falls back to `projects`.
+    var colorProjects: [ProjectDTO] = []
 
     /// Two unified pages up front (2026-09-23, item 4) — Trent: "Instead of
     /// Up Next I'd also like to have just a Today one… We need a Today one
@@ -43,8 +50,8 @@ struct TasksEntry: TimelineEntry {
 
     /// Whether this is one of the two unified pages (Today / Up next) rather
     /// than a single project — gates the header's project dot (shown only on
-    /// a real project page) and each row's project CHIP (item 5, shown only
-    /// on a unified page — see `TaskRow.projectChip`'s doc).
+    /// a real project page) and each row's project-colored EDGE (shown only
+    /// on a unified page — see `TaskRow.showsProjectEdge`).
     var isUnifiedScope: Bool {
         scope == WidgetStore.allProjects || scope == WidgetStore.upNextScope
     }
@@ -62,14 +69,8 @@ struct TasksEntry: TimelineEntry {
     /// task's project has somehow dropped out of `projects` (a project
     /// deleted between fetches, say) rather than crashing or guessing a color.
     func projectColor(for task: TaskDTO) -> Color {
-        WidgetTheme.projectColor(projects.first(where: { $0.id == task.projectId })?.color)
-    }
-
-    /// A task's own project NAME, for `TaskRow`'s project chip (2026-09-23,
-    /// item 5) — same lookup and same "dropped out of `projects`" fallback
-    /// (here, simply no chip) as `projectColor(for:)`.
-    func projectName(for task: TaskDTO) -> String? {
-        projects.first(where: { $0.id == task.projectId })?.name
+        let all = colorProjects.isEmpty ? projects : colorProjects
+        return WidgetTheme.projectColor(all.first(where: { $0.id == task.projectId })?.color)
     }
 
     func overdueCount(now: Date = Date()) -> Int {
@@ -200,7 +201,8 @@ struct TasksProvider: TimelineProvider {
                         isSignedOut: false,
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
-                        actionDescription: WidgetStore.lastActionDescription(at: due)
+                        actionDescription: WidgetStore.lastActionDescription(at: due),
+                        colorProjects: entry.colorProjects
                     )
                 )
             }
@@ -219,7 +221,8 @@ struct TasksProvider: TimelineProvider {
                         isSignedOut: false,
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
-                        actionDescription: nil
+                        actionDescription: nil,
+                        colorProjects: entry.colorProjects
                     )
                 )
             }
@@ -288,7 +291,8 @@ struct TasksProvider: TimelineProvider {
             isSignedOut: false,
             canUndo: WidgetStore.canUndo,
             canRedo: WidgetStore.canRedo,
-            actionDescription: WidgetStore.lastActionDescription(at: now)
+            actionDescription: WidgetStore.lastActionDescription(at: now),
+            colorProjects: snapshot.projects
         )
     }
 }
