@@ -345,6 +345,50 @@ export function RemindersView({
   // A `?reminder=<id>` deep link still brings its row into view (the row's own
   // `scrollRowIntoView` ref).
 
+  /**
+   * `?slot=<slotId>` — the widget's per-slot header deep link (a Time Slot's
+   * numeric `id`, or the literal `"unslotted"` for Anytime — same identity
+   * `groupKey` gives every slot group). Brings that slot's whole SECTION into
+   * view, opening it if folded — the same shape as `?reminder=<id>` above,
+   * but for a section rather than a single row: the widget's slot header
+   * links here, and there is no one row to highlight.
+   *
+   * Every slot starts open by default already (see `useSlotDisclosure`'s doc
+   * comment — a 2026-09-06 change), so `setOpen`/`setExpanded` are usually a
+   * no-op on a fresh visit; they still run for the rare case a slot was
+   * folded earlier in the same session before this link was used.
+   *
+   * Deletes only its own `slot` param (not the whole query string) when
+   * consuming it — unlike a full-path `replaceState`, this can't clobber an
+   * unrelated param a future caller adds alongside it.
+   */
+  const [scrollToSlotKey, setScrollToSlotKey] = useState<string | null>(null)
+  const slotDeepLinkDone = useRef(false)
+  useEffect(() => {
+    if (slotDeepLinkDone.current || !hydrated || error) return
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('slot')
+    if (!raw) {
+      slotDeepLinkDone.current = true
+      return
+    }
+    slotDeepLinkDone.current = true
+    const group = groups.find((g) => groupKey(g) === raw)
+    if (group) {
+      const key = groupKey(group)
+      setOpen(key, true)
+      setExpanded(key, true)
+      setScrollToSlotKey(key)
+    }
+    params.delete('slot')
+    const query = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      window.location.pathname + (query ? `?${query}` : ''),
+    )
+  }, [hydrated, error, groups, setOpen, setExpanded])
+
   // Rows actually rendered, in DOM order — the universe for range selection.
   const renderedRows = useMemo(() => {
     // While searching every match is on screen, so range selection spans all
@@ -622,6 +666,7 @@ export function RemindersView({
                   <ReminderSlotGroup
                     key={key}
                     slotKey={key}
+                    scrollIntoView={scrollToSlotKey === key}
                     group={group}
                     started={summary.started.includes(group)}
                     open={
@@ -1021,6 +1066,11 @@ function SlotRowCountToggle({
   return null
 }
 
+/** The `?slot=<slotId>` deep link's scroll-into-view ref, or none. */
+function slotScrollRef(scrollIntoView: boolean | undefined) {
+  return scrollIntoView ? scrollRowIntoView : undefined
+}
+
 function ReminderSlotGroup({
   group,
   started,
@@ -1028,6 +1078,7 @@ function ReminderSlotGroup({
   expanded,
   locked = false,
   slotKey,
+  scrollIntoView,
   onToggle,
   onExpand,
   completingIds,
@@ -1045,8 +1096,10 @@ function ReminderSlotGroup({
   expanded: boolean
   /** Search results: the slot cannot be folded and offers no sweep. */
   locked?: boolean
-  /** Scroll anchor — the surface lands the viewport on the current slot. */
+  /** Identity for the `?slot=<slotId>` deep link (`groupKey`'s value) and E2E targeting. */
   slotKey?: string
+  /** This is the `?slot=<slotId>` deep link's target — scroll it into view once mounted. */
+  scrollIntoView?: boolean
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number>
@@ -1083,6 +1136,7 @@ function ReminderSlotGroup({
 
   return (
     <div
+      ref={slotScrollRef(scrollIntoView)}
       className={cn(
         // Bottom padding in every state, so the hairline sits inside the card
         // rather than flush with its edge when folded.
@@ -1093,7 +1147,8 @@ function ReminderSlotGroup({
       data-slot-group={label}
       data-slot-started={started}
       data-slot-key={slotKey}
-      // Clears the fixed top bar when scrollIntoView lands on this card.
+      // Clears the fixed top bar when scrollIntoView lands on this card
+      // (`?slot=<slotId>` deep link — see the `scrollToSlotKey` effect above).
       style={{ scrollMarginTop: '4.5rem' }}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">

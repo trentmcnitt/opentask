@@ -12,6 +12,148 @@ interface UseFilterStateOptions {
   initialDateFilters?: DueDateFilter[]
 }
 
+/** The five corpus-slicing filter groups FilterBar renders as chip rows. */
+export type FilterGroup = 'labels' | 'priorities' | 'dateFilters' | 'attributes' | 'projects'
+
+export const FILTER_GROUPS: readonly FilterGroup[] = [
+  'labels',
+  'priorities',
+  'dateFilters',
+  'attributes',
+  'projects',
+]
+
+/** Every filter group's current include/exclude state — the input to `applyTaskFilters`. */
+export interface TaskFilterCriteria {
+  selectedLabels: string[]
+  excludedLabels: string[]
+  selectedPriorities: number[]
+  excludedPriorities: number[]
+  selectedDateFilters: DueDateFilter[]
+  excludedDateFilters: DueDateFilter[]
+  attributeFilters: Set<string>
+  excludedAttributes: Set<string>
+  selectedProjects: number[]
+  excludedProjects: number[]
+}
+
+interface ApplyTaskFiltersOptions {
+  timezone?: string
+  /**
+   * Skip this one group when applying filters — the faceted-count trick
+   * FilterBar's chip rows use for their counts. A row that counted over the
+   * FULLY filtered set would fold its own selection into every chip's count
+   * (e.g. the Today chip would only ever show tasks that are ALSO in the
+   * selected project, priority, etc. — which is right for the LIST, but wrong
+   * for a chip row, where the point is comparing what each chip in THIS row
+   * would give). Counting over "every other group applied, this one not" is
+   * the standard fix: it reflects every active filter except the row's own,
+   * so a Work project filter correctly zeroes out (or reduces) the Today
+   * chip's count instead of leaving it showing the whole corpus's "today"
+   * count (Trent, 2026-09-23 — the "Today 3" chip stayed at 3 under the Work
+   * filter even though none of Work's tasks were due today).
+   */
+  skipGroup?: FilterGroup
+}
+
+function filterByLabels(tasks: Task[], c: TaskFilterCriteria): Task[] {
+  let filtered = tasks
+  if (c.selectedLabels.length > 0) {
+    filtered = filtered.filter((t) => t.labels.some((l) => c.selectedLabels.includes(l)))
+  }
+  if (c.excludedLabels.length > 0) {
+    filtered = filtered.filter((t) => !t.labels.some((l) => c.excludedLabels.includes(l)))
+  }
+  return filtered
+}
+
+function filterByPriorities(tasks: Task[], c: TaskFilterCriteria): Task[] {
+  let filtered = tasks
+  if (c.selectedPriorities.length > 0) {
+    filtered = filtered.filter((t) => c.selectedPriorities.includes(t.priority ?? 0))
+  }
+  if (c.excludedPriorities.length > 0) {
+    filtered = filtered.filter((t) => !c.excludedPriorities.includes(t.priority ?? 0))
+  }
+  return filtered
+}
+
+function filterByDateFilters(tasks: Task[], c: TaskFilterCriteria, timezone?: string): Task[] {
+  if (!timezone) return tasks
+  if (c.selectedDateFilters.length === 0 && c.excludedDateFilters.length === 0) return tasks
+  let filtered = tasks
+  const now = new Date()
+  const boundaries = getTimezoneDayBoundaries(timezone)
+  if (c.selectedDateFilters.length > 0) {
+    filtered = filtered.filter((t) => {
+      const buckets = classifyTaskDueDate(t, now, boundaries)
+      return buckets.some((b) => c.selectedDateFilters.includes(b))
+    })
+  }
+  if (c.excludedDateFilters.length > 0) {
+    filtered = filtered.filter((t) => {
+      const buckets = classifyTaskDueDate(t, now, boundaries)
+      return !buckets.some((b) => c.excludedDateFilters.includes(b))
+    })
+  }
+  return filtered
+}
+
+function filterByAttributes(tasks: Task[], c: TaskFilterCriteria): Task[] {
+  let filtered = tasks
+  if (c.attributeFilters.size > 0) {
+    filtered = filtered.filter((t) => {
+      if (c.attributeFilters.has('recurring') && t.rrule != null) return true
+      if (c.attributeFilters.has('custom_auto_snooze') && t.auto_snooze_minutes != null) return true
+      return false
+    })
+  }
+  if (c.excludedAttributes.size > 0) {
+    filtered = filtered.filter((t) => {
+      if (c.excludedAttributes.has('recurring') && t.rrule != null) return false
+      if (c.excludedAttributes.has('custom_auto_snooze') && t.auto_snooze_minutes != null)
+        return false
+      return true
+    })
+  }
+  return filtered
+}
+
+function filterByProjects(tasks: Task[], c: TaskFilterCriteria): Task[] {
+  let filtered = tasks
+  if (c.selectedProjects.length > 0) {
+    filtered = filtered.filter((t) => c.selectedProjects.includes(t.project_id))
+  }
+  if (c.excludedProjects.length > 0) {
+    filtered = filtered.filter((t) => !c.excludedProjects.includes(t.project_id))
+  }
+  return filtered
+}
+
+/**
+ * The single predicate behind the dashboard's filter chips — includes narrow
+ * down to matching tasks, excludes remove matching tasks, and when both are
+ * active within one group the includes apply first. `useFilterState`'s own
+ * `filteredTasks` calls this with every group applied; FilterBar's chip rows
+ * call it once per row with that row's own group skipped (see
+ * `ApplyTaskFiltersOptions.skipGroup`) — one function, reused both places, so
+ * there is exactly one place that knows what a filter group does.
+ */
+export function applyTaskFilters(
+  tasks: Task[],
+  criteria: TaskFilterCriteria,
+  options: ApplyTaskFiltersOptions = {},
+): Task[] {
+  const { timezone, skipGroup } = options
+  let filtered = tasks
+  if (skipGroup !== 'labels') filtered = filterByLabels(filtered, criteria)
+  if (skipGroup !== 'priorities') filtered = filterByPriorities(filtered, criteria)
+  if (skipGroup !== 'dateFilters') filtered = filterByDateFilters(filtered, criteria, timezone)
+  if (skipGroup !== 'attributes') filtered = filterByAttributes(filtered, criteria)
+  if (skipGroup !== 'projects') filtered = filterByProjects(filtered, criteria)
+  return filtered
+}
+
 /**
  * Filter state for the dashboard filter bar.
  *
@@ -180,86 +322,41 @@ export function useFilterState({
   }, [])
 
   // --- Filter logic ---
-  // Includes narrow down to matching tasks. Excludes remove matching tasks.
-  // When both are active, includes apply first, then excludes remove from the result.
+  // Delegates to `applyTaskFilters` — the same predicate FilterBar's chip rows
+  // use for their faceted counts (with one group skipped there; every group
+  // applied here).
 
-  const filteredTasks = useMemo(() => {
-    let filtered = tasks
+  const criteria: TaskFilterCriteria = useMemo(
+    () => ({
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters,
+      excludedAttributes,
+      selectedProjects,
+      excludedProjects,
+    }),
+    [
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters,
+      excludedAttributes,
+      selectedProjects,
+      excludedProjects,
+    ],
+  )
 
-    // Labels
-    if (selectedLabels.length > 0) {
-      filtered = filtered.filter((t) => t.labels.some((l) => selectedLabels.includes(l)))
-    }
-    if (excludedLabels.length > 0) {
-      filtered = filtered.filter((t) => !t.labels.some((l) => excludedLabels.includes(l)))
-    }
-
-    // Priorities
-    if (selectedPriorities.length > 0) {
-      filtered = filtered.filter((t) => selectedPriorities.includes(t.priority ?? 0))
-    }
-    if (excludedPriorities.length > 0) {
-      filtered = filtered.filter((t) => !excludedPriorities.includes(t.priority ?? 0))
-    }
-
-    // Date filters
-    if ((selectedDateFilters.length > 0 || excludedDateFilters.length > 0) && timezone) {
-      const now = new Date()
-      const boundaries = getTimezoneDayBoundaries(timezone)
-      if (selectedDateFilters.length > 0) {
-        filtered = filtered.filter((t) => {
-          const buckets = classifyTaskDueDate(t, now, boundaries)
-          return buckets.some((b) => selectedDateFilters.includes(b))
-        })
-      }
-      if (excludedDateFilters.length > 0) {
-        filtered = filtered.filter((t) => {
-          const buckets = classifyTaskDueDate(t, now, boundaries)
-          return !buckets.some((b) => excludedDateFilters.includes(b))
-        })
-      }
-    }
-
-    // Attributes
-    if (attributeFilters.size > 0) {
-      filtered = filtered.filter((t) => {
-        if (attributeFilters.has('recurring') && t.rrule != null) return true
-        if (attributeFilters.has('custom_auto_snooze') && t.auto_snooze_minutes != null) return true
-        return false
-      })
-    }
-    if (excludedAttributes.size > 0) {
-      filtered = filtered.filter((t) => {
-        if (excludedAttributes.has('recurring') && t.rrule != null) return false
-        if (excludedAttributes.has('custom_auto_snooze') && t.auto_snooze_minutes != null)
-          return false
-        return true
-      })
-    }
-
-    // Projects
-    if (selectedProjects.length > 0) {
-      filtered = filtered.filter((t) => selectedProjects.includes(t.project_id))
-    }
-    if (excludedProjects.length > 0) {
-      filtered = filtered.filter((t) => !excludedProjects.includes(t.project_id))
-    }
-
-    return filtered
-  }, [
-    tasks,
-    selectedLabels,
-    excludedLabels,
-    selectedPriorities,
-    excludedPriorities,
-    selectedDateFilters,
-    excludedDateFilters,
-    timezone,
-    attributeFilters,
-    excludedAttributes,
-    selectedProjects,
-    excludedProjects,
-  ])
+  const filteredTasks = useMemo(
+    () => applyTaskFilters(tasks, criteria, { timezone }),
+    [tasks, criteria, timezone],
+  )
 
   return {
     // Include state

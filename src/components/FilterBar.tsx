@@ -13,6 +13,12 @@ import {
 } from '@/components/DueDateFilterBar'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { SIGNAL_ICONS } from '@/components/TaskRow'
+import {
+  applyTaskFilters,
+  FILTER_GROUPS,
+  type FilterGroup,
+  type TaskFilterCriteria,
+} from '@/hooks/useFilterState'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { Task, Project } from '@/types'
 
@@ -89,6 +95,9 @@ export function FilterBar({
   onToggleProject,
   onExclusiveProject,
   todayCounts,
+  remainingToday,
+  doneToday,
+  doneTodayByProject,
   // Exclude filters
   excludedPriorities = [],
   excludedLabels = [],
@@ -143,7 +152,14 @@ export function FilterBar({
   selectedProjects?: number[]
   onToggleProject?: (projectId: number) => void
   onExclusiveProject?: (projectId: number) => void
+  /** Due-today, not-yet-done count per project — completion fill denominator (§ITEM 2). */
   todayCounts?: Map<number, number>
+  /** Due-today, not-yet-done count overall — the Today chip's fill denominator. */
+  remainingToday?: number
+  /** Completed today overall — the Today chip's fill numerator. */
+  doneToday?: number
+  /** Completed today per project — each project chip's fill numerator. */
+  doneTodayByProject?: Map<number, number>
   // Exclude filters
   excludedPriorities?: number[]
   excludedLabels?: string[]
@@ -181,6 +197,44 @@ export function FilterBar({
     }
     return false
   }, [timezone, onToggleDateFilter, tasks, selectedDateFilters, excludedDateFilters])
+
+  // Faceted counts (§ see `applyTaskFilters` doc comment in useFilterState.ts):
+  // each chip row counts over `tasks` with every OTHER group's filter applied
+  // and its OWN group skipped, so e.g. a Work project filter correctly narrows
+  // the Today chip's count instead of leaving it showing the whole corpus.
+  const filterCriteria: TaskFilterCriteria = useMemo(
+    () => ({
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters: attributeFilters ?? new Set(),
+      excludedAttributes: excludedAttributes ?? new Set(),
+      selectedProjects,
+      excludedProjects,
+    }),
+    [
+      selectedLabels,
+      excludedLabels,
+      selectedPriorities,
+      excludedPriorities,
+      selectedDateFilters,
+      excludedDateFilters,
+      attributeFilters,
+      excludedAttributes,
+      selectedProjects,
+      excludedProjects,
+    ],
+  )
+  const facetTasks = useMemo(() => {
+    const result = {} as Record<FilterGroup, Task[]>
+    for (const group of FILTER_GROUPS) {
+      result[group] = applyTaskFilters(tasks, filterCriteria, { timezone, skipGroup: group })
+    }
+    return result
+  }, [tasks, filterCriteria, timezone])
 
   if (tasks.length === 0) return null
 
@@ -266,13 +320,14 @@ export function FilterBar({
               <div className="flex flex-wrap items-center gap-1.5">
                 <ProjectFilterBar
                   projects={projects}
-                  tasks={tasks}
+                  tasks={facetTasks.projects}
                   selectedProjects={selectedProjects}
                   excludedProjects={excludedProjects}
                   onToggleProject={onToggleProject}
                   onExclusiveProject={onExclusiveProject}
                   onExcludeProject={onExcludeProject}
                   todayCounts={todayCounts}
+                  doneTodayByProject={doneTodayByProject}
                 />
               </div>
             )}
@@ -281,13 +336,15 @@ export function FilterBar({
             {dateFilterVisible && (
               <div className="scrollbar-hide flex items-center gap-2 overflow-x-auto">
                 <DueDateFilterBar
-                  tasks={tasks}
+                  tasks={facetTasks.dateFilters}
                   selectedDateFilters={selectedDateFilters}
                   excludedDateFilters={excludedDateFilters}
                   onToggleDateFilter={onToggleDateFilter!}
                   timezone={timezone!}
                   onExclusiveDateFilter={onExclusiveDateFilter}
                   onExcludeDateFilter={onExcludeDateFilter}
+                  remainingToday={remainingToday}
+                  doneToday={doneToday}
                 />
               </div>
             )}
@@ -295,7 +352,7 @@ export function FilterBar({
             {/* Row 2: Priority + label filters — wraps to fit */}
             <div className="flex flex-wrap items-center gap-1.5">
               <PriorityFilterBar
-                tasks={tasks}
+                tasks={facetTasks.priorities}
                 selectedPriorities={selectedPriorities}
                 excludedPriorities={excludedPriorities}
                 onTogglePriority={onTogglePriority}
@@ -305,7 +362,7 @@ export function FilterBar({
 
               {hasLabels && (
                 <LabelFilterBar
-                  tasks={tasks}
+                  tasks={facetTasks.labels}
                   selectedLabels={selectedLabels}
                   excludedLabels={excludedLabels}
                   onToggleLabel={onToggleLabel}
@@ -318,7 +375,7 @@ export function FilterBar({
                 <>
                   <div className="bg-border mx-1 h-4 w-px flex-shrink-0" />
                   <AttributeFilterBar
-                    tasks={tasks}
+                    tasks={facetTasks.attributes}
                     attributeFilters={attributeFilters ?? new Set()}
                     excludedAttributes={excludedAttributes ?? new Set()}
                     onToggleAttribute={onToggleAttribute}
