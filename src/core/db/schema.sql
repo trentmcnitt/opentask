@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   auto_snooze_low_minutes INTEGER NOT NULL DEFAULT 240,
   auto_snooze_medium_minutes INTEGER NOT NULL DEFAULT 60,
   default_snooze_option TEXT NOT NULL DEFAULT '60',
+  bulk_snooze_default TEXT NOT NULL DEFAULT 'next_period',
   morning_time  TEXT NOT NULL DEFAULT '09:00',
   wake_time     TEXT NOT NULL DEFAULT '07:00',
   sleep_time    TEXT NOT NULL DEFAULT '22:00',

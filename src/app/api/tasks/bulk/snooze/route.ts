@@ -48,6 +48,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // Urgent accurately. Additive: `skipped_urgent` keeps its old meaning of
       // "skipped on priority" for the clients that already read it.
       skipped_high: result.highSkipped,
+      // How many of the moved tasks were High — all of them on the second press
+      // of a double snooze, which the toast names (see `bulkSnoozeMessage`).
+      snoozed_high: result.highSnoozed,
       // §6: reminders are bucket-locked, so a sweep reports them rather than
       // prompting about them.
       skipped_reminders: result.reminderSkipped,

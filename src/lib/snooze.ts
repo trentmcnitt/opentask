@@ -88,6 +88,8 @@ export function formatSnoozeOptionLabel(option: string, morningTime: string): st
 export interface BulkSnoozeSkips {
   /** Tasks actually moved. */
   affected: number
+  /** How many of those were High (P3). Optional: only the bulk press reports it. */
+  highAffected?: number
   /** P3 skipped — deferred to the next sweep, because something lower was still eligible. */
   high: number
   /** P4 skipped — never bulk-snoozable at all. */
@@ -120,11 +122,22 @@ function skipList(high: number, urgent: number): string {
  *
  * A pure function so the copy can be tested without a browser.
  */
-export function bulkSnoozeMessage({ affected, high, urgent }: BulkSnoozeSkips): string {
+export function bulkSnoozeMessage({
+  affected,
+  highAffected = 0,
+  high,
+  urgent,
+}: BulkSnoozeSkips): string {
   const list = skipList(high, urgent)
 
   if (affected > 0) {
-    return `Snoozed ${affected} ${taskWord(affected)}${list ? ` (${list} skipped)` : ''}`
+    // "HIGH-PRIORITY" WHEN THAT IS ALL IT MOVED (Trent, 2026-09-22). High is
+    // swept only once nothing lower is left, so a double snooze is two presses:
+    // the first moves the ordinary tasks, the second the High ones left over.
+    // Saying so is what makes the second press make sense.
+    const what =
+      highAffected === affected ? `high-priority ${taskWord(affected)}` : taskWord(affected)
+    return `Snoozed ${affected} ${what}${list ? ` (${list} skipped)` : ''}`
   }
   if (!list) return 'No snoozable tasks'
   if (high === 0) {

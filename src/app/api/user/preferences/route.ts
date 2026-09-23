@@ -273,6 +273,14 @@ function validateGeneralFields(
     params.push(val)
   }
 
+  if (body.bulk_snooze_default !== undefined) {
+    const val = body.bulk_snooze_default
+    if (val !== 'next_period' && val !== 'default_option')
+      return 'bulk_snooze_default must be "next_period" or "default_option"'
+    updates.push('bulk_snooze_default = ?')
+    params.push(val)
+  }
+
   if (body.morning_time !== undefined) {
     const val = body.morning_time
     if (typeof val !== 'string' || !/^\d{2}:\d{2}$/.test(val))
@@ -447,7 +455,7 @@ function validatePatchFields(body: Record<string, unknown>): ValidatedPatch | st
 }
 
 const PREFERENCES_SELECT =
-  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
+  'SELECT default_grouping, default_sort, default_sort_reversed, filters_expanded, track_expanded, label_config, priority_display, auto_snooze_minutes, auto_snooze_urgent_minutes, auto_snooze_high_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes, default_snooze_option, bulk_snooze_default, morning_time, wake_time, sleep_time, notifications_enabled, critical_alert_volume, ai_context, ai_mode, ai_show_scores, ai_show_signals, ai_enrichment_mode, ai_quicktake_mode, ai_whats_next_mode, ai_insights_mode, ai_wn_commentary_unfiltered, ai_wn_highlight, ai_insights_signal_chips, ai_insights_score_chips, ai_enrichment_timeout_ms, ai_quicktake_timeout_ms, ai_whats_next_timeout_ms, ai_insights_timeout_ms FROM users WHERE id = ?'
 
 interface PreferencesRow {
   default_grouping: string
@@ -463,6 +471,7 @@ interface PreferencesRow {
   auto_snooze_low_minutes: number
   auto_snooze_medium_minutes: number
   default_snooze_option: string
+  bulk_snooze_default: 'next_period' | 'default_option'
   morning_time: string
   wake_time: string
   sleep_time: string
@@ -501,6 +510,7 @@ const DEFAULT_PREFERENCES_ROW: PreferencesRow = {
   auto_snooze_low_minutes: 240,
   auto_snooze_medium_minutes: 60,
   default_snooze_option: '60',
+  bulk_snooze_default: 'next_period',
   morning_time: '09:00',
   wake_time: '07:00',
   sleep_time: '22:00',
@@ -539,6 +549,7 @@ function formatPreferencesResponse(row: PreferencesRow) {
     auto_snooze_urgent_minutes: row.auto_snooze_urgent_minutes,
     auto_snooze_high_minutes: row.auto_snooze_high_minutes,
     default_snooze_option: row.default_snooze_option,
+    bulk_snooze_default: row.bulk_snooze_default,
     morning_time: row.morning_time,
     wake_time: row.wake_time,
     sleep_time: row.sleep_time,

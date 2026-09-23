@@ -2253,6 +2253,12 @@ components:
           description: |
             The High (P3) subset of `skipped_urgent`. Urgent alone is the
             difference between the two.
+        snoozed_high:
+          type: integer
+          description: |
+            How many of the tasks actually moved were High (P3). Equal to
+            `tasks_affected` on the second press of a double snooze, when only
+            High tasks were left to sweep.
         skipped_reminders:
           type: integer
           description: Reminders skipped — they are bucket-locked and never snoozed
