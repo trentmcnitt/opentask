@@ -218,11 +218,25 @@ struct RemindersProvider: TimelineProvider {
                 // so a future reordering of these blocks can't schedule an
                 // entry dated at or before `now`.
                 if entry.canUndo, let expiry = WidgetStore.undoExpiry(), expiry > entry.date {
+                    // Which slot should still be on screen once Undo turns
+                    // off: whichever entry built above is dated latest at or
+                    // before `expiry` — almost always `entry` itself, but if
+                    // a slot boundary happens to fall inside this 60s window,
+                    // that boundary's NATURAL slot is what should still be
+                    // showing at expiry, not the slot Undo originally
+                    // appeared under. Deliberately NOT
+                    // `RemindersTimeline.displayedSlotIndex(now: expiry)` —
+                    // that has the side effect of clearing a stale override,
+                    // which must only happen against the REAL clock, not a
+                    // hypothetical future timestamp being pre-computed here.
+                    let slotAtExpiry =
+                        entries.filter { $0.date <= expiry }.max { $0.date < $1.date }?.slotIndex
+                        ?? entry.slotIndex
                     entries.append(
                         RemindersEntry(
                             date: expiry,
                             groups: entry.groups,
-                            slotIndex: entry.slotIndex,
+                            slotIndex: slotAtExpiry,
                             staleSince: entry.staleSince,
                             isSignedOut: false,
                             canUndo: false

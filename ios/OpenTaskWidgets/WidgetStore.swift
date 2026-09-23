@@ -475,9 +475,34 @@ enum WidgetStore {
         }
     }
 
+    /// Every filtered-out reminder is credited to `considered` — otherwise a
+    /// slot's `total` (`waiting + considered`, what `ReminderSlotStrip` and
+    /// `RemindersListView.allCaughtUp` are built on, 2026-09-23) would shrink
+    /// every time an item is hidden here, instead of staying fixed while only
+    /// the split between waiting and done moves — the same invariant the
+    /// web's `ReminderSlotBar` comment insists on ("checking things off
+    /// moves the fill but never resizes it"). Without this, `considered`
+    /// silently read 0 forever: this function is the ONE place that ever
+    /// constructs a `ReminderGroupDTO` from a decoded/cached payload once
+    /// tombstones or confirmed completions are in play, and the memberwise
+    /// init defaults `considered` to 0 when it isn't passed explicitly — a
+    /// default that made the bug compile clean and the sample-data gallery
+    /// (which never calls this) look fine while every real render showed
+    /// "Nothing left here" instead of "All caught up" / "<Slot> done".
+    ///
+    /// Safe against double-counting a SERVER-confirmed completion on a fresh
+    /// fetch: the server's own payload already omits it from `reminders`
+    /// there (a recurring task's next occurrence carries a different
+    /// `due_at` and is a different entry, not a re-inclusion of this one),
+    /// so this only ever adds what THIS pass actually removed.
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
         groups.map { group in
-            ReminderGroupDTO(slot: group.slot, reminders: filterPending(group.reminders, now: now))
+            let remaining = filterPending(group.reminders, now: now)
+            return ReminderGroupDTO(
+                slot: group.slot,
+                reminders: remaining,
+                considered: group.considered + (group.reminders.count - remaining.count)
+            )
         }
     }
 
