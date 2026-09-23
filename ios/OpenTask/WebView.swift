@@ -192,6 +192,20 @@ struct WebView: UIViewRepresentable {
         /// of dead-ending on the login page.
         private var loginRescueAttempted = false
 
+        /// True when the navigation immediately preceding the current one was
+        /// CANCELLED (`NSURLErrorCancelled`) rather than reaching `/login` or
+        /// finishing on its own — the tell that a navigation OTHER than the
+        /// one this Coordinator most recently issued is what actually landed
+        /// on `/login`. See `resumePath(fromLoginURL:wasPreempted:)`'s doc
+        /// for why the rescue needs to know this (task A, 2026-09-23: a
+        /// widget tap landing on the wrong tab).
+        ///
+        /// Set in `didFail(Provisional)Navigation` on a cancellation, cleared
+        /// on any successful `didFinish` or non-cancelled failure (proof
+        /// whatever raced has settled), and consumed once by the /login
+        /// interception below.
+        private var lastNavigationWasCancelled = false
+
         /// Re-arm the /login rescue. Wired to `WebViewManager.onNewNavigationIntent`.
         func newNavigationIntent() {
             loginRescueAttempted = false
@@ -299,7 +313,9 @@ struct WebView: UIViewRepresentable {
         /// then the user has SEEN the login page — which reads as "logged out
         /// again". Cancelling the navigation here and bootstrapping first means
         /// the only thing visible is the loading cover, and the resumed load
-        /// carries the exact destination from the login URL's callbackUrl.
+        /// carries the exact destination from the login URL's callbackUrl —
+        /// except when that callback belongs to a DIFFERENT, superseded
+        /// navigation; see `resumePath`'s doc.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -316,9 +332,13 @@ struct WebView: UIViewRepresentable {
                 return
             }
             loginRescueAttempted = true
+            // Consume the "was this preceded by a cancelled navigation of
+            // ours" signal now, before anything else can overwrite it.
+            let wasPreempted = lastNavigationWasCancelled
+            lastNavigationWasCancelled = false
             decisionHandler(.cancel)
             showLoadingCover(over: webView)
-            let resume = Self.resumePath(fromLoginURL: url)
+            let resume = Self.resumePath(fromLoginURL: url, wasPreempted: wasPreempted)
             Task { @MainActor in
                 if await SessionBootstrapper.bootstrap() {
                     print("[OpenTask] /login intercepted — session re-minted, resuming \(resume)")
@@ -338,8 +358,35 @@ struct WebView: UIViewRepresentable {
         /// own callbackUrl when present (the server records exactly where the
         /// user was headed), falling back to the last path the app requested.
         /// Same-origin relative paths only — anything else falls through.
-        static func resumePath(fromLoginURL url: URL) -> String {
-            if let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+        ///
+        /// **The foreground-resume race (task A, 2026-09-23):** "I tapped on a
+        /// widget task link while the Reminders tab was open in the
+        /// background — it opened the app but left me on Reminders instead of
+        /// switching to the dashboard and scrolling to the task." Confirmed in
+        /// the simulator: opening the app resumes TWO things at once — our own
+        /// `WebViewManager.navigate(path: "/?task=<id>&highlight=1")` from
+        /// `handleWidgetLink`, AND the web page's own session recheck
+        /// (`SessionProvider`'s NextAuth default of `refetchOnWindowFocus:
+        /// true`, firing on the same foreground/focus event). When the
+        /// session read momentarily as stale right after resume, the PAGE'S
+        /// OWN client-side redirect (`router.push(loginUrlFromLocation())` in
+        /// e.g. `reminders/page.tsx`) raced our widget navigation and won,
+        /// cancelling it (`didFailProvisionalNavigation` with
+        /// `NSURLErrorCancelled`, logged immediately before the `/login` this
+        /// method resolves). That competing redirect's callbackUrl names the
+        /// OLD page ("/reminders" — where the user was BEFORE backgrounding),
+        /// not the widget tap's actual destination — trusting it here is what
+        /// stranded the user on the wrong tab. `wasPreempted` is true exactly
+        /// in that situation, and `lastRequestedPath` (set synchronously by
+        /// `navigate(path:)`, before either navigation's network round trip)
+        /// is trusted instead. When `wasPreempted` is false — the ordinary
+        /// case, one navigation, one /login bounce — the callbackUrl is still
+        /// preferred exactly as before (it correctly reflects e.g. a stale
+        /// session found on pull-to-refresh of a page the user reached via
+        /// in-page SPA navigation, which `lastRequestedPath` never sees).
+        static func resumePath(fromLoginURL url: URL, wasPreempted: Bool) -> String {
+            if !wasPreempted,
+               let cb = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "callbackUrl" })?.value,
                 cb.hasPrefix("/"), !cb.hasPrefix("//") {
                 return cb
@@ -360,6 +407,12 @@ struct WebView: UIViewRepresentable {
             hideLoadingCover()
             injectDeviceInfo(into: webView)
             injectTokenFlags(into: webView)
+
+            // A navigation reaching didFinish — login page or not — proves
+            // whatever raced (see `resumePath`'s "foreground-resume race"
+            // doc) has settled; a cancellation observed before this point no
+            // longer describes the current situation.
+            lastNavigationWasCancelled = false
 
             // Force WKWebView to flush cookies to disk so session survives force-quit.
             // WKWebView doesn't guarantee immediate persistence — getAllCookies triggers a sync.
@@ -472,14 +525,27 @@ struct WebView: UIViewRepresentable {
             refreshControl?.endRefreshing()
             // Ignore cancelled navigations — happens when a quick action or deep link
             // navigation replaces an in-flight load. Not a real connectivity error.
-            if (error as NSError).code == NSURLErrorCancelled { return }
+            if (error as NSError).code == NSURLErrorCancelled {
+                // See `resumePath`'s "foreground-resume race" doc — a
+                // cancellation here means something ELSE just preempted this
+                // navigation, which the very next /login interception needs
+                // to know about.
+                lastNavigationWasCancelled = true
+                return
+            }
+            lastNavigationWasCancelled = false
             hideLoadingCover()
             onNavigationError?(error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             refreshControl?.endRefreshing()
-            if (error as NSError).code == NSURLErrorCancelled { return }
+            if (error as NSError).code == NSURLErrorCancelled {
+                // See `resumePath`'s "foreground-resume race" doc.
+                lastNavigationWasCancelled = true
+                return
+            }
+            lastNavigationWasCancelled = false
             hideLoadingCover()
             onNavigationError?(error)
         }

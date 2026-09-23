@@ -401,6 +401,15 @@ private struct RemindersListView: View {
 /// fewer reminder row than it would with the strip hidden. That is the
 /// system working as intended — "as many rows as genuinely fit" already
 /// accounts for whatever's above them — not a bug to route around.
+///
+/// Each segment is its own tap target (2026-09-23, "I'd like to be able to
+/// tap a segment to jump to that section even within the widget") — see
+/// `body`'s `Button` and `segmentBleed`'s doc for how the finger target grows
+/// past the 3-4pt bar without costing the strip (or the row it would
+/// otherwise steal from) any extra height. The on-screen slot also gets a
+/// ring, not just its existing height bump (2026-09-23, "we need some kind
+/// of outline... to show which segment we're currently on" — the bump alone
+/// didn't read clearly enough at a glance) — see `segmentBar`.
 private struct ReminderSlotStrip: View {
     let groups: [ReminderGroupDTO]
     let currentIndex: Int
@@ -410,6 +419,11 @@ private struct ReminderSlotStrip: View {
 
     private struct Segment: Identifiable {
         let id: Int
+        /// The slot this segment represents — what `JumpToReminderSlotIntent`
+        /// needs to jump straight to it, since `id` is only this segment's
+        /// position in the (already-filtered) `segments` array, not a stable
+        /// slot identity.
+        let slotKey: Int
         let state: SlotState
         let isCurrent: Bool
     }
@@ -423,9 +437,21 @@ private struct ReminderSlotStrip: View {
             if started, waiting == 0 { state = .done } else if started { state = .behind } else {
                 state = .upcoming
             }
-            return Segment(id: index, state: state, isCurrent: index == currentIndex)
+            return Segment(
+                id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex
+            )
         }
     }
+
+    /// Half of `WidgetTheme.rowSpacing` — the same bleed `ReminderRow`'s
+    /// check-off button uses (see its `markerBleed` doc for the mechanics: a
+    /// taller inner frame so the tap area is bigger than the drawn content,
+    /// then negative padding on the OUTER view so the parent `VStack` still
+    /// only counts the original short height). The strip sits between the
+    /// header and the first row, both separated by a full `rowSpacing`, so
+    /// this is exactly what's free to bleed into on each side without
+    /// touching either neighbor or costing a row.
+    private var segmentBleed: CGFloat { WidgetTheme.rowSpacing / 2 }
 
     var body: some View {
         // One segment is not a strip — same rule as the web's ReminderSlotBar
@@ -435,12 +461,37 @@ private struct ReminderSlotStrip: View {
         if shown.count >= 2 {
             HStack(spacing: 3) {
                 ForEach(shown) { segment in
-                    Capsule()
-                        .fill(color(for: segment.state))
-                        .frame(height: segment.isCurrent ? 4 : 3)
+                    Button(intent: JumpToReminderSlotIntent(slotKey: segment.slotKey)) {
+                        segmentBar(for: segment)
+                            // Taller than the visual bar — see `segmentBleed`'s
+                            // doc for why the parent doesn't see this height.
+                            .frame(height: 4 + 2 * segmentBleed)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -segmentBleed)
+                    .accessibilityLabel(Text(groups[segment.id].label))
                 }
             }
             .padding(.bottom, 2)
+        }
+    }
+
+    /// One segment's fill, plus — only for the on-screen slot — a ring drawn
+    /// OUTSIDE the bar (`padding(-2)`, not a `.stroke` layered directly on
+    /// the 3-4pt capsule) so a stroke thin enough to read at this size
+    /// doesn't eat into the fill and blur the color it's reporting.
+    /// `.primary` rather than a fixed color so it holds contrast against the
+    /// widget background in both light and dark.
+    @ViewBuilder
+    private func segmentBar(for segment: Segment) -> some View {
+        let bar = Capsule()
+            .fill(color(for: segment.state))
+            .frame(height: segment.isCurrent ? 4 : 3)
+        if segment.isCurrent {
+            bar.overlay(Capsule().stroke(Color.primary, lineWidth: 1).padding(-2))
+        } else {
+            bar
         }
     }
 
