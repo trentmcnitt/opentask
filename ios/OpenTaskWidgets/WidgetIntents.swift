@@ -337,6 +337,42 @@ struct ShiftReminderSlotIntent: AppIntent {
     }
 }
 
+/// Jump straight to a specific slot — `ReminderSlotStrip`'s segments
+/// (2026-09-23, "I'd like to be able to tap a segment to jump to that
+/// section"). Same storage as `ShiftReminderSlotIntent` (`WidgetStore.
+/// setSlotOverride`), just addressed by the target slot's own key instead of
+/// an offset from the currently displayed one — a segment tap names its
+/// destination directly, it doesn't need to be counted as N steps away.
+struct JumpToReminderSlotIntent: AppIntent {
+    static var title: LocalizedStringResource = "Jump to Time Slot"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Slot Key")
+    var slotKey: Int
+
+    init() {}
+
+    init(slotKey: Int) {
+        self.slotKey = slotKey
+    }
+
+    func perform() async throws -> some IntentResult {
+        let groups = WidgetStore.loadReminders()?.value.groups ?? []
+        // A widget on the Home Screen can be tapped against an archived
+        // snapshot from before the cache last refreshed — guard against a
+        // slot key that no longer exists rather than setting an override
+        // `displayedSlotIndex` can never resolve back to.
+        guard groups.contains(where: { $0.slotKey == slotKey }) else { return .result() }
+
+        let natural = RemindersTimeline.naturalSlotIndex(in: groups)
+        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: groups[natural].slotKey)
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        return .result()
+    }
+}
+
 // MARK: - Tasks project paging
 
 /// Cycle the Tasks widget's scope: All → each project the server returned → All.

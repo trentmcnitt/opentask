@@ -524,22 +524,51 @@ struct UndoButton: View {
 ///
 /// Never a spinner and never an error dump: an unconfigured widget is a setup
 /// problem, and the only useful thing it can say is where to go fix it.
+///
+/// Tap target follows the same family split as everywhere else (2026-09-23,
+/// the background-tap fix — see `ios/CLAUDE.md`'s tap-targets note):
+/// `compact` (systemSmall, and the Lock Screen families' own custom signed-out
+/// text) is glanceable-only with nothing else to hit, so the whole card stays
+/// a `.widgetURL`. Non-compact (systemMedium/systemLarge's signed-out state,
+/// used by all three list views) drops the card-wide link — the message TEXT
+/// itself becomes a `Link` instead, mirroring the header title `Link` every
+/// other systemMedium/systemLarge state uses. Found via the same audit as the
+/// rest of that fix: this struct was the one remaining background tap target
+/// on those two families, only reachable while signed out.
 struct WidgetSignedOutView: View {
     var compact = false
 
     var body: some View {
+        if compact {
+            content.widgetURL(WidgetLink.dashboard)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         VStack(spacing: compact ? 4 : 8) {
             Image(systemName: "person.crop.circle.badge.questionmark")
                 .font(compact ? .body : .title2)
                 .foregroundStyle(.secondary)
-            Text("Open OpenTask to sign in")
-                .font(compact ? .caption2 : .footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.8)
+            if compact {
+                Text("Open OpenTask to sign in")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+            } else {
+                Link(destination: WidgetLink.dashboard) {
+                    Text("Open OpenTask to sign in")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.8)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(WidgetLink.dashboard)
     }
 }
 
