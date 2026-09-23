@@ -33,6 +33,13 @@ export interface Task {
   project_id: number
   title: string
   original_title: string | null
+  /**
+   * Short label for the quota widget chip (§5). Only meaningful on a tracked
+   * task — the widget shows every quota as a small tappable chip, and a full
+   * quota title ("Balloon breathing practice (teach Mia...)") doesn't fit.
+   * Not rejected on an ordinary task, just unused there. Null unless set.
+   */
+  short_title: string | null
   done: boolean
   done_at: string | null
   priority: number // 0=unset, 1=low, 2=medium, 3=high, 4=urgent

@@ -301,6 +301,16 @@ describe('formatEditDescription', () => {
     expect(result).toBe('Notes updated \u2014 "Buy groceries"')
   })
 
+  test('short name (quota widget chip label) updated', () => {
+    const result = formatEditDescription('Buy groceries', ['short_title'], {
+      isSnooze: false,
+      beforeState: { id: 1 },
+      afterState: { id: 1 },
+      userTimezone: TZ,
+    })
+    expect(result).toBe('Changed short name \u2014 "Buy groceries"')
+  })
+
   // --- Two-field combos ---
 
   test('snooze + priority (two fields)', () => {

@@ -39,6 +39,7 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     anchor_dow: null,
     anchor_dom: null,
     original_title: null,
+    short_title: null,
     original_due_at: null,
     last_notified_at: null,
     last_critical_alert_at: null,
