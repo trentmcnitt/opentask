@@ -26,6 +26,41 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 import { to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
+import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
+
+const SLOT_PREFIX = 'slot:'
+
+/**
+ * The user's time slots, fetched when a menu opens and kept for the session.
+ *
+ * Not `useTimeSlots`: every task row mounts its own `SnoozeMenu`, and that
+ * hook fetches on mount — one request per row, for a menu most rows never
+ * open. Here nothing is fetched until a menu opens; the first open shows the
+ * slots as soon as they arrive, and every later one starts from the cache
+ * while it refreshes (slots are rarely edited, but they can be).
+ */
+let slotCache: TimeSlot[] = []
+function useSlotsWhenOpen(open: boolean): TimeSlot[] {
+  const [slots, setSlots] = useState<TimeSlot[]>(slotCache)
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/time-slots')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        const fresh = json?.data?.time_slots as TimeSlot[] | undefined
+        if (!fresh) return
+        slotCache = fresh
+        if (!cancelled) setSlots(fresh)
+      })
+      // A failed fetch keeps whatever was cached: the fixed options still work.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+  return slots
+}
 
 interface SnoozeMenuProps {
   open: boolean
@@ -49,10 +84,34 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
   const triggerRef = useRef<HTMLDivElement>(null)
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
 
+  const slots = useSlotsWhenOpen(open)
+
+  // THE USER'S TIME SLOTS ARE SNOOZE TARGETS (Trent, 2026-09-22: "snooze till
+  // tomorrow morning (early), tomorrow morning… midday, afternoon, evening").
+  // Each goes to that slot's next start — today if it is still ahead, else
+  // tomorrow, and the label says which. "Tomorrow at <morning>" stays too,
+  // unless a slot already lands on that exact moment — then it would be the
+  // same choice listed twice.
+  const now = new Date()
+  const slotOptions = slots.map((slot) => {
+    const until = nextSlotStart(slot.start_time, timezone, now)
+    const tomorrow = DateTime.fromISO(until)
+      .setZone(timezone)
+      .hasSame(DateTime.fromJSDate(now).setZone(timezone).plus({ days: 1 }), 'day')
+    return {
+      label: `${slot.label} \u00b7 ${tomorrow ? 'tomorrow ' : ''}${formatMorningTime(slot.start_time)}`,
+      option: `${SLOT_PREFIX}${slot.start_time}`,
+      until,
+    }
+  })
+  const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime)
   const options = [
     { label: '1 hour', option: '60' },
     { label: '2 hours', option: '120' },
-    { label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' },
+    ...slotOptions.map(({ label, option }) => ({ label, option })),
+    ...(slotOptions.some((o) => o.until === tomorrowMorning)
+      ? []
+      : [{ label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' }]),
     { label: 'Custom...', option: 'custom' },
   ]
 
@@ -62,7 +121,11 @@ export function SnoozeMenu({ open, onOpenChange, onSnooze, children }: SnoozeMen
       setCustomPickerOpen(true)
       return
     }
-    onSnooze(computeSnoozeTime(option, timezone, morningTime))
+    onSnooze(
+      option.startsWith(SLOT_PREFIX)
+        ? nextSlotStart(option.slice(SLOT_PREFIX.length), timezone)
+        : computeSnoozeTime(option, timezone, morningTime),
+    )
     onOpenChange(false)
   }
 

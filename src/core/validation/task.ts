@@ -346,9 +346,13 @@ export function validateBulkDelete(input: unknown): BulkDeleteInput {
  * All fields are optional:
  * - `delta_minutes`: Minutes from now (with rounding: snapToHour for >= 60 min)
  * - `until`: Absolute ISO 8601 target time
- * - Neither: Uses the user's default_snooze_option preference
+ * - `slot`: A time slot to snooze to — its `start_time` ("HH:MM"), or "next"
+ *   for the next period. The server resolves it in the user's timezone: see
+ *   `nextSlotStart` / `nextPeriodStart`. Clients never compute the time, so a
+ *   phone on a different clock cannot send a wrong one.
+ * - None: Uses the user's default_snooze_option preference
  *
- * `delta_minutes` and `until` are mutually exclusive.
+ * `delta_minutes`, `until` and `slot` are mutually exclusive.
  */
 export const bulkSnoozeOverdueSchema = z
   .object({
@@ -359,11 +363,19 @@ export const bulkSnoozeOverdueSchema = z
       .max(525600, 'Cannot snooze more than 1 year')
       .optional(),
     until: dateTimeString.optional(),
+    slot: z
+      .union([
+        z.literal('next'),
+        z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'slot must be HH:MM or "next"'),
+      ])
+      .optional(),
     include_task_ids: z.array(z.number().int().positive()).max(10).optional(),
   })
-  .refine((data) => !(data.delta_minutes !== undefined && data.until !== undefined), {
-    message: 'Cannot provide both until and delta_minutes',
-  })
+  .refine(
+    (data) =>
+      [data.delta_minutes, data.until, data.slot].filter((v) => v !== undefined).length <= 1,
+    { message: 'Provide at most one of until, delta_minutes and slot' },
+  )
 
 export type BulkSnoozeOverdueInput = z.infer<typeof bulkSnoozeOverdueSchema>
 

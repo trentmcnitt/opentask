@@ -209,6 +209,44 @@ export function naturalSlotIndex(
 }
 
 /**
+ * The next time a slot starts: today, if its start is still ahead of `now`
+ * in `timezone`, otherwise tomorrow. As a UTC ISO string, the form every
+ * snooze target takes.
+ *
+ * What a snooze "to a period" means (Trent, 2026-09-22): "Early morning" at
+ * 9pm is tomorrow at 7:00, "Evening" at 9am is tonight at 8:30. A start equal
+ * to `now` counts as passed — snoozing to the minute you are already in would
+ * be a snooze to nothing.
+ */
+export function nextSlotStart(startTime: string, timezone: string, now: Date = new Date()): string {
+  const minutes = parseHHMM(startTime)
+  if (minutes === null) throw new Error(`Not an HH:MM start time: ${startTime}`)
+  const local = DateTime.fromJSDate(now).setZone(timezone)
+  const today = local.set({
+    hour: Math.floor(minutes / 60),
+    minute: minutes % 60,
+    second: 0,
+    millisecond: 0,
+  })
+  return (today > local ? today : today.plus({ days: 1 })).toUTC().toISO()!
+}
+
+/**
+ * The next period's start: the first slot that starts after `now` today, or
+ * the day's first slot tomorrow once the last one has begun. Null with no
+ * slots. Backs the notification's "All → Next period" — Midday from the
+ * morning, Afternoon from Midday, tomorrow's Early morning from the evening.
+ */
+export function nextPeriodStart(
+  slots: Pick<TimeSlot, 'start_time'>[],
+  timezone: string,
+  now: Date = new Date(),
+): string | null {
+  const starts = slots.map((s) => nextSlotStart(s.start_time, timezone, now)).sort()
+  return starts[0] ?? null
+}
+
+/**
  * Where the Reminders pager goes when the slot on screen has just been
  * finished — its last reminder considered — or null to stay put.
  *

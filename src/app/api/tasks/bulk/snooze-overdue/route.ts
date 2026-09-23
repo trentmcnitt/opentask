@@ -22,6 +22,9 @@ import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { validateBulkSnoozeOverdue } from '@/core/validation'
 import { computeSnoozeTime } from '@/lib/snooze'
+import { nextPeriodStart, nextSlotStart } from '@/lib/time-slot-assign'
+import { listTimeSlots } from '@/core/time-slots'
+import { ValidationError } from '@/core/errors'
 import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
 import { ZodError } from 'zod'
@@ -36,7 +39,16 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     // Compute absolute snooze target from now
     let until: string
-    if (input.until) {
+    if (input.slot) {
+      // A time slot: resolved here, in the user's timezone, never on the
+      // client (see `bulkSnoozeOverdueSchema`).
+      const resolved =
+        input.slot === 'next'
+          ? nextPeriodStart(listTimeSlots(user.id), user.timezone)
+          : nextSlotStart(input.slot, user.timezone)
+      if (!resolved) throw new ValidationError('No time slots to snooze to')
+      until = resolved
+    } else if (input.until) {
       until = input.until
     } else {
       // Use delta_minutes from request, or fall back to user's default_snooze_option
