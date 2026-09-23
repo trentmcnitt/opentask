@@ -273,6 +273,7 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     project_id: 1,
     title: 'Test task',
     original_title: null,
+    short_title: null,
     progress_target: 1,
     is_reminder: false,
     is_tracked: false,

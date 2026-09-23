@@ -21,6 +21,7 @@ import { getPriorityOption } from '@/lib/priority'
 /** Maps DB column names to human-readable labels */
 export const FIELD_LABELS: Record<string, string> = {
   title: 'title',
+  short_title: 'short name',
   priority: 'priority',
   labels: 'labels',
   rrule: 'recurrence',
@@ -220,6 +221,8 @@ function buildFieldFragment(
       return 'Labels updated'
     case 'notes':
       return 'Notes updated'
+    case 'short_title':
+      return 'Changed short name'
     case 'auto_snooze_minutes':
       return buildAutoSnoozeFragment(beforeState, afterState)
     case 'is_reminder':

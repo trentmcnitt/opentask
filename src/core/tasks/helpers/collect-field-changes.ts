@@ -191,6 +191,12 @@ function collectBasicFields(
     trackField(data, 'title', task.title, input.title)
   }
 
+  // §5: the quota widget chip's short label. Ordinary field-change handling —
+  // validated (trimmed, 24-char cap, '' -> null) in the Zod schema, not here.
+  if (input.short_title !== undefined && input.short_title !== task.short_title) {
+    trackField(data, 'short_title', task.short_title, input.short_title)
+  }
+
   if (input.priority !== undefined && input.priority !== task.priority) {
     trackField(data, 'priority', task.priority, input.priority)
   }

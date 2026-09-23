@@ -22,6 +22,7 @@ const LEGACY_FIELD_MAP: Record<string, string> = {
 const VALID_TASK_COLUMNS = new Set([
   'title',
   'original_title',
+  'short_title',
   'done',
   'done_at',
   'priority',

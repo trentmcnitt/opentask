@@ -245,6 +245,12 @@ function runMigrations(database: Database.Database): void {
       "ALTER TABLE users ADD COLUMN bulk_snooze_default TEXT NOT NULL DEFAULT 'next_period'",
     )
   }
+  // Short label for the quota widget chip (§5, Trent 2026-09-23): quota
+  // titles are often long sentences, and the widget needs something that
+  // fits on a small tappable chip.
+  if (!hasColumn(database, 'tasks', 'short_title')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN short_title TEXT DEFAULT NULL')
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
