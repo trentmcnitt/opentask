@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   project_id    INTEGER NOT NULL REFERENCES projects(id),
   title         TEXT NOT NULL,
   original_title TEXT,
+  -- Short label for the quota widget chip (§5). Only meaningful on a tracked
+  -- task, but not rejected on an ordinary one. NULL unless the quota editor's
+  -- optional "Short name" field is set.
+  short_title   TEXT DEFAULT NULL,
   done          INTEGER NOT NULL DEFAULT 0,
   done_at       TEXT,
   priority      INTEGER NOT NULL DEFAULT 0,

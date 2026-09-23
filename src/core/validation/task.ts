@@ -151,6 +151,26 @@ export const QUOTA_DUE_DATE_MESSAGE =
   'A quota has no due date — it is counted within its period, not due on a day'
 
 /**
+ * Short name for the quota widget chip (§5) — trimmed, capped at 24 chars so
+ * it fits a small tappable chip, and an empty string clears it back to null
+ * rather than storing "". Meaningful only on a quota, but accepted on any
+ * task: the widget is the only thing that reads it, and rejecting it
+ * elsewhere would just be a trap for a task later turned into one.
+ */
+// `.optional()` goes OUTSIDE `.transform()` deliberately — a transform's
+// result isn't wrapped in ZodOptional, so `z.infer` marks the field required
+// (present, possibly undefined) rather than omittable when `.optional()`
+// comes first. `dateTimeString`, near the top of this file, has the same
+// shape for the same reason.
+const shortTitle = z
+  .string()
+  .trim()
+  .max(24, 'Short name too long (max 24 characters)')
+  .nullable()
+  .transform((val) => (val === '' ? null : val))
+  .optional()
+
+/**
  * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
  */
 const bulkIds = z
@@ -164,6 +184,7 @@ const bulkIds = z
 export const taskCreateSchema = z
   .object({
     title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long'),
+    short_title: shortTitle,
     due_at: dateTimeString.nullable().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.default('from_due').optional(),
@@ -196,6 +217,7 @@ export type TaskCreateInput = z.infer<typeof taskCreateSchema>
 export const taskUpdateSchema = z
   .object({
     title: z.string().trim().min(1, 'Title is required').max(10000, 'Title too long').optional(),
+    short_title: shortTitle,
     due_at: dateTimeString.nullable().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
