@@ -16,7 +16,16 @@ import Foundation
 /// Everything is best-effort: if the App Group suite is unavailable the widget
 /// still renders, it just loses cache and navigation state.
 enum WidgetStore {
+    /// macOS App Group IDs need the team-ID prefix in the entitlement itself
+    /// (unlike iOS's bare form) — see `KeychainHelper.swift` for the same
+    /// split, confirmed empirically there (2026-09-22): a `UserDefaults`
+    /// suite name has to match one of the entitlement's strings exactly, and
+    /// this project's macOS entitlement lists only the prefixed form.
+    #if os(macOS)
+    static let appGroup = "GEL3VGTUJX.group.io.mcnitt.opentask"
+    #else
     static let appGroup = "group.io.mcnitt.opentask"
+    #endif
 
     private static var defaults: UserDefaults? {
         UserDefaults(suiteName: appGroup)
@@ -392,6 +401,34 @@ enum WidgetStore {
             return defaults.integer(forKey: trackSelectionKey)
         }
         set { defaults?.set(newValue, forKey: trackSelectionKey) }
+    }
+
+    private static let trackPageStartKey = "widget.track.pageStartTaskId"
+
+    /// Which quota the LIST families' (4×2/4×4) window starts from — the same
+    /// KIND of value as `trackSelection`, stored separately (2026-09-22, "Eggs
+    /// moves to the top"). The two used to share `trackSelection`: `+1` pins
+    /// the 2×2 to the tapped quota, and because the window also started from
+    /// that same pin, every `+1` on a row that wasn't already first rotated
+    /// the whole list under the user's finger. The pin itself is correct and
+    /// load-bearing — without it a `+1` can swap the 2×2 to a DIFFERENT quota
+    /// mid-tap as pace shifts (see `IncrementProgressIntent`'s comment) — so
+    /// the fix is a second sticky value, not removing the first.
+    ///
+    /// `ShiftTrackItemIntent` (paging) writes BOTH this and `trackSelection`
+    /// together, because the small family's own chevrons page through
+    /// `trackSelection` directly (there is no "window" at 2×2, just "the
+    /// current quota") — so paging has to keep moving that one too, or the
+    /// 2×2's chevrons would stop doing anything. `IncrementProgressIntent`
+    /// writes only `trackSelection`, never this.
+    static var trackPageStart: Int {
+        get {
+            guard let defaults, defaults.object(forKey: trackPageStartKey) != nil else {
+                return noTrackSelection
+            }
+            return defaults.integer(forKey: trackPageStartKey)
+        }
+        set { defaults?.set(newValue, forKey: trackPageStartKey) }
     }
 
     // MARK: - Track row order

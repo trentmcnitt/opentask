@@ -210,18 +210,26 @@
   }
 }
 
-/* A deep-linked row (?reminder=<id>, the iOS widget's link): a short flash
-   that says "this one", then nothing. It runs once on the element it lands on
-   and is never cleared in state, so a re-render cannot make it flash again. */
+/* A deep-linked row (?reminder=<id> on /reminders, ?task=<id>&highlight=1 on
+   /, ?quota=<id> on /quotas — all iOS/macOS widget links): a short flash
+   that says "this one", then nothing. It runs once on the element it lands
+   on and is never cleared in state, so a re-render cannot make it flash
+   again.
+
+   The ring is INSET, not outset like a normal focus ring: TaskRow's row sits
+   inside SwipeableRow, which clips outset shadows to its own overflow (see
+   TaskRow's isKeyboardFocused comment, the same clipping this sidesteps the
+   same way) — inset paints inside the row's own box, so it can never be cut
+   off by an ancestor regardless of that ancestor's overflow state. */
 @keyframes row-highlight {
   0%,
   55% {
     background-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--ring);
+    box-shadow: inset 0 0 0 2px var(--ring);
   }
   100% {
     background-color: transparent;
-    box-shadow: 0 0 0 2px transparent;
+    box-shadow: inset 0 0 0 2px transparent;
   }
 }
 

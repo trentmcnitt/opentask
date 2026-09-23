@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, periodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts, formatOriginalDueAt, formatTaskAge } from '@/lib/format-date'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -111,6 +112,15 @@ interface TaskRowProps {
   projectName?: string
   /** Project color for the project badge dot (used in unified view) */
   projectColor?: LabelColor | null
+  /**
+   * Deep-linked from the widget (`?task=<id>&highlight=1`): scroll to it and
+   * flash it once, mirroring `RemindersView`'s `ReminderRow` — see the
+   * `ResizeObserver` effect below for why the dashboard needs an effect
+   * where `ReminderRow` gets away with a plain ref.
+   */
+  highlighted?: boolean
+  /** The deep link's flash has played; it must not play again on a remount. */
+  onHighlightDone?: () => void
 }
 
 /** Signal icon + color mapping for AI insights indicators */
@@ -187,6 +197,8 @@ export function TaskRow({
   insightsCommentary,
   projectName,
   projectColor,
+  highlighted = false,
+  onHighlightDone,
 }: TaskRowProps) {
   const timezone = useTimezone()
   const { labelConfig } = useLabelConfig()
@@ -268,6 +280,36 @@ export function TaskRow({
       if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
     }
   }, [])
+
+  /**
+   * `highlighted` (the widget's `?task=<id>&highlight=1` link): keep the row
+   * centred for as long as the highlight is alive, not just once on mount.
+   *
+   * Unlike RemindersView's `?reminder=<id>` (a plain `ref={highlighted ?
+   * scrollRowIntoView : undefined}` — see `scrollRowIntoView`'s doc comment),
+   * the dashboard has several panels — Reminders, Track, AI Insights
+   * annotations — that fetch and mount AFTER this row does, each one pushing
+   * the row further down the page. A single scroll on mount goes stale the
+   * moment any of them lands; found by browser-verifying against Trent's
+   * real dev account, where the row scrolled off-screen again within a
+   * second of landing on it.
+   *
+   * A `ResizeObserver` on `document.body` re-centers on every layout change
+   * instead of guessing a delay — no timeout, no retry count, just a
+   * response to the actual event (the page's height changing). It also
+   * fires once immediately on `observe()`, so the initial scroll comes for
+   * free. Torn down the moment the highlight's flash ends (`onHighlightDone`
+   * flips `highlighted` false via `onAnimationEnd` below), so it never
+   * outlives the thing it's centering.
+   */
+  const rowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!highlighted) return
+    const ro = new ResizeObserver(() => scrollRowIntoView(rowRef.current))
+    ro.observe(document.body)
+    return () => ro.disconnect()
+  }, [highlighted])
+
   // Long-press: range-select when already in selection mode, otherwise toggle
   const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
   const pointer = useLongPress({ onLongPress: longPressAction, trackDoubleClick: true })
@@ -368,6 +410,8 @@ export function TaskRow({
   return (
     <div
       id={`task-row-${task.id}`}
+      ref={rowRef}
+      data-task-highlight={highlighted ? '' : undefined}
       role="option"
       aria-selected={isSelected}
       tabIndex={-1}
@@ -379,6 +423,13 @@ export function TaskRow({
       onPointerMove={pointer.onPointerMove}
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
+      onAnimationEnd={(e) => {
+        // Filtered: this row can also run `animate-ai-processing`, whose
+        // `animationend` must not spend the one-shot highlight early.
+        if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
+          onHighlightDone?.()
+        }
+      }}
       className={cn(
         'group flex items-center gap-3 rounded-lg p-3 select-none',
         // min-h-[62px] matches the natural height when snooze button is present:
@@ -398,6 +449,7 @@ export function TaskRow({
         isAiProcessing && 'animate-ai-processing',
         // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
         isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
+        highlighted && 'animate-row-highlight',
       )}
     >
       {/* Selection checkbox (shown in selection mode) or Done button */}

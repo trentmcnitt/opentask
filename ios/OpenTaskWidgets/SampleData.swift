@@ -145,6 +145,7 @@ enum SampleData {
             date: Date(),
             items: items,
             selectedId: items.first?.id ?? WidgetStore.noTrackSelection,
+            pageStartId: items.first?.id ?? WidgetStore.noTrackSelection,
             staleSince: nil,
             isSignedOut: false
         )

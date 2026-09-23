@@ -99,7 +99,7 @@ Proxy header auth is enabled by setting `OPENTASK_PROXY_AUTH_HEADER` to the head
 
 Do not migrate existing `getAuthUser` endpoints to `requireAuth` unless explicitly asked.
 
-`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified', is_demo: boolean }`.
+`AuthUser` shape: `{ id, email, name, timezone, default_grouping: 'time' | 'project' | 'unified' | 'slot', is_demo: boolean }`. `'slot'` is the §7.3 front door (today's tasks by time of day) and the default a new/invalid value coerces to (`coerceGrouping` in `PreferencesProvider.tsx`) — it is easy to miss since the dashboard's view toggle labels it "Today", not "Slot".
 
 **Login is username-based.** The login form accepts a username (the `name` column, case-insensitive). Email also works as a login identifier for convenience, but the primary interface is username.
 
@@ -465,7 +465,8 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 - `POST /api/push/apns/register`, `DELETE /api/push/apns/register` — device token registration
 - `POST /api/notifications/actions` — done/snooze from notification actions
 - `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
-- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action
+- `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action (+ `slot` body field: a slot's `start_time`, or `"next"` for the next slot to start — bulk-snooze-to-slot notification actions)
 - `GET /api/user/preferences` — connection validation during setup
+- `GET /api/time-slots` — cached in the App Group (`TimeSlotStore`) to build the slot-snooze notification actions offline
 
 See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.

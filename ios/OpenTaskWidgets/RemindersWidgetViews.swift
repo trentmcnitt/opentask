@@ -28,16 +28,28 @@ struct RemindersWidgetView: View {
     @ViewBuilder
     private var content: some View {
         switch family {
+        #if os(iOS)
         case .accessoryCircular:
             RemindersCircularView(entry: entry)
         case .accessoryRectangular:
             RemindersRectangularView(entry: entry)
+        #endif
         case .systemSmall:
             RemindersSmallView(entry: entry)
         case .systemMedium:
             RemindersListView(entry: entry, maxRows: 3, isLarge: false)
         default:
+            // 6 was tuned against iOS's per-row cost (2 lines always
+            // reserved, ~40pt). On macOS rows are now sized to their real
+            // content (see WidgetTheme's "macOS row-height truthing" note) —
+            // often under half that — so 6 stops being "as many as fit"
+            // well before the card is full. `listContent`'s candidate list
+            // is extended to match on macOS; iOS keeps the original 6.
+            #if os(macOS)
+            RemindersListView(entry: entry, maxRows: 10, isLarge: true)
+            #else
             RemindersListView(entry: entry, maxRows: 6, isLarge: true)
+            #endif
         }
     }
 }
@@ -145,26 +157,68 @@ private struct RemindersListView: View {
         if entry.isSignedOut {
             WidgetSignedOutView()
         } else {
-            // Tallest first — ViewThatFits renders the first that fits. Written
-            // out rather than looped: ViewThatFits has to see each candidate as
-            // its own child, and a ForEach would hand it one.
-            ViewThatFits(in: .vertical) {
-                card(rows: min(6, maxRows))
-                card(rows: min(5, maxRows))
-                card(rows: min(4, maxRows))
-                card(rows: min(3, maxRows))
-                card(rows: min(2, maxRows))
-                card(rows: 1)
+            #if os(macOS)
+            // GeometryReader OUTSIDE ViewThatFits — never inside a candidate,
+            // which would report "fits" at every height and defeat the whole
+            // mechanism (see WidgetTheme's "macOS row-height truthing" note).
+            // Reports the card's real width so each row can measure its own
+            // title instead of assuming a flat two-line budget.
+            GeometryReader { geo in
+                listContent(width: geo.size.width)
             }
-            // The candidates carry no Spacer — a flexible child would report
-            // "fits" at every height and defeat the measurement — so the card
-            // is pinned to the top here instead.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .widgetURL(WidgetLink.reminders)
+            #else
+            listContent(width: nil)
+                // The candidates carry no Spacer — a flexible child would report
+                // "fits" at every height and defeat the measurement — so the card
+                // is pinned to the top here instead.
+                //
+                // No `.widgetURL` here (removed 2026-09-22, the misclick fix):
+                // systemMedium/Large used to make the WHOLE card one tap target,
+                // so a near-miss on a row's check-off circle deep-linked into the
+                // app instead of doing nothing. Now only the header (below) and
+                // each row's `Link` are tap targets — see `header`.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
         }
     }
 
-    private func card(rows: Int) -> some View {
+    /// `width`: the row's real available width — non-nil only on macOS (see
+    /// `body`); always `nil` on iOS, where rows never consult it.
+    @ViewBuilder
+    private func listContent(width: CGFloat?) -> some View {
+        // Tallest first — ViewThatFits renders the first that fits. Written
+        // out rather than looped: ViewThatFits has to see each candidate as
+        // its own child, and a ForEach would hand it one.
+        #if os(macOS)
+        // Extended to match macOS's raised `maxRows` ceiling (see `content`
+        // above) — `min(N, maxRows)` still no-ops harmlessly if maxRows is
+        // ever lower than 10.
+        ViewThatFits(in: .vertical) {
+            card(rows: min(10, maxRows), width: width)
+            card(rows: min(9, maxRows), width: width)
+            card(rows: min(8, maxRows), width: width)
+            card(rows: min(7, maxRows), width: width)
+            card(rows: min(6, maxRows), width: width)
+            card(rows: min(5, maxRows), width: width)
+            card(rows: min(4, maxRows), width: width)
+            card(rows: min(3, maxRows), width: width)
+            card(rows: min(2, maxRows), width: width)
+            card(rows: 1, width: width)
+        }
+        #else
+        ViewThatFits(in: .vertical) {
+            card(rows: min(6, maxRows), width: width)
+            card(rows: min(5, maxRows), width: width)
+            card(rows: min(4, maxRows), width: width)
+            card(rows: min(3, maxRows), width: width)
+            card(rows: min(2, maxRows), width: width)
+            card(rows: 1, width: width)
+        }
+        #endif
+    }
+
+    private func card(rows: Int, width: CGFloat?) -> some View {
         VStack(alignment: .leading, spacing: rowSpacing) {
             header
 
@@ -175,16 +229,26 @@ private struct RemindersListView: View {
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
                     ForEach(reminders.prefix(rows)) { reminder in
-                        ReminderRow(reminder: reminder, titleLineLimit: isLarge ? 2 : 1)
+                        ReminderRow(
+                            reminder: reminder, titleLineLimit: isLarge ? 2 : 1, availableWidth: width
+                        )
                     }
                 }
                 // systemMedium drops the overflow line, as Track's does: at
                 // 4×2 that band costs a whole row, and the header's "N left"
                 // already states the total.
+                //
+                // A tap target, same as the header: someone reading "+N more"
+                // wants the rest, so it goes to the surface that has them
+                // (Trent, 2026-09-22). `.foregroundStyle` stays explicit
+                // inside the Link for the same reason the header's does — see
+                // `header`'s doc comment.
                 if isLarge, reminders.count > rows {
-                    Text("+\(reminders.count - rows) more")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Link(destination: WidgetLink.reminders) {
+                        Text("+\(reminders.count - rows) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
 
@@ -197,16 +261,34 @@ private struct RemindersListView: View {
         }
     }
 
+    /// The header IS the card's tap target now that the whole-card link is
+    /// gone (see `RemindersListView.body`). Only the title/count block is a
+    /// `Link` — the `ChevronPager` stays a sibling outside it, because a
+    /// `Button(intent:)` nested inside a `Link` is a WidgetKit combination
+    /// this repo has no way to verify without a device. `.foregroundStyle` on
+    /// the title is explicit: `Link` tints an unstyled label with the accent
+    /// color, same reason `ReminderRow`'s title overrides it below.
+    ///
+    /// The tap target is sized to the text, not stretched to the 40pt floor
+    /// `ChevronButton` uses elsewhere — forcing a frame here would fight the
+    /// `.firstTextBaseline` alignment this header is tuned around, and on
+    /// systemMedium there is no headroom to spend on it (`WidgetTheme.
+    /// compactRowSpacing`'s comment). It reads as tappable because it is the
+    /// same headline text a user already reads as "the current view".
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.group?.label ?? "Reminders")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(countLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            Link(destination: WidgetLink.reminders) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.group?.label ?? "Reminders")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
             ChevronPager(
@@ -241,21 +323,69 @@ private struct RemindersListView: View {
 private struct ReminderRow: View {
     let reminder: TaskDTO
     var titleLineLimit = 2
+    /// The row's real available width, threaded down from
+    /// `RemindersListView`'s `GeometryReader` — macOS only; always `nil` on
+    /// iOS. See WidgetTheme's "macOS row-height truthing" note.
+    var availableWidth: CGFloat? = nil
+
+    #if os(macOS)
+    /// Real per-title line count at this row's actual text column (the card
+    /// width minus the 36pt marker and its 10pt `HStack` spacing), falling
+    /// back to the flat budget if the width isn't known yet.
+    private var measuredLines: Int {
+        guard let availableWidth else { return titleLineLimit }
+        let font = WidgetTheme.subheadlineFont(weight: WidgetTheme.priorityWeight(reminder.priority))
+        return WidgetTheme.measuredLineCount(
+            for: reminder.title, maxWidth: availableWidth - 36 - 10, font: font
+        )
+    }
+    #endif
+
+    /// The row's reserved text height — macOS: the title's REAL measured
+    /// line count; iOS: unchanged, the flat `titleLineLimit` budget (same
+    /// formula this always used).
+    private var reservedHeight: CGFloat {
+        #if os(macOS)
+        CGFloat(measuredLines) * WidgetTheme.rowTitleLineHeight
+        #else
+        CGFloat(titleLineLimit) * WidgetTheme.rowTitleLineHeight
+        #endif
+    }
+
+    /// `nil` (unlimited) on macOS — `reservedHeight` above already reserves
+    /// the title's real line count, so nothing needs to cap and ellipsize
+    /// it. iOS keeps the flat cap unchanged.
+    private var lineLimitValue: Int? {
+        #if os(macOS)
+        nil
+        #else
+        titleLineLimit
+        #endif
+    }
 
     var body: some View {
         // .top, not .center: on a two-line row a centred circle floats down
         // into the gap between the lines, reading as if it belongs to neither.
         HStack(alignment: .top, spacing: 10) {
-            Button(intent: CompleteTaskIntent(taskId: reminder.id)) {
+            Button(intent: CompleteTaskIntent(taskId: reminder.id, kind: RemindersWidget.kind)) {
                 Image(systemName: "circle")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(WidgetTheme.priorityColor(reminder.priority))
-                    // The glyph centres on the title's first line; the 36pt hit
+                    // The glyph centres on the title's first line; the hit
                     // target then hangs below it, so the circle sits beside the
                     // words while staying as easy to hit as ever (26pt missed
-                    // too often).
+                    // too often, iOS's finger-sized floor). macOS matches the
+                    // row's own reserved height instead of that flat 36 — see
+                    // WidgetTheme's "macOS row-height truthing" note for why:
+                    // on macOS 36 was TALLER than the text's own reservation,
+                    // so the marker — not the text — was silently setting
+                    // every row's height.
                     .frame(width: 36, height: WidgetTheme.rowTitleLineHeight)
+                    #if os(macOS)
+                    .frame(width: 36, height: reservedHeight, alignment: .top)
+                    #else
                     .frame(width: 36, height: 36, alignment: .top)
+                    #endif
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -266,7 +396,7 @@ private struct ReminderRow: View {
                     .fontWeight(WidgetTheme.priorityWeight(reminder.priority))
                     .foregroundStyle(.primary)
                     .opacity(WidgetTheme.priorityOpacity(reminder.priority))
-                    .lineLimit(titleLineLimit)
+                    .lineLimit(lineLimitValue)
                     .multilineTextAlignment(.leading)
                     // fixedSize: the wrapped height is the height, and no
                     // parent gets to squeeze it back to one truncated line.
@@ -275,7 +405,7 @@ private struct ReminderRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: CGFloat(titleLineLimit) * WidgetTheme.rowTitleLineHeight,
+                        minHeight: reservedHeight,
                         alignment: .topLeading
                     )
                     .contentShape(Rectangle())
@@ -285,6 +415,13 @@ private struct ReminderRow: View {
 }
 
 // MARK: - Lock Screen
+//
+// Lock Screen accessory families don't exist on macOS (see the #if os(iOS)
+// guard on `content` above and on RemindersWidget's supportedFamilies), so
+// these two views — and AccessoryWidgetBackground, which only compiles on
+// iOS — are gated out of the macOS build entirely rather than left as dead
+// code that happens to still compile.
+#if os(iOS)
 
 /// Lock Screen rectangular: glanceable only.
 ///
@@ -344,3 +481,5 @@ private struct RemindersCircularView: View {
         .widgetURL(WidgetLink.reminders)
     }
 }
+
+#endif

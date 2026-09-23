@@ -47,6 +47,14 @@ interface PreferencesContextValue {
   setSleepTime: (time: string) => void
   defaultGrouping: GroupingMode
   setDefaultGrouping: (grouping: GroupingMode) => void
+  /**
+   * True once the `/api/user/preferences` fetch below has settled (success
+   * or failure). Until then `defaultGrouping` (and everything else in this
+   * context) is the hardcoded fallback above, not the user's real value —
+   * see `useDefaultGrouping`'s doc comment for why a consumer that needs the
+   * REAL grouping (not just "a" grouping) has to wait on this.
+   */
+  preferencesLoaded: boolean
   defaultSort: SortOption
   defaultSortReversed: boolean
   setSortPreference: (sort: SortOption, reversed: boolean) => void
@@ -139,6 +147,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setSleepTime: () => {},
   defaultGrouping: 'project',
   setDefaultGrouping: () => {},
+  preferencesLoaded: false,
   defaultSort: 'due_date',
   defaultSortReversed: false,
   setSortPreference: () => {},
@@ -196,6 +205,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [wakeTime, setWakeTimeState] = useState('07:00')
   const [sleepTime, setSleepTimeState] = useState('22:00')
   const [defaultGrouping, setDefaultGroupingState] = useState<GroupingMode>('project')
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
   const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
   const [filtersExpanded, setFiltersExpandedState] = useState(false)
@@ -403,6 +413,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       .catch((err: unknown) => {
         console.error('Failed to fetch preferences:', err)
       })
+      .finally(() => {
+        setPreferencesLoaded(true)
+      })
   }, [status])
 
   // Handle late APNs token arrival — iOS dispatches this CustomEvent when
@@ -454,6 +467,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
             body: JSON.stringify({ default_grouping: grouping }),
           }).catch(() => {})
         },
+        preferencesLoaded,
         defaultSort,
         defaultSortReversed,
         setSortPreference: (sort: SortOption, reversed: boolean) => {
@@ -572,9 +586,20 @@ export function useSchedulePreferences() {
   return { wakeTime, setWakeTime, sleepTime, setSleepTime }
 }
 
+/**
+ * `groupingLoaded` is `preferencesLoaded` under this hook's own name: until
+ * the `/api/user/preferences` fetch settles, `defaultGrouping` is the
+ * hardcoded `'project'` fallback in this file, not the user's real
+ * preference. Most consumers render fine either way — the fallback just
+ * flashes briefly. But `DashboardClient`'s `?task=<id>&highlight=1` effect
+ * groups tasks BY `defaultGrouping` to find and expand the linked row, and
+ * resolving that against the fallback (rather than waiting a beat for the
+ * real value) can expand the wrong group — found by browser-verifying
+ * against Trent's own dev account, whose real default is `'slot'`.
+ */
 export function useDefaultGrouping() {
-  const { defaultGrouping, setDefaultGrouping } = useContext(PreferencesContext)
-  return { defaultGrouping, setDefaultGrouping }
+  const { defaultGrouping, setDefaultGrouping, preferencesLoaded } = useContext(PreferencesContext)
+  return { defaultGrouping, setDefaultGrouping, groupingLoaded: preferencesLoaded }
 }
 
 export function useDefaultSort() {
