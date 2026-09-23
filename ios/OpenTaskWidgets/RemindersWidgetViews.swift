@@ -564,10 +564,28 @@ private struct ReminderRow: View {
                 Image(systemName: "circle")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(WidgetTheme.priorityColor(reminder.priority))
-                    // The glyph centres on the title's first line; the hit
-                    // target then hangs below it, so the circle sits beside the
-                    // words while staying as easy to hit as ever (26pt missed
-                    // too often, iOS's finger-sized floor — see `markerHeight`).
+                    // TWO frames, deliberately not one — this is the same
+                    // trick the original leading-edge marker used, preserved
+                    // across the 2026-09-23 move to the trailing edge. The
+                    // FIRST frame is exactly one line tall
+                    // (`rowTitleLineHeight`) with DEFAULT (.center)
+                    // alignment, which centres the glyph within the vertical
+                    // span of the title's first line specifically — not the
+                    // row as a whole. The SECOND frame then takes that
+                    // already-centred result and pins it to the TOP of the
+                    // full `markerHeight`, so a two-or-three-line title's
+                    // extra lines extend the tappable area downward without
+                    // dragging the glyph down with them (26pt missed too
+                    // often, iOS's finger-sized floor — see `markerHeight`).
+                    // Collapsing this to a single
+                    // `.frame(height: markerHeight, alignment: .top)` looks
+                    // equivalent but isn't: `.top` alignment there would
+                    // pin the glyph's own small intrinsic size to the frame's
+                    // top edge instead of centring it on the first line,
+                    // which is exactly the "floats down between the lines,
+                    // reading as if it belongs to neither" failure this
+                    // struct's own doc comment warns about avoiding.
+                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
                     .frame(width: WidgetTheme.rowMarkerSize, height: markerHeight, alignment: .top)
                     .contentShape(Rectangle())
             }
