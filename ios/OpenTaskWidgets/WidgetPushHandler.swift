@@ -102,7 +102,7 @@ private enum WidgetPushRegistrar {
     /// server computes the full topic by appending that suffix to whatever
     /// `bundle_id` is registered here. Unverified without a real send: see
     /// docs/NOTIFICATIONS.md § WidgetKit push, "Known gaps."
-    private static let appBundleId = "io.mcnitt.opentask.mac"
+    private static let appBundleId = "io.mcnitt.opentask"
     private static let platform = "macos"
     #else
     private static let appBundleId = "io.mcnitt.opentask"
