@@ -224,21 +224,43 @@ untouched: `WidgetTheme.rowTitleLineHeight` (UIKit's line-height call has
 no direct AppKit equivalent — see the doc comment on that property), the
 Lock Screen accessory families (`.accessoryRectangular`/`.accessoryCircular`
 are `@available(macOS, unavailable)` — hard compile errors on native macOS,
-unlike the Designed-for-iPad build), and — added 2026-09-22, the vertical-space
-fix — how `RemindersListView`/`TasksListView` size a `systemLarge` row. iOS
-always reserves a flat 2 lines per title; on macOS that flat reservation
-turned out to be SMALLER than the row's own fixed 36pt check-off/dot hit
-target, so the hit target — not the text — was silently setting every row's
-height (a one-line title still cost the height of two empty lines). macOS
-instead measures each title's REAL line count with AppKit text APIs
+unlike the Designed-for-iPad build), and how `RemindersListView`/
+`TasksListView` size a `systemLarge` row (added 2026-09-22 for macOS; iOS
+got its own version of the same fix 2026-09-23 — see below for what stayed
+platform-specific). The ORIGINAL bug (macOS only, 2026-09-22): iOS reserved
+a flat 2 lines per title; on macOS that flat reservation turned out to be
+SMALLER than the row's own fixed 36pt check-off/dot hit target, so the hit
+target — not the text — was silently setting every row's height (a one-line
+title still cost the height of two empty lines). The fix measures each
+title's REAL line count with the platform's own text-layout API
 (`WidgetTheme.measuredLineCount`, fed a card width threaded down through a
 `GeometryReader` placed OUTSIDE `ViewThatFits`, never inside a candidate),
-uses that for both the hit target and the reservation, and never caps
-`lineLimit` — so nothing on macOS is ever truncated, and the row ceiling is
-raised from 6 to 10 to use the height that frees up. See the "macOS
-row-height truthing (2026-09-22)" comment block on `WidgetTheme.swift` for
-the full diagnosis. iOS's own behavior is unchanged — every `#else` branch is
-the original code.
+uses that for both the marker's height and the text reservation, and the
+row ceiling is raised from 6 to 10 to use the height that frees up. See the
+"row-height truthing" comment block on `WidgetTheme.swift` for the full
+diagnosis, including the 2026-09-23 addendum.
+
+**iOS is no longer untouched** (2026-09-23, Trent's iPhone screenshots
+showed the same family of complaints — a gap under one-line titles, 2-line
+truncation, wanting more rows visible): iOS now shares the SAME
+`measuredLineCount`/`GeometryReader` mechanism and the SAME raised ceiling
+(10, both platforms), but two things stay platform-specific rather than
+converging all the way to macOS's behavior: **the cap** — iOS still caps a
+title at `WidgetTheme.iOSMaxTitleLines` (3), where macOS never caps at all
+("I don't want to truncate the text until three lines" vs. macOS's "we
+can't truncate the text" — a phone's Home Screen has far less room than a
+desktop widget, so iOS keeps a ceiling macOS doesn't need); and **the
+marker floor** — iOS's 36pt marker column is a FINGER touch target and
+never shrinks below that even when the measured text is shorter
+(`max(reservedHeight, WidgetTheme.rowMarkerSize)`), where macOS's marker
+still has no floor at all (a mouse pointer needs none, and this is the same
+36pt-vs-28pt asymmetry the original 2026-09-22 diagnosis found — it just
+means iOS deliberately keeps the finger-target side of that asymmetry
+instead of fully adopting macOS's fix). `systemMedium` on iOS is
+UNTOUCHED by any of this — it still reserves a flat one line per title,
+with no `GeometryReader`/measurement at all; a 4×2 has no height to spare
+on it. Also unaffected on iOS: `systemMedium`'s row ceiling stays whatever
+`maxRows` (3) it was passed — only `systemLarge` uses the raised 10.
 
 Shares the App Group and `keychain-access-groups` entitlements with
 `OpenTaskMac` (see the long comment on the app target's entitlements in

@@ -332,7 +332,7 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
   const overall = quotaGroupSummary(quotas)
 
   return (
-    <section aria-label="Track" data-track-panel className="mb-6">
+    <section aria-label="Quotas" data-track-panel className="mb-6">
       <TrackHeader
         section={section}
         open={open}
@@ -625,7 +625,7 @@ function TrackHeader({
           />
         </span>
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-          Track
+          Quotas
         </span>
         <span
           data-track-section-summary
@@ -650,7 +650,7 @@ function TrackHeader({
         type="button"
         onClick={onToggleView}
         aria-expanded={open}
-        aria-label={open ? 'Collapse Track' : 'Expand Track'}
+        aria-label={open ? 'Collapse Quotas' : 'Expand Quotas'}
         className="hover:text-foreground hidden min-h-7 min-w-0 flex-1 items-center gap-2 px-1 text-left transition-colors sm:flex"
       >
         <span className="-mr-1.5 flex items-center justify-center p-0.5">
@@ -663,7 +663,7 @@ function TrackHeader({
           />
         </span>
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-          Track
+          Quotas
         </span>
       </button>
 

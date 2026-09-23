@@ -13,7 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { Task, Project } from '@/types'
+import type { Task, Project, LabelColor } from '@/types'
+import { LABEL_COLORS } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
 import { useGroupSort, type SortOption } from '@/hooks/useGroupSort'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
@@ -38,7 +39,15 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * content — §1.1's founding constraint is that the harness adapts to the scale,
  * so nothing is ever hidden permanently, just collapsed behind one tap.
  */
-const GROUP_PREVIEW_COUNT = 5
+/** Today's time slots show this many before "Show more" (§7.3). */
+const SLOT_PREVIEW_COUNT = 5
+/**
+ * Every other grouped view (Projects, and time grouping) shows this many per
+ * group before "Show more" (Trent, 2026-09-23: "cap the number of to-dos that
+ * are shown at 10… otherwise it's too hard to scroll through the projects
+ * when it's not in unified mode"). Unified is one flat list and is not capped.
+ */
+const GROUP_PREVIEW_COUNT = 10
 import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
@@ -376,7 +385,7 @@ export function TaskList({
   const projectNameMap = isUnified ? new Map(projects.map((p) => [p.id, p.name])) : undefined
   const projectColorMap = isUnified ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
-  const groups = isUnified
+  const groups: TaskGroup[] = isUnified
     ? [{ label: '_unified', tasks }]
     : grouping === 'project'
       ? groupByProject(tasks, projects)
@@ -448,12 +457,14 @@ export function TaskList({
           // §7.3: show the first N, with everything else one tap away. Nothing
           // is ever truncated permanently — §1.1's constraint is that the
           // harness adapts to the scale, so a 40-item slot stays fully
-          // reachable while the day still reads at a glance. Only applies to
-          // slot grouping; the other views keep their existing behaviour.
-          const previewed = grouping === 'slot' && !isUnified
+          // reachable while the day still reads at a glance. Every grouped view
+          // previews — Today's slots at 5, the rest at 10 — and only the
+          // unified flat list shows everything.
+          const previewed = !isUnified
+          const previewCount = grouping === 'slot' ? SLOT_PREVIEW_COUNT : GROUP_PREVIEW_COUNT
           const isExpanded = expandedGroups.has(group.label)
           const visibleTasks =
-            previewed && !isExpanded ? sortedTasks.slice(0, GROUP_PREVIEW_COUNT) : sortedTasks
+            previewed && !isExpanded ? sortedTasks.slice(0, previewCount) : sortedTasks
           const hiddenCount = sortedTasks.length - visibleTasks.length
 
           return (
@@ -508,7 +519,26 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      {group.label}
+                      {/* A PROJECT heading is a tag in its project's color
+                          (Trent, 2026-09-23, option C of four rendered: "I
+                          lose track of what color is for what"). The same
+                          tinted pair labels use, so it reads the same in
+                          light and dark. A project with no color, and every
+                          non-project grouping, keeps the plain heading. */}
+                      {group.color ? (
+                        <span
+                          data-project-heading-tag
+                          className={cn(
+                            'rounded-md px-2 py-0.5',
+                            LABEL_COLORS[group.color].bg,
+                            LABEL_COLORS[group.color].text,
+                          )}
+                        >
+                          {group.label}
+                        </span>
+                      ) : (
+                        group.label
+                      )}
                       <span className="text-muted-foreground/60 ml-2">{group.tasks.length}</span>
                     </button>
                   </div>
@@ -574,7 +604,7 @@ export function TaskList({
                       <span className="text-muted-foreground/60"> ({hiddenCount} more)</span>
                     </button>
                   )}
-                  {isExpanded && sortedTasks.length > GROUP_PREVIEW_COUNT && (
+                  {isExpanded && sortedTasks.length > previewCount && (
                     <button
                       type="button"
                       onClick={() => toggleGroupExpanded(group.label)}
@@ -602,6 +632,8 @@ export function isTaskOverdue(task: Task): boolean {
 export interface TaskGroup {
   label: string
   tasks: Task[]
+  /** The project's color, on project groups — drawn as the heading's tag. */
+  color?: LabelColor | null
 }
 
 function groupByTime(tasks: Task[], timezone: string): TaskGroup[] {
@@ -684,11 +716,19 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     byProject.set(task.project_id, list)
   }
 
-  // Sort projects by sort_order
+  // The order Settings shows: sort_order, then NAME — the same rule as the
+  // server's project list (`ORDER BY sort_order, name` in core/projects). It
+  // used to break ties by Map insertion order, which follows the tasks'
+  // soonest-first sort: several projects sharing sort_order 0 then swapped
+  // places whenever a project's soonest task was completed (Trent,
+  // 2026-09-23: completing an Inbox task made the Inbox section jump away).
   const sortedProjectIds = [...byProject.keys()].sort((a, b) => {
     const pa = projectMap.get(a)
     const pb = projectMap.get(b)
-    return (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999)
+    return (
+      (pa?.sort_order ?? 999) - (pb?.sort_order ?? 999) ||
+      (pa?.name ?? '').localeCompare(pb?.name ?? '')
+    )
   })
 
   const groups: TaskGroup[] = []
@@ -716,6 +756,7 @@ function groupByProject(tasks: Task[], projects: Project[]): TaskGroup[] {
     groups.push({
       label: project?.name || `Project ${projectId}`,
       tasks: projectTasks,
+      color: project?.color ?? null,
     })
   }
 

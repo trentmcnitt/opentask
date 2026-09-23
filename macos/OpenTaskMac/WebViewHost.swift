@@ -355,7 +355,7 @@ struct WebViewHost: NSViewRepresentable {
         // MARK: - JavaScript injection
 
         static func deviceInfoJS(token: String) -> String {
-            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask.mac"
+            let bundleId = Bundle.main.bundleIdentifier ?? "io.mcnitt.opentask"
             // Follows the signing entitlement, not the build configuration:
             // `com.apple.developer.aps-environment` is `development` in
             // project.yml for every build, and the app is installed as a
