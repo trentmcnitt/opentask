@@ -1706,7 +1706,19 @@ paths:
           schema:
             type: string
             format: date
-          description: Filter by completion date (YYYY-MM-DD)
+          description: Filter by completion date (YYYY-MM-DD, UTC calendar date)
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter to completions at or after this instant. Must be paired with `until`.
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter to completions before this instant. Must be paired with `since`.
       responses:
         '200':
           description: Completion records
@@ -2119,6 +2131,16 @@ components:
           type: string
           format: date-time
           nullable: true
+        task_title:
+          type: string
+        project_id:
+          type: integer
+        is_reminder:
+          type: boolean
+        is_tracked:
+          type: boolean
+        progress_target:
+          type: integer
 
     Webhook:
       type: object

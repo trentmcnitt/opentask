@@ -52,15 +52,24 @@ func reloadOpenTaskWidget(kind: String) {
     WidgetCenter.shared.reloadTimelines(ofKind: kind)
 }
 
-/// Reload all three widget kinds, unordered. NOT used by any mutating
+/// Reload all three widget kinds, unordered. NOT used by any ROUTINE mutating
 /// intent's normal path as of 2026-09-22 — see `reloadOpenTaskWidget(kind:)`.
-/// The one remaining caller is `CompleteTaskIntent`'s fallback for a button
-/// archived before it carried a `kind` parameter: without a known kind there
-/// is nothing to target, so it falls back to the old, safe-but-unoptimized
-/// "reload everything" rather than guessing.
+/// Two callers remain, both deliberate exceptions to "reload only the acting
+/// kind":
 ///
-/// This function has no other callers now, which is itself evidence for the
-/// fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
+/// - `CompleteTaskIntent`'s fallback for a button archived before it carried
+///   a `kind` parameter: without a known kind there is nothing to target, so
+///   it falls back to the old, safe-but-unoptimized "reload everything"
+///   rather than guessing.
+/// - `UndoLastActionIntent` (2026-09-23), unconditionally: `/api/undo`'s
+///   response carries no task id or kind (see its own doc), so which kind
+///   the undone action belongs to is never knowable, and undo is rare enough
+///   that the chronod queue-contention cost this function exists to avoid
+///   for routine taps (see the measurements below) is not the relevant
+///   tradeoff for an action a user fires a few times a day at most.
+///
+/// Otherwise this function has no other callers, which is itself evidence for
+/// the fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
 /// reload for one extension bundle through ONE SERIAL QUEUE — confirmed from
 /// `/usr/bin/log`: "Would pop task, but all extensions are busy, namely
 /// [io.mcnitt.opentask.mac.widgets]" logged for every kind but the one
@@ -130,23 +139,55 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // One instant for this whole action — shared by the auto-advance
+        // snapshot below and `recordMutation` on success, so the two are
+        // tagged with bit-identical timestamps (see WidgetStore's "Auto-
+        // advance's own undo" section for why that tagging matters).
+        let mutationInstant = Date()
+
         // Optimistic (§8): tombstone the item and repaint from cache BEFORE the
         // server call — the round trip takes seconds and a delayed disappearance
         // reads as a dead button. The tombstone hides the item through the
         // reconciling fetch; a FAILED call clears it so the item honestly
         // reappears, never an alert the user can't act on from the Home Screen.
-        // The occurrence on screen, read before anything can refresh the cache
-        // with the advanced one — see "Confirmed completions" in WidgetStore.
-        let occurrence = WidgetStore.cachedOccurrence(of: taskId)
         WidgetStore.stagePendingCompletion(taskId)
+        // Reminders only (§6/§7 — Tasks has no slot concept to advance
+        // through): Trent, 2026-09-23, "once I finish morning it should take
+        // me automatically back to early morning ... so I can keep checking
+        // things off and automatically switch." Runs BEFORE the first reload
+        // below, using the same cache `filterPending` will draw from, so the
+        // very next repaint shows the slot switch and the hidden item
+        // together rather than as two separately visible steps. Snapshotted
+        // first (unconditionally, even when `autoAdvanceSlot` turns out not
+        // to change anything — restoring an unchanged override is a no-op)
+        // so a failed completion below, or a later Undo, can put the display
+        // back — see WidgetStore's "Auto-advance's own undo" section.
+        let isReminders = kind == RemindersWidget.kind
+        if isReminders, let cached = WidgetStore.loadReminders()?.value.groups {
+            WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(after: taskId, in: cached, now: mutationInstant)
+        }
         await reloadAffectedKind()
 
         do {
             try await APIClient.shared.markDone(taskId: taskId)
-            WidgetStore.confirmCompletion(taskId, occurrence: occurrence)
+            WidgetStore.confirmCompletion(taskId)
+            // Auto-advance correlation only now (2026-09-23) — see
+            // WidgetStore.recordMutation's doc.
+            WidgetStore.recordMutation(now: mutationInstant)
+            // Undo/Redo affordance (2026-09-23): reflect this new undoable
+            // action immediately rather than waiting on the next scheduled
+            // fetch — see WidgetStore.recordLocalMutationForUndoCount's doc.
+            WidgetStore.recordLocalMutationForUndoCount()
         } catch {
             print("[OpenTaskWidgets] Complete \(taskId) failed: \(error)")
             WidgetStore.clearPendingCompletion(taskId)
+            // The completion never happened — undo whatever `autoAdvanceSlot`
+            // did above so the display doesn't stay parked on a slot chosen
+            // for an action that failed.
+            if isReminders {
+                WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutationInstant)
+            }
         }
         // Round 2 is the reconciling pass, and on failure it's the ONLY pass
         // that draws the truth: `clearPendingCompletion` just ran above, so
@@ -226,6 +267,10 @@ struct IncrementProgressIntent: AppIntent {
 
         do {
             try await APIClient.shared.logProgress(taskId: taskId, delta: delta)
+            // Undo/Redo affordance (2026-09-23) — see
+            // WidgetStore.recordLocalMutationForUndoCount's doc. A `−1`
+            // correction is just as undoable as a `+1`, so both record.
+            WidgetStore.recordLocalMutationForUndoCount()
         } catch {
             print("[OpenTaskWidgets] Progress \(taskId) \(delta > 0 ? "+" : "")\(delta) failed: \(error)")
         }
@@ -293,9 +338,47 @@ struct ShiftReminderSlotIntent: AppIntent {
     }
 }
 
+/// Jump straight to a specific slot — `ReminderSlotStrip`'s segments
+/// (2026-09-23, "I'd like to be able to tap a segment to jump to that
+/// section"). Same storage as `ShiftReminderSlotIntent` (`WidgetStore.
+/// setSlotOverride`), just addressed by the target slot's own key instead of
+/// an offset from the currently displayed one — a segment tap names its
+/// destination directly, it doesn't need to be counted as N steps away.
+struct JumpToReminderSlotIntent: AppIntent {
+    static var title: LocalizedStringResource = "Jump to Time Slot"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Slot Key")
+    var slotKey: Int
+
+    init() {}
+
+    init(slotKey: Int) {
+        self.slotKey = slotKey
+    }
+
+    func perform() async throws -> some IntentResult {
+        let groups = WidgetStore.loadReminders()?.value.groups ?? []
+        // A widget on the Home Screen can be tapped against an archived
+        // snapshot from before the cache last refreshed — guard against a
+        // slot key that no longer exists rather than setting an override
+        // `displayedSlotIndex` can never resolve back to.
+        guard groups.contains(where: { $0.slotKey == slotKey }) else { return .result() }
+
+        let natural = RemindersTimeline.naturalSlotIndex(in: groups)
+        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: groups[natural].slotKey)
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        return .result()
+    }
+}
+
 // MARK: - Tasks project paging
 
-/// Cycle the Tasks widget's scope: All → each project the server returned → All.
+/// Cycle the Tasks widget's scope: Today → Up next → each project the server
+/// returned → Today (2026-09-23, item 4 — two unified pages up front, then
+/// the per-project pages as before).
 ///
 /// The project list comes entirely from the cached payload. Nothing here knows
 /// any project's name or how many there are (§7.1 leaves the project set open).
@@ -315,15 +398,82 @@ struct ShiftProjectScopeIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         guard let cache = WidgetStore.loadTasks()?.value else { return .result() }
 
-        // Scope ring: index 0 is "All", then one entry per project that
+        // Scope ring: Today, then Up next, then one entry per project that
         // actually has something in today's set.
-        let ring = [WidgetStore.allProjects]
+        let ring = [WidgetStore.allProjects, WidgetStore.upNextScope]
             + TasksTimeline.scopedProjects(tasks: cache.tasks, projects: cache.projects).map(\.id)
         guard ring.count > 1 else { return .result() }
 
         let current = ring.firstIndex(of: WidgetStore.projectScope) ?? 0
         let count = ring.count
         WidgetStore.projectScope = ring[((current + offset) % count + count) % count]
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+// MARK: - Reminders list paging (2026-09-23, the bottom pager)
+
+/// Move the Reminders systemLarge list's bottom pager one page — the
+/// `‹ 1/3 ›` control that replaced "+N more" (Trent: "It'd be nice to be
+/// able to page through things that are too long to fit"). Unlike the slot/
+/// project/quota rings, this does NOT wrap: `ListPager` dims and disables
+/// the button at either end (`page == 0` / `page == totalPages - 1`, computed
+/// by the view from whichever `ViewThatFits` candidate actually won — see
+/// `RemindersListView.card`), so `perform()` only ever has to clamp the
+/// lower bound; the view's own live clamp handles the upper one, including
+/// when the list shrinks out from under a stale page (a check-off).
+struct ShiftReminderPageIntent: AppIntent {
+    static var title: LocalizedStringResource = "Page Reminders List"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Offset")
+    var offset: Int
+
+    init() {}
+
+    init(offset: Int) {
+        self.offset = offset
+    }
+
+    func perform() async throws -> some IntentResult {
+        let groups = WidgetStore.filterPending(WidgetStore.loadReminders()?.value.groups ?? [])
+        let index = RemindersTimeline.displayedSlotIndex(in: groups)
+        guard groups.indices.contains(index) else { return .result() }
+
+        let slotKey = groups[index].slotKey
+        let current = WidgetStore.remindersPage(for: slotKey)
+        WidgetStore.setRemindersPage(current + offset, for: slotKey)
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: RemindersWidget.kind)
+        return .result()
+    }
+}
+
+// MARK: - Tasks list paging
+
+/// The Tasks twin of `ShiftReminderPageIntent` — same non-wrapping pager,
+/// scoped to the project (or "Up next") currently on screen.
+struct ShiftTasksPageIntent: AppIntent {
+    static var title: LocalizedStringResource = "Page Tasks List"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Offset")
+    var offset: Int
+
+    init() {}
+
+    init(offset: Int) {
+        self.offset = offset
+    }
+
+    func perform() async throws -> some IntentResult {
+        let scope = WidgetStore.projectScope
+        let current = WidgetStore.tasksPage(for: scope)
+        WidgetStore.setTasksPage(current + offset, for: scope)
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TasksWidget.kind)
@@ -393,6 +543,156 @@ struct ShiftTrackItemIntent: AppIntent {
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        return .result()
+    }
+}
+
+// MARK: - Undo / Redo (2026-09-23)
+
+/// Undo the most recent action from ANY of the three widget kinds. Trent:
+/// "I need some way to ... undo the accidental tap" and "the undo should not
+/// disappear like that. Even if you're not on that segment, undoing it
+/// should still be allowed with some indication about what was undone."
+///
+/// Shown as one of `UndoRedoButtons`' two always-present icon buttons —
+/// dimmed/disabled by `WidgetStore.canUndo`, the server's own undoable
+/// count, not by a local clock (the old 60s-window design this replaced).
+///
+/// Calls the SAME `/api/undo` the web app's toast Undo button does
+/// (`useTaskActions.handleUndo`, `src/app/api/undo/route.ts`): it undoes the
+/// single most recent action for the signed-in user, with no task id in the
+/// request or response. That means this intent cannot target "the task THIS
+/// header's row was for" — only "whatever changed last" — exactly like the
+/// web toast, and exactly why `WidgetStore.clearAllPendingState()` below
+/// clears every optimistic marker rather than one.
+struct UndoLastActionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Undo"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        // Atomic claim (see WidgetStore.tryClaimUndoRedo's doc): a
+        // concurrent tap — a real double-tap, a second perform() while this
+        // one's network call is still in flight, or an overlapping Redo tap
+        // — is dropped rather than firing a second server call.
+        guard WidgetStore.tryClaimUndoRedo() else { return .result() }
+        defer { WidgetStore.releaseUndoRedoClaim() }
+
+        // Round 1: ALL THREE kinds, unlike a routine check-off/+1 — see
+        // reloadOpenTaskWidgets()'s doc for why undo is the deliberate
+        // exception. This is what makes both buttons' state and the "Undid:
+        // …" indication update everywhere right away rather than only
+        // wherever this tap happened to land, and it runs before the
+        // network call for the same "don't make a dead-looking button"
+        // reason CompleteTaskIntent stages first.
+        await reloadOpenTaskWidgets()
+
+        do {
+            let result = try await APIClient.shared.undoLastAction()
+            // No task id to target — see this type's doc — so every
+            // optimistic/confirmed marker is cleared rather than one guessed
+            // at. See WidgetStore.clearAllPendingState's doc.
+            WidgetStore.clearAllPendingState()
+            // Server truth for the buttons' own enabled state — exact, not
+            // the optimistic guess `recordLocalMutationForUndoCount` makes
+            // for a completion/`+1`.
+            WidgetStore.setUndoRedoCounts(undoable: result.undoableCount, redoable: result.redoableCount)
+            // The "indication about what was undone" — shown in every
+            // header's subtitle for WidgetStore.lastActionWindow seconds,
+            // "whichever slot/page is on screen" (see WidgetStore's
+            // "Last-action indication" doc for why this is header-level
+            // state, not per-row).
+            WidgetStore.recordLastAction(description: "Undid: \(result.description)")
+            // The cache no longer holds what was undone — a confirmed
+            // completion is taken OUT of it (see WidgetStore). Refetch before
+            // redrawing, and clear the interaction stamp so the providers take
+            // the network path, or the undone item never comes back (Trent,
+            // 2026-09-23: "I pressed undo and nothing actually undid it" —
+            // the server had undone it).
+            WidgetStore.clearInteraction()
+            if let payload = try? await APIClient.shared.fetchReminders() {
+                WidgetStore.saveReminders(payload.groups)
+            }
+            if let tasks = try? await APIClient.shared.fetchOpenTasks(),
+               let projects = try? await APIClient.shared.fetchProjects() {
+                WidgetStore.saveTasks(tasks, projects: projects)
+            }
+            // If the action just reversed was a Reminders completion that
+            // triggered `autoAdvanceSlot`, put the display back where it was
+            // before that side effect — the completed item reappears in its
+            // ORIGINAL slot, and the display should follow it there rather
+            // than staying parked on whatever slot the completion jumped to.
+            // Consumed (not merely peeked) only here, on SUCCESS — see
+            // WidgetStore.consumeLastMutation's doc for why a failed call
+            // below leaves it alone for a retry. A no-op when there is no
+            // recorded mutation, or it doesn't match any snapshot on file
+            // (the last action wasn't a Reminders completion, or didn't
+            // trigger an auto-advance) — see WidgetStore's "Auto-advance's
+            // own undo" section for why the match is required rather than
+            // restoring unconditionally.
+            if let mutatedAt = WidgetStore.consumeLastMutation() {
+                WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutatedAt)
+            }
+        } catch {
+            print("[OpenTaskWidgets] Undo failed: \(error)")
+            // Nothing to roll back here (2026-09-23): the buttons' enabled
+            // state and the auto-advance correlation are both left exactly
+            // as they were — there is no window to restore any more, so a
+            // retry is simply a second tap on the same still-enabled button.
+        }
+        // Round 2, the reconciling pass. `markInteraction()` is deliberately
+        // never called here, so this takes the NETWORK path on both success
+        // (server truth for whatever an undone task changed) and failure. One
+        // caveat, self-healing: a chevron tapped under 10s before this would
+        // still leave `hasRecentInteraction()` true, which fast-paths this
+        // ONE pass from cache instead — the next scheduled or
+        // interaction-triggered reload corrects it.
+        await reloadOpenTaskWidgets()
+        return .result()
+    }
+}
+
+/// Redo the most recently undone action — the twin of `UndoLastActionIntent`,
+/// calling `POST /api/redo` (`src/app/api/redo/route.ts`). Trent: "For undo
+/// and redo I think we want undo and redo, ideally with an icon."
+///
+/// Deliberately does NOT touch the auto-advance-slot-override snapshot
+/// `UndoLastActionIntent` restores: that snapshot only ever records "the
+/// slot override as it stood immediately BEFORE an auto-advance", which has
+/// nothing to replay forward for a redo, and `consumeLastMutation()` is left
+/// untouched here so a Reminders completion made AFTER this redo can still
+/// correlate correctly with a later undo.
+struct RedoLastActionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Redo"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        // Shared claim with Undo — see UndoLastActionIntent's doc.
+        guard WidgetStore.tryClaimUndoRedo() else { return .result() }
+        defer { WidgetStore.releaseUndoRedoClaim() }
+
+        await reloadOpenTaskWidgets()
+
+        do {
+            let result = try await APIClient.shared.redoLastAction()
+            WidgetStore.clearAllPendingState()
+            WidgetStore.setUndoRedoCounts(undoable: result.undoableCount, redoable: result.redoableCount)
+            WidgetStore.recordLastAction(description: "Redid: \(result.description)")
+            WidgetStore.clearInteraction()
+            if let payload = try? await APIClient.shared.fetchReminders() {
+                WidgetStore.saveReminders(payload.groups)
+            }
+            if let tasks = try? await APIClient.shared.fetchOpenTasks(),
+               let projects = try? await APIClient.shared.fetchProjects() {
+                WidgetStore.saveTasks(tasks, projects: projects)
+            }
+        } catch {
+            print("[OpenTaskWidgets] Redo failed: \(error)")
+        }
+        await reloadOpenTaskWidgets()
         return .result()
     }
 }

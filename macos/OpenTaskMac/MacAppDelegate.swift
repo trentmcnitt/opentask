@@ -80,6 +80,13 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     /// the phone's notifications dozens of times a day. (The same call is
     /// already flagged as a bug on iOS in the 2026-09-15 feasibility notes;
     /// this app simply does not inherit it.)
+    /// Leaving the app refreshes the desktop widgets, so whatever was just
+    /// changed in the window shows on the desktop without waiting for the
+    /// timeline or a widget push (Trent, 2026-09-23).
+    func applicationWillResignActive(_ notification: Notification) {
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         updateBadge(0)

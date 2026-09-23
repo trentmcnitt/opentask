@@ -44,6 +44,7 @@ struct TrackWidgetView: View {
             TrackSmallView(entry: entry)
         case .systemMedium:
             TrackListView(entry: entry, capacity: 3, isLarge: false)
+                .backgroundTapOpens(WidgetLink.quotas)
         default:
             // Eight, not six: a real quota corpus is around eight items, and at
             // six the 4×4 was paging a list that would have fit — the user read
@@ -51,6 +52,7 @@ struct TrackWidgetView: View {
             // Home Screen list should never need. See `TrackRow` for what got
             // compacted to buy the two extra rows.
             TrackListView(entry: entry, capacity: 8, isLarge: true)
+                .backgroundTapOpens(WidgetLink.quotas)
         }
     }
 }
@@ -237,14 +239,20 @@ private struct TrackListView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(countLabel)
+                    // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
+                    // see `RemindersListView.header`'s identical comment.
+                    Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
+            // Right-aligned, before the chevrons (2026-09-23) — see
+            // `UndoRedoButtons`' doc.
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
             if canPage {
                 ChevronPager(
                     previous: ShiftTrackItemIntent(offset: -1),

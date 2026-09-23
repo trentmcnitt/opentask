@@ -769,6 +769,47 @@ test.describe('Reminders surface', () => {
 
     await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
   })
+
+  test('?slot=<slotId> brings that slot’s section into view', async ({
+    authenticatedPage: page,
+  }) => {
+    // The widget's per-slot header deep link. `groupKey` (RemindersView.tsx)
+    // gives every slot group its identity from the Time Slot's numeric id, so
+    // the link's target is that id, not a label or index.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const slotsRes = await page.request.get('/api/time-slots')
+    expect(slotsRes.ok()).toBeTruthy()
+    const slots = (
+      (await slotsRes.json()).data.time_slots as { id: number; label: string; start_time: string }[]
+    ).sort((a, b) => a.id - b.id)
+    expect(slots.length).toBeGreaterThan(1)
+    const target = slots[slots.length - 1] // latest slot — furthest down the page
+
+    const ids: number[] = []
+    try {
+      // One reminder per slot (due at that slot's own start time), so the
+      // target sits below several other slot cards rather than trivially
+      // being on-screen already.
+      for (const slot of slots) {
+        const [hour, minute] = slot.start_time.split(':').map(Number)
+        ids.push(
+          await createReminder(page, {
+            title: `Deep-link test — ${slot.label}`,
+            due_at: todayAt(hour, minute),
+          }),
+        )
+      }
+
+      await page.goto(`/reminders?slot=${target.id}`)
+      const section = page.locator(`[data-slot-key="${target.id}"]`)
+      await expect(section).toBeInViewport()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      // The param is spent, so a reload does not re-trigger the scroll.
+      await expect(page).toHaveURL('/reminders')
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
 })
 
 /**

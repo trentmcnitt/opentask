@@ -1,5 +1,10 @@
 import Foundation
+import OSLog
 import WidgetKit
+
+/// `print` from a widget extension reaches no log anyone can read on a device;
+/// this does (Console.app, `log show --predicate 'subsystem == "io.mcnitt.opentask.widgets"'`).
+private let pushLog = Logger(subsystem: "io.mcnitt.opentask.widgets", category: "push")
 
 /// Registers this widget extension's WidgetKit push token with the server so
 /// a mutation made anywhere (web, other device) can trigger a widget reload
@@ -40,6 +45,7 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         // Same hex-encoding idiom AppDelegate/MacAppDelegate use for the
         // regular APNs device token.
         let token = pushInfo.token.map { String(format: "%02.2hhx", $0) }.joined()
+        pushLog.notice("pushTokenDidChange: \(widgets.count, privacy: .public) widget(s), token \(String(token.prefix(8)), privacy: .public)")
 
         // Empty `widgets` means the person removed the last OpenTask widget
         // of whichever kind this handler instance backs — Apple's docs: the
@@ -52,7 +58,7 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
                 do {
                     try await WidgetPushRegistrar.unregister(token: token)
                 } catch {
-                    print("[WidgetPush] unregister failed: \(error)")
+                    pushLog.error("unregister failed: \(String(describing: error), privacy: .public)")
                 }
             }
             return
@@ -67,13 +73,14 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         Task {
             do {
                 try await WidgetPushRegistrar.register(token: token, widgetKind: kinds)
+                pushLog.notice("registered widget push token for [\(kinds, privacy: .public)]")
             } catch {
                 // Best-effort: WidgetKit redelivers "the first push token" the
                 // next time it decides to, so a lost registration self-heals
                 // without a retry loop here. Most likely cause: the widget
                 // was placed before the app ever connected to a server (no
                 // Bearer token in the Keychain yet) — see APIError.notConfigured.
-                print("[WidgetPush] registration failed for [\(kinds)]: \(error)")
+                pushLog.error("registration failed for [\(kinds, privacy: .public)]: \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -95,7 +102,7 @@ private enum WidgetPushRegistrar {
     /// server computes the full topic by appending that suffix to whatever
     /// `bundle_id` is registered here. Unverified without a real send: see
     /// docs/NOTIFICATIONS.md § WidgetKit push, "Known gaps."
-    private static let appBundleId = "io.mcnitt.opentask.mac"
+    private static let appBundleId = "io.mcnitt.opentask"
     private static let platform = "macos"
     #else
     private static let appBundleId = "io.mcnitt.opentask"

@@ -51,7 +51,18 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
     const name = input.name.trim()
     const shared = input.shared
-    const sortOrder = input.sort_order
+    // A new project goes at the END of the user's order unless placed
+    // explicitly. Defaulting to 0 left every new project tied at the top,
+    // which Settings and the dashboard then had to break by name.
+    const sortOrder =
+      input.sort_order ??
+      (
+        getDb()
+          .prepare(
+            'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM projects WHERE owner_id = ?',
+          )
+          .get(user.id) as { next: number }
+      ).next
 
     const db = getDb()
     const now = nowUtc()
