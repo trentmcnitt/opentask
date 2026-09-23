@@ -224,6 +224,9 @@ test.describe('Track', () => {
       // since 2026-09-06 it opens the detail sheet, and the swipe took over −1.
       await chip.click()
       await chip.click()
+      // Met DURING the session, so it stays put, green — only what was met
+      // when the page loaded is put away (Trent, 2026-09-22: "things should
+      // not disappear until reload").
       await expect(chipCount).toHaveText('2/2·wk')
       await chip.click({ modifiers: ['Shift'] })
       await expect(chipCount).toHaveText('1/2·wk')
@@ -301,7 +304,8 @@ test.describe('Track', () => {
       await expect(count).toContainText('0 / 2')
       await expect(minus).toBeDisabled()
 
-      // Reaching the target is "met": a state, not an exit — the line stays.
+      // Reaching the target is "met": a state, not an exit — the line stays
+      // until the next load puts it away.
       await plus.click()
       await plus.click()
       await expect(count).toContainText('2 / 2')
@@ -548,6 +552,77 @@ test.describe('Track', () => {
     await expect(panel.locator(`[data-track-row="${devId}"]`)).toBeVisible()
     await expect(panel.locator('[data-track-cluster="dev"]')).toBeVisible()
     await closeTrack(page)
+  })
+
+  test('what was met at load is put away; a finished label stacks at the foot; the count shows them', async ({
+    authenticatedPage: page,
+  }) => {
+    // A run-unique label, so this cluster holds exactly these two.
+    const label = `zz-hide-${Date.now()}`
+    const done = await createTask(page, {
+      title: 'Hide probe done',
+      progress_target: 1,
+      is_tracked: true,
+      rrule: 'FREQ=MONTHLY',
+      labels: [label],
+      create_label: true,
+    })
+    const open = await createTask(page, {
+      title: 'Hide probe open',
+      progress_target: 1,
+      is_tracked: true,
+      rrule: 'FREQ=MONTHLY',
+      labels: [label],
+    })
+    expect(
+      (await page.request.post(`/api/tasks/${done}/progress`, { data: { delta: 1 } })).ok(),
+    ).toBeTruthy()
+
+    await page.goto('/')
+    await closeTrack(page)
+    const panel = page.getByRole('region', { name: 'Track' })
+    const cluster = panel.locator(`[data-track-cluster="${label}"]`)
+    const doneChip = panel.locator(`[data-track-chip="${done}"]`)
+    const openChip = panel.locator(`[data-track-chip="${open}"]`)
+    const finished = panel.locator(`[data-track-finished-cluster="${label}"]`)
+    const toggle = panel.locator('[data-track-met-toggle]')
+
+    // Met at load: put away. The label stays for its unmet quota, and says
+    // how many it has closed beside its name.
+    await expect(openChip).toBeVisible()
+    await expect(doneChip).toHaveCount(0)
+    await expect(cluster.locator('[data-track-cluster-met]')).toHaveText('1')
+    await expect(finished).toHaveCount(0)
+    await expect(toggle).toHaveText(/^\d+ of \d+$/)
+
+    // Met now, mid-session: nothing disappears and nothing moves.
+    await openChip.click()
+    await expect(openChip.locator('[data-track-count]')).toHaveText('1/1·mo')
+    await expect(openChip).toBeVisible()
+    await expect(cluster).toBeVisible()
+
+    // The next load puts the whole label away, and it stacks at the foot as
+    // one finished chip carrying how many it closed.
+    await expect
+      .poll(async () => (await (await page.request.get(`/api/tasks/${open}`)).json()).data)
+      .toMatchObject({ progress_current: 1 })
+    await page.reload()
+    await expect(finished).toBeVisible()
+    await expect(finished).toContainText('2')
+    await expect(cluster).toHaveCount(0)
+    await expect(openChip).toHaveCount(0)
+
+    // Tapping it — or the header count — shows them in place, and the count
+    // holds its box while they are showing.
+    await finished.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(cluster).toBeVisible()
+    await expect(doneChip).toBeVisible()
+    await expect(openChip).toBeVisible()
+    await expect(finished).toHaveCount(0)
+    await toggle.click()
+    await expect(cluster).toHaveCount(0)
+    await expect(finished).toBeVisible()
   })
 
   test('an ordinary task is a row in the day, not a line in the panel', async ({
