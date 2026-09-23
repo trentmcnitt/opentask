@@ -22,6 +22,15 @@ struct OpenTaskApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // Leaving the app refreshes the widgets too (Trent, 2026-09-23: "I
+            // uncompleted a couple of reminders… swiped back to the home screen
+            // and it did not update"). Whatever he just did in the app is
+            // what the Home Screen should show; a reload asked for by the app
+            // as it leaves doesn't wait on the 30-minute timeline or on a
+            // widget push arriving.
+            if phase == .background {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             if phase == .active {
                 // Reloads triggered by the foregrounded app don't count against
                 // the widget refresh budget, so the widgets are always current
@@ -89,7 +98,24 @@ struct OpenTaskApp: App {
                 WebViewManager.shared.navigate(path: "/reminders")
             }
         case "reminders":
-            WebViewManager.shared.navigate(path: "/reminders")
+            // `/slot/<id>` (2026-09-23, item 2) scopes the header title Link
+            // to bring that slot into view — see `WidgetLink.reminders(slot:)`.
+            // Bare `reminders` (2×2, Lock Screen, "+N more"/background tap)
+            // still opens the surface unscoped.
+            if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
+               let slotId = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
+            } else {
+                WebViewManager.shared.navigate(path: "/reminders")
+            }
+        case "project":
+            // A project-scoped Tasks header link (2026-09-23, item 2) — see
+            // `WidgetLink.project(_:)`.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/?project=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/")
+            }
         case "quota":
             // A quota opens ON the Quotas surface, and opens nothing — same
             // shape as `reminder` above. Tapping a quota from Track means

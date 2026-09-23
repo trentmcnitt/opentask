@@ -118,7 +118,15 @@ targets:
       - target: OpenTaskMacWidgets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac
+        # The SAME bundle ID as the iPhone app (2026-09-23). With its own
+        # (`io.mcnitt.opentask.mac`) macOS treated the Mac app and the iPhone
+        # app as two unrelated apps, so the widget gallery listed "OpenTask"
+        # twice — Trent: "usually when they share the same information,
+        # there's only one app and when I click it, it says 'from iPhone' or
+        # 'from Mac'." One ID across platforms is Apple's model for one app.
+        # The App Group (team-prefixed on macOS) and Keychain group are
+        # unchanged, so signed-in state and cached widget data carry over.
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask
         # `PRODUCT_NAME` (defaults to the target name, "OpenTaskMac") is what
         # actually names the .app FILE — Finder, Spotlight and Launchpad show
         # the file name, not `CFBundleDisplayName` (already "OpenTask" above).
@@ -212,7 +220,8 @@ targets:
         com.apple.developer.aps-environment: development
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.mac.widgets
+        # The iPhone widget extension's ID, for the same reason as the app's.
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
         GENERATE_INFOPLIST_FILE: false

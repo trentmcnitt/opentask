@@ -42,7 +42,7 @@ struct OpenTaskMacApp: App {
     /// Resolve an `opentask://` deep link from OpenTaskMacWidgets to a web path.
     ///
     /// Mirrors `ios/OpenTask/OpenTaskApp.swift`'s `handleWidgetLink` exactly —
-    /// same four cases, same fallback — because the widget extension's own
+    /// same cases, same fallback — because the widget extension's own
     /// `WidgetLink` enum (`ios/OpenTaskWidgets/WidgetTheme.swift`) always
     /// emits `opentask://`, unchanged between platforms. Uses
     /// `WebViewManager`, not `AppConfig`/`ContentView` directly, so a tap
@@ -71,7 +71,22 @@ struct OpenTaskMacApp: App {
                 WebViewManager.shared.navigate(path: "/reminders")
             }
         case "reminders":
-            WebViewManager.shared.navigate(path: "/reminders")
+            // `/slot/<id>` (2026-09-23, item 2) — see the iOS counterpart's
+            // identical comment.
+            if url.pathComponents.count >= 3, url.pathComponents[url.pathComponents.count - 2] == "slot",
+               let slotId = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/reminders?slot=\(slotId)")
+            } else {
+                WebViewManager.shared.navigate(path: "/reminders")
+            }
+        case "project":
+            // A project-scoped Tasks header link (2026-09-23, item 2) — see
+            // the iOS counterpart's identical comment.
+            if let id = url.pathComponents.last.flatMap(Int.init) {
+                WebViewManager.shared.navigate(path: "/?project=\(id)")
+            } else {
+                WebViewManager.shared.navigate(path: "/")
+            }
         case "quota":
             // A quota opens ON the Quotas surface, and opens nothing — see
             // the iOS counterpart's identical comment.

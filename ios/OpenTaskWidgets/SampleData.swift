@@ -34,12 +34,16 @@ enum SampleData {
 
     static var reminderGroups: [ReminderGroupDTO] {
         [
+            // `considered: 2` — some already checked off, so the gallery's
+            // slot strip (§6, `ReminderSlotStrip`) has something to show
+            // besides "upcoming" for every segment.
             ReminderGroupDTO(
                 slot: TimeSlotDTO(id: 1, label: "Early morning", startTime: "07:00"),
                 reminders: [
                     TaskDTO(id: 101, title: "Supplements", priority: 3, anchorTime: "07:00", isReminder: true),
                     TaskDTO(id: 102, title: "Stretch for five minutes", priority: 1, anchorTime: "07:15", isReminder: true),
-                ]
+                ],
+                considered: 2
             ),
             ReminderGroupDTO(
                 slot: TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
@@ -65,7 +69,10 @@ enum SampleData {
             groups: groups,
             slotIndex: RemindersTimeline.naturalSlotIndex(in: groups),
             staleSince: nil,
-            isSignedOut: false
+            isSignedOut: false,
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 
@@ -95,7 +102,10 @@ enum SampleData {
             projects: projects,
             scope: WidgetStore.allProjects,
             staleSince: nil,
-            isSignedOut: false
+            isSignedOut: false,
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 
@@ -147,7 +157,10 @@ enum SampleData {
             selectedId: items.first?.id ?? WidgetStore.noTrackSelection,
             pageStartId: items.first?.id ?? WidgetStore.noTrackSelection,
             staleSince: nil,
-            isSignedOut: false
+            isSignedOut: false,
+            canUndo: false,
+            canRedo: false,
+            actionDescription: nil
         )
     }
 }

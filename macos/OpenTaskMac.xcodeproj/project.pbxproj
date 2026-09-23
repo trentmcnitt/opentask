@@ -401,7 +401,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.widgets;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
@@ -419,7 +419,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.widgets;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
@@ -437,7 +437,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask;
 				PRODUCT_MODULE_NAME = OpenTaskMac;
 				PRODUCT_NAME = OpenTask;
 				SDKROOT = macosx;
@@ -583,7 +583,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.mac;
+				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask;
 				PRODUCT_MODULE_NAME = OpenTaskMac;
 				PRODUCT_NAME = OpenTask;
 				SDKROOT = macosx;

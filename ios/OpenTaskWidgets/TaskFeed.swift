@@ -48,8 +48,17 @@ enum TaskFeed {
         do {
             async let tasks = APIClient.shared.fetchOpenTasks()
             async let projects = APIClient.shared.fetchProjects()
-            let (fetchedTasks, fetchedProjects) = try await (tasks, projects)
+            // Piggybacked undo/redo counts (2026-09-23) — see
+            // `RemindersProvider`'s identical block for why this rides along
+            // rather than being its own fetch, and why it's `try?`: a flaky
+            // `/api/undo/status` must never fail the tasks/projects fetch
+            // both Tasks and Track render from.
+            async let undoStatus: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
+            let (fetchedTasks, fetchedProjects, status) = try await (tasks, projects, undoStatus)
             WidgetStore.saveTasks(fetchedTasks, projects: fetchedProjects)
+            if let status {
+                WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
+            }
             return staged(fetchedTasks, fetchedProjects, staleSince: nil, now: now)
         } catch {
             print("[OpenTaskWidgets] Tasks fetch failed: \(error)")
