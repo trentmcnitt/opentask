@@ -58,6 +58,7 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState } from '@/hooks/useFilterState'
 import { useFilterSection } from '@/hooks/useFilterSection'
 import { useTaskCounts } from '@/hooks/useTaskCounts'
+import { useTodayCompletions } from '@/hooks/useTodayCompletions'
 import { useSnoozeOverdue } from '@/hooks/useSnoozeOverdue'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
@@ -347,6 +348,13 @@ function HomeContent({
   const data = useFetchData(router, initialTasks)
   const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
   const { projects, refreshProjects } = useProjects()
+  // Today's real completions, for the completion fill (§ITEM 2) — see the
+  // hook's doc comment for why "today" and "done" are computed the way they are.
+  const {
+    doneTodayTotal,
+    doneTodayByProject,
+    refresh: refreshTodayCompletions,
+  } = useTodayCompletions(timezone)
   const handleViewTask = useCallback((task: Task) => {
     setFocusedTask(task)
     setQuickActionOpen(true)
@@ -362,7 +370,8 @@ function HomeContent({
     await fetchTasks()
     refreshProjects()
     remindersRefreshRef.current?.()
-  }, [fetchTasks, refreshProjects])
+    void refreshTodayCompletions()
+  }, [fetchTasks, refreshProjects, refreshTodayCompletions])
   // Banner state: combines quick take text, loading, title, and enrichment data
   interface QuickTakeBannerState {
     taskId: number | null
@@ -716,17 +725,36 @@ function HomeContent({
     initialDateFilters,
   })
 
-  // Support ?project=<id> from sidebar/project list links — set project filter, then clear URL.
+  // Support ?project=<id> from sidebar/project list links AND the widget's
+  // dashboard-header deep link (`WidgetLink`-style, ios/CLAUDE.md) — set the
+  // project filter exclusively, scroll to top, then clear the URL.
   // Uses useEffect (not useMemo+ref) because sidebar links navigate within the already-mounted dashboard.
+  //
+  // `setSelectedProjects([projectId])` (not `exclusiveProject`, which TOGGLES
+  // — a second visit to the same link would clear the filter instead of
+  // reapplying it) always REPLACES the selection with exactly this one
+  // project, which is the exclusive filter useFilterState's other exclusive
+  // setters produce. `window.scrollTo` is explicit rather than relying on the
+  // browser's own scroll-to-top-on-navigation: this effect also fires from
+  // the sidebar link case, where the dashboard is already mounted and may
+  // already be scrolled down — a fresh widget-link page load starts at the
+  // top regardless, but nothing here can tell the two apart.
+  //
+  // Strip the param with a raw history rewrite, NOT router.replace: same
+  // reason as the `?task=` effect below — a router navigation issues an RSC
+  // fetch, and losing that race (found here by a flaky E2E run, not just
+  // WebKit) remounts this component and drops the `setSelectedProjects` call
+  // this same effect just made, so the filter never visibly applies.
   useEffect(() => {
     const projectParam = searchParams.get('project')
     if (!projectParam) return
     const projectId = parseInt(projectParam, 10)
     if (!isNaN(projectId)) {
       setSelectedProjects([projectId])
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
-    router.replace('/', { scroll: false })
-  }, [searchParams, router, setSelectedProjects])
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [searchParams, setSelectedProjects])
 
   // AI mode: Off / On toggle + feature preferences
   const {
@@ -1178,20 +1206,28 @@ function HomeContent({
     }
   }, [overdueCount])
 
-  // Compute per-project today task counts for ProjectFilterBar
+  // Per-project "due today, not done yet" counts — the completion fill's
+  // denominator for each project chip (§ITEM 2), and also what ProjectFilterBar
+  // used to badge overdue counts against before that use was removed.
+  //
+  // Sourced from `visibleTasks`, not `tasks_`: `tasks_` is what filter chips
+  // and AI narrowing have left on screen, but the fill has to answer "is
+  // Work's day actually done" regardless of which chips happen to be active
+  // right now — the same reason `navCounts` (nav badges) below reads from
+  // `visibleTasks` rather than the filtered view.
   const todayCounts = useMemo(() => {
     if (!timezone) return new Map<number, number>()
     const now = new Date()
     const boundaries = getTimezoneDayBoundaries(timezone)
     const counts = new Map<number, number>()
-    for (const task of tasks_) {
+    for (const task of visibleTasks) {
       const buckets = classifyTaskDueDate(task, now, boundaries)
       if (buckets.includes('today')) {
         counts.set(task.project_id, (counts.get(task.project_id) || 0) + 1)
       }
     }
     return counts
-  }, [tasks_, timezone])
+  }, [visibleTasks, timezone])
 
   // Compute selected tasks for bulk operations
   // Reads `visibleTasks`, not the raw corpus: the selection can only ever hold
@@ -1322,6 +1358,9 @@ function HomeContent({
         onExcludeAttribute={excludeAttribute}
         onExcludeProject={excludeProject}
         todayCounts={todayCounts}
+        remainingToday={navCounts.todayCount}
+        doneToday={doneTodayTotal}
+        doneTodayByProject={doneTodayByProject}
         timezone={timezone}
         onSearch={bulk.handleSearch}
         onSearchClear={() => {
@@ -1639,6 +1678,9 @@ function DashboardView({
   onExcludeAttribute,
   onExcludeProject,
   todayCounts,
+  remainingToday,
+  doneToday,
+  doneTodayByProject,
   timezone,
   onSearch,
   onSearchClear,
@@ -1760,7 +1802,14 @@ function DashboardView({
   onExcludeDateFilter: (filter: DueDateFilter) => void
   onExcludeAttribute: (key: string) => void
   onExcludeProject: (projectId: number) => void
+  /** Due-today, not-yet-done count per project — the completion fill's per-project denominator (§ITEM 2). */
   todayCounts: Map<number, number>
+  /** Due-today, not-yet-done count overall — the Today chip's completion fill denominator. */
+  remainingToday: number
+  /** Completed today overall — the Today chip's completion fill numerator. */
+  doneToday: number
+  /** Completed today per project — each project chip's completion fill numerator. */
+  doneTodayByProject: Map<number, number>
   timezone: string
   onSearch: (q: string) => void
   onSearchClear: () => void
@@ -1994,6 +2043,9 @@ function DashboardView({
             onExcludeAttribute={onExcludeAttribute}
             onExcludeProject={onExcludeProject}
             todayCounts={todayCounts}
+            remainingToday={remainingToday}
+            doneToday={doneToday}
+            doneTodayByProject={doneTodayByProject}
             timezone={timezone}
             aiAvailable={aiAvailable}
             aiMode={aiMode}
