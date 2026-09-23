@@ -4,7 +4,7 @@ Detailed development reference for the OpenTask iOS companion app. See the main 
 
 ## Notification Mechanisms
 
-1. **Default actions** (AppDelegate): Done, +1hr, All +1hr buttons — used from lock screen or when content extension is unavailable
+1. **Default actions** (AppDelegate): Done, +1hr, All +1hr, then one bulk-snooze-to-slot action per cached time slot (`TimeSlotStore`, "All → Next period" plus "All → \<slot label\>", earliest first) — used from lock screen or when content extension is unavailable
 2. **Silent dismissal**: Server sends `content-available: 1` push with `type: "dismiss"` when a task is snoozed/completed from the web UI — iOS app removes matching delivered notifications
 3. **Content extension** (long-press): Interactive 3x4 snooze grid (presets, increments, decrements) — extension makes API calls directly and dismisses
 4. **Slot batch checklist** (`SLOT_REMINDER`, long-press): a §6 time-slot notification expands into a checklist of that slot's pending reminders (fetched live from `GET /api/reminders`, filtered by the payload's `slot_id`); rows stage check-marks, the "Complete N checked" action button commits them in ONE `POST /api/tasks/bulk/complete`, and "Complete all" takes the whole slot. **Device-test only** — content extensions cannot be invoked in the simulator (see below), so the long-press path is unverifiable there and must not be attempted.

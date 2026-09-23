@@ -256,7 +256,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                         }
 
                     default:
-                        break
+                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                            let result = try await APIClient.shared.snoozeOverdue(slot: slot)
+                            wasBulkSnooze = result.tasksAffected > 0
+                            updateBadge(result.skippedUrgent)
+                        }
                     }
                 } else {
                     // Individual mode: task-specific + bulk actions
@@ -288,7 +292,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                         }
 
                     default:
-                        break
+                        if let slot = NotificationAction.parseSnoozeAllSlot(response.actionIdentifier) {
+                            let result = try await APIClient.shared.snoozeOverdue(slot: slot, includeTaskId: taskId)
+                            wasBulkSnooze = result.tasksAffected > 0
+                            updateBadge(result.skippedUrgent)
+                        }
                     }
                 }
             } catch {
@@ -426,20 +434,28 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     /// Set action buttons showing the absolute "next hour" time (e.g., "4:00 PM").
     /// Called on initial notification expansion and when the grid resets to clean state.
+    ///
+    /// Slot-snooze actions (from `TimeSlotStore`'s cache — the extension never
+    /// fetches on its own, see `TimeSlotStore.swift`) are appended after the
+    /// default +1hr actions using the same `slotSnoozeActions()` builder
+    /// `registerNotificationCategories()` uses, so the identifiers, ordering
+    /// and "All → …" titles never drift between the lock-screen category and
+    /// this expanded view.
     private func setDefaultTimeActions() {
         let nextHour = DateHelpers.snapToNextHour()
         let timeLabel = DateHelpers.formatShortTime(nextHour)
+        let slotActions = slotSnoozeActions()
 
         if isBulkMode {
             extensionContext?.notificationActions = [
                 UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
-            ]
+            ] + slotActions
         } else {
             extensionContext?.notificationActions = [
                 UNNotificationAction(identifier: NotificationAction.done, title: "Done", options: []),
                 UNNotificationAction(identifier: NotificationAction.snooze1hr, title: timeLabel, options: []),
                 UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
-            ]
+            ] + slotActions
         }
     }
 }

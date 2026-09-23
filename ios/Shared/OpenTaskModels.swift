@@ -263,3 +263,13 @@ struct TasksPage: Decodable {
 struct ProjectsPage: Decodable {
     let projects: [ProjectDTO]
 }
+
+/// `GET /api/time-slots` → `{"data":{"time_slots":[...]}}` — same named-field
+/// shape as `TasksPage`/`ProjectsPage`.
+struct TimeSlotsPage: Decodable {
+    let timeSlots: [TimeSlotDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case timeSlots = "time_slots"
+    }
+}
