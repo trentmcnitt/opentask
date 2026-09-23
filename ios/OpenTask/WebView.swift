@@ -365,12 +365,20 @@ struct WebView: UIViewRepresentable {
         /// switching to the dashboard and scrolling to the task." Confirmed in
         /// the simulator: opening the app resumes TWO things at once — our own
         /// `WebViewManager.navigate(path: "/?task=<id>&highlight=1")` from
-        /// `handleWidgetLink`, AND the web page's own session recheck
-        /// (`SessionProvider`'s NextAuth default of `refetchOnWindowFocus:
-        /// true`, firing on the same foreground/focus event). When the
-        /// session read momentarily as stale right after resume, the PAGE'S
-        /// OWN client-side redirect (`router.push(loginUrlFromLocation())` in
-        /// e.g. `reminders/page.tsx`) raced our widget navigation and won,
+        /// `handleWidgetLink`, AND a client-side redirect fired from the
+        /// PAGE ITSELF (`router.push(loginUrlFromLocation())` in e.g.
+        /// `reminders/page.tsx`) — confirmed client-side, not a server
+        /// redirect of our own request, because the /login this raced
+        /// carried `callbackUrl=/reminders` (`window.location` on the OLD
+        /// page), which only `loginUrlFromLocation()` on that still-loaded
+        /// page can produce; a redirect of our `/?task=...` request would
+        /// carry that path instead. The likeliest trigger — not directly
+        /// observed, but the only automatic session-recheck this app wires
+        /// up — is `SessionProvider`'s NextAuth default of
+        /// `refetchOnWindowFocus: true`, firing on the same foreground/focus
+        /// event and finding the session momentarily stale right after
+        /// resume. Whatever fires it, that page's own redirect raced our
+        /// widget navigation and won,
         /// cancelling it (`didFailProvisionalNavigation` with
         /// `NSURLErrorCancelled`, logged immediately before the `/login` this
         /// method resolves). That competing redirect's callbackUrl names the
