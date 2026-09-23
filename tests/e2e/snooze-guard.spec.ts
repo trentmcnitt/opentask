@@ -14,6 +14,13 @@
 import { test, expect } from './fixtures'
 import { DateTime } from 'luxon'
 
+/**
+ * The seeded test user's timezone — recurrence and the snooze menu's
+ * "Tomorrow" default are both computed in the user's own zone server-side.
+ * Must track `globalSetup.ts`'s `E2E_TZ` override (default America/Chicago).
+ */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
+
 /** Create a task via the API using the logged-in page's cookies. */
 async function createTask(
   page: import('@playwright/test').Page,
@@ -64,15 +71,33 @@ test.describe('Snooze guards', () => {
     authenticatedPage: page,
   }) => {
     const title = 'Guard daily task'
-    // Due at the most recent 08:00 that has ALREADY PASSED, so the row is
-    // overdue and the menu offers "Tomorrow", which lands past the next
-    // occurrence. Anchoring on "08:00 today" was a latent time bomb: run the
-    // suite before 08:00 and that timestamp is in the future, the row is not
-    // overdue, and the menu this test needs never appears. CI runs in UTC, so
-    // it failed every night between 00:00 and 08:00 UTC while passing all day
-    // locally (found 2026-09-06, reproduced with TZ=UTC on clean main).
-    let dueAt = DateTime.now().set({ hour: 8, minute: 0, second: 0, millisecond: 0 })
-    if (dueAt > DateTime.now()) dueAt = dueAt.minus({ days: 1 })
+    // Due at the most recent 08:00 *in the seeded user's own zone* that has
+    // ALREADY PASSED, so the row is overdue and the menu offers "Tomorrow",
+    // which lands past the next occurrence. Anchoring on "08:00 today" was a
+    // latent time bomb: run the suite before 08:00 and that timestamp is in
+    // the future, the row is not overdue, and the menu this test needs never
+    // appears. CI runs in UTC, so it failed every night between 00:00 and
+    // 08:00 UTC while passing all day locally (found 2026-09-06, reproduced
+    // with TZ=UTC on clean main).
+    //
+    // A SECOND, independent time bomb lived here even after that fix: the
+    // overdue check above was zone-agnostic (any zone keeps `dueAt <= now`
+    // self-consistently), but recurrence and the snooze menu's "Tomorrow"
+    // default are computed by the app in the seeded user's own zone
+    // (`TEST_TZ`), not the test process's. Anchoring "08:00" to the test
+    // PROCESS's zone (`DateTime.now()` with no `.setZone`) meant the
+    // recurring task's schedule, as the app understood it, silently drifted
+    // away from 08:00 — and whenever it drifted to 09:00 or later in
+    // `TEST_TZ`, "Tomorrow" (fixed at 9:00 AM in the user's own zone) no
+    // longer landed past the next occurrence, and the guard this test exists
+    // to prove never fired. Reproduced with `TZ=Etc/GMT+7` on clean main
+    // (found 2026-09-22, independent of the E2E_TZ/midnight sweep this file
+    // is otherwise untouched by). Anchoring explicitly to `TEST_TZ`, the same
+    // zone the app itself uses, fixes both bombs at once.
+    let dueAt = DateTime.now()
+      .setZone(TEST_TZ)
+      .set({ hour: 8, minute: 0, second: 0, millisecond: 0 })
+    if (dueAt > DateTime.now().setZone(TEST_TZ)) dueAt = dueAt.minus({ days: 1 })
     await createTask(page, {
       title,
       due_at: dueAt.toUTC().toISO(),

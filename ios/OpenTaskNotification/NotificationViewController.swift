@@ -376,16 +376,51 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     // MARK: - Size Management
 
     /// Re-measure the SwiftUI hosting controller and update preferredContentSize
-    /// so the notification extension expands to fit the resolved-time preview bar.
+    /// so the notification extension expands to fit its content.
+    ///
+    /// TWO THINGS THIS HAS TO GET RIGHT, both of which it previously didn't:
+    ///
+    /// 1. MEASURE AFTER SwiftUI HAS LAID OUT. Every caller runs at the moment
+    ///    the model changes — the slot checklist's live fetch resolving, a grid
+    ///    selection — but SwiftUI does not rebuild until the next layout pass.
+    ///    Measuring first returns the height of the PREVIOUS content (for the
+    ///    checklist, the little "loading" state), so iOS reserves too little
+    ///    room and the expanded checklist draws over the notifications stacked
+    ///    below it. `layoutIfNeeded()` forces the rebuild before we measure.
+    ///
+    /// 2. DON'T MEASURE A ZERO-WIDTH VIEW. `didReceive` can run before the
+    ///    extension's view has bounds; a fitting size against width 0 is
+    ///    meaningless. `viewDidLayoutSubviews` re-runs this once bounds are
+    ///    real, which is also what makes the initial render correct — until now
+    ///    nothing sized the view except user interaction.
     private func updatePreferredContentSize() {
         guard let hosting = hostingController else { return }
-        let targetSize = CGSize(width: view.bounds.width, height: UIView.layoutFittingCompressedSize.height)
+        let width = view.bounds.width
+        guard width > 0 else { return }
+
+        hosting.view.setNeedsLayout()
+        hosting.view.layoutIfNeeded()
+
+        let targetSize = CGSize(width: width, height: UIView.layoutFittingCompressedSize.height)
         let fittingSize = hosting.view.systemLayoutSizeFitting(
             targetSize,
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel
         )
-        preferredContentSize = CGSize(width: view.bounds.width, height: fittingSize.height)
+
+        // Assigning preferredContentSize triggers a layout pass, and this is
+        // called FROM one — without this guard the two feed each other.
+        let newSize = CGSize(width: width, height: fittingSize.height)
+        guard abs(newSize.height - preferredContentSize.height) > 0.5
+            || abs(newSize.width - preferredContentSize.width) > 0.5
+        else { return }
+
+        preferredContentSize = newSize
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updatePreferredContentSize()
     }
 
     // MARK: - Grid Selection Handler
