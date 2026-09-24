@@ -42,7 +42,7 @@ All three support `systemSmall` / `systemMedium` / `systemLarge` / `accessoryRec
 
 ### The two project specs
 
-`project.yml` is canonical. `project-sim.yml` is **generated** from it by `ios/scripts/make-sim-spec.py` — it is the same spec minus the watchOS target, because generating and building the canonical spec requires the watchOS SDK to be installed, and without it every `xcodebuild` fails before compiling a single file (including iOS-only builds).
+`project.yml` is canonical. `project-sim.yml` is **generated** from it by `ios/scripts/make-sim-spec.py` — it is the same spec minus every target whose `platform` is `watchOS` (currently `OpenTaskWatch` and `OpenTaskWatchWidgets`), because generating and building the canonical spec requires the watchOS SDK to be installed, and without it every `xcodebuild` fails before compiling a single file (including iOS-only builds). The strip is by platform, not by a hardcoded target name/list, so a future watchOS target is dropped from the sim spec automatically.
 
 ```bash
 python3 ios/scripts/make-sim-spec.py            # regenerate project-sim.yml
@@ -52,6 +52,12 @@ cd ios && xcodegen generate --spec project-sim.yml   # sim (OpenTaskSim.xcodepro
 ```
 
 Never hand-edit `project-sim.yml` — add targets to `project.yml` and regenerate, or the new target silently builds on one spec and not the other.
+
+## Watch App (`OpenTaskWatch` / `OpenTaskWatchWidgets`)
+
+Real UI (2026-09-23), not just notification handling: a vertically paged `TabView` — Reminders (current slot, progress strip, tap-to-consider, toolbar Undo) and Tasks ("Up next", tap-to-complete, per-row swipe snooze, a bulk-snooze sheet for the overdue set). Root view is `WatchRootView`; one `NavigationStack` wraps the whole `TabView` rather than one per page — a `NavigationStack` per page crashes on first launch ("attempt to nest wrapped navigation controllers"), because a `.verticalPage` `TabView` keeps adjacent pages mounted at once. `OpenTaskWatchWidgets` is a sibling watchOS WidgetKit extension (embedded in `OpenTaskWatch`, App Group `group.io.mcnitt.opentask`) with one kind, `ReminderStackWidget` — `accessoryRectangular`/`accessoryCircular`/`accessoryCorner` only (no `systemSmall`/`Medium`/`Large`; those families don't exist on watchOS). Both watchOS targets share `ios/WatchShared/` (cache, slot logic, formatting, theme) — deliberately separate from `ios/Shared/`, which the iOS targets also compile, and from `ios/OpenTaskWidgets/`, the phone widget extension's own private code.
+
+Quotas (a third page mirroring the phone Track widget) does not exist yet on the watch.
 
 ## Simulator Limitations
 
