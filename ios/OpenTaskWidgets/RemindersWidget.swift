@@ -509,6 +509,21 @@ private enum ReminderPreviewData {
         )
     }
 
+    /// `entry()` with Early morning's first reminder (Supplements) gone,
+    /// so the paragraph-long one is `reminders[0]`.
+    static func paragraphFirstEntry() -> RemindersEntry {
+        var gs = groups
+        let g = gs[0]
+        gs[0] = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
+            reminders: Array(g.reminders.dropFirst()), considered: g.considered, consideredItems: g.consideredItems
+        )
+        return RemindersEntry(
+            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
     /// Pins the page and the toggle — previews share the simulator's App
     /// Group UserDefaults, so whatever a prior preview (or a real widget)
     /// left there would otherwise bleed into this render.
@@ -598,6 +613,15 @@ private enum ReminderPreviewData {
 } timeline: {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
     ReminderPreviewData.entry(slotIndex: 4)
+}
+
+/// The 2×2 once "Supplements" is checked off: the paragraph-long reminder
+/// becomes the one shown.
+#Preview("Reminders Small — paragraph first", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.paragraphFirstEntry()
 }
 
 #Preview("Reminders Small", as: .systemSmall) {
