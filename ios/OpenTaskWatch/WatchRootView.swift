@@ -14,6 +14,9 @@ import SwiftUI
 struct WatchRootView: View {
     @StateObject private var model = WatchViewModel()
     @Environment(\.scenePhase) private var scenePhase
+    /// Which page the paged `TabView` shows. Driven by the user's swipes, and
+    /// by `.onOpenURL` below when the Smart Stack widget opens the app.
+    @State private var page: WatchPage = .reminders
 
     var body: some View {
         Group {
@@ -33,9 +36,11 @@ struct WatchRootView: View {
                 // navigation-stacked pages fight over the same chrome the
                 // instant both exist at once.
                 NavigationStack {
-                    TabView {
+                    TabView(selection: $page) {
                         RemindersPageView(model: model)
+                            .tag(WatchPage.reminders)
                         TasksPageView(model: model)
+                            .tag(WatchPage.tasks)
                     }
                     .tabViewStyle(.verticalPage)
                 }
@@ -43,6 +48,15 @@ struct WatchRootView: View {
         }
         .task {
             await model.load()
+        }
+        // Smart Stack widget taps (`ReminderStackWidget`'s `.widgetURL`):
+        // `opentask://reminders` for a reminder/caught-up card, `opentask://
+        // tasks` for an overdue card. Anything else (an older build's link)
+        // just opens the app wherever it was.
+        .onOpenURL { url in
+            if let target = WatchPage(url: url) {
+                page = target
+            }
         }
         // Refresh on every return to the foreground, not just first launch.
         // `WatchAppDelegate.applicationDidBecomeActive` already exists for
@@ -54,6 +68,23 @@ struct WatchRootView: View {
             if newPhase == .active {
                 Task { await model.load() }
             }
+        }
+    }
+}
+
+/// The watch app's pages, addressable by the Smart Stack widget's deep links.
+enum WatchPage: Hashable {
+    case reminders
+    case tasks
+
+    /// `opentask://reminders` → Reminders, `opentask://tasks` (or the phone
+    /// widgets' `opentask://today`) → Tasks; `nil` for anything else.
+    init?(url: URL) {
+        guard url.scheme == "opentask" else { return nil }
+        switch url.host {
+        case "reminders": self = .reminders
+        case "tasks", "today": self = .tasks
+        default: return nil
         }
     }
 }
