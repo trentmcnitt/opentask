@@ -15,11 +15,18 @@ the other.
 The transform:
   1. rename the project OpenTask -> OpenTaskSim (so both .xcodeproj coexist)
   2. drop the watchOS deployment target
-  3. drop the OpenTaskWatch target
-  4. drop every dependency edge pointing at it
+  3. drop every target whose `platform` is `watchOS` (the app AND any
+     extension embedded in it — e.g. a watchOS widget extension)
+  4. drop every dependency edge pointing at one of those dropped targets
 
 Everything else — including any target added to project.yml later — carries
-through untouched.
+through untouched. Step 3 matches by PLATFORM, not by a hardcoded target
+name: a watchOS target added later (a widget extension, a complication
+target, anything) is stripped automatically, which is the whole point of
+generating this file rather than hand-keeping a second copy (see this
+docstring's own opening paragraph on why a hand-kept copy is the wrong
+shape — a name-based filter here would be exactly that same mistake, just
+one layer down).
 
 Usage:  python3 ios/scripts/make-sim-spec.py [--check]
         --check exits non-zero if project-sim.yml is out of date instead of
@@ -39,7 +46,7 @@ IOS_DIR = Path(__file__).resolve().parent.parent
 SOURCE = IOS_DIR / "project.yml"
 DEST = IOS_DIR / "project-sim.yml"
 
-WATCH_TARGET = "OpenTaskWatch"
+WATCH_PLATFORM = "watchOS"
 SIM_PROJECT_NAME = "OpenTaskSim"
 
 
@@ -52,7 +59,7 @@ def strip_watch(spec: dict) -> dict:
     deployment = {
         platform: version
         for platform, version in options.get("deploymentTarget", {}).items()
-        if platform != "watchOS"
+        if platform != WATCH_PLATFORM
     }
     if deployment:
         options["deploymentTarget"] = deployment
@@ -60,13 +67,18 @@ def strip_watch(spec: dict) -> dict:
         options.pop("deploymentTarget", None)
     out["options"] = options
 
+    all_targets = out.get("targets", {})
+    watch_target_names = {
+        name for name, target in all_targets.items() if target.get("platform") == WATCH_PLATFORM
+    }
+
     targets = {}
-    for name, target in out.get("targets", {}).items():
-        if name == WATCH_TARGET:
+    for name, target in all_targets.items():
+        if name in watch_target_names:
             continue
         target = dict(target)
         if "dependencies" in target:
-            deps = [d for d in target["dependencies"] if d.get("target") != WATCH_TARGET]
+            deps = [d for d in target["dependencies"] if d.get("target") not in watch_target_names]
             if deps:
                 target["dependencies"] = deps
             else:
