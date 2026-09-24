@@ -67,7 +67,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // When the app becomes visible, dismiss all notifications on other devices.
   // The user can see their task list, so notification noise everywhere else should clear.
+  //
+  // Skipped inside the native iOS/macOS shells (both inject `__OPENTASK_IOS`):
+  // there the native app decides — the iPhone app only when it had delivered
+  // notifications of its own (`AppDelegate.applicationDidBecomeActive`), the
+  // Mac app never. Without this skip, every WKWebView visibility change
+  // (each app open) wiped every other device's notifications regardless.
   useEffect(() => {
+    if ('__OPENTASK_IOS' in window) return
     let lastDismiss = 0
     const handler = () => {
       if (document.visibilityState !== 'visible') return
