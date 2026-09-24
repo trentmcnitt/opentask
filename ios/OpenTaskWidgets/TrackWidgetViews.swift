@@ -1,19 +1,38 @@
 import SwiftUI
 import WidgetKit
 
-/// The Track widget's rendering, across all five supported families.
+/// The Quotas widget's rendering, across all five supported families
+/// (`feat/quotas-widget`, replacing the old single-item-ring "Track" design —
+/// see `TrackWidget.swift`'s `TrackTimeline` doc for why that OLD algorithm
+/// is still in the tree, just no longer driving this file).
 ///
-/// §5 shapes this surface the way §6 shapes Reminders. A quota is not a
-/// deadline: it asks "how far in am I", never "am I late". So nothing here is
-/// red, nothing counts days, and *pace renders but never alarms* — being behind
-/// moves one small neutral tick and changes the row order, and that is all it
-/// is allowed to do. Per L1 a low count late in a period may only mean the user
-/// hasn't logged, which is precisely the wrong thing to shout about.
+/// Mirrors the web Track panel (`src/components/TrackPanel.tsx`) chip mode,
+/// not its full-row mode — a widget has no room for a second layout, and
+/// chips are the panel's own default. §5 still shapes every rule here: a
+/// quota is not a deadline, so nothing is red, nothing counts days, and pace
+/// (the section bar's notch) renders but never alarms. "Met" does not remove
+/// a chip mid-session — it is a visual state (green fill, green count) until
+/// the NEXT timeline build puts it away, matching the web panel's own "met
+/// quotas are put away at load, never under a finger" rule (`TrackPanel.tsx`
+/// `useMetAtLoad`'s doc) — the widget's equivalent of "at load" is simply
+/// "this build": `WidgetStore.quotaMutationIsRecent` is the short grace
+/// window that keeps a quota visible through the very tap that met it (see
+/// its own doc for why a global stamp, not a persisted id set).
 ///
-/// Reaching target does NOT remove a row: §5 is period-anchored, the item stays
-/// open to its rrule boundary, and a fourth log on a 3× quota has to be able to
-/// show 4/3. "Met" is therefore a visual state — filled ring, green fraction, a
-/// small check — not a filter.
+/// GROUPED BY PERIOD, THEN LABEL — day → year, then a period-less "No
+/// period" bucket, each period's own label clusters inside it, exactly the
+/// web panel's 2026-09-23 redesign (`TrackPanel.tsx`'s file header). A
+/// cluster's chips wrap left-to-right like CSS flex-wrap
+/// (`QuotaFlow.lines` in `TrackWidget.swift`); the systemLarge family PAGES
+/// that flow when it overflows the card (`QuotaFlow.paginate`) rather than
+/// showing "+N more" — see `ListPager`'s doc in `WidgetTheme.swift`.
+///
+/// THE EYE TOGGLE (header, left of Undo — Trent asked for it on this widget
+/// too, alongside Reminders/Tasks' own "show completed" being built in
+/// parallel on `feat/widget-days-show-completed`): off (default) hides a met
+/// quota inside its cluster; on shows every quota regardless of state, in
+/// place, in its normal cluster — mirrors the web panel's own met-count
+/// button (`TrackHeader`'s "X of Y").
 struct TrackWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
@@ -36,212 +55,187 @@ struct TrackWidgetView: View {
         switch family {
         #if os(iOS)
         case .accessoryCircular:
-            TrackCircularView(entry: entry)
+            QuotasCircularView(entry: entry)
         case .accessoryRectangular:
-            TrackRectangularView(entry: entry)
+            QuotasRectangularView(entry: entry)
         #endif
         case .systemSmall:
-            TrackSmallView(entry: entry)
+            QuotasSmallView(entry: entry)
         case .systemMedium:
-            TrackListView(entry: entry, capacity: 3, isLarge: false)
+            QuotasListView(entry: entry, isLarge: false)
                 .backgroundTapOpens(WidgetLink.quotas)
         default:
-            // Eight, not six: a real quota corpus is around eight items, and at
-            // six the 4×4 was paging a list that would have fit — the user read
-            // the chevrons as "the way to scroll", which is the one thing a
-            // Home Screen list should never need. See `TrackRow` for what got
-            // compacted to buy the two extra rows.
-            TrackListView(entry: entry, capacity: 8, isLarge: true)
+            QuotasListView(entry: entry, isLarge: true)
                 .backgroundTapOpens(WidgetLink.quotas)
         }
     }
 }
 
-private let emptyTrackMessage = "Nothing tracked — set a target on a task to see it here."
+private let emptyQuotasMessage = "Nothing tracked — set a target on a task to see it here."
 
-// MARK: - systemSmall (the flagship, §8)
+// MARK: - systemSmall
 
-/// One quota, big.
-///
-/// §8 (amended 2026-07-27) calls this the flagship small layout: a quota
-/// compresses to a ring plus a fraction perfectly, where a *list* of quotas
-/// squeezed into 2×2 would be unreadable. So the 2×2 spends its whole area on
-/// one item and gives the chevrons somewhere to matter.
-///
-/// The bottom row merges the two controls that would otherwise each want their
-/// own row — `‹`, `+1`, `›` — because at ~126pt of usable height a 2×2 cannot
-/// afford a ring, a title, a pager AND a button as four stacked bands. No
-/// staleness note here for the same reason; the larger families carry it.
-///
-/// And no `−` here, unlike the list families: a fourth control on that bottom
-/// row would put four 36pt+ targets across ~126pt, which is a mis-tap machine —
-/// and mis-tapping a correction while trying to log is the worst possible place
-/// for it. Corrections belong to the 4×4, the 4×2, or the app; a mis-logged 2×2
-/// is one tap away from either.
-private struct TrackSmallView: View {
+/// Glanceable only, like Reminders'/Tasks' own 2×2 (§8: "a headline number,
+/// one item, whole-card deep link") — a DELIBERATE change from the OLD
+/// Track small view, which had inline `+1`/chevrons for a single selected
+/// quota. The new design has no "selected item" concept at all (ordering is
+/// static alphabetical, not pace-ranked, so there is nothing for a chevron
+/// to step through), and at ~126pt a `+1` button here would be the same
+/// mis-tap machine the design already avoids on Reminders/Tasks' 2×2s — see
+/// `WidgetSignedOutView`'s "compact" split for the established precedent.
+/// Whole-card `.widgetURL(WidgetLink.quotas)`.
+private struct QuotasSmallView: View {
     let entry: TrackEntry
 
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView(compact: true)
-        } else if let item = entry.selected {
-            VStack(spacing: 2) {
-                // Sized to leave the bottom row its 40pt and still clear the
-                // shortest 2×2 (an SE's is ~132pt of usable height).
-                QuotaRing(item: item, diameter: 62, lineWidth: 7)
+        } else if entry.totalCount == 0 {
+            WidgetEmptyView(symbol: "target", message: emptyQuotasMessage, compact: true)
+                .widgetURL(WidgetLink.dashboard)
+        } else {
+            VStack(spacing: 4) {
+                OverallRing(met: entry.totalMet, total: entry.totalCount, diameter: 62, lineWidth: 7)
 
-                Text(item.task.title)
-                    .font(.caption2)
-                    .fontWeight(WidgetTheme.priorityWeight(item.task.priority))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.85)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 0) {
-                    ChevronButton(
-                        intent: ShiftTrackItemIntent(offset: -1),
-                        direction: .previous,
-                        enabled: entry.items.count > 1
-                    )
-                    Spacer(minLength: 0)
-                    PlusOneButton(taskId: item.task.id)
-                    Spacer(minLength: 0)
-                    ChevronButton(
-                        intent: ShiftTrackItemIntent(offset: 1),
-                        direction: .next,
-                        enabled: entry.items.count > 1
-                    )
+                if let next = entry.nextUnmet {
+                    Text(next.task.displayTitle)
+                        .font(.caption2)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.85)
+                } else {
+                    Text("All met!")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(WidgetTheme.trackMetTint)
                 }
             }
             .frame(maxWidth: .infinity)
-            // Everything that isn't one of the three buttons opens the quota
-            // — `.quota(_:)`, not `.task(_:)`: a quota is tracked, and
-            // `task/<id>` sends a tracked id to the full detail page instead
-            // of highlighting it on Quotas (see `WidgetLink.quota`'s doc).
-            .widgetURL(WidgetLink.quota(item.task.id))
-        } else {
-            WidgetEmptyView(symbol: "target", message: emptyTrackMessage, compact: true)
-                .widgetURL(WidgetLink.dashboard)
+            .widgetURL(WidgetLink.quotas)
         }
     }
 }
 
-// MARK: - systemMedium / systemLarge list
+// MARK: - systemMedium / systemLarge
 
-private struct TrackListView: View {
+/// The flowed, paged body — `GeometryReader` owns both dimensions the layout
+/// needs: `width` for the chip wrap (`QuotaFlow.lines`) and the real
+/// available `height` for pagination (`QuotaFlow.paginate`), so neither
+/// number is ever a guess.
+///
+/// PURE OVER `entry`: this view (and everything below it in this file) reads
+/// no `WidgetStore` directly — `entry.showMet`/`entry.page` are already
+/// resolved by the provider (`TrackWidget.swift`), and `entry.sections`
+/// already carry the `showMet` filtering baked in. That is what lets a
+/// single `#Preview` swap between showMet/page variants by handing this view
+/// different SAMPLE entries, the same as any other SwiftUI preview — a view
+/// that read the store directly would render identically no matter which
+/// entry a preview constructed.
+///
+/// `QuotaMetrics.headerHeight(isLarge:)`/`.pagerHeight` are FIXED
+/// approximations of the header/pager chrome's real height, not measured —
+/// a deliberate simplification (documented on `QuotaMetrics` itself) that
+/// trades exactness at very large Dynamic Type sizes for not needing a
+/// two-pass PreferenceKey measurement just to size a chevron's dim state.
+private struct QuotasListView: View {
     let entry: TrackEntry
-    /// Rows that fit when the card carries no pager chrome.
-    let capacity: Int
-    /// Drives the two things systemMedium has no room for: the adjacent-quota
-    /// chevron labels (see `ChevronPager`) and the "+N more" line. A quota row
-    /// is two lines tall, so three of them plus a header already fill a 4×2 —
-    /// the overflow line was clipping off the bottom edge, and the chevrons say
-    /// "there is more" anyway.
+    /// systemLarge only. Drives whether paging exists at all — the spec
+    /// explicitly allows medium to show no pager and simply render as many
+    /// lines as fit ("no pager if it doesn't fit for medium").
     let isLarge: Bool
-
-    /// The rows on screen.
-    ///
-    /// When everything fits, the list is simply the list — no window, no wrap,
-    /// no arithmetic. When it doesn't, the window starts at `pageStartIndex`
-    /// and wraps, so the chevrons scroll it one row at a time and every quota
-    /// is reachable.
-    ///
-    /// `pageStartIndex`, NOT `selectedIndex` (2026-09-22, "Eggs moves to the
-    /// top"): logging `+1` on a row pins the 2×2 to it (`selectedId`), and
-    /// this window used to start from that same pin — so every `+1` on a row
-    /// that wasn't already first rotated the whole list to put it there. The
-    /// two are now separate sticky values that paging keeps in sync and `+1`
-    /// does not — see `WidgetStore.trackPageStart`.
-    private var window: [TrackItem] {
-        guard canPage else { return entry.items }
-        let start = entry.pageStartIndex ?? 0
-        return (0..<maxRows).map { entry.items[(start + $0) % entry.items.count] }
-    }
-
-    /// Paging costs a row. The pager's 40pt hit targets deepen the header and
-    /// the "+N more" line takes another band, which together is about one row of
-    /// height — so the window shrinks by one the moment there is anything to
-    /// page to, rather than letting the last row clip off the bottom edge.
-    private var maxRows: Int { canPage ? capacity - 1 : capacity }
-
-    /// True only when the corpus genuinely overflows the card.
-    ///
-    /// Below that there are no chevrons AT ALL — not dimmed ones (§8's usual
-    /// treatment for a ring with nowhere to go), none. A pager over a list that
-    /// is already entirely on screen is chrome that has to be interpreted before
-    /// it can be dismissed, and the interpretation users reach for is "this is
-    /// how I scroll", which turns a complete list into a puzzle. With eight rows
-    /// of capacity the ordinary corpus simply fits, and the ordinary card is
-    /// then a list and nothing else.
-    private var canPage: Bool { entry.items.count > capacity }
 
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
         } else {
-            // 4pt between the bands (header / rows / footnotes), not
-            // `rowSpacing`'s 10: at eight rows the card has no 10pt gaps to
-            // spare. See `WidgetTheme.trackRowSpacing`.
-            VStack(alignment: .leading, spacing: 4) {
-                header
+            GeometryReader { geo in
+                let width = geo.size.width
+                // The same gap Reminders' `systemLarge` card puts between its
+                // header and `ReminderSlotStrip` (`RemindersListView.card`'s
+                // outer `VStack(spacing: rowSpacing)`) — this view used a bare
+                // `0` here before review, which is what left "N of M met"
+                // sitting directly on the "TODAY" heading with no breathing
+                // room at all.
+                let rowSpacing = isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
+                let allLines = QuotaFlow.lines(sections: entry.sections, width: width)
+                // One `rowSpacing` reserved for the header→body gap the VStack
+                // below now adds — folded into the same documented
+                // approximation `QuotaMetrics.headerHeight`/`.pagerHeight`
+                // already are (see `QuotasListView`'s own doc).
+                let fullHeight = max(geo.size.height - QuotaMetrics.headerHeight(isLarge: isLarge) - rowSpacing, 0)
+                let fullPages = QuotaFlow.paginate(lines: allLines, pageHeight: fullHeight)
+                let canPage = isLarge && fullPages.count > 1
+                let pages: [[QuotaFlow.Line]] = canPage
+                    ? QuotaFlow.paginate(
+                        lines: allLines,
+                        pageHeight: max(fullHeight - QuotaMetrics.pagerHeight, 0)
+                    )
+                    : fullPages
+                let totalPages = max(pages.count, 1)
+                // Medium never pages (see `isLarge`'s doc) — it always shows
+                // whatever fits from the top, ignoring `entry.page`.
+                let page = canPage ? min(max(entry.page, 0), totalPages - 1) : 0
+                let currentLines = pages.indices.contains(page) ? pages[page] : []
 
-                if entry.items.isEmpty {
-                    WidgetEmptyView(symbol: "target", message: emptyTrackMessage)
-                } else {
-                    VStack(alignment: .leading, spacing: WidgetTheme.trackRowSpacing) {
-                        ForEach(window) { item in
-                            TrackRow(item: item)
+                VStack(alignment: .leading, spacing: rowSpacing) {
+                    header(canPage: canPage, page: page, totalPages: totalPages)
+
+                    if entry.sections.isEmpty {
+                        WidgetEmptyView(symbol: "target", message: emptyQuotasMessage)
+                    } else {
+                        QuotaLinesView(lines: currentLines)
+                        // Pinned to the card's bottom edge, same idiom as
+                        // `RemindersListView.card`'s `ListPager` — a
+                        // `Spacer`'s ideal height is its `minLength` (0), so
+                        // it costs nothing when there's no pager to pin.
+                        Spacer(minLength: 0)
+                        if canPage {
+                            ListPager(
+                                page: page, totalPages: totalPages,
+                                previous: ShiftQuotasPageIntent(offset: -1),
+                                next: ShiftQuotasPageIntent(offset: 1)
+                            )
                         }
                     }
-                    // A tap target, same as the header — see
-                    // `RemindersListView`'s identical comment.
-                    if canPage, isLarge {
-                        Link(destination: WidgetLink.quotas) {
-                            Text("+\(entry.items.count - maxRows) more")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+
+                    if let staleSince = entry.staleSince {
+                        HStack {
+                            Spacer()
+                            StalenessNote(fetchedAt: staleSince)
                         }
                     }
-                    Spacer(minLength: 0)
                 }
-
-                if let staleSince = entry.staleSince {
-                    HStack {
-                        Spacer()
-                        StalenessNote(fetchedAt: staleSince)
-                    }
-                }
+                .frame(width: width, height: geo.size.height, alignment: .topLeading)
             }
-            // No `.widgetURL` here (removed 2026-09-22, the misclick fix): the
-            // whole 4×4/4×2 used to be one tap target, so a near-miss on `+1`
-            // or `−` deep-linked to the dashboard instead of doing nothing.
-            // The header below is now the card's only non-row, non-button tap
-            // target.
         }
     }
 
-    /// One line, not two: the title and the count sat stacked, and that second
-    /// band cost a row of quotas the card would rather spend on content.
-    ///
-    /// Wrapped in a `Link` to the quotas surface (`WidgetLink.quotas`) — see
-    /// `RemindersListView.header` for why the pager stays a sibling outside
-    /// it. Deliberately NOT given a taller frame: this header is one line by
-    /// design (the comment above), and forcing a 40pt tap target here would
-    /// cost the row a whole 4×4 spends on an eighth quota.
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+    /// One line, matching the ALREADY-SHIPPED Reminders/Tasks header shape
+    /// (`.headline` title + `.caption2` subtitle stack, `RemindersListView.
+    /// header`) rather than the OLD Track header's single combined line —
+    /// the mockup PNG also draws a big bold "Quotas" over a muted subtitle.
+    /// Icon order (left → right): the eye toggle, THEN Undo/Redo (2026-09-23:
+    /// "left of Undo" — Trent, on this widget too), then the chevron pager
+    /// bound to the SAME page state as the bottom `ListPager` — a deliberate
+    /// reuse rather than inventing a second "ring" concept Quotas has no
+    /// analog for (see `QuotaFlow`'s handoff notes: Reminders' header ring
+    /// pages slots, Tasks' pages projects, Quotas has no such secondary axis
+    /// — all periods render together in one flowing body). Flagged as
+    /// redundant chrome (both pagers do the same thing) per `ChevronPager`'s
+    /// own doc: "a chevron just says there is more this way".
+    private func header(canPage: Bool, page: Int, totalPages: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
             Link(destination: WidgetLink.quotas) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Track")
-                        .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Quotas")
+                        .font(.headline)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
-                    // see `RemindersListView.header`'s identical comment.
-                    Text(entry.actionDescription ?? countLabel)
+                    // see `WidgetStore`'s "Last-action indication" doc.
+                    Text(entry.actionDescription ?? "\(entry.totalMet) of \(entry.totalCount) met")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -250,66 +244,316 @@ private struct TrackListView: View {
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
-            // Right-aligned, before the chevrons (2026-09-23) — see
-            // `UndoRedoButtons`' doc.
+            ShowMetToggleButton(showMet: entry.showMet)
             UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
             if canPage {
                 ChevronPager(
-                    previous: ShiftTrackItemIntent(offset: -1),
-                    next: ShiftTrackItemIntent(offset: 1)
+                    previous: ShiftQuotasPageIntent(offset: -1),
+                    next: ShiftQuotasPageIntent(offset: 1),
+                    hasPrevious: page > 0,
+                    hasNext: page < totalPages - 1
                 )
             }
         }
-    }
-
-    /// "Met" is worth counting — it is the only summary a quota list has. There
-    /// is deliberately no "behind" count: §5 forbids pace from alarming, and a
-    /// "4 behind" headline is an alarm however calmly it is typeset.
-    private var countLabel: String {
-        guard !entry.items.isEmpty else { return "nothing tracked" }
-        let met = entry.items.filter(\.isMet).count
-        let tracked = "\(entry.items.count) tracked"
-        return met > 0 ? "\(tracked) · \(met) met" : tracked
+        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
     }
 }
 
-/// One quota row: title, count, bar with its pace tick, `−`, and `+1`.
+/// The header's "show met quotas" toggle. Copies `UndoRedoButtons.
+/// iconButton`'s visual shape (same padding/sizing/dim-when-off treatment)
+/// rather than importing a shared component — `WidgetTheme.swift` is under
+/// parallel edit (another agent's twin toggle for Reminders/Tasks' own "show
+/// completed", a different shape of state: a COMPLETION, not a target-met
+/// quota that stays open past it) — so this stays PRIVATE and Quotas-only,
+/// avoiding a shared-name collision between the two.
 ///
-/// Deliberately compact — `.footnote` rather than `.subheadline`, a 3pt bar,
-/// 2pt between the two lines — so the row is no taller than the 36pt buttons it
-/// carries and eight of them fit a 4×4 whole. The chrome shrank; the touch
-/// targets did not.
-private struct TrackRow: View {
-    let item: TrackItem
-
-    /// The count as DRAWN, staged deltas included (`TaskFeed` applies them
-    /// before the view ever sees the task), which is what decides whether `−`
-    /// has anything to undo.
-    private var canDecrement: Bool { item.task.progressCurrent > 0 }
+/// `eye.slash` (met hidden, the default) / `eye` (met shown), tinted with
+/// `Color.indigo` when on — the SAME accent every chip's progress fill and
+/// every section bar use (see `QuotaChip.fillAndStripe`'s doc), which is
+/// also the accent `ReminderSlotStrip.color(for:)` already uses for its
+/// `.behind` state (`RemindersWidgetViews.swift`) — one hue app-wide, not a
+/// new one for this button.
+private struct ShowMetToggleButton: View {
+    let showMet: Bool
 
     var body: some View {
-        HStack(spacing: 2) {
-            // `.quota(_:)`, not `.task(_:)` — see `WidgetLink.quota`'s doc.
-            Link(destination: WidgetLink.quota(item.task.id)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.task.title)
-                            .font(.footnote)
-                            .fontWeight(WidgetTheme.priorityWeight(item.task.priority))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        QuotaCount(item: item, font: .caption2)
-                    }
-
-                    QuotaBar(item: item, height: 3)
-                }
+        Button(intent: ToggleQuotasShowMetIntent()) {
+            Image(systemName: showMet ? "eye" : "eye.slash")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
                 .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(showMet ? Color.indigo : Color.secondary)
+        .accessibilityLabel(Text(showMet ? "Hide met quotas" : "Show met quotas"))
+    }
+}
+
+/// The current page's flowed lines, drawn in order — a heading, a cluster
+/// label, or one complete chip row. This view never wraps or re-measures
+/// anything itself; `QuotaFlow.lines` already decided exactly what belongs
+/// on each line, and cutting a page between two `Line`s (never inside a
+/// `.chipRow`) is what keeps a chip from ever being cut in half.
+private struct QuotaLinesView: View {
+    let lines: [QuotaFlow.Line]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                switch line {
+                case .heading(let section):
+                    // A thin divider between period sections, never before
+                    // the first — mirrors the web panel's `SECTION_DIVIDER`.
+                    // Only correct for the page's OWN first line; a section
+                    // that continues from a previous PAGE (the accepted
+                    // "heading stranded, clusters start fresh" gap —
+                    // `QuotaFlow.paginate`'s doc) draws no divider either,
+                    // since there is nothing on this page to divide from.
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 1)
+                            .padding(.top, 4)
+                            .padding(.bottom, 3)
+                    }
+                    QuotaHeadingRow(section: section)
+                case .clusterTitle(let cluster):
+                    QuotaClusterTitleRow(cluster: cluster)
+                        .padding(.top, 3)
+                        .padding(.bottom, 2)
+                case .chipRow(_, let color, let chips):
+                    QuotaChipRow(color: color, chips: chips)
+                        .padding(.bottom, QuotaMetrics.chipRowSpacing)
+                }
+            }
+        }
+    }
+}
+
+/// A period section's heading row — period name (bold, full-strength, so it
+/// outranks the muted cluster labels beneath it), a muted "ends tonight"/"N
+/// days left" (omitted for the no-period section), a bar that flexes to fill
+/// whatever room is left, and "M of N" met. Mirrors `PeriodHeading`
+/// (`TrackPanel.tsx`) almost exactly, in SwiftUI.
+private struct QuotaHeadingRow: View {
+    let section: QuotaSection
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(section.heading.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize()
+
+            if let timeLeftText = section.timeLeftText {
+                Text(timeLeftText)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
             }
 
-            MinusOneButton(taskId: item.task.id, enabled: canDecrement)
-            PlusOneButton(taskId: item.task.id)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.25))
+                    Capsule()
+                        .fill(section.allMet ? WidgetTheme.trackMetTint : Color.indigo)
+                        .frame(width: max(geo.size.width * section.barFraction, 0))
+                    // The notch: how much of the period's clock has already
+                    // run. `Color.primary` rather than a hardcoded white —
+                    // §5's ONE flat tone "at every fraction, on the fill or
+                    // off it" (`TRACK_NOTCH_CLASS`'s doc), automatically
+                    // adapting black/white by color scheme the same way the
+                    // web's `dark:` variant does. Clipped by the outer
+                    // `.clipShape(Capsule())` below so it can never overhang
+                    // the bar's own rounded ends.
+                    if let elapsed = section.elapsedFraction {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.14))
+                            .frame(width: 2)
+                            .offset(x: min(max(geo.size.width * elapsed - 1, 0), geo.size.width - 2))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 4)
+
+            Text(metCountText)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(height: QuotaMetrics.headingRowHeight)
+    }
+
+    /// "**M** of N" — bold met count, muted rest, one `Text` so the two
+    /// weights can sit on one baseline without a second HStack.
+    private var metCountText: AttributedString {
+        var s = AttributedString("\(section.summary.met) of \(section.summary.count)")
+        if let range = s.range(of: "\(section.summary.met)") {
+            s[range].font = .system(size: 10, weight: .semibold)
+            s[range].foregroundColor = .primary
+        }
+        return s
+    }
+}
+
+/// One label cluster's heading, inside a period section: a color dot, the
+/// uppercase label name, and — only while the cluster still has unmet
+/// quotas — a green "✓N" for how many are already met. Mirrors
+/// `ClusterTitle` (`TrackPanel.tsx`).
+private struct QuotaClusterTitleRow: View {
+    let cluster: QuotaCluster
+
+    private var allMet: Bool { cluster.totalCount > 0 && cluster.metCount == cluster.totalCount }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(WidgetTheme.projectColor(cluster.color))
+                .frame(width: 6, height: 6)
+            Text(cluster.displayName.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            if cluster.metCount > 0, !allMet {
+                HStack(spacing: 2) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("\(cluster.metCount)")
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(WidgetTheme.trackMetTint)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(height: QuotaMetrics.clusterTitleRowHeight)
+    }
+}
+
+/// One complete chip row — exactly the chips `QuotaFlow.lines` packed into
+/// it, drawn as a plain `HStack` that SwiftUI never re-wraps (the "never cut
+/// a chip" guarantee: the row was already measured to fit before it was
+/// handed to this view).
+private struct QuotaChipRow: View {
+    let color: String?
+    let chips: [TrackItem]
+
+    var body: some View {
+        HStack(spacing: QuotaMetrics.chipRowGap) {
+            ForEach(chips) { item in
+                QuotaChip(item: item, color: color)
+            }
+        }
+    }
+}
+
+/// One quota, as a chip. The widget's only progress control — `+1` only, no
+/// `−1` (a DELIBERATE change from the OLD Track row's `−1` button: Undo
+/// covers a mis-tap, and a second button per chip would double the chip-flow
+/// measurement's surface for no everyday benefit). Tapping opens nothing —
+/// `IncrementProgressIntent` (reused verbatim, no new intent per spec) fires
+/// straight from the chip.
+///
+/// `.fixedSize()`: if `QuotaMetrics.chipWidth(for:)`'s measurement ever
+/// under-counts the real rendered width (a font substitution, a measurement
+/// rounding difference), the chip overflows the card's edge VISIBLY in a
+/// render review, rather than SwiftUI silently truncating the title — the
+/// one failure mode Trent's "never truncate" rule can't tolerate. The one
+/// legitimate truncation left is a single chip wider than the whole card,
+/// capped by the title's own `lineLimit(1)`.
+private struct QuotaChip: View {
+    let item: TrackItem
+    let color: String?
+
+    private var fraction: Double { item.doneFraction }
+
+    var body: some View {
+        Button(intent: IncrementProgressIntent(taskId: item.task.id, delta: 1)) {
+            HStack(spacing: QuotaMetrics.chipTitleCountGap) {
+                Text(item.task.displayTitle)
+                    .font(QuotaMetrics.chipTitleFont)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                count
+            }
+            .padding(.leading, QuotaMetrics.chipLeadingPadding)
+            .padding(.trailing, QuotaMetrics.chipTrailingPadding)
+            .frame(height: QuotaMetrics.chipHeight)
+            .background(fillAndStripe)
+            .overlay(
+                RoundedRectangle(cornerRadius: QuotaMetrics.chipCornerRadius)
+                    .strokeBorder(item.isMet ? WidgetTheme.trackMetTint.opacity(0.3) : Color.primary.opacity(0.12), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: QuotaMetrics.chipCornerRadius))
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            Text("Log one more for \(item.task.displayTitle) — \(item.task.progressCurrent) of \(item.task.progressTarget)")
+        )
+    }
+
+    private var count: some View {
+        HStack(spacing: 0) {
+            Text("\(item.task.progressCurrent)")
+                .font(QuotaMetrics.chipCurrentFont)
+            Text("/\(item.task.progressTarget)")
+                .font(QuotaMetrics.chipTargetFont)
+        }
+        .monospacedDigit()
+        .foregroundStyle(item.isMet ? WidgetTheme.trackMetTint : Color.secondary)
+    }
+
+    /// The chip's base fill, the progress fill (indigo, green once met — a
+    /// STRONGER opacity than the section bar's own fill: the mockup and the
+    /// original spec prose both call for a bolder progress fill on the chip
+    /// specifically, stronger than the web `TrackChip`'s current,
+    /// not-yet-updated `bg-foreground/10`), and the label's 3pt leading
+    /// stripe, painted AFTER the fill so a fully-met chip's fill never tints
+    /// the stripe green underneath it.
+    ///
+    /// Base is `.fill.secondary` (an adaptive system fill), not a literal
+    /// dark gray: WidgetKit's `.containerBackground` already makes this card
+    /// light in Light Appearance and dark in Dark Appearance (see
+    /// `TrackWidgetView.body`), so a hardcoded dark chip background read as
+    /// black-on-black text the instant this renders in Light Appearance — a
+    /// bug caught in the first Xcode preview render, fixed here rather than
+    /// tuning `.primary`/`.secondary` around a fixed color that fights the
+    /// card's own adaptivity.
+    ///
+    /// `Color.indigo`, matching the mockup and matching Trent's approval of
+    /// it there — and the SAME literal `ReminderSlotStrip.color(for:)`
+    /// already uses for its `.behind` state (`RemindersWidgetViews.swift`),
+    /// so this is the app's one existing "in progress" accent, not a second
+    /// hue. An earlier pass here reused Track's OLD ring/bar-mode teal
+    /// instead (`WidgetTheme.trackTint`, since removed) on the theory that
+    /// reusing Track's own established color was more "one hue" than
+    /// introducing indigo — reviewed and corrected: indigo is already the
+    /// app-wide in-progress accent (Reminders' slot strip), so teal was
+    /// actually the second, unapproved hue, not indigo.
+    private var fillAndStripe: some View {
+        ZStack(alignment: .leading) {
+            Rectangle().fill(.fill.secondary)
+            GeometryReader { geo in
+                (item.isMet ? WidgetTheme.trackMetTint : Color.indigo)
+                    .opacity(item.isMet ? 0.30 : 0.45)
+                    .frame(width: max(geo.size.width * fraction, 0))
+            }
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(WidgetTheme.projectColor(color))
+                    .frame(width: QuotaMetrics.chipStripeWidth)
+                Spacer(minLength: 0)
+            }
         }
     }
 }
@@ -317,14 +561,17 @@ private struct TrackRow: View {
 // MARK: - Lock Screen
 //
 // Lock Screen accessory families don't exist on macOS — see the #if os(iOS)
-// guard on `content` above. TrackCircularView's `.gaugeStyle(.accessoryCircularCapacity)`
-// below only compiles on iOS, so both views are gated out of the macOS build
-// entirely rather than left as dead code.
+// guard on `content` above.
 #if os(iOS)
 
-/// Glanceable only — §8: interactive widgets are inert on a locked device, so a
-/// `+1` (or `−`) button here would be a control that silently does nothing.
-private struct TrackRectangularView: View {
+/// Glanceable only — §8: interactive widgets are inert on a locked device.
+/// Overall "N/M met" and the next unmet quota's title; no per-item detail
+/// (the OLD design showed the single selected item, which no longer exists
+/// as a concept — see `QuotasSmallView`'s doc for the same change one family
+/// up). `widgetURL(WidgetLink.dashboard)`, matching the OLD code's own
+/// choice — kept rather than switched to `.quotas`, since nothing about this
+/// rebuild changed what a Lock Screen tap should open.
+private struct QuotasRectangularView: View {
     let entry: TrackEntry
 
     var body: some View {
@@ -335,26 +582,35 @@ private struct TrackRectangularView: View {
                     .widgetAccentable()
                 Text("Open to sign in")
                     .font(.caption2)
-            } else if let item = entry.selected {
-                HStack(spacing: 4) {
-                    Text(item.task.title)
-                        .font(.headline)
-                        .widgetAccentable()
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Text("\(item.task.progressCurrent)/\(item.task.progressTarget)")
-                        .font(.caption.weight(.semibold))
-                        .monospacedDigit()
-                        .widgetAccentable()
-                }
-                QuotaBar(item: item, height: 4, monochrome: true)
-            } else {
-                Text("Track")
+            } else if entry.totalCount == 0 {
+                Text("Quotas")
                     .font(.headline)
                     .widgetAccentable()
                 Text("Nothing tracked")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 4) {
+                    Text("Quotas")
+                        .font(.headline)
+                        .widgetAccentable()
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text("\(entry.totalMet)/\(entry.totalCount)")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .widgetAccentable()
+                }
+                if let next = entry.nextUnmet {
+                    Text(next.task.displayTitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("All met")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -362,16 +618,16 @@ private struct TrackRectangularView: View {
     }
 }
 
-/// The selected quota as a capacity ring — the one shape that survives being
-/// 30pt across and tinted by the system.
-private struct TrackCircularView: View {
+/// The overall met/total fraction as a capacity ring — the one shape that
+/// survives being 30pt across and tinted by the system.
+private struct QuotasCircularView: View {
     let entry: TrackEntry
 
     var body: some View {
-        Gauge(value: entry.selected?.doneFraction ?? 0) {
+        Gauge(value: entry.totalCount > 0 ? Double(entry.totalMet) / Double(entry.totalCount) : 0) {
             Image(systemName: "target")
         } currentValueLabel: {
-            Text("\(entry.selected?.task.progressCurrent ?? 0)")
+            Text("\(entry.totalMet)")
                 .minimumScaleFactor(0.7)
         }
         .gaugeStyle(.accessoryCircularCapacity)
@@ -381,37 +637,20 @@ private struct TrackCircularView: View {
 
 #endif
 
-// MARK: - Shared quota chrome
+// MARK: - Shared chrome
 
-/// `n/target`, green once met. Overflow (4/3) is printed as-is — §5 keeps it
-/// observable, so this never clamps the way the ring and bar do.
-private struct QuotaCount: View {
-    let item: TrackItem
-    var font: Font = .caption2
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Text("\(item.task.progressCurrent)/\(item.task.progressTarget)")
-                .font(font)
-                .monospacedDigit()
-            if item.isMet {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 8, weight: .bold))
-            }
-        }
-        .foregroundStyle(item.isMet ? WidgetTheme.trackMetTint : Color.secondary)
-    }
-}
-
-/// The flagship shape: a progress ring with the fraction in the middle.
-private struct QuotaRing: View {
-    let item: TrackItem
+/// The overall met/total ring — `QuotasSmallView`'s flagship shape, the same
+/// visual as the OLD single-item `QuotaRing` but fed the WHOLE corpus'
+/// `met`/`total` instead of one task's progress; there is no single
+/// "selected" quota to ring any more (see `QuotasSmallView`'s doc).
+private struct OverallRing: View {
+    let met: Int
+    let total: Int
     let diameter: CGFloat
     let lineWidth: CGFloat
 
-    private var tint: Color {
-        item.isMet ? WidgetTheme.trackMetTint : WidgetTheme.trackTint
-    }
+    private var fraction: Double { total > 0 ? min(Double(met) / Double(total), 1) : 0 }
+    private var allMet: Bool { total > 0 && met == total }
 
     var body: some View {
         ZStack {
@@ -419,27 +658,20 @@ private struct QuotaRing: View {
                 .stroke(.quaternary, lineWidth: lineWidth)
 
             Circle()
-                .trim(from: 0, to: item.doneFraction)
-                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .trim(from: 0, to: fraction)
+                .stroke(
+                    allMet ? WidgetTheme.trackMetTint : Color.indigo,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
 
-            // The pace tick (§5): where the period's clock has got to. Neutral,
-            // thin, and absent once met — a met quota has nothing left to be
-            // behind on, and a marker there would only read as criticism.
-            if let elapsed = item.elapsedFraction, !item.isMet {
-                Circle()
-                    .trim(from: max(elapsed - 0.006, 0), to: min(elapsed + 0.006, 1))
-                    .stroke(.secondary, style: StrokeStyle(lineWidth: lineWidth + 4))
-                    .rotationEffect(.degrees(-90))
-            }
-
             VStack(spacing: -2) {
-                Text("\(item.task.progressCurrent)/\(item.task.progressTarget)")
-                    .font(.system(size: diameter * 0.29, weight: .semibold, design: .rounded))
+                Text("\(met)/\(total)")
+                    .font(.system(size: diameter * 0.24, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                if item.isMet {
+                if allMet {
                     Image(systemName: "checkmark")
                         .font(.system(size: diameter * 0.17, weight: .bold))
                         .foregroundStyle(WidgetTheme.trackMetTint)
@@ -448,98 +680,5 @@ private struct QuotaRing: View {
             .padding(.horizontal, lineWidth + 2)
         }
         .frame(width: diameter, height: diameter)
-    }
-}
-
-/// The list-row shape: a thin bar with the same pace tick as the ring.
-private struct QuotaBar: View {
-    let item: TrackItem
-    var height: CGFloat = 4
-    /// Lock Screen accessories are tinted wholesale by the system, so the two
-    /// Track colors would collapse into one anyway — asking for them there just
-    /// produces an unpredictable wash.
-    var monochrome = false
-
-    private var tint: Color {
-        if monochrome { return .primary }
-        return item.isMet ? WidgetTheme.trackMetTint : WidgetTheme.trackTint
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
-
-                Capsule()
-                    .fill(tint)
-                    .frame(width: max(geo.size.width * item.doneFraction, 0))
-
-                if let elapsed = item.elapsedFraction, !item.isMet {
-                    Capsule()
-                        .fill(.secondary)
-                        .frame(width: 1.5)
-                        .offset(x: min(max(geo.size.width * elapsed - 0.75, 0), geo.size.width - 1.5))
-                }
-            }
-        }
-        .frame(height: height)
-    }
-}
-
-/// The quota's primary control. `+1`, never a check-off: §5 says a sub-target
-/// increment must not fire the completion path, and at target the item stays
-/// open to its period boundary anyway.
-private struct PlusOneButton: View {
-    let taskId: Int
-
-    var body: some View {
-        Button(intent: IncrementProgressIntent(taskId: taskId, delta: 1)) {
-            Text("+1")
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.fill.secondary, in: Capsule())
-                // The visible capsule is ~24pt; the TARGET is 36, matching the
-                // check-off circles. The row is sized by this frame, so shrink
-                // the capsule to fit more rows and never this.
-                .frame(minWidth: WidgetTheme.progressButtonSize, minHeight: WidgetTheme.progressButtonSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// The correction. A mis-log used to be un-fixable anywhere but the app — the
-/// widget could only ever count up — so a fat-fingered `+1` left a number the
-/// user knew was wrong sitting on their Home Screen all period.
-///
-/// Quieter than `+1` on purpose: same 36pt target, but a bare glyph on the
-/// faintest fill, because logging is the everyday act and correcting is the rare
-/// one. It DIMS and disables at 0 rather than disappearing (the `ChevronButton`
-/// treatment): hiding it would slide `+1` sideways every time a count crossed
-/// 0/1, moving the one control the user is aiming at.
-private struct MinusOneButton: View {
-    let taskId: Int
-    var enabled = true
-
-    var body: some View {
-        Button(intent: IncrementProgressIntent(taskId: taskId, delta: -1)) {
-            Text("−")
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.fill.quaternary, in: Capsule())
-                .frame(minWidth: WidgetTheme.progressButtonSize, minHeight: WidgetTheme.progressButtonSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.3)
-        .disabled(!enabled)
-        // "−" alone reads as a hyphen to VoiceOver.
-        .accessibilityLabel(Text("Remove one"))
     }
 }

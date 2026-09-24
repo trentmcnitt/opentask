@@ -1137,4 +1137,86 @@ enum WidgetStore {
             defaults?.set(trackOrderVersion, forKey: trackOrderVersionKey)
         }
     }
+
+    // MARK: - Quotas (the Track → Quotas rebuild, `feat/quotas-widget`)
+    //
+    // Namespaced `quotas*`, deliberately not sharing a name/shape with the
+    // Reminders/Tasks "show completed"/paging state another agent is adding
+    // in parallel (`feat/widget-days-show-completed`) — see that branch's own
+    // additions to this file for the twin, kind-specific keys.
+
+    private static let quotasShowMetKey = "widget.quotas.showMet"
+
+    /// Whether ALREADY-MET quotas are shown, or put away in their clusters —
+    /// the same "met quotas are put away at load, never under a finger" rule
+    /// as the web Track panel (`TrackPanel.tsx`'s `useShowMet`), but simpler
+    /// here: the widget has no live session to "put away at load and hold for
+    /// the rest of it" — every tap rebuilds the timeline fresh, so this is
+    /// read straight at render time (see `quotaMutationIsRecent` below for
+    /// the one exception: a `+1` that crosses the target must not vanish out
+    /// from under the tap that just made it). Default `false` — met hidden,
+    /// matching the web panel's own default.
+    static var quotasShowMet: Bool {
+        get { defaults?.bool(forKey: quotasShowMetKey) ?? false }
+        set { defaults?.set(newValue, forKey: quotasShowMetKey) }
+    }
+
+    private static let quotasPageKey = "widget.quotas.page"
+
+    /// Which page of the flowed chip layout is on screen. ONE flat sequence,
+    /// unlike Reminders'/Tasks' paging (`remindersPage(for:)`/`tasksPage(for:)`)
+    /// — Quotas has no slot/project axis to key against, so there is nothing
+    /// to pair this with for a self-reset; a `showMet` flip or the corpus
+    /// changing size is instead handled by the VIEW clamping against the live
+    /// page count on every render (same "store only ever needs to move it,
+    /// view clamps" idiom as `remindersPage`'s own doc), not by this store
+    /// detecting the change.
+    static var quotasPage: Int {
+        get { defaults?.integer(forKey: quotasPageKey) ?? 0 }
+        set { defaults?.set(max(0, newValue), forKey: quotasPageKey) }
+    }
+
+    private static let quotaLabelConfigKey = "widget.cache.quotaLabelConfig"
+
+    /// The cluster color source (`label_config`), cached the same way every
+    /// other fetched payload here is: a failed refetch draws the last-known
+    /// colors rather than falling back to neutral for everything.
+    static func saveQuotaLabelConfig(_ config: [LabelConfigDTO]) {
+        save(config, forKey: quotaLabelConfigKey)
+    }
+
+    static func loadQuotaLabelConfig() -> Cached<[LabelConfigDTO]>? {
+        load([LabelConfigDTO].self, forKey: quotaLabelConfigKey)
+    }
+
+    private static let quotaMutationAtKey = "widget.quotas.lastMutationAt"
+    /// How long a quota that just crossed its target stays visible with
+    /// `quotasShowMet` off, matching `pendingTTL`'s idiom (a generous crash
+    /// backstop, not a tuned window).
+    private static let quotaMutationTTL: TimeInterval = 90
+
+    /// Stamp "a quota's progress was just logged from this widget" — see
+    /// `quotaMutationIsRecent(now:)` for what this buys.
+    static func recordQuotaMutation(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: quotaMutationAtKey)
+    }
+
+    /// Whether SOME quota's progress was logged recently enough that a
+    /// just-met one must not be filtered out from under the tap that met it.
+    ///
+    /// Deliberately a single GLOBAL stamp, not a persisted `Set<Int>` of
+    /// "which quota id to keep showing" — met-ness is recomputed fresh from
+    /// the server/cache on every build (there is no snapshot to invalidate),
+    /// so the only thing that can go wrong is a `+1` that crosses the target
+    /// making its own chip disappear before the tap's optimistic repaint is
+    /// even on screen. A short global grace window after ANY `+1`/`−1`
+    /// covers that without inventing new per-id state: the cost is that a
+    /// DIFFERENT quota which happened to already be met also stays visible
+    /// for the same ~90s if the user taps a completely unrelated chip right
+    /// after, which is a harmless false-negative (an extra chip shown, never
+    /// a hidden one) and cheaper than tracking which id actually crossed.
+    static func quotaMutationIsRecent(now: Date = Date()) -> Bool {
+        guard let stamp = defaults?.object(forKey: quotaMutationAtKey) as? Double else { return false }
+        return now.timeIntervalSince1970 - stamp < quotaMutationTTL
+    }
 }
