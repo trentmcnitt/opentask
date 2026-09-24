@@ -132,6 +132,22 @@ function periodRuleOnlyWhenTracked<
   if (!data.rrule || isValidRRule(data.rrule)) return true
   return isTrackedInput(data)
 }
+/**
+ * §6: a reminder is never snoozed out of its time slot. Shared by `snoozeTask`
+ * and `updateTask` (a bare `PATCH { due_at }` on a dated reminder IS a snooze —
+ * it is the payload the iOS content extension snoozes with), so the two paths
+ * cannot drift into saying different things.
+ */
+export const REMINDER_SNOOZE_MESSAGE =
+  'Reminders cannot be snoozed — they stay in their time slot until completed'
+
+/**
+ * §5: `done` on a quota closes its period early and zeroes the count. Nothing
+ * in the app does that; an API caller almost always meant to log progress.
+ */
+export const QUOTA_DONE_MESSAGE =
+  'This is a quota — log progress with POST /api/tasks/{id}/progress. Marking it done closes the period early and resets its count to 0; send close_period: true to do that deliberately'
+
 export const PERIOD_RULE_MESSAGE =
   'A bare period rule (e.g. FREQ=MONTHLY) is only valid on a tracked task'
 
@@ -253,6 +269,9 @@ export type SnoozeInput = z.infer<typeof snoozeSchema>
  */
 export const bulkDoneSchema = z.object({
   ids: bulkIds,
+  // §5: also complete any quotas in the batch (closing each period early and
+  // resetting its count). Without it, quotas are skipped — see `bulkDone`.
+  close_period: z.boolean().optional(),
 })
 
 export type BulkDoneInput = z.infer<typeof bulkDoneSchema>

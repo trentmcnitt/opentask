@@ -66,6 +66,26 @@ RFC 5545 RRULE strings (the iCalendar recurrence rule standard, e.g., `FREQ=WEEK
 
 Snooze sets `due_at` to a new value without modifying recurrence. For recurring tasks, the original schedule is preserved: a daily 9:00 AM task snoozed to noon and then completed will still regenerate as due at 9:00 AM tomorrow.
 
+**Snooze vs explicit reschedule** (Trent, 2026-09-24). `original_due_at` is the occurrence origin; a task is **snoozed** when `due_at` has moved off it (`is_snoozed` = `original_due_at` set and `!== due_at`, the same test as the row's snoozed indicator). A freshly dated task is not snoozed — `createTask` sets the origin to the first date.
+
+| Change to an existing date                                                                                                                             | What it is          | `original_due_at`       | `snooze_count` |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ----------------------- | -------------- |
+| Snooze endpoint, bulk snooze, snooze-overdue, notification snooze, quick-panel +1h/preset/Now buttons, bare `PATCH { due_at }` (iOS content extension) | Snooze              | Kept (set on first one) | +1             |
+| `PATCH { due_at, reset_original_due_at: true }` — the quick panel's date picker                                                                        | Explicit reschedule | = the new `due_at`      | Reset to 0     |
+| `PATCH { rrule, due_at }`                                                                                                                              | Re-schedule         | Cleared                 | Unchanged      |
+
+A bare `PATCH { due_at }` stays a snooze because the iOS content extension snoozes with exactly that payload, so the reschedule has to opt in. Undo restores the prior `original_due_at` and `snooze_count` either way. `PATCH { rrule, due_at }` honors the date and derives the rule's anchors from it, like `createTask` (it used to be dropped).
+
+**Reminders** (`is_reminder`) are never snoozed: the snooze endpoint refuses them, bulk snooze skips them, and a bare `PATCH { due_at }` that would move a dated reminder is refused too. An explicit reschedule (`reset_original_due_at: true`) is allowed, as is giving an undated reminder its first date. `skip-occurrence` refuses reminders — a missed one rolls forward on its own, and completing one marks it considered.
+
+## Quotas and completion
+
+A quota (`isTracked`: `is_tracked` or `progress_target > 1`, one definition in `src/lib/track.ts`) is counted within its period; its period boundary resets `progress_current`. Marking one **done** closes the period early and zeroes the count, so `markDone` refuses a quota unless the caller passes `close_period: true`, and `bulkDone` skips quotas (reporting `quota_skipped`) unless the same flag is set — refusing only when the batch is nothing but quotas. No app surface completes a quota; they log progress (`POST /api/tasks/{id}/progress`).
+
+## Overdue
+
+"Overdue" everywhere — the badge, the notifier, the snooze-overdue sweep and `GET /api/tasks?overdue=true` — is `getCurrentlyDueTaskIds` (`src/core/tasks/currently-due.ts`): reminders and quotas are never overdue, and a recurring task's due-ness is derived from its schedule (`effectiveDueAt`).
+
 ## Updating Recurrence Rules
 
 Updating `rrule` also re-derives `anchor_*` fields and may recompute `due_at`. When logging this for undo, include all derived fields in `fieldsChanged` so undo restores the complete prior state:

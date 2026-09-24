@@ -40,7 +40,13 @@ export function formatTaskResponse(task: Task): FormattedTask {
   return {
     ...task,
     is_recurring: task.rrule !== null,
-    is_snoozed: task.original_due_at !== null,
+    // Snoozed = the due date has moved off its occurrence origin. The same
+    // test the row's snoozed indicator uses (TaskRow). It used to be
+    // `original_due_at !== null` alone, which read every dated task as
+    // snoozed from birth — `createTask` sets the origin to the first due date
+    // — and would have kept an explicit reschedule (origin reset to the new
+    // date, see `collectBasicFields`) reading as snoozed too.
+    is_snoozed: task.original_due_at !== null && task.original_due_at !== task.due_at,
   }
 }
 

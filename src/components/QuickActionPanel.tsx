@@ -108,6 +108,20 @@ export interface QuickActionPanelChanges {
   is_reminder?: boolean
 }
 
+/**
+ * Whether a save carries an explicit, date-PICKER reschedule rather than a
+ * snooze — see `pendingDatePicked`. Kept out of `collectPendingChanges` so
+ * that callback's branching stays readable.
+ */
+function isPickedReschedule(
+  datePicked: boolean,
+  isBulkMode: boolean,
+  isCreateMode: boolean,
+  dueAt: string | null | undefined,
+): boolean {
+  return datePicked && !isBulkMode && !isCreateMode && typeof dueAt === 'string'
+}
+
 export interface QuickActionPanelProps {
   /** Task(s) being acted on. Single task or null for bulk. */
   task: Task | null
@@ -328,6 +342,12 @@ export function QuickActionPanel({
   const [autoSnoozePopoverOpen, setAutoSnoozePopoverOpen] = useState(false)
   // pendingResetOrigin: when true, reset_original_due_at will be sent on save
   const [pendingResetOrigin, setPendingResetOrigin] = useState(false)
+  // pendingDatePicked: the staged date came from the date PICKER, not a snooze
+  // button. Picking an explicit date is a reschedule, not a snooze (Trent,
+  // 2026-09-24): the save sends reset_original_due_at with it so the task stops
+  // being "snoozed from" its old date. Any preset / increment / Now / Next Hour
+  // tap after the pick clears it — those are snoozes and must keep the origin.
+  const [pendingDatePicked, setPendingDatePicked] = useState(false)
   // pendingIsReminder: null = no change, boolean = staged flag (§6 Reminders surface)
   const [pendingIsReminder, setPendingIsReminder] = useState<boolean | null>(null)
   // pendingNotes: undefined = no change, null = clear, string = new value
@@ -564,6 +584,7 @@ export function QuickActionPanel({
     (hour: number, minute: number) => {
       setPendingDueAtCleared(false)
       setPendingDueAt(null)
+      setPendingDatePicked(false)
       applyPreset(hour, minute)
     },
     [applyPreset],
@@ -573,6 +594,7 @@ export function QuickActionPanel({
     (inc: { minutes: number | null; days?: number }) => {
       setPendingDueAtCleared(false)
       setPendingDueAt(null)
+      setPendingDatePicked(false)
       applyIncrement(inc)
     },
     [applyIncrement],
@@ -581,6 +603,7 @@ export function QuickActionPanel({
   const handleSmartButtonClick = useCallback(
     (type: 'now' | 'nextHour') => {
       setPendingDueAtCleared(false)
+      setPendingDatePicked(false)
       // In create mode, "Now" can produce the same value as initWorkingDate(null)
       // (both call snapToNearestFiveMinutes), so the hook's isDirty stays false.
       // Explicitly set pendingDueAt to ensure the date is staged and displayed.
@@ -700,6 +723,12 @@ export function QuickActionPanel({
     if (pendingProject !== null) changes.project_id = pendingProject
     if (pendingAutoSnooze !== undefined) changes.auto_snooze_minutes = pendingAutoSnooze
     if (pendingResetOrigin) changes.reset_original_due_at = true
+    // A picked date is a reschedule: the server makes it the new origin (see
+    // collectBasicFields). Single-task only — the picker is not shown in bulk
+    // mode, and create mode has no origin to reset.
+    if (isPickedReschedule(pendingDatePicked, isBulkMode, isCreateMode, changes.due_at)) {
+      changes.reset_original_due_at = true
+    }
     if (pendingIsReminder !== null) changes.is_reminder = pendingIsReminder
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     return changes
@@ -719,6 +748,8 @@ export function QuickActionPanel({
     pendingProject,
     pendingAutoSnooze,
     pendingResetOrigin,
+    pendingDatePicked,
+    isCreateMode,
     pendingIsReminder,
     pendingNotes,
     isBulkMode,
@@ -740,6 +771,7 @@ export function QuickActionPanel({
     setPendingDueAtCleared(false)
     setPendingAutoSnooze(undefined)
     setPendingResetOrigin(false)
+    setPendingDatePicked(false)
     setPendingIsReminder(null)
     setPendingNotes(undefined)
     setNotesExpanded(false)
@@ -1169,6 +1201,7 @@ export function QuickActionPanel({
                 if (isoUtc === null) {
                   setPendingDueAtCleared(true)
                   setPendingDueAt(null)
+                  setPendingDatePicked(false)
                   if (effectiveTask?.rrule || pendingRrule) {
                     setPendingRrule(null)
                   }
@@ -1178,6 +1211,7 @@ export function QuickActionPanel({
                   // so a calendar pick matching it would leave isDirty false. Use pendingDueAt
                   // as an explicit override (same pattern as smart buttons).
                   setPendingDueAt(isCreateMode ? isoUtc : null)
+                  setPendingDatePicked(true)
                   singleHook.setWorkingDate(isoUtc)
                 }
               }}
