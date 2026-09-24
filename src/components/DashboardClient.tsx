@@ -910,6 +910,22 @@ function HomeContent({
     () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
     [tasks_, projects, grouping, timezone, timeSlots],
   )
+  /**
+   * The top bar's "N total tasks" pill counts what the list is SHOWING, which
+   * is `taskGroups`, not `tasks_`. The two differ in exactly one view: Today
+   * (`grouping === 'slot'`), where `groupByTimeSlot` keeps only what is due by
+   * the end of today and drops everything later. Counting `tasks_` there put
+   * next week's tasks into the number over a list that did not hold them.
+   * Reminders, quotas, search, filter chips and AI chips are already out of
+   * `tasks_`, so every other view gives the same number either way.
+   *
+   * A folded group, or a slot past its "Show all" preview cap, still counts:
+   * its rows are on the page one tap away, and the group header says so.
+   */
+  const shownTaskCount = useMemo(
+    () => taskGroups.reduce((n, g) => n + g.tasks.length, 0),
+    [taskGroups],
+  )
 
   /**
    * Support `?task=<id>` — two shapes, sharing one URL so every existing
@@ -1292,6 +1308,7 @@ function HomeContent({
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchResultCount={visibleSearchResults.length}
+        shownTaskCount={shownTaskCount}
         overdueCount={overdueCount}
         todayCount={todayCount}
         selection={selection}
@@ -1608,6 +1625,7 @@ function DashboardView({
   timeSlots,
   searchQuery,
   searchResultCount,
+  shownTaskCount,
   overdueCount,
   todayCount,
   selection,
@@ -1729,6 +1747,8 @@ function DashboardView({
   timeSlots: TimeSlot[]
   searchQuery: string | null
   searchResultCount: number
+  /** What the list renders — see `shownTaskCount` in `HomeContent`. */
+  shownTaskCount: number
   overdueCount: number
   todayCount: number
   selection: ReturnType<typeof useSelection>
@@ -1880,7 +1900,7 @@ function DashboardView({
   return (
     <div className="flex flex-1 flex-col">
       <Header
-        taskCount={tasks.length}
+        taskCount={shownTaskCount}
         overdueCount={overdueCount}
         todayCount={todayCount}
         isSelectionMode={selection.isSelectionMode}
