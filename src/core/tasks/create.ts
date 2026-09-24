@@ -15,6 +15,7 @@ import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
 import { isTracked } from '@/lib/track'
+import { getCurrentlyDueTaskIds } from './currently-due'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
@@ -233,11 +234,16 @@ export function getTaskById(taskId: number): Task | null {
 /**
  * Get tasks with filters
  */
+export type TaskKind = 'task' | 'reminder' | 'quota'
+
 export interface GetTasksOptions {
   userId: number
   projectId?: number
   done?: boolean
+  /** Only the badge's "currently due" set — see `getCurrentlyDueTaskIds`. */
   overdue?: boolean
+  /** One population: ordinary tasks, reminders (§6), or quotas (§5). */
+  kind?: TaskKind
   recurring?: boolean
   oneOff?: boolean
   search?: string
@@ -289,9 +295,34 @@ export function getTasks(options: GetTasksOptions): Task[] {
     conditions.push('tasks.archived_at IS NULL')
   }
 
-  // Filter by overdue
+  // Filter by kind — the three populations the app keeps on separate surfaces.
+  // Same predicates as everywhere else: a quota is `isTracked` (flag OR target
+  // > 1, period-rollover's exact SQL), a reminder is `is_reminder`, a task is
+  // neither. SQL, so it applies BEFORE the LIMIT/OFFSET below.
+  if (options.kind === 'quota') {
+    conditions.push('(tasks.is_tracked = 1 OR tasks.progress_target > 1)')
+  } else if (options.kind === 'reminder') {
+    conditions.push('tasks.is_reminder = 1')
+  } else if (options.kind === 'task') {
+    conditions.push('tasks.is_reminder = 0 AND tasks.is_tracked = 0 AND tasks.progress_target <= 1')
+  }
+
+  // Filter by overdue — the BADGE's definition, not a hand-rolled `due_at < now`.
+  //
+  // It used to be exactly that, which counted reminders (§6: no debt, never
+  // overdue) and read a recurring task's frozen due_at as the truth, while the
+  // badge, the notifier and the snooze-overdue sweep all exclude reminders and
+  // quotas and derive due-ness from the schedule. `currently-due.ts` is the one
+  // place that answers "what is due right now"; this asks it. An id list, so
+  // pagination still applies after the filter.
+  //
+  // Scope: `getCurrentlyDueTaskIds` is the user's OWN tasks (the badge's
+  // population), so a shared-project task owned by someone else never matches
+  // `overdue=true` — it is not on this user's badge either.
   if (options.overdue) {
-    conditions.push("tasks.due_at IS NOT NULL AND datetime(tasks.due_at) < datetime('now')")
+    const dueIds = getCurrentlyDueTaskIds(userId)
+    conditions.push('tasks.id IN (SELECT value FROM json_each(?))')
+    params.push(JSON.stringify(dueIds))
   }
 
   // Filter by recurring

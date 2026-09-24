@@ -1,7 +1,7 @@
 /**
  * Tasks API routes
  *
- * GET /api/tasks - List tasks with filters
+ * GET /api/tasks - List tasks with filters (`kind=task|reminder|quota`, `overdue=true` = the badge set, ...)
  * POST /api/tasks - Create a task
  */
 
@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
-import { getTasks, createTask } from '@/core/tasks'
+import { getTasks, createTask, type TaskKind } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
 import { isAIEnabled, enrichSingleTask } from '@/core/ai'
 import { log } from '@/lib/logger'
@@ -17,6 +17,21 @@ import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
 import { syncBadgeCount } from '@/core/notifications/dismiss'
+
+/** `?name=true` → true, any other value → false, absent → undefined. */
+function boolParam(params: URLSearchParams, name: string): boolean | undefined {
+  return params.has(name) ? params.get(name) === 'true' : undefined
+}
+
+/**
+ * `kind` narrows the list to one population (§5/§6). Absent = all three, as
+ * before, so existing callers — the dashboard fetches everything and splits it
+ * client-side — are unchanged.
+ */
+function parseKind(raw: string | null): TaskKind | undefined | 'invalid' {
+  if (raw === null) return undefined
+  return raw === 'task' || raw === 'reminder' || raw === 'quota' ? raw : 'invalid'
+}
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
@@ -54,19 +69,23 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       }
     }
 
+    const kind = parseKind(searchParams.get('kind'))
+    if (kind === 'invalid') {
+      return badRequest('Invalid kind parameter (expected task, reminder or quota)')
+    }
+
     const tasks = getTasks({
       userId: user.id,
       projectId,
-      done: searchParams.has('done') ? searchParams.get('done') === 'true' : undefined,
-      overdue: searchParams.has('overdue') ? searchParams.get('overdue') === 'true' : undefined,
-      recurring: searchParams.has('recurring')
-        ? searchParams.get('recurring') === 'true'
-        : undefined,
-      oneOff: searchParams.has('one_off') ? searchParams.get('one_off') === 'true' : undefined,
+      kind,
+      done: boolParam(searchParams, 'done'),
+      overdue: boolParam(searchParams, 'overdue'),
+      recurring: boolParam(searchParams, 'recurring'),
+      oneOff: boolParam(searchParams, 'one_off'),
       search: searchParams.get('search') || undefined,
       label: searchParams.get('label') || undefined,
-      trashed: searchParams.has('trashed') ? searchParams.get('trashed') === 'true' : undefined,
-      archived: searchParams.has('archived') ? searchParams.get('archived') === 'true' : undefined,
+      trashed: boolParam(searchParams, 'trashed'),
+      archived: boolParam(searchParams, 'archived'),
       limit,
       offset,
     })
