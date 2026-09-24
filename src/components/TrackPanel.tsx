@@ -103,7 +103,7 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  *   omitted, both `groupByPeriod`'s doing (`@/lib/track`).
  * - EACH SECTION'S HEADING IS ONE LINE (`PeriodHeading`): the period name,
  *   bold and full-strength — not muted, unlike a label's — so it outranks the
- *   clusters under it; a muted "ends tonight" / "N days left"; an inline bar
+ *   clusters under it; a muted "N days left" (nothing for Today); an inline bar
  *   that flexes to fill whatever room is left; "**M** of N" quotas met. A
  *   THIN DIVIDER (a top border) sits between sections, never before the first.
  * - THE BAR IS HONEST NOW BECAUSE A SECTION SHARES ONE CLOCK. The 09-09 design
@@ -657,8 +657,8 @@ function TrackSectionsList({
 /**
  * A period section's heading — period first, bold and full-strength ink so it
  * outranks the muted label headings beneath it (`mock4`: "TODAY" reads darker
- * than "HEALTH"). One line: the period name · a muted "ends tonight" / "N days
- * left" (omitted for the no-period section, which has no clock) · a bar that
+ * than "HEALTH"). One line: the period name · a muted "N days
+ * left" (omitted for Today, which already says it, and for the no-period section, which has no clock) · a bar that
  * flexes to fill whatever room is left · "**M** of N" quotas met.
  *
  * Not a button — nothing here folds. Only the label clusters inside a section
