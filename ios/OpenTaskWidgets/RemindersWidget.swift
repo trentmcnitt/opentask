@@ -462,6 +462,11 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.setShowCompleted(false, for: RemindersWidget.kind)
+    // Reset the stored page — preview renders share the same App Group
+    // UserDefaults as the simulator's real widgets, so a page a PRIOR
+    // preview (or a real device session) left on 1+ would otherwise bleed
+    // into this one.
+    let _ = WidgetStore.setRemindersPage(0, for: ReminderPreviewData.eveningGroup.slotKey)
     ReminderPreviewData.entry()
 }
 
@@ -469,6 +474,7 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.setShowCompleted(true, for: RemindersWidget.kind)
+    let _ = WidgetStore.setRemindersPage(0, for: ReminderPreviewData.eveningGroup.slotKey)
     ReminderPreviewData.entry()
 }
 #endif

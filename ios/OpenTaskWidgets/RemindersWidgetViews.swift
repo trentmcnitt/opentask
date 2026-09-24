@@ -347,12 +347,16 @@ private struct RemindersListView: View {
         guard rows > 0, !items.isEmpty else {
             return (items, 0, 1)
         }
-        let totalPages = max(1, Int(ceil(Double(items.count) / Double(rows))))
+        // `WidgetTheme.pageBoundaries` (2026-09-23) keeps the "DONE · N"
+        // divider off the tail of a page — see its doc.
+        let pages = WidgetTheme.pageBoundaries(for: items, rows: rows) { item in
+            if case .divider = item { return true }
+            return false
+        }
+        let totalPages = pages.count
         let slotKey = entry.group?.slotKey ?? -1
         let page = min(max(WidgetStore.remindersPage(for: slotKey), 0), totalPages - 1)
-        let start = page * rows
-        let end = min(start + rows, items.count)
-        return (Array(items[start..<end]), page, totalPages)
+        return (Array(items[pages[page]]), page, totalPages)
     }
 
     /// The on-screen slot has nothing waiting — three readings, not one
@@ -428,11 +432,16 @@ private struct RemindersListView: View {
                     // indication" doc. Replaces the ordinary count subtitle
                     // rather than sitting beside it: the header has no
                     // spare height for a third line on systemMedium.
+                    //
+                    // `minimumScaleFactor` at 0.6, matching `TasksListView.
+                    // header`'s identical fix — see that comment for why
+                    // 0.8 let a long "show completed" count string truncate
+                    // instead of shrinking.
                     Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.6)
                 }
                 .contentShape(Rectangle())
             }

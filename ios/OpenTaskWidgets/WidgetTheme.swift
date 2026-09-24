@@ -444,13 +444,32 @@ enum WidgetTheme {
     /// so this function has exactly one clock-reading job (bucketing days
     /// away), not two.
     static func dueLabelParts(for due: Date, now: Date = Date(), isOverdue: Bool) -> DueLabelParts {
-        if isOverdue {
-            return DueLabelParts(dayWord: nil, time: shortTime(due))
-        }
-
         let calendar = Calendar.current
         let isDateOnly =
             calendar.component(.hour, from: due) == 0 && calendar.component(.minute, from: due) == 0
+
+        if isOverdue {
+            // A date-only task has no time to show — "12:00 am" would read
+            // as a real due TIME, not the absence of one (Trent's review of
+            // the first cut). Show the date instead, in the SAME red the
+            // time would otherwise draw in (`dueLabelText` below): "Sep 22",
+            // or "Yesterday" specifically for exactly one day past — the one
+            // relative word worth the recognition win, per Trent's ask.
+            // Anything further back is just the date; there is no "3 days
+            // ago" ladder here the way `DateHelpers.formatRelativeTime` has
+            // for notifications, because a widget row has no room for it
+            // and the day-naming feature this belongs to is about WHEN,
+            // not HOW LONG AGO.
+            guard isDateOnly else {
+                return DueLabelParts(dayWord: nil, time: shortTime(due))
+            }
+            let startOfToday = calendar.startOfDay(for: now)
+            let startOfDue = calendar.startOfDay(for: due)
+            let daysAgo = calendar.dateComponents([.day], from: startOfDue, to: startOfToday).day ?? 0
+            let word = daysAgo == 1 ? "Yesterday" : dueMonthDayFormatter.string(from: due)
+            return DueLabelParts(dayWord: word, time: nil)
+        }
+
         let time = isDateOnly ? nil : shortTime(due)
 
         let startOfToday = calendar.startOfDay(for: now)
@@ -493,7 +512,14 @@ enum WidgetTheme {
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
         if overdue {
-            return Text(parts.time ?? "").foregroundStyle(Color.red.opacity(0.9))
+            // `plainString` is safe here even though it's normally the
+            // MEASUREMENT-only accessor: for an overdue task `dueLabelParts`
+            // always populates exactly ONE of `dayWord`/`time` (never both),
+            // so it resolves to whichever one is set — the plain time for
+            // an ordinary overdue task, or "Yesterday"/"Sep 22" for a
+            // date-only one — with no day-word/time split to color
+            // differently, unlike the non-overdue branch below.
+            return Text(parts.plainString).foregroundStyle(Color.red.opacity(0.9))
         }
         var text: Text?
         if let dayWord = parts.dayWord {
@@ -504,6 +530,57 @@ enum WidgetTheme {
             text = text.map { $0 + Text(" ") + timeText } ?? timeText
         }
         return text ?? Text("")
+    }
+
+    // MARK: - List paging (2026-09-23, "show completed"'s divider-aware pages)
+
+    /// Page boundaries for a combined open+divider+done list — shared by
+    /// `RemindersListView.pagedReminders` and `TasksListView.pagedTasks` via
+    /// a generic `isDivider` predicate rather than a common item protocol
+    /// (the two lists' item enums are private to their own files, matching
+    /// this file's established "duplicate the view, share the math" split —
+    /// see `TasksListView.shouldMeasureRealWidth`'s identical precedent).
+    ///
+    /// Never lets the "DONE · N" divider be the LAST item of a page when
+    /// there is at least one done row after it — Trent's review of the
+    /// first cut: "never let 'DONE · N' be the last item on a page... if
+    /// the first done row spills, the divider moves to the next page too."
+    /// A naive uniform `rows`-per-page slice can land the divider at the
+    /// very end of a page with nothing under it (the done rows all pushed
+    /// to the next page, which then starts with no divider of its own) —
+    /// an orphaned section header. This walks the list building one page
+    /// at a time and, whenever the item that would end a page is the
+    /// divider AND something still follows it, backs that page off by one
+    /// row so the divider carries at least its first done row along with
+    /// it onto the NEXT page instead.
+    ///
+    /// Only ever WITHDRAWS a row from a page's tail, never adds one back,
+    /// so a page can be one row narrower than `rows` exactly at that
+    /// boundary — never wider. Since the list has at most one divider,
+    /// this can only trigger once, so it adds at most one extra page
+    /// versus uniform slicing.
+    static func pageBoundaries<Item>(
+        for items: [Item], rows: Int, isDivider: (Item) -> Bool
+    ) -> [Range<Int>] {
+        guard rows > 0, !items.isEmpty else { return [0..<items.count] }
+        var pages: [Range<Int>] = []
+        var index = 0
+        while index < items.count {
+            var end = min(index + rows, items.count)
+            if end > index, end < items.count, isDivider(items[end - 1]) {
+                end -= 1
+            }
+            // Degenerate floor: `rows == 1` (the smallest `ViewThatFits`
+            // candidate) can never keep a divider paired with a done row
+            // no matter what — there is no room. Rather than loop forever
+            // backing off to `index`, let the divider stand alone on its
+            // own page; the next page then starts with its done rows,
+            // still divider-less but at least not empty.
+            if end <= index { end = index + 1 }
+            pages.append(index..<end)
+            index = end
+        }
+        return pages
     }
 }
 
