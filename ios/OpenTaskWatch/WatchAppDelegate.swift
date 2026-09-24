@@ -20,6 +20,22 @@ import WatchConnectivity
 class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate, WCSessionDelegate {
 
     func applicationDidFinishLaunching() {
+        // Simulator-only credential seeding (overnight watch-app build/test,
+        // 2026-09-23). The Watch normally learns serverURL/bearerToken from
+        // the paired iPhone over WatchConnectivity (`session(_:didReceiveApplicationContext:)`
+        // below) — but a watch SIMULATOR is never actually paired to anything,
+        // so that path never fires there. `#if DEBUG` keeps this entirely out
+        // of Release builds (it would be a shipped backdoor otherwise); reading
+        // from `ProcessInfo.environment` rather than a hardcoded string keeps
+        // no server URL or token compiled into the binary at all — both are
+        // injected at launch time (Xcode scheme env vars, or `SIMCTL_CHILD_*`
+        // for `simctl launch`) and never committed. Overwrites unconditionally
+        // when both vars are present, since simulator Keychain state is
+        // disposable and a stale token from a previous run should never win.
+        #if DEBUG
+        seedSimulatorCredentialsIfPresent()
+        #endif
+
         // Migrate keychain items to kSecAttrAccessibleAfterFirstUnlock so they're
         // readable from notification actions when the Watch is locked.
         KeychainHelper.migrateAccessibility(keys: ["serverURL", "bearerToken"])
@@ -43,6 +59,19 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
     func applicationDidBecomeActive() {
         Task { await refreshSlotActions() }
     }
+
+    #if DEBUG
+    /// See `applicationDidFinishLaunching`'s doc. Never compiled into Release.
+    private func seedSimulatorCredentialsIfPresent() {
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["OPENTASK_SIM_SERVER_URL"], !url.isEmpty,
+              let token = env["OPENTASK_SIM_TOKEN"], !token.isEmpty
+        else { return }
+        KeychainHelper.save(key: "serverURL", value: url)
+        KeychainHelper.save(key: "bearerToken", value: token)
+        print("[OpenTaskWatch] DEBUG: seeded simulator credentials for \(url)")
+    }
+    #endif
 
     // MARK: - APNs Registration
 
