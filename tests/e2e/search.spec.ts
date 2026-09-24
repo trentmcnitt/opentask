@@ -63,6 +63,64 @@ test.describe('Search', () => {
     await expect(searchInput).toHaveValue('Zarquon')
   })
 
+  /**
+   * Regression: the delete handlers used to trim the hit set as well as the
+   * task list, so Undo put the task back in `tasks` but its id was gone from
+   * the results and it never came back until the query was re-run. The hit
+   * set is now left alone — rows render out of `tasks`, so a deleted hit
+   * drops out by itself and an undone one returns by itself.
+   */
+  test('undoing a delete from the results puts the task back in them', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const title = `Blorptastic search subject ${Date.now()}`
+    const created = await page.request.post('/api/tasks', { data: { title } })
+    expect(created.ok()).toBeTruthy()
+    const id = (await created.json()).data.id as number
+
+    try {
+      await page.reload()
+      const searchInput = page.getByRole('textbox', { name: 'Search tasks' })
+      await expect(searchInput).toBeVisible({ timeout: 5000 })
+      await searchInput.fill('Blorptastic')
+      const oneResult = page.getByText('1 result for “Blorptastic”')
+      const noResults = page.getByText('0 results for “Blorptastic”')
+      await expect(oneResult).toBeVisible({ timeout: 5000 })
+
+      // Both delete paths used to trim the hit set: the single-task one
+      // (keyboard focus + Delete) and the bulk one (a selection + Delete).
+      // A click in the row's padding (clear of the title link, which
+      // navigates) gives it keyboard focus without selecting it.
+      const paths = [
+        { name: 'single', select: [] as string[], toast: 'Task moved to trash' },
+        { name: 'bulk', select: ['Space'], toast: '1 task deleted' },
+      ]
+      for (const path of paths) {
+        const row = page.locator(`#task-row-${id}`)
+        await row.click({ position: { x: 4, y: 4 } })
+        await expect(row).toBeFocused()
+        for (const key of path.select) await page.keyboard.press(key)
+        await page.keyboard.press('Delete')
+        await expect(noResults, `${path.name} delete`).toBeVisible({ timeout: 5000 })
+        await expect(row).toHaveCount(0)
+
+        await page
+          .locator('[data-sonner-toast]')
+          .filter({ hasText: path.toast })
+          .getByRole('button', { name: 'Undo' })
+          .click()
+
+        // Back, with the query still active and never re-run.
+        await expect(oneResult, `${path.name} undo`).toBeVisible({ timeout: 5000 })
+        await expect(page.locator(`#task-row-${id}`)).toBeVisible()
+        await expect(searchInput).toHaveValue('Blorptastic')
+      }
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
   test('advancing a recurring task from the results keeps it in the list', async ({
     authenticatedPage: page,
   }) => {

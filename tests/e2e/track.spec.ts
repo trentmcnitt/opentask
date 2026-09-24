@@ -119,21 +119,25 @@ async function switchView(page: Page, v: View) {
   await saved
 }
 
-/** The panel starts folded; open it (the choice persists, so tests close it again). */
+/**
+ * The panel starts as chips; switch it to rows with the header's "Show as rows"
+ * control (the choice persists, so tests switch it back). The "Quotas" heading
+ * itself is plain text as of 2026-09-24 — see `TrackViewSwitch`.
+ */
 async function openTrack(page: Page) {
   const panel = page.getByRole('region', { name: 'Quotas' })
   await expect(panel).toBeVisible()
-  const fold = panel.getByRole('button', { name: 'Expand Quotas' })
+  const fold = panel.getByRole('button', { name: 'Show as rows' })
   if (await fold.isVisible()) {
     // The choice is saved fire-and-forget; wait for it so a reload can't race it.
     const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
     await fold.click()
     await saved
   }
-  await expect(panel.getByRole('button', { name: 'Collapse Quotas' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Show as chips' })).toBeVisible()
 }
 async function closeTrack(page: Page) {
-  const fold = page.getByRole('button', { name: 'Collapse Quotas' })
+  const fold = page.getByRole('button', { name: 'Show as chips' })
   if (await fold.isVisible()) {
     const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
     await fold.click()
@@ -165,7 +169,7 @@ test.describe('Track', () => {
       const panel = page.getByRole('region', { name: 'Quotas' })
       await expect(panel).toBeVisible()
       // Folded by default: the header's total, and the quota as a chip.
-      await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
+      await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
       const night = panel.locator(`[data-track-chip="${nightId}"]`)
       await expect(night).toContainText('Date night')
       // No period suffix on the chip's own count — the section it sits in
@@ -203,7 +207,7 @@ test.describe('Track', () => {
       await expect(stream).toHaveCount(1)
       await expect(stream).toContainText('Date night')
       await expect(stream).toContainText('Eggs for the kids')
-      await expect(panel.getByRole('button', { name: 'Expand Quotas' })).not.toContainText('this')
+      await expect(panel.locator('[data-track-heading]')).not.toContainText('this')
       await expect(panel.locator(`[data-track-row="${id}"]`)).toHaveCount(0)
       const chip = panel.locator(`[data-track-chip="${id}"]`)
       const chipCount = chip.locator('[data-track-count]')
@@ -294,7 +298,7 @@ test.describe('Track', () => {
       await openTrack(page)
       // The choice sticks across a reload.
       await page.reload()
-      await expect(panel.getByRole('button', { name: 'Collapse Quotas' })).toBeVisible()
+      await expect(panel.getByRole('button', { name: 'Show as chips' })).toBeVisible()
       const row = panel.locator(`[data-track-row="${id}"]`)
       await expect(row).toBeVisible()
       // On the Today view it is not also a row in the day's groups: the panel
@@ -362,6 +366,57 @@ test.describe('Track', () => {
    * that its delete still goes through the same soft-delete-with-undo path
    * the Quotas page and the full-page editor use.
    */
+  /**
+   * Trent kept flipping chips/rows by tapping the "Quotas" heading without
+   * meaning to (2026-09-24). The heading is plain text now; only the labelled
+   * switch at the header's right changes the view, and the choice still
+   * persists as the server-side `track_expanded` preference.
+   */
+  test('the heading does not switch the view; the "Show as rows" control does', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await createTask(page, {
+      title: 'Probe track view switch',
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY',
+    })
+    try {
+      await closeTrack(page)
+      await page.goto('/')
+      const panel = page.getByRole('region', { name: 'Quotas' })
+      const chip = panel.locator(`[data-track-chip="${id}"]`)
+      const row = panel.locator(`[data-track-row="${id}"]`)
+      await expect(chip).toBeVisible()
+
+      // The heading is not a control: no button carries its name, and
+      // clicking it leaves the chips where they were.
+      const heading = panel.locator('[data-track-heading]')
+      await expect(heading).toHaveText('Quotas')
+      await expect(panel.getByRole('button', { name: 'Quotas', exact: true })).toHaveCount(0)
+      await heading.click()
+      await expect(chip).toBeVisible()
+      await expect(row).toHaveCount(0)
+
+      // The switch does, and says the way back.
+      const switchControl = panel.locator('[data-track-view-switch]')
+      await expect(switchControl).toHaveText('Show as rows')
+      const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+      await switchControl.click()
+      await saved
+      await expect(row).toBeVisible()
+      await expect(chip).toHaveCount(0)
+      await expect(switchControl).toHaveText('Show as chips')
+
+      // Persisted: a reload comes back in rows.
+      await page.reload()
+      await expect(panel.locator(`[data-track-row="${id}"]`)).toBeVisible()
+      await expect(panel.locator('[data-track-view-switch]')).toHaveText('Show as chips')
+    } finally {
+      // The task itself is cleaned up by `afterEach`; the preference is ours.
+      await closeTrack(page)
+    }
+  })
+
   test("deletes a quota from the chip's modal, with an Undo", async ({
     authenticatedPage: page,
   }) => {
@@ -372,7 +427,7 @@ test.describe('Track', () => {
     })
     await page.goto('/')
     const panel = page.getByRole('region', { name: 'Quotas' })
-    await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
     const chip = panel.locator(`[data-track-chip="${id}"]`)
     await expect(chip).toBeVisible()
 
@@ -528,7 +583,7 @@ test.describe('Track', () => {
 
     await page.goto('/')
     const panel = page.getByRole('region', { name: 'Quotas' })
-    await expect(panel.getByRole('button', { name: 'Expand Quotas' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
 
     // Exactly one WEEKLY section for the whole panel, however many weekly
     // quotas exist — `groupByPeriod` merges them into one group — so this
