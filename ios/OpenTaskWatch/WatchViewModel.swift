@@ -9,9 +9,13 @@ import WatchKit
 /// pipeline (staged deltas, tombstone TTLs, auto-advance snapshots): the
 /// watch app is a live, foregrounded SwiftUI view with a real event loop, not
 /// a WidgetKit timeline that has to fake responsiveness between reloads. A
-/// tap here hides the row immediately (`@Published` removal) and reconciles
-/// against a real fetch a moment later — no cache TTL bookkeeping needed
-/// because there's no "next timeline entry" to hide behind.
+/// completion hides the row immediately (`@Published` removal) and
+/// reconciles against a real fetch a moment later; a snooze just calls the
+/// API and refetches; a quota tap stages a net delta and writes the
+/// server's returned count (`logQuota`/`settleQuota` — the one piece of
+/// per-tap bookkeeping here, because rapid quota taps must all draw and the
+/// count must end server-true). No TTLs: there's no "next timeline entry"
+/// to hide behind.
 @MainActor
 final class WatchViewModel: ObservableObject {
     @Published private(set) var reminderGroups: [ReminderGroupDTO] = []
@@ -25,12 +29,40 @@ final class WatchViewModel: ObservableObject {
     @Published var showMetQuotas: Bool = WatchCache.showMetQuotas {
         didSet { WatchCache.showMetQuotas = showMetQuotas }
     }
-    /// Quotas logged from the Quotas page since it was last shown — kept
-    /// visible even once met, so a +1 that completes a quota doesn't pull
-    /// the row (and the −1 that would take it back) out from under the
-    /// finger. Cleared when the page is left (`QuotasPageView`'s
-    /// `.onDisappear`), never on a timer — see `WatchQuotaLogic.sections`.
-    @Published private(set) var recentlyLoggedQuotaIds: Set<Int> = []
+    /// Quotas' Takeback mode (2026-09-24) — the phone Quotas widget's model
+    /// (`WidgetStore.quotasTakebackMode`), ported: the page's ⊖ toolbar
+    /// toggle arms it; while on, every tap is `−1`, rows at 0 are dimmed and
+    /// disabled, and met quotas show whatever "Show met" says (so they can
+    /// be taken back). It STAYS ON across `−1`s — Trent found auto-exit
+    /// after one "weird" on the phone (3/3 → 0/3 meant re-arming before
+    /// every tap) — until the toggle is tapped again.
+    ///
+    /// Not persisted, and cleared when the Quotas page is left or the app
+    /// goes to the background (`QuotasPageView.onDisappear`,
+    /// `WatchRootView`'s scene-phase handler): the phone clears it on any
+    /// timeline built outside its own taps, so an armed mode never outlives
+    /// the moment it was armed for; a live view's equivalent is "you walked
+    /// away from it".
+    @Published var quotasTakebackMode = false
+    /// Net `+1`/`−1` taps per quota whose server round trip is still in
+    /// flight (`logQuota`). Drawn on top of the server's count (`quotas`),
+    /// so rapid taps all show; each tap retires exactly its own delta when
+    /// its response lands (`settleQuota`). The same shape as the phone's
+    /// staged progress (`WidgetStore.stagePendingProgress`).
+    @Published private(set) var pendingQuotaDeltas: [Int: Int] = [:]
+    /// Bumped on every `settleQuota`; `settledAt[id]` is the value it had
+    /// when that quota's count was last written from a tap response.
+    /// `load()` notes the counter when it STARTS, and keeps our copy of any
+    /// quota settled after that — a fetch sent before the server applied a
+    /// tap can land after the tap's response and would otherwise put the
+    /// pre-tap count back (the phone's "a fetch that STARTED after" rule,
+    /// `ios/CLAUDE.md`'s stale-count note).
+    private var settleCounter = 0
+    private var settledAt: [Int: Int] = [:]
+    /// Quotas that had two or more taps in flight at once. Their responses
+    /// can arrive out of order (last response wins in `settleQuota`), so
+    /// once the last one settles, one real fetch confirms the count.
+    private var overlappedQuotaIds: Set<Int> = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
     /// Whether `load()` has completed at least once. Both pages gate their
@@ -79,14 +111,28 @@ final class WatchViewModel: ObservableObject {
     /// Every open quota — the same `isTracked` slice of `/api/tasks` the
     /// phone Quotas widget reads (quotas are open tasks that never complete,
     /// so no separate endpoint exists or is needed).
-    var quotas: [TaskDTO] { tasks.filter(\.isTracked) }
+    ///
+    /// Each count is the server's (the last fetch, or the task the server
+    /// returned for the last settled tap) plus any still-in-flight taps
+    /// (`pendingQuotaDeltas`), floored at 0 like the server.
+    var quotas: [TaskDTO] {
+        tasks.filter(\.isTracked).map { task in
+            guard let delta = pendingQuotaDeltas[task.id] else { return task }
+            return task.withOptimisticIncrement(delta)
+        }
+    }
 
+    /// Met quotas are hidden unless "Show met" is on OR Takeback mode is
+    /// armed (a met quota has to be visible to be taken back — the phone
+    /// widget's `showMet || takeback`). With both off, a `+1` that meets a
+    /// quota makes its row vanish on that tap — no grace period, the phone's
+    /// rule since PR #65 (a met row left under the finger just gets
+    /// over-tapped).
     var quotaSections: [WatchQuotaSection] {
         WatchQuotaLogic.sections(
             quotas: quotas,
             labelConfig: labelConfig,
-            showMet: showMetQuotas,
-            keepVisible: recentlyLoggedQuotaIds
+            showMet: showMetQuotas || quotasTakebackMode
         )
     }
 
@@ -104,6 +150,8 @@ final class WatchViewModel: ObservableObject {
         guard isConfigured else { return }
         isLoading = true
         loadError = nil
+        // See `settleCounter`: quotas settled after this point keep our copy.
+        let settleCounterAtStart = settleCounter
 
         async let remindersResult = asyncResult { try await api.fetchReminders() }
         async let tasksResult = asyncResult { try await api.fetchOpenTasks() }
@@ -122,7 +170,26 @@ final class WatchViewModel: ObservableObject {
             reminderGroups = cached
         }
 
-        if case let .success(openTasks) = tsk, case let .success(proj) = proj {
+        if case let .success(fetched) = tsk, case let .success(proj) = proj {
+            // A quota with a tap still in flight, or one whose tap response
+            // landed after this fetch was SENT, keeps the count we already
+            // hold: this fetch may or may not include that tap (it can land
+            // either side of the server applying it). Drawing a pending delta
+            // over a count that already has it would show the tap twice, and
+            // taking a pre-tap count over a settled one would undo the
+            // server-true write. The tap's own response (`settleQuota`) is
+            // the authority for that quota.
+            func keepsOurs(_ id: Int) -> Bool {
+                pendingQuotaDeltas[id] != nil || (settledAt[id] ?? Int.min) > settleCounterAtStart
+            }
+            var openTasks = fetched
+            if fetched.contains(where: { keepsOurs($0.id) }) {
+                let held = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                openTasks = fetched.map { task in
+                    guard keepsOurs(task.id), let mine = held[task.id] else { return task }
+                    return mine
+                }
+            }
             tasks = openTasks
             projects = proj
             WatchCache.saveTasks(openTasks, projects: proj)
@@ -224,43 +291,48 @@ final class WatchViewModel: ObservableObject {
         }
     }
 
-    /// Snooze one task to the next time slot's start. Computed on-device
-    /// (`WatchSlotLogic.nextPeriodDate`) and sent as an absolute `due_at` via
-    /// `PATCH /api/tasks/:id` (`APIClient.snoozeTo`) — there is no
-    /// single-task "slot: next" endpoint; only the bulk overdue sweep
-    /// resolves that keyword server-side. See `WatchSlotLogic.
-    /// nextPeriodDate`'s doc for why this can't reuse that endpoint here.
-    func snoozeTaskToNextPeriod(_ task: TaskDTO) {
-        guard let target = WatchSlotLogic.nextPeriodDate() else {
+    /// Snooze one task from the Tasks page's touch-and-hold chooser —
+    /// "Next period" or "+1 hour", by the SAME due-relative rule as the
+    /// phone Tasks widget's per-row snooze (`TaskSnoozePlan`, shared in
+    /// `ios/Shared/`): base = max(now, due). An UPCOMING task's +1h is its
+    /// own due + 60 min (a `delta_minutes: 60` request) and its Next period
+    /// is the first slot start after its due time; an overdue one's +1h is
+    /// one hour from now, snapped, and its Next period the next slot from
+    /// now. Sent through `POST /api/tasks/bulk/snooze` with
+    /// `include_task_ids: [id]` (an explicit tap bypasses the P3/P4 sweep
+    /// filter), exactly like the phone.
+    ///
+    /// Before 2026-09-24 this was two methods that both counted from NOW
+    /// (`PATCH` to the next slot from now; the notification action's
+    /// `snapToHour(now + 60)`) — Trent's "+1 hour on a 5 PM task moved it
+    /// to 11 AM" bug, still live here after the phone was fixed.
+    ///
+    /// No optimistic removal (the phone stages nothing for snoozes either):
+    /// an upcoming task snoozed +1h stays in "Up next", so hiding it and
+    /// re-adding it on reload would just flicker. The reload redraws it at
+    /// its new time. Slots come from `TimeSlotStore` (refreshed on every
+    /// launch/foreground by `WatchAppDelegate`'s `refreshSlotActions()`);
+    /// Next period with no cached slots plans nothing → failure haptic,
+    /// nothing sent.
+    func snoozeTask(_ task: TaskDTO, target: TaskSnoozeTarget) {
+        let requests = TaskSnoozePlan.requests(
+            target,
+            tasks: [(id: task.id, dueAt: task.dueDate)],
+            now: Date(),
+            slots: TimeSlotStore.cachedSlots
+        )
+        guard !requests.isEmpty else {
             WKInterfaceDevice.current().play(.failure)
             return
         }
-        tasks.removeAll { $0.id == task.id }
         WKInterfaceDevice.current().play(.click)
         Task {
-            do {
-                try await api.snoozeTo(taskId: task.id, dueAt: DateHelpers.formatISO(target))
+            let moved = await TaskSnoozePlan.send(requests)
+            if moved.contains(task.id) {
                 WKInterfaceDevice.current().play(.success)
+                canUndo = true
                 WidgetCenter.shared.reloadAllTimelines()
-            } catch {
-                WKInterfaceDevice.current().play(.failure)
-            }
-            await load()
-        }
-    }
-
-    /// Snooze one task by the same "+1 hour, snapped to the hour" rule the
-    /// notification actions use (`snoozeNextHour` → `/api/notifications/
-    /// actions` action `"snooze"` → `snapToHour(now + 60min)` server-side).
-    func snoozeTaskPlusHour(_ task: TaskDTO) {
-        tasks.removeAll { $0.id == task.id }
-        WKInterfaceDevice.current().play(.click)
-        Task {
-            do {
-                try await api.snoozeNextHour(taskId: task.id)
-                WKInterfaceDevice.current().play(.success)
-                WidgetCenter.shared.reloadAllTimelines()
-            } catch {
+            } else {
                 WKInterfaceDevice.current().play(.failure)
             }
             await load()
@@ -269,41 +341,86 @@ final class WatchViewModel: ObservableObject {
 
     // MARK: - Quotas
 
-    /// Tap on a quota row: +1 while it's under target, −1 once it's met
-    /// ("take back" — a met quota is done, so the only useful tap on it is
-    /// correcting a mis-log). The same `POST /api/tasks/:id/progress` the
-    /// phone widget's `IncrementProgressIntent` sends (`APIClient.
-    /// logProgress`, server floors at 0), and like every other mutation here
-    /// it lands in the server's undo log, so the toolbar Undo reverts it.
+    /// Tap on a quota row: `+1`, or `−1` while Takeback mode is armed —
+    /// the phone Quotas widget's model (`IncrementProgressIntent`, 2026-09-24).
+    /// Outside the mode EVERY row is `+1`, a met one included (visible only
+    /// with "Show met" on), so over-target counts like "2/1" are allowed —
+    /// deliberately, matching the phone and the web panel (whose chip tap is
+    /// an unconditional `log(1)`). Before 2026-09-24 a tap on a met row was
+    /// a silent `−1`; Takeback mode replaced that. The same
+    /// `POST /api/tasks/:id/progress` (`APIClient.logProgress`, server floors
+    /// at 0), in the server's undo log like every mutation here.
     ///
-    /// Optimistic: the row's count moves before the round trip (via
-    /// `withOptimisticIncrement`, the same helper the phone widget uses), then
-    /// `load()` reconciles against the server either way — a failure simply
-    /// redraws the true count.
+    /// Optimistic, then SERVER-TRUE: the tap's delta is staged
+    /// (`pendingQuotaDeltas`, drawn by `quotas`) before the round trip, and
+    /// the task the endpoint returns is written into `tasks` (and
+    /// `WatchCache`) in the same main-actor step that retires the delta —
+    /// the count on screen after the tap is the server's, never "old count
+    /// with the delta removed". That was the phone widget's stale-count bug
+    /// (2026-09-24, `WidgetStore.confirmProgress`): it retired the delta
+    /// without writing the response, and drew the pre-tap count back.
+    /// No `load()` on success — a full refetch racing a second quick tap
+    /// could redraw the count from before it.
     func logQuota(_ task: TaskDTO) {
-        let delta = task.isProgressMet ? -1 : 1
-        guard let idx = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        tasks[idx] = tasks[idx].withOptimisticIncrement(delta)
-        recentlyLoggedQuotaIds.insert(task.id)
+        let delta = quotasTakebackMode ? -1 : 1
+        let shown = quotas.first { $0.id == task.id }?.progressCurrent ?? task.progressCurrent
+        // Takeback rows at 0 are disabled; this is the same rule for a tap
+        // that lands anyway (nothing to take back — the server would floor
+        // it, but it would still cost an undo entry).
+        if delta < 0, shown <= 0 { return }
+        if pendingQuotaDeltas[task.id] != nil { overlappedQuotaIds.insert(task.id) }
+        pendingQuotaDeltas[task.id, default: 0] += delta
         WKInterfaceDevice.current().play(delta > 0 ? .click : .directionDown)
 
         Task {
             do {
-                try await api.logProgress(taskId: task.id, delta: delta)
+                let confirmed = try await api.logProgress(taskId: task.id, delta: delta)
+                settleQuota(task.id, delta: delta, confirmed: confirmed)
                 WKInterfaceDevice.current().play(.success)
                 canUndo = true
                 WidgetCenter.shared.reloadAllTimelines()
+                // Logged, but the body didn't decode: nothing trustworthy to
+                // draw, so fetch the truth.
+                if confirmed == nil { await load() }
             } catch {
+                // Usually nothing changed server-side and `tasks` still holds
+                // the pre-tap count, so retiring the delta is the revert. But
+                // a timeout can fire after the server committed, so fetch the
+                // truth either way.
+                settleQuota(task.id, delta: delta, confirmed: nil)
                 WKInterfaceDevice.current().play(.failure)
+                await load()
             }
-            await load()
         }
     }
 
-    /// Leaving the Quotas page ends the "just logged" grace: next time it is
-    /// shown, met quotas are hidden again per the toggle.
-    func clearRecentlyLoggedQuotas() {
-        recentlyLoggedQuotaIds.removeAll()
+    /// Retire one tap's staged delta and, when the server answered with the
+    /// task, write that count in — one synchronous step, so no render ever
+    /// sees the server's new count AND the still-staged delta (the tap
+    /// counted twice). A sibling tap still in flight keeps its own delta,
+    /// drawn over the server's count.
+    ///
+    /// Out-of-order responses (two overlapping taps on one quota, the later
+    /// one answered first) can draw one step high for a moment and then
+    /// settle one step behind — last response wins. So a quota that had
+    /// overlapping taps gets one `load()` once its last tap settles, which
+    /// replaces the count with a fetch sent after every one of them landed.
+    private func settleQuota(_ id: Int, delta: Int, confirmed: TaskDTO?) {
+        if let confirmed, let idx = tasks.firstIndex(where: { $0.id == id }) {
+            tasks[idx] = confirmed
+            WatchCache.saveTasks(tasks, projects: projects)
+            settleCounter += 1
+            settledAt[id] = settleCounter
+        }
+        let remaining = (pendingQuotaDeltas[id] ?? 0) - delta
+        if remaining == 0 {
+            pendingQuotaDeltas.removeValue(forKey: id)
+            if overlappedQuotaIds.remove(id) != nil {
+                Task { await load() }
+            }
+        } else {
+            pendingQuotaDeltas[id] = remaining
+        }
     }
 
     // MARK: - Bulk overdue
@@ -386,13 +503,14 @@ extension WatchViewModel {
     /// file because the properties it fills are `private(set)`. Setting
     /// `showMetQuotas` persists through its `didSet`, which is harmless in a
     /// preview process (its App Group defaults are its own sandbox).
-    static func preview(showMet: Bool) -> WatchViewModel {
+    static func preview(showMet: Bool, takeback: Bool = false) -> WatchViewModel {
         let model = WatchViewModel()
         model.tasks = WatchPreviewData.quotas
         model.labelConfig = WatchPreviewData.labelConfig
         model.hasLoadedOnce = true
         model.canUndo = true
         model.showMetQuotas = showMet
+        model.quotasTakebackMode = takeback
         return model
     }
 }

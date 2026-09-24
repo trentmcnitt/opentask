@@ -236,7 +236,7 @@ final class APIClient {
     /// different established meanings for the same parameter name.
     ///
     /// The Tasks widget uses BOTH modes (2026-09-24, `TaskSnoozePlan` in
-    /// `OpenTaskWidgets/TaskFeed.swift`): "+1h" on an UPCOMING task is
+    /// `Shared/TaskSnoozePlan.swift`, also the watch): "+1h" on an UPCOMING task is
     /// exactly its own due + 60 — this `deltaMinutes: 60` — while "+1h" on an
     /// overdue/undated one is one hour from now, snapped, sent as `until`.
     /// (2026-09-23 had every "+1h" as from-now `until`; that moved a 5 PM

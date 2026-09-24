@@ -32,8 +32,11 @@ struct BulkSnoozeSheetView: View {
         return false
     }
 
+    /// The sweep resolves "next" server-side from NOW (every task it moves
+    /// is overdue), so the label previews the next slot start from now —
+    /// `TimeSlotStore.nextPeriodStart`, the server's `nextPeriodStart` twin.
     private var nextPeriodLabel: String {
-        guard let date = WatchSlotLogic.nextPeriodDate() else { return "Next period" }
+        guard let date = TimeSlotStore.nextPeriodStart() else { return "Next period" }
         return "Next period · \(WatchFormatting.dueLine(for: date))"
     }
 
