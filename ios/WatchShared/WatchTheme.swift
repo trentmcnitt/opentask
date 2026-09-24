@@ -18,6 +18,13 @@ enum WatchTheme {
     /// meaning on this surface.
     static let done = Color.green
 
+    /// Overdue. Matches the web app's `text-destructive` (red) used for every
+    /// overdue indicator there — `TaskRow`'s left border, `Header`'s overdue
+    /// pill, project/due-date chip badges (`src/components/TaskRow.tsx`,
+    /// `Header.tsx`, `chip-due-badges.ts`) — never orange/amber, which this
+    /// surface briefly (and wrongly) used for the same meaning.
+    static let overdue = Color.red
+
     /// The eight named palette colors a project can carry server-side
     /// (`src/lib/project-colors.ts`). Kept in sync by hand since this target
     /// cannot import `OpenTaskWidgets/WidgetTheme.swift`.

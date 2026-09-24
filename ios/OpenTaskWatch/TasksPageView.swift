@@ -40,9 +40,9 @@ struct TasksPageView: View {
                             Text("All overdue (\(overdueCount))")
                             Spacer()
                         }
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(WatchTheme.overdue)
                     }
-                    .listRowBackground(Color.orange.opacity(0.15))
+                    .listRowBackground(WatchTheme.overdue.opacity(0.15))
                 }
 
                 if upNext.isEmpty {
@@ -54,17 +54,27 @@ struct TasksPageView: View {
                             .contentShape(Rectangle())
                             .onTapGesture { model.completeTask(task) }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                // Short labels ("Next"/"+1h") rather than the
+                                // full "Next period"/"+1 hour" — watchOS'
+                                // swipe-action buttons are narrow circles with
+                                // very little room for text alongside the
+                                // glyph. `clock.badge.plus` (previously used
+                                // here) rendered as a BLANK button in the
+                                // simulator — not a real SF Symbol name on
+                                // this SDK — so this uses `clock`, confirmed
+                                // to render, matching `arrow.right.to.line`'s
+                                // confirmed rendering for the other action.
                                 Button {
                                     model.snoozeTaskToNextPeriod(task)
                                 } label: {
-                                    Label("Next period", systemImage: "arrow.right.to.line")
+                                    Label("Next", systemImage: "arrow.right.to.line")
                                 }
                                 .tint(WatchTheme.accent)
 
                                 Button {
                                     model.snoozeTaskPlusHour(task)
                                 } label: {
-                                    Label("+1 hour", systemImage: "clock.badge.plus")
+                                    Label("+1h", systemImage: "clock")
                                 }
                                 .tint(.gray)
                             }
@@ -107,7 +117,7 @@ private struct TaskRow: View {
                 if let due = task.dueDate {
                     Text(WatchFormatting.dueLine(for: due))
                         .font(.caption2)
-                        .foregroundStyle(task.isOverdue() ? .orange : .secondary)
+                        .foregroundStyle(task.isOverdue() ? WatchTheme.overdue : .secondary)
                 }
             }
         }
