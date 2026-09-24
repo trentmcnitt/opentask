@@ -198,7 +198,23 @@ private struct TasksListView: View {
 
     /// Bulk-select's current picks, scoped to the on-screen scope — see
     /// `WidgetStore.selectedTaskIds(for:)`'s doc for the scope-pairing.
-    private var selectedIds: Set<Int> { WidgetStore.selectedTaskIds(for: entry.scope) }
+    /// The raw stored picks — used only to build `selectedIds` below and by
+    /// row rendering's own `modeForRow` (which already checks membership
+    /// against a real task, so a stale id there is harmless: it just never
+    /// matches any row). Prefer `selectedIds` at every OTHER call site.
+    private var rawSelectedIds: Set<Int> { WidgetStore.selectedTaskIds(for: entry.scope) }
+
+    /// The picks, intersected with what's actually in `entry.tasks` right
+    /// now (2026-09-23, PR review) — a stored id can go stale if the task it
+    /// named was completed/deleted from elsewhere (the web, another device)
+    /// WHILE this select-mode session was open; without this, "N selected"
+    /// and `hasSelection` would count/enable against ids the widget can no
+    /// longer act on honestly. The server would simply ignore an unowned/
+    /// missing id if it were sent, but the COUNT the user sees should match
+    /// what they can see selected on screen.
+    private var selectedIds: Set<Int> {
+        rawSelectedIds.intersection(Set(entry.tasks.map(\.id)))
+    }
 
     /// Whether EVERY task in the current scope (all pages, not just the one
     /// on screen — `entry.tasks` is the full scope-filtered list before

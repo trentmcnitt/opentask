@@ -1092,25 +1092,37 @@ struct SnoozeSelectedTasksIntent: AppIntent {
         let ids = Array(WidgetStore.selectedTaskIds(for: scope))
         guard !ids.isEmpty else { return .result() }
 
+        // `succeeded`, not an early `return` inside the `guard let until`
+        // below (the first cut's bug, caught in review): an early return
+        // there skipped `clearInteraction()` + the reload entirely, so a
+        // stale/disabled button somehow firing with no cached slots would
+        // silently do nothing rather than at least reconciling the widget.
+        var succeeded = false
         do {
             switch TaskSnoozeTarget(rawValue: target) {
             case .nextPeriod:
                 // No cached slots to resolve "next" from — the bar's button
                 // should already be disabled in this state (see
-                // `SnoozeSelectModeBar`'s doc), but guard defensively rather
-                // than sending a request with no destination.
-                guard let until = TimeSlotStore.nextPeriodStart() else { return .result() }
-                try await APIClient.shared.bulkSnoozeTasks(
-                    ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids
-                )
+                // `SelectModeActionBar`'s doc), so this is a defensive no-op
+                // rather than a request with no destination — but the reload
+                // below still runs either way.
+                if let until = TimeSlotStore.nextPeriodStart() {
+                    try await APIClient.shared.bulkSnoozeTasks(
+                        ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids
+                    )
+                    succeeded = true
+                }
             case .plusOneHour, .none:
                 try await APIClient.shared.bulkSnoozeTasks(ids: ids, deltaMinutes: 60, includeTaskIds: ids)
+                succeeded = true
             }
+        } catch {
+            print("[OpenTaskWidgets] Snooze selected failed: \(error)")
+        }
+        if succeeded {
             WidgetStore.recordLocalMutationForUndoCount()
             WidgetStore.tasksSelectMode = false
             WidgetStore.clearTasksSelection()
-        } catch {
-            print("[OpenTaskWidgets] Snooze selected failed: \(error)")
         }
         WidgetStore.clearInteraction()
         await reloadOpenTaskWidget(kind: TasksWidget.kind)
@@ -1184,17 +1196,22 @@ struct SnoozeTaskRowIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // See `SnoozeSelectedTasksIntent`'s identical fix/doc: an early
+        // `return` inside the `.nextPeriod` guard would skip
+        // `clearInteraction()` + the reload entirely.
         do {
             switch TaskSnoozeTarget(rawValue: target) {
             case .nextPeriod:
-                guard let until = TimeSlotStore.nextPeriodStart() else { return .result() }
-                try await APIClient.shared.bulkSnoozeTasks(
-                    ids: [taskId], until: DateHelpers.formatISO(until), includeTaskIds: [taskId]
-                )
+                if let until = TimeSlotStore.nextPeriodStart() {
+                    try await APIClient.shared.bulkSnoozeTasks(
+                        ids: [taskId], until: DateHelpers.formatISO(until), includeTaskIds: [taskId]
+                    )
+                    WidgetStore.recordLocalMutationForUndoCount()
+                }
             case .plusOneHour, .none:
                 try await APIClient.shared.bulkSnoozeTasks(ids: [taskId], deltaMinutes: 60, includeTaskIds: [taskId])
+                WidgetStore.recordLocalMutationForUndoCount()
             }
-            WidgetStore.recordLocalMutationForUndoCount()
         } catch {
             print("[OpenTaskWidgets] Snooze \(taskId) failed: \(error)")
         }
