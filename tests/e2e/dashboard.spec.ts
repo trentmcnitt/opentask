@@ -537,3 +537,90 @@ test.describe('?project=<id> deep link', () => {
     await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 2000 }).toBe(0)
   })
 })
+
+/**
+ * The top bar's "N total tasks" pill counts the list on screen. In the Today
+ * view (`grouping === 'slot'`) that list stops at the end of today, so a task
+ * due next week is not on it and must not be in the number — it used to be,
+ * because the pill read the filtered corpus instead of the rendered groups.
+ * See `shownTaskCount` in `DashboardClient.tsx`.
+ */
+test.describe('Top bar total', () => {
+  async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
+    const res = await page.request.post('/api/tasks', { data: body })
+    expect(res.ok()).toBeTruthy()
+    return (await res.json()).data.id as number
+  }
+
+  /** The number in the pill's popover ("N total tasks"), then shut it again. */
+  async function readTotal(page: Page): Promise<number> {
+    const counts = page.getByRole('group', { name: 'Task counts' })
+    await counts.click()
+    const line = page.getByText(/^\d+ total tasks$/)
+    await expect(line).toBeVisible()
+    const n = parseInt((await line.innerText()).trim(), 10)
+    await page.keyboard.press('Escape')
+    await expect(line).toHaveCount(0)
+    return n
+  }
+
+  async function setGrouping(page: Page, grouping: string): Promise<void> {
+    const res = await page.request.patch('/api/user/preferences', {
+      data: { default_grouping: grouping },
+    })
+    expect(res.ok()).toBeTruthy()
+  }
+
+  /**
+   * Reload into a view and wait until the page is IN it. Until the
+   * preferences fetch settles the dashboard groups by the `'project'`
+   * fallback (see `useDefaultGrouping`), and a count read in that window is
+   * the Projects view's, not the one asked for.
+   */
+  async function reloadInto(page: Page, view: 'Today' | 'All'): Promise<void> {
+    await page.reload()
+    await expect(page.getByRole('button', { name: view, exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  }
+
+  test('counts only what the Today view shows', async ({ authenticatedPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const before = (await (await page.request.get('/api/user/preferences')).json()).data
+      .default_grouping as string
+    const ids: number[] = []
+    try {
+      await setGrouping(page, 'slot')
+      await reloadInto(page, 'Today')
+      const baseline = await readTotal(page)
+
+      // Due a week out: in the corpus, not on today's list.
+      const later = await createTask(page, {
+        title: 'Top bar probe next week',
+        due_at: DateTime.now()
+          .setZone(TEST_TZ)
+          .plus({ days: 7 })
+          .set({ hour: 12, minute: 0 })
+          .toUTC()
+          .toISO(),
+      })
+      ids.push(later)
+      // Undated: the Today view keeps these, so this one does count.
+      ids.push(await createTask(page, { title: 'Top bar probe undated' }))
+
+      await reloadInto(page, 'Today')
+      await expect(page.locator(`#task-row-${later}`)).toHaveCount(0)
+      expect(await readTotal(page)).toBe(baseline + 1)
+
+      // The All view shows the whole corpus, so the week-out task counts there.
+      await setGrouping(page, 'time')
+      // (Its row may sit in a folded group, so only the number is asserted.)
+      await reloadInto(page, 'All')
+      expect(await readTotal(page)).toBeGreaterThanOrEqual(baseline + 2)
+    } finally {
+      for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
+      await setGrouping(page, before)
+    }
+  })
+})

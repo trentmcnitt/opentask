@@ -266,7 +266,6 @@ function useBulkActions(
 
   const bulkDelete = async () => {
     const count = selection.selectedIds.size
-    const deletedIds = new Set(selection.selectedIds)
     try {
       const res = await fetch('/api/tasks/bulk/delete', {
         method: 'POST',
@@ -274,7 +273,10 @@ function useBulkActions(
         body: JSON.stringify({ ids: [...selection.selectedIds] }),
       })
       if (!res.ok) throw new Error('Delete failed')
-      setSearchResults((prev) => prev.filter((t) => !deletedIds.has(t.id)))
+      // The search hit set is deliberately NOT trimmed here: the refetch drops
+      // the rows from `tasks`, which drops them from the results, and leaving
+      // the ids in place is what lets Undo bring them back. See
+      // `visibleSearchResults`.
       selection.clear()
       bumpUndoCount()
       fetchTasks()
@@ -520,7 +522,7 @@ function HomeContent({
       try {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Failed to delete')
-        setSearchResults((prev) => prev.filter((t) => t.id !== taskId))
+        // No trim of the search hit set — see `bulkDelete` and `visibleSearchResults`.
         refreshAll()
         showToast({
           message: 'Task moved to trash',
@@ -652,6 +654,12 @@ function HomeContent({
    * the row data always comes from `tasks`. A hit that is no longer in `tasks`
    * has been completed, deleted or filtered away, and correctly drops out of
    * the results as well.
+   *
+   * NOTHING BUT A NEW SEARCH (OR CLEARING ONE) WRITES `searchResults`. The two
+   * delete handlers used to trim it as well, and that trim is what broke Undo:
+   * the restored task came back into `tasks`, but its id was no longer a hit,
+   * so it stayed missing from the results until the query was re-run. Every
+   * other mutation already relied on the derivation alone; delete now does too.
    */
   const visibleSearchResults = useMemo(() => {
     const byId = new Map(tasks.map((t) => [t.id, t]))
@@ -909,6 +917,22 @@ function HomeContent({
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, grouping, timezone, timeSlots),
     [tasks_, projects, grouping, timezone, timeSlots],
+  )
+  /**
+   * The top bar's "N total tasks" pill counts what the list is SHOWING, which
+   * is `taskGroups`, not `tasks_`. The two differ in exactly one view: Today
+   * (`grouping === 'slot'`), where `groupByTimeSlot` keeps only what is due by
+   * the end of today and drops everything later. Counting `tasks_` there put
+   * next week's tasks into the number over a list that did not hold them.
+   * Reminders, quotas, search, filter chips and AI chips are already out of
+   * `tasks_`, so every other view gives the same number either way.
+   *
+   * A folded group, or a slot past its "Show all" preview cap, still counts:
+   * its rows are on the page one tap away, and the group header says so.
+   */
+  const shownTaskCount = useMemo(
+    () => taskGroups.reduce((n, g) => n + g.tasks.length, 0),
+    [taskGroups],
   )
 
   /**
@@ -1292,6 +1316,7 @@ function HomeContent({
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchResultCount={visibleSearchResults.length}
+        shownTaskCount={shownTaskCount}
         overdueCount={overdueCount}
         todayCount={todayCount}
         selection={selection}
@@ -1608,6 +1633,7 @@ function DashboardView({
   timeSlots,
   searchQuery,
   searchResultCount,
+  shownTaskCount,
   overdueCount,
   todayCount,
   selection,
@@ -1729,6 +1755,8 @@ function DashboardView({
   timeSlots: TimeSlot[]
   searchQuery: string | null
   searchResultCount: number
+  /** What the list renders — see `shownTaskCount` in `HomeContent`. */
+  shownTaskCount: number
   overdueCount: number
   todayCount: number
   selection: ReturnType<typeof useSelection>
@@ -1880,7 +1908,7 @@ function DashboardView({
   return (
     <div className="flex flex-1 flex-col">
       <Header
-        taskCount={tasks.length}
+        taskCount={shownTaskCount}
         overdueCount={overdueCount}
         todayCount={todayCount}
         isSelectionMode={selection.isSelectionMode}

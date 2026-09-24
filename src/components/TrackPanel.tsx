@@ -157,11 +157,13 @@ import type { LabelColor, LabelConfig, Task } from '@/types'
  * in CSS, so the first paint is already right (see `useResponsiveFold`).
  *
  * 1. THE SECTION FOLD hides the whole card, leaving one line: `TRACK · 8 of 22
- *    left`. It is a SECOND header button, `sm:hidden`, sitting beside the
- *    original one rather than replacing it. The original button means something
- *    else entirely — chips versus full rows — and folding that meaning into a
- *    single chevron would have made one control mean two things depending on
- *    the width it was pressed at.
+ *    left`. It is a header button, `sm:hidden`, sitting beside the desktop
+ *    heading rather than sharing a control with the chips/rows switch. That
+ *    switch means something else entirely — chips versus full rows — and
+ *    folding that meaning into a single chevron would have made one control
+ *    mean two things depending on the width it was pressed at. (The desktop
+ *    heading used to BE that switch; as of 2026-09-24 it is plain text and the
+ *    switch is `TrackViewSwitch`, a labelled button at the header's right.)
  *
  *    That pair left the phone with no handle on chips-versus-rows at all, and
  *    `track_expanded` is a SERVER preference: a user who switched to rows at a
@@ -390,7 +392,7 @@ export function TrackPanel({ tasks, onUndo, onCompleted, onRefresh }: TrackPanel
         />
 
         {/* The phone's only route between chips and rows. See the block comment
-            above: the desktop header button that does this is `sm:hidden`'s
+            above: the desktop header's `TrackViewSwitch` is `sm:hidden`'s
             opposite number, and without this one a `track_expanded` pinned on a
             desktop was unreachable on a phone. Right-aligned and muted — it is
             a way out of a view, not a thing to press on the way in. */}
@@ -725,9 +727,37 @@ const MET_COUNT: FoldClasses = {
 }
 
 /**
- * The panel's header: the phone's section fold, the desktop chips/rows caret,
- * and — top right, as on every Reminders slot — the met count that shows and
- * hides the met quotas.
+ * The desktop chips/rows switch: a small text button at the header's right,
+ * just left of the met count. Moved off the "Quotas" heading (Trent,
+ * 2026-09-24) because tapping the heading flipped the view by accident.
+ *
+ * A WORD, NOT AN ICON. The same "Show as rows / Show as chips" wording as the
+ * phone's switch at the card's foot, so one control reads the same at every
+ * width, and styled exactly like the met-count box beside it (text-xs, muted,
+ * the hover box) so the header's two small controls read as a pair. It names
+ * what a press DOES, so it needs no pressed state of its own. `hidden
+ * sm:inline-flex`: below `sm` the foot link is the switch, and a second copy
+ * here would put two controls for one thing on a phone. The data attribute
+ * differs from the foot link's `data-track-view-toggle` for the same reason
+ * — each width's tests find exactly one.
+ */
+function TrackViewSwitch({ open, onToggleView }: { open: boolean; onToggleView: () => void }) {
+  return (
+    <button
+      type="button"
+      data-track-view-switch
+      onClick={onToggleView}
+      className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground hidden shrink-0 items-center rounded-lg px-1.5 py-1 text-xs whitespace-nowrap transition-colors sm:inline-flex"
+    >
+      {open ? 'Show as chips' : 'Show as rows'}
+    </button>
+  )
+}
+
+/**
+ * The panel's header: the phone's section fold, the desktop heading and its
+ * chips/rows switch, and — top right, as on every Reminders slot — the met
+ * count that shows and hides the met quotas.
  *
  * THE COUNT COPIES THE REMINDERS SLOT'S "X of Y" EXACTLY (Trent, 2026-09-22:
  * "That's where we find things for the reminders. It's in the top right. You
@@ -788,32 +818,20 @@ function TrackHeader({
         </span>
       </button>
 
-      {/* A plain group header, built exactly like "Early morning" below —
-          same padding, chevron size and negative margin — so the carets and
-          labels line up. The caret switches the card between chips and the
-          full rows. `hidden … sm:flex` rather than a bare `flex`: this is the
-          desktop half of the header pair, and the two display utilities would
-          otherwise fight over which one wins. */}
-      <button
-        type="button"
-        onClick={onToggleView}
-        aria-expanded={open}
-        aria-label={open ? 'Collapse Quotas' : 'Expand Quotas'}
-        className="hover:text-foreground hidden min-h-7 min-w-0 flex-1 items-center gap-2 px-1 text-left transition-colors sm:flex"
-      >
-        <span className="-mr-1.5 flex items-center justify-center p-0.5">
-          <ChevronDown
-            aria-hidden="true"
-            className={cn(
-              'text-muted-foreground size-3 shrink-0 transition-transform duration-200',
-              !open && '-rotate-90',
-            )}
-          />
-        </span>
+      {/* Desktop: the heading is PLAIN TEXT. It used to be the chips/rows
+          switch itself (a caret button, "Expand/Collapse Quotas"), and Trent
+          kept flipping the view by tapping the heading without meaning to
+          (2026-09-24). The switch now lives in its own labelled control at the
+          right — see `TrackViewSwitch`. `hidden … sm:flex` rather than a bare
+          `flex`: this is the desktop half of the header pair, and the two
+          display utilities would otherwise fight over which one wins. */}
+      <div data-track-heading className="hidden min-h-7 min-w-0 flex-1 items-center px-1 sm:flex">
         <span className="text-muted-foreground text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
           Quotas
         </span>
-      </button>
+      </div>
+
+      <TrackViewSwitch open={open} onToggleView={onToggleView} />
 
       {overall.met > 0 ? (
         <button
