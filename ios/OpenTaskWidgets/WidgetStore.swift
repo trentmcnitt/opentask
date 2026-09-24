@@ -419,8 +419,9 @@ enum WidgetStore {
         return tasks.filter { !pending.contains($0.id) }
     }
 
-    // MARK: - Show completed (2026-09-23, "show completed" — the eye toggle
-    // left of Undo, Reminders and Tasks systemLarge only)
+    // MARK: - Show completed (2026-09-23, "show completed" — an eye toggle
+    // left of Undo until 2026-09-24, now the bottom row's "done" dot,
+    // `CompletedDotToggle`; Reminders and Tasks systemLarge only)
     //
     // Trent picked mockup option A: completed items sit at the bottom, under
     // a "DONE · N" divider. Deliberately NOT plumbed through `RemindersEntry`/
@@ -952,9 +953,9 @@ enum WidgetStore {
     // list" any more once the slot has moved.
     //
     // NOT bounded to the list's actual page count here: the list itself is
-    // the only thing that knows how many rows currently fit (`ViewThatFits`'s
-    // winning candidate, which nothing outside that view's own body can
-    // observe — see `RemindersListView`'s doc), so it clamps this value live
+    // the only thing that knows how many rows currently fit (its paging is
+    // computed from the real card size inside the view's own layout — see
+    // `RemindersListView.listBody`), so it clamps this value live
     // on every render instead ("clamp it when the list shrinks"). This store
     // only ever needs to move it.
 
@@ -1041,7 +1042,7 @@ enum WidgetStore {
     // explicitly turns the other off (see `ToggleTasksSnoozeModeIntent`/
     // `EnterTasksSelectModeIntent`), rather than this store enforcing it
     // structurally. `systemLarge` only — call sites gate it, mirroring
-    // `ShowCompletedToggle`'s identical `isLarge` gating (no row/header
+    // "show completed"'s identical `isLarge` gating (no row/header
     // budget on systemMedium for a third control cluster).
 
     private static let tasksSnoozeModeKey = "widget.tasks.snoozeMode"
