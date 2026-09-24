@@ -167,6 +167,18 @@ function collectQuotaDateClear(data: FieldChangeData, task: Task, willBeTracked:
   }
 }
 
+/** The origin reset itself — see the comment at its call in collectBasicFields. */
+function collectOriginReset(data: FieldChangeData, task: Task, input: FieldChangesInput): void {
+  const resetTo = input.due_at !== undefined ? input.due_at : task.due_at
+  if (!resetTo) return
+  if (task.original_due_at !== resetTo) {
+    trackField(data, 'original_due_at', task.original_due_at, resetTo)
+  }
+  if (task.snooze_count !== 0) {
+    trackField(data, 'snooze_count', task.snooze_count, 0)
+  }
+}
+
 /**
  * Collect basic field changes (title, priority, project_id, labels, recurrence_mode, notes)
  */
@@ -177,15 +189,25 @@ function collectBasicFields(
   userId: number,
   skipProjectValidation: boolean,
 ): void {
-  // Reset origin: sets original_due_at = due_at, snooze_count = 0
-  if (input.reset_original_due_at && task.due_at) {
-    if (task.original_due_at !== task.due_at) {
-      trackField(data, 'original_due_at', task.original_due_at, task.due_at)
-    }
-    if (task.snooze_count !== 0) {
-      trackField(data, 'snooze_count', task.snooze_count, 0)
-    }
-  }
+  // Reset origin: the user says what the occurrence origin is. Sets
+  // original_due_at to the task's due date and snooze_count to 0.
+  //
+  // WITH A DATE IN THE SAME REQUEST, the origin is the NEW date: this is how an
+  // explicit reschedule is told apart from a snooze (Trent, 2026-09-24).
+  // Picking a date in the quick panel's date picker sends
+  // `{ due_at, reset_original_due_at: true }`, and the row stops being
+  // "snoozed from" anything. A bare `{ due_at }` stays a snooze — the iOS
+  // content extension's "snooze to a specific time" is exactly that payload —
+  // so the reschedule has to opt in.
+  //
+  // Before 2026-09-24 the two halves disagreed: this block set the origin to
+  // the OLD due date, then `collectDueAtChanges` still ran its snooze branch
+  // and pushed `snooze_count = old + 1` after this block's `0` (SQLite keeps
+  // the last assignment), so "reset + new date" came out as a snooze.
+  // `collectDueAtChanges` now skips its snooze branch when this flag is set.
+  // A null date (clearing it) is not a reschedule — the due-date clear there
+  // takes the origin with it.
+  if (input.reset_original_due_at) collectOriginReset(data, task, input)
 
   if (input.title !== undefined && input.title !== task.title) {
     trackField(data, 'title', task.title, input.title)
@@ -308,6 +330,31 @@ function collectBasicFields(
 }
 
 /**
+ * An explicit date arriving WITH a new (non-null) rule is honored, the way
+ * `createTask` honors `{ rrule, due_at }`: "repeat weekly, starting on this
+ * date". It used to be silently dropped at 200 — the rule branch only ever
+ * auto-computed a date, `collectDueAtChanges` returns early on any rule change
+ * except a clear, and the anchors were derived from the OLD date — so the
+ * quick panel's "change recurrence and pick a date" lost the date. It is a
+ * re-schedule, never a snooze (`rruleTakesTheOrigin` drops the origin). A
+ * quota is left to the refusal / date-clear paths: it has no date to honor.
+ *
+ * @returns the due date the new rule's anchors should be derived from
+ */
+function applyDateWithNewRule(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  willBeTracked: boolean,
+): string | null {
+  const explicit = !willBeTracked && input.due_at !== undefined
+  if (!explicit) return data.afterState.due_at ?? task.due_at
+  const dueAt = input.due_at ?? null
+  if (dueAt !== task.due_at) trackField(data, 'due_at', task.due_at, dueAt)
+  return dueAt
+}
+
+/**
  * Collect rrule changes with anchor field derivation
  *
  * @returns Whether rrule changed (used by due_at logic)
@@ -373,8 +420,9 @@ function collectRruleChanges(
       trackField(data, 'recurrence_mode', task.recurrence_mode, 'from_due')
     }
   } else {
-    // Setting/changing recurrence - derive anchor fields
-    const dueAtForAnchors = data.afterState.due_at ?? task.due_at
+    // Setting/changing recurrence - derive anchor fields (from the explicit
+    // date, when one arrives with the rule — see applyDateWithNewRule)
+    const dueAtForAnchors = applyDateWithNewRule(data, task, input, willBeTracked)
     const anchors = deriveAnchorFields(input.rrule, dueAtForAnchors, userTimezone)
 
     // Update anchor_time
@@ -490,7 +538,16 @@ function collectDueAtChanges(
   // date instead. Without this it would bump `snooze_count`, back-fill
   // `original_due_at`, fire the snooze stat and the `snooze` activity entry,
   // and draw the snoozed indicator on a row nobody snoozed.
-  if (!rruleChanged && task.due_at !== null && input.due_at !== null) {
+  //
+  // Nor when `reset_original_due_at` rides along: that is an explicit
+  // reschedule, and `collectBasicFields` has already made the new date the
+  // origin (see the comment there).
+  if (
+    !rruleChanged &&
+    !input.reset_original_due_at &&
+    task.due_at !== null &&
+    input.due_at !== null
+  ) {
     data.isSnoozeScenario = true
 
     // Set original_due_at if not already set (preserve existing)
@@ -513,7 +570,12 @@ function collectDueAtChanges(
 
   // When due_at is set for the first time on a task that had no due date,
   // also set original_due_at to track the occurrence origin timestamp.
-  if (task.due_at === null && input.due_at !== null && task.original_due_at === null) {
+  if (
+    task.due_at === null &&
+    input.due_at !== null &&
+    task.original_due_at === null &&
+    !data.fieldsChanged.includes('original_due_at')
+  ) {
     data.setClauses.push('original_due_at = ?')
     data.values.push(input.due_at)
     data.fieldsChanged.push('original_due_at')

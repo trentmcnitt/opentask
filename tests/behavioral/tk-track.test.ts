@@ -11,7 +11,9 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask, markDone } from '@/core/tasks'
-import { incrementProgress, computePace, isTracked } from '@/core/tasks/progress'
+import { incrementProgress, computePace } from '@/core/tasks/progress'
+import { isTracked } from '@/lib/track'
+import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import {
@@ -126,7 +128,13 @@ describe('Track (quotas)', () => {
     incrementProgress({ userId: TEST_USER_ID, taskId: task.id })
     expect(getTaskById(task.id)!.progress_current).toBe(2)
 
-    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: task.id })
+    // Deliberately: `done` on a quota requires close_period (2026-09-24).
+    markDone({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      closePeriod: true,
+    })
 
     const after = getTaskById(task.id)!
     expect(after.progress_current).toBe(0)
@@ -138,14 +146,28 @@ describe('Track (quotas)', () => {
   })
 
   /**
-   * TK-008: An explicit complete-tap before the boundary still completes early.
-   * The user is never prevented from closing something out.
+   * TK-008: An explicit completion before the boundary still completes early —
+   * but only when asked for with `closePeriod` (2026-09-24). A bare `done` on
+   * a quota is refused with a pointer to progress: it used to close the period
+   * and silently zero the count, which an API caller almost never meant.
    */
   test('TK-008: an explicit completion before target still completes', () => {
     const task = makeTracked(5)
     incrementProgress({ userId: TEST_USER_ID, taskId: task.id })
 
-    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: task.id })
+    expect(() =>
+      markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: task.id }),
+    ).toThrow(QUOTA_DONE_MESSAGE)
+    const refused = getTaskById(task.id)!
+    expect(refused.progress_current).toBe(1)
+    expect(refused.completion_count).toBe(0)
+
+    markDone({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      taskId: task.id,
+      closePeriod: true,
+    })
     expect(getTaskById(task.id)!.completion_count).toBe(1)
   })
 

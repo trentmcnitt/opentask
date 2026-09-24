@@ -15,8 +15,12 @@
  * The rejected alternative was auto-completing at target, which made overflow
  * unobservable — the row disappeared at 2/2 and the third never got recorded.
  *
- * An explicit complete-tap before the boundary still completes early; the user
- * is never prevented from closing something out.
+ * Completing one before the boundary still closes the period early, but only
+ * as a deliberate act: `markDone`/`bulkDone` refuse a quota unless the caller
+ * passes `close_period: true` (2026-09-24). No app surface offers it — every
+ * quota surface only logs progress — and an API `done` on a quota almost
+ * always meant +1, which the old behavior answered by silently zeroing the
+ * period's count.
  *
  * WHAT MUST NOT HAPPEN HERE:
  * - A sub-target increment must NOT dispatch `task.completed`. Anything
@@ -37,6 +41,10 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
+// ONE definition of "is this a quota" — the client-safe one in lib/track. This
+// file used to carry its own copy, and two copies of a rule this central are
+// how the reminder/quota guard in updateTask ended up testing only half of it.
+import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { emitSyncEvent } from '@/lib/sync-events'
 
@@ -52,11 +60,6 @@ export interface IncrementProgressResult {
   /** True when this increment brought the task to or past its target. */
   met: boolean
   description: string
-}
-
-/** Is this task tracked (a quota) rather than an ordinary one-shot task? */
-export function isTracked(task: Pick<Task, 'progress_target' | 'is_tracked'>): boolean {
-  return task.is_tracked === true || (task.progress_target ?? 1) > 1
 }
 
 /**

@@ -5,6 +5,7 @@
  *
  * For recurring tasks: advances due_at to next occurrence
  * For one-off tasks: sets done=1 and archives
+ * Quotas (§5): refused unless the body has `close_period: true`
  */
 
 import { NextRequest } from 'next/server'
@@ -32,10 +33,18 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       return notFound('Task not found', { id })
     }
 
+    // Optional body. Every existing caller (web, iOS) POSTs with no body at
+    // all, so this must not throw on an empty or non-JSON one. The only field
+    // is §5's `close_period`: completing a quota is refused without it (it
+    // closes the period early and resets the count — see markDone).
+    const body = (await request.json().catch(() => null)) as { close_period?: unknown } | null
+    const closePeriod = body?.close_period === true
+
     const result = markDone({
       userId: user.id,
       userTimezone: user.timezone,
       taskId,
+      closePeriod,
     })
 
     dismissNotificationsForTasks(user.id, [taskId])
