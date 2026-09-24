@@ -60,6 +60,17 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
   if (!task) throw new NotFoundError('Task not found')
   if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
   if (task.deleted_at) throw new ValidationError('Cannot skip a trashed task')
+  // §6: a reminder has no occurrence to skip. A missed one already rolls
+  // forward on its own (`effectiveDueAt`), and clearing one is "Considered"
+  // (done), which is the whole interaction — the same reason `snoozeTask`
+  // refuses it. Skipping would re-date a recurring reminder behind the
+  // user's back, or archive a one-off without it ever being considered. No
+  // app surface offers skip on a reminder; this closes the API path.
+  if (task.is_reminder) {
+    throw new ValidationError(
+      'Reminders cannot be skipped — a missed one rolls forward on its own; complete it to mark it considered',
+    )
+  }
   if (task.done && !isRecurring(task.rrule)) {
     throw new ValidationError('Task is already done')
   }

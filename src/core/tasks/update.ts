@@ -19,7 +19,7 @@ import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
-import { TRACKED_REMINDER_MESSAGE } from '@/core/validation'
+import { REMINDER_SNOOZE_MESSAGE, TRACKED_REMINDER_MESSAGE } from '@/core/validation'
 import { isTracked } from '@/lib/track'
 
 export interface UpdateTaskOptions {
@@ -91,6 +91,26 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     userId,
     userTimezone,
   })
+
+  // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
+  // enforced here because a bare `PATCH { due_at }` on a dated reminder is a
+  // snooze by every other measure (`isSnoozeScenario`: origin kept, count
+  // bumped, snooze stat) and used to walk straight past it.
+  //
+  // An EXPLICIT reschedule is still allowed: `reset_original_due_at: true`
+  // with the date (what the date picker sends) is not a snooze — it moves the
+  // occurrence and clears "snoozed from" — so `isSnoozeScenario` is false and
+  // this does not fire. Nor does giving an undated ("anytime") reminder its
+  // first date, or a schedule change that recomputes one.
+  //
+  // Asked of the RESULTING flag, like the exclusivity guard above, so
+  // `{ is_reminder: true, due_at }` — convert and snooze in one request — is
+  // refused too; the date has to be an explicit reschedule to travel with it.
+  if (data.isSnoozeScenario && resultingIsReminder) {
+    throw new ValidationError(
+      `${REMINDER_SNOOZE_MESSAGE}. To move one to a new time, send reset_original_due_at: true with the due_at.`,
+    )
+  }
 
   if (data.setClauses.length === 0) {
     return { task, fieldsChanged: [], description: '' }
