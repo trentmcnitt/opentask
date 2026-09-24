@@ -16,6 +16,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
 import { ValidationError, ForbiddenError } from '@/core/errors'
+import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-labels'
 import { formatDurationDelta } from '@/lib/format-date'
 import { validateLabelsExist } from '@/core/labels'
@@ -82,12 +83,19 @@ export interface BulkDoneOptions {
   userId: number
   userTimezone: string
   taskIds: number[]
+  /**
+   * §5: also complete the quotas in the batch — closing each one's period
+   * early and resetting its count to 0. Off by default; see `bulkDone`.
+   */
+  closePeriod?: boolean
 }
 
 export interface BulkDoneResult {
   tasksAffected: number
   recurringCount: number
   oneOffCount: number
+  /** Quotas left alone because `closePeriod` was not set. */
+  quotaSkipped: number
 }
 
 /**
@@ -100,17 +108,31 @@ export interface BulkDoneResult {
  * BO-005: Mixed types handled correctly
  */
 export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
-  const { userId, userTimezone, taskIds } = options
+  const { userId, userTimezone, taskIds, closePeriod = false } = options
 
   if (taskIds.length === 0) {
-    return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0 }
+    return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0, quotaSkipped: 0 }
   }
 
   const completedAt = new Date()
   const nowStr = nowUtc()
 
   // Validate all tasks exist and user has access before starting transaction (BO-002: atomic)
-  const tasks = validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true })
+  const validated = validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true })
+
+  // §5: `done` on a quota closes its period early and silently zeroes the
+  // count (`computeMarkDone`'s period reset). Nothing in the app sends a quota
+  // here — every done surface filters them out — so a quota in the batch is an
+  // API caller that meant "log one" or a stale selection. SKIPPED rather than
+  // refused, so one stale id does not abort the whole transaction (the lesson
+  // `bulkEdit` learned, TR-023); refused only when nothing else is left, so a
+  // caller sending just the quota still gets the explanation. `closePeriod`
+  // is the deliberate opt-in.
+  const tasks = closePeriod ? validated : validated.filter((t) => !isTracked(t))
+  const quotaSkipped = validated.length - tasks.length
+  if (tasks.length === 0 && quotaSkipped > 0) {
+    throw new ValidationError(QUOTA_DONE_MESSAGE)
+  }
 
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
@@ -170,6 +192,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
       tasksAffected: tasks.length,
       recurringCount,
       oneOffCount,
+      quotaSkipped,
     }
   })
 

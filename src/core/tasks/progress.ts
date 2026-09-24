@@ -15,8 +15,12 @@
  * The rejected alternative was auto-completing at target, which made overflow
  * unobservable — the row disappeared at 2/2 and the third never got recorded.
  *
- * An explicit complete-tap before the boundary still completes early; the user
- * is never prevented from closing something out.
+ * Completing one before the boundary still closes the period early, but only
+ * as a deliberate act: `markDone`/`bulkDone` refuse a quota unless the caller
+ * passes `close_period: true` (2026-09-24). No app surface offers it — every
+ * quota surface only logs progress — and an API `done` on a quota almost
+ * always meant +1, which the old behavior answered by silently zeroing the
+ * period's count.
  *
  * WHAT MUST NOT HAPPEN HERE:
  * - A sub-target increment must NOT dispatch `task.completed`. Anything
