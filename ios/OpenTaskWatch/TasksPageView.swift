@@ -95,7 +95,10 @@ struct TasksPageView: View {
             titleVisibility: .visible,
             presenting: snoozeTarget
         ) { task in
+            // Disabled with no cached time slots (nothing to plan against),
+            // like the phone's dimmed ⏭ — never a tap that just buzzes.
             Button("Next period") { model.snoozeTask(task, target: .nextPeriod) }
+                .disabled(TimeSlotStore.cachedSlots.isEmpty)
             Button("+1 hour") { model.snoozeTask(task, target: .plusOneHour) }
         }
     }

@@ -9,9 +9,13 @@ import WatchKit
 /// pipeline (staged deltas, tombstone TTLs, auto-advance snapshots): the
 /// watch app is a live, foregrounded SwiftUI view with a real event loop, not
 /// a WidgetKit timeline that has to fake responsiveness between reloads. A
-/// tap here hides the row immediately (`@Published` removal) and reconciles
-/// against a real fetch a moment later — no cache TTL bookkeeping needed
-/// because there's no "next timeline entry" to hide behind.
+/// completion hides the row immediately (`@Published` removal) and
+/// reconciles against a real fetch a moment later; a snooze just calls the
+/// API and refetches; a quota tap stages a net delta and writes the
+/// server's returned count (`logQuota`/`settleQuota` — the one piece of
+/// per-tap bookkeeping here, because rapid quota taps must all draw and the
+/// count must end server-true). No TTLs: there's no "next timeline entry"
+/// to hide behind.
 @MainActor
 final class WatchViewModel: ObservableObject {
     @Published private(set) var reminderGroups: [ReminderGroupDTO] = []
@@ -46,6 +50,19 @@ final class WatchViewModel: ObservableObject {
     /// its response lands (`settleQuota`). The same shape as the phone's
     /// staged progress (`WidgetStore.stagePendingProgress`).
     @Published private(set) var pendingQuotaDeltas: [Int: Int] = [:]
+    /// Bumped on every `settleQuota`; `settledAt[id]` is the value it had
+    /// when that quota's count was last written from a tap response.
+    /// `load()` notes the counter when it STARTS, and keeps our copy of any
+    /// quota settled after that — a fetch sent before the server applied a
+    /// tap can land after the tap's response and would otherwise put the
+    /// pre-tap count back (the phone's "a fetch that STARTED after" rule,
+    /// `ios/CLAUDE.md`'s stale-count note).
+    private var settleCounter = 0
+    private var settledAt: [Int: Int] = [:]
+    /// Quotas that had two or more taps in flight at once. Their responses
+    /// can arrive out of order (last response wins in `settleQuota`), so
+    /// once the last one settles, one real fetch confirms the count.
+    private var overlappedQuotaIds: Set<Int> = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
     /// Whether `load()` has completed at least once. Both pages gate their
@@ -133,6 +150,8 @@ final class WatchViewModel: ObservableObject {
         guard isConfigured else { return }
         isLoading = true
         loadError = nil
+        // See `settleCounter`: quotas settled after this point keep our copy.
+        let settleCounterAtStart = settleCounter
 
         async let remindersResult = asyncResult { try await api.fetchReminders() }
         async let tasksResult = asyncResult { try await api.fetchOpenTasks() }
@@ -152,17 +171,22 @@ final class WatchViewModel: ObservableObject {
         }
 
         if case let .success(fetched) = tsk, case let .success(proj) = proj {
-            // A quota with a tap still in flight keeps the count we already
+            // A quota with a tap still in flight, or one whose tap response
+            // landed after this fetch was SENT, keeps the count we already
             // hold: this fetch may or may not include that tap (it can land
-            // either side of the server applying it), and drawing the
-            // pending delta over a count that already has it would show the
-            // tap twice. The tap's own response (`settleQuota`) writes the
-            // server's count for it a moment later.
+            // either side of the server applying it). Drawing a pending delta
+            // over a count that already has it would show the tap twice, and
+            // taking a pre-tap count over a settled one would undo the
+            // server-true write. The tap's own response (`settleQuota`) is
+            // the authority for that quota.
+            func keepsOurs(_ id: Int) -> Bool {
+                pendingQuotaDeltas[id] != nil || (settledAt[id] ?? Int.min) > settleCounterAtStart
+            }
             var openTasks = fetched
-            if !pendingQuotaDeltas.isEmpty {
+            if fetched.contains(where: { keepsOurs($0.id) }) {
                 let held = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 openTasks = fetched.map { task in
-                    guard pendingQuotaDeltas[task.id] != nil, let mine = held[task.id] else { return task }
+                    guard keepsOurs(task.id), let mine = held[task.id] else { return task }
                     return mine
                 }
             }
@@ -344,6 +368,7 @@ final class WatchViewModel: ObservableObject {
         // that lands anyway (nothing to take back — the server would floor
         // it, but it would still cost an undo entry).
         if delta < 0, shown <= 0 { return }
+        if pendingQuotaDeltas[task.id] != nil { overlappedQuotaIds.insert(task.id) }
         pendingQuotaDeltas[task.id, default: 0] += delta
         WKInterfaceDevice.current().play(delta > 0 ? .click : .directionDown)
 
@@ -358,10 +383,13 @@ final class WatchViewModel: ObservableObject {
                 // draw, so fetch the truth.
                 if confirmed == nil { await load() }
             } catch {
-                // Nothing changed server-side, and `tasks` still holds the
-                // pre-tap count — retiring the delta IS the honest revert.
+                // Usually nothing changed server-side and `tasks` still holds
+                // the pre-tap count, so retiring the delta is the revert. But
+                // a timeout can fire after the server committed, so fetch the
+                // truth either way.
                 settleQuota(task.id, delta: delta, confirmed: nil)
                 WKInterfaceDevice.current().play(.failure)
+                await load()
             }
         }
     }
@@ -370,17 +398,26 @@ final class WatchViewModel: ObservableObject {
     /// task, write that count in — one synchronous step, so no render ever
     /// sees the server's new count AND the still-staged delta (the tap
     /// counted twice). A sibling tap still in flight keeps its own delta,
-    /// drawn over the server's count. The phone's `confirmProgress` seam
-    /// applies here too: two taps whose responses arrive out of order can
-    /// leave the count one step behind until the next fetch.
+    /// drawn over the server's count.
+    ///
+    /// Out-of-order responses (two overlapping taps on one quota, the later
+    /// one answered first) can draw one step high for a moment and then
+    /// settle one step behind — last response wins. So a quota that had
+    /// overlapping taps gets one `load()` once its last tap settles, which
+    /// replaces the count with a fetch sent after every one of them landed.
     private func settleQuota(_ id: Int, delta: Int, confirmed: TaskDTO?) {
         if let confirmed, let idx = tasks.firstIndex(where: { $0.id == id }) {
             tasks[idx] = confirmed
             WatchCache.saveTasks(tasks, projects: projects)
+            settleCounter += 1
+            settledAt[id] = settleCounter
         }
         let remaining = (pendingQuotaDeltas[id] ?? 0) - delta
         if remaining == 0 {
             pendingQuotaDeltas.removeValue(forKey: id)
+            if overlappedQuotaIds.remove(id) != nil {
+                Task { await load() }
+            }
         } else {
             pendingQuotaDeltas[id] = remaining
         }
