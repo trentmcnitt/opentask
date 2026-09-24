@@ -252,14 +252,18 @@ struct IncrementProgressIntent: AppIntent {
         // same disorientation Trent flagged, now happening on every `+1`.
         WidgetStore.trackSelection = taskId
 
-        // Takeback mode is one-shot (2026-09-24 — see
-        // `WidgetStore.quotasTakebackMode`): the `−1` that a takeback-mode
-        // chip fires is the mode's ONE action, so it ends here, BEFORE the
-        // round-1 reload — the optimistic repaint already shows the mode
-        // off and the count down. Unconditional rather than `delta < 0`:
-        // outside the mode this is already false, and inside it every live
-        // chip is a `−1`, so there is no tap that should leave it on.
-        WidgetStore.quotasTakebackMode = false
+        // Takeback mode is NOT touched here (2026-09-24, Trent: auto-exit
+        // after one `−1` was "weird") — it stays on until the button is
+        // tapped again, or a Track timeline is built for a reason other than
+        // this widget's own taps (`TrackProvider.currentEntry`). The
+        // interaction stamp below is what keeps this tap's own round 2, and
+        // the server's widget push that follows it ~2s later, reading as
+        // "ours" rather than "a change elsewhere".
+        //
+        // It is also, with `confirmProgress` below, what makes both rounds
+        // draw the same number: every pass inside the window repaints from a
+        // cache that the confirmed result has already been written into.
+        WidgetStore.markInteraction()
 
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
         // then let the server catch up. The staged value is a NET count, so
@@ -274,34 +278,41 @@ struct IncrementProgressIntent: AppIntent {
         // optimistic repaint to exist at all.
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
 
+        // Every outcome retires THIS call's staged delta and nothing else — a
+        // sibling tap still in flight keeps its own (see
+        // `WidgetStore.clearPendingProgress`).
         do {
-            try await APIClient.shared.logProgress(taskId: taskId, delta: delta)
+            if let confirmed = try await APIClient.shared.logProgress(taskId: taskId, delta: delta) {
+                // The server's count goes INTO the cache, in the same lock
+                // hold that retires the delta — THE fix for "the widget never
+                // shows the new count" (2026-09-24; see
+                // `WidgetStore.confirmProgress`'s doc for the whole bug).
+                // Subtracting alone used to leave the cache at the pre-tap
+                // count, and any pass that fast-pathed from it — round 2
+                // below whenever another tap was < 10s old, the server's
+                // push right after — drew the old number back.
+                WidgetStore.confirmProgress(confirmed, delta: delta)
+            } else {
+                // Logged, but the body didn't decode: nothing trustworthy to
+                // write, so retire the delta and make the next pass fetch.
+                WidgetStore.clearPendingProgress(taskId, delta: delta)
+                WidgetStore.clearInteraction()
+            }
             // Undo/Redo affordance (2026-09-23) — see
             // WidgetStore.recordLocalMutationForUndoCount's doc. A `−1`
             // correction is just as undoable as a `+1`, so both record.
             WidgetStore.recordLocalMutationForUndoCount()
         } catch {
             print("[OpenTaskWidgets] Progress \(taskId) \(delta > 0 ? "+" : "")\(delta) failed: \(error)")
+            // The cache still holds the pre-tap count, so retiring the delta
+            // IS the honest revert — no fetch needed to show it.
+            WidgetStore.clearPendingProgress(taskId, delta: delta)
         }
-        // Unconditional, and deliberately a SUBTRACTION of this call's own
-        // delta rather than a wipe: on success the server now carries it, on
-        // failure the optimistic draw reverts, and either way a sibling tap
-        // still in flight keeps its own staged delta (see
-        // `WidgetStore.clearPendingProgress`).
-        WidgetStore.clearPendingProgress(taskId, delta: delta)
-        // Round 2, still Track only. This is the reconciling pass: the entry
-        // `clearPendingProgress` just removed was the ONLY thing keeping
-        // `hasRecentInteraction()` true for this task (this intent never
-        // calls `markInteraction()`), so this pass takes the network path —
-        // `/api/tasks` + `/api/projects` via `TaskFeed` — on both success and
-        // failure, landing the server's real count or reverting an optimistic
-        // one the call above rejected. Nothing to fast-path here even in
-        // principle: server truth is exactly what a failed call needs shown.
-        //
-        // Not fixed here, flagged for a follow-up: this fetch is real and
-        // unavoidable, but `logProgress` returns `Void` — if it returned the
-        // updated task, writing it straight into `WidgetStore.saveTasks`
-        // before this reload would turn round 2 into a cache hit instead.
+        // Round 2, still Track only: the reconciling pass. Inside the
+        // interaction window it repaints from cache — which now holds the
+        // server's count on success, or the untouched pre-tap count on
+        // failure — so it draws the same number round 1 did (success) or the
+        // honest revert (failure), never a stale one in between.
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
         return .result()
     }
@@ -737,13 +748,14 @@ struct UndoLastActionIntent: AppIntent {
             // as they were — there is no window to restore any more, so a
             // retry is simply a second tap on the same still-enabled button.
         }
-        // Round 2, the reconciling pass. `markInteraction()` is deliberately
-        // never called here, so this takes the NETWORK path on both success
-        // (server truth for whatever an undone task changed) and failure. One
-        // caveat, self-healing: a chevron tapped under 10s before this would
-        // still leave `hasRecentInteraction()` true, which fast-paths this
-        // ONE pass from cache instead — the next scheduled or
-        // interaction-triggered reload corrects it.
+        // Round 2, the reconciling pass. On success the caches were just
+        // refetched above (which also settled `clearInteraction()`'s
+        // fetch-required stamps — `WidgetStore.saveTasks`), so a fast path
+        // here draws server truth; a payload whose refetch failed keeps its
+        // stamp and this pass fetches it. On failure nothing changed
+        // server-side, so whatever path this takes is already current.
+        // (Before 2026-09-24 a chevron tapped under 10s earlier could
+        // fast-path this pass from a cache the refetch had not replaced.)
         await reloadOpenTaskWidgets()
         return .result()
     }

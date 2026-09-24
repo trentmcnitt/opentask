@@ -356,42 +356,48 @@ private struct TasksListView: View {
     ) -> TaskRowLayout {
         switch item {
         case .open(let task):
+            // ONE rule for the due label (2026-09-24, Trent's screenshot of
+            // "Tomorrow 9:00 am" inline on one row, "Tomorrow" over "12:00
+            // pm" on the next, "Sat" over "9:00 am" on a third): a label
+            // with a day word AND a time ALWAYS stacks — the day on its own
+            // line above the time, right-aligned — on every family. A
+            // time-only label (today) and a day-only label (date-only task)
+            // are one line. It used to stack only where that made the row
+            // shorter, which is exactly what made neighbouring rows
+            // disagree.
+            let stacksDue = dueParts(for: task)?.hasTwoParts ?? false
+            let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
             guard measuresTitles else {
+                // iOS systemMedium: one title line on the 36pt finger floor
+                // — and tall enough for a stacked label at a large text size.
+                let floor = max(metrics.titleHeight(lines: 1), WidgetTheme.rowMarkerSize)
                 return TaskRowLayout(
-                    lines: 1, height: max(metrics.titleHeight(lines: 1), WidgetTheme.rowMarkerSize), dueStacked: false
+                    lines: 1, height: stacksDue ? max(floor, stackedDueHeight) : floor, dueStacked: stacksDue
                 )
             }
             var column = width - TaskRow.trailingControlWidth(for: mode) - 10
             if isLarge, entry.isUnifiedScope { column -= 3 + 8 }
             let text: (lines: Int, height: CGFloat, dueStacked: Bool)
             if let parts = dueParts(for: task) {
-                let inline = titleLayout(
-                    task, column: column - WidgetTheme.measuredWidth(for: parts.plainString, font: metrics.caption2Font) - 8,
-                    labelHeight: 0, budget: budget, metrics: metrics
-                )
-                if isLarge, parts.hasTwoParts {
-                    // The stacked alternative (see `TaskRow.dueStacked`): a
-                    // column only as wide as the label's longer half, but a
-                    // label two caption2 lines tall that even a one-line
-                    // title's row must hold. A title that would be CUT
-                    // inline but fits stacked always stacks (never truncate
-                    // when there's a layout that doesn't); otherwise the
-                    // SHORTER row wins — "Sat / 9:00 am" beside a one-line
-                    // title would only add a line; beside "Mia Allowance
-                    // ($8)" it saves one. A tie stays inline.
+                if parts.hasTwoParts {
+                    // Stacked: the title's column gives up only the label's
+                    // LONGER half, and the row holds two caption2 lines even
+                    // beside a one-line title.
                     let half = max(
                         WidgetTheme.measuredWidth(for: parts.dayWord ?? "", font: metrics.caption2Font),
                         WidgetTheme.measuredWidth(for: parts.time ?? "", font: metrics.caption2Font)
                     )
                     let stacked = titleLayout(
-                        task, column: column - half - 8, labelHeight: ceil(2 * metrics.caption2LineHeight),
+                        task, column: column - half - 8, labelHeight: stackedDueHeight,
                         budget: budget, metrics: metrics
                     )
-                    let stackedWins = inline.truncated != stacked.truncated
-                        ? inline.truncated : stacked.height < inline.height
-                    text = stackedWins
-                        ? (stacked.lines, stacked.height, true) : (inline.lines, inline.height, false)
+                    text = (stacked.lines, stacked.height, true)
                 } else {
+                    let inline = titleLayout(
+                        task,
+                        column: column - WidgetTheme.measuredWidth(for: parts.plainString, font: metrics.caption2Font) - 8,
+                        labelHeight: 0, budget: budget, metrics: metrics
+                    )
                     text = (inline.lines, inline.height, false)
                 }
             } else {
@@ -689,10 +695,13 @@ private struct TaskRow: View {
     /// One title line's height — the checkbox centres on the FIRST line.
     let firstLineHeight: CGFloat
     /// The due label on two lines, day word over time ("Tomorrow" / "4:00
-    /// pm") — systemLarge, two-part labels only, and only when that makes
-    /// the row shorter (`TasksListView.layout(for:)` decides, 2026-09-24).
-    /// On one line "Tomorrow 4:00 pm" took half the row at Trent's text size
-    /// and pushed titles like "Weekly allowance ($8)" to three narrow lines.
+    /// pm"), right-aligned — true for EVERY two-part label, on every family
+    /// (`TasksListView.layout(for:)`, 2026-09-24). It first stacked only
+    /// where that made the row shorter, so neighbouring rows mixed "Tomorrow
+    /// 9:00 am" on one line with "Tomorrow" over "12:00 pm" — Trent asked for
+    /// one rule. On one line "Tomorrow 4:00 pm" also took half the row at
+    /// his text size and pushed titles like "Weekly allowance ($8)" to three
+    /// narrow lines.
     let dueStacked: Bool
     /// See `TasksListView.markerBleed`. Zero outside normal mode: snooze
     /// mode's controls are already finger-sized on their own (a 32pt circle,
