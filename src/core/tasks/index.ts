@@ -6,7 +6,7 @@
 
 // Create and read
 export { createTask, getTaskById, getTasks } from './create'
-export type { CreateTaskOptions, GetTasksOptions } from './create'
+export type { CreateTaskOptions, GetTasksOptions, TaskKind } from './create'
 
 // Update
 export { updateTask, canUserAccessTask } from './update'
