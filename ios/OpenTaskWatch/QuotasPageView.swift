@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchKit
 
 /// Quotas page (third page, after Reminders and Tasks): every open quota
 /// (`WatchViewModel.quotas`, the `isTracked` slice of `/api/tasks`) grouped by
@@ -6,16 +7,29 @@ import SwiftUI
 /// section headed "This week · 2 of 7 met". A row is a label-color stripe,
 /// the quota's `displayTitle` (`short_title ?? title`), and "cur/target".
 ///
-/// Tap = +1. On a MET row, tap = −1 ("take back" a mis-log) — the only
-/// useful thing to do to a quota that's done for its period, and the only
-/// way to undo one tap without reaching for the toolbar Undo (which reverts
-/// whatever changed LAST server-wide, same as the other pages).
+/// Interaction is the phone Quotas widget's Takeback model (2026-09-24,
+/// copied from `TrackWidgetViews.QuotaChip` + `TakebackModeToggle`):
 ///
-/// Met quotas are hidden by default; a "Show met" toggle at the foot of the
-/// list (only drawn when something is met — no empty chrome) reveals them.
-/// A quota logged from this page stays visible after it becomes met until
-/// the page is left (`WatchViewModel.recentlyLoggedQuotaIds`), so a +1 that
-/// completes it never yanks the row out from under the finger.
+/// - **Tap = +1**, on every row, met ones included (over-target "2/1" is
+///   allowed, as on the phone and the web panel).
+/// - **⊖ (toolbar, top-leading) arms Takeback mode**: the glyph fills and
+///   turns red, every row with progress shows a red "−1" after its count
+///   and taps as `−1`, rows at 0 are dimmed and disabled (nothing to take
+///   back), and met rows show even with "Show met" off. The mode STAYS ON
+///   across `−1`s until ⊖ is tapped again (or the page is left — see
+///   `WatchViewModel.quotasTakebackMode`).
+/// - Met quotas vanish on the tap that meets them when "Show met" is off —
+///   no grace period (`WatchQuotaLogic.sections`).
+///
+/// This replaced the page's first model (a tap on a MET row silently meant
+/// `−1`, and just-logged rows stayed visible until the page was left): one
+/// tap target doing opposite things depending on a count the finger is
+/// covering is exactly what the phone moved away from. The toolbar Undo
+/// stays — it is every page's "revert whatever changed last, server-wide",
+/// not a quota-specific takeback.
+///
+/// Counts are server-true after every tap (`WatchViewModel.logQuota` writes
+/// the task `POST /api/tasks/:id/progress` returns).
 ///
 /// Shape copied from `TasksPageView` (a `List` with the same
 /// `hasLoadedOnce`/error gating), not invented — see that file's doc.
@@ -24,6 +38,7 @@ struct QuotasPageView: View {
 
     private var sections: [WatchQuotaSection] { model.quotaSections }
     private var anyMet: Bool { model.quotas.contains(where: \.isProgressMet) }
+    private var takeback: Bool { model.quotasTakebackMode }
 
     var body: some View {
         // `.navigationTitle`/`.toolbar` anchor to the single `NavigationStack`
@@ -48,12 +63,9 @@ struct QuotasPageView: View {
                 ForEach(sections) { section in
                     Section {
                         ForEach(section.rows) { row in
-                            Button {
+                            QuotaRowButton(row: row, takeback: takeback) {
                                 model.logQuota(row.task)
-                            } label: {
-                                QuotaRow(row: row)
                             }
-                            .accessibilityHint(row.task.isProgressMet ? "Takes back one" : "Logs one")
                         }
                     } header: {
                         // Section header: the period and its corpus-wide met
@@ -65,7 +77,9 @@ struct QuotasPageView: View {
                     }
                 }
 
-                if anyMet || model.showMetQuotas {
+                // Hidden while Takeback is armed: the mode already shows
+                // every met row, so the toggle would do nothing visible.
+                if !takeback, anyMet || model.showMetQuotas {
                     Toggle(isOn: $model.showMetQuotas) {
                         Text("Show met")
                             .font(.footnote)
@@ -80,6 +94,9 @@ struct QuotasPageView: View {
         .environment(\.defaultMinListRowHeight, 36)
         .navigationTitle("Quotas")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                TakebackToggle(isOn: $model.quotasTakebackMode)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     model.undo()
@@ -93,12 +110,69 @@ struct QuotasPageView: View {
             await model.load()
         }
         .onDisappear {
-            model.clearRecentlyLoggedQuotas()
+            // Leaving the page disarms Takeback (`quotasTakebackMode`'s doc).
+            // Verified in the watchOS 26.5 simulator (2026-09-24): although
+            // the paged TabView keeps neighbours mounted, swiping Quotas →
+            // Tasks → Quotas fires this and the ⊖ comes back "Off".
+            model.quotasTakebackMode = false
         }
     }
 }
 
-/// One quota row: label stripe, wrapped title, trailing "cur/target".
+/// The ⊖ that arms/disarms Takeback mode — the phone's `TakebackModeToggle`
+/// (`minus.circle`, icon only; accessibility label "Takeback mode"). Off:
+/// the outline glyph in the toolbar's ordinary tint. On: the FILLED glyph in
+/// `WatchTheme.takebackTint` — "armed" must be unmistakable at a glance.
+/// Tapping it again exits without doing anything else.
+private struct TakebackToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+            WKInterfaceDevice.current().play(.click)
+        } label: {
+            Image(systemName: isOn ? "minus.circle.fill" : "minus.circle")
+                .foregroundStyle(isOn ? WatchTheme.takebackTint : Color.primary)
+        }
+        .accessibilityLabel(Text("Takeback mode"))
+        .accessibilityValue(Text(isOn ? "On" : "Off"))
+    }
+}
+
+/// One quota row as a button: `+1` normally, `−1` in Takeback mode, and
+/// disabled + dimmed in Takeback mode at a count of 0 (the phone chip's
+/// `isInert`: nothing to take back). The row itself draws the "−1".
+private struct QuotaRowButton: View {
+    let row: WatchQuotaRow
+    let takeback: Bool
+    let action: () -> Void
+
+    private var task: TaskDTO { row.task }
+    /// Takeback mode, on a row with something to take back: draws "−1".
+    private var takesBack: Bool { takeback && task.progressCurrent > 0 }
+    /// Takeback mode, at 0: dimmed and inert.
+    private var isInert: Bool { takeback && !takesBack }
+
+    var body: some View {
+        Button(action: action) {
+            QuotaRow(row: row, takesBack: takesBack)
+        }
+        .disabled(isInert)
+        // 0.55, the phone chip's value: quieter, still readable.
+        .opacity(isInert ? 0.55 : 1)
+        .accessibilityLabel(Text(accessibilityText))
+    }
+
+    private var accessibilityText: String {
+        let count = "\(task.progressCurrent) of \(task.progressTarget)"
+        if isInert { return "\(task.displayTitle) — \(count), nothing to take back" }
+        return "\(takesBack ? "Take one back from" : "Log one more for") \(task.displayTitle) — \(count)"
+    }
+}
+
+/// One quota row: label stripe, wrapped title, trailing "cur/target" (and,
+/// in Takeback mode, a red "│ −1" after it — the phone chip's mark).
 ///
 /// The title is never truncated (Trent's rule for reminders, extended here):
 /// the watch list scrolls, so a long quota name just takes more lines. Both
@@ -109,9 +183,10 @@ struct QuotasPageView: View {
 /// a `short_title` on the quota is the way to make a row shorter.
 ///
 /// Met: the count turns green with a checkmark, the title dims — done for
-/// the period, but still legible (the row is tappable to take one back).
+/// the period, but still legible (shown with "Show met", or in Takeback).
 private struct QuotaRow: View {
     let row: WatchQuotaRow
+    let takesBack: Bool
 
     private var task: TaskDTO { row.task }
     private var met: Bool { task.isProgressMet }
@@ -129,15 +204,27 @@ private struct QuotaRow: View {
                 .foregroundStyle(met ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 2) {
-                if met {
-                    Image(systemName: "checkmark")
-                        .font(.caption2.weight(.bold))
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 2) {
+                    if met {
+                        Image(systemName: "checkmark")
+                            .font(.caption2.weight(.bold))
+                    }
+                    Text("\(task.progressCurrent)/\(task.progressTarget)")
+                        .font(.body.monospacedDigit().weight(.semibold))
                 }
-                Text("\(task.progressCurrent)/\(task.progressTarget)")
-                    .font(.body.monospacedDigit().weight(.semibold))
+                .foregroundStyle(met ? WatchTheme.done : WatchTheme.accent)
+
+                // Under the count rather than beside it: at the watch's
+                // width (and at large text sizes) "3/5 │ −1" on one line
+                // would eat the title's column. Red whatever the count's
+                // color — it names the ACTION, not the quota's state.
+                if takesBack {
+                    Text("−1")
+                        .font(.body.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(WatchTheme.takebackTint)
+                }
             }
-            .foregroundStyle(met ? WatchTheme.done : WatchTheme.accent)
             .fixedSize()
         }
         .accessibilityElement(children: .combine)
@@ -145,9 +232,9 @@ private struct QuotaRow: View {
 }
 
 #if DEBUG
-// Trent's real prod quotas (`ReminderStackPreviewData.quotas`, read-only
-// snapshot) — the long titles are the point: they're what a watch-width row
-// has to wrap without eating the count.
+// Trent's real prod quotas (`WatchPreviewData.quotas`, read-only snapshot) —
+// the long titles are the point: they're what a watch-width row has to wrap
+// without eating the count.
 #Preview("Quotas — met hidden") {
     NavigationStack {
         QuotasPageView(model: .preview(showMet: false))
@@ -158,5 +245,18 @@ private struct QuotaRow: View {
     NavigationStack {
         QuotasPageView(model: .preview(showMet: true))
     }
+}
+
+#Preview("Quotas — takeback") {
+    NavigationStack {
+        QuotasPageView(model: .preview(showMet: false, takeback: true))
+    }
+}
+
+#Preview("Quotas — takeback, XXX Large") {
+    NavigationStack {
+        QuotasPageView(model: .preview(showMet: false, takeback: true))
+    }
+    .dynamicTypeSize(.xxxLarge)
 }
 #endif

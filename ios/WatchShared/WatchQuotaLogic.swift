@@ -95,15 +95,12 @@ enum WatchQuotaLogic {
 
     /// Every period with at least one quota, day → year then period-less.
     ///
-    /// `showMet` false hides met quotas — EXCEPT ids in `keepVisible`: the
-    /// quotas this page has just logged. A +1 that completes a quota would
-    /// otherwise make its row vanish under the finger, taking the only way
-    /// to take the tap back (−1 on a met row) with it — the same problem the
-    /// phone widget's mutation grace (`WidgetStore.quotaMutationIsRecent`)
-    /// solves, handled here by an explicit id set rather than a timer
-    /// because this is a live view: the set is cleared when the page is
-    /// left, not after an arbitrary number of seconds (`WatchViewModel.
-    /// recentlyLoggedQuotaIds`).
+    /// `showMet` false hides met quotas — immediately, including one that a
+    /// tap has just met (no "just logged" grace since 2026-09-24, the
+    /// phone widget's rule: a met row left under the finger gets
+    /// over-tapped, and taking one back is Takeback mode's job). The caller
+    /// passes `showMet || takeback` (`WatchViewModel.quotaSections`), so an
+    /// armed Takeback mode shows met rows to take back.
     ///
     /// A period whose every quota is filtered out keeps its SECTION (with
     /// its "N of N met" header and no rows): "This week · 5 of 5 met" is
@@ -111,14 +108,13 @@ enum WatchQuotaLogic {
     static func sections(
         quotas: [TaskDTO],
         labelConfig: [LabelConfigDTO],
-        showMet: Bool,
-        keepVisible: Set<Int>
+        showMet: Bool
     ) -> [WatchQuotaSection] {
         let byPeriod = Dictionary(grouping: quotas) { WatchQuotaPeriod.from(rrule: $0.rrule) }
         return WatchQuotaPeriod.allCases.compactMap { period in
             guard let tasks = byPeriod[period], !tasks.isEmpty else { return nil }
             let visible = sorted(tasks).filter { task in
-                showMet || !task.isProgressMet || keepVisible.contains(task.id)
+                showMet || !task.isProgressMet
             }
             return WatchQuotaSection(
                 period: period,

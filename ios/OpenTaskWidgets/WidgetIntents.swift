@@ -937,7 +937,7 @@ struct UncompleteTaskIntent: AppIntent {
 // 8:30 PM moved it to noon). A per-row or bulk-select snooze now counts
 // from the task's OWN time while it is upcoming, from now once it is
 // overdue or undated — computed per task by `TaskSnoozePlan`
-// (`TaskFeed.swift`, pure and harness-tested), which also turns a
+// (`Shared/TaskSnoozePlan.swift`, pure and harness-tested), which also turns a
 // selection into the fewest `POST /api/tasks/bulk/snooze` requests: +1h is
 // at most two (overdue/undated → one `until`, snapped from now; upcoming →
 // one `delta_minutes: 60`, which the server adds to each task's own
@@ -1062,35 +1062,14 @@ struct ToggleTaskSelectionIntent: AppIntent {
     }
 }
 
-/// Send a `TaskSnoozePlan`'s requests one after another, returning the ids
-/// that actually moved (every id of each request that succeeded). Sequential
-/// on purpose: each request is its own server undo entry, and firing them
-/// concurrently would make the order they land on the undo stack — and so
-/// which one the first Undo reverses — a race. A failed request doesn't
-/// stop the rest: its ids simply aren't in the result, so the caller can
-/// keep exactly those selected for a retry without re-moving the others.
+/// Send a `TaskSnoozePlan`'s requests (`TaskSnoozePlan.send`, shared with
+/// the watch app — sequential, returns the ids that actually moved), bumping
+/// the Undo/Redo affordance's local count once per request that landed —
+/// one server undo entry each.
 private func sendSnoozeRequests(_ requests: [TaskSnoozePlan.Request]) async -> Set<Int> {
-    var moved: Set<Int> = []
-    for request in requests {
-        do {
-            switch request.kind {
-            case .until(let until):
-                try await APIClient.shared.bulkSnoozeTasks(
-                    ids: request.ids, until: DateHelpers.formatISO(until), includeTaskIds: request.ids
-                )
-            case .deltaMinutes(let minutes):
-                try await APIClient.shared.bulkSnoozeTasks(
-                    ids: request.ids, deltaMinutes: minutes, includeTaskIds: request.ids
-                )
-            }
-            moved.formUnion(request.ids)
-            // Undo/Redo affordance — one server undo entry per request.
-            WidgetStore.recordLocalMutationForUndoCount()
-        } catch {
-            print("[OpenTaskWidgets] Snooze \(request.ids) failed: \(error)")
-        }
+    await TaskSnoozePlan.send(requests) { _ in
+        WidgetStore.recordLocalMutationForUndoCount()
     }
-    return moved
 }
 
 /// Snooze every currently-selected task at once — the select-mode bottom

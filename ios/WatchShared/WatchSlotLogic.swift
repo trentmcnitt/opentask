@@ -8,7 +8,7 @@ import Foundation
 /// equivalent logic (`RemindersTimeline`/`TasksTimeline`, private to that
 /// extension) was read for reference but not copied line-for-line; this is a
 /// smaller, independent implementation sized for the watch's simpler UI (no
-/// paging, no auto-advance, no optimistic staging).
+/// paging, no auto-advance).
 enum WatchSlotLogic {
 
     // MARK: - Reminders: current slot
@@ -61,29 +61,6 @@ enum WatchSlotLogic {
             return .notStarted
         }
         return group.reminders.isEmpty ? .finished : .waiting
-    }
-
-    // MARK: - Reminders: next-period target
-
-    /// Local twin of the server's `nextPeriodStart()`
-    /// (`src/lib/time-slot-assign.ts`): the earliest upcoming occurrence,
-    /// across every cached time slot, of that slot's clock time — today if it
-    /// hasn't happened yet, else tomorrow. Computed on-device (unlike the bulk
-    /// endpoint's `slot: "next"`, which the SERVER resolves) because the
-    /// single-task snooze path (`PATCH /api/tasks/:id` via `APIClient.
-    /// snoozeTo`) takes an absolute `due_at`, not a slot keyword — there is no
-    /// single-task equivalent of the bulk endpoint's server-side resolution.
-    /// `nil` when no slots are cached yet (fresh install, before the first
-    /// `TimeSlotStore` fetch lands).
-    static func nextPeriodDate(now: Date = Date()) -> Date? {
-        let slots = TimeSlotStore.cachedSlots
-        guard !slots.isEmpty else { return nil }
-        return slots
-            .compactMap { slot -> Date? in
-                guard let minutes = slot.startMinutes else { return nil }
-                return DateHelpers.snapToNextPreset(hour: minutes / 60, minute: minutes % 60, now: now)
-            }
-            .min()
     }
 
     // MARK: - Tasks: "Up next"
