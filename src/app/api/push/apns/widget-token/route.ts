@@ -9,7 +9,7 @@
  * sent with apns-push-type "widgets" to a different APNs topic — see
  * docs/NOTIFICATIONS.md and src/core/notifications/apns.ts (sendApnsWidgetReload).
  *
- * Body (POST): { push_token: string, bundle_id: string, platform: 'ios' | 'macos',
+ * Body (POST): { push_token: string, bundle_id: string, platform: 'ios' | 'macos' | 'watchos',
  *                 environment?: string, widget_kind?: string }
  * Body (DELETE): { push_token: string }
  */
@@ -20,6 +20,8 @@ import { success, unauthorized, badRequest, handleError } from '@/lib/api-respon
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+
+const WIDGET_PUSH_PLATFORMS: unknown[] = ['ios', 'macos', 'watchos']
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -33,8 +35,13 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     if (!bundle_id || typeof bundle_id !== 'string') {
       return badRequest('Missing required field: bundle_id')
     }
-    if (platform !== 'ios' && platform !== 'macos') {
-      return badRequest('platform must be "ios" or "macos"')
+    // 'watchos': the Apple Watch Smart Stack widget (watchOS 26 WidgetKit
+    // push, ios/OpenTaskWatchWidgets/WatchWidgetPushHandler.swift). Stored and
+    // sent exactly like the others — the topic comes from bundle_id
+    // (`io.mcnitt.opentask.watchapp` → `….push-type.widgets`), so platform is
+    // informational only.
+    if (!WIDGET_PUSH_PLATFORMS.includes(platform)) {
+      return badRequest('platform must be "ios", "macos" or "watchos"')
     }
     if (widget_kind !== undefined && widget_kind !== null && typeof widget_kind !== 'string') {
       return badRequest('widget_kind must be a string')

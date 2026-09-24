@@ -98,6 +98,20 @@ describe('Widget push token registration', () => {
     expect(res.status).toBe(200)
   })
 
+  test('POST /api/push/apns/widget-token accepts watchOS platform', async () => {
+    const res = await apiFetch('/api/push/apns/widget-token', {
+      method: 'POST',
+      body: {
+        push_token: 'watch-widget-token',
+        bundle_id: 'io.mcnitt.opentask.watchapp',
+        platform: 'watchos',
+        environment: 'development',
+        widget_kind: 'OpenTaskWatchReminders',
+      },
+    })
+    expect(res.status).toBe(200)
+  })
+
   test('DELETE /api/push/apns/widget-token requires auth', async () => {
     const res = await apiAnon('/api/push/apns/widget-token', {
       method: 'DELETE',
