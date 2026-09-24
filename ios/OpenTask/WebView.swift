@@ -98,6 +98,11 @@ struct WebView: UIViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = false
         webView.navigationDelegate = context.coordinator
+        #if DEBUG
+        // Safari → Develop → <device> can attach Web Inspector to Debug
+        // builds (iOS 16.4+ requires opting in). Never in Release.
+        webView.isInspectable = true
+        #endif
 
         // Pull-to-refresh
         let refreshControl = UIRefreshControl()
@@ -402,8 +407,13 @@ struct WebView: UIViewRepresentable {
             return WebViewManager.shared.lastRequestedPath
         }
 
+        /// Uses the Coordinator's own `webView` reference (set in
+        /// `makeUIView`), not `sender.superview?.superview` — that walked
+        /// UIKit's private view hierarchy (refresh control → scroll view →
+        /// web view) and would silently stop refreshing if WebKit ever
+        /// nested the scroll view differently.
         @objc func handleRefresh(_ sender: UIRefreshControl) {
-            guard let webView = sender.superview?.superview as? WKWebView else {
+            guard let webView else {
                 sender.endRefreshing()
                 return
             }
