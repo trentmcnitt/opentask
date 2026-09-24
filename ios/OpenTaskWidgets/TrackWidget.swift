@@ -30,7 +30,7 @@ struct TrackEntry: TimelineEntry {
     /// regardless of `showMet`: an UNMET quota is never filtered by that
     /// toggle, only a met one ever is — see `QuotaSectionBuilder`.
     let nextUnmet: TrackItem?
-    /// The eye toggle's current state, carried on the entry rather than read
+    /// The "met" dot's current state, carried on the entry rather than read
     /// live from `WidgetStore` inside the view — see `TrackWidgetViews.swift`
     /// for why every view in that file is pure over this entry.
     let showMet: Bool
@@ -683,21 +683,31 @@ enum QuotaMetrics {
 
     static let headingRowHeight: CGFloat = 16
     static let clusterTitleRowHeight: CGFloat = 15
-    /// Extra vertical space (with a hairline divider) before a section's
-    /// heading, when it isn't the first section on the page.
-    static let sectionSpacing: CGFloat = 8
+    /// The air `QuotaLinesView` puts above and below a cluster's title row —
+    /// part of that line's height (`QuotaFlow.height(of:isFirstOnPage:)`),
+    /// which counted only the 15pt row until 2026-09-24, so every cluster
+    /// on a page drew 5pt more than it was budgeted.
+    static let clusterTitleTopPadding: CGFloat = 3
+    static let clusterTitleBottomPadding: CGFloat = 2
+    /// The hairline between period sections, and its air — drawn before
+    /// every heading except the first line on a page (`QuotaLinesView`).
+    static let dividerHeight: CGFloat = 1
+    static let dividerTopPadding: CGFloat = 4
+    static let dividerBottomPadding: CGFloat = 3
+    /// The divider and its air — what a heading costs beyond its own row
+    /// when it ISN'T the first line on a page.
+    static var sectionSpacing: CGFloat { dividerHeight + dividerTopPadding + dividerBottomPadding }
 
-    /// The header block's approximate rendered height, used ONLY to budget
-    /// the body's available height before layout actually happens (see
-    /// `QuotasListView`'s doc for why this is a deliberate, documented
-    /// approximation rather than a measured value). Large gets the full
-    /// title+subtitle+icon-row stack; medium has no top padding and a
-    /// tighter stack.
-    static func headerHeight(isLarge: Bool) -> CGFloat { isLarge ? 40 : 30 }
+    /// A chip too long for a line of its own wraps its title to this many
+    /// lines inside a card-wide chip, and is cut at the end of the last one
+    /// only if that still isn't enough (2026-09-24 — see `QuotaChip`).
+    static let wrappedTitleLines = 2
 
-    /// The bottom `ListPager`'s approximate rendered height (large only —
-    /// medium never shows one).
-    static let pagerHeight: CGFloat = 22
+    /// A chip's height for a title of `lines` lines: `chipHeight` for one,
+    /// plus one title line per extra line.
+    static func chipHeight(lines: Int) -> CGFloat {
+        chipHeight + CGFloat(max(lines - 1, 0)) * ceil(WidgetTheme.lineHeight(of: chipTitleMeasureFont))
+    }
 
     #if os(iOS)
     private static func platformFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
@@ -743,13 +753,16 @@ enum QuotaFlow {
         case clusterTitle(QuotaCluster)
         /// `color` is the owning cluster's — chips carry no color of their
         /// own (`TrackItem` is unchanged by this rebuild; see its doc).
-        case chipRow(id: String, color: String?, chips: [TrackItem])
+        /// `wrapWidth` is non-nil for a row holding ONE chip too long for
+        /// any line (2026-09-24): that chip is drawn exactly `wrapWidth`
+        /// wide with a two-line title — see `QuotaChip`.
+        case chipRow(id: String, color: String?, chips: [TrackItem], wrapWidth: CGFloat?)
 
         var id: String {
             switch self {
             case .heading(let section): return "h:\(section.id)"
             case .clusterTitle(let cluster): return "t:\(cluster.id)"
-            case .chipRow(let id, _, _): return "r:\(id)"
+            case .chipRow(let id, _, _, _): return "r:\(id)"
             }
         }
     }
@@ -758,6 +771,11 @@ enum QuotaFlow {
     /// `width` — mirrors CSS flex-wrap. A `.chipRow` this returns is ALWAYS
     /// a whole row by construction: nothing downstream ever re-wraps it, so
     /// a page break landing between two lines can never cut a chip.
+    ///
+    /// A chip wider than `width` on its own (2026-09-24 — Trent's quotas
+    /// have no short names yet) gets a row to itself, marked with
+    /// `wrapWidth` so it draws card-wide with its title on two lines,
+    /// instead of running off the card's edge as it used to.
     static func lines(sections: [QuotaSection], width: CGFloat) -> [Line] {
         guard width > 0 else { return [] }
         var out: [Line] = []
@@ -768,12 +786,24 @@ enum QuotaFlow {
                 var row: [TrackItem] = []
                 var rowWidth: CGFloat = 0
                 var rowIndex = 0
+                func flush() {
+                    guard !row.isEmpty else { return }
+                    out.append(.chipRow(id: "\(cluster.id):\(rowIndex)", color: cluster.color, chips: row, wrapWidth: nil))
+                    rowIndex += 1
+                    row = []
+                    rowWidth = 0
+                }
                 for chip in cluster.chips {
                     let chipWidth = QuotaMetrics.chipWidth(for: chip)
+                    if chipWidth > width {
+                        flush()
+                        out.append(.chipRow(id: "\(cluster.id):\(rowIndex)", color: cluster.color, chips: [chip], wrapWidth: width))
+                        rowIndex += 1
+                        continue
+                    }
                     let needed = row.isEmpty ? chipWidth : rowWidth + QuotaMetrics.chipRowGap + chipWidth
                     if !row.isEmpty, needed > width {
-                        out.append(.chipRow(id: "\(cluster.id):\(rowIndex)", color: cluster.color, chips: row))
-                        rowIndex += 1
+                        flush()
                         row = [chip]
                         rowWidth = chipWidth
                     } else {
@@ -781,21 +811,27 @@ enum QuotaFlow {
                         rowWidth = needed
                     }
                 }
-                if !row.isEmpty {
-                    out.append(.chipRow(id: "\(cluster.id):\(rowIndex)", color: cluster.color, chips: row))
-                }
+                flush()
             }
         }
         return out
     }
 
-    /// This flow's fixed per-line height — the ceiling every page-break
-    /// decision below is made against.
-    static func height(of line: Line) -> CGFloat {
+    /// A line's exact drawn height — built from the SAME `QuotaMetrics`
+    /// constants `QuotaLinesView` draws with, so a page break decided here
+    /// is a page break that fits there. A heading costs its divider only
+    /// when it isn't the page's first line (`QuotaLinesView` draws none
+    /// there); a wrapped chip row costs a two-line chip.
+    static func height(of line: Line, isFirstOnPage: Bool) -> CGFloat {
         switch line {
-        case .heading: return QuotaMetrics.headingRowHeight + QuotaMetrics.sectionSpacing
-        case .clusterTitle: return QuotaMetrics.clusterTitleRowHeight
-        case .chipRow: return QuotaMetrics.chipHeight + QuotaMetrics.chipRowSpacing
+        case .heading:
+            return QuotaMetrics.headingRowHeight + (isFirstOnPage ? 0 : QuotaMetrics.sectionSpacing)
+        case .clusterTitle:
+            return QuotaMetrics.clusterTitleTopPadding + QuotaMetrics.clusterTitleRowHeight
+                + QuotaMetrics.clusterTitleBottomPadding
+        case .chipRow(_, _, _, let wrapWidth):
+            let lines = wrapWidth == nil ? 1 : QuotaMetrics.wrappedTitleLines
+            return QuotaMetrics.chipHeight(lines: lines) + QuotaMetrics.chipRowSpacing
         }
     }
 
@@ -810,14 +846,10 @@ enum QuotaFlow {
     /// once every one of its chips is filtered away), so "heading, then a
     /// page break" is sometimes the true content, not a pagination artifact.
     ///
-    /// Known, accepted simplification (time/scope budget): a cluster's own
-    /// chip rows may still split across a page boundary with no repeated
-    /// heading/label on the continuation page, and a `.heading` CAN end up
-    /// alone at a page's bottom with its clusters starting fresh,
-    /// unlabeled, on the next page — the same accepted gap, one level up.
-    /// Both would need the break to look further ahead than "does the next
-    /// line fit", which a quota corpus large enough to hit this is rare
-    /// enough not to justify here.
+    /// Known, accepted simplification: a cluster's own chip rows may still
+    /// split across a page boundary with no repeated heading/label on the
+    /// continuation page, and a `.heading` CAN end up alone at a page's
+    /// bottom with its clusters starting fresh, unlabeled, on the next page.
     static func paginate(lines: [Line], pageHeight: CGFloat) -> [[Line]] {
         guard !lines.isEmpty else { return [[]] }
         guard pageHeight > 0 else { return [lines] }
@@ -827,17 +859,17 @@ enum QuotaFlow {
         var used: CGFloat = 0
 
         for line in lines {
-            let lineHeight = height(of: line)
+            let lineHeight = height(of: line, isFirstOnPage: page.isEmpty)
             if !page.isEmpty, used + lineHeight > pageHeight {
                 if case .clusterTitle = page.last {
                     let strand = page.removeLast()
                     pages.append(page)
                     page = [strand, line]
-                    used = height(of: strand) + lineHeight
+                    used = height(of: strand, isFirstOnPage: true) + height(of: line, isFirstOnPage: false)
                 } else {
                     pages.append(page)
                     page = [line]
-                    used = lineHeight
+                    used = height(of: line, isFirstOnPage: true)
                 }
             } else {
                 page.append(line)
@@ -1040,16 +1072,62 @@ struct TrackWidget: Widget {
 
 // MARK: - Previews
 
-/// A `SampleData.trackEntry`-shaped entry with `showMet`/`page` varied — the
-/// gallery/placeholder entry is always `showMet: false, page: 0` (see
-/// `SampleData.trackEntry`'s own doc for why those two knobs live only
-/// here), so a render review of the toggle-on and second-page states builds
-/// its own entries from the same underlying corpus instead.
+#if DEBUG
+/// Trent's REAL quotas, read-only from production on 2026-09-24 when he
+/// screenshotted the Quotas widget ("2 of 24 met"): every open quota
+/// (`is_tracked` or `progress_target > 1`), titles VERBATIM — none has a
+/// `short_title` yet, which is exactly what made the long ones run off the
+/// card — with his real labels and label colors. See
+/// `RemindersWidget.swift`'s preview header for why this lives here and not
+/// in `SampleData.swift` (which stays generic: it backs the real gallery).
+private enum QuotasPreviewData {
+    static var quotas: [TaskDTO] {
+        [
+            TaskDTO(id: 83, projectId: 4434, title: "Daily Walks", priority: 0, rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 111, projectId: 4434, title: "Clean bedroom fans", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 152, projectId: 4434, title: "Charge jump starter", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house", "finance"]),
+            TaskDTO(id: 276, projectId: 4434, title: "Clean the car seats", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["kids", "house"]),
+            TaskDTO(id: 295, projectId: 4434, title: "Reset the router (power everything off for 10 sec)", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 309, projectId: 4434, title: "Clean earbuds + phone speakers", priority: 0, rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["house"]),
+            TaskDTO(id: 27, projectId: 4434, title: "Music Practice", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 1, trackedFlag: true, labels: ["kids"]),
+            TaskDTO(id: 103, projectId: 4434, title: "Say something kind to someone every day", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: true, labels: ["kids", "relationships"]),
+            TaskDTO(id: 114, projectId: 4434, title: "Evening Shower", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 1, trackedFlag: true, labels: ["kids"]),
+            TaskDTO(id: 116, projectId: 1, title: "Green Vegetables", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, trackedFlag: false, labels: []),
+            TaskDTO(id: 129, projectId: 1, title: "High-Fiber Food (e.g. Bran, Oats)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 132, projectId: 4434, title: "Daily Supplements (Vit. D, maybe Omega-3, etc.)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health", "kids"]),
+            TaskDTO(id: 160, projectId: 1, title: "Trail mix bites", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 163, projectId: 4434, title: "Balloon breathing practice (slow exhale, relaxed shoulders, breathe into the upper back, seated)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 4, progressCurrent: 0, trackedFlag: true, labels: ["health", "kids"]),
+            TaskDTO(id: 192, projectId: 4434, title: "Empty the dishwasher (chore)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 0, trackedFlag: true, labels: ["kids", "house"]),
+            TaskDTO(id: 193, projectId: 1, title: "Protein Breakfast", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, trackedFlag: false, labels: []),
+            TaskDTO(id: 221, projectId: 4434, title: "Weight Lift", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 255, projectId: 4434, title: "Cook daily vegetables (incl. black beans)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 3, trackedFlag: true, labels: ["health"]),
+            TaskDTO(id: 605, projectId: 4434, title: "Play a card game after dinner", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["kids", "media"]),
+            TaskDTO(id: 3307, projectId: 6, title: "Check for new certifications — vendor academies, platform certs, automation credentials", priority: 2, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["ideas"]),
+            TaskDTO(id: 21771, projectId: 1, title: "Play Catch in the Backyard", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: []),
+            TaskDTO(id: 21829, projectId: 1, title: "Iron-Rich Meal (e.g. lentils, spinach)", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 2, trackedFlag: true, labels: []),
+            TaskDTO(id: 23532, projectId: 1, title: "Review book highlights", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["hub"]),
+            TaskDTO(id: 23534, projectId: 1, title: "Run the weekly maintenance checklist in a fresh chat", priority: 0, rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true, labels: ["hub", "ai-added"]),
+        ].filter(\.isTracked)
+    }
+
+    static var labelConfig: [LabelConfigDTO] {
+        [
+            LabelConfigDTO(name: "health", color: "blue"),
+            LabelConfigDTO(name: "house", color: "orange"),
+            LabelConfigDTO(name: "kids", color: "purple"),
+            LabelConfigDTO(name: "ideas", color: "pink"),
+        ]
+    }
+}
+
+/// A real-data entry with `showMet`/`page` varied. This view is pure over
+/// its entry (`QuotasListView`'s doc), so one preview's timeline can step
+/// through every page and both toggle states.
 private func previewEntry(showMet: Bool, page: Int) -> TrackEntry {
     let now = Date()
-    let quotas = SampleData.trackedQuotas
+    let quotas = QuotasPreviewData.quotas
     let sections = QuotaSectionBuilder.sections(
-        from: quotas, labelConfig: SampleData.trackLabelConfig,
+        from: quotas, labelConfig: QuotasPreviewData.labelConfig,
         showMet: showMet, mutationIsRecent: false, now: now
     )
     let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
@@ -1069,19 +1147,27 @@ private func previewEntry(showMet: Bool, page: Int) -> TrackEntry {
     )
 }
 
+/// Timeline indexes 0-4: met hidden, pages 1-5; 5-9: met shown, pages 1-5.
+/// Pages past the end clamp to the last one.
 #Preview("Quotas — Large", as: .systemLarge) {
     TrackWidget()
 } timeline: {
     previewEntry(showMet: false, page: 0)
     previewEntry(showMet: false, page: 1)
+    previewEntry(showMet: false, page: 2)
+    previewEntry(showMet: false, page: 3)
+    previewEntry(showMet: false, page: 4)
     previewEntry(showMet: true, page: 0)
+    previewEntry(showMet: true, page: 1)
+    previewEntry(showMet: true, page: 2)
+    previewEntry(showMet: true, page: 3)
+    previewEntry(showMet: true, page: 4)
 }
 
 #Preview("Quotas — Medium", as: .systemMedium) {
     TrackWidget()
 } timeline: {
     previewEntry(showMet: false, page: 0)
-    previewEntry(showMet: true, page: 0)
 }
 
 #Preview("Quotas — Small", as: .systemSmall) {
@@ -1089,3 +1175,4 @@ private func previewEntry(showMet: Bool, page: Int) -> TrackEntry {
 } timeline: {
     previewEntry(showMet: false, page: 0)
 }
+#endif
