@@ -105,6 +105,11 @@ struct ReminderChecklistView: View {
             }
         }
         .padding(12)
+        // The checklist's height is its content's, never less: if iOS ever
+        // grants the extension less room than `preferredContentSize` asked
+        // for, the bottom clips instead of rows being compressed into each
+        // other (the "grouped notification" overlap, 2026-09-24).
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Header
@@ -196,7 +201,8 @@ struct ReminderChecklistView: View {
         return Button {
             model.toggle(item.id)
         } label: {
-            HStack(spacing: 8) {
+            // .top: on a wrapped title the circle stays beside line one.
+            HStack(alignment: .top, spacing: 8) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                     .font(.body)
                     .foregroundColor(checked ? .green : .secondary)
@@ -208,7 +214,11 @@ struct ReminderChecklistView: View {
                     .fontWeight(item.priority >= 3 ? .semibold : .regular)
                     .foregroundColor(checked ? .secondary : .primary)
                     .strikethrough(checked, color: .secondary)
-                    .lineLimit(1)
+                    // Wraps in full (2026-09-24) — a reminder is never
+                    // truncated, and `fixedSize` keeps a parent from
+                    // squeezing the wrapped rows into each other.
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 6)
@@ -219,3 +229,4 @@ struct ReminderChecklistView: View {
         .buttonStyle(.plain)
     }
 }
+
