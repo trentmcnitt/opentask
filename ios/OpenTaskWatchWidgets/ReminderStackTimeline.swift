@@ -34,22 +34,14 @@ struct WatchWidgetEntry: TimelineEntry {
         let slotLabel: String
         /// `ReminderGroupDTO.slotKey` — scopes the ⏭ skip list.
         let slotKey: Int
-        /// "2 of 7": position through the slot's WHOLE day, not the remaining
-        /// list — `considered + index-in-remaining + 1` over `considered +
-        /// remaining`. So a ✓ moves "1 of 7" to "2 of 7" (progress you can
-        /// feel), where a remaining-list count would sit at "1 of 6". A ⏭
-        /// moves it forward too, since the shown item is further down.
-        let position: Int
-        let total: Int
         /// Every still-pending id in card order, for `SkipReminderIntent`'s
-        /// wrap decision.
+        /// wrap decision — and the header's "N left" count (2026-09-24,
+        /// replacing a "4 of 5" position that read as a mystery).
         let remainingIds: [Int]
         /// Overdue Urgent (P4) tasks — never bulk-snoozable, so they don't
         /// take the card over (see `ReminderStackTimeline.content`), but they
         /// must not vanish either: a small red line under the header.
         let urgentOverdue: Int
-
-        var isLast: Bool { remainingIds.count == 1 }
     }
 
     struct CaughtUpCard: Equatable {
@@ -167,8 +159,6 @@ enum ReminderStackTimeline {
             let card = WatchWidgetEntry.ReminderCard(
                 taskId: shown.id, title: shown.title,
                 slotLabel: group.label, slotKey: group.slotKey,
-                position: group.considered + index + 1,
-                total: group.considered + remaining.count,
                 remainingIds: remaining.map(\.id),
                 urgentOverdue: urgent
             )
