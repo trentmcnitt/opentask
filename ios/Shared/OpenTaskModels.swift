@@ -236,15 +236,27 @@ struct ReminderGroupDTO: Codable, Hashable {
     /// older cached payload (written before this field existed) still
     /// parses — see the file header's "partial decode" note.
     let considered: Int
+    /// The considered-today items THEMSELVES (`g.considered_items` from
+    /// `GET /api/reminders`), full `TaskDTO`s — the server already builds
+    /// this list to support "put back" (`POST /api/tasks/:id/undone`, the
+    /// same endpoint the web Reminders surface's put-back uses,
+    /// `useReminders.ts`'s `usePutBack`), so the widget's "show completed"
+    /// (2026-09-23) reads it directly rather than inventing a second
+    /// fetch. Decoded with a default (`[]`) for the same reason `considered`
+    /// is — an older cached payload written before this field existed must
+    /// still parse.
+    let consideredItems: [TaskDTO]
 
     enum CodingKeys: String, CodingKey {
         case slot, reminders, considered
+        case consideredItems = "considered_items"
     }
 
-    init(slot: TimeSlotDTO?, reminders: [TaskDTO], considered: Int = 0) {
+    init(slot: TimeSlotDTO?, reminders: [TaskDTO], considered: Int = 0, consideredItems: [TaskDTO] = []) {
         self.slot = slot
         self.reminders = reminders
         self.considered = considered
+        self.consideredItems = consideredItems
     }
 
     init(from decoder: Decoder) throws {
@@ -252,6 +264,7 @@ struct ReminderGroupDTO: Codable, Hashable {
         slot = try c.decodeIfPresent(TimeSlotDTO.self, forKey: .slot)
         reminders = try c.decodeIfPresent([TaskDTO].self, forKey: .reminders) ?? []
         considered = try c.decodeIfPresent(Int.self, forKey: .considered) ?? 0
+        consideredItems = try c.decodeIfPresent([TaskDTO].self, forKey: .consideredItems) ?? []
     }
 
     /// Stable identity for the App Group override key. -1 stands in for the
