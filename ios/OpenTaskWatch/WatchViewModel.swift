@@ -2,7 +2,8 @@ import Foundation
 import WidgetKit
 import WatchKit
 
-/// Single source of truth for both pages (`RemindersPageView`, `TasksPageView`).
+/// Single source of truth for all three pages (`RemindersPageView`,
+/// `TasksPageView`, `QuotasPageView`).
 ///
 /// Deliberately simpler than the phone widgets' `WidgetStore` optimistic
 /// pipeline (staged deltas, tombstone TTLs, auto-advance snapshots): the
@@ -16,6 +17,20 @@ final class WatchViewModel: ObservableObject {
     @Published private(set) var reminderGroups: [ReminderGroupDTO] = []
     @Published private(set) var tasks: [TaskDTO] = []
     @Published private(set) var projects: [ProjectDTO] = []
+    /// Label display colors for the Quotas page's stripes (`GET /api/user/
+    /// preferences`' `label_config` — see `APIClient.fetchLabelConfig`'s doc
+    /// for why not `/api/labels`).
+    @Published private(set) var labelConfig: [LabelConfigDTO] = []
+    /// The Quotas page's "Show met" toggle, persisted in `WatchCache`.
+    @Published var showMetQuotas: Bool = WatchCache.showMetQuotas {
+        didSet { WatchCache.showMetQuotas = showMetQuotas }
+    }
+    /// Quotas logged from the Quotas page since it was last shown — kept
+    /// visible even once met, so a +1 that completes a quota doesn't pull
+    /// the row (and the −1 that would take it back) out from under the
+    /// finger. Cleared when the page is left (`QuotasPageView`'s
+    /// `.onDisappear`), never on a timer — see `WatchQuotaLogic.sections`.
+    @Published private(set) var recentlyLoggedQuotaIds: Set<Int> = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
     /// Whether `load()` has completed at least once. Both pages gate their
@@ -61,6 +76,19 @@ final class WatchViewModel: ObservableObject {
 
     var upNextTasks: [TaskDTO] { WatchSlotLogic.upNextTasks(from: tasks) }
     var overdueTasks: [TaskDTO] { WatchSlotLogic.overdueTasks(from: tasks) }
+    /// Every open quota — the same `isTracked` slice of `/api/tasks` the
+    /// phone Quotas widget reads (quotas are open tasks that never complete,
+    /// so no separate endpoint exists or is needed).
+    var quotas: [TaskDTO] { tasks.filter(\.isTracked) }
+
+    var quotaSections: [WatchQuotaSection] {
+        WatchQuotaLogic.sections(
+            quotas: quotas,
+            labelConfig: labelConfig,
+            showMet: showMetQuotas,
+            keepVisible: recentlyLoggedQuotaIds
+        )
+    }
 
     func project(for task: TaskDTO) -> ProjectDTO? {
         projects.first { $0.id == task.projectId }
@@ -68,7 +96,7 @@ final class WatchViewModel: ObservableObject {
 
     // MARK: - Load
 
-    /// Fetch everything the two pages need in one pass, in parallel. Falls
+    /// Fetch everything the three pages need in one pass, in parallel. Falls
     /// back to the last-known `WatchCache` payload on failure (e.g. dev
     /// server unreachable) rather than blanking the screen — same "stale
     /// beats empty" instinct as the phone widgets, just without their TTL.
@@ -81,8 +109,11 @@ final class WatchViewModel: ObservableObject {
         async let tasksResult = asyncResult { try await api.fetchOpenTasks() }
         async let projectsResult = asyncResult { try await api.fetchProjects() }
         async let undoResult = asyncResult { try await api.fetchUndoStatus() }
+        async let labelsResult = asyncResult { try await api.fetchLabelConfig() }
 
-        let (rem, tsk, proj, undo) = await (remindersResult, tasksResult, projectsResult, undoResult)
+        let (rem, tsk, proj, undo, labels) = await (
+            remindersResult, tasksResult, projectsResult, undoResult, labelsResult
+        )
 
         if case let .success(payload) = rem {
             reminderGroups = payload.groups
@@ -102,6 +133,15 @@ final class WatchViewModel: ObservableObject {
 
         if case let .success(status) = undo {
             canUndo = status.undoableCount > 0
+        }
+
+        // Colors only — a failure falls back to the cached config (or none:
+        // every stripe draws neutral), never to an error state.
+        if case let .success(config) = labels {
+            labelConfig = config
+            WatchCache.saveLabelConfig(config)
+        } else if let cached = WatchCache.loadLabelConfig() {
+            labelConfig = cached
         }
 
         // Surface a failure on EITHER fetch, not just reminders — the
@@ -227,6 +267,45 @@ final class WatchViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Quotas
+
+    /// Tap on a quota row: +1 while it's under target, −1 once it's met
+    /// ("take back" — a met quota is done, so the only useful tap on it is
+    /// correcting a mis-log). The same `POST /api/tasks/:id/progress` the
+    /// phone widget's `IncrementProgressIntent` sends (`APIClient.
+    /// logProgress`, server floors at 0), and like every other mutation here
+    /// it lands in the server's undo log, so the toolbar Undo reverts it.
+    ///
+    /// Optimistic: the row's count moves before the round trip (via
+    /// `withOptimisticIncrement`, the same helper the phone widget uses), then
+    /// `load()` reconciles against the server either way — a failure simply
+    /// redraws the true count.
+    func logQuota(_ task: TaskDTO) {
+        let delta = task.isProgressMet ? -1 : 1
+        guard let idx = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        tasks[idx] = tasks[idx].withOptimisticIncrement(delta)
+        recentlyLoggedQuotaIds.insert(task.id)
+        WKInterfaceDevice.current().play(delta > 0 ? .click : .directionDown)
+
+        Task {
+            do {
+                try await api.logProgress(taskId: task.id, delta: delta)
+                WKInterfaceDevice.current().play(.success)
+                canUndo = true
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+            }
+            await load()
+        }
+    }
+
+    /// Leaving the Quotas page ends the "just logged" grace: next time it is
+    /// shown, met quotas are hidden again per the toggle.
+    func clearRecentlyLoggedQuotas() {
+        recentlyLoggedQuotaIds.removeAll()
+    }
+
     // MARK: - Bulk overdue
 
     /// Snooze every overdue task (server-side set, not just what's on
@@ -299,9 +378,29 @@ final class WatchViewModel: ObservableObject {
     }
 }
 
-/// Small `Result`-from-async helper so `load()` can fan out four requests in
+#if DEBUG
+extension WatchViewModel {
+    /// A model pre-filled with `WatchPreviewData` (Trent's real quotas) for
+    /// `#Preview`s — no network, `hasLoadedOnce` already true so the page
+    /// renders content instead of its first-launch spinner. Lives in this
+    /// file because the properties it fills are `private(set)`. Setting
+    /// `showMetQuotas` persists through its `didSet`, which is harmless in a
+    /// preview process (its App Group defaults are its own sandbox).
+    static func preview(showMet: Bool) -> WatchViewModel {
+        let model = WatchViewModel()
+        model.tasks = WatchPreviewData.quotas
+        model.labelConfig = WatchPreviewData.labelConfig
+        model.hasLoadedOnce = true
+        model.canUndo = true
+        model.showMetQuotas = showMet
+        return model
+    }
+}
+#endif
+
+/// Small `Result`-from-async helper so `load()` can fan out five requests in
 /// parallel with `async let` and still fall back per-endpoint on failure,
-/// without four separate do/catch blocks. A free function rather than a
+/// without five separate do/catch blocks. A free function rather than a
 /// `Result.init(catching:)` extension to avoid any overload ambiguity with
 /// the stdlib's synchronous `init(catching:)` at call sites that use trailing
 /// closure syntax.

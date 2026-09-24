@@ -1,13 +1,24 @@
 import SwiftUI
+import WatchKit
 
 /// Tasks page: "Up next" (every open, dated, non-reminder, non-tracked task,
 /// soonest first — `WatchSlotLogic.upNextTasks`, the same scope as the phone
-/// Tasks widget's "Up next" page). Tap a row to complete; swipe for
+/// Tasks widget's "Up next" page). Tap a row to complete; touch and hold for
 /// per-task snooze ("Next period" / "+1 hour"); a banner button when
 /// anything is overdue opens the bulk-snooze sheet.
+///
+/// Per-task snooze was a trailing `.swipeActions` until 2026-09-24, when the
+/// root pager turned horizontal (`WatchRootView`): this is the MIDDLE page,
+/// so a left swipe on a row now means "next page" too. Verified in the
+/// watchOS 26.5 simulator — even a short, slow left swipe on a row flipped
+/// to Quotas (and half-opened the row's actions behind it), and a leading
+/// swipe would collide with "back to Reminders" the same way. A long press
+/// is the one row gesture the pager doesn't claim.
 struct TasksPageView: View {
     @ObservedObject var model: WatchViewModel
     @State private var showingBulkSheet = false
+    /// The row whose long-press snooze chooser is open.
+    @State private var snoozeTarget: TaskDTO?
 
     private var upNext: [TaskDTO] { model.upNextTasks }
     private var overdueCount: Int { model.overdueTasks.count }
@@ -53,30 +64,12 @@ struct TasksPageView: View {
                         TaskRow(task: task, project: model.project(for: task))
                             .contentShape(Rectangle())
                             .onTapGesture { model.completeTask(task) }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                // Short labels ("Next"/"+1h") rather than the
-                                // full "Next period"/"+1 hour" — watchOS'
-                                // swipe-action buttons are narrow circles with
-                                // very little room for text alongside the
-                                // glyph. `clock.badge.plus` (previously used
-                                // here) rendered as a BLANK button in the
-                                // simulator — not a real SF Symbol name on
-                                // this SDK — so this uses `clock`, confirmed
-                                // to render, matching `arrow.right.to.line`'s
-                                // confirmed rendering for the other action.
-                                Button {
-                                    model.snoozeTaskToNextPeriod(task)
-                                } label: {
-                                    Label("Next", systemImage: "arrow.right.to.line")
-                                }
-                                .tint(WatchTheme.accent)
-
-                                Button {
-                                    model.snoozeTaskPlusHour(task)
-                                } label: {
-                                    Label("+1h", systemImage: "clock")
-                                }
-                                .tint(.gray)
+                            // `minimumDuration` 0.4s: long enough that a
+                            // tap still completes and a scroll never
+                            // triggers it, short enough not to feel stuck.
+                            .onLongPressGesture(minimumDuration: 0.4) {
+                                WKInterfaceDevice.current().play(.click)
+                                snoozeTarget = task
                             }
                     }
                 }
@@ -88,6 +81,21 @@ struct TasksPageView: View {
         }
         .sheet(isPresented: $showingBulkSheet) {
             BulkSnoozeSheetView(model: model, isPresented: $showingBulkSheet)
+        }
+        // A chooser, not a confirmation: each button IS the action (Trent's
+        // "undo over confirm" rule — both land in the toolbar-Undo log).
+        // Same two snoozes, same model calls, the old swipe actions made.
+        .confirmationDialog(
+            snoozeTarget?.title ?? "Snooze",
+            isPresented: Binding(
+                get: { snoozeTarget != nil },
+                set: { if !$0 { snoozeTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: snoozeTarget
+        ) { task in
+            Button("Next period") { model.snoozeTaskToNextPeriod(task) }
+            Button("+1 hour") { model.snoozeTaskPlusHour(task) }
         }
     }
 }

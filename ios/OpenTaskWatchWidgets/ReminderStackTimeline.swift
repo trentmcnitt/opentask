@@ -302,6 +302,38 @@ enum ReminderStackTimeline {
             .sorted()
     }
 
+    /// Budgeted-refresh cadence while nothing is overdue.
+    static let calmRefreshInterval: TimeInterval = 20 * 60
+    /// Tighter cadence while any task is overdue — the state where a stale
+    /// card costs the most ("still says it's overdue" after it was done on
+    /// the phone, Trent 2026-09-24) and where changes from elsewhere
+    /// (snoozes, check-offs) are most likely.
+    static let overdueRefreshInterval: TimeInterval = 15 * 60
+
+    /// When the timeline's `.after` policy should ask for a REAL fetch (as
+    /// opposed to `changeDates`, which only re-render cached data):
+    /// whichever comes first of the cadence above and the next slot start —
+    /// a new slot is where the card's subject changes, so it is worth one
+    /// fetch to open it with current data rather than whatever was cached up
+    /// to 20 min earlier.
+    ///
+    /// Only the last resort for changes made elsewhere: WidgetKit push
+    /// (watchOS 26, `WatchWidgetPushHandler`) and the watch app's own
+    /// reloads normally get there first. WidgetKit treats `.after` as a
+    /// floor, not a promise — on a tight daily budget it may run later.
+    static func refreshDate(groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date) -> Date {
+        let anyOverdue = !WatchSlotLogic.overdueTasks(from: tasks, now: now).isEmpty
+        let cadence = now.addingTimeInterval(anyOverdue ? overdueRefreshInterval : calmRefreshInterval)
+        // +1s, same as `changeDates`: land just inside the new slot.
+        let nextSlotStart = groups
+            .compactMap { startDate(of: $0, on: now) }
+            .map { $0.addingTimeInterval(1) }
+            .filter { $0 > now }
+            .min()
+        guard let nextSlotStart else { return cadence }
+        return min(cadence, nextSlotStart)
+    }
+
     // MARK: Relevance (Smart Stack)
 
     /// Windows in which the Smart Stack should surface the card on its own:
