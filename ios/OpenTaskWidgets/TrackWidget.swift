@@ -428,17 +428,18 @@ enum QuotaPeriodKey: String {
         return min(max(now.timeIntervalSince(start) / total, 0), 1)
     }
 
-    /// The section heading's muted clause — "ends tonight" for a day, "N
-    /// days left" for anything longer, nil for `.none`. Mirrors
-    /// `periodTimeLeftText`: measured from the start of TODAY to the
+    /// The section heading's muted clause — "N days left" for a week or
+    /// longer, nil for a day and for `.none`. Mirrors `periodTimeLeftText`
+    /// (`src/lib/track.ts`), which since PR #62 (Trent, 2026-09-24) returns
+    /// null for DAILY: "Today · ends tonight" said the same thing twice. The
+    /// heading row's bar flexes, so it takes the freed width. Measured from the start of TODAY to the
     /// period's end (both midnight-aligned in this calendar, so the day
     /// count is already exact — no rounding needed), so the number only
     /// changes at midnight rather than ticking down the instant `now`'s
     /// clock passes.
     func timeLeftText(now: Date) -> String? {
         switch self {
-        case .daily: return "ends tonight"
-        case .none: return nil
+        case .daily, .none: return nil
         case .weekly, .monthly, .yearly:
             guard let (_, end) = bounds(now: now) else { return nil }
             let startOfToday = Self.calendar.startOfDay(for: now)
@@ -458,7 +459,7 @@ struct QuotaSection: Identifiable {
     /// `QuotaPeriodKey.rawValue` — the section's DOM/list key.
     let id: String
     let heading: String
-    /// "ends tonight" / "N days left" — nil for the no-period section.
+    /// "N days left" — nil for Today (PR #62) and the no-period section.
     let timeLeftText: String?
     /// 0...1, where the section bar's notch sits — nil for the no-period
     /// section (no clock, no notch).
