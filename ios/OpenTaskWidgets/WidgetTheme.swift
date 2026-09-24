@@ -62,6 +62,18 @@ enum WidgetTheme {
         }
     }
 
+    // MARK: - Shared accents
+
+    /// The one indigo used across all three widget kinds for "this is
+    /// active / worth noticing right now" — `ReminderSlotStrip`'s "behind,
+    /// still waiting" segment fill (`RemindersWidgetViews.swift`) and the
+    /// "show completed" eye toggle's ON state (`ShowCompletedToggle` below).
+    /// ONE named constant, not two independently-chosen indigo literals, so
+    /// the Reminders and Track/Tasks/Quotas widgets' accent can never drift
+    /// apart pixel-by-pixel across files (2026-09-23, per coordinator note
+    /// keeping this consistent with the parallel Quotas widget rebuild).
+    static let indigoAccent = Color.indigo
+
     // MARK: - Track (§5)
 
     /// Track's palette sits deliberately OUTSIDE the priority scale above.
@@ -365,6 +377,134 @@ enum WidgetTheme {
     static func staleNote(_ fetchedAt: Date) -> String {
         "as of \(shortTime(fetchedAt))"
     }
+
+    // MARK: - Due-date day-naming (2026-09-23)
+    //
+    // "Anywhere a task time shows" now reads a day word ahead of the time:
+    // "8:30 PM" (today, unchanged), "Tomorrow 9:00 AM", "Sun 9:00 AM" (2-6
+    // days out), "Oct 1 9:00 AM" (7+ days out), "Oct 2" (date-only, no time
+    // at all). Overdue is DELIBERATELY UNCHANGED — always the plain time in
+    // red, never a day word (an overdue item is "late", not "coming up",
+    // and the red already carries that meaning).
+    //
+    // Date-only detection is an INVENTED convention, not something the wire
+    // format states: `TaskDTO.dueAt`/the server schema carry no date-only
+    // flag anywhere (the web's own `DateTimePicker.tsx` defaults an unset
+    // time to 9:00 AM, not midnight, so there is no existing signal to key
+    // off). A local time-of-day of exactly midnight is treated as
+    // date-only — common enough as a convention, but flagged here because
+    // nothing in the codebase already does this.
+    //
+    // `DueLabelParts` is the ONE function both the styled `Text` render
+    // (`dueLabelText`) and the plain-string WIDTH MEASUREMENT
+    // (`TaskRow.measuredLines`, via `plainString`) build from — the same
+    // discipline `measuredLineCount`'s own doc insists on elsewhere in this
+    // file: a row's reserved height must measure the SAME string it renders,
+    // or `ViewThatFits` silently mismeasures and a title clips or gets an
+    // extra blank line.
+
+    struct DueLabelParts {
+        /// nil when the due date is today or overdue (no day word in either
+        /// case — see this section's header comment).
+        let dayWord: String?
+        /// nil when the due date is date-only (local time-of-day exactly
+        /// midnight).
+        let time: String?
+
+        /// The exact string shown — `"\(dayWord) \(time)"`, or whichever
+        /// half is present alone, or "" if somehow both are nil (a
+        /// date-only task due exactly today: no day word because it's
+        /// today, no time because it's date-only — nothing to say).
+        var plainString: String {
+            switch (dayWord, time) {
+            case let (.some(d), .some(t)): return "\(d) \(t)"
+            case let (.some(d), nil): return d
+            case let (nil, .some(t)): return t
+            case (nil, nil): return ""
+            }
+        }
+    }
+
+    private static let dueWeekdayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
+
+    private static let dueMonthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    /// The single source of truth for a due date's day word + time — see
+    /// this section's header comment. `isOverdue` is passed in rather than
+    /// recomputed here (`TaskDTO.isOverdue(now:)` already exists and every
+    /// call site already has it or an equivalent `now` to compute it from),
+    /// so this function has exactly one clock-reading job (bucketing days
+    /// away), not two.
+    static func dueLabelParts(for due: Date, now: Date = Date(), isOverdue: Bool) -> DueLabelParts {
+        if isOverdue {
+            return DueLabelParts(dayWord: nil, time: shortTime(due))
+        }
+
+        let calendar = Calendar.current
+        let isDateOnly =
+            calendar.component(.hour, from: due) == 0 && calendar.component(.minute, from: due) == 0
+        let time = isDateOnly ? nil : shortTime(due)
+
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfDue = calendar.startOfDay(for: due)
+        let daysAway = calendar.dateComponents([.day], from: startOfToday, to: startOfDue).day ?? 0
+
+        let dayWord: String?
+        switch daysAway {
+        case ..<1:
+            // Today (0) or, in principle, still-negative-but-not-overdue
+            // (never reached in practice — `isOverdue` already caught every
+            // past instant — kept as a safe fallback rather than an
+            // unreachable-crash).
+            dayWord = nil
+        case 1:
+            dayWord = "Tomorrow"
+        case 2...6:
+            dayWord = dueWeekdayFormatter.string(from: due)
+        default:
+            dayWord = dueMonthDayFormatter.string(from: due)
+        }
+        return DueLabelParts(dayWord: dayWord, time: time)
+    }
+
+    /// Subtle indigo for the day word — built on `indigoAccent` (the same
+    /// hue `ReminderSlotStrip`'s "behind, still waiting" fill and
+    /// `ShowCompletedToggle`'s ON state use), dimmed to `0.85` since a due
+    /// label sits beside body text far more often than a slot strip segment
+    /// does and doesn't need the fully saturated version.
+    static let dueDayWordTint = indigoAccent.opacity(0.85)
+
+    /// The styled `Text` for wherever a task's due time shows (`TaskRow`,
+    /// `TasksSmallView`) — builds on `dueLabelParts` so the day-word tint and
+    /// the overdue-red rule can never drift between call sites. Built via
+    /// `Text` concatenation (`+`), not a nested `HStack`, so it composes
+    /// inline with a `.firstTextBaseline` `HStack` the way a single `Text`
+    /// would.
+    static func dueLabelText(for task: TaskDTO, now: Date = Date()) -> Text {
+        guard let due = task.dueDate else { return Text("") }
+        let overdue = task.isOverdue(now: now)
+        let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
+        if overdue {
+            return Text(parts.time ?? "").foregroundStyle(Color.red.opacity(0.9))
+        }
+        var text: Text?
+        if let dayWord = parts.dayWord {
+            text = Text(dayWord).foregroundStyle(dueDayWordTint)
+        }
+        if let time = parts.time {
+            let timeText = Text(time).foregroundStyle(Color.secondary)
+            text = text.map { $0 + Text(" ") + timeText } ?? timeText
+        }
+        return text ?? Text("")
+    }
 }
 
 // MARK: - Deep links
@@ -562,6 +702,66 @@ struct UndoRedoButtons: View {
         .opacity(enabled ? 1 : 0.3)
         .disabled(!enabled)
         .accessibilityLabel(Text(label))
+    }
+}
+
+/// The "show completed" eye toggle (2026-09-23), left of `UndoRedoButtons` in
+/// the Reminders/Tasks `systemLarge` headers (mockup option A: completed
+/// items sit at the bottom of the card, Trent's pick). Self-contained and
+/// keyed by an arbitrary `kind` string (`WidgetStore.showCompleted(for:)` /
+/// `ToggleShowCompletedIntent`), so a parallel branch building the Track
+/// widget's own eye toggle can reuse this exact view — and its storage —
+/// without either branch's change colliding with the other's.
+///
+/// `systemLarge` only — the call sites gate it (mirroring `UndoRedoButtons`'
+/// own systemMedium/Large split doc): a systemMedium card has no header
+/// height, and no row budget, to spare on a DONE section at all (see
+/// `WidgetTheme.compactRowSpacing`'s "6pt costs a whole row" doc).
+struct ShowCompletedToggle: View {
+    let kind: String
+    let isOn: Bool
+
+    /// `eye.slash` (secondary) off, `eye` (indigo, `WidgetTheme.
+    /// indigoAccent`) on — matched to the parallel Quotas widget rebuild's
+    /// own eye toggle for the same affordance across all three kinds, per
+    /// coordinator note (2026-09-23). Deliberately NOT `eye`/`eye.fill`
+    /// (this view's first-drafted pair): "slashed" reads as "hidden, tap to
+    /// reveal" more clearly than a plain outline does, and the indigo tint
+    /// on ON is what makes an active toggle visually distinct from
+    /// `UndoRedoButtons`' plain secondary-gray icons beside it, not just a
+    /// filled-vs-outline glyph difference.
+    var body: some View {
+        Button(intent: ToggleShowCompletedIntent(kind: kind)) {
+            Image(systemName: isOn ? "eye" : "eye.slash")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
+        .accessibilityLabel(Text(isOn ? "Hide completed" : "Show completed"))
+    }
+}
+
+/// The "DONE · N" divider between open and completed rows (2026-09-23, "show
+/// completed", mockup option A) — a hairline, not a full section header:
+/// completed items are secondary content sitting below the primary list, not
+/// a second list of equal visual weight.
+struct DoneDivider: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("DONE · \(count)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .fixedSize()
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: 1)
+        }
     }
 }
 

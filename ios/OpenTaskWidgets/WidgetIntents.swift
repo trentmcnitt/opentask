@@ -616,7 +616,14 @@ struct UndoLastActionIntent: AppIntent {
             }
             if let tasks = try? await APIClient.shared.fetchOpenTasks(),
                let projects = try? await APIClient.shared.fetchProjects() {
-                WidgetStore.saveTasks(tasks, projects: projects)
+                // Completions too (2026-09-23, "show completed") — this is a
+                // full refetch outside `TaskFeed`, so without an explicit
+                // fetch here `saveTasks` (no default on `completions` since
+                // this file's fix — see `WidgetStore.saveTasks`'s doc) would
+                // force this call site to pass SOMETHING, and passing `[]`
+                // would wipe the DONE list cache on every undo/redo.
+                let completions = (try? await APIClient.shared.fetchTodaysCompletions()) ?? []
+                WidgetStore.saveTasks(tasks, projects: projects, completions: completions)
             }
             // If the action just reversed was a Reminders completion that
             // triggered `autoAdvanceSlot`, put the display back where it was
@@ -687,12 +694,125 @@ struct RedoLastActionIntent: AppIntent {
             }
             if let tasks = try? await APIClient.shared.fetchOpenTasks(),
                let projects = try? await APIClient.shared.fetchProjects() {
-                WidgetStore.saveTasks(tasks, projects: projects)
+                // Completions too — see UndoLastActionIntent's identical
+                // block for why.
+                let completions = (try? await APIClient.shared.fetchTodaysCompletions()) ?? []
+                WidgetStore.saveTasks(tasks, projects: projects, completions: completions)
             }
         } catch {
             print("[OpenTaskWidgets] Redo failed: \(error)")
         }
         await reloadOpenTaskWidgets()
+        return .result()
+    }
+}
+
+// MARK: - Show completed (2026-09-23)
+
+/// Flip the "show completed" eye toggle — see `WidgetStore`'s "Show
+/// completed" section for the storage and why it's keyed by an arbitrary
+/// `kind` string rather than plumbed through the entry.
+struct ToggleShowCompletedIntent: AppIntent {
+    static var title: LocalizedStringResource = "Show Completed"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Widget Kind")
+    var kind: String
+
+    init() {}
+
+    init(kind: String) {
+        self.kind = kind
+    }
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.setShowCompleted(!WidgetStore.showCompleted(for: kind), for: kind)
+        // View-state only: fast path + single-kind reload (see
+        // ShiftReminderSlotIntent). No explicit page reset needed —
+        // `pagedReminders`/`pagedTasks` already recompute `totalPages` from
+        // whatever combined open+done list is currently showing and clamp
+        // the stored page into range on every render, exactly like they
+        // already do when a check-off shrinks the open list out from under
+        // a stale page.
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: kind)
+        return .result()
+    }
+}
+
+/// Restore a completed item to open — tapping a DONE row's trailing
+/// checkmark (2026-09-23, "show completed"). Calls `APIClient.markUndone`
+/// (`POST /api/tasks/:id/undone`), the same endpoint the web Reminders
+/// surface's "put back" gesture uses, confirmed to generalize correctly to a
+/// one-off Task too (see `APIClient.markUndone`'s doc). `kind` picks which
+/// cached DONE list to reconcile — mirrors `CompleteTaskIntent.kind`.
+///
+/// Failure mode worth calling out (from the handoff): a RECURRING task/
+/// reminder's restore can fail with "Task changed since it was completed" if
+/// it was snoozed/edited/completed-again since — `markUndone`'s one real
+/// failure case, narrow (same-day, already-modified-since-completion). This
+/// intent does not attempt a global-undo fallback for that case; it simply
+/// reverts the optimistic restore like any other failure (the item
+/// reappears in DONE, still tappable for a retry) rather than guessing at a
+/// broader recovery. Safe — no wrong-item corruption — even though it isn't
+/// literally "non-interactive" the way a silent auto-recovery would be.
+struct UncompleteTaskIntent: AppIntent {
+    static var title: LocalizedStringResource = "Restore Task"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    @Parameter(title: "Widget Kind")
+    var kind: String
+
+    init() {}
+
+    init(taskId: Int, kind: String) {
+        self.taskId = taskId
+        self.kind = kind
+    }
+
+    func perform() async throws -> some IntentResult {
+        // Optimistic (§8): tombstone it out of the DONE list and repaint
+        // from cache before the server call — same discipline as
+        // CompleteTaskIntent's own tombstone. `markInteraction()` matters
+        // here specifically: `pendingRestores` isn't one of the sources
+        // `hasRecentInteraction()` consults (unlike `pendingCompletions`),
+        // so without this stamp round 1's reload would pay a real network
+        // fetch instead of painting the tombstone instantly.
+        WidgetStore.stagePendingRestore(taskId)
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: kind)
+
+        do {
+            try await APIClient.shared.markUndone(taskId: taskId)
+            // No honest way to put this back into OPEN from what the DONE
+            // list carries (see WidgetStore.confirmRestore's doc) — drop the
+            // tombstone permanently and clear the interaction stamp so the
+            // reload below takes the network path and fetches the real
+            // restored TaskDTO into OPEN.
+            WidgetStore.confirmRestore(taskId, kind: kind)
+            WidgetStore.clearInteraction()
+            // Undo/Redo affordance (2026-09-23) — restoring a task is just
+            // as undoable as completing one (`markUndone` calls `logAction`
+            // server-side, confirmed against `src/core/tasks/mark-done.ts`)
+            // — see WidgetStore.recordLocalMutationForUndoCount's doc.
+            WidgetStore.recordLocalMutationForUndoCount()
+        } catch {
+            print("[OpenTaskWidgets] Restore \(taskId) failed: \(error)")
+            // The restore never happened — un-hide it from DONE so it is
+            // honestly still there and tappable for a retry, the same
+            // failure-reversion pattern CompleteTaskIntent uses.
+            WidgetStore.clearPendingRestore(taskId)
+        }
+        // Round 2, the reconciling pass — same reasoning as
+        // CompleteTaskIntent's round 2: on success `clearInteraction()` just
+        // ran, so this takes the network path and lands the restored task
+        // into OPEN; on failure the tombstone was cleared, so this also
+        // takes the network path and the item honestly reappears in DONE
+        // (never stuck hidden behind a tombstone the server rejected).
+        await reloadOpenTaskWidget(kind: kind)
         return .result()
     }
 }

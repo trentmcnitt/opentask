@@ -401,3 +401,74 @@ struct RemindersWidget: Widget {
         }
     }
 }
+
+#if DEBUG
+// MARK: - Previews (2026-09-23, day-naming + "show completed" verification)
+//
+// Realistic named sample data — deliberately NOT `SampleData.swift`, which
+// stays generic/non-identifying on purpose (it ships in the app bundle and
+// backs the real widget gallery/placeholder/redaction preview). These two
+// previews are `#if DEBUG`-only and never ship, so real-looking personal
+// content here is fine.
+//
+// TWO SEPARATE #Preview BLOCKS per toggle state, not two timeline entries
+// inside ONE preview: `WidgetStore.showCompleted` is read live from the App
+// Group at RENDER time (2026-09-23's design — see `WidgetStore`'s "Show
+// completed" section), not carried on the entry, and a `timeline:` closure's
+// entry array is built ONCE, before any entry in it is ever rendered — so a
+// store mutation made while building ONE shared timeline would be in effect
+// for every entry in it, not scoped to just one. Setting the toggle
+// immediately before each SEPARATE preview's own (single-entry) timeline is
+// what actually makes the two renders differ.
+private enum ReminderPreviewData {
+    static var eveningGroup: ReminderGroupDTO {
+        ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 3, label: "Evening", startTime: "20:00"),
+            reminders: [
+                TaskDTO(
+                    id: 901, title: "Journaling before bed might help clear the mind at night",
+                    priority: 2, isReminder: true
+                ),
+                TaskDTO(
+                    id: 902, title: "Timed breathing to slow down (use app)",
+                    priority: 1, isReminder: true
+                ),
+                TaskDTO(id: 903, title: "Neck stretch (posture)", priority: 1, isReminder: true),
+                TaskDTO(id: 904, title: "Evening stretch routine (after mobility)", priority: 1, isReminder: true),
+            ],
+            considered: 2,
+            consideredItems: [
+                TaskDTO(id: 905, title: "Laundry fold", isReminder: true),
+                TaskDTO(id: 906, title: "Dark chocolate", isReminder: true),
+            ]
+        )
+    }
+
+    static func entry() -> RemindersEntry {
+        RemindersEntry(
+            date: Date(),
+            groups: [eveningGroup],
+            slotIndex: 0,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil
+        )
+    }
+}
+
+#Preview("Reminders Large — Completed Off", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.setShowCompleted(false, for: RemindersWidget.kind)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — Completed On", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.setShowCompleted(true, for: RemindersWidget.kind)
+    ReminderPreviewData.entry()
+}
+#endif

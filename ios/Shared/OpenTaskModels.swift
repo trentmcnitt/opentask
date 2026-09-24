@@ -282,6 +282,91 @@ struct RemindersPayload: Codable {
     }
 }
 
+// MARK: - Completions
+
+/// One row from `GET /api/completions` (`src/app/api/completions/route.ts`) —
+/// the Tasks widget's "show completed" DONE list (2026-09-23). The same
+/// endpoint the web History page already reads, queried with `?since=&until=`
+/// for the local calendar day (`APIClient.fetchTodaysCompletions`).
+///
+/// `completedAt` is decoded as the raw ISO **String**, mirroring `TaskDTO.
+/// dueAt` — `JSONDecoder()`'s default date strategy is `.deferredToDate`
+/// (expects a Double), which silently fails against the server's ISO string.
+/// Parse with `DateHelpers.parseISO` on demand (`completedDate` below).
+struct CompletionDTO: Codable, Identifiable, Hashable {
+    let id: Int
+    let taskId: Int
+    let completedAt: String
+    let taskTitle: String
+    let projectId: Int
+    /// Reminder/tracked completions ride the same `completions` table (both
+    /// go through `markDone`) — the DONE list must exclude them (their own
+    /// widgets own that data), so the server includes these flags rather
+    /// than making the client re-derive them from a task it doesn't have.
+    let isReminder: Bool
+    let isTracked: Bool
+    let progressTarget: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case taskId = "task_id"
+        case completedAt = "completed_at"
+        case taskTitle = "task_title"
+        case projectId = "project_id"
+        case isReminder = "is_reminder"
+        case isTracked = "is_tracked"
+        case progressTarget = "progress_target"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        taskId = try c.decodeIfPresent(Int.self, forKey: .taskId) ?? 0
+        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt) ?? ""
+        taskTitle = try c.decodeIfPresent(String.self, forKey: .taskTitle) ?? ""
+        projectId = try c.decodeIfPresent(Int.self, forKey: .projectId) ?? 0
+        isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
+        isTracked = try c.decodeIfPresent(Bool.self, forKey: .isTracked) ?? false
+        progressTarget = try c.decodeIfPresent(Int.self, forKey: .progressTarget) ?? 1
+    }
+
+    /// Memberwise init for sample data and `WidgetStore.confirmCompletion`'s
+    /// optimistic synthesis (a just-completed `TaskDTO` gets a synthetic
+    /// negative `id` purely so `Identifiable`/`ForEach` works locally — see
+    /// that function's doc — silently replaced by the real, server-confirmed
+    /// row on the next full fetch).
+    init(
+        id: Int,
+        taskId: Int,
+        completedAt: String,
+        taskTitle: String,
+        projectId: Int = 0,
+        isReminder: Bool = false,
+        isTracked: Bool = false,
+        progressTarget: Int = 1
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.completedAt = completedAt
+        self.taskTitle = taskTitle
+        self.projectId = projectId
+        self.isReminder = isReminder
+        self.isTracked = isTracked
+        self.progressTarget = progressTarget
+    }
+
+    var completedDate: Date? {
+        DateHelpers.parseISO(completedAt)
+    }
+}
+
+/// `GET /api/completions` → `{"data":{"completions":[...],"count":...}}` —
+/// same named-field envelope shape as `TasksPage`/`ProjectsPage`. `count` is
+/// unused by the widget (`completions.count` is equivalent) and left out.
+struct CompletionsPage: Decodable {
+    let completions: [CompletionDTO]
+}
+
 // MARK: - List envelopes
 
 /// `/api/tasks` and `/api/projects` wrap their arrays in a named field inside
