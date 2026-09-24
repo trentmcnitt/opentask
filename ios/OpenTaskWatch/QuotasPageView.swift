@@ -111,6 +111,9 @@ struct QuotasPageView: View {
         }
         .onDisappear {
             // Leaving the page disarms Takeback (`quotasTakebackMode`'s doc).
+            // Verified in the watchOS 26.5 simulator (2026-09-24): although
+            // the paged TabView keeps neighbours mounted, swiping Quotas →
+            // Tasks → Quotas fires this and the ⊖ comes back "Off".
             model.quotasTakebackMode = false
         }
     }

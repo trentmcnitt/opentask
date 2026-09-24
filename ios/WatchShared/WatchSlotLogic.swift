@@ -8,7 +8,7 @@ import Foundation
 /// equivalent logic (`RemindersTimeline`/`TasksTimeline`, private to that
 /// extension) was read for reference but not copied line-for-line; this is a
 /// smaller, independent implementation sized for the watch's simpler UI (no
-/// paging, no auto-advance, no optimistic staging).
+/// paging, no auto-advance).
 enum WatchSlotLogic {
 
     // MARK: - Reminders: current slot
