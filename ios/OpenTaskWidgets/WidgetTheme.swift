@@ -72,7 +72,16 @@ enum WidgetTheme {
     /// the period may only mean *unlogged*. So there is exactly one calm tint
     /// for in-progress and green for met, and the only thing pace is allowed to
     /// move is the position of a small neutral tick.
-    static let trackTint = Color.teal
+    ///
+    /// No named "in-progress" constant here (removed `trackTint`,
+    /// `feat/quotas-widget` review pass, 2026-09-23) — the Quotas widget's
+    /// in-progress color is the plain SwiftUI `Color.indigo`, referenced
+    /// directly at each call site in `TrackWidgetViews.swift`, the SAME
+    /// literal `ReminderSlotStrip.color(for:)` already uses for its
+    /// `.behind` state (`RemindersWidgetViews.swift`) — the app's one
+    /// existing "in progress" accent, not a second hue. `trackTint` briefly
+    /// aliased this to `Color.teal`, which was caught in review as an
+    /// accidental second accent hue and reverted before merge.
     static let trackMetTint = Color.green
 
     // MARK: - Metrics
