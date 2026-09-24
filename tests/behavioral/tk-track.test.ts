@@ -11,7 +11,8 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, updateTask, markDone } from '@/core/tasks'
-import { incrementProgress, computePace, isTracked } from '@/core/tasks/progress'
+import { incrementProgress, computePace } from '@/core/tasks/progress'
+import { isTracked } from '@/lib/track'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import {
