@@ -496,11 +496,11 @@ private enum ReminderPreviewData {
     /// page index is paired with (`WidgetStore.remindersPage(for:)`).
     static let earlyMorningKey = 11
 
-    static func entry() -> RemindersEntry {
+    static func entry(slotIndex: Int = 0) -> RemindersEntry {
         RemindersEntry(
             date: now,
             groups: groups,
-            slotIndex: 0,
+            slotIndex: slotIndex,
             staleSince: nil,
             isSignedOut: false,
             canUndo: true,
@@ -509,13 +509,32 @@ private enum ReminderPreviewData {
         )
     }
 
+    /// `entry()` with Early morning's first reminder (Supplements) gone,
+    /// so the paragraph-long one is `reminders[0]`.
+    static func paragraphFirstEntry() -> RemindersEntry {
+        var gs = groups
+        let g = gs[0]
+        gs[0] = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
+            reminders: Array(g.reminders.dropFirst()), considered: g.considered, consideredItems: g.consideredItems
+        )
+        return RemindersEntry(
+            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
     /// Pins the page and the toggle — previews share the simulator's App
     /// Group UserDefaults, so whatever a prior preview (or a real widget)
     /// left there would otherwise bleed into this render.
-    static func prepare(page: Int, showCompleted: Bool) {
+    static func prepare(page: Int, showCompleted: Bool, slotKey: Int = earlyMorningKey) {
         WidgetStore.setShowCompleted(showCompleted, for: RemindersWidget.kind)
-        WidgetStore.setRemindersPage(page, for: earlyMorningKey)
+        WidgetStore.setRemindersPage(page, for: slotKey)
     }
+
+    /// Evening — the slot with Trent's other paragraph-length reminder
+    /// ("Surround myself with good books and thoughtful people…").
+    static let eveningKey = 15
 }
 
 #Preview("Reminders Large — page 1", as: .systemLarge) {
@@ -539,6 +558,41 @@ private enum ReminderPreviewData {
     ReminderPreviewData.entry()
 }
 
+#Preview("Reminders Large — page 4", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 3, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 5", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 4, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — Evening page 1", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+#Preview("Reminders Large — Evening page 2", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+#Preview("Reminders Large — Evening page 3", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
 #Preview("Reminders Large — completed on, last page", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
@@ -553,4 +607,28 @@ private enum ReminderPreviewData {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.entry()
 }
+
+#Preview("Reminders Medium — Evening", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+/// The 2×2 once "Supplements" is checked off: the paragraph-long reminder
+/// becomes the one shown.
+#Preview("Reminders Small — paragraph first", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.paragraphFirstEntry()
+}
+
+#Preview("Reminders Small", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
 #endif

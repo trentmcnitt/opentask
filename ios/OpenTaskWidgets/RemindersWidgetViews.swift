@@ -94,12 +94,15 @@ private struct RemindersSmallView: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    // No line limit (2026-09-24, never truncate a reminder):
+                    // the 2×2 has a fixed card, so a long title SHRINKS into
+                    // what's left under the count instead of ending in "…"
+                    // ("Supplements ( Vitamin C, Zin…" at XXX Large).
                     Text(reminders[0].title)
                         .font(.caption2)
                         .fontWeight(WidgetTheme.priorityWeight(reminders[0].priority))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(WidgetTheme.overflowTitleScale)
 
                     Spacer(minLength: 0)
                 }
@@ -137,6 +140,9 @@ private struct ReminderRowLayout {
     /// Title lines — the row's `lineLimit`, and what its height is built from.
     let lines: Int
     let height: CGFloat
+    /// The title is longer than the whole card: the row is one page tall and
+    /// the title shrinks to fit it (see `WidgetTextMetrics.titleLines`).
+    var shrinks = false
 }
 
 /// The Home Screen list.
@@ -193,15 +199,20 @@ private struct RemindersListView: View {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
     }
 
-    /// Whether a title wraps to its real measured line count, or gets the
-    /// flat one line a 4×2 has room for. macOS always measures (2026-09-22
-    /// fix, every family); iOS measures on systemLarge only — a systemMedium
-    /// card is ~128pt, a header plus two one-line rows and nothing more.
-    private var measuresTitles: Bool {
-        #if os(macOS)
-        true
+    /// The row-height floor: iOS systemMedium keeps the 36pt finger target
+    /// for its check-off (it has no `markerBleed` to borrow from the gaps);
+    /// iOS systemLarge bleeds instead, and macOS needs no floor.
+    ///
+    /// systemMedium used to get a flat ONE line per title on iOS ("a header
+    /// plus two one-line rows and nothing more"). Since 2026-09-24 it wraps
+    /// like every other family — Trent's rule is that a reminder is never
+    /// truncated — and simply shows fewer rows: it has no pager, and its
+    /// header count already says how many are waiting.
+    private var rowFloor: CGFloat {
+        #if os(iOS)
+        isLarge ? 0 : WidgetTheme.rowMarkerSize
         #else
-        isLarge
+        0
         #endif
     }
 
@@ -326,35 +337,37 @@ private struct RemindersListView: View {
     /// `item`'s lines and exact height at this card's `width`.
     ///
     /// An open reminder's title column is the card minus the check-off's
-    /// `rowMarkerSize` column and its 10pt `HStack` gap. iOS caps it at
-    /// `iOSMaxTitleLines` (3 — "I don't want to truncate the text until
-    /// three lines"); macOS never caps; neither lets one row outgrow
-    /// `budget`. systemMedium's iOS rows are one line on the 36pt finger
-    /// floor. A done row is one line; the divider is one caption2 line.
+    /// `rowMarkerSize` column and its 10pt `HStack` gap. The title wraps to
+    /// its full line count on every family and platform (2026-09-24 — the
+    /// iOS 3-line cap and systemMedium's one-line rows are gone); only a
+    /// title longer than the whole `budget` is clamped (see
+    /// `WidgetTextMetrics.titleLines`). iOS systemMedium rows sit on the
+    /// 36pt finger floor (`rowFloor`). A done row is one line; the divider is
+    /// one caption2 line.
     private func layout(
         for item: ReminderListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
         switch item {
         case .open(let reminder):
-            guard measuresTitles else {
-                return ReminderRowLayout(
-                    lines: 1, height: max(metrics.titleHeight(lines: 1), WidgetTheme.rowMarkerSize)
-                )
-            }
-            #if os(iOS)
-            let cap: Int? = WidgetTheme.iOSMaxTitleLines
-            #else
-            let cap: Int? = nil
-            #endif
-            let lines = metrics.titleLines(
+            let fit = metrics.titleLines(
                 reminder.title, width: width - WidgetTheme.rowMarkerSize - 10,
-                weight: WidgetTheme.priorityWeight(reminder.priority), cap: cap, maxHeight: budget
+                weight: WidgetTheme.priorityWeight(reminder.priority), maxHeight: budget
             )
-            return ReminderRowLayout(lines: lines, height: metrics.titleHeight(lines: lines))
+            if fit.shrinks {
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true)
+            }
+            return ReminderRowLayout(lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), rowFloor))
         case .divider:
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
-        case .done:
-            return ReminderRowLayout(lines: 1, height: metrics.titleHeight(lines: 1))
+        case .done(let reminder):
+            // Wraps in full too (2026-09-24) — a completed reminder is still
+            // a reminder, and "Yesterday = Lesson, Tomorrow…" struck through
+            // says nothing.
+            let fit = metrics.titleLines(
+                reminder.title, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular, maxHeight: budget
+            )
+            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+            return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
         }
     }
 
@@ -363,13 +376,16 @@ private struct RemindersListView: View {
         switch item {
         case .open(let reminder):
             ReminderRow(
-                reminder: reminder, lines: layout.lines, height: layout.height,
+                reminder: reminder, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed
             )
         case .divider(let count):
             DoneDivider(count: count)
         case .done(let reminder):
-            DoneReminderRow(reminder: reminder, height: layout.height)
+            DoneReminderRow(
+                reminder: reminder, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
+                firstLineHeight: metrics.titleHeight(lines: 1)
+            )
         }
     }
 
@@ -684,9 +700,9 @@ private struct ReminderSlotStrip: View {
 /// failure mode `ios/CLAUDE.md`'s tap-targets note warns about).
 ///
 /// A reminder is a THOUGHT, not an errand ("Done is better than perfect. Start
-/// small."), and half a thought prompts nothing — so in systemLarge the title
-/// wraps rather than ellipsising at one line, up to `lines` (3 on iOS,
-/// uncapped on macOS). The list shows fewer rows to pay for it.
+/// small."), and half a thought prompts nothing — so the title wraps to its
+/// full length (`lines`, uncapped on every family since 2026-09-24) rather
+/// than ellipsising. The list shows fewer rows to pay for it.
 ///
 /// DUMB ABOUT ITS OWN SIZE (2026-09-24): `lines` and `height` come from
 /// `RemindersListView.layout(for:)` — the same numbers the pager added up —
@@ -697,6 +713,8 @@ private struct ReminderRow: View {
     let reminder: TaskDTO
     let lines: Int
     let height: CGFloat
+    /// Longer than the whole card — draw ALL of it, smaller, in `height`.
+    var shrinks = false
     /// One title line's height — the marker centres on the FIRST line.
     let firstLineHeight: CGFloat
     /// How far the check-off's tap area reaches into the gap above and below
@@ -715,12 +733,7 @@ private struct ReminderRow: View {
                     .fontWeight(WidgetTheme.priorityWeight(reminder.priority))
                     .foregroundStyle(.primary)
                     .opacity(WidgetTheme.priorityOpacity(reminder.priority))
-                    .lineLimit(lines)
-                    .multilineTextAlignment(.leading)
-                    // fixedSize: the wrapped height is the height, and no
-                    // parent gets to squeeze it back to one truncated line.
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+                    .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                     .contentShape(Rectangle())
             }
 
@@ -760,23 +773,26 @@ private struct ReminderRow: View {
 /// it's the smallest diff from the open row and keeps the item's own deep
 /// link live even while shown as done.
 ///
-/// `.lineLimit(1)`, unlike `ReminderRow`'s wrap-don't-truncate rule: a
-/// completed item is secondary content, not the "never truncate a reminder"
-/// case that rule exists to protect. `height` is one title line — what the
-/// pager counted for it.
+/// Wraps in full like `ReminderRow` (2026-09-24 — it was `.lineLimit(1)`
+/// as "secondary content" until Trent's real data showed "Yesterday = Lesson,
+/// Tomorrow…" cut off; the never-truncate rule has no exception for done).
+/// `lines`/`height`/`shrinks` are what the pager counted.
 private struct DoneReminderRow: View {
     let reminder: TaskDTO
+    let lines: Int
     let height: CGFloat
+    let shrinks: Bool
+    /// The marker centres on the FIRST line, like `ReminderRow`'s.
+    let firstLineHeight: CGFloat
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Link(destination: WidgetLink.reminder(reminder.id)) {
                 Text(reminder.title)
                     .font(.subheadline)
                     .strikethrough()
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                     .contentShape(Rectangle())
             }
 
@@ -784,7 +800,8 @@ private struct DoneReminderRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(.secondary)
-                    .frame(width: WidgetTheme.rowMarkerSize, height: height)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -830,10 +847,12 @@ private struct RemindersRectangularView: View {
                         .font(.headline)
                         .widgetAccentable()
                 }
+                // Shrinks rather than truncating (2026-09-24) — see
+                // `RemindersSmallView`'s title.
                 Text(reminders.first?.title ?? "All clear")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .minimumScaleFactor(WidgetTheme.overflowTitleScale)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
