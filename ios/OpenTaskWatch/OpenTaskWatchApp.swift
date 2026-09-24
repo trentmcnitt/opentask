@@ -6,7 +6,7 @@ struct OpenTaskWatchApp: App {
 
     var body: some Scene {
         WindowGroup {
-            StatusView()
+            WatchRootView()
         }
     }
 }
