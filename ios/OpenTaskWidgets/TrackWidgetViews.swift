@@ -15,7 +15,8 @@ import WidgetKit
 /// grace window (2026-09-24; PR #58 had ported the web panel's "put away at
 /// load, never under a finger" rule, and on a widget it left met chips
 /// showing and tappable — see `WidgetStore.quotasShowMet`'s doc). With the
-/// dot on, met chips show green and a tap takes one back (`QuotaChip`).
+/// dot on, met chips show green and a tap is `+1` like any chip — the web
+/// panel allows over-target counts, so this does too (`QuotaChip`).
 ///
 /// GROUPED BY PERIOD, THEN LABEL — day → year, then a period-less "No
 /// period" bucket, each period's own label clusters inside it, exactly the
@@ -30,6 +31,14 @@ import WidgetKit
 /// made): off (default) hides a met quota inside its cluster; on shows every
 /// quota regardless of state, in place, in its normal cluster — mirrors the
 /// web panel's own met-count button (`TrackHeader`'s "X of Y").
+///
+/// TAKEBACK (bottom row, right of the "met" dot — 2026-09-24): the ONE way
+/// to take a count back. Trent found Undo alone "too disorienting" for
+/// 2/3 → 1/3. The button arms a one-shot mode: every chip with progress
+/// shows a red "│ −1" and a tap on it logs `−1`, chips at 0 dim and go
+/// inert, met chips show even with the dot off — and the first `−1` turns
+/// the mode off again. See `WidgetStore.quotasTakebackMode` for the whole
+/// lifecycle (including the auto-clear on an outside data change).
 struct TrackWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
@@ -179,7 +188,8 @@ private struct QuotasListView: View {
         let barHeight = metrics.bottomBarHeight
         let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
         let pages = QuotaFlow.paginate(
-            lines: QuotaFlow.lines(sections: entry.sections, width: size.width), pageHeight: budget
+            lines: QuotaFlow.lines(sections: entry.sections, width: size.width, takeback: takeback),
+            pageHeight: budget
         )
         // Medium never pages — it always shows whatever fits from the top.
         let page = isLarge ? min(max(entry.page, 0), pages.count - 1) : 0
@@ -188,7 +198,7 @@ private struct QuotasListView: View {
             if entry.sections.isEmpty {
                 WidgetEmptyView(symbol: "target", message: emptyQuotasMessage)
             } else {
-                QuotaLinesView(lines: pages[page])
+                QuotaLinesView(lines: pages[page], takeback: takeback)
             }
 
             Spacer(minLength: 0)
@@ -207,10 +217,14 @@ private struct QuotasListView: View {
                 } trailing: {
                     // "Show met quotas" (2026-09-24: the header eye, moved
                     // down as the same dot Reminders/Tasks use for "show
-                    // completed" — see `CompletedDotToggle`).
-                    CompletedDotToggle(
-                        intent: ToggleQuotasShowMetIntent(), isOn: entry.showMet, label: "met", height: barHeight
-                    )
+                    // completed" — see `CompletedDotToggle`), then the
+                    // Takeback button at the card's right edge.
+                    HStack(spacing: 0) {
+                        CompletedDotToggle(
+                            intent: ToggleQuotasShowMetIntent(), isOn: entry.showMet, label: "met", height: barHeight
+                        )
+                        TakebackModeToggle(isOn: takeback, height: barHeight)
+                    }
                 }
                 .padding(.top, rowSpacing)
             }
@@ -221,6 +235,12 @@ private struct QuotasListView: View {
         // mis-measured one inside the card rather than across its edge.
         .clipped()
     }
+
+    /// Takeback mode as drawn — `systemLarge` only. The provider already
+    /// hands a non-large entry `false` (`TrackEntry.takebackMode`); gating
+    /// again here keeps a medium card from ever drawing a mode it has no
+    /// button to leave.
+    private var takeback: Bool { isLarge && entry.takebackMode }
 
     /// Matches the Reminders/Tasks header shape (`.headline` title +
     /// `.caption2` subtitle), with only Undo/Redo beside it (2026-09-24).
@@ -264,6 +284,7 @@ private struct QuotasListView: View {
 /// it was measured for.
 private struct QuotaLinesView: View {
     let lines: [QuotaFlow.Line]
+    let takeback: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -286,7 +307,7 @@ private struct QuotaLinesView: View {
                         .padding(.top, QuotaMetrics.clusterTitleTopPadding)
                         .padding(.bottom, QuotaMetrics.clusterTitleBottomPadding)
                 case .chipRow(_, let color, let chips, let wrapWidth):
-                    QuotaChipRow(color: color, chips: chips, wrapWidth: wrapWidth)
+                    QuotaChipRow(color: color, chips: chips, wrapWidth: wrapWidth, takeback: takeback)
                         .padding(.bottom, QuotaMetrics.chipRowSpacing)
                 }
             }
@@ -412,11 +433,12 @@ private struct QuotaChipRow: View {
     let color: String?
     let chips: [TrackItem]
     let wrapWidth: CGFloat?
+    let takeback: Bool
 
     var body: some View {
         HStack(spacing: QuotaMetrics.chipRowGap) {
             ForEach(chips) { item in
-                QuotaChip(item: item, color: color, wrapWidth: wrapWidth)
+                QuotaChip(item: item, color: color, wrapWidth: wrapWidth, takeback: takeback)
             }
         }
     }
@@ -426,16 +448,23 @@ private struct QuotaChipRow: View {
 /// no second hit target per chip. Tapping opens nothing;
 /// `IncrementProgressIntent` fires straight from the chip:
 ///
-/// - **Unmet**: `+1`.
-/// - **Met** (2026-09-24): `−1`, and the chip says so with a trailing
-///   "│ −1" (`QuotaMetrics.takeBackLabel`, counted in `chipWidth(for:)`).
-///   Trent over-tapped "All Kids Kazoo" to 2/1 because a met chip was still
-///   a `+1`; past the target a `+1` is almost always a mis-tap, and the one
-///   thing worth doing to a met quota from a widget is correcting one. A met
-///   chip only ever RENDERS with the "met" dot on — with it off, met chips
-///   are filtered out (`QuotaSectionBuilder`, no grace window) — so gating
-///   on `item.isMet` alone is "met and the dot is on" by construction. The
-///   header Undo still reverses the last action, whatever it was.
+/// - **Resting** (Takeback mode off): `+1`, met or not. OVER-TARGET IS
+///   ALLOWED (2026-09-24), matching the dashboard: the web `TrackChip`'s
+///   tap is an unconditional `log(1)` and `trackState` never clamps
+///   (`met: current >= target`), so "2/1" is a count the web will happily
+///   make, and §5 keeps overflow observable (`TrackItem.doneFraction`).
+///   PR #65 had turned a met chip into a `−1` after Trent over-tapped "All
+///   Kids Kazoo" to 2/1 — but that over-tap happened because met chips
+///   stayed visible with the "met" dot OFF, which #65 also fixed (they now
+///   vanish on the tap that meets them). A met chip only shows now when he
+///   asked to see met quotas, and the correction path is Takeback mode.
+/// - **Takeback mode** (`takeback`, systemLarge only): a chip with progress
+///   is a `−1`, marked by a trailing red "│ −1" (`QuotaMetrics.
+///   takeBackLabel`, counted by `QuotaMetrics.chipWidth(for:takeback:)`
+///   through the SAME `showsTakeBack` predicate drawn here). A chip at 0
+///   has nothing to take back: dimmed and DISABLED (see `body` for why it
+///   stays a disabled button rather than a plain view). The first `−1`
+///   ends the mode (`IncrementProgressIntent`).
 ///
 /// Two shapes:
 ///
@@ -453,29 +482,53 @@ private struct QuotaChip: View {
     let item: TrackItem
     let color: String?
     let wrapWidth: CGFloat?
+    let takeback: Bool
 
     private var fraction: Double { item.doneFraction }
+    /// Drawing the red "│ −1" — and, identically, being a `−1` button.
+    private var takesBack: Bool { QuotaMetrics.showsTakeBack(item, takeback: takeback) }
+    /// Takeback mode, on a chip at 0: dimmed and inert.
+    private var isInert: Bool { takeback && !takesBack }
 
     var body: some View {
-        Button(intent: IncrementProgressIntent(taskId: item.task.id, delta: item.isMet ? -1 : 1)) {
-            if let wrapWidth {
-                content(lines: QuotaMetrics.wrappedTitleLines)
-                    .frame(width: wrapWidth, height: QuotaMetrics.chipHeight(lines: QuotaMetrics.wrappedTitleLines))
-                    .modifier(ChipChrome(item: item, fillAndStripe: fillAndStripe))
-            } else {
-                content(lines: 1)
-                    .frame(height: QuotaMetrics.chipHeight)
-                    .modifier(ChipChrome(item: item, fillAndStripe: fillAndStripe))
-                    .fixedSize()
-            }
+        // ONE button for every state. An inert chip (Takeback mode, count
+        // at 0) is still a `Button` — `.disabled`, dimmed — not a bare view:
+        // on iOS a tap that lands on no Button/Link falls through to the
+        // card's background `.widgetURL` (`backgroundTapOpens`) and opens
+        // the app, which is anything but "non-interactive". Disabled is the
+        // same convention `ListPager`'s end chevrons and `UndoRedoButtons`
+        // already rely on; its intent is the `−1` a live takeback chip
+        // would fire, which the server floors at 0 anyway
+        // (`src/core/tasks/progress.ts`).
+        Button(intent: IncrementProgressIntent(taskId: item.task.id, delta: takeback ? -1 : 1)) {
+            chip
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(
-            Text(
-                "\(item.isMet ? "Take one back from" : "Log one more for") \(item.task.displayTitle) — "
-                    + "\(item.task.progressCurrent) of \(item.task.progressTarget)"
-            )
-        )
+        .disabled(isInert)
+        // 0.55, not lower: `.disabled` already mutes a button in a widget,
+        // and the two stack — the title must stay readable, only quieter.
+        .opacity(isInert ? 0.55 : 1)
+        .accessibilityLabel(Text(accessibilityText))
+    }
+
+    private var accessibilityText: String {
+        let count = "\(item.task.progressCurrent) of \(item.task.progressTarget)"
+        if isInert { return "\(item.task.displayTitle) — \(count), nothing to take back" }
+        return "\(takesBack ? "Take one back from" : "Log one more for") \(item.task.displayTitle) — \(count)"
+    }
+
+    @ViewBuilder
+    private var chip: some View {
+        if let wrapWidth {
+            content(lines: QuotaMetrics.wrappedTitleLines)
+                .frame(width: wrapWidth, height: QuotaMetrics.chipHeight(lines: QuotaMetrics.wrappedTitleLines))
+                .modifier(ChipChrome(item: item, takesBack: takesBack, fillAndStripe: fillAndStripe))
+        } else {
+            content(lines: 1)
+                .frame(height: QuotaMetrics.chipHeight)
+                .modifier(ChipChrome(item: item, takesBack: takesBack, fillAndStripe: fillAndStripe))
+                .fixedSize()
+        }
     }
 
     private func content(lines: Int) -> some View {
@@ -499,15 +552,18 @@ private struct QuotaChip: View {
                 .font(QuotaMetrics.chipCurrentFont)
             Text("/\(item.task.progressTarget)")
                 .font(QuotaMetrics.chipTargetFont)
-            if item.isMet {
+            if takesBack {
                 // "│ −1" — exactly `QuotaMetrics.takeBackWidth`: gap,
-                // hairline, gap, label (see `chipWidth(for:)`).
+                // hairline, gap, label (see `chipWidth(for:takeback:)`).
+                // Red (`WidgetTheme.takebackTint`) whatever the count's own
+                // color: it names the ACTION, not the quota's state.
                 Rectangle()
-                    .fill(WidgetTheme.trackMetTint.opacity(0.45))
+                    .fill(WidgetTheme.takebackTint.opacity(0.45))
                     .frame(width: QuotaMetrics.takeBackDividerWidth, height: QuotaMetrics.chipCountSize + 1)
                     .padding(.horizontal, QuotaMetrics.chipTitleCountGap)
                 Text(QuotaMetrics.takeBackLabel)
                     .font(QuotaMetrics.chipCurrentFont)
+                    .foregroundStyle(WidgetTheme.takebackTint)
             }
         }
         .monospacedDigit()
@@ -549,18 +605,24 @@ private struct QuotaChip: View {
 
 /// A chip's background, border and rounded clip — shared by both chip
 /// shapes so the one-line and two-line chips can't drift apart visually.
+/// A Takeback-mode `−1` chip's border goes red too — the whole chip, not
+/// just its "−1", reads as armed.
 private struct ChipChrome<Fill: View>: ViewModifier {
     let item: TrackItem
+    let takesBack: Bool
     let fillAndStripe: Fill
+
+    private var border: Color {
+        if takesBack { return WidgetTheme.takebackTint.opacity(0.45) }
+        return item.isMet ? WidgetTheme.trackMetTint.opacity(0.3) : Color.primary.opacity(0.12)
+    }
 
     func body(content: Content) -> some View {
         content
             .background(fillAndStripe)
             .overlay(
                 RoundedRectangle(cornerRadius: QuotaMetrics.chipCornerRadius)
-                    .strokeBorder(
-                        item.isMet ? WidgetTheme.trackMetTint.opacity(0.3) : Color.primary.opacity(0.12), lineWidth: 1
-                    )
+                    .strokeBorder(border, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: QuotaMetrics.chipCornerRadius))
     }

@@ -34,6 +34,15 @@ struct TrackEntry: TimelineEntry {
     /// live from `WidgetStore` inside the view — see `TrackWidgetViews.swift`
     /// for why every view in that file is pure over this entry.
     let showMet: Bool
+    /// Takeback mode (2026-09-24) as THIS entry draws it — already `false`
+    /// for anything but a `systemLarge` instance (the provider gates on
+    /// `context.family`; see `WidgetStore.quotasTakebackMode`). While true,
+    /// `sections` were built with met chips SHOWN whatever `showMet` says,
+    /// so a met quota can be taken back; `showMet` itself stays the dot's
+    /// real state, so the dot doesn't light up on its own. Defaulted so the
+    /// gallery's `SampleData.trackEntry` needn't mention a mode it never
+    /// shows.
+    var takebackMode = false
     /// The flowed-layout page on screen. Raw `WidgetStore.quotasPage` —
     /// UNCLAMPED here; the view clamps it against the real page count it
     /// alone can compute (it is the only thing that knows the card's real
@@ -727,16 +736,25 @@ enum QuotaMetrics {
     /// runs since they render at different weights) + trailing padding. The
     /// ONE call both `QuotaFlow.lines` and `QuotaChip` use — see this enum's
     /// own doc for why that sharing is the whole point.
-    static func chipWidth(for item: TrackItem) -> CGFloat {
+    static func chipWidth(for item: TrackItem, takeback: Bool) -> CGFloat {
         let title = WidgetTheme.measuredWidth(for: item.task.displayTitle, font: chipTitleMeasureFont)
         let current = WidgetTheme.measuredWidth(for: "\(item.task.progressCurrent)", font: chipCurrentMeasureFont)
         let target = WidgetTheme.measuredWidth(for: "/\(item.task.progressTarget)", font: chipTargetMeasureFont)
         return chipLeadingPadding + title + chipTitleCountGap + current + target
-            + (item.isMet ? takeBackWidth : 0) + chipTrailingPadding
+            + (showsTakeBack(item, takeback: takeback) ? takeBackWidth : 0) + chipTrailingPadding
     }
 
-    /// A MET chip's trailing "│ −1" (2026-09-24): a tap on a met chip takes
-    /// one back instead of logging another — see `QuotaChip`. The same
+    /// Whether a chip draws the trailing red "│ −1": in Takeback mode, and
+    /// only on a chip with something to take back — a chip at 0 is dimmed
+    /// and inert instead (`QuotaChip`). The ONE predicate both the width
+    /// above and the chip's own drawing ask, so the two can't disagree.
+    static func showsTakeBack(_ item: TrackItem, takeback: Bool) -> Bool {
+        takeback && item.task.progressCurrent > 0
+    }
+
+    /// The trailing "│ −1" (Takeback mode, 2026-09-24 — it was PR #65's
+    /// always-on met-chip affordance until Takeback mode absorbed it, so
+    /// there is exactly one way to take one back). The same
     /// `chipTitleCountGap` either side of a hairline, then the label in the
     /// count's own semibold face.
     static let takeBackLabel = "\u{2212}1"
@@ -785,7 +803,11 @@ enum QuotaFlow {
     /// have no short names yet) gets a row to itself, marked with
     /// `wrapWidth` so it draws card-wide with its title on two lines,
     /// instead of running off the card's edge as it used to.
-    static func lines(sections: [QuotaSection], width: CGFloat) -> [Line] {
+    ///
+    /// `takeback` widens every chip that draws Takeback mode's "│ −1"
+    /// (`QuotaMetrics.showsTakeBack`) — the row wrap has to measure the chip
+    /// that will actually be drawn.
+    static func lines(sections: [QuotaSection], width: CGFloat, takeback: Bool) -> [Line] {
         guard width > 0 else { return [] }
         var out: [Line] = []
         for section in sections {
@@ -803,7 +825,7 @@ enum QuotaFlow {
                     rowWidth = 0
                 }
                 for chip in cluster.chips {
-                    let chipWidth = QuotaMetrics.chipWidth(for: chip)
+                    let chipWidth = QuotaMetrics.chipWidth(for: chip, takeback: takeback)
                     if chipWidth > width {
                         flush()
                         out.append(.chipRow(id: "\(cluster.id):\(rowIndex)", color: cluster.color, chips: [chip], wrapWidth: width))
@@ -905,7 +927,7 @@ struct TrackProvider: TimelineProvider {
             completion(SampleData.trackEntry)
             return
         }
-        Task { completion(await currentEntry()) }
+        Task { completion(await currentEntry(family: context.family)) }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TrackEntry>) -> Void) {
@@ -922,7 +944,7 @@ struct TrackProvider: TimelineProvider {
             // exception: still a real moment this provider has to know about
             // ahead of the 30-minute refresh — see RemindersProvider's
             // identical block.
-            let entry = await currentEntry()
+            let entry = await currentEntry(family: context.family)
             var entries = [entry]
             if !entry.isSignedOut, entry.actionDescription != nil,
                 let expiry = WidgetStore.lastActionExpiry(), expiry > entry.date {
@@ -934,6 +956,7 @@ struct TrackProvider: TimelineProvider {
                         totalCount: entry.totalCount,
                         nextUnmet: entry.nextUnmet,
                         showMet: entry.showMet,
+                        takebackMode: entry.takebackMode,
                         page: entry.page,
                         staleSince: entry.staleSince,
                         isSignedOut: false,
@@ -951,9 +974,24 @@ struct TrackProvider: TimelineProvider {
     /// Shares `TaskFeed` with the Tasks widget — same endpoint, same cache,
     /// same §8 optimistic staging, different slice. `TaskFeed` also
     /// piggybacks the undo/redo counts fetch (2026-09-23) — see its doc.
-    private func currentEntry() async -> TrackEntry {
+    ///
+    /// Takeback mode's auto-clear lives here (2026-09-24 — see
+    /// `WidgetStore.quotasTakebackMode`): a build that is NOT riding a tap
+    /// from seconds ago is a scheduled refresh, a push after a change
+    /// somewhere else, or the app foregrounding — and a mode armed against
+    /// counts that may no longer be the counts on screen is exactly the
+    /// accidental `−1` the one-shot rule exists to prevent. It is the SAME
+    /// predicate `TaskFeed.snapshot` uses to choose cache over network, so
+    /// "the mode survives" and "this build repaints from cache" are always
+    /// the same builds. Checked before `TaskFeed.snapshot` runs, against
+    /// one `now`, so the two can't straddle the window's edge differently.
+    private func currentEntry(family: WidgetFamily) async -> TrackEntry {
         let now = Date()
         let showMet = WidgetStore.quotasShowMet
+        if WidgetStore.quotasTakebackMode, !WidgetStore.hasRecentInteraction(now: now) {
+            WidgetStore.quotasTakebackMode = false
+        }
+        let takeback = family == .systemLarge && WidgetStore.quotasTakebackMode
 
         // Concurrent with the tasks/projects fetch below — a quota-only
         // fetch this file OWNS (see `fetchLabelConfig`'s doc for why it
@@ -967,7 +1005,7 @@ struct TrackProvider: TimelineProvider {
             _ = await labelConfigTask
             return TrackEntry(
                 date: now, sections: [], totalMet: 0, totalCount: 0, nextUnmet: nil,
-                showMet: showMet, page: WidgetStore.quotasPage,
+                showMet: showMet, takebackMode: false, page: WidgetStore.quotasPage,
                 staleSince: nil, isSignedOut: true, canUndo: false, canRedo: false,
                 actionDescription: nil
             )
@@ -976,8 +1014,10 @@ struct TrackProvider: TimelineProvider {
         let quotas = snapshot.tasks.filter(\.isTracked)
         let labelConfig = await labelConfigTask
 
+        // Takeback mode shows met chips too (so they can be taken back),
+        // without flipping the dot's own state — see `TrackEntry.takebackMode`.
         let sections = QuotaSectionBuilder.sections(
-            from: quotas, labelConfig: labelConfig, showMet: showMet, now: now
+            from: quotas, labelConfig: labelConfig, showMet: showMet || takeback, now: now
         )
         // Valid regardless of `showMet`: an unmet quota is NEVER filtered by
         // that toggle (only a met one ever is), so this flatten always
@@ -994,6 +1034,7 @@ struct TrackProvider: TimelineProvider {
             totalCount: quotas.count,
             nextUnmet: nextUnmet,
             showMet: showMet,
+            takebackMode: takeback,
             page: WidgetStore.quotasPage,
             staleSince: snapshot.staleSince,
             isSignedOut: false,
@@ -1134,20 +1175,36 @@ private enum QuotasPreviewData {
 /// `justMet` (2026-09-24) is the state right after the tap that met that
 /// quota: its count at its target — what `TaskFeed`'s staged `+1` draws on
 /// the tap's own repaint — so the met-off render shows it GONE (no grace
-/// window any more) and the met-on render shows it green with "│ −1".
-private func previewEntry(showMet: Bool, page: Int, justMet: Int? = nil) -> TrackEntry {
+/// window any more) and the met-on render shows it green (a plain `+1`
+/// chip, like the web — Takeback mode is the only `−1`).
+///
+/// `takeback` builds the entry the way the provider does in Takeback mode
+/// (met chips shown whatever `showMet` says — `TrackEntry.takebackMode`);
+/// `takenBack` is the state right after ONE takeback on that quota: its
+/// count one lower, and the mode already off (`IncrementProgressIntent`
+/// clears it before its optimistic repaint).
+private func previewEntry(
+    showMet: Bool, page: Int, justMet: Int? = nil, takeback: Bool = false, takenBack: Int? = nil
+) -> TrackEntry {
     let now = Date()
     let quotas = QuotasPreviewData.quotas.map { task -> TaskDTO in
-        guard task.id == justMet else { return task }
+        let current: Int
+        if task.id == justMet {
+            current = task.progressTarget
+        } else if task.id == takenBack {
+            current = max(task.progressCurrent - 1, 0)
+        } else {
+            return task
+        }
         return TaskDTO(
             id: task.id, projectId: task.projectId, title: task.title, priority: task.priority,
             dueAt: task.dueAt, rrule: task.rrule, progressTarget: task.progressTarget,
-            progressCurrent: task.progressTarget, trackedFlag: task.trackedFlag, labels: task.labels
+            progressCurrent: current, trackedFlag: task.trackedFlag, labels: task.labels
         )
     }
     let sections = QuotaSectionBuilder.sections(
         from: quotas, labelConfig: QuotasPreviewData.labelConfig,
-        showMet: showMet, now: now
+        showMet: showMet || takeback, now: now
     )
     let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
     return TrackEntry(
@@ -1157,6 +1214,7 @@ private func previewEntry(showMet: Bool, page: Int, justMet: Int? = nil) -> Trac
         totalCount: quotas.count,
         nextUnmet: nextUnmet,
         showMet: showMet,
+        takebackMode: takeback,
         page: page,
         staleSince: nil,
         isSignedOut: false,
@@ -1186,8 +1244,8 @@ private func previewEntry(showMet: Bool, page: Int, justMet: Int? = nil) -> Trac
 /// Right after "Weight Lift" (id 221, 0/3 in the snapshot) is tapped to its
 /// target. Indexes 0-2: met dot OFF, pages 1-3 — Weight Lift is gone, and
 /// so is "All Kids Kazoo" (1/1, already met). Indexes 3-5: met dot ON, pages
-/// 1-3 — both show green, each with its "│ −1" take-back (Weight Lift sorts
-/// last in THIS WEEK's HEALTH cluster, so it lands on page 2).
+/// 1-3 — both show green, plain `+1` chips (Weight Lift sorts last in THIS
+/// WEEK's HEALTH cluster, so it lands on page 2).
 #Preview("Quotas — Large, just met", as: .systemLarge) {
     TrackWidget()
 } timeline: {
@@ -1197,6 +1255,24 @@ private func previewEntry(showMet: Bool, page: Int, justMet: Int? = nil) -> Trac
     previewEntry(showMet: true, page: 0, justMet: 221)
     previewEntry(showMet: true, page: 1, justMet: 221)
     previewEntry(showMet: true, page: 2, justMet: 221)
+}
+
+/// Takeback mode (2026-09-24), met dot OFF throughout. Indexes 0-3: mode
+/// ON, pages 1-4 — every chip with progress carries a red "−1", chips at 0
+/// are dimmed, and the met chips ("All Kids Kazoo" 1/1, "Kid's Iron Meal"
+/// 2/2) are back even though the dot is off. Index 4-5: right after ONE
+/// takeback on All Kids Kazoo — mode off again, Kazoo at 0/1 (unmet, so it
+/// stays visible with the dot off), pages 1 and 3 (Kazoo lands on page 3 at
+/// XXX Large, page 2 at the default text size).
+#Preview("Quotas — Large, takeback", as: .systemLarge) {
+    TrackWidget()
+} timeline: {
+    previewEntry(showMet: false, page: 0, takeback: true)
+    previewEntry(showMet: false, page: 1, takeback: true)
+    previewEntry(showMet: false, page: 2, takeback: true)
+    previewEntry(showMet: false, page: 3, takeback: true)
+    previewEntry(showMet: false, page: 0, takenBack: 27)
+    previewEntry(showMet: false, page: 2, takenBack: 27)
 }
 
 #Preview("Quotas — Medium", as: .systemMedium) {
