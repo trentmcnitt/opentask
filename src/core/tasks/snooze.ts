@@ -11,6 +11,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { isTracked } from '@/lib/track'
+import { REMINDER_SNOOZE_MESSAGE } from '@/core/validation'
 import { getTaskById } from './create'
 import { canUserAccessTask, updateTask } from './update'
 
@@ -62,9 +63,7 @@ export function snoozeTask(options: SnoozeTaskOptions): SnoozeResult {
   // defensive re-dating this redesign removes, on the one population that has
   // no debt to defer.
   if (task.is_reminder) {
-    throw new ValidationError(
-      'Reminders cannot be snoozed — they stay in their time slot until completed',
-    )
+    throw new ValidationError(REMINDER_SNOOZE_MESSAGE)
   }
 
   // §5: a quota cannot be snoozed either, for the stronger reason that it has

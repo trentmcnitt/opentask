@@ -130,7 +130,9 @@ describe('Reminders considered today', () => {
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
       taskId: moved.id,
-      input: { due_at: localTime(18, 0) },
+      // An explicit reschedule: a bare `{ due_at }` on a dated reminder is a
+      // snooze, which updateTask refuses (§6, same as snoozeTask).
+      input: { due_at: localTime(18, 0), reset_original_due_at: true },
     })
     expect(() =>
       markUndone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: moved.id }),
