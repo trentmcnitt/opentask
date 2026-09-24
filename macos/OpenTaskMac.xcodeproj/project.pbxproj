@@ -18,10 +18,12 @@
 		21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */; };
 		34B70C4530803D25110BE465 /* RemindersWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
 		44C5A3993A906B44D2AD2CE7 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */; };
+		4A71D0C3A619C2A06C85216F /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		4AAFC03D30E04FA841BE999D /* OpenTaskMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */; };
 		4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
 		4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
@@ -99,6 +101,7 @@
 		8AD02E9C8EEFCD5774761B19 /* OpenTaskMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskMacApp.swift; sourceTree = "<group>"; };
 		8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidget.swift; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
+		A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		A535170EA850BA882099BFB1 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidgetViews.swift; sourceTree = "<group>"; };
 		AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushHandler.swift; sourceTree = "<group>"; };
@@ -134,6 +137,7 @@
 				D48B4A75163FF407F49D160B /* KeychainHelper.swift */,
 				606B27B10869F5EC627043D9 /* NotificationConstants.swift */,
 				7F814F05408288A5A627F9CC /* OpenTaskModels.swift */,
+				A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */,
 				432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */,
 			);
 			name = Shared;
@@ -346,6 +350,7 @@
 				6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */,
 				86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */,
 				16E01EEDD0FF0DD9247D3962 /* SetupView.swift in Sources */,
+				4A71D0C3A619C2A06C85216F /* TaskSnoozePlan.swift in Sources */,
 				F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */,
 				0B34DE6E2D6CCD5064ABEE66 /* WebViewHost.swift in Sources */,
 				0F675979F0E897179550119D /* WebViewManager.swift in Sources */,
@@ -366,6 +371,7 @@
 				9556B8E8A59E161239E3988F /* RemindersWidgetViews.swift in Sources */,
 				5B23A255E708A92C2D1DC783 /* SampleData.swift in Sources */,
 				B02511E14449D27CAA689536 /* TaskFeed.swift in Sources */,
+				317AD7608CC469844284701E /* TaskSnoozePlan.swift in Sources */,
 				33CF5D1C7C74D001B90D2E1B /* TasksWidget.swift in Sources */,
 				1A1131E268CC52CAA6F32234 /* TasksWidgetViews.swift in Sources */,
 				B9F16D4212C33EEB0E5E7A2B /* TimeSlotStore.swift in Sources */,
