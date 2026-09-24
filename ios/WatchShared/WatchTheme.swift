@@ -42,6 +42,15 @@ enum WatchTheme {
         }
     }
 
+    /// A quota row's stripe: its label's `label_config` color (same eight-name
+    /// palette as projects), or a faint neutral for an unlabeled quota / a
+    /// label with no color / a green label (`WatchQuotaLogic.color(of:)`
+    /// already maps green to nil — green means "met" on this surface).
+    static func labelColor(_ name: String?) -> Color {
+        guard name != nil else { return Color.secondary.opacity(0.35) }
+        return projectColor(name)
+    }
+
     /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`. The watch has no
     /// room for a priority glyph, so this only ever drives font weight — "priority
     /// is prominence, not interruption" applies here even more than on the phone.

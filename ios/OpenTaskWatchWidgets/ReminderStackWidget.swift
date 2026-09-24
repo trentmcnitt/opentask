@@ -26,18 +26,31 @@ struct ReminderStackProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchWidgetEntry>) -> Void) {
         guard APIClient.shared.isConfigured else {
-            completion(Timeline(entries: [.signedOut], policy: .after(refreshDate())))
+            let later = Date().addingTimeInterval(ReminderStackTimeline.calmRefreshInterval)
+            completion(Timeline(entries: [.signedOut], policy: .after(later)))
             return
         }
 
         Task {
+            // Push-token registration rides every reload until the server
+            // confirms it — see `WatchWidgetPushRegistration`'s doc. A no-op
+            // once registered, and on watchOS < 26 (nothing is ever saved).
+            // Awaited alongside the fetch, not before it, so a slow
+            // registration never delays the card.
+            async let registration: Void = WatchWidgetPushRegistration.retryIfNeeded()
             let now = Date()
             let fetched = await fetchInputs()
+            _ = await registration
             let entries = fetched.map { buildEntries(groups: $0.groups, tasks: $0.tasks, now: now) }
                 ?? cachedEntries(now: now)
+            let refresh = ReminderStackTimeline.refreshDate(
+                groups: fetched?.groups ?? WatchCache.loadReminders() ?? [],
+                tasks: fetched?.tasks ?? WatchCache.loadTasks()?.tasks ?? [],
+                now: now
+            )
             completion(Timeline(
                 entries: entries.isEmpty ? [ReminderStackPlaceholder.entry] : entries,
-                policy: .after(refreshDate())
+                policy: .after(refresh)
             ))
         }
     }
@@ -56,15 +69,6 @@ struct ReminderStackProvider: TimelineProvider {
         guard let groups = WatchCache.loadReminders() else { return WidgetRelevance([]) }
         let tasks = WatchCache.loadTasks()?.tasks ?? []
         return ReminderStackTimeline.widgetRelevance(groups: groups, tasks: tasks, now: Date())
-    }
-
-    /// ~20 min budgeted refresh. Everything that changes the card on a known
-    /// clock (slot starts, due times, the snooze result's expiry) is already
-    /// a pre-scheduled entry (`ReminderStackTimeline.changeDates`), and every
-    /// ✓/Snooze tap gets a free post-intent reload, so this only has to catch
-    /// changes made elsewhere (web, phone).
-    private func refreshDate() -> Date {
-        Date().addingTimeInterval(20 * 60)
     }
 
     private struct Inputs {
@@ -155,6 +159,22 @@ struct ReminderStackWidget: Widget {
     static let kind = WatchWidgetState.kind
 
     var body: some WidgetConfiguration {
+        // Server-pushed reloads need `.pushHandler(...)`, which only exists
+        // on watchOS 26+ — gated here rather than raising the extension's
+        // watchOS 10 floor. Same explicit-`return` `#available` if/else as
+        // the phone widgets (`ios/OpenTaskWidgets/TasksWidget.swift`'s doc):
+        // `Widget.body` has no result builder, so an implicit-return
+        // if/else of two different configuration types doesn't compile, but
+        // explicit returns in a `#available` branch do.
+        if #available(watchOS 26.0, *) {
+            return configuration
+                .pushHandler(WatchWidgetPushHandler.self)
+        } else {
+            return configuration
+        }
+    }
+
+    private var configuration: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: ReminderStackProvider()) { entry in
             ReminderStackWidgetView(entry: entry)
         }
