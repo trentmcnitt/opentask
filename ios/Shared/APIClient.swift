@@ -185,6 +185,46 @@ final class APIClient {
         return responseData["tasks_affected"] as? Int ?? 0
     }
 
+    /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`
+    /// (2026-09-23, Tasks widget snooze mode / bulk select). The ids-based
+    /// twin of `snoozeOverdue`'s sweep: that endpoint (`bulk/snooze-overdue`)
+    /// queries the overdue set server-side and has no `ids` mode at all;
+    /// this one does the opposite — it never looks at what's overdue, it
+    /// acts on EXACTLY the ids given.
+    ///
+    /// `includeTaskIds`, when passed, bypasses the P3(High)/P4(Urgent) sweep
+    /// -safety filter (`filterForBulkSnooze`, `src/core/tasks/bulk.ts`) for
+    /// those specific ids — mirroring the web's OWN explicit-selection
+    /// convention exactly (`src/lib/save-quick-panel-changes.ts`'s
+    /// `buildDateRequest`: "explicit user selections always pass
+    /// `include_task_ids` so explicit selections bypass the P4/Urgent skip
+    /// filter... the sweep remains the only caller that omits it"). Callers
+    /// in THIS file follow the same split: a per-row snooze-mode tap and a
+    /// bulk-select action are both explicit, deliberate picks (pass
+    /// `includeTaskIds` = `ids`); nothing here ever omits it, because
+    /// nothing here is a sweep — `snoozeOverdue` above is the sweep.
+    ///
+    /// `deltaMinutes` here means "N minutes added to EACH task's own
+    /// `due_at`" — confirmed against `bulkSnooze`'s server implementation
+    /// (`src/core/tasks/bulk.ts`) and matched by the web's own bulk "+1hr"
+    /// (`save-quick-panel-changes.ts` passes `changes.delta_minutes`
+    /// straight through). This is DIFFERENT from `snoozeOverdue(deltaMinutes:)`
+    /// above, whose `delta_minutes` means "N minutes from NOW, snapped" —
+    /// two different endpoints with two different established meanings for
+    /// the same parameter name; each call site here maps to the ONE the web
+    /// already uses for that same UI gesture, not to be unified.
+    @discardableResult
+    func bulkSnoozeTasks(
+        ids: [Int], until: String? = nil, deltaMinutes: Int? = nil, includeTaskIds: [Int]? = nil
+    ) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = ["ids": ids]
+        if let until { body["until"] = until }
+        if let deltaMinutes { body["delta_minutes"] = deltaMinutes }
+        if let includeTaskIds { body["include_task_ids"] = includeTaskIds }
+        let data = try await post(path: "/api/tasks/bulk/snooze", body: body)
+        return parseBulkSnoozeResult(data)
+    }
+
     /// Pending reminders for one time slot (§6), newest server truth.
     ///
     /// `slotId` is the `slot_id` from the SLOT_REMINDER push; -1 means the

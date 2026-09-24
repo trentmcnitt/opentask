@@ -368,6 +368,17 @@ enum WidgetTheme {
     /// bare `36`s could.
     static let rowMarkerSize: CGFloat = 36
 
+    /// `TaskRow`'s trailing column width in snooze mode (2026-09-23, Phase
+    /// 2) — the ⏭ circle (32) + 6pt spacing + the "+1h" pill's own width,
+    /// rounded up generously rather than measured exactly (unlike the due
+    /// label, this trailing content is fixed chrome, not variable text, so a
+    /// small fixed over-reservation costs nothing and never underestimates).
+    static let snoozeRowControlsWidth: CGFloat = 96
+
+    /// `TaskRow`'s trailing column width in select mode — `SelectionMarker`'s
+    /// own diameter, smaller than the normal checkbox's `rowMarkerSize`.
+    static let selectionMarkerSize: CGFloat = 22
+
     // MARK: - Formatting
 
     private static let timeFormatter: DateFormatter = {
@@ -1027,5 +1038,246 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+// MARK: - Tasks snooze mode / bulk select (2026-09-23, Phase 2)
+//
+// Mockups: `bulk.png` (bulk select) / `bulk2.png` (snooze mode's "All" row +
+// select mode's "Select all" revision), option 1. Tasks-only — see
+// `WidgetStore`'s "Tasks snooze mode / bulk select" section doc for why
+// these views take no `kind` parameter the way `ShowCompletedToggle` does.
+
+/// Shared capsule chrome for every text-labeled snooze/select-mode action
+/// button — factored once so the half-dozen call sites below don't each
+/// redeclare the same padding/corner/opacity values. `isPrimary` is the
+/// mockup's ONE emphasized action per bar ("Next period", filled indigo);
+/// everything else ("+1h", "Cancel"-adjacent pills) stays the neutral
+/// secondary fill.
+private struct ActionPill<I: AppIntent>: View {
+    let intent: I
+    let label: String
+    var systemImage: String? = nil
+    var isPrimary = false
+    var isEnabled = true
+
+    var body: some View {
+        Button(intent: intent) {
+            HStack(spacing: 4) {
+                if let systemImage {
+                    Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
+                }
+                Text(label)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isPrimary ? Color.white : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule().fill(isPrimary ? WidgetTheme.indigoAccent : Color.secondary.opacity(0.18))
+            )
+            .opacity(isEnabled ? 1 : 0.4)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
+
+/// The icon-only circular twin of `ActionPill` — the mockup's "⏭" (snooze to
+/// next period) and select-mode's icon-only "✓" (Done).
+private struct ActionCircle<I: AppIntent>: View {
+    let intent: I
+    let systemImage: String
+    var isPrimary = false
+    var isEnabled = true
+    var diameter: CGFloat = 32
+
+    var body: some View {
+        Button(intent: intent) {
+            Image(systemName: systemImage)
+                .font(.system(size: diameter * 0.4, weight: .semibold))
+                .foregroundStyle(isPrimary ? Color.white : Color.primary)
+                .frame(width: diameter, height: diameter)
+                .background(
+                    Circle().fill(isPrimary ? WidgetTheme.indigoAccent : Color.secondary.opacity(0.18))
+                )
+                .opacity(isEnabled ? 1 : 0.4)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
+
+/// The header clock toggle — flips Tasks' snooze mode. Same icon-button
+/// chrome as `ShowCompletedToggle`, deliberately not sharing its type: that
+/// one is generic over `kind`/a completion-shaped boolean, this one is
+/// Tasks-only and wired to a different intent — see `WidgetStore`'s doc for
+/// why the two toggles don't share a store key either.
+struct SnoozeModeToggle: View {
+    let isOn: Bool
+
+    var body: some View {
+        Button(intent: ToggleTasksSnoozeModeIntent()) {
+            Image(systemName: "clock")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
+        .accessibilityLabel(Text(isOn ? "Exit snooze mode" : "Snooze mode"))
+    }
+}
+
+/// Per-row snooze buttons (⏭ circle, +1h pill) replacing the checkbox in
+/// snooze mode — mockup: "Each row gets its own ⏭ / +1h." The ⏭ circle
+/// disables (dimmed, non-interactive) when `TimeSlotStore` has no cached
+/// slots to resolve "next period" from — see `SnoozeTaskRowIntent`'s doc for
+/// why this is a client-side computation for the per-row/select-mode path,
+/// unlike the "All overdue" bar's server-resolved "next".
+struct SnoozeRowButtons: View {
+    let taskId: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ActionCircle(
+                intent: SnoozeTaskRowIntent(taskId: taskId, target: .nextPeriod),
+                systemImage: "forward.end.fill",
+                isPrimary: true,
+                isEnabled: !TimeSlotStore.cachedSlots.isEmpty,
+                diameter: 32
+            )
+            .accessibilityLabel(Text("Snooze to next period"))
+            ActionPill(intent: SnoozeTaskRowIntent(taskId: taskId, target: .plusOneHour), label: "+1h")
+                .accessibilityLabel(Text("Snooze one hour"))
+        }
+    }
+}
+
+/// Select-mode's trailing selection indicator — an outline circle, filled
+/// indigo with a checkmark once picked (mockup: "the check-off circle
+/// becomes a selection circle").
+struct SelectionMarker: View {
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle().fill(isSelected ? WidgetTheme.indigoAccent : Color.clear)
+            Circle().strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.5), lineWidth: 1.5)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 22, height: 22)
+    }
+}
+
+/// Resting mode's bottom-LEFT "Select" entry point — Trent's pick between
+/// the two positions the mockup showed side by side: "bottom-left opposite
+/// the pager; the thumb-friendly right side stays for check-offs."
+struct SelectEntryButton: View {
+    var body: some View {
+        Button(intent: EnterTasksSelectModeIntent()) {
+            Text("Select")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The snooze-mode "All overdue (N)" bottom bar — acts on the WHOLE server-
+/// side overdue set via `SnoozeAllOverdueIntent`, not just what's on screen
+/// (see that intent's doc). The CALLER hides this entirely when `count == 0`
+/// — a bar offering to snooze zero tasks has nothing honest to say.
+struct SnoozeAllOverdueBar: View {
+    let count: Int
+    /// `nil` when `TimeSlotStore` has no cached slots — unlike the per-row/
+    /// select-mode buttons, the "Next period" pill here still WORKS (its
+    /// target is resolved server-side for the sweep — `slot: "next"` on
+    /// `POST /api/tasks/bulk/snooze-overdue`), it just can't preview a time
+    /// in its own label.
+    let nextPeriodLabel: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("All overdue (\(count)):")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+            Spacer(minLength: 4)
+            ActionPill(
+                intent: SnoozeAllOverdueIntent(target: .nextPeriod),
+                label: nextPeriodLabel.map { "Next period · \($0)" } ?? "Next period",
+                systemImage: "forward.end.fill",
+                isPrimary: true
+            )
+            ActionPill(intent: SnoozeAllOverdueIntent(target: .plusOneHour), label: "+1h")
+        }
+    }
+}
+
+/// The select-mode bottom action bar — "All · ⏭ Next period · +1h · ✓ ·
+/// Cancel" (`bulk2.png`'s revised layout, adding the "All" select-all toggle
+/// where "Select" sat in resting mode). `hasSelection` disables every action
+/// but Cancel when nothing is picked yet — tapping "Done" on an empty
+/// selection would otherwise silently no-op with no explanation.
+struct SelectModeActionBar: View {
+    let allSelected: Bool
+    let hasSelection: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(intent: ToggleSelectAllTasksIntent()) {
+                HStack(spacing: 3) {
+                    Text("All")
+                    if allSelected {
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    }
+                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(allSelected ? WidgetTheme.indigoAccent : Color.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 4)
+
+            ActionCircle(
+                intent: SnoozeSelectedTasksIntent(target: .nextPeriod),
+                systemImage: "forward.end.fill",
+                isPrimary: true,
+                isEnabled: hasSelection && !TimeSlotStore.cachedSlots.isEmpty,
+                diameter: 28
+            )
+            .accessibilityLabel(Text("Snooze selected to next period"))
+            ActionPill(
+                intent: SnoozeSelectedTasksIntent(target: .plusOneHour), label: "+1h", isEnabled: hasSelection
+            )
+            .accessibilityLabel(Text("Snooze selected one hour"))
+            ActionCircle(
+                intent: CompleteSelectedTasksIntent(), systemImage: "checkmark",
+                isEnabled: hasSelection, diameter: 28
+            )
+            .accessibilityLabel(Text("Complete selected"))
+            Button(intent: CancelTasksSelectModeIntent()) {
+                Text("Cancel")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
