@@ -62,6 +62,20 @@ enum WidgetTheme {
         }
     }
 
+    // MARK: - Shared accents
+
+    /// The one indigo used across all three widget kinds for "this is
+    /// active / worth noticing right now" — `ReminderSlotStrip`'s "behind,
+    /// still waiting" segment fill (`RemindersWidgetViews.swift`), the "show
+    /// completed" eye toggle's ON state (`ShowCompletedToggle` below), and —
+    /// after merging with the parallel Quotas widget rebuild (2026-09-23,
+    /// `feat/quotas-widget`, PR #58) — every in-progress quota chip/bar and
+    /// the Quotas widget's own "show met" eye toggle (`ShowMetToggleButton`,
+    /// `TrackWidgetViews.swift`). ONE named constant, not several
+    /// independently-chosen `Color.indigo` literals, so all three widgets'
+    /// accent can never drift apart pixel-by-pixel across files.
+    static let indigoAccent = Color.indigo
+
     // MARK: - Track (§5)
 
     /// Track's palette sits deliberately OUTSIDE the priority scale above.
@@ -374,6 +388,211 @@ enum WidgetTheme {
     static func staleNote(_ fetchedAt: Date) -> String {
         "as of \(shortTime(fetchedAt))"
     }
+
+    // MARK: - Due-date day-naming (2026-09-23)
+    //
+    // "Anywhere a task time shows" now reads a day word ahead of the time:
+    // "8:30 PM" (today, unchanged), "Tomorrow 9:00 AM", "Sun 9:00 AM" (2-6
+    // days out), "Oct 1 9:00 AM" (7+ days out), "Oct 2" (date-only, no time
+    // at all). Overdue is DELIBERATELY UNCHANGED — always the plain time in
+    // red, never a day word (an overdue item is "late", not "coming up",
+    // and the red already carries that meaning).
+    //
+    // Date-only detection is an INVENTED convention, not something the wire
+    // format states: `TaskDTO.dueAt`/the server schema carry no date-only
+    // flag anywhere (the web's own `DateTimePicker.tsx` defaults an unset
+    // time to 9:00 AM, not midnight, so there is no existing signal to key
+    // off). A local time-of-day of exactly midnight is treated as
+    // date-only — common enough as a convention, but flagged here because
+    // nothing in the codebase already does this.
+    //
+    // `DueLabelParts` is the ONE function both the styled `Text` render
+    // (`dueLabelText`) and the plain-string WIDTH MEASUREMENT
+    // (`TaskRow.measuredLines`, via `plainString`) build from — the same
+    // discipline `measuredLineCount`'s own doc insists on elsewhere in this
+    // file: a row's reserved height must measure the SAME string it renders,
+    // or `ViewThatFits` silently mismeasures and a title clips or gets an
+    // extra blank line.
+
+    struct DueLabelParts {
+        /// nil when the due date is today or overdue (no day word in either
+        /// case — see this section's header comment).
+        let dayWord: String?
+        /// nil when the due date is date-only (local time-of-day exactly
+        /// midnight).
+        let time: String?
+
+        /// The exact string shown — `"\(dayWord) \(time)"`, or whichever
+        /// half is present alone, or "" if somehow both are nil (a
+        /// date-only task due exactly today: no day word because it's
+        /// today, no time because it's date-only — nothing to say).
+        var plainString: String {
+            switch (dayWord, time) {
+            case let (.some(d), .some(t)): return "\(d) \(t)"
+            case let (.some(d), nil): return d
+            case let (nil, .some(t)): return t
+            case (nil, nil): return ""
+            }
+        }
+    }
+
+    private static let dueWeekdayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
+
+    private static let dueMonthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    /// The single source of truth for a due date's day word + time — see
+    /// this section's header comment. `isOverdue` is passed in rather than
+    /// recomputed here (`TaskDTO.isOverdue(now:)` already exists and every
+    /// call site already has it or an equivalent `now` to compute it from),
+    /// so this function has exactly one clock-reading job (bucketing days
+    /// away), not two.
+    static func dueLabelParts(for due: Date, now: Date = Date(), isOverdue: Bool) -> DueLabelParts {
+        let calendar = Calendar.current
+        let isDateOnly =
+            calendar.component(.hour, from: due) == 0 && calendar.component(.minute, from: due) == 0
+
+        if isOverdue {
+            // A date-only task has no time to show — "12:00 am" would read
+            // as a real due TIME, not the absence of one (Trent's review of
+            // the first cut). Show the date instead, in the SAME red the
+            // time would otherwise draw in (`dueLabelText` below): "Sep 22",
+            // or "Yesterday" specifically for exactly one day past — the one
+            // relative word worth the recognition win, per Trent's ask.
+            // Anything further back is just the date; there is no "3 days
+            // ago" ladder here the way `DateHelpers.formatRelativeTime` has
+            // for notifications, because a widget row has no room for it
+            // and the day-naming feature this belongs to is about WHEN,
+            // not HOW LONG AGO.
+            guard isDateOnly else {
+                return DueLabelParts(dayWord: nil, time: shortTime(due))
+            }
+            let startOfToday = calendar.startOfDay(for: now)
+            let startOfDue = calendar.startOfDay(for: due)
+            let daysAgo = calendar.dateComponents([.day], from: startOfDue, to: startOfToday).day ?? 0
+            let word = daysAgo == 1 ? "Yesterday" : dueMonthDayFormatter.string(from: due)
+            return DueLabelParts(dayWord: word, time: nil)
+        }
+
+        let time = isDateOnly ? nil : shortTime(due)
+
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfDue = calendar.startOfDay(for: due)
+        let daysAway = calendar.dateComponents([.day], from: startOfToday, to: startOfDue).day ?? 0
+
+        let dayWord: String?
+        switch daysAway {
+        case ..<1:
+            // Today (0) or, in principle, still-negative-but-not-overdue
+            // (never reached in practice — `isOverdue` already caught every
+            // past instant — kept as a safe fallback rather than an
+            // unreachable-crash).
+            dayWord = nil
+        case 1:
+            dayWord = "Tomorrow"
+        case 2...6:
+            dayWord = dueWeekdayFormatter.string(from: due)
+        default:
+            dayWord = dueMonthDayFormatter.string(from: due)
+        }
+        return DueLabelParts(dayWord: dayWord, time: time)
+    }
+
+    /// Subtle indigo for the day word — built on `indigoAccent` (the same
+    /// hue `ReminderSlotStrip`'s "behind, still waiting" fill and
+    /// `ShowCompletedToggle`'s ON state use), dimmed to `0.85` since a due
+    /// label sits beside body text far more often than a slot strip segment
+    /// does and doesn't need the fully saturated version.
+    static let dueDayWordTint = indigoAccent.opacity(0.85)
+
+    /// The styled `Text` for wherever a task's due time shows (`TaskRow`,
+    /// `TasksSmallView`) — builds on `dueLabelParts` so the day-word tint and
+    /// the overdue-red rule can never drift between call sites. Built via
+    /// `Text` concatenation (`+`), not a nested `HStack`, so it composes
+    /// inline with a `.firstTextBaseline` `HStack` the way a single `Text`
+    /// would.
+    static func dueLabelText(for task: TaskDTO, now: Date = Date()) -> Text {
+        guard let due = task.dueDate else { return Text("") }
+        let overdue = task.isOverdue(now: now)
+        let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
+        if overdue {
+            // `plainString` is safe here even though it's normally the
+            // MEASUREMENT-only accessor: for an overdue task `dueLabelParts`
+            // always populates exactly ONE of `dayWord`/`time` (never both),
+            // so it resolves to whichever one is set — the plain time for
+            // an ordinary overdue task, or "Yesterday"/"Sep 22" for a
+            // date-only one — with no day-word/time split to color
+            // differently, unlike the non-overdue branch below.
+            return Text(parts.plainString).foregroundStyle(Color.red.opacity(0.9))
+        }
+        var text: Text?
+        if let dayWord = parts.dayWord {
+            text = Text(dayWord).foregroundStyle(dueDayWordTint)
+        }
+        if let time = parts.time {
+            let timeText = Text(time).foregroundStyle(Color.secondary)
+            text = text.map { $0 + Text(" ") + timeText } ?? timeText
+        }
+        return text ?? Text("")
+    }
+
+    // MARK: - List paging (2026-09-23, "show completed"'s divider-aware pages)
+
+    /// Page boundaries for a combined open+divider+done list — shared by
+    /// `RemindersListView.pagedReminders` and `TasksListView.pagedTasks` via
+    /// a generic `isDivider` predicate rather than a common item protocol
+    /// (the two lists' item enums are private to their own files, matching
+    /// this file's established "duplicate the view, share the math" split —
+    /// see `TasksListView.shouldMeasureRealWidth`'s identical precedent).
+    ///
+    /// Never lets the "DONE · N" divider be the LAST item of a page when
+    /// there is at least one done row after it — Trent's review of the
+    /// first cut: "never let 'DONE · N' be the last item on a page... if
+    /// the first done row spills, the divider moves to the next page too."
+    /// A naive uniform `rows`-per-page slice can land the divider at the
+    /// very end of a page with nothing under it (the done rows all pushed
+    /// to the next page, which then starts with no divider of its own) —
+    /// an orphaned section header. This walks the list building one page
+    /// at a time and, whenever the item that would end a page is the
+    /// divider AND something still follows it, backs that page off by one
+    /// row so the divider carries at least its first done row along with
+    /// it onto the NEXT page instead.
+    ///
+    /// Only ever WITHDRAWS a row from a page's tail, never adds one back,
+    /// so a page can be one row narrower than `rows` exactly at that
+    /// boundary — never wider. Since the list has at most one divider,
+    /// this can only trigger once, so it adds at most one extra page
+    /// versus uniform slicing.
+    static func pageBoundaries<Item>(
+        for items: [Item], rows: Int, isDivider: (Item) -> Bool
+    ) -> [Range<Int>] {
+        guard rows > 0, !items.isEmpty else { return [0..<items.count] }
+        var pages: [Range<Int>] = []
+        var index = 0
+        while index < items.count {
+            var end = min(index + rows, items.count)
+            if end > index, end < items.count, isDivider(items[end - 1]) {
+                end -= 1
+            }
+            // Degenerate floor: `rows == 1` (the smallest `ViewThatFits`
+            // candidate) can never keep a divider paired with a done row
+            // no matter what — there is no room. Rather than loop forever
+            // backing off to `index`, let the divider stand alone on its
+            // own page; the next page then starts with its done rows,
+            // still divider-less but at least not empty.
+            if end <= index { end = index + 1 }
+            pages.append(index..<end)
+            index = end
+        }
+        return pages
+    }
 }
 
 // MARK: - Deep links
@@ -571,6 +790,66 @@ struct UndoRedoButtons: View {
         .opacity(enabled ? 1 : 0.3)
         .disabled(!enabled)
         .accessibilityLabel(Text(label))
+    }
+}
+
+/// The "show completed" eye toggle (2026-09-23), left of `UndoRedoButtons` in
+/// the Reminders/Tasks `systemLarge` headers (mockup option A: completed
+/// items sit at the bottom of the card, Trent's pick). Self-contained and
+/// keyed by an arbitrary `kind` string (`WidgetStore.showCompleted(for:)` /
+/// `ToggleShowCompletedIntent`), so a parallel branch building the Track
+/// widget's own eye toggle can reuse this exact view — and its storage —
+/// without either branch's change colliding with the other's.
+///
+/// `systemLarge` only — the call sites gate it (mirroring `UndoRedoButtons`'
+/// own systemMedium/Large split doc): a systemMedium card has no header
+/// height, and no row budget, to spare on a DONE section at all (see
+/// `WidgetTheme.compactRowSpacing`'s "6pt costs a whole row" doc).
+struct ShowCompletedToggle: View {
+    let kind: String
+    let isOn: Bool
+
+    /// `eye.slash` (secondary) off, `eye` (indigo, `WidgetTheme.
+    /// indigoAccent`) on — matched to the parallel Quotas widget rebuild's
+    /// own eye toggle for the same affordance across all three kinds, per
+    /// coordinator note (2026-09-23). Deliberately NOT `eye`/`eye.fill`
+    /// (this view's first-drafted pair): "slashed" reads as "hidden, tap to
+    /// reveal" more clearly than a plain outline does, and the indigo tint
+    /// on ON is what makes an active toggle visually distinct from
+    /// `UndoRedoButtons`' plain secondary-gray icons beside it, not just a
+    /// filled-vs-outline glyph difference.
+    var body: some View {
+        Button(intent: ToggleShowCompletedIntent(kind: kind)) {
+            Image(systemName: isOn ? "eye" : "eye.slash")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
+        .accessibilityLabel(Text(isOn ? "Hide completed" : "Show completed"))
+    }
+}
+
+/// The "DONE · N" divider between open and completed rows (2026-09-23, "show
+/// completed", mockup option A) — a hairline, not a full section header:
+/// completed items are secondary content sitting below the primary list, not
+/// a second list of equal visual weight.
+struct DoneDivider: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("DONE · \(count)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .fixedSize()
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(height: 1)
+        }
     }
 }
 

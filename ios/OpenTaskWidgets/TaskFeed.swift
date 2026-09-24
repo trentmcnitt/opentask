@@ -23,6 +23,12 @@ enum TaskFeed {
         /// Tombstoned completions removed, staged `+1`s applied (§8).
         let tasks: [TaskDTO]
         let projects: [ProjectDTO]
+        /// Today's completions (2026-09-23, "show completed" — the Tasks
+        /// widget's DONE list), pending restores filtered out. ALWAYS
+        /// fetched, never gated on the toggle — see `snapshot(now:)`'s doc
+        /// for why gating it would leave the DONE list empty for one repaint
+        /// after the toggle turns on.
+        let completions: [CompletionDTO]
         /// Non-nil when this came from the cache because the fetch failed —
         /// drives the "as of HH:MM" note.
         let staleSince: Date?
@@ -34,7 +40,7 @@ enum TaskFeed {
     /// "signed out" and "stale".
     static func snapshot(now: Date = Date()) async -> Snapshot {
         guard APIClient.shared.isConfigured else {
-            return Snapshot(tasks: [], projects: [], staleSince: nil, isSignedOut: true)
+            return Snapshot(tasks: [], projects: [], completions: [], staleSince: nil, isSignedOut: true)
         }
 
         // Interaction fast path (§8 optimistic check-off): a tap landed seconds
@@ -42,7 +48,10 @@ enum TaskFeed {
         // exactly what makes a widget button read as dead. No staleness note:
         // this data is seconds old by construction.
         if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadTasks() {
-            return staged(cached.value.tasks, cached.value.projects, staleSince: nil, now: now)
+            return staged(
+                cached.value.tasks, cached.value.projects, cached.value.completions,
+                staleSince: nil, now: now
+            )
         }
 
         do {
@@ -54,20 +63,33 @@ enum TaskFeed {
             // `/api/undo/status` must never fail the tasks/projects fetch
             // both Tasks and Track render from.
             async let undoStatus: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
-            let (fetchedTasks, fetchedProjects, status) = try await (tasks, projects, undoStatus)
-            WidgetStore.saveTasks(fetchedTasks, projects: fetchedProjects)
+            // Today's completions (2026-09-23, "show completed"), same
+            // best-effort `try?` reasoning as `undoStatus`: a flaky
+            // `/api/completions` must not fail the tasks/projects fetch
+            // Track also renders from. Fetched UNCONDITIONALLY (not gated on
+            // `WidgetStore.showCompleted`) — see the handoff's reasoning:
+            // gating this on the toggle would mean flipping it on hits the
+            // interaction fast path above with a cache that never had
+            // completions in it, rendering an empty DONE section for the
+            // first repaint.
+            async let completions: [CompletionDTO]? = try? APIClient.shared.fetchTodaysCompletions(now: now)
+            let (fetchedTasks, fetchedProjects, status, fetchedCompletions) =
+                try await (tasks, projects, undoStatus, completions)
+            let completionsOrEmpty = fetchedCompletions ?? []
+            WidgetStore.saveTasks(fetchedTasks, projects: fetchedProjects, completions: completionsOrEmpty)
             if let status {
                 WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
             }
-            return staged(fetchedTasks, fetchedProjects, staleSince: nil, now: now)
+            return staged(fetchedTasks, fetchedProjects, completionsOrEmpty, staleSince: nil, now: now)
         } catch {
             print("[OpenTaskWidgets] Tasks fetch failed: \(error)")
             guard let cached = WidgetStore.loadTasks() else {
-                return Snapshot(tasks: [], projects: [], staleSince: nil, isSignedOut: false)
+                return Snapshot(tasks: [], projects: [], completions: [], staleSince: nil, isSignedOut: false)
             }
             return staged(
                 cached.value.tasks,
                 cached.value.projects,
+                cached.value.completions,
                 staleSince: cached.fetchedAt,
                 now: now
             )
@@ -77,10 +99,14 @@ enum TaskFeed {
     /// Single choke point for the §8 staging, applied on the fresh-fetch path
     /// too: the server may not have committed the interaction yet, and
     /// resurrecting a checked item — or dropping a logged `+1` — for one
-    /// refresh cycle looks exactly like the tap didn't take.
+    /// refresh cycle looks exactly like the tap didn't take. Also the single
+    /// choke point for "show completed"'s pending-restore filtering
+    /// (2026-09-23) — the Tasks twin of what `WidgetStore.filterPending(_
+    /// groups:)` does for Reminders' `consideredItems`.
     private static func staged(
         _ tasks: [TaskDTO],
         _ projects: [ProjectDTO],
+        _ completions: [CompletionDTO],
         staleSince: Date?,
         now: Date
     ) -> Snapshot {
@@ -90,6 +116,7 @@ enum TaskFeed {
                 now: now
             ),
             projects: projects,
+            completions: WidgetStore.filterPendingRestoresFromCompletions(completions, now: now),
             staleSince: staleSince,
             isSignedOut: false
         )
