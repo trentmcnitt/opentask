@@ -448,18 +448,18 @@ export function periodDaysLeft(freq: QuotaFreq, timezone: string, now: Date = ne
 }
 
 /**
- * The section heading's muted clause: "ends tonight" for a day, "N days left"
- * for anything longer. DAILY is worded separately rather than routed through
- * `periodDaysLeft` (which would say "1 day left" today and "0 days left" a
- * minute before midnight) — a day quota has no days to count, only the one
- * it is already in.
+ * The section heading's muted clause: "N days left" for a week or longer, and
+ * nothing at all for a day. "Today" already says when it ends — "ends tonight"
+ * beside it was noise (Trent, 2026-09-24) — and routing DAILY through
+ * `periodDaysLeft` would say "1 day left" today and "0 days left" a minute
+ * before midnight.
  */
 export function periodTimeLeftText(
   freq: QuotaFreq,
   timezone: string,
   now: Date = new Date(),
-): string {
-  if (freq === 'DAILY') return 'ends tonight'
+): string | null {
+  if (freq === 'DAILY') return null
   const days = periodDaysLeft(freq, timezone, now)
   return `${days} day${days === 1 ? '' : 's'} left`
 }
