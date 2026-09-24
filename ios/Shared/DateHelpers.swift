@@ -143,6 +143,31 @@ enum DateHelpers {
         return snapToHour(oneHourLater)
     }
 
+    // MARK: - Snooze base (Tasks widget snooze mode / bulk select, 2026-09-24)
+
+    /// What a task-relative snooze counts FROM: the task's own due time when
+    /// it is still upcoming, else now (overdue, due exactly now, or undated).
+    /// Trent, 2026-09-24, at 10:04 AM: "+1 hour" on a task due 5 PM moved it
+    /// to 11 AM, and "Next" on Dark chocolate (due 8:30 PM) moved it to
+    /// noon — "relative to when the task is due", i.e. `max(now, due)`.
+    static func snoozeBase(dueAt: Date?, now: Date = Date()) -> Date {
+        guard let dueAt, dueAt > now else { return now }
+        return dueAt
+    }
+
+    /// "+1 hour" for ONE task, per `snoozeBase`: an UPCOMING task moves by an
+    /// exact 60 minutes from its own due time (5:00 PM → 6:00 PM — the web
+    /// Quick panel's "+1 hr" increment, `adjustDate(initWorkingDate(dueAt),
+    /// {minutes: 60})`, which never snaps); an overdue or undated task goes
+    /// to one hour from NOW, snapped (`snapToNextHour` — the web's
+    /// `computeSnoozeTime('60')`, which is what the swipe/row snooze and the
+    /// `bulk/snooze-overdue` sweep both use). Snapping an upcoming task's own
+    /// time would move a 5:10 PM task to 6:00 PM, not "an hour later".
+    static func snoozePlusOneHour(dueAt: Date?, now: Date = Date()) -> Date {
+        guard let dueAt, dueAt > now else { return snapToNextHour(now: now) }
+        return dueAt.addingTimeInterval(3600)
+    }
+
     /// Format a date as a short time string (e.g., "3:00 PM") in the device timezone.
     private static let shortTimeFormatter: DateFormatter = {
         let f = DateFormatter()
