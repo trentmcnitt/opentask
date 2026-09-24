@@ -116,6 +116,24 @@ private struct RemindersSmallView: View {
 
 // MARK: - Home Screen list
 
+/// One row of the combined open+divider+done list (2026-09-23, "show
+/// completed") — see `combinedItems`' doc. `Identifiable` by a prefixed
+/// string rather than an `Int` id so `.divider` (which has no natural id of
+/// its own) fits the same `ForEach` as the other two cases.
+private enum ReminderListItem: Identifiable {
+    case open(TaskDTO)
+    case divider(count: Int)
+    case done(TaskDTO)
+
+    var id: String {
+        switch self {
+        case .open(let reminder): return "open-\(reminder.id)"
+        case .divider: return "divider"
+        case .done(let reminder): return "done-\(reminder.id)"
+        }
+    }
+}
+
 /// The Home Screen list.
 ///
 /// HOW MANY ROWS: the card shows as many as actually FIT and no more.
@@ -142,6 +160,27 @@ private struct RemindersListView: View {
     let isLarge: Bool
 
     private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
+
+    /// ONE flat sequence — open rows, then (only when "show completed" is on
+    /// AND there is something to show, AND only on `systemLarge` — see
+    /// `ShowCompletedToggle`'s doc for why systemMedium is excluded) a
+    /// divider and the slot's `consideredItems` (2026-09-23, decision #4 in
+    /// the handoff). Paging THIS array with the exact same `pagedReminders`
+    /// ladder the open-only list already used is what makes "recount on
+    /// toggle flip, clamp into range, break only on whole rows" fall out for
+    /// free: `combinedItems.count` changing is exactly what makes
+    /// `pagedReminders`' `totalPages` recompute, and slicing a flat array by
+    /// `rows` can only ever cut between two whole items, never inside one.
+    private var combinedItems: [ReminderListItem] {
+        let openItems = reminders.map(ReminderListItem.open)
+        guard isLarge, WidgetStore.showCompleted(for: RemindersWidget.kind),
+            let group = entry.group, !group.consideredItems.isEmpty
+        else {
+            return openItems
+        }
+        return openItems + [.divider(count: group.consideredItems.count)]
+            + group.consideredItems.map(ReminderListItem.done)
+    }
 
     /// The slot ring wraps (`ShiftReminderSlotIntent`), so both chevrons stay
     /// live whenever there is more than one slot to move between.
@@ -232,14 +271,21 @@ private struct RemindersListView: View {
 
             if entry.groups.isEmpty {
                 WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
-            } else if reminders.isEmpty {
+            } else if window.items.isEmpty {
                 emptySlotView
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(window.items) { reminder in
-                        ReminderRow(
-                            reminder: reminder, titleLineLimit: isLarge ? 2 : 1, availableWidth: width
-                        )
+                    ForEach(window.items) { item in
+                        switch item {
+                        case .open(let reminder):
+                            ReminderRow(
+                                reminder: reminder, titleLineLimit: isLarge ? 2 : 1, availableWidth: width
+                            )
+                        case .divider(let count):
+                            DoneDivider(count: count)
+                        case .done(let reminder):
+                            DoneReminderRow(reminder: reminder)
+                        }
                     }
                 }
                 // systemMedium drops this band, as Track's does: at 4×2 it
@@ -296,16 +342,17 @@ private struct RemindersListView: View {
     /// similar lengths, and the property that matters most — the page
     /// actually shown is always the one THAT candidate verified fits, never
     /// squeezed — holds regardless.
-    private func pagedReminders(rows: Int) -> (items: [TaskDTO], page: Int, totalPages: Int) {
-        guard rows > 0, !reminders.isEmpty else {
-            return (reminders, 0, 1)
+    private func pagedReminders(rows: Int) -> (items: [ReminderListItem], page: Int, totalPages: Int) {
+        let items = combinedItems
+        guard rows > 0, !items.isEmpty else {
+            return (items, 0, 1)
         }
-        let totalPages = max(1, Int(ceil(Double(reminders.count) / Double(rows))))
+        let totalPages = max(1, Int(ceil(Double(items.count) / Double(rows))))
         let slotKey = entry.group?.slotKey ?? -1
         let page = min(max(WidgetStore.remindersPage(for: slotKey), 0), totalPages - 1)
         let start = page * rows
-        let end = min(start + rows, reminders.count)
-        return (Array(reminders[start..<end]), page, totalPages)
+        let end = min(start + rows, items.count)
+        return (Array(items[start..<end]), page, totalPages)
     }
 
     /// The on-screen slot has nothing waiting — three readings, not one
@@ -390,6 +437,13 @@ private struct RemindersListView: View {
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
+            // "Show completed" (2026-09-23), left of Undo/Redo — systemLarge
+            // only, see `ShowCompletedToggle`'s doc.
+            if isLarge {
+                ShowCompletedToggle(
+                    kind: RemindersWidget.kind, isOn: WidgetStore.showCompleted(for: RemindersWidget.kind)
+                )
+            }
             // Right-aligned, before the chevrons (2026-09-23) — see
             // `UndoRedoButtons`' doc: always present, dimmed when there is
             // nothing to undo/redo.
@@ -417,8 +471,17 @@ private struct RemindersListView: View {
         return WidgetLink.reminders(slot: group.slotKey)
     }
 
+    /// "N left" ordinarily; "N left · M done" once "show completed" is on
+    /// (2026-09-23) — `isLarge`-gated like the toggle itself, so a
+    /// systemMedium header (which never shows the toggle, and can't show a
+    /// DONE section) never reads this branch.
     private var countLabel: String {
-        reminders.isEmpty ? "all clear" : "\(reminders.count) left"
+        guard isLarge, WidgetStore.showCompleted(for: RemindersWidget.kind) else {
+            return reminders.isEmpty ? "all clear" : "\(reminders.count) left"
+        }
+        let doneCount = entry.group?.consideredItems.count ?? 0
+        guard !reminders.isEmpty || doneCount > 0 else { return "all clear" }
+        return "\(reminders.count) left · \(doneCount) done"
     }
 }
 
@@ -582,7 +645,11 @@ private struct ReminderSlotStrip: View {
     private func color(for state: SlotState) -> Color {
         switch state {
         case .done: return WidgetTheme.trackMetTint.opacity(0.85)
-        case .behind: return .indigo
+        // `WidgetTheme.indigoAccent` (2026-09-23) — the same named constant
+        // the "show completed" eye toggle's ON state now uses, so this
+        // segment's fill and that toggle can never drift into two
+        // different indigos.
+        case .behind: return WidgetTheme.indigoAccent
         case .upcoming: return Color.secondary.opacity(0.15)
         }
     }
@@ -746,6 +813,46 @@ private struct ReminderRow: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, -markerBleed)
+        }
+    }
+}
+
+/// One completed reminder in the DONE section (2026-09-23, "show
+/// completed") — struck-through title, no time (Reminders never show a due
+/// time on an open row either, per this file's header comment). Row grammar
+/// mirrors `ReminderRow`'s (title = `Link`, trailing marker = `Button`) —
+/// the handoff's decision, picked over "whole row is one button" because
+/// it's the smallest diff from the open row and keeps the item's own deep
+/// link live even while shown as done.
+///
+/// `.lineLimit(1)`, unlike `ReminderRow`'s wrap-don't-truncate rule: a
+/// completed item is secondary content, not the "never truncate a reminder"
+/// case that rule exists to protect. No reserved-height dance either — a
+/// single-line `Text` reports its own honest intrinsic height to
+/// `ViewThatFits`, which is all a fixed-height row needs.
+private struct DoneReminderRow: View {
+    let reminder: TaskDTO
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Link(destination: WidgetLink.reminder(reminder.id)) {
+                Text(reminder.title)
+                    .font(.subheadline)
+                    .strikethrough()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+
+            Button(intent: UncompleteTaskIntent(taskId: reminder.id, kind: RemindersWidget.kind)) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 19, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

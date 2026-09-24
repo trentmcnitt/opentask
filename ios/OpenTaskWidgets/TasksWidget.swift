@@ -32,6 +32,15 @@ struct TasksEntry: TimelineEntry {
     /// (2026-09-23). Defaulted so sample entries needn't pass it; empty
     /// falls back to `projects`.
     var colorProjects: [ProjectDTO] = []
+    /// Today's completions for THIS scope (2026-09-23, "show completed" —
+    /// the DONE section) — unlike the toggle bool itself (pure local UI
+    /// state, read live from `WidgetStore`), this has to ride on the entry:
+    /// it is server data, already filtered/scoped by the provider
+    /// (`TasksTimeline.doneTasks`) the same way `tasks` above is. Defaulted
+    /// so every existing `TasksEntry` construction site (the boundary/expiry
+    /// entries in `getTimeline`, `SampleData`) keeps compiling without
+    /// passing it — see `colorProjects`' identical precedent.
+    var doneTasks: [CompletionDTO] = []
 
     /// Two unified pages up front (2026-09-23, item 4) — Trent: "Instead of
     /// Up Next I'd also like to have just a Today one… We need a Today one
@@ -69,8 +78,16 @@ struct TasksEntry: TimelineEntry {
     /// task's project has somehow dropped out of `projects` (a project
     /// deleted between fetches, say) rather than crashing or guessing a color.
     func projectColor(for task: TaskDTO) -> Color {
+        projectColor(forProjectId: task.projectId)
+    }
+
+    /// The `CompletionDTO` twin of `projectColor(for:)` (2026-09-23, "show
+    /// completed") — `DoneTaskRow`'s source is a `CompletionDTO`, which
+    /// carries a bare `projectId` rather than a full `TaskDTO`, so this is
+    /// the same lookup addressed by id directly.
+    func projectColor(forProjectId projectId: Int) -> Color {
         let all = colorProjects.isEmpty ? projects : colorProjects
-        return WidgetTheme.projectColor(all.first(where: { $0.id == task.projectId })?.color)
+        return WidgetTheme.projectColor(all.first(where: { $0.id == projectId })?.color)
     }
 
     func overdueCount(now: Date = Date()) -> Int {
@@ -151,6 +168,34 @@ enum TasksTimeline {
         return projects.filter { present.contains($0.id) }
     }
 
+    /// The DONE list for "show completed" (2026-09-23) — today's completions,
+    /// scoped the same way `todaysTasks`/`upNextTasks` scope the OPEN list:
+    /// reminders and tracked items are excluded ALWAYS (their own widgets own
+    /// that data — same exclusions `eligibleTasks` applies), and a
+    /// per-project page filters further by `project_id`. Both unified pages
+    /// (Today/Up next) show every one of today's matching completions,
+    /// unfiltered by project.
+    ///
+    /// DECISION, not fully spec'd (flagged in the handoff): there is no clean
+    /// way to further restrict "Today"'s done list to only tasks that were
+    /// DUE today (as opposed to any task completed today) without extra
+    /// due-date reconstruction the completions payload doesn't cleanly
+    /// support — `CompletionDTO` carries no due date at all. So "Today" here
+    /// means "completed today", not "was due today and got done". Sorted
+    /// most-recently-completed first — a small, un-spec'd choice: the DONE
+    /// section reads top-down like the OPEN list above it, so the item just
+    /// checked off appears at its top, not buried under older completions.
+    static func doneTasks(from completions: [CompletionDTO], scope: Int) -> [CompletionDTO] {
+        let eligible = completions.filter { !$0.isReminder && !$0.isTracked }
+        let scoped: [CompletionDTO]
+        if scope == WidgetStore.allProjects || scope == WidgetStore.upNextScope {
+            scoped = eligible
+        } else {
+            scoped = eligible.filter { $0.projectId == scope }
+        }
+        return scoped.sorted { ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast) }
+    }
+
     /// Filters to one project's slice of `tasks`. Only ever called with a
     /// real project id now — the two unified scopes (`allProjects`,
     /// `upNextScope`) are resolved by `TasksProvider.makeEntry` before this
@@ -205,7 +250,8 @@ struct TasksProvider: TimelineProvider {
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
                         actionDescription: WidgetStore.lastActionDescription(at: due),
-                        colorProjects: entry.colorProjects
+                        colorProjects: entry.colorProjects,
+                        doneTasks: entry.doneTasks
                     )
                 )
             }
@@ -225,7 +271,8 @@ struct TasksProvider: TimelineProvider {
                         canUndo: entry.canUndo,
                         canRedo: entry.canRedo,
                         actionDescription: nil,
-                        colorProjects: entry.colorProjects
+                        colorProjects: entry.colorProjects,
+                        doneTasks: entry.doneTasks
                     )
                 )
             }
@@ -295,7 +342,8 @@ struct TasksProvider: TimelineProvider {
             canUndo: WidgetStore.canUndo,
             canRedo: WidgetStore.canRedo,
             actionDescription: WidgetStore.lastActionDescription(at: now),
-            colorProjects: snapshot.projects
+            colorProjects: snapshot.projects,
+            doneTasks: TasksTimeline.doneTasks(from: snapshot.completions, scope: scope)
         )
     }
 }
@@ -355,3 +403,119 @@ struct TasksWidget: Widget {
         }
     }
 }
+
+#if DEBUG
+// MARK: - Previews (2026-09-23, day-naming + "show completed" verification)
+//
+// See `RemindersWidget.swift`'s identical preview section header for why
+// this uses realistic named data (not `SampleData.swift`) and two SEPARATE
+// `#Preview` blocks rather than two timeline entries in one.
+private enum TasksPreviewData {
+    static var projects: [ProjectDTO] {
+        [
+            ProjectDTO(id: 1, name: "Personal", color: "blue"),
+            ProjectDTO(id: 2, name: "Work", color: "red"),
+        ]
+    }
+
+    /// A local time `days` from now, as the UTC ISO string the API would
+    /// return. Relative to `Date()` (not a literal "Oct 1"/"Oct 2", the
+    /// verification brief's own wording) so this preview keeps demonstrating
+    /// the right day-naming BUCKET (today / tomorrow / 2-6 days / 7+ days)
+    /// whenever it's rendered, rather than only on the day it was written.
+    private static func at(daysFromNow days: Int, hour: Int, minute: Int = 0) -> String {
+        let calendar = Calendar.current
+        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        var comps = calendar.dateComponents([.year, .month, .day], from: day)
+        comps.hour = hour
+        comps.minute = minute
+        return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
+    }
+
+    /// Date-only (local midnight) `days` from now — the "Oct 2"-style case:
+    /// a day word with no time at all.
+    private static func dateOnly(daysFromNow days: Int) -> String {
+        let calendar = Calendar.current
+        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+        return DateHelpers.formatISO(calendar.startOfDay(for: day))
+    }
+
+    /// The next Sunday at least 2 days out, so this reliably lands in the
+    /// "2-6 days away" weekday-name bucket (`WidgetTheme.dueLabelParts`)
+    /// regardless of which day this preview happens to be rendered on — a
+    /// Sunday only 1 day away would correctly show "Tomorrow" instead, which
+    /// is accurate day-naming behavior but wouldn't demonstrate the "Sun"
+    /// case this preview exists to show.
+    private static func nextSunday(hour: Int, minute: Int = 0) -> String {
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: Date()) // 1 = Sunday ... 7 = Saturday
+        var offset = (8 - weekday) % 7
+        if offset < 2 { offset += 7 }
+        return at(daysFromNow: offset, hour: hour, minute: minute)
+    }
+
+    static var tasks: [TaskDTO] {
+        [
+            TaskDTO(
+                id: 911, projectId: 1, title: "Kelly chocolate", priority: 2,
+                dueAt: at(daysFromNow: 0, hour: 20, minute: 30)
+            ),
+            TaskDTO(
+                id: 912, projectId: 2, title: "Check if clients are waiting on me", priority: 3,
+                dueAt: at(daysFromNow: 1, hour: 9)
+            ),
+            TaskDTO(
+                id: 913, projectId: 2, title: "Log Upwork hours before the UTC week lock", priority: 2,
+                dueAt: nextSunday(hour: 9)
+            ),
+            TaskDTO(
+                id: 914, projectId: 1, title: "Make sure Mercury is cancelled", priority: 2,
+                dueAt: at(daysFromNow: 10, hour: 9)
+            ),
+            TaskDTO(
+                id: 915, projectId: 1, title: "Return Burleigh immunization records", priority: 1,
+                dueAt: dateOnly(daysFromNow: 11)
+            ),
+        ]
+    }
+
+    static var doneToday: [CompletionDTO] {
+        [
+            CompletionDTO(
+                id: -920, taskId: 920, completedAt: at(daysFromNow: 0, hour: 8, minute: 15),
+                taskTitle: "Morning check-in", projectId: 1
+            )
+        ]
+    }
+
+    static func entry() -> TasksEntry {
+        TasksEntry(
+            date: Date(),
+            tasks: TasksTimeline.upNextTasks(from: tasks),
+            projects: projects,
+            scope: WidgetStore.upNextScope,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: projects,
+            doneTasks: doneToday
+        )
+    }
+}
+
+#Preview("Tasks Large — Completed Off", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Completed On", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = WidgetStore.setShowCompleted(true, for: TasksWidget.kind)
+    TasksPreviewData.entry()
+}
+#endif
