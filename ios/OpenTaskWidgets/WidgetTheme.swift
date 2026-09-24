@@ -97,6 +97,15 @@ enum WidgetTheme {
     /// accidental second accent hue and reverted before merge.
     static let trackMetTint = Color.green
 
+    /// Quotas' Takeback mode (2026-09-24) — the button's ON tint and every
+    /// chip's "−1" while the mode is armed. The ONE red on the Quotas card,
+    /// and not an exception to §5's "nothing is red" above: that rule is
+    /// about STATE (a quota behind pace must never read as an alarm), and
+    /// this marks an ACTION — "the next tap subtracts" — the destructive
+    /// tint Trent asked for so the armed mode can't be mistaken for the
+    /// resting one. It never colors a count, a bar or a pace mark.
+    static let takebackTint = Color.red
+
     // MARK: - Metrics
 
     static let rowSpacing: CGFloat = 10
@@ -1060,6 +1069,55 @@ struct CompletedDotToggle<I: AppIntent>: View {
         .buttonStyle(.plain)
         .padding(.vertical, -bleed)
         .accessibilityLabel(Text(isOn ? "Hide \(label)" : "Show \(label)"))
+    }
+}
+
+/// Quotas' "Takeback" button (2026-09-24) — sits at the right end of the
+/// bottom row, after the "met" dot, and flips Takeback mode
+/// (`ToggleQuotasTakebackModeIntent`; the mode itself is documented on
+/// `WidgetStore.quotasTakebackMode`). The `minus.circle` ICON ALONE, no
+/// "Takeback" word: the brief was "the word if it fits at XXX Large, else
+/// the icon", and it doesn't fit — measured in the row's own drawn
+/// `.caption2` on an iPhone 18 Pro Large card, the pager is centred in its
+/// own layer (`ListBottomBar`), leaving the right-hand cluster ~110pt,
+/// and "○ met" + icon + "Takeback" needs ~120pt even at the DEFAULT text
+/// size (more at XXX Large). An adaptive word (shown only when there's one
+/// page and no pager) was tried and dropped: the button would change shape
+/// the moment a takeback re-hid the met chips and the pages collapsed. The
+/// accessibility label carries the name ("Takeback mode").
+///
+/// Off: secondary, like every other bottom-row control. On:
+/// `WidgetTheme.takebackTint`, the FILLED glyph, and a faint red capsule
+/// behind it — "armed" must be unmistakable at a glance.
+///
+/// Framed to the bottom row's fixed height with its tap target bled half a
+/// `rowSpacing` above and below — `CompletedDotToggle`'s trick — so it
+/// costs the page budget nothing.
+struct TakebackModeToggle: View {
+    let isOn: Bool
+    let height: CGFloat
+
+    private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
+    var body: some View {
+        Button(intent: ToggleQuotasTakebackModeIntent()) {
+            Image(systemName: isOn ? "minus.circle.fill" : "minus.circle")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6)
+                .frame(height: height)
+                .background(
+                    Capsule().fill(isOn ? WidgetTheme.takebackTint.opacity(0.16) : Color.clear)
+                )
+                .frame(height: height + 2 * bleed)
+                // Space between this and the "met" dot before it.
+                .padding(.leading, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -bleed)
+        .foregroundStyle(isOn ? WidgetTheme.takebackTint : Color.secondary)
+        .accessibilityLabel(Text("Takeback mode"))
+        .accessibilityValue(Text(isOn ? "On" : "Off"))
     }
 }
 

@@ -252,6 +252,15 @@ struct IncrementProgressIntent: AppIntent {
         // same disorientation Trent flagged, now happening on every `+1`.
         WidgetStore.trackSelection = taskId
 
+        // Takeback mode is one-shot (2026-09-24 — see
+        // `WidgetStore.quotasTakebackMode`): the `−1` that a takeback-mode
+        // chip fires is the mode's ONE action, so it ends here, BEFORE the
+        // round-1 reload — the optimistic repaint already shows the mode
+        // off and the count down. Unconditional rather than `delta < 0`:
+        // outside the mode this is already false, and inside it every live
+        // chip is a `−1`, so there is no tap that should leave it on.
+        WidgetStore.quotasTakebackMode = false
+
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
         // then let the server catch up. The staged value is a NET count, so
         // three taps in a row draw +3 instead of the single +1 a stamp-only
@@ -598,6 +607,29 @@ struct ToggleQuotasShowMetIntent: AppIntent {
         // render time (see `WidgetStore.quotasPage`'s doc), the same "store
         // only ever needs to move it, view clamps" idiom every other pager
         // in this file follows.
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        return .result()
+    }
+}
+
+/// The Quotas bottom row's "Takeback" button (2026-09-24) — flips Takeback
+/// mode (`WidgetStore.quotasTakebackMode`, where the whole mode is
+/// documented). Turning it OFF this way does nothing else — no `−1`, no
+/// page move; turning it on doesn't touch the page either (met chips
+/// appearing can reflow the pages, and the view clamps, same as the "met"
+/// dot). View-state only, so the same fast path as every toggle here:
+/// `markInteraction()` is also what keeps `TrackProvider` from treating
+/// this very reload as "a change elsewhere" and clearing the mode it just
+/// set.
+struct ToggleQuotasTakebackModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Takeback Mode"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.quotasTakebackMode.toggle()
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
         return .result()
