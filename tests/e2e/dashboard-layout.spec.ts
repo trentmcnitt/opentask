@@ -130,7 +130,7 @@ const TALL_QUOTAS = Array.from({ length: 10 }, (_, i) => ({
  * Fold every group in the task list, leaving a column of headings.
  *
  * Scoped to the list's own grid child: the Track panel's desktop header button
- * is also labelled "Collapse Quotas" and would otherwise be swept up. The loop
+ * used to be labelled "Collapse Quotas" and would have been swept up. The loop
  * waits on the COUNT rather than on any one button — clicking relabels the
  * button to "Expand …", so each click removes exactly one from the set, and
  * Playwright's own retry does the waiting.
