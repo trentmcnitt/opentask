@@ -188,10 +188,21 @@ enum WidgetStore {
     /// fast paths consult (`canRepaintTasksFromCache`/
     /// `canRepaintRemindersFromCache`), and only a fetch that STARTED after
     /// them settles them — no window, no guess.
-    static func clearInteraction(now: Date = Date()) {
+    ///
+    /// `kind` scopes WHICH payload is declared stale, by the partition
+    /// `reloadOpenTaskWidget(kind:)`'s doc lays out: Reminders reads the
+    /// reminders payload, Tasks and Track share the tasks one. `nil` (Undo/
+    /// Redo, which can't know what they reversed) marks both. Scoping keeps
+    /// a Tasks snooze from making the Reminders widget's next chevron pay a
+    /// network round trip for a payload the snooze could not have changed.
+    static func clearInteraction(kind: String? = nil, now: Date = Date()) {
         defaults?.removeObject(forKey: lastInteractionKey)
-        defaults?.set(now.timeIntervalSince1970, forKey: tasksFetchRequiredKey)
-        defaults?.set(now.timeIntervalSince1970, forKey: remindersFetchRequiredKey)
+        if kind != RemindersWidget.kind {
+            defaults?.set(now.timeIntervalSince1970, forKey: tasksFetchRequiredKey)
+        }
+        if kind == nil || kind == RemindersWidget.kind {
+            defaults?.set(now.timeIntervalSince1970, forKey: remindersFetchRequiredKey)
+        }
     }
 
     /// Record that an interaction just happened, so the next provider pass
@@ -386,6 +397,14 @@ enum WidgetStore {
     /// see the server's new count AND the still-staged delta — the tap
     /// counted twice for one repaint. A sibling tap on the same chip still in
     /// flight keeps its own staged delta, drawn over the server's count.
+    ///
+    /// The one known seam: two taps on one chip whose RESPONSES arrive in
+    /// the opposite order the server applied them (a slow first response on
+    /// a shared connection). Last response wins here, so the cache can end
+    /// one step behind the server until the next real fetch (a scheduled
+    /// refresh, or any change elsewhere). Rare, self-healing, and ordering
+    /// them would need a server version this payload doesn't carry.
+    ///
     /// `fetchedAt` is kept: this is one task's truth, not a fresh payload, so
     /// it must not hide an "as of" note the rest of the cache has earned.
     static func confirmProgress(_ task: TaskDTO, delta: Int, now: Date = Date()) {
