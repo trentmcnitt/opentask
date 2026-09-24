@@ -93,3 +93,32 @@ extension WatchCache {
         saveTasks(kept, projects: cached.projects)
     }
 }
+
+// MARK: - Quotas page
+
+extension WatchCache {
+    private static let labelConfigKey = "watch.labelConfig.v1"
+    private static let showMetQuotasKey = "watch.quotas.showMet.v1"
+
+    /// The user's label display colors (`label_config`) — the Quotas page's
+    /// stripe colors. Cached like everything else so a failed fetch keeps
+    /// last-known colors instead of drawing every stripe neutral.
+    static func saveLabelConfig(_ config: [LabelConfigDTO]) {
+        guard let data = try? JSONEncoder().encode(config) else { return }
+        defaults?.set(data, forKey: labelConfigKey)
+    }
+
+    static func loadLabelConfig() -> [LabelConfigDTO]? {
+        guard let data = defaults?.data(forKey: labelConfigKey) else { return nil }
+        return try? JSONDecoder().decode([LabelConfigDTO].self, from: data)
+    }
+
+    /// The Quotas page's "Show met" toggle. Off by default (a missing key
+    /// reads `false`) — a met quota is done for its period and stays out of
+    /// the way unless asked for, the same default as the phone widget and the
+    /// web panel. Local UI state, never synced.
+    static var showMetQuotas: Bool {
+        get { defaults?.bool(forKey: showMetQuotasKey) ?? false }
+        set { defaults?.set(newValue, forKey: showMetQuotasKey) }
+    }
+}

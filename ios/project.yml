@@ -196,6 +196,13 @@ targets:
     entitlements:
       path: OpenTaskWatchWidgets/OpenTaskWatchWidgets.entitlements
       properties:
+        # WidgetKit push (watchOS 26, `WatchWidgetPushHandler`): a widget
+        # extension needs its OWN push entitlement, separate from the watch
+        # app's — missing, the build still succeeds and pushes silently never
+        # arrive (docs/NOTIFICATIONS.md § WidgetKit push). Bare key on watchOS,
+        # like the watch app's; `development` to match it and the phone/Mac
+        # widgets (the registrar sends "development" for the same reason).
+        aps-environment: development
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
     settings:

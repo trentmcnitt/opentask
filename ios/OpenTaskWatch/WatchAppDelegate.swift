@@ -1,6 +1,7 @@
 import WatchKit
 import UserNotifications
 import WatchConnectivity
+import WidgetKit
 
 /// Handles notification actions on Apple Watch.
 ///
@@ -132,6 +133,21 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
         guard let type = userInfo["type"] as? String else {
             completionHandler(.noData)
             return
+        }
+
+        // Every silent push the server sends this app means "something
+        // changed elsewhere": `dismiss` goes out on every done/snooze/edit/
+        // delete from any device (`dismissNotificationsForTasks`,
+        // src/core/notifications/dismiss.ts), `dismiss-all` when the app is
+        // opened on another device. That is exactly the Smart Stack's stale
+        // case (checked off on the phone, card still says overdue), so ask
+        // WidgetKit to re-run the card's timeline — its provider fetches
+        // fresh data itself. Works below watchOS 26 too, where WidgetKit
+        // push doesn't exist; on 26 it's a second path next to
+        // `WatchWidgetPushHandler`. Best-effort: Apple budgets background
+        // silent pushes and may drop or delay them.
+        if type == "dismiss" || type == "dismiss-all" {
+            WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         }
 
         let center = UNUserNotificationCenter.current()

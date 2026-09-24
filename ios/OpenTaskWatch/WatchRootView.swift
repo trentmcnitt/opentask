@@ -1,16 +1,19 @@
 import SwiftUI
 
-/// App root: a vertically paged `TabView` (Digital Crown / swipe scrolls
-/// between pages, the watchOS-native pattern — see `.tabViewStyle(.verticalPage)`
-/// below), Reminders first then Tasks. Quotas (§ the task brief's optional
-/// third page) is deliberately NOT built tonight — see the PR description and
-/// the morning report for why (everything else needed to be built, tested on
-/// a real dev server, and verified before it was worth starting a third
-/// surface from scratch).
+/// App root: a HORIZONTALLY paged `TabView` — swipe left/right between
+/// Reminders, Tasks and Quotas, with page dots — where each page scrolls
+/// vertically on its own with the Digital Crown.
+///
+/// Was `.tabViewStyle(.verticalPage)` until 2026-09-24: the crown and a
+/// vertical swipe both scrolled the page AND flipped to the next one, so
+/// reaching Tasks meant scrolling to the bottom of every reminder first
+/// (Trent: "swipe left/right between sections instead of scrolling to the
+/// bottom to flip to the next page"). `.page` is the watchOS horizontal
+/// pager — the crown is left entirely to the page's own scroll view.
 ///
 /// Falls back to the existing `StatusView` "not connected" message when the
-/// Keychain has no server URL/token yet — unchanged from before this task,
-/// still reachable by opening the iOS app to pair.
+/// Keychain has no server URL/token yet — still reachable by opening the iOS
+/// app to pair.
 struct WatchRootView: View {
     @StateObject private var model = WatchViewModel()
     @Environment(\.scenePhase) private var scenePhase
@@ -27,22 +30,25 @@ struct WatchRootView: View {
                 // one per page. Each page below still sets its own
                 // `.navigationTitle`/`.toolbar` and this single stack picks
                 // up whichever page is on screen — a NavigationStack per page
-                // crashed on first run (verified in the simulator):
+                // crashed on first run (verified in the simulator, with the
+                // earlier vertical pager):
                 // "Layout requested for visible navigation bar ... top item
                 // belongs to a different navigation bar ... possibly from a
                 // client attempt to nest wrapped navigation controllers." A
-                // vertically-paged watchOS TabView keeps adjacent pages
-                // mounted for the swipe transition, so two independently
-                // navigation-stacked pages fight over the same chrome the
-                // instant both exist at once.
+                // paged watchOS TabView keeps adjacent pages mounted for the
+                // swipe transition, so two independently navigation-stacked
+                // pages fight over the same chrome the instant both exist at
+                // once — true of the horizontal pager too.
                 NavigationStack {
                     TabView(selection: $page) {
                         RemindersPageView(model: model)
                             .tag(WatchPage.reminders)
                         TasksPageView(model: model)
                             .tag(WatchPage.tasks)
+                        QuotasPageView(model: model)
+                            .tag(WatchPage.quotas)
                     }
-                    .tabViewStyle(.verticalPage)
+                    .tabViewStyle(.page)
                 }
             }
         }
@@ -58,12 +64,11 @@ struct WatchRootView: View {
                 page = target
             }
         }
-        // Refresh on every return to the foreground, not just first launch.
-        // `WatchAppDelegate.applicationDidBecomeActive` already exists for
-        // slot-action cache refresh but was never wired to THIS view's data
-        // — without this, reopening the app after it's been backgrounded
-        // shows whatever was on screen when it was last active, however
-        // stale, until a manual pull-to-refresh.
+        // Refresh on every return to the foreground, not just first launch —
+        // a change made on the phone or web while the app sat in the
+        // background must not wait for a manual pull-to-refresh. `load()`
+        // also reloads the Smart Stack widget's timeline, so opening the app
+        // is itself a guaranteed way to bring a stale card up to date.
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 Task { await model.load() }
@@ -76,14 +81,18 @@ struct WatchRootView: View {
 enum WatchPage: Hashable {
     case reminders
     case tasks
+    case quotas
 
     /// `opentask://reminders` → Reminders, `opentask://tasks` (or the phone
-    /// widgets' `opentask://today`) → Tasks; `nil` for anything else.
+    /// widgets' `opentask://today`) → Tasks, `opentask://quotas` (or
+    /// `opentask://quota/<id>`, the phone Quotas widget's row link) →
+    /// Quotas; `nil` for anything else.
     init?(url: URL) {
         guard url.scheme == "opentask" else { return nil }
         switch url.host {
         case "reminders": self = .reminders
         case "tasks", "today": self = .tasks
+        case "quotas", "quota": self = .quotas
         default: return nil
         }
     }
