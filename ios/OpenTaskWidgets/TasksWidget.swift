@@ -670,6 +670,69 @@ private func resetTasksPreviewState(page: Int = 0) {
     TasksPreviewData.entry()
 }
 
+#Preview("Tasks Large — Up next page 4", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 3)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 5", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 4)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 6", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 5)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 7", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 6)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 8", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 7)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 9", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 8)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 10", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 9)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 11", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 10)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 12", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 11)
+    TasksPreviewData.entry()
+}
+
 #Preview("Tasks Large — Completed On, last page", as: .systemLarge) {
     TasksWidget()
 } timeline: {
@@ -708,6 +771,13 @@ private func resetTasksPreviewState(page: Int = 0) {
     TasksWidget()
 } timeline: {
     let _ = resetTasksPreviewState()
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Small", as: .systemSmall) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0)
     TasksPreviewData.entry()
 }
 
