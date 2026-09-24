@@ -25,6 +25,12 @@ enum WatchTheme {
     /// surface briefly (and wrongly) used for the same meaning.
     static let overdue = Color.red
 
+    /// Quotas' Takeback mode (`QuotasPageView`): the armed ⊖ toggle and each
+    /// row's "−1". Same value as the phone widget's `WidgetTheme.
+    /// takebackTint` — an ACTION color (this tap removes one), not a state
+    /// color, so it doesn't compete with indigo "in progress" / green "met".
+    static let takebackTint = Color.red
+
     /// The eight named palette colors a project can carry server-side
     /// (`src/lib/project-colors.ts`). Kept in sync by hand since this target
     /// cannot import `OpenTaskWidgets/WidgetTheme.swift`.
