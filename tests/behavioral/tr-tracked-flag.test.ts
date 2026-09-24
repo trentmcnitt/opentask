@@ -106,4 +106,44 @@ describe('Tracked flag', () => {
     })
     expect(getTaskById(plain.id)!.is_tracked).toBe(false)
   })
+
+  /**
+   * TR-005: the resulting-row guard in updateTask used to test
+   * `progress_target > 1` only, so a target-1 quota (tracked by the flag
+   * alone) could be flipped into a reminder by the editor's toggle, which
+   * sends `is_reminder` by itself.
+   */
+  test('TR-005: a flag-only quota cannot be flipped into a reminder', () => {
+    const night = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Date night', rrule: 'FREQ=MONTHLY', is_tracked: true },
+    })
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: night.id,
+        input: { is_reminder: true },
+      }),
+    ).toThrow(TRACKED_REMINDER_MESSAGE)
+    const stored = getTaskById(night.id)!
+    expect(stored.is_reminder).toBe(false)
+    expect(stored.is_tracked).toBe(true)
+
+    // ...and the reverse: flagging an existing reminder as tracked.
+    const reminder = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'Stretch', rrule: 'FREQ=DAILY', is_reminder: true },
+    })
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: TEST_TIMEZONE,
+        taskId: reminder.id,
+        input: { is_tracked: true },
+      }),
+    ).toThrow(TRACKED_REMINDER_MESSAGE)
+  })
 })

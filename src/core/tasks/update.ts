@@ -20,6 +20,7 @@ import { getTaskById } from './create'
 import { collectFieldChanges } from './helpers'
 import { validateLabelsExist } from '@/core/labels'
 import { TRACKED_REMINDER_MESSAGE } from '@/core/validation'
+import { isTracked } from '@/lib/track'
 
 export interface UpdateTaskOptions {
   userId: number
@@ -62,9 +63,16 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // cannot catch "flag this already-tracked task as a reminder" — the single
   // most likely way to reach the incoherent state from the task editor, where
   // the toggle sends `is_reminder` alone.
+  //
+  // `isTracked`, not `progress_target > 1`: a quota with target 1 is marked by
+  // the `is_tracked` flag alone ("date night, once a month"), and testing only
+  // the target let the editor toggle flip exactly those quotas into reminders.
   const resultingIsReminder = input.is_reminder ?? task.is_reminder
-  const resultingTarget = input.progress_target ?? task.progress_target
-  if (resultingIsReminder && resultingTarget > 1) {
+  const resultingTracked = isTracked({
+    is_tracked: input.is_tracked ?? task.is_tracked,
+    progress_target: input.progress_target ?? task.progress_target,
+  })
+  if (resultingIsReminder && resultingTracked) {
     throw new ValidationError(TRACKED_REMINDER_MESSAGE)
   }
 
