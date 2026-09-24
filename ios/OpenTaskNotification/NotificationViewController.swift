@@ -134,23 +134,46 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         setDefaultTimeActions()
     }
 
-    /// Pin a SwiftUI hosting controller to the extension's full bounds.
+    /// Pin a SwiftUI hosting controller to the extension's top and sides.
+    ///
+    /// The BOTTOM pin is deliberately below required priority (2026-09-24,
+    /// the grouped-checklist overlap): a required top+bottom pin forces the
+    /// SwiftUI view to exactly the extension's CURRENT height, and whenever
+    /// that lagged the content — the live fetch landing, a stacked/grouped
+    /// notification expanding at a different width, large Dynamic Type —
+    /// SwiftUI compressed the checklist and its rows drew over each other.
+    /// Now the hosting view keeps its own (intrinsic) height and the
+    /// extension's frame follows `preferredContentSize`; a transient
+    /// mismatch clips at the bottom instead of overlapping.
     private func install(hosting: UIViewController) {
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         hosting.view.backgroundColor = .clear
+        if let swiftUIHost = hosting as? any SizingHost {
+            swiftUIHost.enableContentSizing()
+        }
 
         addChild(hosting)
         view.addSubview(hosting.view)
         hosting.didMove(toParent: self)
 
+        let bottom = hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        bottom.priority = .defaultLow
         NSLayoutConstraint.activate([
             hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
             hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottom,
         ])
 
         hostingController = hosting
+    }
+
+    /// The hosting controller reports a new ideal size whenever its SwiftUI
+    /// content changes (`sizingOptions` includes `.preferredContentSize`) —
+    /// re-measure then, rather than only when a caller remembers to.
+    override func preferredContentSizeDidChange(forChildContentContainer container: UIContentContainer) {
+        super.preferredContentSizeDidChange(forChildContentContainer: container)
+        updatePreferredContentSize()
     }
 
     // MARK: - Slot Checklist (§6.1)
@@ -378,7 +401,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// Re-measure the SwiftUI hosting controller and update preferredContentSize
     /// so the notification extension expands to fit its content.
     ///
-    /// TWO THINGS THIS HAS TO GET RIGHT, both of which it previously didn't:
+    /// THREE THINGS THIS HAS TO GET RIGHT:
     ///
     /// 1. MEASURE AFTER SwiftUI HAS LAID OUT. Every caller runs at the moment
     ///    the model changes — the slot checklist's live fetch resolving, a grid
@@ -386,31 +409,33 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     ///    Measuring first returns the height of the PREVIOUS content (for the
     ///    checklist, the little "loading" state), so iOS reserves too little
     ///    room and the expanded checklist draws over the notifications stacked
-    ///    below it. `layoutIfNeeded()` forces the rebuild before we measure.
+    ///    below it. So this also re-runs from `preferredContentSizeDidChange`,
+    ///    which the hosting controller fires AFTER SwiftUI has rebuilt.
     ///
     /// 2. DON'T MEASURE A ZERO-WIDTH VIEW. `didReceive` can run before the
     ///    extension's view has bounds; a fitting size against width 0 is
     ///    meaningless. `viewDidLayoutSubviews` re-runs this once bounds are
     ///    real, which is also what makes the initial render correct — until now
     ///    nothing sized the view except user interaction.
+    ///
+    /// 3. (2026-09-24) ASK SwiftUI, DON'T REVERSE-ENGINEER AUTO LAYOUT. The
+    ///    height used to come from `systemLayoutSizeFitting` on the hosting
+    ///    view — which, with the view pinned top AND bottom to the extension,
+    ///    reflected the constraints as much as the content, and under-reported
+    ///    a tall checklist (wrapped rows, XXX Large text, a grouped
+    ///    notification's expansion): the rows then overlapped. It is now the
+    ///    hosting controller's own `sizeThatFits(in:)` — SwiftUI's ideal
+    ///    height for the content at this exact width, unbounded vertically.
     private func updatePreferredContentSize() {
-        guard let hosting = hostingController else { return }
+        guard let hosting = hostingController as? any SizingHost else { return }
         let width = view.bounds.width
         guard width > 0 else { return }
 
-        hosting.view.setNeedsLayout()
-        hosting.view.layoutIfNeeded()
-
-        let targetSize = CGSize(width: width, height: UIView.layoutFittingCompressedSize.height)
-        let fittingSize = hosting.view.systemLayoutSizeFitting(
-            targetSize,
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        )
+        let fittingHeight = hosting.idealHeight(forWidth: width)
 
         // Assigning preferredContentSize triggers a layout pass, and this is
         // called FROM one — without this guard the two feed each other.
-        let newSize = CGSize(width: width, height: fittingSize.height)
+        let newSize = CGSize(width: width, height: ceil(fittingHeight))
         guard abs(newSize.height - preferredContentSize.height) > 0.5
             || abs(newSize.width - preferredContentSize.width) > 0.5
         else { return }
@@ -423,7 +448,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         updatePreferredContentSize()
     }
 
-    // MARK: - Grid Selection Handler
+    // MARK: - Grid Selection Handler (see also `SizingHost` below)
 
     /// Called when the user taps a grid button. Updates the action buttons to show
     /// the resolved absolute time. If the net change is zero (e.g., +1hr then -1hr),
@@ -492,5 +517,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
             ] + slotActions
         }
+    }
+}
+
+/// The two things `NotificationViewController` needs from its SwiftUI host,
+/// whatever its root view type (snooze grid or checklist): content-driven
+/// sizing, and SwiftUI's ideal height at a given width.
+protocol SizingHost: UIViewController {
+    func enableContentSizing()
+    func idealHeight(forWidth width: CGFloat) -> CGFloat
+}
+
+extension UIHostingController: SizingHost {
+    /// `.intrinsicContentSize` so the hosting view keeps its content's height
+    /// when the bottom pin yields; `.preferredContentSize` so SwiftUI tells
+    /// the parent when that height changes (`preferredContentSizeDidChange`).
+    func enableContentSizing() {
+        sizingOptions = [.intrinsicContentSize, .preferredContentSize]
+    }
+
+    func idealHeight(forWidth width: CGFloat) -> CGFloat {
+        sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height
     }
 }
