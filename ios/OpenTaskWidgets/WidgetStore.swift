@@ -1027,6 +1027,79 @@ enum WidgetStore {
         defaults?.set(scope, forKey: tasksPageScopeKey)
     }
 
+    // MARK: - Tasks snooze mode / bulk select (2026-09-23, Phase 2)
+    //
+    // Tasks-only (Reminders has no equivalent — §6 reminders are
+    // bucket-locked and never snoozed, `filterForBulkSnooze`'s own doc), so
+    // unlike `showCompleted(for kind:)` these are NOT keyed by an arbitrary
+    // kind string; there is only ever one Tasks widget kind to key against.
+    //
+    // A row's trailing control can only be ONE thing at a time — the
+    // ordinary checkbox, snooze mode's ⏭/+1h pair, or select mode's
+    // selection circle — so `tasksSnoozeMode` and `tasksSelectMode` are
+    // mutually exclusive by convention: every intent that turns one on
+    // explicitly turns the other off (see `ToggleTasksSnoozeModeIntent`/
+    // `EnterTasksSelectModeIntent`), rather than this store enforcing it
+    // structurally. `systemLarge` only — call sites gate it, mirroring
+    // `ShowCompletedToggle`'s identical `isLarge` gating (no row/header
+    // budget on systemMedium for a third control cluster).
+
+    private static let tasksSnoozeModeKey = "widget.tasks.snoozeMode"
+    private static let tasksSelectModeKey = "widget.tasks.selectMode"
+
+    static var tasksSnoozeMode: Bool {
+        get { defaults?.bool(forKey: tasksSnoozeModeKey) ?? false }
+        set { defaults?.set(newValue, forKey: tasksSnoozeModeKey) }
+    }
+
+    static var tasksSelectMode: Bool {
+        get { defaults?.bool(forKey: tasksSelectModeKey) ?? false }
+        set { defaults?.set(newValue, forKey: tasksSelectModeKey) }
+    }
+
+    /// Thin setter FUNCTIONS over the two vars above, for `#Preview`
+    /// timeline closures — `let _ = WidgetStore.tasksSnoozeMode = true`
+    /// does not compile (a bare property assignment is a statement, not an
+    /// expression `let _ =` can bind), the same reason every other
+    /// `#Preview` reset in this codebase calls a FUNCTION
+    /// (`setShowCompleted`, `setTasksPage`) rather than assigning a `var`
+    /// directly. Intents still use the `var`s themselves — these exist
+    /// purely for preview call sites.
+    static func setTasksSnoozeMode(_ value: Bool) { tasksSnoozeMode = value }
+    static func setTasksSelectMode(_ value: Bool) { tasksSelectMode = value }
+
+    private static let tasksSelectedIdsKey = "widget.tasks.selectedIds"
+    private static let tasksSelectedIdsScopeKey = "widget.tasks.selectedIds.scope"
+
+    /// Bulk-select picks, paired with the SCOPE they were made in — the same
+    /// "pair a value with the state it was set against" self-reset trick
+    /// `remindersPage(for:)`/`tasksPage(for:)` already use (see either's
+    /// doc): reading against a DIFFERENT scope than the one last written
+    /// returns empty, so switching from "Up next" to a project mid-selection
+    /// can never leave stale, invisible ids selected underneath the bar's
+    /// "N selected" count. WITHIN one scope, picks persist across PAGES —
+    /// mockup: "Tap rows to pick them (pages keep your picks)" — which falls
+    /// out for free here since this is keyed by scope, not by scope+page.
+    static func selectedTaskIds(for scope: Int) -> Set<Int> {
+        guard let defaults, defaults.object(forKey: tasksSelectedIdsScopeKey) != nil,
+            defaults.integer(forKey: tasksSelectedIdsScopeKey) == scope
+        else {
+            return []
+        }
+        let ids = (defaults.array(forKey: tasksSelectedIdsKey) as? [Int]) ?? []
+        return Set(ids)
+    }
+
+    static func setSelectedTaskIds(_ ids: Set<Int>, for scope: Int) {
+        defaults?.set(Array(ids), forKey: tasksSelectedIdsKey)
+        defaults?.set(scope, forKey: tasksSelectedIdsScopeKey)
+    }
+
+    static func clearTasksSelection() {
+        defaults?.removeObject(forKey: tasksSelectedIdsKey)
+        defaults?.removeObject(forKey: tasksSelectedIdsScopeKey)
+    }
+
     // MARK: - Track selection
 
     private static let trackSelectionKey = "widget.track.taskId"

@@ -93,6 +93,18 @@ struct TasksEntry: TimelineEntry {
     func overdueCount(now: Date = Date()) -> Int {
         tasks.filter { $0.isOverdue(now: now) }.count
     }
+
+    /// How many tasks the "All overdue" snooze-mode bar's sweep would
+    /// actually move (2026-09-23, Phase 2) — computed once by the provider
+    /// (`TasksTimeline.overdueSweepEligibleCount`) from the FULL open-tasks
+    /// cache, not `tasks` above (which is already scope-filtered to the
+    /// on-screen page/project — the sweep bar acts on the WHOLE server-side
+    /// overdue set regardless of what scope happens to be on screen). A
+    /// plain `Int`, not the task list itself: WidgetKit archives every
+    /// timeline entry, and carrying the same few-hundred-task array on
+    /// every one of them (7 entries per `getTimeline` pass) for a single
+    /// number would be pure waste.
+    var overdueSweepCount = 0
 }
 
 // MARK: - Today's set
@@ -126,6 +138,35 @@ enum TasksTimeline {
             if l != r { return l < r }
             return lhs.priority > rhs.priority
         }
+    }
+
+    /// How many tasks `POST /api/tasks/bulk/snooze-overdue` would actually
+    /// move right now (2026-09-23, Phase 2's "All overdue" snooze-mode bar)
+    /// — an HONEST CLIENT-SIDE ESTIMATE, not an authoritative count. Mirrors
+    /// `filterForBulkSnooze`'s ceiling rule (`src/core/tasks/bulk.ts`): P0-P2
+    /// always eligible; P3 (High) joins in ONLY once none of P0-P2 remain in
+    /// the overdue-and-snoozable set; P4 (Urgent) never counts. `tasks`
+    /// should be the FULL open-tasks cache (unscoped) — the sweep acts
+    /// server-wide, not on whatever scope/page happens to be on screen.
+    ///
+    /// Two honest gaps versus the server, both accepted rather than chased:
+    /// (1) "overdue" here is `TaskDTO.isOverdue(now:)` (`due_at < now`), the
+    /// SAME check every row's red styling already uses — the server's actual
+    /// sweep instead queries `getCurrentlyDueTaskIds` (§4.6: a recurring
+    /// task's frozen `due_at` needs its own "is this actually due today"
+    /// logic that a raw date comparison can't replicate client-side without
+    /// a dedicated endpoint neither this widget nor its API surface has).
+    /// (2) `eligibleTasks` already drops reminders/tracked items, matching
+    /// `filterForBulkSnooze`'s own "reminders and quotas are never late"
+    /// exclusion — no separate filter needed here. Both gaps only ever
+    /// affect what number this bar PRINTS and whether it shows at all
+    /// (N > 0); the server remains the sole authority on what actually moves
+    /// when the button is tapped.
+    static func overdueSweepEligibleCount(from tasks: [TaskDTO], now: Date = Date()) -> Int {
+        let overdue = eligibleTasks(from: tasks).filter { $0.isOverdue(now: now) }
+        let lowCount = overdue.filter { $0.priority < 3 }.count
+        if lowCount > 0 { return lowCount }
+        return overdue.filter { $0.priority == 3 }.count
     }
 
     /// Due or overdue as of the end of the local day — the "Today" unified
@@ -251,7 +292,8 @@ struct TasksProvider: TimelineProvider {
                         canRedo: entry.canRedo,
                         actionDescription: WidgetStore.lastActionDescription(at: due),
                         colorProjects: entry.colorProjects,
-                        doneTasks: entry.doneTasks
+                        doneTasks: entry.doneTasks,
+                        overdueSweepCount: entry.overdueSweepCount
                     )
                 )
             }
@@ -272,7 +314,8 @@ struct TasksProvider: TimelineProvider {
                         canRedo: entry.canRedo,
                         actionDescription: nil,
                         colorProjects: entry.colorProjects,
-                        doneTasks: entry.doneTasks
+                        doneTasks: entry.doneTasks,
+                        overdueSweepCount: entry.overdueSweepCount
                     )
                 )
             }
@@ -343,7 +386,11 @@ struct TasksProvider: TimelineProvider {
             canRedo: WidgetStore.canRedo,
             actionDescription: WidgetStore.lastActionDescription(at: now),
             colorProjects: snapshot.projects,
-            doneTasks: TasksTimeline.doneTasks(from: snapshot.completions, scope: scope)
+            doneTasks: TasksTimeline.doneTasks(from: snapshot.completions, scope: scope),
+            // From the FULL open-tasks cache (`tasks`, unscoped) — see
+            // `TasksEntry.overdueSweepCount`'s doc for why this must not be
+            // `displayedTasks`.
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks, now: now)
         )
     }
 }
@@ -507,28 +554,72 @@ private enum TasksPreviewData {
             canRedo: false,
             actionDescription: nil,
             colorProjects: projects,
-            doneTasks: doneToday
+            doneTasks: doneToday,
+            // Computed the same way `TasksProvider.makeEntry` does, from the
+            // FULL sample task list — see `TasksEntry.overdueSweepCount`'s
+            // doc for why this must come from the unscoped set.
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks)
         )
     }
+}
+
+/// Resets EVERY piece of `#Preview`-visible App Group state this branch (and
+/// the "show completed" branch before it) introduced, before each preview's
+/// own timeline builds — previews share the same App Group UserDefaults as
+/// the simulator's real widgets AND each other, so anything a PRIOR preview
+/// (or a prior real interaction in this same simulator) left set would
+/// otherwise silently bleed into the next one's render.
+private func resetTasksPreviewState() {
+    WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
+    WidgetStore.setTasksSnoozeMode(false)
+    WidgetStore.setTasksSelectMode(false)
+    WidgetStore.clearTasksSelection()
+    // Seed `TimeSlotStore` with realistic slots (2026-09-23, review addendum)
+    // — the widget extension only ever READS that cache (`TimeSlotStore`'s
+    // own doc: the main app populates it), so an unseeded preview host
+    // renders every "⏭ Next period" button dimmed/disabled, which isn't
+    // what a real device with the main app installed ever shows. Mirrors
+    // `SampleData.swift`'s reminder slot labels/times for consistency.
+    let slots = [
+        TimeSlotDTO(id: 1, label: "Early morning", startTime: "07:00"),
+        TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
+        TimeSlotDTO(id: 3, label: "Evening", startTime: "20:00"),
+    ]
+    TimeSlotStore.save(slots)
 }
 
 #Preview("Tasks Large — Completed Off", as: .systemLarge) {
     TasksWidget()
 } timeline: {
+    let _ = resetTasksPreviewState()
     let _ = WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
-    let _ = WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
     TasksPreviewData.entry()
 }
 
 #Preview("Tasks Large — Completed On", as: .systemLarge) {
     TasksWidget()
 } timeline: {
+    let _ = resetTasksPreviewState()
     let _ = WidgetStore.setShowCompleted(true, for: TasksWidget.kind)
-    // Reset the stored page — preview renders share the same App Group
-    // UserDefaults as the simulator's real widgets, so a page a PRIOR
-    // preview (or a real device session) left on 1+ would otherwise bleed
-    // into this one.
-    let _ = WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
     TasksPreviewData.entry()
 }
+
+#Preview("Tasks Large — Snooze mode", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState()
+    let _ = WidgetStore.setTasksSnoozeMode(true)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Select mode (2 picked)", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState()
+    let _ = WidgetStore.setTasksSelectMode(true)
+    // Two picks, matching bulk.png's "Select mode (2 picked)" panel.
+    let _ = WidgetStore.setSelectedTaskIds([912, 914], for: WidgetStore.upNextScope)
+    TasksPreviewData.entry()
+}
+
 #endif
