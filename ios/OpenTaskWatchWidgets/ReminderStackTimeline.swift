@@ -289,7 +289,9 @@ enum ReminderStackTimeline {
     ) -> [Date] {
         let horizon = now.addingTimeInterval(12 * 3600)
         var dates = groups.compactMap { startDate(of: $0, on: now) }
-        dates += WatchSlotLogic.upNextTasks(from: tasks).compactMap(\.dueDate).prefix(12)
+        // Filter to the future BEFORE capping: `upNextTasks` is soonest-first,
+        // so already-overdue tasks lead the list and would eat the cap.
+        dates += WatchSlotLogic.upNextTasks(from: tasks).compactMap(\.dueDate).filter { $0 > now }.prefix(12)
         if let snoozeResult {
             dates.append(snoozeResult.at.addingTimeInterval(WatchWidgetState.snoozeResultWindow))
         }
