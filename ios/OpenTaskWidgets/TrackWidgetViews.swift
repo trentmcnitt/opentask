@@ -295,8 +295,9 @@ private struct QuotaLinesView: View {
 }
 
 /// A period section's heading row — period name (bold, full-strength, so it
-/// outranks the muted cluster labels beneath it), a muted "ends tonight"/"N
-/// days left" (omitted for the no-period section), a bar that flexes to fill
+/// outranks the muted cluster labels beneath it), a muted "N days left"
+/// (omitted for Today — PR #62 — and the no-period section, the bar taking
+/// that width), a bar that flexes to fill
 /// whatever room is left, and "M of N" met. Mirrors `PeriodHeading`
 /// (`TrackPanel.tsx`) almost exactly, in SwiftUI.
 private struct QuotaHeadingRow: View {
