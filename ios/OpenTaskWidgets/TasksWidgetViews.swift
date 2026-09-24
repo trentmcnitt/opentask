@@ -216,14 +216,6 @@ private struct TasksListView: View {
         rawSelectedIds.intersection(Set(entry.tasks.map(\.id)))
     }
 
-    /// Whether EVERY task in the current scope (all pages, not just the one
-    /// on screen — `entry.tasks` is the full scope-filtered list before
-    /// paging) is selected — drives the select-mode bar's "All ✓" state.
-    private var allTasksSelected: Bool {
-        let ids = Set(entry.tasks.map(\.id))
-        return !ids.isEmpty && ids.isSubset(of: selectedIds)
-    }
-
     /// The next time slot's start, formatted — `nil` when `TimeSlotStore`
     /// has no cached slots (see `SnoozeAllOverdueBar.nextPeriodLabel`'s doc).
     private var nextPeriodTimeLabel: String? {
@@ -352,7 +344,7 @@ private struct TasksListView: View {
                 // count; only the chosen card, laid out in the full widget
                 // height, stretches.
                 Spacer(minLength: 0)
-                bottomArea(window: window, mode: mode, allSelected: allTasksSelected, hasSelection: !picks.isEmpty)
+                bottomArea(window: window, mode: mode, hasSelection: !picks.isEmpty)
             }
 
             if let staleSince = entry.staleSince {
@@ -385,7 +377,7 @@ private struct TasksListView: View {
     @ViewBuilder
     private func bottomArea(
         window: (items: [TaskListItem], page: Int, totalPages: Int),
-        mode: TaskRowMode, allSelected: Bool, hasSelection: Bool
+        mode: TaskRowMode, hasSelection: Bool
     ) -> some View {
         if WidgetStore.tasksSnoozeMode {
             VStack(spacing: 6) {
@@ -398,7 +390,7 @@ private struct TasksListView: View {
         } else if WidgetStore.tasksSelectMode {
             VStack(spacing: 6) {
                 pagerIfNeeded(window)
-                SelectModeActionBar(allSelected: allSelected, hasSelection: hasSelection)
+                SelectModeActionBar(hasSelection: hasSelection)
             }
         } else {
             // Resting mode: "Select" bottom-LEFT (Trent's pick — see

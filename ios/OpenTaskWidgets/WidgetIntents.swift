@@ -893,16 +893,24 @@ struct UncompleteTaskIntent: AppIntent {
 // these take a `kind` parameter the way the show-completed intents do, since
 // there is only ever one Tasks widget kind to act on.
 //
-// Snooze semantics, confirmed against the server before writing any of this
-// (see the PR description for the grep trail): `POST /api/tasks/bulk/snooze`
-// (the ids-based endpoint every intent below uses) treats `delta_minutes` as
-// "N minutes added to EACH task's own `due_at`" — matching the web's own
-// bulk relative-snooze (`save-quick-panel-changes.ts`'s `changes.delta_minutes`
-// passed straight through) — NOT "from now". That is a DIFFERENT meaning
-// than `snoozeOverdue(deltaMinutes:)`'s sweep, which resolves "from now,
-// snapped" server-side (`bulk/snooze-overdue`'s own doc). Every "+1h" below
-// maps to whichever endpoint the mockup's button belongs to, matching each
-// one's own established meaning — see `APIClient.bulkSnoozeTasks`'s doc.
+// "+1h" means ONE HOUR FROM NOW, SNAPPED — Trent, reviewing the first cut:
+// "'+1h' on a row and in select mode must mean ONE HOUR FROM NOW... snoozing
+// to the next hour... a task 3 days overdue stays overdue" [with a raw
+// 60-minute delta added to its own, already-3-days-past due date]. Confirmed
+// against `src/lib/snooze.ts`: `computeSnoozeTime('60', ...)` —  the SAME
+// helper `bulk/snooze-overdue` calls for its own `delta_minutes: 60` — is
+// `snapToHour(now + 60min)`, the exact algorithm `DateHelpers.
+// snapToNextHour()` already ports client-side (originally for the
+// notification snooze grid). So every "+1h" below — per-row AND bulk-select
+// — resolves `DateHelpers.snapToNextHour()` and sends it as an absolute
+// `until`, identical in spirit to what `snoozeOverdue(deltaMinutes: 60)`
+// (the "All overdue" bar, unchanged) already does server-side for the sweep.
+// `POST /api/tasks/bulk/snooze`'s OWN `delta_minutes` parameter (added to
+// EACH task's own `due_at`, not "from now" — confirmed against `bulkSnooze`
+// server-side and matched by the web's bulk relative-INCREMENT button, NOT
+// its "+1h"/"Next Hour" smart button) is real and still exposed on
+// `APIClient.bulkSnoozeTasks` for completeness, but nothing in this
+// extension calls it that way anymore — see that function's doc.
 //
 // `include_task_ids` is always sent equal to the ids being acted on for a
 // per-row or bulk-select snooze (never for the sweep) — mirroring the web's
@@ -948,9 +956,10 @@ struct ToggleTasksSnoozeModeIntent: AppIntent {
 
 /// The bottom-left "Select" control (resting mode only) — always ENTERS
 /// select mode; exit is via `CancelTasksSelectModeIntent`'s "Cancel", never
-/// this same button toggling back off (mockup: "Select" only ever appears
-/// in resting mode; select mode's bottom-left slot becomes the "All" toggle
-/// instead — see `ToggleSelectAllTasksIntent`).
+/// this same button toggling back off. Select mode's own bottom-left slot is
+/// simply empty (2026-09-23 review: Trent decided against a "select all" —
+/// "'All overdue' in snooze mode covers everything-at-once, and Select is
+/// for hand-picked sets" — see `SelectModeActionBar`'s doc).
 struct EnterTasksSelectModeIntent: AppIntent {
     static var title: LocalizedStringResource = "Select Tasks"
     static var isDiscoverable: Bool { false }
@@ -1020,47 +1029,13 @@ struct ToggleTaskSelectionIntent: AppIntent {
     }
 }
 
-/// The "All" toggle (bulk2.png's revision of the select-mode bottom-left
-/// slot) — selects every task in the CURRENT scope's full list (every page,
-/// not just the one on screen) if not all of them are already selected,
-/// else clears the selection entirely. Recomputes the scope's full id set
-/// from the cache the same way the provider does (`TasksTimeline`'s scope
-/// rules), rather than reading `TasksEntry.tasks` (unavailable to an intent,
-/// which has no entry — only the cache).
-struct ToggleSelectAllTasksIntent: AppIntent {
-    static var title: LocalizedStringResource = "Select All Tasks"
-    static var isDiscoverable: Bool { false }
-
-    init() {}
-
-    func perform() async throws -> some IntentResult {
-        let scope = WidgetStore.projectScope
-        let cache = WidgetStore.loadTasks()?.value
-        let allTasks = WidgetStore.filterPending(cache?.tasks ?? [])
-        let scopedIds: [Int]
-        switch scope {
-        case WidgetStore.allProjects:
-            scopedIds = TasksTimeline.todaysTasks(from: allTasks).map(\.id)
-        case WidgetStore.upNextScope:
-            scopedIds = TasksTimeline.upNextTasks(from: allTasks).map(\.id)
-        default:
-            scopedIds = TasksTimeline.apply(scope: scope, to: TasksTimeline.todaysTasks(from: allTasks))
-                .map(\.id)
-        }
-
-        let current = WidgetStore.selectedTaskIds(for: scope)
-        let full = Set(scopedIds)
-        WidgetStore.setSelectedTaskIds(full.isSubset(of: current) && !full.isEmpty ? [] : full, for: scope)
-        WidgetStore.markInteraction()
-        await reloadOpenTaskWidget(kind: TasksWidget.kind)
-        return .result()
-    }
-}
-
-/// A snooze target: "next period" (client-computed from `TimeSlotStore`,
-/// since `/api/tasks/bulk/snooze` has no server-side slot resolution the way
-/// `/api/tasks/bulk/snooze-overdue` does) or a flat "+1 hour" ADDED TO EACH
-/// TASK'S OWN due date (see this section's header doc — NOT "from now").
+/// A snooze target: "next period" or "one hour from now" — BOTH resolved to
+/// an absolute `Date` client-side (`TimeSlotStore.nextPeriodStart()` /
+/// `DateHelpers.snapToNextHour()` respectively) and sent as `until`, since
+/// `/api/tasks/bulk/snooze` has no server-side slot OR "from now" resolution
+/// the way `/api/tasks/bulk/snooze-overdue` does for both. See this
+/// section's header doc for why "+1h" is "from now, snapped" and NOT a
+/// delta on each task's own due date.
 enum TaskSnoozeTarget: String {
     case nextPeriod = "next"
     case plusOneHour = "1h"
@@ -1092,28 +1067,30 @@ struct SnoozeSelectedTasksIntent: AppIntent {
         let ids = Array(WidgetStore.selectedTaskIds(for: scope))
         guard !ids.isEmpty else { return .result() }
 
-        // `succeeded`, not an early `return` inside the `guard let until`
+        // `succeeded`, not an early `return` inside the `if let until`
         // below (the first cut's bug, caught in review): an early return
         // there skipped `clearInteraction()` + the reload entirely, so a
         // stale/disabled button somehow firing with no cached slots would
         // silently do nothing rather than at least reconciling the widget.
         var succeeded = false
         do {
+            // Both targets resolve to an absolute `Date` — "next period"
+            // from `TimeSlotStore` (nil with no cached slots — the ⏭
+            // button should already be disabled in that state, see
+            // `SelectModeActionBar`'s doc, so this is a defensive no-op),
+            // "+1h" from `DateHelpers.snapToNextHour()` (2026-09-23 review
+            // correction — "one hour from now, snapped", NEVER unavailable
+            // — see this section's header doc for why this isn't a delta
+            // on each task's own due date).
+            let until: Date?
             switch TaskSnoozeTarget(rawValue: target) {
-            case .nextPeriod:
-                // No cached slots to resolve "next" from — the bar's button
-                // should already be disabled in this state (see
-                // `SelectModeActionBar`'s doc), so this is a defensive no-op
-                // rather than a request with no destination — but the reload
-                // below still runs either way.
-                if let until = TimeSlotStore.nextPeriodStart() {
-                    try await APIClient.shared.bulkSnoozeTasks(
-                        ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids
-                    )
-                    succeeded = true
-                }
-            case .plusOneHour, .none:
-                try await APIClient.shared.bulkSnoozeTasks(ids: ids, deltaMinutes: 60, includeTaskIds: ids)
+            case .nextPeriod: until = TimeSlotStore.nextPeriodStart()
+            case .plusOneHour, .none: until = DateHelpers.snapToNextHour()
+            }
+            if let until {
+                try await APIClient.shared.bulkSnoozeTasks(
+                    ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids
+                )
                 succeeded = true
             }
         } catch {
@@ -1198,18 +1175,21 @@ struct SnoozeTaskRowIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         // See `SnoozeSelectedTasksIntent`'s identical fix/doc: an early
         // `return` inside the `.nextPeriod` guard would skip
-        // `clearInteraction()` + the reload entirely.
+        // `clearInteraction()` + the reload entirely. Both targets resolve
+        // to an absolute `Date` — "+1h" via `DateHelpers.snapToNextHour()`
+        // (2026-09-23 review correction: "one hour from now, snapped",
+        // never a delta on this task's own due date — see this file's
+        // "Tasks snooze mode / bulk select" section header doc).
         do {
+            let until: Date?
             switch TaskSnoozeTarget(rawValue: target) {
-            case .nextPeriod:
-                if let until = TimeSlotStore.nextPeriodStart() {
-                    try await APIClient.shared.bulkSnoozeTasks(
-                        ids: [taskId], until: DateHelpers.formatISO(until), includeTaskIds: [taskId]
-                    )
-                    WidgetStore.recordLocalMutationForUndoCount()
-                }
-            case .plusOneHour, .none:
-                try await APIClient.shared.bulkSnoozeTasks(ids: [taskId], deltaMinutes: 60, includeTaskIds: [taskId])
+            case .nextPeriod: until = TimeSlotStore.nextPeriodStart()
+            case .plusOneHour, .none: until = DateHelpers.snapToNextHour()
+            }
+            if let until {
+                try await APIClient.shared.bulkSnoozeTasks(
+                    ids: [taskId], until: DateHelpers.formatISO(until), includeTaskIds: [taskId]
+                )
                 WidgetStore.recordLocalMutationForUndoCount()
             }
         } catch {

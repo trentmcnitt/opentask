@@ -1043,10 +1043,15 @@ extension View {
 
 // MARK: - Tasks snooze mode / bulk select (2026-09-23, Phase 2)
 //
-// Mockups: `bulk.png` (bulk select) / `bulk2.png` (snooze mode's "All" row +
-// select mode's "Select all" revision), option 1. Tasks-only — see
-// `WidgetStore`'s "Tasks snooze mode / bulk select" section doc for why
-// these views take no `kind` parameter the way `ShowCompletedToggle` does.
+// Mockups: `bulk.png` (bulk select) / `bulk2.png` (snooze mode's "All
+// overdue" bottom bar), option 1 — bulk2.png's own further revision ADDING a
+// "select all" toggle to select mode's bottom-left slot was tried and then
+// REJECTED (Trent, 2026-09-23 review: "'All overdue' in snooze mode covers
+// everything-at-once, and Select is for hand-picked sets" — see
+// `SelectModeActionBar`'s doc), so select mode's bottom-left is simply empty
+// here. Tasks-only — see `WidgetStore`'s "Tasks snooze mode / bulk select"
+// section doc for why these views take no `kind` parameter the way
+// `ShowCompletedToggle` does.
 
 /// Shared capsule chrome for every text-labeled snooze/select-mode action
 /// button — factored once so the half-dozen call sites below don't each
@@ -1227,30 +1232,20 @@ struct SnoozeAllOverdueBar: View {
     }
 }
 
-/// The select-mode bottom action bar — "All · ⏭ Next period · +1h · ✓ ·
-/// Cancel" (`bulk2.png`'s revised layout, adding the "All" select-all toggle
-/// where "Select" sat in resting mode). `hasSelection` disables every action
-/// but Cancel when nothing is picked yet — tapping "Done" on an empty
-/// selection would otherwise silently no-op with no explanation.
+/// The select-mode bottom action bar — "⏭ Next period · +1h · ✓ · Cancel"
+/// (`bulk.png`'s layout). Deliberately NO "select all" (Trent, reviewing
+/// `bulk2.png`'s revision which had added one: "'All overdue' in snooze mode
+/// covers everything-at-once, and Select is for hand-picked sets" — the
+/// bottom-left slot "Select" occupied in resting mode is simply empty here,
+/// which is also why this bar's own leading edge starts with a `Spacer`
+/// rather than a control). `hasSelection` disables every action but Cancel
+/// when nothing is picked yet — tapping "Done" on an empty selection would
+/// otherwise silently no-op with no explanation.
 struct SelectModeActionBar: View {
-    let allSelected: Bool
     let hasSelection: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(intent: ToggleSelectAllTasksIntent()) {
-                HStack(spacing: 3) {
-                    Text("All")
-                    if allSelected {
-                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
-                    }
-                }
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(allSelected ? WidgetTheme.indigoAccent : Color.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
             Spacer(minLength: 4)
 
             ActionCircle(
