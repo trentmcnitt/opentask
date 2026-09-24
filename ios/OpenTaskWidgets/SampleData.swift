@@ -258,8 +258,7 @@ enum SampleData {
         let now = Date()
         let quotas = trackedQuotas
         let sections = QuotaSectionBuilder.sections(
-            from: quotas, labelConfig: trackLabelConfig, showMet: false,
-            mutationIsRecent: false, now: now
+            from: quotas, labelConfig: trackLabelConfig, showMet: false, now: now
         )
         let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
         return TrackEntry(
