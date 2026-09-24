@@ -1232,12 +1232,50 @@ enum WidgetStore {
     /// showing with the dot off, and Kazoo over-tapped because its met chip
     /// stayed a live `+1` target. A widget has no session to "hold for", so
     /// the rule does not carry over. On: met chips show, green, and a tap
-    /// on one is `−1` (`QuotaChip`). Default `false` — met hidden, matching
-    /// the web panel's own default.
+    /// on one is `+1` like any chip — over-target counts ("2/1") are allowed,
+    /// exactly as the web panel's chip tap allows them (Takeback mode,
+    /// `quotasTakebackMode` below, is the ONE way to take one back; the
+    /// met-chip "│ −1" PR #65 added was folded into it, 2026-09-24).
+    /// Default `false` — met hidden, matching the web panel's own default.
     static var quotasShowMet: Bool {
         get { defaults?.bool(forKey: quotasShowMetKey) ?? false }
         set { defaults?.set(newValue, forKey: quotasShowMetKey) }
     }
+
+    private static let quotasTakebackModeKey = "widget.quotas.takebackMode"
+
+    /// Takeback mode (2026-09-24, Trent: Undo alone is "too disorienting"
+    /// to take a quota from 2/3 back to 1/3 — it reverses whatever changed
+    /// LAST, server-wide, and says so only in a 60s subtitle). The bottom
+    /// row's "Takeback" button turns it on; while on, every chip with
+    /// progress shows a red "−1" and a tap on one logs `−1`, chips at 0 are
+    /// dimmed and inert, and met chips show even with the "met" dot off (so
+    /// they can be taken back). It is a ONE-SHOT mode, the same shape as
+    /// Tasks' snooze mode (`tasksSnoozeMode`) but self-exiting:
+    ///
+    /// - ONE `−1` and it's off — `IncrementProgressIntent` clears it before
+    ///   its optimistic repaint, so a second tap can never decrement again
+    ///   by accident.
+    /// - Tapping the button again exits without doing anything.
+    /// - Any timeline build that is NOT this widget's own recent tap (a
+    ///   scheduled refresh, a server push after a change elsewhere, the app
+    ///   foregrounding, an Undo) clears it — `TrackProvider.currentEntry`,
+    ///   keyed on `hasRecentInteraction()`, the same predicate `TaskFeed`
+    ///   uses to pick its cache-only fast path. A mode armed and walked away
+    ///   from must not still be armed when the data under it has changed.
+    ///
+    /// `systemLarge` only — the button lives in its bottom row, so the
+    /// provider only honors this for a large instance (`context.family`); a
+    /// medium card beside it never shows the mode it has no way out of.
+    static var quotasTakebackMode: Bool {
+        get { defaults?.bool(forKey: quotasTakebackModeKey) ?? false }
+        set { defaults?.set(newValue, forKey: quotasTakebackModeKey) }
+    }
+
+    /// Function form of the setter above, for `#Preview` timeline closures —
+    /// see `setTasksSnoozeMode(_:)`'s doc for why a bare `var` assignment
+    /// can't be used there.
+    static func setQuotasTakebackMode(_ value: Bool) { quotasTakebackMode = value }
 
     private static let quotasPageKey = "widget.quotas.page"
 
