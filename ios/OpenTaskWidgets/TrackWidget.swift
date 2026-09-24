@@ -979,12 +979,13 @@ struct TrackProvider: TimelineProvider {
     /// `WidgetStore.quotasTakebackMode`): a build that is NOT riding a tap
     /// from seconds ago is a scheduled refresh, a push after a change
     /// somewhere else, or the app foregrounding — and a mode armed against
-    /// counts that may no longer be the counts on screen is exactly the
-    /// accidental `−1` the one-shot rule exists to prevent. It is the SAME
-    /// predicate `TaskFeed.snapshot` uses to choose cache over network, so
-    /// "the mode survives" and "this build repaints from cache" are always
-    /// the same builds. Checked before `TaskFeed.snapshot` runs, against
-    /// one `now`, so the two can't straddle the window's edge differently.
+    /// counts that may no longer be the counts on screen invites an
+    /// accidental `−1`. A build riding this widget's own taps keeps it —
+    /// including every `−1` (the mode no longer exits after one, 2026-09-24)
+    /// and the server's widget push right after, both inside the window
+    /// `IncrementProgressIntent`'s `markInteraction()` opens. Read once,
+    /// against the same `now` `TaskFeed.snapshot` gets, so the two can't
+    /// straddle the window's edge differently.
     private func currentEntry(family: WidgetFamily) async -> TrackEntry {
         let now = Date()
         let showMet = WidgetStore.quotasShowMet
@@ -1181,8 +1182,8 @@ private enum QuotasPreviewData {
 /// `takeback` builds the entry the way the provider does in Takeback mode
 /// (met chips shown whatever `showMet` says — `TrackEntry.takebackMode`);
 /// `takenBack` is the state right after ONE takeback on that quota: its
-/// count one lower, and the mode already off (`IncrementProgressIntent`
-/// clears it before its optimistic repaint).
+/// count one lower (pass `takeback: true` too — the mode stays on across
+/// `−1`s since 2026-09-24).
 private func previewEntry(
     showMet: Bool, page: Int, justMet: Int? = nil, takeback: Bool = false, takenBack: Int? = nil
 ) -> TrackEntry {
@@ -1261,9 +1262,9 @@ private func previewEntry(
 /// ON, pages 1-4 — every chip with progress carries a red "−1", chips at 0
 /// are dimmed, and the met chips ("Music Practice" 1/1, "Iron-Rich Meal"
 /// 2/2) are back even though the dot is off. Index 4-5: right after ONE
-/// takeback on Music Practice — mode off again, Kazoo at 0/1 (unmet, so it
-/// stays visible with the dot off), pages 1 and 3 (Kazoo lands on page 3 at
-/// XXX Large, page 2 at the default text size).
+/// takeback on Music Practice — the mode STILL ON (2026-09-24; it used to
+/// exit here), Kazoo at 0/1 and so dimmed/inert, pages 1 and 3 (Kazoo
+/// lands on page 3 at XXX Large, page 2 at the default text size).
 #Preview("Quotas — Large, takeback", as: .systemLarge) {
     TrackWidget()
 } timeline: {
@@ -1271,8 +1272,73 @@ private func previewEntry(
     previewEntry(showMet: false, page: 1, takeback: true)
     previewEntry(showMet: false, page: 2, takeback: true)
     previewEntry(showMet: false, page: 3, takeback: true)
-    previewEntry(showMet: false, page: 0, takenBack: 27)
-    previewEntry(showMet: false, page: 2, takenBack: 27)
+    previewEntry(showMet: false, page: 0, takeback: true, takenBack: 27)
+    previewEntry(showMet: false, page: 2, takeback: true, takenBack: 27)
+}
+
+/// The stale-count fix (2026-09-24), drawn THROUGH THE REAL STORE rather
+/// than a hand-built entry: the App Group cache is seeded with the snapshot
+/// (Weight Lift, id 221, at 3/3 — where Trent started his 11:53 taps), and
+/// every entry is built from `WidgetStore.loadTasks()` +
+/// `applyPendingProgress`, exactly what `TaskFeed`'s fast path draws.
+/// Takeback mode is armed once and never re-armed.
+private func storeEntry(page: Int) -> TrackEntry {
+    let now = Date()
+    let cached = WidgetStore.loadTasks()?.value.tasks ?? []
+    let quotas = WidgetStore.applyPendingProgress(cached, now: now).filter(\.isTracked)
+    let takeback = WidgetStore.quotasTakebackMode
+    let sections = QuotaSectionBuilder.sections(
+        from: quotas, labelConfig: QuotasPreviewData.labelConfig, showMet: takeback, now: now
+    )
+    return TrackEntry(
+        date: now, sections: sections, totalMet: quotas.filter(\.isProgressMet).count,
+        totalCount: quotas.count, nextUnmet: sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet },
+        showMet: false, takebackMode: takeback, page: page, staleSince: nil, isSignedOut: false,
+        canUndo: true, canRedo: false, actionDescription: nil
+    )
+}
+
+/// One takeback `−1` on Weight Lift, the way `IncrementProgressIntent`
+/// runs it, with the server's answer written back (`confirmProgress`).
+private func previewTakeback(from current: Int) {
+    WidgetStore.markInteraction()
+    WidgetStore.stagePendingProgress(221, delta: -1)
+    let serverTask = TaskDTO(
+        id: 221, projectId: 4434, title: "Weight Lift", rrule: "FREQ=WEEKLY", progressTarget: 3,
+        progressCurrent: current - 1, trackedFlag: true, labels: ["health"]
+    )
+    WidgetStore.confirmProgress(serverTask, delta: -1)
+}
+
+private func seedQuotasStore() {
+    let seeded = QuotasPreviewData.quotas.map { task -> TaskDTO in
+        guard task.id == 221 else { return task }
+        return TaskDTO(
+            id: 221, projectId: 4434, title: "Weight Lift", rrule: "FREQ=WEEKLY", progressTarget: 3,
+            progressCurrent: 3, trackedFlag: true, labels: ["health"]
+        )
+    }
+    WidgetStore.clearAllPendingState()
+    WidgetStore.saveTasks(seeded, projects: [], completions: [])
+    WidgetStore.setQuotasTakebackMode(true)  // ToggleQuotasTakebackModeIntent
+    WidgetStore.markInteraction()
+}
+
+/// Indexes 0-2: pages 1-3 before any tap (Weight Lift 3/3, mode on).
+/// Indexes 3-5: pages 1-3 after TWO takebacks — Weight Lift 1/3 from the
+/// confirmed cache, the mode still on (no re-arm between the taps).
+#Preview("Quotas — Large, after takeback taps (store path)", as: .systemLarge) {
+    TrackWidget()
+} timeline: {
+    let _ = seedQuotasStore()
+    storeEntry(page: 0)
+    storeEntry(page: 1)
+    storeEntry(page: 2)
+    let _ = previewTakeback(from: 3)
+    let _ = previewTakeback(from: 2)
+    storeEntry(page: 0)
+    storeEntry(page: 1)
+    storeEntry(page: 2)
 }
 
 #Preview("Quotas — Medium", as: .systemMedium) {

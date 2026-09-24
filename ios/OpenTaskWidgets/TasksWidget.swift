@@ -554,6 +554,41 @@ private enum TasksPreviewData {
         )
     }
 
+    /// "Up next" with the snapshot's rows PLUS every due-label shape his
+    /// 11:55 screenshot mixed (2026-09-24, the one-rule fix): a "Tomorrow"
+    /// at 12:00 pm, and two DATE-ONLY tasks (local midnight — one tomorrow,
+    /// one three days out) whose label is a day word alone, one line. The
+    /// snapshot already carries today (time only), "Tomorrow 4:00 pm" and a
+    /// weekday ("Sat 9:00 am").
+    static func dayLabelsEntry() -> TasksEntry {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        func day(_ offset: Int, hour: Int = 0) -> String {
+            let base = calendar.date(byAdding: .day, value: offset, to: today) ?? today
+            return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: 0, second: 0, of: base) ?? base)
+        }
+        let extra = [
+            TaskDTO(id: 900_001, projectId: 4434, title: "Pick up prescription", priority: 2, dueAt: day(1, hour: 12)),
+            TaskDTO(id: 900_002, projectId: 6, title: "Send invoice", priority: 1, dueAt: day(1)),
+            TaskDTO(id: 900_003, projectId: 4434, title: "Library books due", priority: 1, dueAt: day(3)),
+        ]
+        let all = tasks + extra
+        return TasksEntry(
+            date: now,
+            tasks: TasksTimeline.upNextTasks(from: all),
+            projects: projects,
+            scope: WidgetStore.upNextScope,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: projects,
+            doneTasks: [],
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all)
+        )
+    }
+
     /// Trent's "Personal" project page (4434) — his longest project name,
     /// for checking the header title beside the clock/Undo/Redo/‹ › cluster.
     /// Filtered the way a project page filters "Today" (`todaysTasks`).
@@ -603,6 +638,22 @@ private func resetTasksPreviewState(page: Int = 0) {
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     TasksPreviewData.entry()
+}
+
+/// Every due-label shape — see `dayLabelsEntry()`; page 2 reaches the
+/// weekday and "Oct 1"-style dated rows.
+#Preview("Tasks Large — Up next, day labels", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0)
+    TasksPreviewData.dayLabelsEntry()
+}
+
+#Preview("Tasks Large — Up next, day labels page 2", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 1)
+    TasksPreviewData.dayLabelsEntry()
 }
 
 #Preview("Tasks Large — Up next page 2", as: .systemLarge) {
