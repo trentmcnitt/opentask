@@ -268,11 +268,15 @@ private struct QuotasListView: View {
 /// avoiding a shared-name collision between the two.
 ///
 /// `eye.slash` (met hidden, the default) / `eye` (met shown), tinted with
-/// `Color.indigo` when on — the SAME accent every chip's progress fill and
-/// every section bar use (see `QuotaChip.fillAndStripe`'s doc), which is
-/// also the accent `ReminderSlotStrip.color(for:)` already uses for its
-/// `.behind` state (`RemindersWidgetViews.swift`) — one hue app-wide, not a
-/// new one for this button.
+/// `WidgetTheme.indigoAccent` when on — the SAME accent every chip's
+/// progress fill and every section bar use (see `QuotaChip.fillAndStripe`'s
+/// doc), which is also the accent `ReminderSlotStrip.color(for:)` already
+/// uses for its `.behind` state (`RemindersWidgetViews.swift`) — one hue
+/// app-wide, not a new one for this button. Post-merge with the parallel
+/// Reminders/Tasks "show completed" branch (2026-09-23), this and
+/// `ReminderSlotStrip` both read the SAME named `WidgetTheme.indigoAccent`
+/// constant rather than each spelling out the bare `Color.indigo` literal —
+/// see that constant's own doc.
 private struct ShowMetToggleButton: View {
     let showMet: Bool
 
@@ -285,7 +289,7 @@ private struct ShowMetToggleButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(showMet ? Color.indigo : Color.secondary)
+        .foregroundStyle(showMet ? WidgetTheme.indigoAccent : Color.secondary)
         .accessibilityLabel(Text(showMet ? "Hide met quotas" : "Show met quotas"))
     }
 }
@@ -360,7 +364,7 @@ private struct QuotaHeadingRow: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.25))
                     Capsule()
-                        .fill(section.allMet ? WidgetTheme.trackMetTint : Color.indigo)
+                        .fill(section.allMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent)
                         .frame(width: max(geo.size.width * section.barFraction, 0))
                     // The notch: how much of the period's clock has already
                     // run. `Color.primary` rather than a hardcoded white —
@@ -530,21 +534,24 @@ private struct QuotaChip: View {
     /// tuning `.primary`/`.secondary` around a fixed color that fights the
     /// card's own adaptivity.
     ///
-    /// `Color.indigo`, matching the mockup and matching Trent's approval of
-    /// it there — and the SAME literal `ReminderSlotStrip.color(for:)`
-    /// already uses for its `.behind` state (`RemindersWidgetViews.swift`),
-    /// so this is the app's one existing "in progress" accent, not a second
-    /// hue. An earlier pass here reused Track's OLD ring/bar-mode teal
-    /// instead (`WidgetTheme.trackTint`, since removed) on the theory that
-    /// reusing Track's own established color was more "one hue" than
-    /// introducing indigo — reviewed and corrected: indigo is already the
-    /// app-wide in-progress accent (Reminders' slot strip), so teal was
-    /// actually the second, unapproved hue, not indigo.
+    /// `WidgetTheme.indigoAccent`, matching the mockup and matching Trent's
+    /// approval of it there — the SAME named constant `ReminderSlotStrip.
+    /// color(for:)` already uses for its `.behind` state
+    /// (`RemindersWidgetViews.swift`, unified post-merge with the parallel
+    /// Reminders/Tasks branch, 2026-09-23 — both used to spell out the bare
+    /// `Color.indigo` literal independently), so this is the app's one
+    /// existing "in progress" accent, not a second hue. An earlier pass here
+    /// reused Track's OLD ring/bar-mode teal instead (`WidgetTheme.
+    /// trackTint`, since removed) on the theory that reusing Track's own
+    /// established color was more "one hue" than introducing indigo —
+    /// reviewed and corrected: indigo is already the app-wide in-progress
+    /// accent (Reminders' slot strip), so teal was actually the second,
+    /// unapproved hue, not indigo.
     private var fillAndStripe: some View {
         ZStack(alignment: .leading) {
             Rectangle().fill(.fill.secondary)
             GeometryReader { geo in
-                (item.isMet ? WidgetTheme.trackMetTint : Color.indigo)
+                (item.isMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent)
                     .opacity(item.isMet ? 0.30 : 0.45)
                     .frame(width: max(geo.size.width * fraction, 0))
             }
@@ -660,7 +667,7 @@ private struct OverallRing: View {
             Circle()
                 .trim(from: 0, to: fraction)
                 .stroke(
-                    allMet ? WidgetTheme.trackMetTint : Color.indigo,
+                    allMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
