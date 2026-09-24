@@ -66,12 +66,14 @@ enum WidgetTheme {
 
     /// The one indigo used across all three widget kinds for "this is
     /// active / worth noticing right now" — `ReminderSlotStrip`'s "behind,
-    /// still waiting" segment fill (`RemindersWidgetViews.swift`) and the
-    /// "show completed" eye toggle's ON state (`ShowCompletedToggle` below).
-    /// ONE named constant, not two independently-chosen indigo literals, so
-    /// the Reminders and Track/Tasks/Quotas widgets' accent can never drift
-    /// apart pixel-by-pixel across files (2026-09-23, per coordinator note
-    /// keeping this consistent with the parallel Quotas widget rebuild).
+    /// still waiting" segment fill (`RemindersWidgetViews.swift`), the "show
+    /// completed" eye toggle's ON state (`ShowCompletedToggle` below), and —
+    /// after merging with the parallel Quotas widget rebuild (2026-09-23,
+    /// `feat/quotas-widget`, PR #58) — every in-progress quota chip/bar and
+    /// the Quotas widget's own "show met" eye toggle (`ShowMetToggleButton`,
+    /// `TrackWidgetViews.swift`). ONE named constant, not several
+    /// independently-chosen `Color.indigo` literals, so all three widgets'
+    /// accent can never drift apart pixel-by-pixel across files.
     static let indigoAccent = Color.indigo
 
     // MARK: - Track (§5)
