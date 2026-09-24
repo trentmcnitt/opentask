@@ -204,15 +204,25 @@ final class APIClient {
     /// `includeTaskIds` = `ids`); nothing here ever omits it, because
     /// nothing here is a sweep — `snoozeOverdue` above is the sweep.
     ///
-    /// `deltaMinutes` here means "N minutes added to EACH task's own
-    /// `due_at`" — confirmed against `bulkSnooze`'s server implementation
-    /// (`src/core/tasks/bulk.ts`) and matched by the web's own bulk "+1hr"
-    /// (`save-quick-panel-changes.ts` passes `changes.delta_minutes`
-    /// straight through). This is DIFFERENT from `snoozeOverdue(deltaMinutes:)`
-    /// above, whose `delta_minutes` means "N minutes from NOW, snapped" —
-    /// two different endpoints with two different established meanings for
-    /// the same parameter name; each call site here maps to the ONE the web
-    /// already uses for that same UI gesture, not to be unified.
+    /// `deltaMinutes`, on THIS endpoint, means "N minutes added to EACH
+    /// task's own `due_at`" — confirmed against `bulkSnooze`'s server
+    /// implementation (`src/core/tasks/bulk.ts`) and matched by the web's
+    /// OWN bulk relative-INCREMENT button (`QuickActionPanel`'s
+    /// `applyIncrement`, which feeds `save-quick-panel-changes.ts`'s
+    /// `changes.delta_minutes`). This is DIFFERENT from
+    /// `snoozeOverdue(deltaMinutes:)` above, whose `delta_minutes` means "N
+    /// minutes from NOW, snapped" — two different endpoints with two
+    /// different established meanings for the same parameter name.
+    ///
+    /// NOT what "+1h" means anywhere in THIS extension, though (2026-09-23
+    /// review correction): Trent's "+1h" is "snooze to the next hour" — one
+    /// hour from now, snapped — the SAME thing `snoozeOverdue(deltaMinutes:)`
+    /// already gives the sweep bar. Every "+1h" tap in snooze mode / bulk
+    /// select (`SnoozeTaskRowIntent`, `SnoozeSelectedTasksIntent`) resolves
+    /// that with `DateHelpers.snapToNextHour()` and sends it as `until`
+    /// instead — this parameter exists here to keep the function a faithful
+    /// mirror of everything the server endpoint accepts, but as of this
+    /// correction nothing in this extension actually calls it.
     @discardableResult
     func bulkSnoozeTasks(
         ids: [Int], until: String? = nil, deltaMinutes: Int? = nil, includeTaskIds: [Int]? = nil

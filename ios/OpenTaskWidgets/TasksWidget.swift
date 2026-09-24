@@ -574,6 +574,18 @@ private func resetTasksPreviewState() {
     WidgetStore.setTasksSnoozeMode(false)
     WidgetStore.setTasksSelectMode(false)
     WidgetStore.clearTasksSelection()
+    // Seed `TimeSlotStore` with realistic slots (2026-09-23, review addendum)
+    // — the widget extension only ever READS that cache (`TimeSlotStore`'s
+    // own doc: the main app populates it), so an unseeded preview host
+    // renders every "⏭ Next period" button dimmed/disabled, which isn't
+    // what a real device with the main app installed ever shows. Mirrors
+    // `SampleData.swift`'s reminder slot labels/times for consistency.
+    let slots = [
+        TimeSlotDTO(id: 1, label: "Early morning", startTime: "07:00"),
+        TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
+        TimeSlotDTO(id: 3, label: "Evening", startTime: "20:00"),
+    ]
+    TimeSlotStore.save(slots)
 }
 
 #Preview("Tasks Large — Completed Off", as: .systemLarge) {
@@ -610,15 +622,4 @@ private func resetTasksPreviewState() {
     TasksPreviewData.entry()
 }
 
-#Preview("Tasks Large — Select mode (all)", as: .systemLarge) {
-    TasksWidget()
-} timeline: {
-    let _ = resetTasksPreviewState()
-    let _ = WidgetStore.setTasksSelectMode(true)
-    // Every sample task selected — bulk2.png's "All ✓" state.
-    let _ = WidgetStore.setSelectedTaskIds(
-        Set(TasksTimeline.upNextTasks(from: TasksPreviewData.tasks).map(\.id)), for: WidgetStore.upNextScope
-    )
-    TasksPreviewData.entry()
-}
 #endif
