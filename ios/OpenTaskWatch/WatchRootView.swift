@@ -13,6 +13,7 @@ import SwiftUI
 /// still reachable by opening the iOS app to pair.
 struct WatchRootView: View {
     @StateObject private var model = WatchViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -42,6 +43,17 @@ struct WatchRootView: View {
         }
         .task {
             await model.load()
+        }
+        // Refresh on every return to the foreground, not just first launch.
+        // `WatchAppDelegate.applicationDidBecomeActive` already exists for
+        // slot-action cache refresh but was never wired to THIS view's data
+        // — without this, reopening the app after it's been backgrounded
+        // shows whatever was on screen when it was last active, however
+        // stale, until a manual pull-to-refresh.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await model.load() }
+            }
         }
     }
 }
