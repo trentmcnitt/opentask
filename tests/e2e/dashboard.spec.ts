@@ -571,6 +571,20 @@ test.describe('Top bar total', () => {
     expect(res.ok()).toBeTruthy()
   }
 
+  /**
+   * Reload into a view and wait until the page is IN it. Until the
+   * preferences fetch settles the dashboard groups by the `'project'`
+   * fallback (see `useDefaultGrouping`), and a count read in that window is
+   * the Projects view's, not the one asked for.
+   */
+  async function reloadInto(page: Page, view: 'Today' | 'All'): Promise<void> {
+    await page.reload()
+    await expect(page.getByRole('button', { name: view, exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  }
+
   test('counts only what the Today view shows', async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const before = (await (await page.request.get('/api/user/preferences')).json()).data
@@ -578,7 +592,7 @@ test.describe('Top bar total', () => {
     const ids: number[] = []
     try {
       await setGrouping(page, 'slot')
-      await page.reload()
+      await reloadInto(page, 'Today')
       const baseline = await readTotal(page)
 
       // Due a week out: in the corpus, not on today's list.
@@ -595,14 +609,14 @@ test.describe('Top bar total', () => {
       // Undated: the Today view keeps these, so this one does count.
       ids.push(await createTask(page, { title: 'Top bar probe undated' }))
 
-      await page.reload()
+      await reloadInto(page, 'Today')
       await expect(page.locator(`#task-row-${later}`)).toHaveCount(0)
       expect(await readTotal(page)).toBe(baseline + 1)
 
       // The All view shows the whole corpus, so the week-out task counts there.
       await setGrouping(page, 'time')
       // (Its row may sit in a folded group, so only the number is asserted.)
-      await page.reload()
+      await reloadInto(page, 'All')
       expect(await readTotal(page)).toBeGreaterThanOrEqual(baseline + 2)
     } finally {
       for (const id of ids) await page.request.delete(`/api/tasks/${id}`)
