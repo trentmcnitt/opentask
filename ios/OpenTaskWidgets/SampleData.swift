@@ -20,16 +20,6 @@ enum SampleData {
         return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
     }
 
-    /// Local midnight `days` ago, as the UTC ISO 8601 string the API returns in
-    /// `progress_period_start`. A quota sample needs an anchor *and* an rrule or
-    /// `TrackTimeline` has no period to measure pace against, and the gallery
-    /// card would show quotas with no pace tick at all.
-    private static func periodStart(daysAgo days: Int) -> String {
-        let calendar = Calendar.current
-        let day = calendar.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-        return DateHelpers.formatISO(calendar.startOfDay(for: day))
-    }
-
     // MARK: - Reminders
 
     static var reminderGroups: [ReminderGroupDTO] {
@@ -109,53 +99,155 @@ enum SampleData {
         )
     }
 
-    // MARK: - Track (§5)
+    // MARK: - Quotas (§5, `feat/quotas-widget`)
 
     /// Quotas, kept separate from `tasks` now that §8 excludes tracked items
     /// from the Tasks widget — mixing them back in would only mean the Tasks
     /// gallery card silently filtering half its sample away.
     ///
-    /// Spread across the pace range on purpose: one behind, one comfortably
-    /// ahead, one met, one overflowing, so the gallery card shows every state
-    /// the widget can be in.
+    /// This is the corpus from the APPROVED mockup (`~/hub-store/capabilities/
+    /// opentask/mockups-2026-09-23/widgets.html`'s `qbody`, section 3 —
+    /// "Quotas widget (the design you picked today)") — kept "generic,
+    /// non-identifying" per this file's own header rule (grocery/chore/errand
+    /// names, not a real household's), padded from the mock's ~14 to 24 so a
+    /// systemLarge gallery card genuinely pages to a second screen the way the
+    /// mock's own "‹ 1/2 ›" footer shows. Four periods, four labeled clusters
+    /// (health/hub/ideas/kids) plus an unlabeled "Other" bucket in the
+    /// month/year sections, three states represented per cluster where
+    /// possible (untouched, partial, met) so a render review sees every chip
+    /// treatment the widget draws.
     ///
-    /// No `due_at` — §5 quotas are dateless, and the period anchor is what pace
-    /// is measured from. The anchors are offsets from today rather than real
-    /// Monday/1st boundaries so each card keeps the state it was written to
-    /// show whatever day the gallery is opened on.
+    /// No `due_at` — §5 quotas are dateless. Also no `progressPeriodStart`:
+    /// unlike the OLD per-item pace ring, nothing this widget draws reads a
+    /// quota's own anchor any more — `QuotaSectionBuilder` measures every
+    /// period fresh from `Date()`/`Calendar`, and `TrackItem.elapsedFraction`
+    /// is always nil in the new flow (see that struct's doc).
     static var trackedTasks: [TaskDTO] {
         [
-            // 5/7 of a week gone against 1 of 4 done: behind.
-            TaskDTO(id: 301, projectId: 3, title: "Workout", priority: 2,
-                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 4, progressCurrent: 1,
-                    progressPeriodStart: periodStart(daysAgo: 5)),
-            // 2/7 gone against 2 of 3 done: ahead.
-            TaskDTO(id: 302, projectId: 3, title: "Read", priority: 0,
-                    rrule: "FREQ=WEEKLY;BYDAY=SU", progressTarget: 3, progressCurrent: 2,
-                    progressPeriodStart: periodStart(daysAgo: 2)),
-            // Today's daily quota, already met.
-            TaskDTO(id: 303, projectId: 1, title: "Walk the long way home", priority: 1,
-                    rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2,
-                    progressPeriodStart: periodStart(daysAgo: 0)),
-            // Overflowing: 4 logged against a target of 3.
-            TaskDTO(id: 304, projectId: 2, title: "Deep work block", priority: 3,
-                    rrule: "FREQ=WEEKLY;BYDAY=FR", progressTarget: 3, progressCurrent: 4,
-                    progressPeriodStart: periodStart(daysAgo: 3)),
+            // Today — met, matching the mock's "Today · ends tonight · 1 of 1".
+            TaskDTO(id: 301, projectId: 1, title: "Walk the long way home", priority: 1,
+                    rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2),
+
+            // This week · health
+            TaskDTO(id: 310, projectId: 3, title: "Vegetables", priority: 2,
+                    rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 3, labels: ["health"]),
+            TaskDTO(id: 311, projectId: 3, title: "Supplements", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, labels: ["health"]),
+            TaskDTO(id: 312, projectId: 3, title: "Balloon", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 4, progressCurrent: 0, labels: ["health"]),
+            TaskDTO(id: 313, projectId: 3, title: "Weight lift", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 0, labels: ["health"]),
+            TaskDTO(id: 314, projectId: 3, title: "Cardio", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, labels: ["health"]),
+            TaskDTO(id: 315, projectId: 3, title: "Meal prep", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, labels: ["health"]),
+
+            // This week · hub. `trackedFlag: true` on every target-1 quota
+            // below: `TaskDTO.isTracked` is `trackedFlag || progressTarget >
+            // 1` (mirroring the server's own `isTracked()`), so a "once a
+            // period" quota with no explicit flag isn't a quota at all as
+            // far as `isProgressMet`/`isTracked` are concerned — a real
+            // once-per-period quota always carries this flag from the
+            // server. Missing it here first showed up as a met target-1
+            // quota that never turned green in a render review (`isTracked
+            // == false` makes `isProgressMet` permanently false) — caught
+            // and fixed against the actual Xcode preview, not assumed.
+            TaskDTO(id: 320, projectId: 1, title: "Audiobook notes", priority: 0,
+                    rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
+                    trackedFlag: true, labels: ["hub"]),
+            TaskDTO(id: 321, projectId: 1, title: "Card maintenance", priority: 0,
+                    rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
+                    trackedFlag: true, labels: ["hub"]),
+            TaskDTO(id: 322, projectId: 1, title: "Inbox zero", priority: 0,
+                    rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
+                    trackedFlag: true, labels: ["hub"]),
+            TaskDTO(id: 323, projectId: 1, title: "Backup photos", priority: 0,
+                    rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
+                    trackedFlag: true, labels: ["hub"]),
+
+            // This week · ideas
+            TaskDTO(id: 330, projectId: 2, title: "Certifications", priority: 2,
+                    rrule: "FREQ=WEEKLY", progressTarget: 1, progressCurrent: 0,
+                    trackedFlag: true, labels: ["ideas"]),
+            TaskDTO(id: 331, projectId: 2, title: "Applications", priority: 2,
+                    rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 1, labels: ["ideas"]),
+
+            // This week · kids
+            TaskDTO(id: 340, projectId: 3, title: "Shower", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 1, labels: ["kids"]),
+            TaskDTO(id: 341, projectId: 3, title: "Dishes", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 5, progressCurrent: 0, labels: ["kids"]),
+            TaskDTO(id: 342, projectId: 3, title: "Compliment", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 2, progressCurrent: 0, labels: ["kids"]),
+            TaskDTO(id: 343, projectId: 3, title: "Reading time", priority: 1,
+                    rrule: "FREQ=WEEKLY", progressTarget: 3, progressCurrent: 3, labels: ["kids"]),
+
+            // This month · unlabeled ("Other")
+            TaskDTO(id: 350, projectId: 3, title: "Date night", priority: 2,
+                    rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true),
+            TaskDTO(id: 351, projectId: 1, title: "Budget review", priority: 1,
+                    rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true),
+            TaskDTO(id: 352, projectId: 1, title: "Deep clean", priority: 1,
+                    rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 1, trackedFlag: true),
+            TaskDTO(id: 353, projectId: 1, title: "Car maintenance", priority: 1,
+                    rrule: "FREQ=MONTHLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true),
+
+            // This year · unlabeled
+            TaskDTO(id: 360, projectId: 1, title: "Physical", priority: 2,
+                    rrule: "FREQ=YEARLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true),
+            TaskDTO(id: 361, projectId: 1, title: "Dentist", priority: 2,
+                    rrule: "FREQ=YEARLY", progressTarget: 1, progressCurrent: 1, trackedFlag: true),
+            TaskDTO(id: 362, projectId: 1, title: "Eye exam", priority: 1,
+                    rrule: "FREQ=YEARLY", progressTarget: 1, progressCurrent: 0, trackedFlag: true),
         ]
     }
 
+    /// The cluster color source (`label_config`) for the sample corpus above —
+    /// four named labels, the same colors the mock's own swatches use
+    /// (health blue, hub gray, ideas pink, kids purple).
+    static var trackLabelConfig: [LabelConfigDTO] {
+        [
+            LabelConfigDTO(name: "health", color: "blue"),
+            LabelConfigDTO(name: "hub", color: "gray"),
+            LabelConfigDTO(name: "ideas", color: "pink"),
+            LabelConfigDTO(name: "kids", color: "purple"),
+        ]
+    }
+
+    /// `trackedTasks`, run through the SAME `isTracked` filter the real
+    /// provider applies (`TrackProvider.currentEntry`'s `snapshot.tasks.
+    /// filter(\.isTracked)`) before anything ever reaches
+    /// `QuotaSectionBuilder`. Doing this here too, rather than trusting every
+    /// entry in `trackedTasks` to already qualify, is what caught a real bug
+    /// in a first render pass: a target-1 sample quota with no `trackedFlag`
+    /// isn't a quota at all by `isTracked`'s own rule, and would otherwise
+    /// silently read as permanently-unmet in a gallery render instead of
+    /// simply not appearing (matching what a real, un-flagged such task
+    /// would do in production — never shown, not shown-and-wrong).
+    static var trackedQuotas: [TaskDTO] { trackedTasks.filter(\.isTracked) }
+
+    /// `showMet: false` — the default, met-hidden state. Previews/tests that
+    /// want the met-shown variant build their own entry from
+    /// `QuotaSectionBuilder.sections(from: trackedQuotas, ...)` directly (see
+    /// `TrackWidget.swift`'s `#Preview` blocks) rather than adding parameters
+    /// here — `placeholder(in:)`/`getSnapshot(in:)` only ever need the one,
+    /// default-state entry this property provides.
     static var trackEntry: TrackEntry {
-        // `pacedItems`, never `orderedItems`: the ordered variant PERSISTS the
-        // id order it renders, and `placeholder(in:)` runs against real widgets
-        // (redaction) as well as the gallery — sample ids would overwrite the
-        // user's stored row order and make the next real pass re-sort, which is
-        // exactly the shuffle that order is stored to prevent.
-        let items = TrackTimeline.pacedItems(from: trackedTasks)
+        let now = Date()
+        let quotas = trackedQuotas
+        let sections = QuotaSectionBuilder.sections(
+            from: quotas, labelConfig: trackLabelConfig, showMet: false,
+            mutationIsRecent: false, now: now
+        )
+        let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
         return TrackEntry(
-            date: Date(),
-            items: items,
-            selectedId: items.first?.id ?? WidgetStore.noTrackSelection,
-            pageStartId: items.first?.id ?? WidgetStore.noTrackSelection,
+            date: now,
+            sections: sections,
+            totalMet: quotas.filter(\.isProgressMet).count,
+            totalCount: quotas.count,
+            nextUnmet: nextUnmet,
+            showMet: false,
+            page: 0,
             staleSince: nil,
             isSignedOut: false,
             canUndo: false,
