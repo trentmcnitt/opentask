@@ -105,6 +105,22 @@ paths:
           in: query
           schema:
             type: boolean
+          description: |
+            `true` = only what is due right now, by the same definition as the
+            app badge, notifications and the snooze-overdue sweep: reminders
+            and quotas are never overdue, and a recurring task's due-ness comes
+            from its schedule. Only the user's own tasks (the badge's
+            population). Applied before pagination.
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [task, reminder, quota]
+          description: |
+            Narrow to one population: ordinary tasks, reminders
+            (`is_reminder`), or quotas (`is_tracked` or `progress_target > 1`).
+            Omitted = all three. Applied before pagination; any other value is
+            a 400.
         - name: recurring
           in: query
           schema:
@@ -285,6 +301,22 @@ paths:
       description: |
         For recurring tasks, advances due_at to the next occurrence.
         For one-off tasks, sets done=true and archives.
+
+        **Quotas** are refused (400) unless the body has `close_period: true`.
+        Completing a quota closes its period early and resets
+        `progress_current` to 0; to log one, use
+        `POST /api/tasks/{id}/progress`. The body is optional — a bare POST
+        with no body works for everything else.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                close_period:
+                  type: boolean
+                  description: Deliberately complete a quota, closing its period early.
       responses:
         '200':
           description: Completed task
@@ -304,6 +336,8 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -401,6 +435,9 @@ paths:
 
         Named `skip-occurrence` rather than `skip` because the review API
         already uses "skip" for a no-op review acknowledgment.
+
+        Reminders (`is_reminder`) are refused (400): a missed one already
+        rolls forward on its own, and completing one marks it considered.
       responses:
         '200':
           description: Skipped task
@@ -703,6 +740,10 @@ paths:
       summary: Mark multiple tasks done
       operationId: bulkDone
       tags: [Bulk Operations]
+      description: |
+        Quotas in `ids` are skipped (counted in `quota_skipped`) unless
+        `close_period: true` — completing a quota closes its period early and
+        resets its count. A batch of nothing but quotas is a 400.
       requestBody:
         required: true
         content:
@@ -715,6 +756,9 @@ paths:
                   type: array
                   items:
                     type: integer
+                close_period:
+                  type: boolean
+                  description: Also complete quotas in the batch, closing each period early.
       responses:
         '200':
           description: Bulk operation result
@@ -930,6 +974,9 @@ paths:
         Built for the §6.1 notification batch checklist: the iOS content
         extension commits N staged check-marks with one request. Delegates to
         the same core bulk-done path — one transaction, ONE undo entry.
+
+        Quotas are skipped unless `close_period: true`, as for
+        `/api/tasks/bulk/done`.
       requestBody:
         required: true
         content:
@@ -942,6 +989,9 @@ paths:
                   type: array
                   items:
                     type: integer
+                close_period:
+                  type: boolean
+                  description: Also complete quotas in the batch, closing each period early.
       responses:
         '200':
           description: Completion result
@@ -959,6 +1009,11 @@ paths:
                         type: integer
                       one_off_count:
                         type: integer
+                      quota_skipped:
+                        type: integer
+                        description: Quotas left alone because close_period was not set.
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1917,7 +1972,11 @@ components:
           description: Computed field — true if rrule is set
         is_snoozed:
           type: boolean
-          description: Computed field — true if original_due_at is set
+          description: |
+            Computed field — true when the due date has moved off its
+            occurrence origin (`original_due_at` set and different from
+            `due_at`). A freshly dated task, or one given an explicit new date
+            with `reset_original_due_at`, is not snoozed.
 
     TaskCreate:
       type: object
@@ -2051,6 +2110,24 @@ components:
           type: string
           format: date-time
           nullable: true
+          description: |
+            On its own, moving an existing date is a **snooze**: the
+            occurrence origin (`original_due_at`) is kept, `snooze_count`
+            increments, and the task reads as snoozed. Send
+            `reset_original_due_at: true` with it for an **explicit
+            reschedule** instead (what the date picker does): the new date
+            becomes the origin, `snooze_count` resets, and it is not a snooze.
+
+            A snooze of a dated reminder is refused (400) — reminders are not
+            snoozed; an explicit reschedule is allowed. Sent together with
+            `rrule`, the date is honored and the rule's anchors are derived
+            from it (a re-schedule, never a snooze). A quota has no due date.
+        reset_original_due_at:
+          type: boolean
+          description: |
+            Make the occurrence origin the task's due date — the NEW `due_at`
+            when one is sent in the same request — and reset `snooze_count` to
+            0. Undo restores the previous values.
         priority:
           type: integer
           minimum: 0
