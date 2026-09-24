@@ -47,6 +47,34 @@ enum WidgetStore {
     struct TasksCache: Codable {
         let tasks: [TaskDTO]
         let projects: [ProjectDTO]
+        /// Today's completions (2026-09-23, "show completed") — see this
+        /// file's "Show completed" section. A CUSTOM `init(from:)` (not the
+        /// synthesized memberwise one `Codable` would otherwise generate) is
+        /// required here, not merely a default value on the property: a
+        /// stored property's default only applies when the MEMBERWISE init
+        /// is used, and a synthesized `Decodable.init(from:)` still requires
+        /// every key to be present. Without this, an on-device cache written
+        /// by a build before this field existed would fail to decode on
+        /// first load after this update — losing the WHOLE cache (tasks and
+        /// projects too), not just the new field.
+        let completions: [CompletionDTO]
+
+        enum CodingKeys: String, CodingKey {
+            case tasks, projects, completions
+        }
+
+        init(tasks: [TaskDTO], projects: [ProjectDTO], completions: [CompletionDTO] = []) {
+            self.tasks = tasks
+            self.projects = projects
+            self.completions = completions
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            tasks = try c.decodeIfPresent([TaskDTO].self, forKey: .tasks) ?? []
+            projects = try c.decodeIfPresent([ProjectDTO].self, forKey: .projects) ?? []
+            completions = try c.decodeIfPresent([CompletionDTO].self, forKey: .completions) ?? []
+        }
     }
 
     private static let remindersKey = "widget.cache.reminders"
@@ -72,8 +100,13 @@ enum WidgetStore {
         load(RemindersCache.self, forKey: remindersKey)
     }
 
-    static func saveTasks(_ tasks: [TaskDTO], projects: [ProjectDTO]) {
-        save(TasksCache(tasks: tasks, projects: projects), forKey: tasksKey)
+    /// `completions` has NO default (2026-09-23): every call site must now
+    /// say explicitly what it knows about today's completions rather than
+    /// silently wiping the DONE list cache to empty. `UndoLastActionIntent`/
+    /// `RedoLastActionIntent`'s full refetch is the one place that would
+    /// otherwise have compiled clean while quietly blanking it.
+    static func saveTasks(_ tasks: [TaskDTO], projects: [ProjectDTO], completions: [CompletionDTO]) {
+        save(TasksCache(tasks: tasks, projects: projects, completions: completions), forKey: tasksKey)
     }
 
     static func loadTasks() -> Cached<TasksCache>? {
@@ -312,28 +345,70 @@ enum WidgetStore {
     // disagree with the next fetch.
 
     /// The server confirmed `id`'s completion: drop it from both cached
-    /// payloads. In Reminders it moves to its slot's `considered` count, so
-    /// the slot strip and the "done" states read it straight away.
+    /// payloads' OPEN side. In Reminders it moves to its slot's `considered`
+    /// count AND `consideredItems` (2026-09-23, "show completed" — the DONE
+    /// list needs the item itself, not just the count, and this is the
+    /// EARLIEST point a just-completed item can be shown as done: waiting
+    /// for the next network fetch would miss it entirely, since
+    /// `CompleteTaskIntent`'s round-2 reload fast-paths from cache on
+    /// success). Tasks has no DTO with full task data to fall back on for its
+    /// DONE list, so it synthesizes a `CompletionDTO` from the `TaskDTO`
+    /// being removed — see the block below.
+    ///
+    /// Also clears any live `pendingRestore` for `id` (re-completing within
+    /// 90s of restoring it, or restoring within 90s of completing it, are
+    /// both real sequences a fast tapper can produce — see
+    /// `confirmRestore`'s matching clear for the mirror case): without this,
+    /// a stale restore tombstone would keep hiding `id` from the DONE list
+    /// this very function just put it back into.
     static func confirmCompletion(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
         if let cached = loadReminders() {
             let groups = cached.value.groups.map { group -> ReminderGroupDTO in
+                let completed = group.reminders.filter { $0.id == id }
                 let remaining = group.reminders.filter { $0.id != id }
                 return ReminderGroupDTO(
                     slot: group.slot,
                     reminders: remaining,
-                    considered: group.considered + (group.reminders.count - remaining.count)
+                    considered: group.considered + completed.count,
+                    consideredItems: completed + group.consideredItems
                 )
             }
             save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
         }
         if let cached = loadTasks() {
+            let completedTask = cached.value.tasks.first(where: { $0.id == id })
             let tasks = cached.value.tasks.filter { $0.id != id }
+            var completions = cached.value.completions
+            // Reminders and tracked items ride the same raw `tasks` cache
+            // (TaskFeed fetches ALL open tasks, not just Tasks-widget-
+            // eligible ones) — excluded here exactly like `TasksTimeline.
+            // eligibleTasks` excludes them from the OPEN list, so a
+            // Reminders completion (which also flows through THIS function)
+            // can never pollute the Tasks widget's DONE list.
+            if let completedTask, !completedTask.isReminder, !completedTask.isTracked {
+                // Synthetic negative id, purely for Identifiable/ForEach —
+                // silently replaced by the real, server-confirmed row
+                // (positive id) on the next full TaskFeed fetch, which
+                // always re-fetches completions now (see TaskFeed.snapshot).
+                let synthetic = CompletionDTO(
+                    id: -completedTask.id,
+                    taskId: completedTask.id,
+                    completedAt: DateHelpers.formatISO(Date()),
+                    taskTitle: completedTask.title,
+                    projectId: completedTask.projectId,
+                    isReminder: false,
+                    isTracked: false,
+                    progressTarget: completedTask.progressTarget
+                )
+                completions = [synthetic] + completions
+            }
             save(
-                TasksCache(tasks: tasks, projects: cached.value.projects),
+                TasksCache(tasks: tasks, projects: cached.value.projects, completions: completions),
                 forKey: tasksKey, at: cached.fetchedAt)
         }
+        clearPendingRestore(id)
     }
 
     /// Remove tombstoned (in-flight) completions from a fetched or cached
@@ -342,6 +417,127 @@ enum WidgetStore {
         let pending = pendingCompletions(now: now)
         guard !pending.isEmpty else { return tasks }
         return tasks.filter { !pending.contains($0.id) }
+    }
+
+    // MARK: - Show completed (2026-09-23, "show completed" — the eye toggle
+    // left of Undo, Reminders and Tasks systemLarge only)
+    //
+    // Trent picked mockup option A: completed items sit at the bottom, under
+    // a "DONE · N" divider. Deliberately NOT plumbed through `RemindersEntry`/
+    // `TasksEntry` — the toggle is pure local UI state, and threading it
+    // through would mean touching every `getTimeline`/`SampleData`
+    // construction site for a flag those types don't otherwise need. Read
+    // live instead, straight from here, by the LIST VIEWS themselves
+    // (`RemindersListView`/`TasksListView`) — the same division of labor
+    // `remindersPage(for:)`/`tasksPage(for:)` already use for paging state.
+    //
+    // Keyed by an arbitrary `kind` STRING, not a fixed enum case, so a
+    // parallel branch building the Track widget's own eye toggle
+    // (`feat/quotas-widget`) can share this exact function without either
+    // branch's change colliding with the other's in this file.
+
+    private static func showCompletedKey(for kind: String) -> String {
+        "widget.showCompleted.\(kind)"
+    }
+
+    static func showCompleted(for kind: String) -> Bool {
+        defaults?.bool(forKey: showCompletedKey(for: kind)) ?? false
+    }
+
+    static func setShowCompleted(_ value: Bool, for kind: String) {
+        defaults?.set(value, forKey: showCompletedKey(for: kind))
+    }
+
+    // MARK: - Pending restores (2026-09-23, "show completed" — tap a DONE row)
+    //
+    // The mirror image of the completion tombstone above: this one hides an
+    // item from the DONE list instead of from OPEN, the instant
+    // `UncompleteTaskIntent` taps it, while `POST /api/tasks/:id/undone` is
+    // still on the wire. Same TTL/liveIds mechanics as `pendingCompletions`
+    // — see that section's doc for the reasoning, not repeated here.
+    //
+    // Addressed by TASK id, not by a `CompletionDTO`'s own row `id` (which,
+    // for an optimistically-synthesized row, is a negative placeholder that
+    // never appears server-side) — Reminders' `consideredItems` and Tasks'
+    // `completions` both carry an honest task id (`TaskDTO.id` /
+    // `CompletionDTO.taskId`) that survives the swap from synthetic to
+    // server-confirmed.
+
+    private static let pendingRestoresKey = "widget.pendingRestores"
+
+    static func stagePendingRestore(_ id: Int, now: Date = Date()) {
+        var map = pendingMap(pendingRestoresKey)
+        map[String(id)] = now.timeIntervalSince1970
+        defaults?.set(map, forKey: pendingRestoresKey)
+    }
+
+    static func clearPendingRestore(_ id: Int) {
+        var map = pendingMap(pendingRestoresKey)
+        map.removeValue(forKey: String(id))
+        defaults?.set(map, forKey: pendingRestoresKey)
+    }
+
+    /// Live (un-expired) tombstones, pruning expired ones as a side effect —
+    /// consulted by `filterPending(_ groups:)` (Reminders) and
+    /// `TaskFeed.staged` (Tasks, via `filterPendingRestoresFromCompletions`)
+    /// so a just-tapped restore vanishes from DONE immediately.
+    static func pendingRestores(now: Date = Date()) -> Set<Int> {
+        liveIds(pendingRestoresKey, now: now)
+    }
+
+    /// Remove tombstoned (in-flight) restores from Tasks' DONE list
+    /// (`CompletionDTO`, keyed by `taskId`) — the Tasks twin of
+    /// `filterPending(_ groups:)`'s Reminders-side handling, called from
+    /// `TaskFeed.staged` (the ONE choke point every Tasks render path goes
+    /// through, matching that function's own "single choke point" doc).
+    static func filterPendingRestoresFromCompletions(
+        _ completions: [CompletionDTO], now: Date = Date()
+    ) -> [CompletionDTO] {
+        let restoring = pendingRestores(now: now)
+        guard !restoring.isEmpty else { return completions }
+        return completions.filter { !restoring.contains($0.taskId) }
+    }
+
+    /// The server confirmed `id`'s restore (`POST /api/tasks/:id/undone`
+    /// succeeded): permanently drop it from the cached DONE list. Unlike a
+    /// completion tombstone, there is nowhere honest to put the item back
+    /// into OPEN from here — Tasks' `CompletionDTO` carries no due date,
+    /// priority, or labels to reconstruct a `TaskDTO` from — so
+    /// `UncompleteTaskIntent` also clears the interaction stamp
+    /// (`clearInteraction()`) so the NEXT reload takes the network path and
+    /// fetches the real restored `TaskDTO` into OPEN. Net effect: the item
+    /// leaves DONE instantly, and reappears in OPEN within one round trip
+    /// rather than in the same paint — an accepted asymmetry with the
+    /// completion side, not a bug (see `UncompleteTaskIntent`'s doc).
+    ///
+    /// Also clears any live `pendingCompletion` for `id` — the mirror of
+    /// `confirmCompletion`'s clear of `pendingRestore` above, for the same
+    /// fast-tapper reason (restoring, then re-completing within 90s, must
+    /// not leave a stale completion tombstone hiding it from the OPEN list
+    /// this function's caller just asked the server to restore it to).
+    static func confirmRestore(_ id: Int, kind: String) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if kind == RemindersWidget.kind, let cached = loadReminders() {
+            let groups = cached.value.groups.map { group -> ReminderGroupDTO in
+                let remainingConsidered = group.consideredItems.filter { $0.id != id }
+                let removed = group.consideredItems.count - remainingConsidered.count
+                return ReminderGroupDTO(
+                    slot: group.slot,
+                    reminders: group.reminders,
+                    considered: max(0, group.considered - removed),
+                    consideredItems: remainingConsidered
+                )
+            }
+            save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
+        }
+        if kind == TasksWidget.kind, let cached = loadTasks() {
+            let completions = cached.value.completions.filter { $0.taskId != id }
+            save(
+                TasksCache(tasks: cached.value.tasks, projects: cached.value.projects, completions: completions),
+                forKey: tasksKey, at: cached.fetchedAt)
+        }
+        clearPendingCompletion(id)
     }
 
     // MARK: - Undo/redo counts (2026-09-23, replaces the 60s Undo window)
@@ -549,6 +745,13 @@ enum WidgetStore {
     static func clearAllPendingState() {
         defaults?.removeObject(forKey: pendingCompletionsKey)
         defaults?.removeObject(forKey: pendingProgressKey)
+        // 2026-09-23, "show completed": a pending restore is just as much an
+        // in-flight optimistic marker as the other two, and an undo/redo
+        // response carries no task id to single one out — see this
+        // function's own doc for why clearing all three is the honest
+        // choice rather than guessing which one belongs to the reversed
+        // action.
+        defaults?.removeObject(forKey: pendingRestoresKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -587,13 +790,27 @@ enum WidgetStore {
     /// there (a recurring task's next occurrence carries a different
     /// `due_at` and is a different entry, not a re-inclusion of this one),
     /// so this only ever adds what THIS pass actually removed.
+    ///
+    /// Also strips any live `pendingRestores` entries out of
+    /// `consideredItems` (2026-09-23, "show completed") — this is the ONE
+    /// place that reconstructs a `ReminderGroupDTO` from every reminders
+    /// render path (the interaction fast path, the fresh fetch, and the
+    /// error fallback all call this), so it is also the one place a
+    /// just-tapped restore needs to disappear from the DONE list
+    /// immediately, mirroring how `pendingCompletions` already hides a
+    /// just-tapped completion from `reminders` in the same pass.
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
-        groups.map { group in
+        let restoring = pendingRestores(now: now)
+        return groups.map { group in
             let remaining = filterPending(group.reminders, now: now)
+            let consideredItems = restoring.isEmpty
+                ? group.consideredItems
+                : group.consideredItems.filter { !restoring.contains($0.id) }
             return ReminderGroupDTO(
                 slot: group.slot,
                 reminders: remaining,
-                considered: group.considered + (group.reminders.count - remaining.count)
+                considered: group.considered + (group.reminders.count - remaining.count),
+                consideredItems: consideredItems
             )
         }
     }

@@ -24,16 +24,23 @@ enum SampleData {
 
     static var reminderGroups: [ReminderGroupDTO] {
         [
-            // `considered: 2` — some already checked off, so the gallery's
-            // slot strip (§6, `ReminderSlotStrip`) has something to show
-            // besides "upcoming" for every segment.
+            // `considered: 2`, backed by 2 real `consideredItems` — some
+            // already checked off, so the gallery's slot strip (§6,
+            // `ReminderSlotStrip`) has something to show besides "upcoming"
+            // for every segment, AND (2026-09-23) the "show completed" DONE
+            // section has something to render in the gallery/placeholder/
+            // redaction preview too.
             ReminderGroupDTO(
                 slot: TimeSlotDTO(id: 1, label: "Early morning", startTime: "07:00"),
                 reminders: [
                     TaskDTO(id: 101, title: "Supplements", priority: 3, anchorTime: "07:00", isReminder: true),
                     TaskDTO(id: 102, title: "Stretch for five minutes", priority: 1, anchorTime: "07:15", isReminder: true),
                 ],
-                considered: 2
+                considered: 2,
+                consideredItems: [
+                    TaskDTO(id: 111, title: "Make the bed", isReminder: true),
+                    TaskDTO(id: 112, title: "Drink a glass of water", isReminder: true),
+                ]
             ),
             ReminderGroupDTO(
                 slot: TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
@@ -85,6 +92,20 @@ enum SampleData {
         ]
     }
 
+    /// One generic completion (2026-09-23, "show completed") — enough for
+    /// the gallery/placeholder/redaction preview to have a non-empty DONE
+    /// section, without the gallery leaking anything that looks like real
+    /// content (this file's own doc: "everything here is generic and
+    /// non-identifying").
+    static var doneTasksSample: [CompletionDTO] {
+        [
+            CompletionDTO(
+                id: -211, taskId: 211, completedAt: todayAt(hour: 8, minute: 30),
+                taskTitle: "Check email", projectId: 1
+            )
+        ]
+    }
+
     static var tasksEntry: TasksEntry {
         TasksEntry(
             date: Date(),
@@ -95,7 +116,8 @@ enum SampleData {
             isSignedOut: false,
             canUndo: false,
             canRedo: false,
-            actionDescription: nil
+            actionDescription: nil,
+            doneTasks: doneTasksSample
         )
     }
 

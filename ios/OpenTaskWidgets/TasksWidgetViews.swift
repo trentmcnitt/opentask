@@ -101,14 +101,13 @@ private struct TasksSmallView: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
 
-                    if let due = next.dueDate {
-                        Text(WidgetTheme.shortTime(due))
+                    if next.dueDate != nil {
+                        // Day-naming (2026-09-23) — see `WidgetTheme.
+                        // dueLabelText`'s doc; "anywhere a task time shows"
+                        // includes this 2×2's "next up" line.
+                        WidgetTheme.dueLabelText(for: next, now: entry.date)
                             .font(.caption2)
                             .monospacedDigit()
-                            .foregroundStyle(
-                                next.isOverdue(now: entry.date)
-                                    ? Color.red.opacity(0.9) : Color.secondary
-                            )
                     }
                     Spacer(minLength: 0)
                 } else {
@@ -126,6 +125,26 @@ private struct TasksSmallView: View {
 }
 
 // MARK: - Home Screen list
+
+/// One row of the combined open+divider+done list (2026-09-23, "show
+/// completed") — the Tasks twin of `ReminderListItem`, not shared with it:
+/// the two lists have no common protocol to hang a shared enum off of (see
+/// `TasksListView.shouldMeasureRealWidth`'s identical "no common protocol"
+/// note for the established precedent of duplicating rather than forcing an
+/// abstraction across the two files).
+private enum TaskListItem: Identifiable {
+    case open(TaskDTO)
+    case divider(count: Int)
+    case done(CompletionDTO)
+
+    var id: String {
+        switch self {
+        case .open(let task): return "open-\(task.id)"
+        case .divider: return "divider"
+        case .done(let completion): return "done-\(completion.id)"
+        }
+    }
+}
 
 /// The Home Screen list.
 ///
@@ -145,6 +164,18 @@ private struct TasksListView: View {
     /// two unified pages always exist, so the ring never has fewer than 2
     /// entries and the chevrons are always live.
     private var canPage: Bool { true }
+
+    /// ONE flat sequence — see `RemindersListView.combinedItems`'s identical
+    /// doc for why paging this exact array is what makes "recount on toggle
+    /// flip, clamp into range, break only on whole rows" fall out of the
+    /// EXISTING `pagedTasks` paging math, unmodified.
+    private var combinedItems: [TaskListItem] {
+        let openItems = entry.tasks.map(TaskListItem.open)
+        guard isLarge, WidgetStore.showCompleted(for: TasksWidget.kind), !entry.doneTasks.isEmpty else {
+            return openItems
+        }
+        return openItems + [.divider(count: entry.doneTasks.count)] + entry.doneTasks.map(TaskListItem.done)
+    }
 
     private var rowSpacing: CGFloat {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
@@ -215,18 +246,28 @@ private struct TasksListView: View {
         return VStack(alignment: .leading, spacing: rowSpacing) {
             header
 
-            if entry.tasks.isEmpty {
+            if window.items.isEmpty {
                 WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing due today")
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(window.items) { task in
-                        TaskRow(
-                            task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1,
-                            availableWidth: width, projectColor: entry.projectColor(for: task),
-                            // Project edge: systemLarge, unified pages only —
-                            // see `TaskRow.showsProjectEdge`.
-                            showsProjectEdge: isLarge && entry.isUnifiedScope
-                        )
+                    ForEach(window.items) { item in
+                        switch item {
+                        case .open(let task):
+                            TaskRow(
+                                task: task, now: entry.date, titleLineLimit: isLarge ? 2 : 1,
+                                availableWidth: width, projectColor: entry.projectColor(for: task),
+                                // Project edge: systemLarge, unified pages only —
+                                // see `TaskRow.showsProjectEdge`.
+                                showsProjectEdge: isLarge && entry.isUnifiedScope
+                            )
+                        case .divider(let count):
+                            DoneDivider(count: count)
+                        case .done(let completion):
+                            DoneTaskRow(
+                                completion: completion,
+                                projectColor: entry.projectColor(forProjectId: completion.projectId)
+                            )
+                        }
                     }
                 }
                 // systemMedium drops this band, as Track's does: at 4×2 it
@@ -265,15 +306,20 @@ private struct TasksListView: View {
     /// A page window into `entry.tasks`, the Tasks twin of
     /// `RemindersListView.pagedReminders` — see that function's doc for the
     /// paging math and its accepted imperfection.
-    private func pagedTasks(rows: Int) -> (items: [TaskDTO], page: Int, totalPages: Int) {
-        guard rows > 0, !entry.tasks.isEmpty else {
-            return (entry.tasks, 0, 1)
+    private func pagedTasks(rows: Int) -> (items: [TaskListItem], page: Int, totalPages: Int) {
+        let items = combinedItems
+        guard rows > 0, !items.isEmpty else {
+            return (items, 0, 1)
         }
-        let totalPages = max(1, Int(ceil(Double(entry.tasks.count) / Double(rows))))
+        // `WidgetTheme.pageBoundaries` (2026-09-23) keeps the "DONE · N"
+        // divider off the tail of a page — see its doc.
+        let pages = WidgetTheme.pageBoundaries(for: items, rows: rows) { item in
+            if case .divider = item { return true }
+            return false
+        }
+        let totalPages = pages.count
         let page = min(max(WidgetStore.tasksPage(for: entry.scope), 0), totalPages - 1)
-        let start = page * rows
-        let end = min(start + rows, entry.tasks.count)
-        return (Array(entry.tasks[start..<end]), page, totalPages)
+        return (Array(items[pages[page]]), page, totalPages)
     }
 
     /// The header IS the card's tap target now that the whole-card link is
@@ -298,15 +344,30 @@ private struct TasksListView: View {
                     }
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
                     // see `RemindersListView.header`'s identical comment.
+                    //
+                    // `minimumScaleFactor` dropped to 0.6 (2026-09-23,
+                    // review fix) — the toggle-on three-part count ("N due ·
+                    // N overdue · N done") is genuinely longer than anything
+                    // this subtitle showed before "show completed", and 0.8
+                    // (the title's own floor, still right for the shorter
+                    // strings this shares a scale factor pool with) let it
+                    // truncate with an ellipsis instead of shrinking to fit.
                     Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.6)
                 }
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
+            // "Show completed" (2026-09-23), left of Undo/Redo — systemLarge
+            // only, see `ShowCompletedToggle`'s doc.
+            if isLarge {
+                ShowCompletedToggle(
+                    kind: TasksWidget.kind, isOn: WidgetStore.showCompleted(for: TasksWidget.kind)
+                )
+            }
             // Right-aligned, before the chevrons (2026-09-23) — see
             // `UndoRedoButtons`' doc.
             UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
@@ -331,14 +392,40 @@ private struct TasksListView: View {
         return WidgetLink.project(entry.scope)
     }
 
+    /// Ordinarily "N due"/"N overdue"; "N left · M done" once "show
+    /// completed" is on (2026-09-23) — `isLarge`-gated like the toggle
+    /// itself, matching `RemindersListView.countLabel`'s identical split so
+    /// both widgets' DONE subtitle reads the same way.
     private var countLabel: String {
-        guard !entry.tasks.isEmpty else { return "all clear" }
+        guard isLarge, WidgetStore.showCompleted(for: TasksWidget.kind) else {
+            guard !entry.tasks.isEmpty else { return "all clear" }
+            let overdue = entry.overdueCount(now: entry.date)
+            let due = "\(entry.tasks.count) due"
+            // "300 due · 300 overdue" is pure noise — when everything due is
+            // overdue, one number tells the whole story.
+            if overdue == entry.tasks.count { return "\(overdue) overdue" }
+            return overdue > 0 ? "\(due) · \(overdue) overdue" : due
+        }
+        // With the toggle on, the overdue count stays (Trent's review of the
+        // first cut: it's the headline number on this widget) — "5 due · 1
+        // overdue · 1 done" — rather than being replaced by the Reminders-
+        // style "N left". Each part is dropped when it's 0, same "no
+        // redundant zero" rule `RemindersListView.countLabel`'s "all clear"
+        // fallback already follows; the all-overdue collapse above applies
+        // here too, for the same "pure noise" reason.
         let overdue = entry.overdueCount(now: entry.date)
-        let due = "\(entry.tasks.count) due"
-        // "300 due · 300 overdue" is pure noise — when everything due is
-        // overdue, one number tells the whole story.
-        if overdue == entry.tasks.count { return "\(overdue) overdue" }
-        return overdue > 0 ? "\(due) · \(overdue) overdue" : due
+        let doneCount = entry.doneTasks.count
+        var parts: [String] = []
+        if !entry.tasks.isEmpty {
+            if overdue == entry.tasks.count {
+                parts.append("\(overdue) overdue")
+            } else {
+                parts.append("\(entry.tasks.count) due")
+                if overdue > 0 { parts.append("\(overdue) overdue") }
+            }
+        }
+        if doneCount > 0 { parts.append("\(doneCount) done") }
+        return parts.isEmpty ? "all clear" : parts.joined(separator: " · ")
     }
 }
 
@@ -394,11 +481,17 @@ private struct TaskRow: View {
 
     /// Real per-title line count at this row's actual text column: the card
     /// width minus the marker column, its 10pt `HStack` spacing, the project
-    /// edge (3pt plus its 8pt spacing, when shown), and — when a due time shows — that label's own measured
-    /// width plus its 8pt spacing. The title's column is narrower whenever a
-    /// due time or chip sits beside it, so both are measured/reserved first.
-    /// Capped on iOS — see WidgetTheme's "row-height truthing" note, the
-    /// 2026-09-23 addendum.
+    /// edge (3pt plus its 8pt spacing, when shown), and — when a due time
+    /// shows — that label's own measured width plus its 8pt spacing. The
+    /// title's column is narrower whenever a due time or chip sits beside
+    /// it, so both are measured/reserved first. Capped on iOS — see
+    /// WidgetTheme's "row-height truthing" note, the 2026-09-23 addendum.
+    ///
+    /// The due-time width is measured from `DueLabelParts.plainString`
+    /// (2026-09-23, day-naming), NOT `WidgetTheme.shortTime(due)` alone —
+    /// that plain string is the SAME source `WidgetTheme.dueLabelText`
+    /// renders from below, so a wide label like "Tomorrow 9:00 AM" reserves
+    /// exactly as much room as it actually draws, never less.
     private var measuredLines: Int {
         guard let availableWidth else { return titleLineLimit }
         var textWidth = availableWidth - WidgetTheme.rowMarkerSize - 10
@@ -406,9 +499,8 @@ private struct TaskRow: View {
             textWidth -= 3 + 8
         }
         if let due = task.dueDate {
-            let dueWidth = WidgetTheme.measuredWidth(
-                for: WidgetTheme.shortTime(due), font: WidgetTheme.caption2Font
-            )
+            let parts = WidgetTheme.dueLabelParts(for: due, now: now, isOverdue: isOverdue)
+            let dueWidth = WidgetTheme.measuredWidth(for: parts.plainString, font: WidgetTheme.caption2Font)
             textWidth -= dueWidth + 8
         }
         let font = WidgetTheme.subheadlineFont(weight: WidgetTheme.priorityWeight(task.priority))
@@ -499,11 +591,15 @@ private struct TaskRow: View {
                             alignment: .topLeading
                         )
 
-                    if let due = task.dueDate {
-                        Text(WidgetTheme.shortTime(due))
+                    if task.dueDate != nil {
+                        // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
+                        // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
+                        // AM" (further), "Oct 2" (date-only). Overdue is
+                        // unchanged — plain time, red — see
+                        // `WidgetTheme.dueLabelText`'s doc.
+                        WidgetTheme.dueLabelText(for: task, now: now)
                             .font(.caption2)
                             .monospacedDigit()
-                            .foregroundStyle(isOverdue ? Color.red.opacity(0.9) : Color.secondary)
                     }
                 }
                 .contentShape(Rectangle())
@@ -535,6 +631,69 @@ private struct TaskRow: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, -markerBleed)
+        }
+    }
+}
+
+/// One completed task in the DONE section (2026-09-23, "show completed") —
+/// struck-through title, with "Done H:MM" on its OWN line beneath (a
+/// STACKED second line, per the mockup — not side-by-side like `TaskRow`'s
+/// due time, since the completion time is secondary-to-the-secondary here).
+/// Row grammar mirrors `DoneReminderRow`'s (title = `Link`, trailing marker
+/// = `Button`) — see that struct's doc for why.
+///
+/// `.lineLimit(1)` on the title, same "completed items are secondary
+/// content, not the never-truncate case" reasoning as `DoneReminderRow`.
+private struct DoneTaskRow: View {
+    let completion: CompletionDTO
+    let projectColor: Color
+
+    private var doneTimeText: String {
+        guard let date = completion.completedDate else { return "Done" }
+        return "Done \(WidgetTheme.shortTime(date))"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Link(destination: WidgetLink.task(completion.taskId)) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(completion.taskTitle)
+                        .font(.subheadline)
+                        .strikethrough()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(doneTimeText)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+
+            Button(intent: UncompleteTaskIntent(taskId: completion.taskId, kind: TasksWidget.kind)) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(projectColor.opacity(0.7))
+                    .frame(width: 16, height: 16)
+                    .overlay(
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                    )
+                    // Two lines' worth of height (title + "Done H:MM"),
+                    // centred on the first line — same trick as `TaskRow`'s
+                    // marker, sized to this row's fixed two-line height
+                    // instead of a measured one since a done row never wraps.
+                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
+                    .frame(
+                        width: WidgetTheme.rowMarkerSize,
+                        height: WidgetTheme.rowTitleLineHeight * 2,
+                        alignment: .top
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

@@ -66,6 +66,23 @@ final class APIClient {
         ])
     }
 
+    /// Restore a completed item to open (2026-09-23, "show completed" — a
+    /// tap on a DONE row's checkmark). `POST /api/tasks/:id/undone`
+    /// (`src/app/api/tasks/[id]/undone/route.ts` → `markUndone()`), the same
+    /// endpoint the web Reminders surface's "put back" gesture already uses
+    /// (`useReminders.ts`'s `usePutBack`) — confirmed correct for a one-off
+    /// Task too: `markUndone` only requires `task.done === true` for a
+    /// non-recurring task. A recurring task/reminder throws
+    /// `ValidationError('Task changed since it was completed')` if it was
+    /// snoozed/edited/completed-again since — `UncompleteTaskIntent` treats
+    /// that the same as any other failure (see its doc). Empty body, no
+    /// response parsing beyond success/failure — mirrors `undoLastAction()`'s
+    /// call shape.
+    @discardableResult
+    func markUndone(taskId: Int) async throws -> Data {
+        try await post(path: "/api/tasks/\(taskId)/undone", body: [:])
+    }
+
     /// Snooze a task using the "next hour" behavior (rounded to hour boundary).
     func snoozeNextHour(taskId: Int) async throws {
         guard let token = bearerToken else { throw APIError.notConfigured }
@@ -297,6 +314,34 @@ final class APIClient {
     /// about the slot list is hardcoded on the client.
     func fetchTimeSlots() async throws -> [TimeSlotDTO] {
         try await get(path: "/api/time-slots", as: TimeSlotsPage.self).timeSlots
+    }
+
+    /// Completions in `[since, until)` — `GET /api/completions`
+    /// (`src/app/api/completions/route.ts`), for the Tasks widget's "show
+    /// completed" DONE list (2026-09-23). `URLComponents` is used only for
+    /// its percent-encoding of the ISO query values, not for the request
+    /// itself — `get(path:as:)` already builds the full URL from `serverURL`
+    /// + `path`.
+    func fetchCompletions(since: Date, until: Date) async throws -> [CompletionDTO] {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "since", value: DateHelpers.formatISO(since)),
+            URLQueryItem(name: "until", value: DateHelpers.formatISO(until)),
+        ]
+        let query = components.percentEncodedQuery ?? ""
+        return try await get(path: "/api/completions?\(query)", as: CompletionsPage.self).completions
+    }
+
+    /// Today's completions (the device's local calendar day) — a thin
+    /// convenience over `fetchCompletions(since:until:)` that computes the
+    /// local day boundary itself, so `TaskFeed` and the Undo/Redo intents'
+    /// full refetch (`UndoLastActionIntent`/`RedoLastActionIntent`) don't
+    /// each repeat the same `Calendar` arithmetic.
+    func fetchTodaysCompletions(now: Date = Date()) async throws -> [CompletionDTO] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? now
+        return try await fetchCompletions(since: startOfDay, until: startOfTomorrow)
     }
 
     // MARK: - Notification Dismiss
