@@ -144,7 +144,7 @@ enum ReminderStackPlaceholder {
         date: Date(),
         content: .reminder(.init(
             taskId: 0, title: "Step away from the desk", slotLabel: "Midday", slotKey: 0,
-            position: 2, total: 3, remainingIds: [0, 1], urgentOverdue: 0
+            remainingIds: [0, 1], urgentOverdue: 0
         )),
         ring: .init(count: 2, fraction: 1.0 / 3.0, isOverdue: false, label: "Midday"),
         relevance: nil
