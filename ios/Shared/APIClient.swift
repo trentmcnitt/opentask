@@ -297,6 +297,18 @@ final class APIClient {
         try await get(path: "/api/projects", as: ProjectsPage.self).projects
     }
 
+    /// The user's label display colors (`label_config`), for the Quotas
+    /// widget's cluster stripes/dots — the same source the web Track panel
+    /// reads (`PreferencesProvider`'s `data.label_config`, NOT `/api/labels`,
+    /// which is the separate label *registry*, decoupled from display color).
+    /// Pulled from the big `/api/user/preferences` payload one field at a
+    /// time (`UserPreferencesLabelConfigPage`) rather than adding a
+    /// label-config-only endpoint server-side.
+    func fetchLabelConfig() async throws -> [LabelConfigDTO] {
+        try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
+            .labelConfig
+    }
+
     /// The user's time slots (§6.0), for the notification slot-snooze actions
     /// (`TimeSlotStore`, `refreshSlotActions()`). User-configurable — nothing
     /// about the slot list is hardcoded on the client.
