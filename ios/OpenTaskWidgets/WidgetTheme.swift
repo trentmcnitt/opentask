@@ -523,11 +523,12 @@ enum WidgetTheme {
     /// would.
     ///
     /// `stacked` (2026-09-24): the day word and the time on two lines
-    /// ("Tomorrow" / "4:00 pm") instead of one. `TaskRow` stacks a
-    /// two-part label on systemLarge because at large text sizes a one-line
-    /// "Tomorrow 4:00 pm" takes half the row and squeezes the title to three
-    /// narrow lines; stacked, the label's column is only as wide as its
-    /// longer half. It is an explicit line break, never a wrap, so the
+    /// ("Tomorrow" / "4:00 pm") instead of one. `TaskRow` stacks EVERY
+    /// two-part label (one rule since 2026-09-24 — rows used to mix inline
+    /// and stacked): at large text sizes a one-line "Tomorrow 4:00 pm"
+    /// takes half the row and squeezes the title to three narrow lines;
+    /// stacked, the label's column is only as wide as its longer half. It
+    /// is an explicit line break, never a wrap, so the
     /// label's width and height are exactly what `TasksListView.layout
     /// (for:)` measured.
     static func dueLabelText(for task: TaskDTO, now: Date = Date(), stacked: Bool = false) -> Text {

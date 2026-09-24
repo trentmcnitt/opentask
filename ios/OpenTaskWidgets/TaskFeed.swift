@@ -46,8 +46,10 @@ enum TaskFeed {
         // Interaction fast path (§8 optimistic check-off): a tap landed seconds
         // ago, so repaint straight from cache — waiting on the network here is
         // exactly what makes a widget button read as dead. No staleness note:
-        // this data is seconds old by construction.
-        if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadTasks() {
+        // this data is seconds old by construction. Not "a tap was recent"
+        // alone (2026-09-24): also "no intent has since declared this cache
+        // stale" — see `WidgetStore.canRepaintTasksFromCache`.
+        if WidgetStore.canRepaintTasksFromCache(now: now), let cached = WidgetStore.loadTasks() {
             return staged(
                 cached.value.tasks, cached.value.projects, cached.value.completions,
                 staleSince: nil, now: now
@@ -76,7 +78,11 @@ enum TaskFeed {
             let (fetchedTasks, fetchedProjects, status, fetchedCompletions) =
                 try await (tasks, projects, undoStatus, completions)
             let completionsOrEmpty = fetchedCompletions ?? []
-            WidgetStore.saveTasks(fetchedTasks, projects: fetchedProjects, completions: completionsOrEmpty)
+            // `now` is when these requests went out — only a fetch sent after
+            // a `clearInteraction()` may settle it.
+            WidgetStore.saveTasks(
+                fetchedTasks, projects: fetchedProjects, completions: completionsOrEmpty, fetchStartedAt: now
+            )
             if let status {
                 WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
             }
