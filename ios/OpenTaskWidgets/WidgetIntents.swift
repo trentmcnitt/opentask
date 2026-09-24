@@ -296,7 +296,7 @@ struct IncrementProgressIntent: AppIntent {
                 // Logged, but the body didn't decode: nothing trustworthy to
                 // write, so retire the delta and make the next pass fetch.
                 WidgetStore.clearPendingProgress(taskId, delta: delta)
-                WidgetStore.clearInteraction()
+                WidgetStore.clearInteraction(kind: TrackWidget.kind)
             }
             // Undo/Redo affordance (2026-09-23) — see
             // WidgetStore.recordLocalMutationForUndoCount's doc. A `−1`
@@ -894,7 +894,7 @@ struct UncompleteTaskIntent: AppIntent {
             // reload below takes the network path and fetches the real
             // restored TaskDTO into OPEN.
             WidgetStore.confirmRestore(taskId, kind: kind)
-            WidgetStore.clearInteraction()
+            WidgetStore.clearInteraction(kind: kind.isEmpty ? nil : kind)
             // Undo/Redo affordance (2026-09-23) — restoring a task is just
             // as undoable as completing one (`markUndone` calls `logAction`
             // server-side, confirmed against `src/core/tasks/mark-done.ts`)
@@ -911,7 +911,7 @@ struct UncompleteTaskIntent: AppIntent {
             // confirming server truth, the one case this file's
             // "reconciling pass" comments are elsewhere careful to rule out.
             WidgetStore.clearPendingRestore(taskId)
-            WidgetStore.clearInteraction()
+            WidgetStore.clearInteraction(kind: kind.isEmpty ? nil : kind)
         }
         // Round 2, the reconciling pass — same reasoning as
         // CompleteTaskIntent's round 2: on success `clearInteraction()` just
@@ -1138,7 +1138,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
         } else {
             WidgetStore.setSelectedTaskIds(remaining, for: scope)
         }
-        WidgetStore.clearInteraction()
+        WidgetStore.clearInteraction(kind: TasksWidget.kind)
         await reloadOpenTaskWidget(kind: TasksWidget.kind)
         return .result()
     }
@@ -1222,7 +1222,7 @@ struct SnoozeTaskRowIntent: AppIntent {
             slots: TimeSlotStore.cachedSlots
         )
         _ = await sendSnoozeRequests(requests)
-        WidgetStore.clearInteraction()
+        WidgetStore.clearInteraction(kind: TasksWidget.kind)
         await reloadOpenTaskWidget(kind: TasksWidget.kind)
         return .result()
     }
@@ -1260,7 +1260,7 @@ struct SnoozeAllOverdueIntent: AppIntent {
         } catch {
             print("[OpenTaskWidgets] Snooze all overdue failed: \(error)")
         }
-        WidgetStore.clearInteraction()
+        WidgetStore.clearInteraction(kind: TasksWidget.kind)
         await reloadOpenTaskWidget(kind: TasksWidget.kind)
         return .result()
     }
