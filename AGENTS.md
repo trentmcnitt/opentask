@@ -471,5 +471,6 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 - `GET /api/time-slots` — cached in the App Group (`TimeSlotStore`) to build the slot-snooze notification actions offline
 - `GET /api/completions` — the Tasks widget's "show completed" DONE list (2026-09-23), queried with `?since=&until=` for the local calendar day
 - `POST /api/tasks/{id}/undone` — restore a completed item to open, from a widget's "show completed" DONE row (2026-09-23)
+- `POST /api/tasks/bulk/snooze` — Tasks widget snooze mode's per-row and bulk-select "⏭ Next period"/"+1h" (2026-09-23, Phase 2), with `include_task_ids` mirroring `ids` so explicit picks bypass the P3/P4 sweep filter. `POST /api/tasks/bulk/complete` (pre-existing, previously undocumented here) is the same endpoint bulk select's "Done" and the SLOT_REMINDER notification checklist both use.
 
 See `ios/CLAUDE.md` for full details: targets, shared code, contributing, notification mechanisms, and XcodeBuildMCP workarounds.

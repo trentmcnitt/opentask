@@ -886,3 +886,358 @@ struct UncompleteTaskIntent: AppIntent {
         return .result()
     }
 }
+
+// MARK: - Tasks snooze mode / bulk select (2026-09-23, Phase 2)
+//
+// Tasks-only (§6: reminders are bucket-locked and never snoozed) — none of
+// these take a `kind` parameter the way the show-completed intents do, since
+// there is only ever one Tasks widget kind to act on.
+//
+// Snooze semantics, confirmed against the server before writing any of this
+// (see the PR description for the grep trail): `POST /api/tasks/bulk/snooze`
+// (the ids-based endpoint every intent below uses) treats `delta_minutes` as
+// "N minutes added to EACH task's own `due_at`" — matching the web's own
+// bulk relative-snooze (`save-quick-panel-changes.ts`'s `changes.delta_minutes`
+// passed straight through) — NOT "from now". That is a DIFFERENT meaning
+// than `snoozeOverdue(deltaMinutes:)`'s sweep, which resolves "from now,
+// snapped" server-side (`bulk/snooze-overdue`'s own doc). Every "+1h" below
+// maps to whichever endpoint the mockup's button belongs to, matching each
+// one's own established meaning — see `APIClient.bulkSnoozeTasks`'s doc.
+//
+// `include_task_ids` is always sent equal to the ids being acted on for a
+// per-row or bulk-select snooze (never for the sweep) — mirroring the web's
+// OWN convention exactly (`save-quick-panel-changes.ts`: "explicit user
+// selections always pass `include_task_ids` ... the sweep remains the only
+// caller that omits it"). A deliberate, single-row or explicitly-selected
+// tap must not be silently dropped by the P3/P4 sweep-safety filter meant
+// for "snooze everything overdue" blanket sweeps.
+//
+// None of the snooze intents below stage anything optimistically (unlike
+// `CompleteTaskIntent`'s tombstone) — a due-date change can move a task to a
+// different scope/page/sort position in ways this file has no reliable way
+// to predict client-side, and neither does the web app: `useSnoozeOverdue`'s
+// own sweep just calls `fetchTasks()` once after the response lands, no
+// optimistic staging there either. So these call the API, then reload ONCE
+// with `clearInteraction()` forcing the network path, rather than running
+// CompleteTaskIntent's stage/repaint/reconcile two-round shape.
+
+/// The header clock toggle — flips Tasks' snooze mode. Mutually exclusive
+/// with select mode: turning snooze mode ON also turns select mode off and
+/// clears any in-progress selection, since a row's trailing control can only
+/// be one thing at a time (see `WidgetStore`'s "Tasks snooze mode / bulk
+/// select" section doc).
+struct ToggleTasksSnoozeModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Snooze Mode"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let next = !WidgetStore.tasksSnoozeMode
+        WidgetStore.tasksSnoozeMode = next
+        if next {
+            WidgetStore.tasksSelectMode = false
+            WidgetStore.clearTasksSelection()
+        }
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// The bottom-left "Select" control (resting mode only) — always ENTERS
+/// select mode; exit is via `CancelTasksSelectModeIntent`'s "Cancel", never
+/// this same button toggling back off (mockup: "Select" only ever appears
+/// in resting mode; select mode's bottom-left slot becomes the "All" toggle
+/// instead — see `ToggleSelectAllTasksIntent`).
+struct EnterTasksSelectModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Select Tasks"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.tasksSelectMode = true
+        WidgetStore.tasksSnoozeMode = false
+        // Always a fresh start, never resuming a stale selection from a
+        // previous select-mode session (there is no way to have gotten here
+        // with a live selection anyway — Cancel/Done both clear it — but
+        // this makes the invariant explicit rather than assumed).
+        WidgetStore.clearTasksSelection()
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// "Cancel" in select mode — exits without acting on anything.
+struct CancelTasksSelectModeIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cancel Selection"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.tasksSelectMode = false
+        WidgetStore.clearTasksSelection()
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// Tapping a row in select mode — the mockup's "tapping a row selects it
+/// (the check-off circle becomes a selection circle)": the row's own `Link`
+/// is replaced by this intent's `Button` entirely while select mode is on
+/// (see `TaskRow`'s mode-gated body), so there is nowhere else for a select-
+/// mode tap to go.
+struct ToggleTaskSelectionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Task Selection"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+
+    init() {}
+
+    init(taskId: Int) {
+        self.taskId = taskId
+    }
+
+    func perform() async throws -> some IntentResult {
+        let scope = WidgetStore.projectScope
+        var ids = WidgetStore.selectedTaskIds(for: scope)
+        if ids.contains(taskId) {
+            ids.remove(taskId)
+        } else {
+            ids.insert(taskId)
+        }
+        WidgetStore.setSelectedTaskIds(ids, for: scope)
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// The "All" toggle (bulk2.png's revision of the select-mode bottom-left
+/// slot) — selects every task in the CURRENT scope's full list (every page,
+/// not just the one on screen) if not all of them are already selected,
+/// else clears the selection entirely. Recomputes the scope's full id set
+/// from the cache the same way the provider does (`TasksTimeline`'s scope
+/// rules), rather than reading `TasksEntry.tasks` (unavailable to an intent,
+/// which has no entry — only the cache).
+struct ToggleSelectAllTasksIntent: AppIntent {
+    static var title: LocalizedStringResource = "Select All Tasks"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let scope = WidgetStore.projectScope
+        let cache = WidgetStore.loadTasks()?.value
+        let allTasks = WidgetStore.filterPending(cache?.tasks ?? [])
+        let scopedIds: [Int]
+        switch scope {
+        case WidgetStore.allProjects:
+            scopedIds = TasksTimeline.todaysTasks(from: allTasks).map(\.id)
+        case WidgetStore.upNextScope:
+            scopedIds = TasksTimeline.upNextTasks(from: allTasks).map(\.id)
+        default:
+            scopedIds = TasksTimeline.apply(scope: scope, to: TasksTimeline.todaysTasks(from: allTasks))
+                .map(\.id)
+        }
+
+        let current = WidgetStore.selectedTaskIds(for: scope)
+        let full = Set(scopedIds)
+        WidgetStore.setSelectedTaskIds(full.isSubset(of: current) && !full.isEmpty ? [] : full, for: scope)
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// A snooze target: "next period" (client-computed from `TimeSlotStore`,
+/// since `/api/tasks/bulk/snooze` has no server-side slot resolution the way
+/// `/api/tasks/bulk/snooze-overdue` does) or a flat "+1 hour" ADDED TO EACH
+/// TASK'S OWN due date (see this section's header doc — NOT "from now").
+enum TaskSnoozeTarget: String {
+    case nextPeriod = "next"
+    case plusOneHour = "1h"
+}
+
+/// Snooze every currently-selected task at once — the select-mode bottom
+/// bar's "⏭ Next period" / "+1h". `POST /api/tasks/bulk/snooze` with
+/// `include_task_ids` mirroring `ids` (see this section's header doc: an
+/// explicit selection always bypasses the P3/P4 sweep filter, matching the
+/// web). On success: exit select mode and clear the selection, matching
+/// "Done"'s own exit. On failure: keep select mode AND the selection so the
+/// user can see what was picked and retry — only `clearInteraction()` runs,
+/// forcing the reload to confirm server truth either way.
+struct SnoozeSelectedTasksIntent: AppIntent {
+    static var title: LocalizedStringResource = "Snooze Selected Tasks"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Target")
+    var target: String
+
+    init() {}
+
+    init(target: TaskSnoozeTarget) {
+        self.target = target.rawValue
+    }
+
+    func perform() async throws -> some IntentResult {
+        let scope = WidgetStore.projectScope
+        let ids = Array(WidgetStore.selectedTaskIds(for: scope))
+        guard !ids.isEmpty else { return .result() }
+
+        do {
+            switch TaskSnoozeTarget(rawValue: target) {
+            case .nextPeriod:
+                // No cached slots to resolve "next" from — the bar's button
+                // should already be disabled in this state (see
+                // `SnoozeSelectModeBar`'s doc), but guard defensively rather
+                // than sending a request with no destination.
+                guard let until = TimeSlotStore.nextPeriodStart() else { return .result() }
+                try await APIClient.shared.bulkSnoozeTasks(
+                    ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids
+                )
+            case .plusOneHour, .none:
+                try await APIClient.shared.bulkSnoozeTasks(ids: ids, deltaMinutes: 60, includeTaskIds: ids)
+            }
+            WidgetStore.recordLocalMutationForUndoCount()
+            WidgetStore.tasksSelectMode = false
+            WidgetStore.clearTasksSelection()
+        } catch {
+            print("[OpenTaskWidgets] Snooze selected failed: \(error)")
+        }
+        WidgetStore.clearInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// Complete every currently-selected task at once — the select-mode bottom
+/// bar's "✓ Done". `POST /api/tasks/bulk/complete` (the SAME endpoint the
+/// SLOT_REMINDER notification checklist already uses — see `ios/CLAUDE.md`'s
+/// "Slot batch checklist"). Reuses `CompleteTaskIntent`'s exact optimistic
+/// tombstone machinery per id (advisor review: "zero new mechanism") rather
+/// than inventing a bulk-shaped tombstone — completion is the one action in
+/// this section that DOES stage optimistically, because unlike a snooze a
+/// completed task's fate (leave the open list) is completely predictable.
+struct CompleteSelectedTasksIntent: AppIntent {
+    static var title: LocalizedStringResource = "Complete Selected Tasks"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        let scope = WidgetStore.projectScope
+        let ids = Array(WidgetStore.selectedTaskIds(for: scope))
+        guard !ids.isEmpty else { return .result() }
+
+        for id in ids { WidgetStore.stagePendingCompletion(id) }
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+
+        do {
+            let affected = try await APIClient.shared.completeTasks(ids: ids)
+            for id in ids { WidgetStore.confirmCompletion(id) }
+            if affected > 0 { WidgetStore.recordLocalMutationForUndoCount() }
+            WidgetStore.tasksSelectMode = false
+            WidgetStore.clearTasksSelection()
+        } catch {
+            print("[OpenTaskWidgets] Complete selected failed: \(error)")
+            // None of it happened — un-hide every id, the same failure-
+            // reversion pattern CompleteTaskIntent uses for one.
+            for id in ids { WidgetStore.clearPendingCompletion(id) }
+        }
+        // Round 2, the reconciling pass — same reasoning as
+        // CompleteTaskIntent's: on success the tombstones are still live
+        // (90s TTL), so this fast-paths from the now-edited cache; on
+        // failure the tombstones were just cleared, so this takes the
+        // network path and the tasks honestly reappear.
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// A single row's own "⏭"/"+1h" in snooze mode — the per-row twin of
+/// `SnoozeSelectedTasksIntent`, one task instead of a selection.
+/// `include_task_ids: [taskId]` for the same "an explicit, deliberate tap
+/// bypasses the sweep filter" reasoning (this section's header doc).
+struct SnoozeTaskRowIntent: AppIntent {
+    static var title: LocalizedStringResource = "Snooze Task"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Task ID")
+    var taskId: Int
+    @Parameter(title: "Target")
+    var target: String
+
+    init() {}
+
+    init(taskId: Int, target: TaskSnoozeTarget) {
+        self.taskId = taskId
+        self.target = target.rawValue
+    }
+
+    func perform() async throws -> some IntentResult {
+        do {
+            switch TaskSnoozeTarget(rawValue: target) {
+            case .nextPeriod:
+                guard let until = TimeSlotStore.nextPeriodStart() else { return .result() }
+                try await APIClient.shared.bulkSnoozeTasks(
+                    ids: [taskId], until: DateHelpers.formatISO(until), includeTaskIds: [taskId]
+                )
+            case .plusOneHour, .none:
+                try await APIClient.shared.bulkSnoozeTasks(ids: [taskId], deltaMinutes: 60, includeTaskIds: [taskId])
+            }
+            WidgetStore.recordLocalMutationForUndoCount()
+        } catch {
+            print("[OpenTaskWidgets] Snooze \(taskId) failed: \(error)")
+        }
+        WidgetStore.clearInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
+
+/// The "All overdue (N)" bar in snooze mode — the whole server-side overdue
+/// sweep, via the SAME endpoint (`POST /api/tasks/bulk/snooze-overdue`) the
+/// app's own header clock button and the bulk-snooze-to-slot notification
+/// actions already use (`APIClient.snoozeOverdue`, no changes needed there).
+/// Deliberately NO `include_task_ids` — this is the sweep, and the sweep is
+/// exactly the caller meant to respect the P3(once-nothing-lower)/P4(never)
+/// protection (this section's header doc's web-parity note).
+struct SnoozeAllOverdueIntent: AppIntent {
+    static var title: LocalizedStringResource = "Snooze All Overdue"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Target")
+    var target: String
+
+    init() {}
+
+    init(target: TaskSnoozeTarget) {
+        self.target = target.rawValue
+    }
+
+    func perform() async throws -> some IntentResult {
+        do {
+            switch TaskSnoozeTarget(rawValue: target) {
+            case .nextPeriod, .none:
+                try await APIClient.shared.snoozeOverdue(slot: "next")
+            case .plusOneHour:
+                try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
+            }
+            WidgetStore.recordLocalMutationForUndoCount()
+        } catch {
+            print("[OpenTaskWidgets] Snooze all overdue failed: \(error)")
+        }
+        WidgetStore.clearInteraction()
+        await reloadOpenTaskWidget(kind: TasksWidget.kind)
+        return .result()
+    }
+}
