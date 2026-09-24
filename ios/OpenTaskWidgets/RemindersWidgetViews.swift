@@ -37,16 +37,12 @@ struct RemindersWidgetView: View {
         case .systemSmall:
             RemindersSmallView(entry: entry)
         case .systemMedium:
-            RemindersListView(entry: entry, maxRows: 3, isLarge: false)
+            RemindersListView(entry: entry, isLarge: false)
                 .backgroundTapOpens(WidgetLink.reminders)
         default:
-            // 6 was tuned against the OLD flat per-row cost (2 lines always
-            // reserved). Both platforms now size rows to their real content
-            // (see WidgetTheme's "row-height truthing" note — macOS since
-            // 2026-09-22, iOS since 2026-09-23), so 6 stops being "as many
-            // as fit" well before the card is full on either one. Raised to
-            // 10 on both — `listContent`'s candidate list matches.
-            RemindersListView(entry: entry, maxRows: 10, isLarge: true)
+            // No row ceiling (2026-09-24): the list pages by real row
+            // height, as many as fit — see `RemindersListView`'s doc.
+            RemindersListView(entry: entry, isLarge: true)
                 .backgroundTapOpens(WidgetLink.reminders)
         }
     }
@@ -134,48 +130,55 @@ private enum ReminderListItem: Identifiable {
     }
 }
 
+/// One row's size, decided ONCE per render and used twice: by the pager to
+/// add up what fits (`WidgetTheme.pages`), and by the row itself as its
+/// exact frame. The two can't disagree because they are the same numbers.
+private struct ReminderRowLayout {
+    /// Title lines — the row's `lineLimit`, and what its height is built from.
+    let lines: Int
+    let height: CGFloat
+}
+
 /// The Home Screen list.
 ///
-/// HOW MANY ROWS: the card shows as many as actually FIT and no more.
+/// HOW MANY ROWS (2026-09-24): as many as genuinely fit, page after page.
 ///
-/// A fixed row count was the bug behind two of Trent's complaints at once
-/// (2026-09-11). Six rows, a header and an overflow line asked for more height
-/// than a 4×4 has; WidgetKit does not scroll or clip a widget, it squeezes it,
-/// so every `lineLimit(2)` title collapsed to one truncated line ("I am a
-/// thinker, not a d…") and the leftover overflow pushed the header off the top
-/// edge — on systemMedium the whole header was gone. Rows were cut off because
-/// there were too many of them, and the header looked jammed against the top
-/// for the same reason.
+/// A `GeometryReader` takes whatever height the header and slot strip leave
+/// (so neither needs estimating — they are laid out for real above it),
+/// minus the bottom row's fixed `bottomBarHeight`. Every row's height is
+/// computed up front from its real title (`WidgetTextMetrics`, at the
+/// widget's real text size), and `WidgetTheme.pages` fills each page greedily
+/// until the next row doesn't fit. Each row is then FRAMED to exactly the
+/// height the pager counted, so the page on screen is the page that was
+/// measured — see `WidgetTheme.pages` for the uniform `ViewThatFits` pages
+/// this replaced ("7 left" as four pages of two rows).
 ///
-/// So `maxRows` is a ceiling, not a count: `ViewThatFits` walks down from it and
-/// renders the first version whose real height — these titles, at this text
-/// size, on this device — fits the card. Short reminders fill the card; long
-/// ones show fewer rows and say "+N more". Nothing is ever squeezed, and no
-/// number here needs re-tuning for a different phone or a larger text setting.
+/// Nothing is ever squeezed: WidgetKit doesn't scroll or clip a widget, it
+/// compresses it, which is what once collapsed every two-line title to one
+/// truncated line (2026-09-11) — the reason rows carry their own heights at
+/// all.
 private struct RemindersListView: View {
     let entry: RemindersEntry
-    let maxRows: Int
-    /// systemLarge. Drives the three things a 4×2 has no height for: two-line
-    /// titles, 10pt row gaps, and the "+N more" line.
+    /// systemLarge. Drives the things a 4×2 has no height for: wrapped
+    /// titles, 10pt row gaps, the slot strip, the DONE section and the
+    /// bottom row (pager + completed dot).
     let isLarge: Bool
 
     private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
 
+    private var showCompleted: Bool {
+        isLarge && WidgetStore.showCompleted(for: RemindersWidget.kind)
+    }
+
     /// ONE flat sequence — open rows, then (only when "show completed" is on
-    /// AND there is something to show, AND only on `systemLarge` — see
-    /// `ShowCompletedToggle`'s doc for why systemMedium is excluded) a
-    /// divider and the slot's `consideredItems` (2026-09-23, decision #4 in
-    /// the handoff). Paging THIS array with the exact same `pagedReminders`
-    /// ladder the open-only list already used is what makes "recount on
-    /// toggle flip, clamp into range, break only on whole rows" fall out for
-    /// free: `combinedItems.count` changing is exactly what makes
-    /// `pagedReminders`' `totalPages` recompute, and slicing a flat array by
-    /// `rows` can only ever cut between two whole items, never inside one.
+    /// AND there is something to show, AND only on `systemLarge`) a divider
+    /// and the slot's `consideredItems` (2026-09-23, decision #4 in the
+    /// handoff). Paging THIS array is what makes "recount on toggle flip,
+    /// break only on whole rows" fall out for free: the toggle changes the
+    /// array, and `WidgetTheme.pages` only ever cuts between two items.
     private var combinedItems: [ReminderListItem] {
         let openItems = reminders.map(ReminderListItem.open)
-        guard isLarge, WidgetStore.showCompleted(for: RemindersWidget.kind),
-            let group = entry.group, !group.consideredItems.isEmpty
-        else {
+        guard showCompleted, let group = entry.group, !group.consideredItems.isEmpty else {
             return openItems
         }
         return openItems + [.divider(count: group.consideredItems.count)]
@@ -190,14 +193,11 @@ private struct RemindersListView: View {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
     }
 
-    /// Whether this card measures each row's real title height (needs the
-    /// `GeometryReader` below) or uses the flat per-family budget. macOS
-    /// always measures (2026-09-22 fix, every family). iOS only measures for
-    /// systemLarge (2026-09-23 fix) — systemMedium keeps its flat one-line
-    /// budget unconditionally; a 4×2 has no height to spare on wrapped rows
-    /// at all (see `header`'s `padding.top` comment). See WidgetTheme's
-    /// "row-height truthing" note for the full history.
-    private var shouldMeasureRealWidth: Bool {
+    /// Whether a title wraps to its real measured line count, or gets the
+    /// flat one line a 4×2 has room for. macOS always measures (2026-09-22
+    /// fix, every family); iOS measures on systemLarge only — a systemMedium
+    /// card is ~128pt, a header plus two one-line rows and nothing more.
+    private var measuresTitles: Bool {
         #if os(macOS)
         true
         #else
@@ -205,158 +205,172 @@ private struct RemindersListView: View {
         #endif
     }
 
+    /// iOS only, systemLarge only: the check-off's tap target reaches half a
+    /// `rowSpacing` into the gaps above and below its row instead of forcing
+    /// the row up to a 36pt finger floor (2026-09-23 — a one-line row's pitch
+    /// fell from 46pt to 28pt). systemMedium keeps the floor; macOS needs
+    /// none.
+    private var markerBleed: CGFloat {
+        #if os(iOS)
+        isLarge ? WidgetTheme.rowSpacing / 2 : 0
+        #else
+        0
+        #endif
+    }
+
     var body: some View {
         if entry.isSignedOut {
             WidgetSignedOutView()
-        } else if shouldMeasureRealWidth {
-            // GeometryReader OUTSIDE ViewThatFits — never inside a candidate,
-            // which would report "fits" at every height and defeat the whole
-            // mechanism (see WidgetTheme's "row-height truthing" note).
-            // Reports the card's real width so each row can measure its own
-            // title instead of assuming a flat budget.
-            GeometryReader { geo in
-                listContent(width: geo.size.width)
+        } else {
+            // No `.widgetURL` here (removed 2026-09-22, the misclick fix):
+            // only the header and each row's `Link` are tap targets on
+            // systemMedium/Large — see `header`.
+            VStack(alignment: .leading, spacing: rowSpacing) {
+                header
+
+                // systemLarge only — see `ReminderSlotStrip`'s doc for why
+                // systemMedium skips it entirely rather than just costing it
+                // some height.
+                if isLarge {
+                    ReminderSlotStrip(groups: entry.groups, currentIndex: entry.slotIndex, now: entry.date)
+                }
+
+                // Everything below the header and strip. The reader gets the
+                // height they left, laid out for real — never an estimate of
+                // how tall a header is at this text size — plus SwiftUI's
+                // real text metrics (`RenderedTextReader`'s doc).
+                RenderedTextReader { size, metrics in
+                    listBody(size: size, metrics: metrics)
+                }
+
+                if let staleSince = entry.staleSince {
+                    HStack {
+                        Spacer()
+                        StalenessNote(fetchedAt: staleSince)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            listContent(width: nil)
-                // The candidates carry no Spacer — a flexible child would report
-                // "fits" at every height and defeat the measurement — so the card
-                // is pinned to the top here instead.
-                //
-                // No `.widgetURL` here (removed 2026-09-22, the misclick fix):
-                // systemMedium/Large used to make the WHOLE card one tap target,
-                // so a near-miss on a row's check-off circle deep-linked into the
-                // app instead of doing nothing. Now only the header (below) and
-                // each row's `Link` are tap targets — see `header`.
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
-    /// `width`: the row's real available width when `shouldMeasureRealWidth`
-    /// is true, else `nil` (rows fall back to their flat per-family budget).
-    private func listContent(width: CGFloat?) -> some View {
-        // Tallest first — ViewThatFits renders the first that fits. Written
-        // out rather than looped: ViewThatFits has to see each candidate as
-        // its own child, and a ForEach would hand it one. 10, on both
-        // platforms now (see `content`'s comment on why 6 stopped being "as
-        // many as fit" once rows measure their real content) —
-        // `min(N, maxRows)` still no-ops harmlessly if `maxRows` (3 at
-        // systemMedium) is lower.
-        ViewThatFits(in: .vertical) {
-            card(rows: min(10, maxRows), width: width)
-            card(rows: min(9, maxRows), width: width)
-            card(rows: min(8, maxRows), width: width)
-            card(rows: min(7, maxRows), width: width)
-            card(rows: min(6, maxRows), width: width)
-            card(rows: min(5, maxRows), width: width)
-            card(rows: min(4, maxRows), width: width)
-            card(rows: min(3, maxRows), width: width)
-            card(rows: min(2, maxRows), width: width)
-            card(rows: 1, width: width)
+    /// The paged rows plus (systemLarge) the bottom row, laid out in `size`.
+    ///
+    /// The height arithmetic is exact, and the layout below is built so it
+    /// stays exact: rows in their own `VStack(spacing: rowSpacing)` (n rows
+    /// cost their heights plus n−1 gaps — what `WidgetTheme.pages` adds up),
+    /// then a `Spacer`, then the bottom row carrying its OWN `rowSpacing` of
+    /// top padding. The outer stack has zero spacing: a spaced outer stack
+    /// would add a gap on BOTH sides of the Spacer, a second `rowSpacing`
+    /// the budget never subtracted — enough, on a tight page, to push the
+    /// pager off the bottom edge.
+    private func listBody(size: CGSize, metrics: WidgetTextMetrics) -> some View {
+        let items = combinedItems
+        let barHeight = metrics.bottomBarHeight
+        // The bottom row is always present on systemLarge (the completed dot
+        // lives there even on a one-page list), so it and its gap always
+        // come off the row budget.
+        let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
+        let layouts = items.map { layout(for: $0, width: size.width, budget: budget, metrics: metrics) }
+        let pages = WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget) {
+            if case .divider = items[$0] { return true }
+            return false
         }
-    }
+        // systemMedium has no pager, so it always shows the first page — the
+        // stored page belongs to the systemLarge card's pager.
+        let page = isLarge ? min(max(WidgetStore.remindersPage(for: entry.group?.slotKey ?? -1), 0), pages.count - 1) : 0
+        let range = pages[page]
 
-    private func card(rows: Int, width: CGFloat?) -> some View {
-        let window = pagedReminders(rows: rows)
-        return VStack(alignment: .leading, spacing: rowSpacing) {
-            header
-
-            // systemLarge only — see `ReminderSlotStrip`'s doc for why
-            // systemMedium skips it entirely rather than just costing it
-            // some height.
-            if isLarge {
-                ReminderSlotStrip(groups: entry.groups, currentIndex: entry.slotIndex, now: entry.date)
-            }
-
+        return VStack(alignment: .leading, spacing: 0) {
             if entry.groups.isEmpty {
                 WidgetEmptyView(symbol: "checkmark.circle", message: "No reminders today")
-            } else if window.items.isEmpty {
+            } else if items.isEmpty {
                 emptySlotView
             } else {
                 VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(window.items) { item in
-                        switch item {
-                        case .open(let reminder):
-                            ReminderRow(
-                                reminder: reminder, titleLineLimit: isLarge ? 2 : 1, availableWidth: width
-                            )
-                        case .divider(let count):
-                            DoneDivider(count: count)
-                        case .done(let reminder):
-                            DoneReminderRow(reminder: reminder)
-                        }
+                    ForEach(range, id: \.self) { index in
+                        row(items[index], layout: layouts[index], metrics: metrics)
+                            .frame(height: layouts[index].height, alignment: .top)
                     }
-                }
-                // systemMedium drops this band, as Track's does: at 4×2 it
-                // costs a whole row, and the header's "N left" already
-                // states the total — there is no pager at that size.
-                //
-                // The bottom pager (2026-09-23) replacing "+N more" — Trent:
-                // "It'd be nice to be able to page through things that are
-                // too long to fit... maybe at the bottom." Tapping "+N more"
-                // used to open the app; paging through the list in place is
-                // strictly more useful, so nothing here is a `Link` anymore.
-                if isLarge, window.totalPages > 1 {
-                    // Pinned to the card's bottom edge (Trent, 2026-09-23: "the
-                    // page switcher should not move"): a short last page used to
-                    // pull it up under its one row. A Spacer's ideal height is its
-                    // minLength, 0, so `ViewThatFits` still measures each candidate
-                    // at its content height and picks the same row count; only the
-                    // chosen card, laid out in the full widget height, stretches.
-                    Spacer(minLength: 0)
-                    ListPager(
-                        page: window.page,
-                        totalPages: window.totalPages,
-                        previous: ShiftReminderPageIntent(offset: -1),
-                        next: ShiftReminderPageIntent(offset: 1)
-                    )
                 }
             }
 
-            if let staleSince = entry.staleSince {
-                HStack {
-                    Spacer()
-                    StalenessNote(fetchedAt: staleSince)
+            // Pins the bottom row to the card's bottom edge (Trent,
+            // 2026-09-23: "the page switcher should not move").
+            Spacer(minLength: 0)
+
+            if isLarge {
+                ListBottomBar(height: barHeight) {
+                    EmptyView()
+                } pager: {
+                    if pages.count > 1 {
+                        ListPager(
+                            page: page,
+                            totalPages: pages.count,
+                            previous: ShiftReminderPageIntent(offset: -1),
+                            next: ShiftReminderPageIntent(offset: 1)
+                        )
+                    }
+                } trailing: {
+                    CompletedDotToggle(
+                        intent: ToggleShowCompletedIntent(kind: RemindersWidget.kind),
+                        isOn: showCompleted, label: "done", height: barHeight
+                    )
                 }
+                .padding(.top, rowSpacing)
             }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+
+    /// `item`'s lines and exact height at this card's `width`.
+    ///
+    /// An open reminder's title column is the card minus the check-off's
+    /// `rowMarkerSize` column and its 10pt `HStack` gap. iOS caps it at
+    /// `iOSMaxTitleLines` (3 — "I don't want to truncate the text until
+    /// three lines"); macOS never caps; neither lets one row outgrow
+    /// `budget`. systemMedium's iOS rows are one line on the 36pt finger
+    /// floor. A done row is one line; the divider is one caption2 line.
+    private func layout(
+        for item: ReminderListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
+    ) -> ReminderRowLayout {
+        switch item {
+        case .open(let reminder):
+            guard measuresTitles else {
+                return ReminderRowLayout(
+                    lines: 1, height: max(metrics.titleHeight(lines: 1), WidgetTheme.rowMarkerSize)
+                )
+            }
+            #if os(iOS)
+            let cap: Int? = WidgetTheme.iOSMaxTitleLines
+            #else
+            let cap: Int? = nil
+            #endif
+            let lines = metrics.titleLines(
+                reminder.title, width: width - WidgetTheme.rowMarkerSize - 10,
+                weight: WidgetTheme.priorityWeight(reminder.priority), cap: cap, maxHeight: budget
+            )
+            return ReminderRowLayout(lines: lines, height: metrics.titleHeight(lines: lines))
+        case .divider:
+            return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
+        case .done:
+            return ReminderRowLayout(lines: 1, height: metrics.titleHeight(lines: 1))
         }
     }
 
-    /// A page window into `reminders`, sized to `rows` — the row count of
-    /// WHICHEVER `ViewThatFits` candidate is asking (2026-09-23, "page
-    /// through things that are too long to fit"). `page` is read from
-    /// `WidgetStore.remindersPage(for:)`, keyed to the on-screen slot so it
-    /// self-resets whenever the slot changes (see that function's doc), and
-    /// clamped here to `0..<totalPages` so a list that shrank out from under
-    /// a stale page (a check-off) never renders an empty window instead of
-    /// snapping back into range.
-    ///
-    /// Known imperfection, accepted deliberately: each `ViewThatFits`
-    /// candidate resolves its OWN `rows`/`totalPages` from only the items
-    /// its own page slices out, not from the full list — there is no way to
-    /// ask ViewThatFits "which candidate won" from outside its own body (see
-    /// `RemindersListView`'s "row-height truthing" reference), so a
-    /// differently-sized page 2 could in principle resolve a different `rows`
-    /// than page 1 did. In practice reminder titles in one list are usually
-    /// similar lengths, and the property that matters most — the page
-    /// actually shown is always the one THAT candidate verified fits, never
-    /// squeezed — holds regardless.
-    private func pagedReminders(rows: Int) -> (items: [ReminderListItem], page: Int, totalPages: Int) {
-        let items = combinedItems
-        guard rows > 0, !items.isEmpty else {
-            return (items, 0, 1)
+    @ViewBuilder
+    private func row(_ item: ReminderListItem, layout: ReminderRowLayout, metrics: WidgetTextMetrics) -> some View {
+        switch item {
+        case .open(let reminder):
+            ReminderRow(
+                reminder: reminder, lines: layout.lines, height: layout.height,
+                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed
+            )
+        case .divider(let count):
+            DoneDivider(count: count)
+        case .done(let reminder):
+            DoneReminderRow(reminder: reminder, height: layout.height)
         }
-        // `WidgetTheme.pageBoundaries` (2026-09-23) keeps the "DONE · N"
-        // divider off the tail of a page — see its doc.
-        let pages = WidgetTheme.pageBoundaries(for: items, rows: rows) { item in
-            if case .divider = item { return true }
-            return false
-        }
-        let totalPages = pages.count
-        let slotKey = entry.group?.slotKey ?? -1
-        let page = min(max(WidgetStore.remindersPage(for: slotKey), 0), totalPages - 1)
-        return (Array(items[pages[page]]), page, totalPages)
     }
 
     /// The on-screen slot has nothing waiting — three readings, not one
@@ -405,19 +419,20 @@ private struct RemindersListView: View {
     }
 
     /// The header IS the card's tap target now that the whole-card link is
-    /// gone (see `RemindersListView.body`). Only the title/count block is a
-    /// `Link` — the `ChevronPager` stays a sibling outside it, because a
-    /// `Button(intent:)` nested inside a `Link` is a WidgetKit combination
-    /// this repo has no way to verify without a device. `.foregroundStyle` on
-    /// the title is explicit: `Link` tints an unstyled label with the accent
-    /// color, same reason `ReminderRow`'s title overrides it below.
+    /// gone. Only the title/count block is a `Link` — the buttons stay
+    /// siblings outside it, because a `Button(intent:)` nested inside a
+    /// `Link` is a WidgetKit combination this repo has no way to verify
+    /// without a device. `.foregroundStyle` on the title is explicit: `Link`
+    /// tints an unstyled label with the accent color.
     ///
-    /// The tap target is sized to the text, not stretched to the 40pt floor
-    /// `ChevronButton` uses elsewhere — forcing a frame here would fight the
-    /// `.firstTextBaseline` alignment this header is tuned around, and on
-    /// systemMedium there is no headroom to spend on it (`WidgetTheme.
-    /// compactRowSpacing`'s comment). It reads as tappable because it is the
-    /// same headline text a user already reads as "the current view".
+    /// THE TITLE NEVER TRUNCATES (2026-09-24 — "Early m…" on Trent's phone,
+    /// at XXX Large text). It is `fixedSize` horizontally and its block has
+    /// the row's layout priority, and the header was thinned so that costs
+    /// nothing: the eye moved to the bottom row as the completed dot, and
+    /// systemLarge's slot chevrons are gone — the slot strip's segments
+    /// under the header are each a tap target (`JumpToReminderSlotIntent`)
+    /// that already does what they did. systemMedium has no strip, so it
+    /// keeps the chevrons as its only way between slots.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
             Link(destination: headerDestination) {
@@ -426,17 +441,12 @@ private struct RemindersListView: View {
                         .font(.headline)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: true, vertical: false)
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo
                     // (2026-09-23) — see `WidgetStore`'s "Last-action
                     // indication" doc. Replaces the ordinary count subtitle
                     // rather than sitting beside it: the header has no
                     // spare height for a third line on systemMedium.
-                    //
-                    // `minimumScaleFactor` at 0.6, matching `TasksListView.
-                    // header`'s identical fix — see that comment for why
-                    // 0.8 let a long "show completed" count string truncate
-                    // instead of shrinking.
                     Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -445,24 +455,19 @@ private struct RemindersListView: View {
                 }
                 .contentShape(Rectangle())
             }
+            .layoutPriority(1)
             Spacer(minLength: 0)
-            // "Show completed" (2026-09-23), left of Undo/Redo — systemLarge
-            // only, see `ShowCompletedToggle`'s doc.
-            if isLarge {
-                ShowCompletedToggle(
-                    kind: RemindersWidget.kind, isOn: WidgetStore.showCompleted(for: RemindersWidget.kind)
+            // Right-aligned (2026-09-23) — see `UndoRedoButtons`' doc:
+            // always present, dimmed when there is nothing to undo/redo.
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
+            if !isLarge {
+                ChevronPager(
+                    previous: ShiftReminderSlotIntent(offset: -1),
+                    next: ShiftReminderSlotIntent(offset: 1),
+                    hasPrevious: canPage,
+                    hasNext: canPage
                 )
             }
-            // Right-aligned, before the chevrons (2026-09-23) — see
-            // `UndoRedoButtons`' doc: always present, dimmed when there is
-            // nothing to undo/redo.
-            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
-            ChevronPager(
-                previous: ShiftReminderSlotIntent(offset: -1),
-                next: ShiftReminderSlotIntent(offset: 1),
-                hasPrevious: canPage,
-                hasNext: canPage
-            )
         }
         // systemMedium gets none: its card is 128pt tall and a header plus two
         // rows spends 122 of that, so 6pt of air there costs the second row —
@@ -481,11 +486,9 @@ private struct RemindersListView: View {
     }
 
     /// "N left" ordinarily; "N left · M done" once "show completed" is on
-    /// (2026-09-23) — `isLarge`-gated like the toggle itself, so a
-    /// systemMedium header (which never shows the toggle, and can't show a
-    /// DONE section) never reads this branch.
+    /// (2026-09-23) — systemLarge only, like the toggle itself.
     private var countLabel: String {
-        guard isLarge, WidgetStore.showCompleted(for: RemindersWidget.kind) else {
+        guard showCompleted else {
             return reminders.isEmpty ? "all clear" : "\(reminders.count) left"
         }
         let doneCount = entry.group?.consideredItems.count ?? 0
@@ -524,7 +527,7 @@ private struct RemindersListView: View {
 /// `RemindersListView.header`'s `padding.top` comment). Kept deliberately
 /// tiny even on systemLarge (a few points, plus one more `rowSpacing` gap
 /// the `VStack` adds around it) rather than free: it IS real height the
-/// reservation-driven `ViewThatFits` measurement counts like any other
+/// list's height-based paging leaves out of the row budget like any other
 /// content, so a card tight enough on a given day can end up fitting one
 /// fewer reminder row than it would with the strip hidden. That is the
 /// system working as intended — "as many rows as genuinely fit" already
@@ -655,7 +658,7 @@ private struct ReminderSlotStrip: View {
         switch state {
         case .done: return WidgetTheme.trackMetTint.opacity(0.85)
         // `WidgetTheme.indigoAccent` (2026-09-23) — the same named constant
-        // the "show completed" eye toggle's ON state now uses, so this
+        // the "show completed" dot's ON state now uses, so this
         // segment's fill and that toggle can never drift into two
         // different indigos.
         case .behind: return WidgetTheme.indigoAccent
@@ -676,92 +679,31 @@ private struct ReminderSlotStrip: View {
 /// can't reach the circles on the left"). No overlap risk: `HStack` lays
 /// out the `Link` and the `Button` as non-overlapping siblings — the Link's
 /// `.frame(maxWidth: .infinity)` fills whatever the marker's fixed
-/// `WidgetTheme.rowMarkerSize` column doesn't take, the same way it always
-/// filled the space beside a LEADING marker; nothing here relies on
+/// `WidgetTheme.rowMarkerSize` column doesn't take; nothing here relies on
 /// hit-testing precedence between overlapping views (the community-reported
-/// failure mode `ios/CLAUDE.md`'s tap-targets note warns about, and this
-/// layout has none of the multi-`Link`-in-one-container shape that report
-/// describes).
+/// failure mode `ios/CLAUDE.md`'s tap-targets note warns about).
 ///
 /// A reminder is a THOUGHT, not an errand ("I am a thinker, not a doer. Kel is
 /// a doer."), and half a thought prompts nothing — so in systemLarge the title
-/// wraps rather than ellipsising at one line, capped at `WidgetTheme.
-/// iOSMaxTitleLines` (3) on iOS and unbounded on macOS. The list above shows
-/// fewer rows to pay for it.
+/// wraps rather than ellipsising at one line, up to `lines` (3 on iOS,
+/// uncapped on macOS). The list shows fewer rows to pay for it.
+///
+/// DUMB ABOUT ITS OWN SIZE (2026-09-24): `lines` and `height` come from
+/// `RemindersListView.layout(for:)` — the same numbers the pager added up —
+/// and the list frames the row to `height`. The row used to measure itself
+/// and reserve a `minHeight`, which only had to AGREE with a `ViewThatFits`
+/// guess; now there is nothing to agree with.
 private struct ReminderRow: View {
     let reminder: TaskDTO
-    var titleLineLimit = 2
-    /// The row's real available width, threaded down from
-    /// `RemindersListView`'s `GeometryReader`. `nil` whenever the card isn't
-    /// measuring real widths (iOS systemMedium — see `RemindersListView.
-    /// shouldMeasureRealWidth`), in which case every computed property below
-    /// falls back to the flat `titleLineLimit` budget.
-    var availableWidth: CGFloat? = nil
-
-    /// Real per-title line count at this row's actual text column (the card
-    /// width minus the marker column and its 10pt `HStack` spacing), falling
-    /// back to the flat budget if the width isn't known. Capped on iOS — see
-    /// WidgetTheme's "row-height truthing" note, the 2026-09-23 addendum.
-    private var measuredLines: Int {
-        guard let availableWidth else { return titleLineLimit }
-        let font = WidgetTheme.subheadlineFont(weight: WidgetTheme.priorityWeight(reminder.priority))
-        let real = WidgetTheme.measuredLineCount(
-            for: reminder.title, maxWidth: availableWidth - WidgetTheme.rowMarkerSize - 10, font: font
-        )
-        #if os(iOS)
-        return min(real, WidgetTheme.iOSMaxTitleLines)
-        #else
-        return real
-        #endif
-    }
-
-    /// The row's reserved text height: the title's real measured line count
-    /// where it's known, else the flat `titleLineLimit` budget.
-    private var reservedHeight: CGFloat {
-        CGFloat(measuredLines) * WidgetTheme.rowTitleLineHeight
-    }
-
-    /// The marker's height: iOS floors it at `rowMarkerSize` (36, a finger
-    /// target) even when the measured text is shorter — macOS has no floor,
-    /// a mouse pointer needs none. See WidgetTheme's "row-height truthing"
-    /// note, the 2026-09-23 addendum, for why this means iOS wins back less
-    /// per-row space than macOS did at the default text size.
-    private var markerHeight: CGFloat {
-        #if os(iOS)
-        guard availableWidth == nil else { return reservedHeight + 2 * markerBleed }
-        return max(reservedHeight, WidgetTheme.rowMarkerSize)
-        #else
-        reservedHeight
-        #endif
-    }
-
+    let lines: Int
+    let height: CGFloat
+    /// One title line's height — the marker centres on the FIRST line.
+    let firstLineHeight: CGFloat
     /// How far the check-off's tap area reaches into the gap above and below
-    /// its row, without taking layout space (Trent, 2026-09-23: the gap under
-    /// a one-line title). On iOS systemLarge the row is exactly as tall as its
-    /// text, and the finger target instead stretches half a `rowSpacing` into
-    /// each neighbouring gap — applied as negative vertical padding on the
-    /// Button, so adjacent targets meet but never overlap, and a one-line
-    /// row's pitch drops from 46pt (the old 36pt floor + 10) to 28pt. Zero
-    /// elsewhere: systemMedium keeps the 36pt floor, macOS needs none.
-    private var markerBleed: CGFloat {
-        #if os(iOS)
-        availableWidth == nil ? 0 : WidgetTheme.rowSpacing / 2
-        #else
-        0
-        #endif
-    }
-
-    /// iOS caps at 3 lines once `availableWidth` is known (systemLarge);
-    /// unlimited on macOS, and unlimited on iOS systemMedium too, where
-    /// `availableWidth` is `nil` and `titleLineLimit` (1) already caps it.
-    private var lineLimitValue: Int? {
-        guard availableWidth != nil else { return titleLineLimit }
-        #if os(iOS)
-        return WidgetTheme.iOSMaxTitleLines
-        #else
-        return nil
-        #endif
-    }
+    /// the row without taking layout space (see `RemindersListView.
+    /// markerBleed`). Applied as negative vertical padding on the Button, so
+    /// adjacent targets meet but never overlap.
+    let markerBleed: CGFloat
 
     var body: some View {
         // .top, not .center: on a two-line row a centred circle floats down
@@ -773,18 +715,12 @@ private struct ReminderRow: View {
                     .fontWeight(WidgetTheme.priorityWeight(reminder.priority))
                     .foregroundStyle(.primary)
                     .opacity(WidgetTheme.priorityOpacity(reminder.priority))
-                    .lineLimit(lineLimitValue)
+                    .lineLimit(lines)
                     .multilineTextAlignment(.leading)
                     // fixedSize: the wrapped height is the height, and no
                     // parent gets to squeeze it back to one truncated line.
-                    // minHeight: the row RESERVES its lines whether this title
-                    // uses them or not, which is what `ViewThatFits` measures.
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: reservedHeight,
-                        alignment: .topLeading
-                    )
+                    .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
                     .contentShape(Rectangle())
             }
 
@@ -792,32 +728,22 @@ private struct ReminderRow: View {
                 Image(systemName: "circle")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(WidgetTheme.priorityColor(reminder.priority))
-                    // TWO frames, deliberately not one — this is the same
-                    // trick the original leading-edge marker used, preserved
-                    // across the 2026-09-23 move to the trailing edge. The
-                    // FIRST frame is exactly one line tall
-                    // (`rowTitleLineHeight`) with DEFAULT (.center)
-                    // alignment, which centres the glyph within the vertical
-                    // span of the title's first line specifically — not the
-                    // row as a whole. The SECOND frame then takes that
-                    // already-centred result and pins it to the TOP of the
-                    // full `markerHeight`, so a two-or-three-line title's
-                    // extra lines extend the tappable area downward without
-                    // dragging the glyph down with them (26pt missed too
-                    // often, iOS's finger-sized floor — see `markerHeight`).
-                    // Collapsing this to a single
-                    // `.frame(height: markerHeight, alignment: .top)` looks
-                    // equivalent but isn't: `.top` alignment there would
-                    // pin the glyph's own small intrinsic size to the frame's
-                    // top edge instead of centring it on the first line,
-                    // which is exactly the "floats down between the lines,
-                    // reading as if it belongs to neither" failure this
-                    // struct's own doc comment warns about avoiding.
-                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
+                    // TWO frames, deliberately not one. The FIRST is exactly
+                    // one line tall with DEFAULT (.center) alignment, which
+                    // centres the glyph on the title's first line
+                    // specifically — not the row as a whole. The SECOND pins
+                    // that already-centred result to the TOP of the full
+                    // target height, so a wrapped title's extra lines extend
+                    // the tappable area downward without dragging the glyph
+                    // down with them. A single `.frame(height:, alignment:
+                    // .top)` would pin the glyph's own small intrinsic size
+                    // to the top edge instead — the "floats between the
+                    // lines" failure this avoids.
+                    .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
                     // The bleed above is part of the target, not the glyph's
                     // offset: pad it back so the glyph stays on line 1.
                     .padding(.top, markerBleed)
-                    .frame(width: WidgetTheme.rowMarkerSize, height: markerHeight, alignment: .top)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: height + 2 * markerBleed, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -836,11 +762,11 @@ private struct ReminderRow: View {
 ///
 /// `.lineLimit(1)`, unlike `ReminderRow`'s wrap-don't-truncate rule: a
 /// completed item is secondary content, not the "never truncate a reminder"
-/// case that rule exists to protect. No reserved-height dance either — a
-/// single-line `Text` reports its own honest intrinsic height to
-/// `ViewThatFits`, which is all a fixed-height row needs.
+/// case that rule exists to protect. `height` is one title line — what the
+/// pager counted for it.
 private struct DoneReminderRow: View {
     let reminder: TaskDTO
+    let height: CGFloat
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -858,7 +784,7 @@ private struct DoneReminderRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 19, weight: .light))
                     .foregroundStyle(.secondary)
-                    .frame(width: WidgetTheme.rowMarkerSize, height: WidgetTheme.rowTitleLineHeight)
+                    .frame(width: WidgetTheme.rowMarkerSize, height: height)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -935,3 +861,4 @@ private struct RemindersCircularView: View {
 }
 
 #endif
+

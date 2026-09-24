@@ -67,11 +67,10 @@ enum WidgetTheme {
     /// The one indigo used across all three widget kinds for "this is
     /// active / worth noticing right now" — `ReminderSlotStrip`'s "behind,
     /// still waiting" segment fill (`RemindersWidgetViews.swift`), the "show
-    /// completed" eye toggle's ON state (`ShowCompletedToggle` below), and —
-    /// after merging with the parallel Quotas widget rebuild (2026-09-23,
-    /// `feat/quotas-widget`, PR #58) — every in-progress quota chip/bar and
-    /// the Quotas widget's own "show met" eye toggle (`ShowMetToggleButton`,
-    /// `TrackWidgetViews.swift`). ONE named constant, not several
+    /// completed"/"show met" dot's ON state (`CompletedDotToggle` below,
+    /// shared by all three kinds since 2026-09-24), and — after merging with
+    /// the parallel Quotas widget rebuild (2026-09-23, `feat/quotas-widget`,
+    /// PR #58) — every in-progress quota chip/bar. ONE named constant, not several
     /// independently-chosen `Color.indigo` literals, so all three widgets'
     /// accent can never drift apart pixel-by-pixel across files.
     static let indigoAccent = Color.indigo
@@ -122,45 +121,12 @@ enum WidgetTheme {
     /// at 6 the second row did not fit and the card dropped to one.
     static let compactRowSpacing: CGFloat = 4
 
-    /// One line of a `.subheadline` row title, at the reader's text size.
-    ///
-    /// Two jobs, both in `ReminderRow` / `TaskRow`:
-    ///
-    /// 1. It centres the row's marker on the title's FIRST line. The marker's
-    ///    36pt hit target is taller than a line of text, so without this a
-    ///    two-line row floats its circle down between the two lines instead of
-    ///    beside the words it acts on.
-    /// 2. It RESERVES the row's lines, which is what lets `ViewThatFits` count
-    ///    rows correctly. ViewThatFits compares each candidate's *ideal* height,
-    ///    and a Text's ideal height is one unwrapped line however long the
-    ///    string is — so without a reserved height every candidate measured as
-    ///    if nothing wrapped, the tallest was chosen, and the card then squeezed
-    ///    the wrapping right back out of it. That was the truncation Trent saw.
-    ///
-    /// Read from the platform's own font metrics rather than hardcoded so it
-    /// tracks the system text size, and rounded UP so a reserved two lines is
-    /// never a hair short of two real ones (which would silently cost the
-    /// second line).
-    ///
-    /// **macOS**: `NSFont` has no `.lineHeight` property the way `UIFont`
-    /// does — `NSLayoutManager().defaultLineHeight(for:)` is AppKit's
-    /// equivalent (the same value the layout system itself uses to lay out a
-    /// line of that font). This is still the load-bearing per-LINE unit on
-    /// both platforms; neither multiplies it by a flat `titleLineLimit`
-    /// anymore — see the "row-height truthing" note on `measuredLineCount`
-    /// below. **Measured**: at the platform's default text size this is
-    /// 14pt on macOS vs. 18pt on iOS (an iPhone 17 Pro simulator, default
-    /// Dynamic Type size — see the 2026-09-23 addendum below for why that
-    /// number, not the ~20pt first assumed, is what actually matters for
-    /// row height on iOS).
-    static var rowTitleLineHeight: CGFloat {
-        #if os(iOS)
-        ceil(UIFont.preferredFont(forTextStyle: .subheadline).lineHeight)
-        #else
-        let font = NSFont.preferredFont(forTextStyle: .subheadline, options: [:])
-        return ceil(NSLayoutManager().defaultLineHeight(for: font))
-        #endif
-    }
+    // (`rowTitleLineHeight`, a static one-line height read from
+    // `UIFont.preferredFont(forTextStyle:)` with no trait collection, lived
+    // here until 2026-09-24. It is now `WidgetTextMetrics.titleLineHeight`,
+    // built from the widget's OWN `\.dynamicTypeSize` — see that struct's
+    // doc for why the static version measured a different text size than
+    // SwiftUI actually drew.)
 
     // MARK: - Row-height truthing (macOS 2026-09-22, iOS 2026-09-23)
     //
@@ -269,6 +235,23 @@ enum WidgetTheme {
     //    default, `rowTitleLineHeight` grows past 18pt and the per-title
     //    measurement starts winning back real space from the marker floor
     //    too, the same way it always did on macOS.
+    //
+    // ADDENDUM, 2026-09-24 (the mechanism above is gone — history only):
+    // `ViewThatFits`, its 10-row candidate ladder, the `minHeight`
+    // reservations and the flat `rowTitleLineHeight` no longer exist. On
+    // Trent's phone (XXX Large text) "7 left" paged as "1/4" with two rows
+    // and "26 due" as 13 pages of two, because uniform candidate pages let
+    // one page's longest rows set every page's size, and each candidate
+    // sliced its own page from the stored index (so page 2 read "2/2" with
+    // ONE row). Rows now carry exact heights computed up front — line
+    // counts from `measuredLineCount` at SwiftUI's own drawn font size and
+    // line pitch (`WidgetTextMetrics`, calibrated by `RenderedTextReader`),
+    // every row FRAMED to that height — and `WidgetTheme.pages` fills each
+    // page greedily against the card's real remaining height. The platform
+    // rules above survive unchanged: iOS caps titles at `iOSMaxTitleLines`,
+    // macOS never caps; iOS systemLarge's check-off bleeds its tap target
+    // into the row gaps; systemMedium iOS rows are one line on the 36pt
+    // finger floor.
 
     #if os(iOS)
     typealias PlatformFont = UIFont
@@ -282,8 +265,15 @@ enum WidgetTheme {
     static let iOSMaxTitleLines = 3
 
     /// How many lines `text` needs at `maxWidth`, in `font` — real platform
-    /// text measurement (`NSString.boundingRect`), not a guess. Ceil'd: a
-    /// fractional line still costs the row a whole line of height.
+    /// text measurement (`NSString.boundingRect`), not a guess.
+    ///
+    /// Divided by the font's OWN line height (2026-09-24). It used to divide
+    /// by a ceil'd, trait-less `rowTitleLineHeight` — a DIFFERENT number
+    /// from the font actually measured whenever the two disagreed about the
+    /// text size, and even when they agreed the ceil'd divisor drifts a line
+    /// short on a long wrap (30 lines × 25.06pt ÷ 26pt = 28.9). A
+    /// line-fragment layout's height is a whole number of `lineHeight`s, so
+    /// rounding here recovers that whole number exactly.
     static func measuredLineCount(for text: String, maxWidth: CGFloat, font: PlatformFont) -> Int {
         guard maxWidth > 0, !text.isEmpty else { return 1 }
         let bounds = (text as NSString).boundingRect(
@@ -292,7 +282,19 @@ enum WidgetTheme {
             attributes: [.font: font],
             context: nil
         )
-        return max(1, Int(ceil(bounds.height / rowTitleLineHeight)))
+        return max(1, Int((bounds.height / lineHeight(of: font)).rounded()))
+    }
+
+    /// One line of `font`, as the platform's text system lays it out.
+    /// `NSFont` has no `.lineHeight` the way `UIFont` does —
+    /// `NSLayoutManager().defaultLineHeight(for:)` is AppKit's equivalent
+    /// (the value the layout system itself uses for a line of that font).
+    static func lineHeight(of font: PlatformFont) -> CGFloat {
+        #if os(iOS)
+        font.lineHeight
+        #else
+        NSLayoutManager().defaultLineHeight(for: font)
+        #endif
     }
 
     /// The single-line width `text` needs in `font` — used to reserve room
@@ -304,31 +306,8 @@ enum WidgetTheme {
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    /// The subheadline font at a given weight, matching what `.font(.subheadline)
-    /// .fontWeight(weight)` renders — weight has to match what's actually
-    /// drawn (P3/P4 titles render `.semibold`, which is measurably wider)
-    /// or a title near the wrap boundary undercounts its lines.
-    static func subheadlineFont(weight: Font.Weight) -> PlatformFont {
-        #if os(iOS)
-        let pointSize = UIFont.preferredFont(forTextStyle: .subheadline).pointSize
-        return UIFont.systemFont(ofSize: pointSize, weight: uiWeight(weight))
-        #else
-        let pointSize = NSFont.preferredFont(forTextStyle: .subheadline, options: [:]).pointSize
-        return NSFont.systemFont(ofSize: pointSize, weight: nsWeight(weight))
-        #endif
-    }
-
-    /// The caption2 font, for measuring `TaskRow`'s due-time label.
-    static var caption2Font: PlatformFont {
-        #if os(iOS)
-        UIFont.preferredFont(forTextStyle: .caption2)
-        #else
-        NSFont.preferredFont(forTextStyle: .caption2, options: [:])
-        #endif
-    }
-
     #if os(iOS)
-    private static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
+    fileprivate static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
         switch weight {
         case .semibold: return .semibold
         case .medium: return .medium
@@ -336,7 +315,7 @@ enum WidgetTheme {
         }
     }
     #else
-    private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
+    fileprivate static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
         case .semibold: return .semibold
         case .medium: return .medium
@@ -419,11 +398,11 @@ enum WidgetTheme {
     //
     // `DueLabelParts` is the ONE function both the styled `Text` render
     // (`dueLabelText`) and the plain-string WIDTH MEASUREMENT
-    // (`TaskRow.measuredLines`, via `plainString`) build from — the same
-    // discipline `measuredLineCount`'s own doc insists on elsewhere in this
-    // file: a row's reserved height must measure the SAME string it renders,
-    // or `ViewThatFits` silently mismeasures and a title clips or gets an
-    // extra blank line.
+    // (`TasksListView.layout(for:)`, via `plainString` or the two halves)
+    // build from — the same discipline `measuredLineCount`'s own doc insists
+    // on elsewhere in this file: a row's height must be measured from the
+    // SAME string it renders, or the pager mismeasures and a title clips or
+    // gets an extra blank line.
 
     struct DueLabelParts {
         /// nil when the due date is today or overdue (no day word in either
@@ -445,6 +424,10 @@ enum WidgetTheme {
             case (nil, nil): return ""
             }
         }
+
+        /// Both halves present ("Tomorrow" + "4:00 pm") — the only shape that
+        /// can STACK onto two lines (see `dueLabelText(for:now:stacked:)`).
+        var hasTwoParts: Bool { dayWord != nil && time != nil }
     }
 
     private static let dueWeekdayFormatter: DateFormatter = {
@@ -518,7 +501,7 @@ enum WidgetTheme {
 
     /// Subtle indigo for the day word — built on `indigoAccent` (the same
     /// hue `ReminderSlotStrip`'s "behind, still waiting" fill and
-    /// `ShowCompletedToggle`'s ON state use), dimmed to `0.85` since a due
+    /// `CompletedDotToggle`'s ON state use), dimmed to `0.85` since a due
     /// label sits beside body text far more often than a slot strip segment
     /// does and doesn't need the fully saturated version.
     static let dueDayWordTint = indigoAccent.opacity(0.85)
@@ -529,7 +512,16 @@ enum WidgetTheme {
     /// `Text` concatenation (`+`), not a nested `HStack`, so it composes
     /// inline with a `.firstTextBaseline` `HStack` the way a single `Text`
     /// would.
-    static func dueLabelText(for task: TaskDTO, now: Date = Date()) -> Text {
+    ///
+    /// `stacked` (2026-09-24): the day word and the time on two lines
+    /// ("Tomorrow" / "4:00 pm") instead of one. `TaskRow` stacks a
+    /// two-part label on systemLarge because at large text sizes a one-line
+    /// "Tomorrow 4:00 pm" takes half the row and squeezes the title to three
+    /// narrow lines; stacked, the label's column is only as wide as its
+    /// longer half. It is an explicit line break, never a wrap, so the
+    /// label's width and height are exactly what `TasksListView.layout
+    /// (for:)` measured.
+    static func dueLabelText(for task: TaskDTO, now: Date = Date(), stacked: Bool = false) -> Text {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
@@ -549,60 +541,279 @@ enum WidgetTheme {
         }
         if let time = parts.time {
             let timeText = Text(time).foregroundStyle(Color.secondary)
-            text = text.map { $0 + Text(" ") + timeText } ?? timeText
+            text = text.map { $0 + Text(stacked ? "\n" : " ") + timeText } ?? timeText
         }
         return text ?? Text("")
     }
 
-    // MARK: - List paging (2026-09-23, "show completed"'s divider-aware pages)
+    // MARK: - List paging (2026-09-24, height-based)
 
-    /// Page boundaries for a combined open+divider+done list — shared by
-    /// `RemindersListView.pagedReminders` and `TasksListView.pagedTasks` via
-    /// a generic `isDivider` predicate rather than a common item protocol
-    /// (the two lists' item enums are private to their own files, matching
-    /// this file's established "duplicate the view, share the math" split —
-    /// see `TasksListView.shouldMeasureRealWidth`'s identical precedent).
+    /// Page boundaries for a list of rows of KNOWN heights — shared by the
+    /// Reminders and Tasks lists (`RemindersListView`/`TasksListView`,
+    /// each via its own `pages(...)`), with `isDivider` naming the "DONE ·
+    /// N" row by index rather than through a common item protocol (the two
+    /// lists' item enums are private to their own files).
     ///
-    /// Never lets the "DONE · N" divider be the LAST item of a page when
-    /// there is at least one done row after it — Trent's review of the
-    /// first cut: "never let 'DONE · N' be the last item on a page... if
-    /// the first done row spills, the divider moves to the next page too."
-    /// A naive uniform `rows`-per-page slice can land the divider at the
-    /// very end of a page with nothing under it (the done rows all pushed
-    /// to the next page, which then starts with no divider of its own) —
-    /// an orphaned section header. This walks the list building one page
-    /// at a time and, whenever the item that would end a page is the
-    /// divider AND something still follows it, backs that page off by one
-    /// row so the divider carries at least its first done row along with
-    /// it onto the NEXT page instead.
+    /// GREEDY, BY HEIGHT (2026-09-24, the fill fix): each page takes rows
+    /// until the NEXT row genuinely doesn't fit `budget`, then starts the
+    /// next page with that row. So every page fills, pages break only
+    /// between whole rows, and the partition is a pure function of the list
+    /// — the same page count and the same boundaries whichever page happens
+    /// to be on screen.
     ///
-    /// Only ever WITHDRAWS a row from a page's tail, never adds one back,
-    /// so a page can be one row narrower than `rows` exactly at that
-    /// boundary — never wider. Since the list has at most one divider,
-    /// this can only trigger once, so it adds at most one extra page
-    /// versus uniform slicing.
-    static func pageBoundaries<Item>(
-        for items: [Item], rows: Int, isDivider: (Item) -> Bool
+    /// What this replaced, and why it had to go: each list used to offer
+    /// `ViewThatFits` ten candidates ("10 rows", "9 rows"… "1 row") and slice
+    /// the list into UNIFORM pages of whatever size won. Two failures fell
+    /// out of that, both on Trent's phone on 2026-09-24:
+    ///
+    /// 1. Uniform pages meant the page that happened to hold the LONGEST
+    ///    rows set the size of EVERY page. One three-line reminder on page 1
+    ///    dropped the page size to 2, so "7 left" became "1/4", with two
+    ///    rows and a card's worth of empty space under them — and 26 tasks
+    ///    became 13 pages of 2.
+    /// 2. Each candidate sliced ITS OWN page from the stored page index, so
+    ///    the winner — and with it the page size and the page count —
+    ///    depended on which page was showing. The same 7 reminders read
+    ///    "1/4" on page 1 and "2/2" on page 2 (one row, Cold Shower, alone
+    ///    on an otherwise empty card): on page 2 the 6-row candidate's
+    ///    slice was a single short row, which trivially "fit".
+    ///
+    /// The divider rule survives from the uniform version (Trent's review:
+    /// "never let 'DONE · N' be the last item on a page... if the first
+    /// done row spills, the divider moves to the next page too"): a page
+    /// that would END on the divider, with done rows still to come, hands
+    /// the divider to the next page instead — unless the divider is the
+    /// page's only row, where there is nothing to back off to.
+    ///
+    /// A single row taller than `budget` still gets a page of its own
+    /// rather than looping forever; the callers cap a row's lines so that
+    /// never actually happens (see `WidgetTextMetrics.titleLines`).
+    static func pages(
+        heights: [CGFloat], spacing: CGFloat, budget: CGFloat, isDivider: (Int) -> Bool
     ) -> [Range<Int>] {
-        guard rows > 0, !items.isEmpty else { return [0..<items.count] }
+        guard !heights.isEmpty else { return [0..<0] }
         var pages: [Range<Int>] = []
-        var index = 0
-        while index < items.count {
-            var end = min(index + rows, items.count)
-            if end > index, end < items.count, isDivider(items[end - 1]) {
+        var start = 0
+        while start < heights.count {
+            var end = start
+            var used: CGFloat = 0
+            while end < heights.count {
+                let needed = used + (end > start ? spacing : 0) + heights[end]
+                if end > start, needed > budget { break }
+                used = needed
+                end += 1
+            }
+            if end - start > 1, end < heights.count, isDivider(end - 1) {
                 end -= 1
             }
-            // Degenerate floor: `rows == 1` (the smallest `ViewThatFits`
-            // candidate) can never keep a divider paired with a done row
-            // no matter what — there is no room. Rather than loop forever
-            // backing off to `index`, let the divider stand alone on its
-            // own page; the next page then starts with its done rows,
-            // still divider-less but at least not empty.
-            if end <= index { end = index + 1 }
-            pages.append(index..<end)
-            index = end
+            pages.append(start..<end)
+            start = end
         }
         return pages
+    }
+}
+
+// MARK: - Text metrics at the widget's real text size (2026-09-24)
+
+/// What SwiftUI ACTUALLY drew for one text style, read back out of layout
+/// by `RenderedTextReader`: the width of a fixed sample line, and one
+/// line's height.
+struct RenderedTextSample {
+    /// The sample every probe draws and every calibration measures —
+    /// ten capital Ms, wide enough that a rounding pixel is noise.
+    static let sampleLine = String(repeating: "M", count: 10)
+    /// Lines in the probe; its height ÷ this is the line pitch.
+    static let sampleLines = 10
+
+    let lineWidth: CGFloat
+    let lineHeight: CGFloat
+}
+
+/// The row-sizing numbers the Reminders/Tasks lists page with, at the text
+/// size the widget is ACTUALLY drawn at.
+///
+/// TWO CORRECTIONS, both found by rendering Trent's real data at his text
+/// size (XXX Large) in the Xcode preview, 2026-09-24:
+///
+/// 1. **The text size.** It is read from the view's `\.dynamicTypeSize`, never
+///    from a bare `UIFont.preferredFont(forTextStyle:)`. That trait-less call
+///    answers for the PROCESS's content size category, which isn't
+///    guaranteed to be the widget's — in the preview it plainly isn't (the
+///    Dynamic Type variant changes the environment SwiftUI draws with, and
+///    nothing else), and a widget extension is the same kind of process.
+///    When the two disagree, every line count and reserved height is
+///    computed for one text size while the text is drawn at another.
+/// 2. **SwiftUI's own metrics.** Even at the RIGHT text size, UIKit's font
+///    for `.subheadline` at XXX Large (21pt, `lineHeight` 25.06) is not what
+///    SwiftUI draws in a widget: SwiftUI's line pitch there measured 24.13,
+///    and its lines are correspondingly narrower — a title UIKit wrapped to
+///    three lines rendered in two, and its row kept an empty third line
+///    ("Check if clients are waiting on me", "Josie Allowance ($8)"). So
+///    when a `RenderedTextSample` is supplied, the measuring font is SCALED
+///    to SwiftUI's drawn width for the same sample line, and the line
+///    height is SwiftUI's drawn pitch. UIKit still does the wrapping — the
+///    only text engine a widget can ask "how many lines?" — but at the size
+///    SwiftUI actually drew.
+///
+/// macOS has no Dynamic Type in widgets; there the platform's preferred
+/// fonts are the base, calibrated the same way.
+struct WidgetTextMetrics {
+    /// One `.subheadline` line (row titles) as drawn, unrounded — the line
+    /// pitch every row height is built from.
+    let titleLineHeight: CGFloat
+    private let titlePointSize: CGFloat
+    /// The `.caption2` font, at its drawn size, with monospaced digits — due
+    /// times render `.monospacedDigit()`, and a proportional "1" is narrower
+    /// than the digit actually drawn.
+    let caption2Font: WidgetTheme.PlatformFont
+    let caption2LineHeight: CGFloat
+
+    /// `title`/`caption2`: what `RenderedTextReader` read back from SwiftUI.
+    /// `nil` uses the platform fonts as-is — correct for the text size,
+    /// slightly large for SwiftUI's drawing (see this struct's doc).
+    init(dynamicTypeSize: DynamicTypeSize, title: RenderedTextSample? = nil, caption2: RenderedTextSample? = nil) {
+        #if os(iOS)
+        let traits = UITraitCollection(preferredContentSizeCategory: Self.category(for: dynamicTypeSize))
+        let baseTitle = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
+        let baseCaption = UIFont.preferredFont(forTextStyle: .caption2, compatibleWith: traits)
+        #else
+        let baseTitle = NSFont.preferredFont(forTextStyle: .subheadline, options: [:])
+        let baseCaption = NSFont.preferredFont(forTextStyle: .caption2, options: [:])
+        #endif
+        titlePointSize = baseTitle.pointSize * Self.scale(of: baseTitle, toMatch: title)
+        let captionSize = baseCaption.pointSize * Self.scale(of: baseCaption, toMatch: caption2)
+        #if os(iOS)
+        caption2Font = UIFont.monospacedDigitSystemFont(ofSize: captionSize, weight: .regular)
+        #else
+        caption2Font = NSFont.monospacedDigitSystemFont(ofSize: captionSize, weight: .regular)
+        #endif
+        titleLineHeight = title?.lineHeight ?? WidgetTheme.lineHeight(of: baseTitle)
+        caption2LineHeight = caption2?.lineHeight ?? WidgetTheme.lineHeight(of: baseCaption)
+    }
+
+    /// The factor that makes `font` draw `RenderedTextSample.sampleLine` as
+    /// wide as SwiftUI did; 1 with no sample to match.
+    private static func scale(of font: WidgetTheme.PlatformFont, toMatch sample: RenderedTextSample?) -> CGFloat {
+        guard let sample, sample.lineWidth > 0 else { return 1 }
+        let measured = (RenderedTextSample.sampleLine as NSString).size(withAttributes: [.font: font]).width
+        return measured > 0 ? sample.lineWidth / measured : 1
+    }
+
+    /// The subheadline font at a given weight, at the drawn size — weight
+    /// has to match what's drawn (P3/P4 titles render `.semibold`, which is
+    /// measurably wider) or a title near the wrap boundary undercounts its
+    /// lines.
+    func titleFont(weight: Font.Weight) -> WidgetTheme.PlatformFont {
+        #if os(iOS)
+        UIFont.systemFont(ofSize: titlePointSize, weight: WidgetTheme.uiWeight(weight))
+        #else
+        NSFont.systemFont(ofSize: titlePointSize, weight: WidgetTheme.nsWeight(weight))
+        #endif
+    }
+
+    /// How many lines a row title gets: its real wrapped count at `width`,
+    /// capped at `cap` (iOS's 3-line rule; `nil` on macOS, which never caps
+    /// — but never more lines than `maxHeight` can hold, so no single row
+    /// can outgrow the card the pager pages through).
+    func titleLines(
+        _ text: String, width: CGFloat, weight: Font.Weight, cap: Int?, maxHeight: CGFloat
+    ) -> Int {
+        let real = WidgetTheme.measuredLineCount(for: text, maxWidth: width, font: titleFont(weight: weight))
+        let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
+        return min(real, cap ?? real, fitting)
+    }
+
+    /// The exact height `lines` title lines take — the number a row is
+    /// FRAMED to, and the number the pager adds up. Rounded up once for the
+    /// whole block (not per line), so three 24.13pt lines cost 73, not 75.
+    func titleHeight(lines: Int) -> CGFloat {
+        ceil(CGFloat(lines) * titleLineHeight)
+    }
+
+    /// One `.caption2` line, rounded up — the divider row's height.
+    var caption2Height: CGFloat { ceil(caption2LineHeight) }
+
+    /// The list's bottom row (`Select` · `‹ n/N ›` · the completed dot) —
+    /// a FIXED height the pager can subtract before it pages: the taller of
+    /// a caption2 line and `ListPager`'s 18pt glyph frame. No air of its
+    /// own: the `rowSpacing` above it and WidgetKit's content margin below
+    /// already separate it, and every point here is a point a row can't
+    /// have. Every control in that row is framed to this and bleeds its tap
+    /// target past it (see `ListPager`), so its real size never drifts from
+    /// what was budgeted.
+    var bottomBarHeight: CGFloat { max(18, caption2Height) }
+
+    /// `ActionPill`'s height — a caption2 line plus its 6pt top/bottom
+    /// padding. Tasks' snooze/select bars are framed to budgets built on it.
+    var actionPillHeight: CGFloat { caption2Height + 12 }
+
+    #if os(iOS)
+    private static func category(for size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        @unknown default: return .large
+        }
+    }
+    #endif
+}
+
+/// Lays `content` out in this view's full size, handing it that size and
+/// `WidgetTextMetrics` calibrated to what SwiftUI really draws here — see
+/// that struct's doc for why UIKit's own numbers aren't good enough.
+///
+/// How: clear PROBE texts — ten lines of `RenderedTextSample.sampleLine`
+/// in `.subheadline`, and again in `.caption2` — sit at the region's
+/// top-left, each with a `GeometryReader` over it reading SwiftUI's real
+/// size for that text: its width is one sample line's drawn width, its
+/// height ÷ 10 is the drawn line pitch. `content` is laid out inside the
+/// innermost reader but framed to the REGION's size from its top-left, so
+/// it covers exactly the region; it just overflows the probes' own frames,
+/// which draw nothing. One layout pass, no preferences, no state — the only
+/// kind of measurement a widget's single render allows.
+struct RenderedTextReader<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ViewBuilder let content: (CGSize, WidgetTextMetrics) -> Content
+
+    var body: some View {
+        GeometryReader { region in
+            probe(.subheadline) { title in
+                probe(.caption2) { caption in
+                    content(
+                        region.size,
+                        WidgetTextMetrics(dynamicTypeSize: dynamicTypeSize, title: title, caption2: caption)
+                    )
+                    .frame(width: region.size.width, height: region.size.height, alignment: .topLeading)
+                }
+            }
+        }
+    }
+
+    private func probe<Inner: View>(
+        _ font: Font, @ViewBuilder inner: @escaping (RenderedTextSample) -> Inner
+    ) -> some View {
+        let lines = RenderedTextSample.sampleLines
+        return Text(Array(repeating: RenderedTextSample.sampleLine, count: lines).joined(separator: "\n"))
+            .font(font)
+            .lineLimit(lines)
+            .fixedSize()
+            .foregroundStyle(.clear)
+            .accessibilityHidden(true)
+            .overlay(alignment: .topLeading) {
+                GeometryReader { probe in
+                    inner(RenderedTextSample(lineWidth: probe.size.width, lineHeight: probe.size.height / CGFloat(lines)))
+                }
+            }
     }
 }
 
@@ -804,42 +1015,80 @@ struct UndoRedoButtons: View {
     }
 }
 
-/// The "show completed" eye toggle (2026-09-23), left of `UndoRedoButtons` in
-/// the Reminders/Tasks `systemLarge` headers (mockup option A: completed
-/// items sit at the bottom of the card, Trent's pick). Self-contained and
-/// keyed by an arbitrary `kind` string (`WidgetStore.showCompleted(for:)` /
-/// `ToggleShowCompletedIntent`), so a parallel branch building the Track
-/// widget's own eye toggle can reuse this exact view — and its storage —
-/// without either branch's change colliding with the other's.
+/// The "show completed" toggle, as a DOT in the list's bottom row
+/// (2026-09-24 — Trent: "change the eyeball to a dot and move it to the
+/// bottom by the paginator"). Hollow = completed items hidden, filled indigo
+/// = shown, with a small word beside it ("done" on Reminders/Tasks, "met" on
+/// Quotas) because a bare dot says nothing on its own. It used to be an
+/// `eye`/`eye.slash` glyph in the HEADER, which — with the clock, Undo,
+/// Redo and ‹ › beside it — squeezed the title down to "Early m…"/"Up…".
 ///
-/// `systemLarge` only — the call sites gate it (mirroring `UndoRedoButtons`'
-/// own systemMedium/Large split doc): a systemMedium card has no header
-/// height, and no row budget, to spare on a DONE section at all (see
-/// `WidgetTheme.compactRowSpacing`'s "6pt costs a whole row" doc).
-struct ShowCompletedToggle: View {
-    let kind: String
+/// Generic over its intent so all three kinds share one look:
+/// `ToggleShowCompletedIntent(kind:)` for Reminders/Tasks,
+/// `ToggleQuotasShowMetIntent()` for Quotas (a different state — a met
+/// quota stays open — with its own store key).
+///
+/// Framed to the bottom row's fixed height (`WidgetTextMetrics.
+/// bottomBarHeight`) with its tap target bled half a `rowSpacing` above
+/// and below — the `ListPager` trick — so it is a comfortable target
+/// without costing the row a point of the height the pager budgeted.
+struct CompletedDotToggle<I: AppIntent>: View {
+    let intent: I
     let isOn: Bool
+    let label: String
+    let height: CGFloat
 
-    /// `eye.slash` (secondary) off, `eye` (indigo, `WidgetTheme.
-    /// indigoAccent`) on — matched to the parallel Quotas widget rebuild's
-    /// own eye toggle for the same affordance across all three kinds, per
-    /// coordinator note (2026-09-23). Deliberately NOT `eye`/`eye.fill`
-    /// (this view's first-drafted pair): "slashed" reads as "hidden, tap to
-    /// reveal" more clearly than a plain outline does, and the indigo tint
-    /// on ON is what makes an active toggle visually distinct from
-    /// `UndoRedoButtons`' plain secondary-gray icons beside it, not just a
-    /// filled-vs-outline glyph difference.
+    private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
     var body: some View {
-        Button(intent: ToggleShowCompletedIntent(kind: kind)) {
-            Image(systemName: isOn ? "eye" : "eye.slash")
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+        Button(intent: intent) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(isOn ? WidgetTheme.indigoAccent : Color.clear)
+                    .overlay(Circle().strokeBorder(isOn ? Color.clear : Color.secondary, lineWidth: 1.2))
+                    .frame(width: 8, height: 8)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .frame(height: height + 2 * bleed)
+            .padding(.leading, 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isOn ? WidgetTheme.indigoAccent : Color.secondary)
-        .accessibilityLabel(Text(isOn ? "Hide completed" : "Show completed"))
+        .padding(.vertical, -bleed)
+        .accessibilityLabel(Text(isOn ? "Hide \(label)" : "Show \(label)"))
+    }
+}
+
+/// The list's bottom row (2026-09-24): `leading` at the left edge (Tasks'
+/// "Select"; nothing on Reminders/Quotas), the `‹ n/N ›` pager CENTRED on
+/// the card, and `trailing` at the right edge (the completed dot). The pager
+/// sits in its own layer so it stays centred on the card whatever the two
+/// sides hold — a three-column HStack would drift it off-centre the moment
+/// "Select" and "done" differ in width.
+///
+/// Exactly `height` tall (`WidgetTextMetrics.bottomBarHeight`) — the number
+/// the list subtracted from the card before paging, so the pager can never
+/// be pushed off the bottom by a row the budget didn't know about.
+struct ListBottomBar<Leading: View, Pager: View, Trailing: View>: View {
+    let height: CGFloat
+    @ViewBuilder let leading: Leading
+    @ViewBuilder let pager: Pager
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        ZStack {
+            pager
+            HStack(spacing: 0) {
+                leading
+                Spacer(minLength: 0)
+                trailing
+            }
+        }
+        .frame(height: height)
     }
 }
 
@@ -868,12 +1117,13 @@ struct DoneDivider: View {
 /// to page through things that are too long to fit on the widget screen. It
 /// should be a number/number to show what page you're on… maybe at the
 /// bottom." Replaces "+N more" on the Reminders and Tasks systemLarge lists
-/// once a card's real content outgrows even the tallest `ViewThatFits`
-/// candidate (`RemindersListView.card`/`TasksListView.card`).
+/// (and pages the Quotas chip flow) once a card's content outgrows one page
+/// (`WidgetTheme.pages` / `QuotaFlow.paginate`). Sits centred in
+/// `ListBottomBar`, on EVERY page when there is more than one.
 ///
 /// `page`/`totalPages` are 0-based internally, shown 1-based, and computed
-/// by the CALLER from whichever candidate actually won — this view is dumb
-/// chrome, the same division of labor as `ChevronPager`.
+/// by the CALLER — this view is dumb chrome, the same division of labor as
+/// `ChevronPager`.
 ///
 /// Dims at the ends like every other pager in this file rather than
 /// wrapping (see `ChevronButton`'s doc): a reader paging through a long list
@@ -896,15 +1146,18 @@ struct ListPager<Previous: AppIntent, Next: AppIntent>: View {
     private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
 
     var body: some View {
+        // Sized to its content (2026-09-24 — it used to pad itself out to
+        // the full width with Spacers); `ListBottomBar` centres it on the
+        // card in its own layer, beside "Select" and the completed dot.
         HStack(spacing: 6) {
-            Spacer(minLength: 0)
             glyphButton(intent: previous, symbol: "chevron.left", enabled: page > 0, label: "Previous page")
             Text("\(page + 1)/\(totalPages)")
                 .font(.caption2)
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .fixedSize()
             glyphButton(intent: next, symbol: "chevron.right", enabled: page < totalPages - 1, label: "Next page")
-            Spacer(minLength: 0)
         }
     }
 
@@ -1051,7 +1304,7 @@ extension View {
 // `SelectModeActionBar`'s doc), so select mode's bottom-left is simply empty
 // here. Tasks-only — see `WidgetStore`'s "Tasks snooze mode / bulk select"
 // section doc for why these views take no `kind` parameter the way
-// `ShowCompletedToggle` does.
+// `CompletedDotToggle`'s intent does.
 
 /// Shared capsule chrome for every text-labeled snooze/select-mode action
 /// button — factored once so the half-dozen call sites below don't each
@@ -1118,10 +1371,9 @@ private struct ActionCircle<I: AppIntent>: View {
 }
 
 /// The header clock toggle — flips Tasks' snooze mode. Same icon-button
-/// chrome as `ShowCompletedToggle`, deliberately not sharing its type: that
-/// one is generic over `kind`/a completion-shaped boolean, this one is
-/// Tasks-only and wired to a different intent — see `WidgetStore`'s doc for
-/// why the two toggles don't share a store key either.
+/// chrome as `UndoRedoButtons`, tinted indigo when on. Tasks-only and wired
+/// to its own intent — see `WidgetStore`'s doc for why it doesn't share a
+/// store key with "show completed".
 struct SnoozeModeToggle: View {
     let isOn: Bool
 
@@ -1148,6 +1400,11 @@ struct SnoozeModeToggle: View {
 struct SnoozeRowButtons: View {
     let taskId: Int
 
+    /// The ⏭ circle's diameter — the floor a snooze-mode row's height is
+    /// paged with (`TasksListView.layout(for:)`), so a one-line row never
+    /// lets the circle hang past what the pager counted.
+    static let height: CGFloat = 32
+
     var body: some View {
         HStack(spacing: 6) {
             ActionCircle(
@@ -1155,7 +1412,7 @@ struct SnoozeRowButtons: View {
                 systemImage: "forward.end.fill",
                 isPrimary: true,
                 isEnabled: !TimeSlotStore.cachedSlots.isEmpty,
-                diameter: 32
+                diameter: Self.height
             )
             .accessibilityLabel(Text("Snooze to next period"))
             ActionPill(intent: SnoozeTaskRowIntent(taskId: taskId, target: .plusOneHour), label: "+1h")
@@ -1187,16 +1444,29 @@ struct SelectionMarker: View {
 /// Resting mode's bottom-LEFT "Select" entry point — Trent's pick between
 /// the two positions the mockup showed side by side: "bottom-left opposite
 /// the pager; the thumb-friendly right side stays for check-offs."
+///
+/// Framed to the bottom row's fixed `height` with its tap target bled half
+/// a `rowSpacing` past it (2026-09-24) — it used to pad itself 6pt top and
+/// bottom, which made the bottom row taller than anything the list's pager
+/// budgeted for (see `ListBottomBar`).
 struct SelectEntryButton: View {
+    let height: CGFloat
+
+    private var bleed: CGFloat { WidgetTheme.rowSpacing / 2 }
+
     var body: some View {
         Button(intent: EnterTasksSelectModeIntent()) {
             Text("Select")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
-                .padding(.vertical, 6)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(height: height + 2 * bleed)
+                .padding(.trailing, 8)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.vertical, -bleed)
     }
 }
 
@@ -1244,6 +1514,10 @@ struct SnoozeAllOverdueBar: View {
 struct SelectModeActionBar: View {
     let hasSelection: Bool
 
+    /// The icon circles' diameter — with `ActionPill`'s height, what
+    /// `TasksListView.bottomHeight(withPager:)` budgets this bar at.
+    static let circleDiameter: CGFloat = 28
+
     var body: some View {
         HStack(spacing: 6) {
             Spacer(minLength: 4)
@@ -1253,7 +1527,7 @@ struct SelectModeActionBar: View {
                 systemImage: "forward.end.fill",
                 isPrimary: true,
                 isEnabled: hasSelection && !TimeSlotStore.cachedSlots.isEmpty,
-                diameter: 28
+                diameter: Self.circleDiameter
             )
             .accessibilityLabel(Text("Snooze selected to next period"))
             ActionPill(
@@ -1262,7 +1536,7 @@ struct SelectModeActionBar: View {
             .accessibilityLabel(Text("Snooze selected one hour"))
             ActionCircle(
                 intent: CompleteSelectedTasksIntent(), systemImage: "checkmark",
-                isEnabled: hasSelection, diameter: 28
+                isEnabled: hasSelection, diameter: Self.circleDiameter
             )
             .accessibilityLabel(Text("Complete selected"))
             Button(intent: CancelTasksSelectModeIntent()) {

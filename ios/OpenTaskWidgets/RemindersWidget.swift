@@ -403,51 +403,101 @@ struct RemindersWidget: Widget {
 }
 
 #if DEBUG
-// MARK: - Previews (2026-09-23, day-naming + "show completed" verification)
+// MARK: - Previews (2026-09-24, real-data snapshot)
 //
-// Realistic named sample data — deliberately NOT `SampleData.swift`, which
-// stays generic/non-identifying on purpose (it ships in the app bundle and
-// backs the real widget gallery/placeholder/redaction preview). These two
-// previews are `#if DEBUG`-only and never ship, so real-looking personal
-// content here is fine.
+// Trent's REAL reminders, read-only from production on 2026-09-24 at the
+// moment he screenshotted the widget ("Early morning · 7 left", page 1/4
+// showing only two rows — the list-fill bug this snapshot exists to
+// reproduce). Titles are VERBATIM, including the very long "Singing and
+// many other body things…" one: the fill bug only shows up with real
+// title lengths, and a tidy generic corpus is exactly what let it ship.
+// Deliberately NOT `SampleData.swift`, which ships in the app bundle and
+// backs the real widget gallery/placeholder — these previews are
+// `#if DEBUG`-only and never ship, and every title here already lives in
+// Trent's own app.
 //
-// TWO SEPARATE #Preview BLOCKS per toggle state, not two timeline entries
-// inside ONE preview: `WidgetStore.showCompleted` is read live from the App
-// Group at RENDER time (2026-09-23's design — see `WidgetStore`'s "Show
-// completed" section), not carried on the entry, and a `timeline:` closure's
-// entry array is built ONCE, before any entry in it is ever rendered — so a
-// store mutation made while building ONE shared timeline would be in effect
-// for every entry in it, not scoped to just one. Setting the toggle
-// immediately before each SEPARATE preview's own (single-entry) timeline is
-// what actually makes the two renders differ.
+// ONE #Preview BLOCK PER STORE STATE (page, "show completed"), not several
+// timeline entries in one: the page index and the toggle are read live from
+// the App Group at RENDER time, and a `timeline:` closure's entries are all
+// built before any of them renders — so a store write made while building
+// one shared timeline would apply to every entry in it.
 private enum ReminderPreviewData {
-    static var eveningGroup: ReminderGroupDTO {
+    /// The snapshot's clock: 8:44 AM local today — inside Early morning
+    /// (07:00-09:00), where Trent's screenshots were taken.
+    static var now: Date {
+        Calendar.current.date(bySettingHour: 8, minute: 44, second: 0, of: Date()) ?? Date()
+    }
+
+    private static func group(
+        _ id: Int, _ label: String, _ start: String, _ reminders: [TaskDTO], considered: [TaskDTO]
+    ) -> ReminderGroupDTO {
         ReminderGroupDTO(
-            slot: TimeSlotDTO(id: 3, label: "Evening", startTime: "20:00"),
-            reminders: [
-                TaskDTO(
-                    id: 901, title: "Owen may need to get his thoughts out at night time",
-                    priority: 2, isReminder: true
-                ),
-                TaskDTO(
-                    id: 902, title: "Timed breathing to connect with breath+body (use app)",
-                    priority: 1, isReminder: true
-                ),
-                TaskDTO(id: 903, title: "Head massage (proprioception)", priority: 1, isReminder: true),
-                TaskDTO(id: 904, title: "Evening Kegel App (after PRI)", priority: 1, isReminder: true),
-            ],
-            considered: 2,
-            consideredItems: [
-                TaskDTO(id: 905, title: "Hair treatment", isReminder: true),
-                TaskDTO(id: 906, title: "Kelly chocolate", isReminder: true),
-            ]
+            slot: TimeSlotDTO(id: id, label: label, startTime: start),
+            reminders: reminders,
+            considered: considered.count,
+            consideredItems: considered
         )
     }
 
+    /// Every slot of the day, as `GET /api/reminders` returned them at 8:44.
+    static var groups: [ReminderGroupDTO] {
+        [
+            group(11, "Early morning", "07:00", [
+                TaskDTO(id: 604, title: "Supplements ( Creatine, Vitamin D, L-Theanine )", priority: 2, isReminder: true),
+                TaskDTO(id: 64, title: "Singing and many other body things require a feedback loop, where I hear/see/sense/assess what I'm doing while I do it. Allows leveraging of IQ/executive/conscious processing. (that’s how you connect the smart, thinking part of your brain to your body.) Able to mentally acknowledge what I’m seeing, or hearing/sensing.", priority: 0, isReminder: true),
+                TaskDTO(id: 168, title: "Face (Cleanse, Treatment, Lotion, SPF)", priority: 0, isReminder: true),
+                TaskDTO(id: 208, title: "Think of improvement as cool to see what’s possible?", priority: 0, isReminder: true),
+                TaskDTO(id: 218, title: "Athleticism uses the full body to accomplish the task", priority: 0, isReminder: true),
+                TaskDTO(id: 223, title: "Walk and move in a way that pumps blood to the pelvis", priority: 0, isReminder: true),
+                TaskDTO(id: 23432, title: "Cold Shower (Naval)", priority: 0, isReminder: true),
+            ], considered: [
+                TaskDTO(id: 24, title: "Depressed = Past, Anxious = Future, Present = Peace", priority: 0, isReminder: true),
+            ]),
+            group(12, "Morning", "09:00", [
+                TaskDTO(id: 2226, title: "Check GitHub issues", priority: 2, isReminder: true),
+                TaskDTO(id: 126, title: "Do my PRI", priority: 0, isReminder: true),
+                TaskDTO(id: 183, title: "Mixed Nuts + Pumpkin and Sunflower Seeds", priority: 0, isReminder: true),
+                TaskDTO(id: 197, title: "Vision therapy (Relax into it, hold it steady — good for presence)", priority: 0, isReminder: true),
+                TaskDTO(id: 215, title: "Stair pushups", priority: 0, isReminder: true),
+                TaskDTO(id: 18050, title: "how has Claudes speech been (pleasant and effective to talk with?)", priority: 0, isReminder: true),
+            ], considered: [
+            ]),
+            group(13, "Midday", "12:00", [
+                TaskDTO(id: 2247, title: "Check all public visibility places", priority: 2, isReminder: true),
+                TaskDTO(id: 38, title: "Is Kelly using vinegar softener", priority: 0, isReminder: true),
+                TaskDTO(id: 146, title: "Kel game training", priority: 0, isReminder: true),
+                TaskDTO(id: 279, title: "Peanut", priority: 0, isReminder: true),
+                TaskDTO(id: 23393, title: "Teeth whitening (optional)", priority: 0, isReminder: true),
+            ], considered: [
+            ]),
+            group(14, "Afternoon", "16:00", [
+                TaskDTO(id: 12, title: "Being loving is a much happier way to live/be", priority: 0, isReminder: true),
+                TaskDTO(id: 127, title: "Reinforce to the kids that they should be enjoying themselves (“are you enjoying your day?”, “what are you going to do to enjoy your day?”)", priority: 0, isReminder: true),
+                TaskDTO(id: 150, title: "Make sure both kids are in a ball sport or hand eye coordination sport", priority: 0, isReminder: true),
+                TaskDTO(id: 222, title: "“It’s Dad and Moms job to take care of me, and my job to listen (to them).”", priority: 0, isReminder: true),
+            ], considered: [
+            ]),
+            group(15, "Evening", "20:30", [
+                TaskDTO(id: 41, title: "Hair treatment", priority: 0, isReminder: true),
+                TaskDTO(id: 44, title: "Owen may need to get his thoughts out at night time", priority: 0, isReminder: true),
+                TaskDTO(id: 70, title: "Timed breathing to connect with breath+body (use app)", priority: 0, isReminder: true),
+                TaskDTO(id: 94, title: "Head massage (proprioception)", priority: 0, isReminder: true),
+                TaskDTO(id: 136, title: "Surround myself with advanced/business/thinking people and books. Read books, listen to people, play games-whatever it takes. Provides learning + mindset reinforcement", priority: 0, isReminder: true),
+                TaskDTO(id: 273, title: "Evening Kegel App (after PRI) (finish with long reverse kegel)", priority: 0, isReminder: true),
+                TaskDTO(id: 3093, title: "Ask myself: “How did I perform today?”", priority: 0, isReminder: true),
+            ], considered: [
+            ]),
+        ]
+    }
+
+    /// Early morning's slot key — the on-screen slot, and what the stored
+    /// page index is paired with (`WidgetStore.remindersPage(for:)`).
+    static let earlyMorningKey = 11
+
     static func entry() -> RemindersEntry {
         RemindersEntry(
-            date: Date(),
-            groups: [eveningGroup],
+            date: now,
+            groups: groups,
             slotIndex: 0,
             staleSince: nil,
             isSignedOut: false,
@@ -456,25 +506,49 @@ private enum ReminderPreviewData {
             actionDescription: nil
         )
     }
+
+    /// Pins the page and the toggle — previews share the simulator's App
+    /// Group UserDefaults, so whatever a prior preview (or a real widget)
+    /// left there would otherwise bleed into this render.
+    static func prepare(page: Int, showCompleted: Bool) {
+        WidgetStore.setShowCompleted(showCompleted, for: RemindersWidget.kind)
+        WidgetStore.setRemindersPage(page, for: earlyMorningKey)
+    }
 }
 
-#Preview("Reminders Large — Completed Off", as: .systemLarge) {
+#Preview("Reminders Large — page 1", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
-    let _ = WidgetStore.setShowCompleted(false, for: RemindersWidget.kind)
-    // Reset the stored page — preview renders share the same App Group
-    // UserDefaults as the simulator's real widgets, so a page a PRIOR
-    // preview (or a real device session) left on 1+ would otherwise bleed
-    // into this one.
-    let _ = WidgetStore.setRemindersPage(0, for: ReminderPreviewData.eveningGroup.slotKey)
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.entry()
 }
 
-#Preview("Reminders Large — Completed On", as: .systemLarge) {
+#Preview("Reminders Large — page 2", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
-    let _ = WidgetStore.setShowCompleted(true, for: RemindersWidget.kind)
-    let _ = WidgetStore.setRemindersPage(0, for: ReminderPreviewData.eveningGroup.slotKey)
+    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 3", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — completed on, last page", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    // Past the end on purpose — the list clamps to its last page.
+    let _ = ReminderPreviewData.prepare(page: 99, showCompleted: true)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Medium", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.entry()
 }
 #endif
