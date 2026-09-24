@@ -1,70 +1,27 @@
 import WidgetKit
 import SwiftUI
 
-/// One entry's worth of Smart Stack content — deliberately flat (no
-/// `ReminderGroupDTO`/`TaskDTO` arrays) because the accessory families this
-/// widget renders (`accessoryRectangular`, `accessoryCircular`,
-/// `accessoryCorner`) only ever show a handful of numbers and up to two
-/// titles; carrying the full payload into the entry would just be dead
-/// weight the views never read.
-struct WatchWidgetEntry: TimelineEntry {
-    let date: Date
-    let isConfigured: Bool
-    /// Current slot's label ("Midday"), or "Reminders" when there are no
-    /// slots configured at all.
-    let slotLabel: String
-    /// Reminders still pending in the current slot.
-    let remindersLeft: Int
-    /// `remindersLeft` + however many were already considered today in this
-    /// slot — the ring's denominator. 0 when the slot has nothing at all
-    /// (never started, or truly empty), which both ring views read as "no
-    /// progress to show" rather than dividing by zero.
-    let remindersTotal: Int
-    /// Overdue task count (§ Tasks page's "Up next" scope), shown on the
-    /// rectangular widget in place of an upcoming title when there's
-    /// something more pressing than the current slot's reminders, and used
-    /// by the ring views as a fallback subject once the current slot's own
-    /// reminders are all done.
-    let overdueCount: Int
-    /// Up to 2 reminder titles from the current slot, earliest first — never
-    /// truncated by this struct (Trent's "never truncate a reminder" rule);
-    /// the VIEW is responsible for how much of a title actually fits.
-    let upcomingTitles: [String]
-
-    static let signedOut = WatchWidgetEntry(
-        date: Date(), isConfigured: false, slotLabel: "OpenTask",
-        remindersLeft: 0, remindersTotal: 0, overdueCount: 0, upcomingTitles: []
-    )
-
-    /// Non-identifying placeholder content for the widget gallery and
-    /// redaction — same reasoning as the phone widgets' `SampleData`
-    /// (`ios/OpenTaskWidgets/SampleData.swift`), independently written here
-    /// since that file lives in a target this one may not import.
-    static let sample = WatchWidgetEntry(
-        date: Date(), isConfigured: true, slotLabel: "Midday",
-        remindersLeft: 2, remindersTotal: 3, overdueCount: 1,
-        upcomingTitles: ["Step away from the desk", "Drink water"]
-    )
-}
-
 /// `TimelineProvider` (not the `AppIntent` variant — this widget has no
 /// user-facing configuration) that fetches live data via the shared
 /// `APIClient`, same Keychain credentials the watch app itself uses. Written
-/// as completion-based `TimelineProvider` methods with an inner `Task` rather
-/// than the newer async provider protocol, matching the plain,
-/// widely-supported pattern and keeping this file readable independent of
-/// which async provider variant a given watchOS SDK offers.
+/// as completion-based `TimelineProvider` methods with an inner `Task`,
+/// matching the plain, widely-supported pattern.
+///
+/// All card logic lives in `ReminderStackTimeline` (pure); this type only
+/// gathers inputs — network, `WatchCache` fallback, and the widget's own App
+/// Group state (`WatchWidgetState`: skips, ✓ tombstones, the last snooze
+/// result) — and schedules entries.
 struct ReminderStackProvider: TimelineProvider {
     func placeholder(in context: Context) -> WatchWidgetEntry {
-        .sample
+        ReminderStackPlaceholder.entry
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WatchWidgetEntry) -> Void) {
         if context.isPreview {
-            completion(.sample)
+            completion(ReminderStackPlaceholder.entry)
             return
         }
-        completion(cachedOrSampleEntry())
+        completion(cachedEntries(now: Date()).first ?? ReminderStackPlaceholder.entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchWidgetEntry>) -> Void) {
@@ -74,106 +31,135 @@ struct ReminderStackProvider: TimelineProvider {
         }
 
         Task {
-            let entry = await fetchEntry() ?? cachedOrSampleEntry()
-            completion(Timeline(entries: [entry], policy: .after(refreshDate())))
+            let now = Date()
+            let fetched = await fetchInputs()
+            let entries = fetched.map { buildEntries(groups: $0.groups, tasks: $0.tasks, now: now) }
+                ?? cachedEntries(now: now)
+            completion(Timeline(
+                entries: entries.isEmpty ? [ReminderStackPlaceholder.entry] : entries,
+                policy: .after(refreshDate())
+            ))
         }
     }
 
-    /// ~15–30 min budgeted refresh (the task brief's range) — the watch app
-    /// itself calls `WidgetCenter.shared.reloadAllTimelines()` after every
-    /// mutation for the budget-free "acted just now" case, so this scheduled
-    /// policy only has to cover the gap between explicit reloads: the clock
-    /// crossing into a new slot, or a task becoming overdue, with nobody
-    /// touching the app in between.
+    /// Smart Stack relevance (watchOS 11+ `TimelineProvider.relevance()`,
+    /// kinded `RelevantContext.date(interval:kind:)` on watchOS 26 — see
+    /// `ReminderStackTimeline.relevantIntervals` for the windows). Cache-only,
+    /// no network: the system may ask at any time, and every fetch (widget or
+    /// app) writes the cache and invalidates this. Deliberately NOT
+    /// watchOS 26's `RelevanceConfiguration` — that is a separate,
+    /// system-suggested widget type (its own `RelevanceEntriesProvider` and a
+    /// configuration intent) for things you'd never add yourself; Trent adds
+    /// this card to his stack, so the timeline widget carries the hints.
+    @available(watchOS 11.0, *)
+    func relevance() async -> WidgetRelevance<Void> {
+        guard let groups = WatchCache.loadReminders() else { return WidgetRelevance([]) }
+        let tasks = WatchCache.loadTasks()?.tasks ?? []
+        return ReminderStackTimeline.widgetRelevance(groups: groups, tasks: tasks, now: Date())
+    }
+
+    /// ~20 min budgeted refresh. Everything that changes the card on a known
+    /// clock (slot starts, due times, the snooze result's expiry) is already
+    /// a pre-scheduled entry (`ReminderStackTimeline.changeDates`), and every
+    /// ✓/Snooze tap gets a free post-intent reload, so this only has to catch
+    /// changes made elsewhere (web, phone).
     private func refreshDate() -> Date {
         Date().addingTimeInterval(20 * 60)
     }
 
-    /// Live fetch, on success writing through `WatchCache` so a later failed
-    /// fetch (or the Reminders/Tasks app pages, if they ever want a fast
-    /// first paint) has something recent to fall back to. `nil` on any
-    /// failure — the caller falls back to the cache.
-    private func fetchEntry() async -> WatchWidgetEntry? {
+    private struct Inputs {
+        let groups: [ReminderGroupDTO]
+        let tasks: [TaskDTO]
+    }
+
+    /// Live fetch, writing through `WatchCache` on success (the watch app's
+    /// pages and a later failed fetch both read it). `nil` if reminders
+    /// failed — the caller falls back to the cache. Tasks failing alone falls
+    /// back to cached tasks rather than reading as "nothing overdue".
+    private func fetchInputs() async -> Inputs? {
         async let remindersCall: RemindersPayload? = try? await APIClient.shared.fetchReminders()
         async let tasksCall: [TaskDTO]? = try? await APIClient.shared.fetchOpenTasks()
-        let (reminders, tasks) = await (remindersCall, tasksCall)
+        async let slotsCall: [TimeSlotDTO]? = try? await APIClient.shared.fetchTimeSlots()
+        let (reminders, tasks, slots) = await (remindersCall, tasksCall, slotsCall)
 
         guard let reminders else { return nil }
         WatchCache.saveReminders(reminders.groups)
+        if let slots, !slots.isEmpty {
+            TimeSlotStore.save(slots)
+        }
         if let tasks {
-            // Projects aren't needed by any accessory-family view here, but
-            // `WatchCache.saveTasks` is the one write path and takes both —
-            // an empty project list just means the app's next read fills in
-            // stale project names for one pass, never a crash.
-            WatchCache.saveTasks(tasks, projects: [])
+            // Keep whatever projects the app cached — `saveTasks` is the one
+            // write path and takes both, and no widget view needs projects.
+            WatchCache.saveTasks(tasks, projects: WatchCache.loadTasks()?.projects ?? [])
         }
-        return buildEntry(groups: reminders.groups, tasks: tasks ?? [])
+        return Inputs(groups: reminders.groups, tasks: tasks ?? WatchCache.loadTasks()?.tasks ?? [])
     }
 
-    private func cachedOrSampleEntry() -> WatchWidgetEntry {
-        guard let groups = WatchCache.loadReminders() else {
-            return APIClient.shared.isConfigured ? .sample : .signedOut
-        }
-        let tasks = WatchCache.loadTasks()?.tasks ?? []
-        return buildEntry(groups: groups, tasks: tasks)
+    private func cachedEntries(now: Date) -> [WatchWidgetEntry] {
+        guard APIClient.shared.isConfigured else { return [.signedOut] }
+        guard let groups = WatchCache.loadReminders() else { return [] }
+        return buildEntries(groups: groups, tasks: WatchCache.loadTasks()?.tasks ?? [], now: now)
     }
 
-    private func buildEntry(groups: [ReminderGroupDTO], tasks: [TaskDTO]) -> WatchWidgetEntry {
-        guard !groups.isEmpty else {
-            return WatchWidgetEntry(
-                date: Date(), isConfigured: true, slotLabel: "Reminders",
-                remindersLeft: 0, remindersTotal: 0,
-                overdueCount: WatchSlotLogic.overdueTasks(from: tasks).count,
-                upcomingTitles: []
+    /// The entry for now plus one per `changeDates` instant. Skip state and
+    /// ✓ tombstones are read per entry date (a future entry past a slot
+    /// change must not inherit the old slot's skips — `skippedIds` pairs them
+    /// with the slot key, which handles it).
+    private func buildEntries(groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date) -> [WatchWidgetEntry] {
+        let slots = slotList(groups: groups)
+        let snooze = WatchWidgetState.snoozeResult(now: now)
+        let dates = [now] + ReminderStackTimeline.changeDates(
+            groups: groups, tasks: tasks, snoozeResult: snooze, now: now
+        )
+        return dates.map { date in
+            ReminderStackTimeline.entry(
+                groups: groups,
+                tasks: tasks,
+                skipped: { WatchWidgetState.skippedIds(slotKey: $0, now: date) },
+                pendingDone: WatchWidgetState.pendingDoneIds(now: date),
+                snoozeResult: WatchWidgetState.snoozeResult(now: date),
+                slots: slots,
+                at: date
             )
         }
-        let index = WatchSlotLogic.naturalSlotIndex(in: groups)
-        let group = groups[index]
-        return WatchWidgetEntry(
-            date: Date(),
-            isConfigured: true,
-            slotLabel: group.label,
-            remindersLeft: group.reminders.count,
-            remindersTotal: group.reminders.count + group.considered,
-            overdueCount: WatchSlotLogic.overdueTasks(from: tasks).count,
-            upcomingTitles: group.reminders.prefix(2).map(\.title)
-        )
+    }
+
+    /// Slots for labeling "next period": the reminders payload already names
+    /// every slot, falling back to the app's `TimeSlotStore` cache.
+    private func slotList(groups: [ReminderGroupDTO]) -> [TimeSlotDTO] {
+        let fromGroups = groups.compactMap(\.slot)
+        return fromGroups.isEmpty ? TimeSlotStore.cachedSlots : fromGroups
     }
 }
 
-/// The Smart Stack widget itself. `accessoryRectangular` is the "master"
-/// family the task brief calls for (slot + count + next items);
-/// `accessoryCircular`/`accessoryCorner` are the compact ring families for
-/// denser stack contexts. No `systemSmall`/`systemMedium`/`systemLarge` —
+/// Non-identifying placeholder content for the widget gallery and
+/// redaction — deliberately NOT Trent's real data (that is DEBUG preview
+/// data only, `ReminderStackPreviewData`), since the gallery ships.
+enum ReminderStackPlaceholder {
+    static let entry = WatchWidgetEntry(
+        date: Date(),
+        content: .reminder(.init(
+            taskId: 0, title: "Step away from the desk", slotLabel: "Midday", slotKey: 0,
+            position: 2, total: 3, remainingIds: [0, 1], urgentOverdue: 0
+        )),
+        ring: .init(count: 2, fraction: 1.0 / 3.0, isOverdue: false, label: "Midday"),
+        relevance: nil
+    )
+}
+
+/// The Smart Stack widget. `accessoryRectangular` is the card (one reminder
+/// with ✓/⏭, or the overdue sweep); `accessoryCircular`/`accessoryCorner` are
+/// glanceable rings for watch-face slots. No `systemSmall`/`Medium`/`Large` —
 /// those families don't exist on watchOS.
 struct ReminderStackWidget: Widget {
-    static let kind = "OpenTaskWatchReminders"
+    static let kind = WatchWidgetState.kind
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: ReminderStackProvider()) { entry in
             ReminderStackWidgetView(entry: entry)
         }
         .configurationDisplayName("OpenTask")
-        .description("Current slot's reminders and overdue tasks.")
+        .description("Check off the current slot's reminders, or snooze what's overdue.")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryCorner])
     }
-}
-
-#Preview("Rectangular", as: .accessoryRectangular) {
-    ReminderStackWidget()
-} timeline: {
-    WatchWidgetEntry.sample
-    WatchWidgetEntry.signedOut
-}
-
-#Preview("Circular", as: .accessoryCircular) {
-    ReminderStackWidget()
-} timeline: {
-    WatchWidgetEntry.sample
-}
-
-#Preview("Corner", as: .accessoryCorner) {
-    ReminderStackWidget()
-} timeline: {
-    WatchWidgetEntry.sample
 }

@@ -120,6 +120,16 @@ final class WatchViewModel: ObservableObject {
 
         isLoading = false
         hasLoadedOnce = true
+        // Keep the Smart Stack card in step with what the app just saw: a
+        // change made elsewhere (web, phone) otherwise waits for the widget's
+        // own ~20 min refresh. Reloads requested by a foreground app don't
+        // count against the widget's budget. Its relevance hints are computed
+        // from the cache this just wrote (`ReminderStackProvider.relevance()`),
+        // so ask the system to re-read those too.
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        if #available(watchOS 11.0, *) {
+            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
+        }
     }
 
     // MARK: - Reminders
