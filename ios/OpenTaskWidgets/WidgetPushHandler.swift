@@ -54,6 +54,7 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         // reading this token anymore, so unregister it rather than leaving a
         // dead row the server would keep spending its push budget on.
         guard !widgets.isEmpty else {
+            WidgetPushRegistration.clear()
             Task {
                 do {
                     try await WidgetPushRegistrar.unregister(token: token)
@@ -70,18 +71,63 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         // handler call.
         let kinds = Set(widgets.map(\.kind)).sorted().joined(separator: ",")
 
-        Task {
-            do {
-                try await WidgetPushRegistrar.register(token: token, widgetKind: kinds)
-                pushLog.notice("registered widget push token for [\(kinds, privacy: .public)]")
-            } catch {
-                // Best-effort: WidgetKit redelivers "the first push token" the
-                // next time it decides to, so a lost registration self-heals
-                // without a retry loop here. Most likely cause: the widget
-                // was placed before the app ever connected to a server (no
-                // Bearer token in the Keychain yet) — see APIError.notConfigured.
-                pushLog.error("registration failed for [\(kinds, privacy: .public)]: \(String(describing: error), privacy: .public)")
-            }
+        // Saved BEFORE the network call, then sent. WidgetKit hands a token
+        // over once and does not redeliver it on its own schedule, so one
+        // lost request used to leave the device unregistered until the
+        // widget was removed and re-added (2026-09-23: the Mac's request died
+        // with NSURLErrorNetworkConnectionLost, and a second attempt never
+        // logged an outcome — the extension was suspended mid-request). The
+        // saved token is retried from every timeline reload until the server
+        // confirms it — see `WidgetPushRegistration.retryIfNeeded()`.
+        WidgetPushRegistration.savePending(token: token, widgetKind: kinds)
+        Task { await WidgetPushRegistration.retryIfNeeded() }
+    }
+}
+
+/// The token this extension has been given and whether the server has it,
+/// kept in the App Group so it survives the extension being suspended or
+/// relaunched between `pushTokenDidChange` and a successful request.
+///
+/// Not `@available`-gated: on an OS without widget push nothing is ever
+/// saved, so `retryIfNeeded()` — called from all three timeline providers'
+/// `getTimeline` — is a cheap no-op there. Re-sending an already-registered
+/// token is harmless (the server upserts on `push_token`), which is what makes
+/// "retry on every reload until confirmed" safe rather than a guess.
+enum WidgetPushRegistration {
+    private static let pendingTokenKey = "widgetPush.pendingToken"
+    private static let pendingKindsKey = "widgetPush.pendingKinds"
+    private static let registeredTokenKey = "widgetPush.registeredToken"
+
+    private static var defaults: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
+
+    static func savePending(token: String, widgetKind: String) {
+        defaults?.set(token, forKey: pendingTokenKey)
+        defaults?.set(widgetKind, forKey: pendingKindsKey)
+    }
+
+    /// Forget everything — the last widget was removed and its token unregistered.
+    static func clear() {
+        defaults?.removeObject(forKey: pendingTokenKey)
+        defaults?.removeObject(forKey: pendingKindsKey)
+        defaults?.removeObject(forKey: registeredTokenKey)
+    }
+
+    /// Send the saved token if the server hasn't confirmed it yet.
+    static func retryIfNeeded() async {
+        guard let defaults,
+              let token = defaults.string(forKey: pendingTokenKey),
+              defaults.string(forKey: registeredTokenKey) != token
+        else { return }
+        let kinds = defaults.string(forKey: pendingKindsKey) ?? ""
+        do {
+            try await WidgetPushRegistrar.register(token: token, widgetKind: kinds)
+            defaults.set(token, forKey: registeredTokenKey)
+            pushLog.notice("registered widget push token for [\(kinds, privacy: .public)]")
+        } catch {
+            // Left pending: the next timeline reload tries again. Also the
+            // path for a widget placed before the app ever connected to a
+            // server (no Bearer token in the Keychain yet — APIError.notConfigured).
+            pushLog.error("registration failed for [\(kinds, privacy: .public)], will retry on next reload: \(String(describing: error), privacy: .public)")
         }
     }
 }

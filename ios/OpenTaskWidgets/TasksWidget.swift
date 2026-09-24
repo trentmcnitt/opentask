@@ -187,6 +187,9 @@ struct TasksProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TasksEntry>) -> Void) {
         Task {
+            // A widget push token the server never confirmed — see
+            // `WidgetPushRegistration` in WidgetPushHandler.swift.
+            await WidgetPushRegistration.retryIfNeeded()
             let entry = await currentEntry()
 
             var entries = [entry]
