@@ -10,14 +10,12 @@ import WidgetKit
 /// not its full-row mode — a widget has no room for a second layout, and
 /// chips are the panel's own default. §5 still shapes every rule here: a
 /// quota is not a deadline, so nothing is red, nothing counts days, and pace
-/// (the section bar's notch) renders but never alarms. "Met" does not remove
-/// a chip mid-session — it is a visual state (green fill, green count) until
-/// the NEXT timeline build puts it away, matching the web panel's own "met
-/// quotas are put away at load, never under a finger" rule (`TrackPanel.tsx`
-/// `useMetAtLoad`'s doc) — the widget's equivalent of "at load" is simply
-/// "this build": `WidgetStore.quotaMutationIsRecent` is the short grace
-/// window that keeps a quota visible through the very tap that met it (see
-/// its own doc for why a global stamp, not a persisted id set).
+/// (the section bar's notch) renders but never alarms. With the "met" dot
+/// off, a quota that becomes met disappears on the tap that met it — no
+/// grace window (2026-09-24; PR #58 had ported the web panel's "put away at
+/// load, never under a finger" rule, and on a widget it left met chips
+/// showing and tappable — see `WidgetStore.quotasShowMet`'s doc). With the
+/// dot on, met chips show green and a tap takes one back (`QuotaChip`).
 ///
 /// GROUPED BY PERIOD, THEN LABEL — day → year, then a period-less "No
 /// period" bucket, each period's own label clusters inside it, exactly the
@@ -297,8 +295,9 @@ private struct QuotaLinesView: View {
 }
 
 /// A period section's heading row — period name (bold, full-strength, so it
-/// outranks the muted cluster labels beneath it), a muted "ends tonight"/"N
-/// days left" (omitted for the no-period section), a bar that flexes to fill
+/// outranks the muted cluster labels beneath it), a muted "N days left"
+/// (omitted for Today — PR #62 — and the no-period section, the bar taking
+/// that width), a bar that flexes to fill
 /// whatever room is left, and "M of N" met. Mirrors `PeriodHeading`
 /// (`TrackPanel.tsx`) almost exactly, in SwiftUI.
 private struct QuotaHeadingRow: View {
@@ -423,12 +422,20 @@ private struct QuotaChipRow: View {
     }
 }
 
-/// One quota, as a chip. The widget's only progress control — `+1` only, no
-/// `−1` (a DELIBERATE change from the OLD Track row's `−1` button: Undo
-/// covers a mis-tap, and a second button per chip would double the chip-flow
-/// measurement's surface for no everyday benefit). Tapping opens nothing —
-/// `IncrementProgressIntent` (reused verbatim, no new intent per spec) fires
-/// straight from the chip.
+/// One quota, as a chip — the widget's only progress control, one button,
+/// no second hit target per chip. Tapping opens nothing;
+/// `IncrementProgressIntent` fires straight from the chip:
+///
+/// - **Unmet**: `+1`.
+/// - **Met** (2026-09-24): `−1`, and the chip says so with a trailing
+///   "│ −1" (`QuotaMetrics.takeBackLabel`, counted in `chipWidth(for:)`).
+///   Trent over-tapped "All Kids Kazoo" to 2/1 because a met chip was still
+///   a `+1`; past the target a `+1` is almost always a mis-tap, and the one
+///   thing worth doing to a met quota from a widget is correcting one. A met
+///   chip only ever RENDERS with the "met" dot on — with it off, met chips
+///   are filtered out (`QuotaSectionBuilder`, no grace window) — so gating
+///   on `item.isMet` alone is "met and the dot is on" by construction. The
+///   header Undo still reverses the last action, whatever it was.
 ///
 /// Two shapes:
 ///
@@ -450,7 +457,7 @@ private struct QuotaChip: View {
     private var fraction: Double { item.doneFraction }
 
     var body: some View {
-        Button(intent: IncrementProgressIntent(taskId: item.task.id, delta: 1)) {
+        Button(intent: IncrementProgressIntent(taskId: item.task.id, delta: item.isMet ? -1 : 1)) {
             if let wrapWidth {
                 content(lines: QuotaMetrics.wrappedTitleLines)
                     .frame(width: wrapWidth, height: QuotaMetrics.chipHeight(lines: QuotaMetrics.wrappedTitleLines))
@@ -464,7 +471,10 @@ private struct QuotaChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            Text("Log one more for \(item.task.displayTitle) — \(item.task.progressCurrent) of \(item.task.progressTarget)")
+            Text(
+                "\(item.isMet ? "Take one back from" : "Log one more for") \(item.task.displayTitle) — "
+                    + "\(item.task.progressCurrent) of \(item.task.progressTarget)"
+            )
         )
     }
 
@@ -489,6 +499,16 @@ private struct QuotaChip: View {
                 .font(QuotaMetrics.chipCurrentFont)
             Text("/\(item.task.progressTarget)")
                 .font(QuotaMetrics.chipTargetFont)
+            if item.isMet {
+                // "│ −1" — exactly `QuotaMetrics.takeBackWidth`: gap,
+                // hairline, gap, label (see `chipWidth(for:)`).
+                Rectangle()
+                    .fill(WidgetTheme.trackMetTint.opacity(0.45))
+                    .frame(width: QuotaMetrics.takeBackDividerWidth, height: QuotaMetrics.chipCountSize + 1)
+                    .padding(.horizontal, QuotaMetrics.chipTitleCountGap)
+                Text(QuotaMetrics.takeBackLabel)
+                    .font(QuotaMetrics.chipCurrentFont)
+            }
         }
         .monospacedDigit()
         .foregroundStyle(item.isMet ? WidgetTheme.trackMetTint : Color.secondary)

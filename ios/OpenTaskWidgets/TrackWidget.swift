@@ -428,17 +428,18 @@ enum QuotaPeriodKey: String {
         return min(max(now.timeIntervalSince(start) / total, 0), 1)
     }
 
-    /// The section heading's muted clause — "ends tonight" for a day, "N
-    /// days left" for anything longer, nil for `.none`. Mirrors
-    /// `periodTimeLeftText`: measured from the start of TODAY to the
+    /// The section heading's muted clause — "N days left" for a week or
+    /// longer, nil for a day and for `.none`. Mirrors `periodTimeLeftText`
+    /// (`src/lib/track.ts`), which since PR #62 (Trent, 2026-09-24) returns
+    /// null for DAILY: "Today · ends tonight" said the same thing twice. The
+    /// heading row's bar flexes, so it takes the freed width. Measured from the start of TODAY to the
     /// period's end (both midnight-aligned in this calendar, so the day
     /// count is already exact — no rounding needed), so the number only
     /// changes at midnight rather than ticking down the instant `now`'s
     /// clock passes.
     func timeLeftText(now: Date) -> String? {
         switch self {
-        case .daily: return "ends tonight"
-        case .none: return nil
+        case .daily, .none: return nil
         case .weekly, .monthly, .yearly:
             guard let (_, end) = bounds(now: now) else { return nil }
             let startOfToday = Self.calendar.startOfDay(for: now)
@@ -458,7 +459,7 @@ struct QuotaSection: Identifiable {
     /// `QuotaPeriodKey.rawValue` — the section's DOM/list key.
     let id: String
     let heading: String
-    /// "ends tonight" / "N days left" — nil for the no-period section.
+    /// "N days left" — nil for Today (PR #62) and the no-period section.
     let timeLeftText: String?
     /// 0...1, where the section bar's notch sits — nil for the no-period
     /// section (no clock, no notch).
@@ -504,9 +505,8 @@ struct QuotaCluster: Identifiable {
     /// `showMet` — what the cluster title's "✓N" and shut-state meter read.
     let metCount: Int
     let totalCount: Int
-    /// The SHOWN chips only — met ones filtered per the toggle (and the
-    /// mutation-grace exemption, see `WidgetStore.quotaMutationIsRecent`),
-    /// sorted by `title` (matching `trackedItems`' own sort key — display
+    /// The SHOWN chips only — met ones filtered per the toggle, with no
+    /// grace for a just-met one (see `WidgetStore.quotasShowMet`), sorted by `title` (matching `trackedItems`' own sort key — display
     /// is `displayTitle`, the sort key is always the full title so a set
     /// short name never reorders a cluster out from under itself).
     let chips: [TrackItem]
@@ -536,7 +536,6 @@ enum QuotaSectionBuilder {
         from quotas: [TaskDTO],
         labelConfig: [LabelConfigDTO],
         showMet: Bool,
-        mutationIsRecent: Bool,
         now: Date
     ) -> [QuotaSection] {
         var byPeriod: [QuotaPeriodKey: [TaskDTO]] = [:]
@@ -547,7 +546,7 @@ enum QuotaSectionBuilder {
             guard let tasks = byPeriod[key], !tasks.isEmpty else { return nil }
             return section(
                 key: key, tasks: tasks, labelConfig: labelConfig,
-                showMet: showMet, mutationIsRecent: mutationIsRecent, now: now
+                showMet: showMet, now: now
             )
         }
     }
@@ -557,7 +556,6 @@ enum QuotaSectionBuilder {
         tasks: [TaskDTO],
         labelConfig: [LabelConfigDTO],
         showMet: Bool,
-        mutationIsRecent: Bool,
         now: Date
     ) -> QuotaSection {
         let metCount = tasks.filter(\.isProgressMet).count
@@ -573,22 +571,21 @@ enum QuotaSectionBuilder {
             summary: (met: metCount, count: tasks.count),
             clusters: clusters(
                 sectionId: key.rawValue, tasks: tasks, labelConfig: labelConfig,
-                showMet: showMet, mutationIsRecent: mutationIsRecent
+                showMet: showMet
             )
         )
     }
 
     /// `groupByLabel`, scoped to one section: case-insensitive grouping,
     /// first-seen spelling displayed, unlabeled cluster last. A cluster
-    /// whose every quota is filtered out (met, with the toggle off and no
-    /// recent mutation grace) is OMITTED — title and all — mirroring the
+    /// whose every quota is filtered out (met, with the toggle off) is
+    /// OMITTED — title and all — mirroring the
     /// web's `putAwayMet`.
     private static func clusters(
         sectionId: String,
         tasks: [TaskDTO],
         labelConfig: [LabelConfigDTO],
-        showMet: Bool,
-        mutationIsRecent: Bool
+        showMet: Bool
     ) -> [QuotaCluster] {
         var order: [String] = []
         var display: [String: String] = [:]
@@ -623,7 +620,7 @@ enum QuotaSectionBuilder {
                 return cmp == .orderedSame ? a.id < b.id : cmp == .orderedAscending
             }
             let visible = sorted.filter { task in
-                showMet || !task.isProgressMet || mutationIsRecent
+                showMet || !task.isProgressMet
             }
             guard !visible.isEmpty else { return nil }
 
@@ -734,7 +731,19 @@ enum QuotaMetrics {
         let title = WidgetTheme.measuredWidth(for: item.task.displayTitle, font: chipTitleMeasureFont)
         let current = WidgetTheme.measuredWidth(for: "\(item.task.progressCurrent)", font: chipCurrentMeasureFont)
         let target = WidgetTheme.measuredWidth(for: "/\(item.task.progressTarget)", font: chipTargetMeasureFont)
-        return chipLeadingPadding + title + chipTitleCountGap + current + target + chipTrailingPadding
+        return chipLeadingPadding + title + chipTitleCountGap + current + target
+            + (item.isMet ? takeBackWidth : 0) + chipTrailingPadding
+    }
+
+    /// A MET chip's trailing "│ −1" (2026-09-24): a tap on a met chip takes
+    /// one back instead of logging another — see `QuotaChip`. The same
+    /// `chipTitleCountGap` either side of a hairline, then the label in the
+    /// count's own semibold face.
+    static let takeBackLabel = "\u{2212}1"
+    static let takeBackDividerWidth: CGFloat = 1
+    static var takeBackWidth: CGFloat {
+        chipTitleCountGap + takeBackDividerWidth + chipTitleCountGap
+            + WidgetTheme.measuredWidth(for: takeBackLabel, font: chipCurrentMeasureFont)
     }
 }
 
@@ -945,7 +954,6 @@ struct TrackProvider: TimelineProvider {
     private func currentEntry() async -> TrackEntry {
         let now = Date()
         let showMet = WidgetStore.quotasShowMet
-        let mutationIsRecent = WidgetStore.quotaMutationIsRecent(now: now)
 
         // Concurrent with the tasks/projects fetch below — a quota-only
         // fetch this file OWNS (see `fetchLabelConfig`'s doc for why it
@@ -969,8 +977,7 @@ struct TrackProvider: TimelineProvider {
         let labelConfig = await labelConfigTask
 
         let sections = QuotaSectionBuilder.sections(
-            from: quotas, labelConfig: labelConfig, showMet: showMet,
-            mutationIsRecent: mutationIsRecent, now: now
+            from: quotas, labelConfig: labelConfig, showMet: showMet, now: now
         )
         // Valid regardless of `showMet`: an unmet quota is NEVER filtered by
         // that toggle (only a met one ever is), so this flatten always
@@ -1123,12 +1130,24 @@ private enum QuotasPreviewData {
 /// A real-data entry with `showMet`/`page` varied. This view is pure over
 /// its entry (`QuotasListView`'s doc), so one preview's timeline can step
 /// through every page and both toggle states.
-private func previewEntry(showMet: Bool, page: Int) -> TrackEntry {
+///
+/// `justMet` (2026-09-24) is the state right after the tap that met that
+/// quota: its count at its target — what `TaskFeed`'s staged `+1` draws on
+/// the tap's own repaint — so the met-off render shows it GONE (no grace
+/// window any more) and the met-on render shows it green with "│ −1".
+private func previewEntry(showMet: Bool, page: Int, justMet: Int? = nil) -> TrackEntry {
     let now = Date()
-    let quotas = QuotasPreviewData.quotas
+    let quotas = QuotasPreviewData.quotas.map { task -> TaskDTO in
+        guard task.id == justMet else { return task }
+        return TaskDTO(
+            id: task.id, projectId: task.projectId, title: task.title, priority: task.priority,
+            dueAt: task.dueAt, rrule: task.rrule, progressTarget: task.progressTarget,
+            progressCurrent: task.progressTarget, trackedFlag: task.trackedFlag, labels: task.labels
+        )
+    }
     let sections = QuotaSectionBuilder.sections(
         from: quotas, labelConfig: QuotasPreviewData.labelConfig,
-        showMet: showMet, mutationIsRecent: false, now: now
+        showMet: showMet, now: now
     )
     let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
     return TrackEntry(
@@ -1162,6 +1181,22 @@ private func previewEntry(showMet: Bool, page: Int) -> TrackEntry {
     previewEntry(showMet: true, page: 2)
     previewEntry(showMet: true, page: 3)
     previewEntry(showMet: true, page: 4)
+}
+
+/// Right after "Weight Lift" (id 221, 0/3 in the snapshot) is tapped to its
+/// target. Indexes 0-2: met dot OFF, pages 1-3 — Weight Lift is gone, and
+/// so is "All Kids Kazoo" (1/1, already met). Indexes 3-5: met dot ON, pages
+/// 1-3 — both show green, each with its "│ −1" take-back (Weight Lift sorts
+/// last in THIS WEEK's HEALTH cluster, so it lands on page 2).
+#Preview("Quotas — Large, just met", as: .systemLarge) {
+    TrackWidget()
+} timeline: {
+    previewEntry(showMet: false, page: 0, justMet: 221)
+    previewEntry(showMet: false, page: 1, justMet: 221)
+    previewEntry(showMet: false, page: 2, justMet: 221)
+    previewEntry(showMet: true, page: 0, justMet: 221)
+    previewEntry(showMet: true, page: 1, justMet: 221)
+    previewEntry(showMet: true, page: 2, justMet: 221)
 }
 
 #Preview("Quotas — Medium", as: .systemMedium) {

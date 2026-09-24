@@ -146,7 +146,7 @@ enum SampleData {
     /// is always nil in the new flow (see that struct's doc).
     static var trackedTasks: [TaskDTO] {
         [
-            // Today — met, matching the mock's "Today · ends tonight · 1 of 1".
+            // Today — met, matching the mock's "Today · 1 of 1" (no "ends tonight" since PR #62).
             TaskDTO(id: 301, projectId: 1, title: "Walk the long way home", priority: 1,
                     rrule: "FREQ=DAILY", progressTarget: 2, progressCurrent: 2),
 
@@ -258,8 +258,7 @@ enum SampleData {
         let now = Date()
         let quotas = trackedQuotas
         let sections = QuotaSectionBuilder.sections(
-            from: quotas, labelConfig: trackLabelConfig, showMet: false,
-            mutationIsRecent: false, now: now
+            from: quotas, labelConfig: trackLabelConfig, showMet: false, now: now
         )
         let nextUnmet = sections.flatMap(\.clusters).flatMap(\.chips).first { !$0.isMet }
         return TrackEntry(

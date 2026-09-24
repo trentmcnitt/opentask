@@ -235,15 +235,12 @@ final class APIClient {
     /// minutes from NOW, snapped" — two different endpoints with two
     /// different established meanings for the same parameter name.
     ///
-    /// NOT what "+1h" means anywhere in THIS extension, though (2026-09-23
-    /// review correction): Trent's "+1h" is "snooze to the next hour" — one
-    /// hour from now, snapped — the SAME thing `snoozeOverdue(deltaMinutes:)`
-    /// already gives the sweep bar. Every "+1h" tap in snooze mode / bulk
-    /// select (`SnoozeTaskRowIntent`, `SnoozeSelectedTasksIntent`) resolves
-    /// that with `DateHelpers.snapToNextHour()` and sends it as `until`
-    /// instead — this parameter exists here to keep the function a faithful
-    /// mirror of everything the server endpoint accepts, but as of this
-    /// correction nothing in this extension actually calls it.
+    /// The Tasks widget uses BOTH modes (2026-09-24, `TaskSnoozePlan` in
+    /// `OpenTaskWidgets/TaskFeed.swift`): "+1h" on an UPCOMING task is
+    /// exactly its own due + 60 — this `deltaMinutes: 60` — while "+1h" on an
+    /// overdue/undated one is one hour from now, snapped, sent as `until`.
+    /// (2026-09-23 had every "+1h" as from-now `until`; that moved a 5 PM
+    /// task to 11 AM.)
     @discardableResult
     func bulkSnoozeTasks(
         ids: [Int], until: String? = nil, deltaMinutes: Int? = nil, includeTaskIds: [Int]? = nil

@@ -65,19 +65,31 @@ enum TimeSlotStore {
     /// the DEVICE's local timezone/calendar, same as every other on-device
     /// time computation in this file's siblings (`RemindersTimeline`,
     /// `DateHelpers`) — there is no per-request timezone to send here.
+    ///
+    /// `now` is really "after WHAT": the Tasks widget passes each task's own
+    /// snooze base (`DateHelpers.snoozeBase` — its due time while upcoming,
+    /// 2026-09-24), so an 8:30 PM task's "Next" is the first slot after
+    /// 8:30 PM, tomorrow's first once none is left that evening.
     static func nextPeriodStart(now: Date = Date()) -> Date? {
-        let slots = cachedSlots
-        guard !slots.isEmpty else { return nil }
-        let calendar = Calendar.current
+        nextPeriodStart(slots: cachedSlots, after: now)
+    }
+
+    /// The pure half of `nextPeriodStart(now:)` — the first slot start
+    /// STRICTLY after `base` (base's own day, else the day after), over the
+    /// slots given rather than the App Group cache, so it can be tested
+    /// without a suite. `nil` with no slots (or only malformed ones).
+    static func nextPeriodStart(
+        slots: [TimeSlotDTO], after base: Date, calendar: Calendar = .current
+    ) -> Date? {
         let starts: [Date] = slots.compactMap { slot in
             guard let minutes = slot.startMinutes else { return nil }
-            var comps = calendar.dateComponents([.year, .month, .day], from: now)
+            var comps = calendar.dateComponents([.year, .month, .day], from: base)
             comps.hour = minutes / 60
             comps.minute = minutes % 60
             comps.second = 0
-            guard let todayAtSlot = calendar.date(from: comps) else { return nil }
-            if todayAtSlot > now { return todayAtSlot }
-            return calendar.date(byAdding: .day, value: 1, to: todayAtSlot)
+            guard let sameDayAtSlot = calendar.date(from: comps) else { return nil }
+            if sameDayAtSlot > base { return sameDayAtSlot }
+            return calendar.date(byAdding: .day, value: 1, to: sameDayAtSlot)
         }
         return starts.min()
     }

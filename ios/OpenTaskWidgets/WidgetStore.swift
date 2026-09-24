@@ -1221,15 +1221,19 @@ enum WidgetStore {
 
     private static let quotasShowMetKey = "widget.quotas.showMet"
 
-    /// Whether ALREADY-MET quotas are shown, or put away in their clusters —
-    /// the same "met quotas are put away at load, never under a finger" rule
-    /// as the web Track panel (`TrackPanel.tsx`'s `useShowMet`), but simpler
-    /// here: the widget has no live session to "put away at load and hold for
-    /// the rest of it" — every tap rebuilds the timeline fresh, so this is
-    /// read straight at render time (see `quotaMutationIsRecent` below for
-    /// the one exception: a `+1` that crosses the target must not vanish out
-    /// from under the tap that just made it). Default `false` — met hidden,
-    /// matching the web panel's own default.
+    /// Whether ALREADY-MET quotas are shown, or put away in their clusters.
+    /// Read straight at render time, with NO grace for the chip that was
+    /// just tapped (2026-09-24): with this off, a `+1` that meets a quota
+    /// makes it disappear on the tap's own optimistic repaint (reappearing
+    /// only if the server rejects it). PR #58 kept a just-met chip visible
+    /// for ~90s after any tap — the web panel's "put away at load, never
+    /// under a finger" rule, ported — and Trent's phone showed what that
+    /// costs on a widget: "Weight Lift 3/3" and "All Kids Kazoo 2/1" still
+    /// showing with the dot off, and Kazoo over-tapped because its met chip
+    /// stayed a live `+1` target. A widget has no session to "hold for", so
+    /// the rule does not carry over. On: met chips show, green, and a tap
+    /// on one is `−1` (`QuotaChip`). Default `false` — met hidden, matching
+    /// the web panel's own default.
     static var quotasShowMet: Bool {
         get { defaults?.bool(forKey: quotasShowMetKey) ?? false }
         set { defaults?.set(newValue, forKey: quotasShowMetKey) }
@@ -1261,36 +1265,5 @@ enum WidgetStore {
 
     static func loadQuotaLabelConfig() -> Cached<[LabelConfigDTO]>? {
         load([LabelConfigDTO].self, forKey: quotaLabelConfigKey)
-    }
-
-    private static let quotaMutationAtKey = "widget.quotas.lastMutationAt"
-    /// How long a quota that just crossed its target stays visible with
-    /// `quotasShowMet` off, matching `pendingTTL`'s idiom (a generous crash
-    /// backstop, not a tuned window).
-    private static let quotaMutationTTL: TimeInterval = 90
-
-    /// Stamp "a quota's progress was just logged from this widget" — see
-    /// `quotaMutationIsRecent(now:)` for what this buys.
-    static func recordQuotaMutation(now: Date = Date()) {
-        defaults?.set(now.timeIntervalSince1970, forKey: quotaMutationAtKey)
-    }
-
-    /// Whether SOME quota's progress was logged recently enough that a
-    /// just-met one must not be filtered out from under the tap that met it.
-    ///
-    /// Deliberately a single GLOBAL stamp, not a persisted `Set<Int>` of
-    /// "which quota id to keep showing" — met-ness is recomputed fresh from
-    /// the server/cache on every build (there is no snapshot to invalidate),
-    /// so the only thing that can go wrong is a `+1` that crosses the target
-    /// making its own chip disappear before the tap's optimistic repaint is
-    /// even on screen. A short global grace window after ANY `+1`/`−1`
-    /// covers that without inventing new per-id state: the cost is that a
-    /// DIFFERENT quota which happened to already be met also stays visible
-    /// for the same ~90s if the user taps a completely unrelated chip right
-    /// after, which is a harmless false-negative (an extra chip shown, never
-    /// a hidden one) and cheaper than tracking which id actually crossed.
-    static func quotaMutationIsRecent(now: Date = Date()) -> Bool {
-        guard let stamp = defaults?.object(forKey: quotaMutationAtKey) as? Double else { return false }
-        return now.timeIntervalSince1970 - stamp < quotaMutationTTL
     }
 }
