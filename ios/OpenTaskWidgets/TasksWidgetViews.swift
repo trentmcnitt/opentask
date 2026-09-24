@@ -90,12 +90,13 @@ private struct TasksSmallView: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    // Shrinks rather than truncating (2026-09-24) — see
+                    // `RemindersSmallView`'s title.
                     Text(next.title)
                         .font(.caption2)
                         .fontWeight(WidgetTheme.priorityWeight(next.priority))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(WidgetTheme.overflowTitleScale)
 
                     if next.dueDate != nil {
                         // Day-naming (2026-09-23) — see `WidgetTheme.
@@ -146,6 +147,8 @@ private struct TaskRowLayout {
     let height: CGFloat
     /// Whether the due label stacks day-over-time — see `TaskRow.dueStacked`.
     let dueStacked: Bool
+    /// Longer than the whole card — see `ReminderRowLayout.shrinks`.
+    var shrinks = false
 }
 
 /// The Home Screen list.
@@ -217,12 +220,14 @@ private struct TasksListView: View {
         isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
     }
 
-    /// See `RemindersListView.measuresTitles` — identical rule.
-    private var measuresTitles: Bool {
-        #if os(macOS)
-        true
+    /// See `RemindersListView.rowFloor` — identical rule: iOS systemMedium
+    /// keeps the 36pt finger floor, and (since 2026-09-24) wraps its titles
+    /// in full like every other family instead of one flat line.
+    private var rowFloor: CGFloat {
+        #if os(iOS)
+        isLarge ? 0 : WidgetTheme.rowMarkerSize
         #else
-        isLarge
+        0
         #endif
     }
 
@@ -365,19 +370,10 @@ private struct TasksListView: View {
             // are one line. It used to stack only where that made the row
             // shorter, which is exactly what made neighbouring rows
             // disagree.
-            let stacksDue = dueParts(for: task)?.hasTwoParts ?? false
             let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
-            guard measuresTitles else {
-                // iOS systemMedium: one title line on the 36pt finger floor
-                // — and tall enough for a stacked label at a large text size.
-                let floor = max(metrics.titleHeight(lines: 1), WidgetTheme.rowMarkerSize)
-                return TaskRowLayout(
-                    lines: 1, height: stacksDue ? max(floor, stackedDueHeight) : floor, dueStacked: stacksDue
-                )
-            }
             var column = width - TaskRow.trailingControlWidth(for: mode) - 10
             if isLarge, entry.isUnifiedScope { column -= 3 + 8 }
-            let text: (lines: Int, height: CGFloat, dueStacked: Bool)
+            let text: (lines: Int, height: CGFloat, dueStacked: Bool, shrinks: Bool)
             if let parts = dueParts(for: task) {
                 if parts.hasTwoParts {
                     // Stacked: the title's column gives up only the label's
@@ -391,51 +387,59 @@ private struct TasksListView: View {
                         task, column: column - half - 8, labelHeight: stackedDueHeight,
                         budget: budget, metrics: metrics
                     )
-                    text = (stacked.lines, stacked.height, true)
+                    text = (stacked.lines, stacked.height, true, stacked.shrinks)
                 } else {
                     let inline = titleLayout(
                         task,
                         column: column - WidgetTheme.measuredWidth(for: parts.plainString, font: metrics.caption2Font) - 8,
                         labelHeight: 0, budget: budget, metrics: metrics
                     )
-                    text = (inline.lines, inline.height, false)
+                    text = (inline.lines, inline.height, false, inline.shrinks)
                 }
             } else {
                 let plain = titleLayout(task, column: column, labelHeight: 0, budget: budget, metrics: metrics)
-                text = (plain.lines, plain.height, false)
+                text = (plain.lines, plain.height, false, plain.shrinks)
             }
             let floor: CGFloat
             switch mode {
-            case .normal: floor = 0
+            case .normal: floor = rowFloor
             case .snooze: floor = SnoozeRowButtons.height
             case .select: floor = WidgetTheme.selectionMarkerSize
             }
-            return TaskRowLayout(lines: text.lines, height: max(text.height, floor), dueStacked: text.dueStacked)
+            return TaskRowLayout(
+                lines: text.lines, height: max(text.height, floor), dueStacked: text.dueStacked, shrinks: text.shrinks
+            )
         case .divider:
             return TaskRowLayout(lines: 1, height: metrics.caption2Height, dueStacked: false)
-        case .done:
-            // Title line, 1pt, "Done H:MM" — see `DoneTaskRow`.
+        case .done(let completion):
+            // Title (wrapped in full since 2026-09-24), 1pt, "Done H:MM" —
+            // see `DoneTaskRow`.
+            let meta = 1 + metrics.caption2Height
+            let fit = metrics.titleLines(
+                completion.taskTitle, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular,
+                maxHeight: max(budget - meta, 0)
+            )
+            if fit.shrinks {
+                return TaskRowLayout(lines: fit.lines, height: budget, dueStacked: false, shrinks: true)
+            }
             return TaskRowLayout(
-                lines: 1, height: metrics.titleHeight(lines: 1) + 1 + metrics.caption2Height, dueStacked: false
+                lines: fit.lines, height: metrics.titleHeight(lines: fit.lines) + meta, dueStacked: false
             )
         }
     }
 
-    /// A title's lines at `column`, the row height they need beside a due
-    /// label `labelHeight` tall, and whether the line cap CUTS the title
-    /// there (its real wrap needs more lines than it gets).
+    /// A title's lines at `column` — its full wrap, uncapped since
+    /// 2026-09-24 on every family (clamped only when longer than the whole
+    /// `budget`, see `WidgetTextMetrics.titleLines`) — and the row height
+    /// they need beside a due label `labelHeight` tall.
     private func titleLayout(
         _ task: TaskDTO, column: CGFloat, labelHeight: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
-    ) -> (lines: Int, height: CGFloat, truncated: Bool) {
-        #if os(iOS)
-        let cap: Int? = WidgetTheme.iOSMaxTitleLines
-        #else
-        let cap: Int? = nil
-        #endif
+    ) -> (lines: Int, height: CGFloat, shrinks: Bool) {
         let weight = WidgetTheme.priorityWeight(task.priority)
-        let lines = metrics.titleLines(task.title, width: column, weight: weight, cap: cap, maxHeight: budget)
-        let real = metrics.titleLines(task.title, width: column, weight: weight, cap: nil, maxHeight: .infinity)
-        return (lines, max(metrics.titleHeight(lines: lines), labelHeight), real > lines)
+        let fit = metrics.titleLines(task.title, width: column, weight: weight, maxHeight: budget)
+        // Longer than the whole card: a page of its own, title shrunk to fit.
+        if fit.shrinks { return (fit.lines, budget, true) }
+        return (fit.lines, max(metrics.titleHeight(lines: fit.lines), labelHeight), false)
     }
 
     /// `task`'s due label, split — `nil` when it has no due date.
@@ -451,7 +455,7 @@ private struct TasksListView: View {
         switch item {
         case .open(let task):
             TaskRow(
-                task: task, now: entry.date, lines: layout.lines, height: layout.height,
+                task: task, now: entry.date, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1),
                 dueStacked: layout.dueStacked,
                 markerBleed: mode.isNormal ? markerBleed : 0,
@@ -468,7 +472,10 @@ private struct TasksListView: View {
                 completion: completion,
                 projectColor: entry.projectColor(forProjectId: completion.projectId),
                 firstLineHeight: metrics.titleHeight(lines: 1),
-                height: layout.height
+                lines: layout.lines,
+                height: layout.height,
+                titleHeight: layout.height - 1 - metrics.caption2Height,
+                shrinks: layout.shrinks
             )
         }
     }
@@ -671,10 +678,10 @@ private enum TaskRowMode {
 /// An ordinary task row: a tappable title (with its due time just before the
 /// checkbox) and, at the row's trailing edge, a square check-off.
 ///
-/// In systemLarge the title wraps rather than truncating at one line
-/// ("Register Josie for Viking Vo…" is a task you have to open the app to
-/// identify, which is the one thing the widget exists to save you), up to
-/// `lines` (3 on iOS, uncapped on macOS).
+/// The title wraps rather than truncating ("Register Josie for Viking Vo…"
+/// is a task you have to open the app to identify, which is the one thing
+/// the widget exists to save you), to its full `lines` — uncapped on every
+/// family and platform since 2026-09-24.
 ///
 /// 2026-09-23: the check-off moved from a leading priority-colored DOT to a
 /// trailing PROJECT-colored SQUARE — see `ReminderRow`'s doc for why moving
@@ -692,6 +699,8 @@ private struct TaskRow: View {
     let now: Date
     let lines: Int
     let height: CGFloat
+    /// Longer than the whole card — draw ALL of it, smaller, in `height`.
+    var shrinks = false
     /// One title line's height — the checkbox centres on the FIRST line.
     let firstLineHeight: CGFloat
     /// The due label on two lines, day word over time ("Tomorrow" / "4:00
@@ -766,10 +775,7 @@ private struct TaskRow: View {
                 .font(.subheadline)
                 .fontWeight(WidgetTheme.priorityWeight(task.priority))
                 .foregroundStyle(.primary)
-                .lineLimit(lines)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
 
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
@@ -872,14 +878,20 @@ private struct TaskRow: View {
 /// Row grammar mirrors `DoneReminderRow`'s (title = `Link`, trailing marker
 /// = `Button`) — see that struct's doc for why.
 ///
-/// `.lineLimit(1)` on the title, same "completed items are secondary
-/// content, not the never-truncate case" reasoning as `DoneReminderRow`.
-/// `height` (a title line + 1pt + a caption2 line) is what the pager counted.
+/// The title wraps in full, like `DoneReminderRow`'s (2026-09-24 — it was
+/// `.lineLimit(1)` as "secondary content"; the never-truncate rule has no
+/// exception for done). `height` (the title's lines + 1pt + a caption2
+/// line) is what the pager counted.
 private struct DoneTaskRow: View {
     let completion: CompletionDTO
     let projectColor: Color
     let firstLineHeight: CGFloat
+    /// Title lines — wrapped in full since 2026-09-24 (it was `.lineLimit(1)`).
+    let lines: Int
     let height: CGFloat
+    /// The title's share of `height` (minus the "Done H:MM" line).
+    let titleHeight: CGFloat
+    let shrinks: Bool
 
     private var doneTimeText: String {
         guard let date = completion.completedDate else { return "Done" }
@@ -894,7 +906,7 @@ private struct DoneTaskRow: View {
                         .font(.subheadline)
                         .strikethrough()
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .modifier(RowTitleFit(lines: lines, height: shrinks ? titleHeight : 0, shrinks: shrinks))
                     Text(doneTimeText)
                         .font(.caption2)
                         .monospacedDigit()
@@ -960,10 +972,11 @@ private struct TasksRectangularView: View {
                             .widgetAccentable()
                     }
                 }
+                // Shrinks rather than truncating (2026-09-24).
                 Text(entry.tasks.first?.title ?? "Nothing due today")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .minimumScaleFactor(WidgetTheme.overflowTitleScale)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

@@ -120,9 +120,12 @@ struct SnoozeGridView: View {
             switch mode {
             case .individual(let taskTitle, _):
                 VStack(alignment: .leading, spacing: 2) {
+                    // Never truncated (2026-09-24, Trent's rule): wraps in
+                    // full; the extension sizes to its content
+                    // (`NotificationViewController.updatePreferredContentSize`).
                     Text(taskTitle)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(DateHelpers.formatRelativeTime(originalDueAt))
                         .font(.caption)

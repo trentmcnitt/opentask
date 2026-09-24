@@ -32,10 +32,22 @@ struct OpenTaskApp: App {
                 WidgetCenter.shared.reloadAllTimelines()
             }
             if phase == .active {
-                // Reloads triggered by the foregrounded app don't count against
-                // the widget refresh budget, so the widgets are always current
-                // by the time the user returns to the Home Screen.
-                WidgetCenter.shared.reloadAllTimelines()
+                // No `reloadAllTimelines()` here (removed 2026-09-24). It
+                // reloaded all three widget kinds — each a network fetch — on
+                // every activation, while the user is IN the app and can't
+                // see a widget. What keeps them current instead:
+                //  - the `.background` reload above, fired as the user
+                //    leaves, i.e. exactly when the Home Screen shows again,
+                //    carrying whatever changed in the app (mutations happen
+                //    in the web view, so native can't tell "data changed"
+                //    any more precisely than "the user was here");
+                //  - the server's WidgetKit push on every mutation from any
+                //    device (iOS 26, docs/NOTIFICATIONS.md);
+                //  - each widget intent's own reload, and the timeline.
+                // Side effect to know about: Quotas' Takeback mode used to be
+                // cleared by this app-foreground reload; it is now cleared by
+                // the leave-the-app reload instead (`TrackProvider.currentEntry`
+                // clears it on any timeline built outside a recent widget tap).
 
                 // Install interceptor for warm-launch quick actions.
                 // SwiftUI replaces the scene delegate set in configurationForConnecting

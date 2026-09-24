@@ -245,11 +245,11 @@ showed the same family of complaints — a gap under one-line titles, 2-line
 truncation, wanting more rows visible): iOS now shares the SAME
 `measuredLineCount`/`GeometryReader` mechanism and the SAME raised ceiling
 (10, both platforms), but two things stay platform-specific rather than
-converging all the way to macOS's behavior: **the cap** — iOS still caps a
-title at `WidgetTheme.iOSMaxTitleLines` (3), where macOS never caps at all
-("I don't want to truncate the text until three lines" vs. macOS's "we
-can't truncate the text" — a phone's Home Screen has far less room than a
-desktop widget, so iOS keeps a ceiling macOS doesn't need); and **the
+converging all the way to macOS's behavior: **the cap** — iOS capped a
+title at 3 lines, where macOS never capped at all (removed 2026-09-24: both
+platforms now wrap every title in full, on every family, and a title only
+ends in "…" when it is longer than the whole card — see the 2026-09-24
+addendum in `WidgetTheme.swift`); and **the
 marker floor** — iOS's 36pt marker column is a FINGER touch target and
 never shrinks below that even when the measured text is shorter
 (`max(reservedHeight, WidgetTheme.rowMarkerSize)`), where macOS's marker

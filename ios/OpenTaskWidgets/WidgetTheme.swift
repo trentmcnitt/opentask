@@ -261,17 +261,40 @@ enum WidgetTheme {
     // macOS never caps; iOS systemLarge's check-off bleeds its tap target
     // into the row gaps; systemMedium iOS rows are one line on the 36pt
     // finger floor.
+    //
+    // ADDENDUM, 2026-09-24 (later the same day — the iOS cap is gone): the
+    // 3-line `iOSMaxTitleLines` cap above, and systemMedium's flat one-line
+    // rows, are both removed. Trent's rule is "never truncate a reminder or
+    // a task title", and on his phone (XXX Large text) three lines of a
+    // paragraph-long reminder was still half a thought. Every family on both
+    // platforms now wraps a title to its full measured line count; the
+    // height-based pager already absorbs that — a tall row just leaves fewer
+    // rows on its page (row caps count ITEMS, never lines). systemMedium
+    // wraps too; it keeps its 36pt finger floor (no marker bleed there), and
+    // since it has no pager it simply shows fewer rows under the same "N
+    // left" count. A single title taller than the whole list area (Trent's
+    // real "Singing and many other body things…" reminder at XXX Large text
+    // needs ~13 lines on a systemLarge card with room for ~8) can't be
+    // shown at full size anywhere: `WidgetTextMetrics.titleLines` flags it
+    // `shrinks`, the row is framed to the whole budget (so `WidgetTheme.
+    // pages` gives it a page of its own), and the title SHRINKS to fit that
+    // page (`minimumScaleFactor`, `WidgetTheme.overflowTitleScale`) rather
+    // than ending in "…" — the whole thought, smaller. Tried first and
+    // rejected on the render: clamping it to the lines that fit cut it off
+    // mid-sentence ("…connect the smart, thinking…"). The alternative of a
+    // row taller than the card would be clipped hard by WidgetKit.
+    //
+    // Accepted side effect of keeping list ORDER: a short row followed by
+    // one that can't share its page leaves that page part-empty (Early
+    // morning at XXX Large: "Supplements" alone on page 1, the long one on
+    // page 2). Reordering to pack pages would move reminders out of the
+    // order Trent set them in.
 
     #if os(iOS)
     typealias PlatformFont = UIFont
     #else
     typealias PlatformFont = NSFont
     #endif
-
-    /// Reminders never truncate on iOS until they need a 4th line — see the
-    /// "2026-09-23" addendum above. macOS has no equivalent constant: it
-    /// never caps at all.
-    static let iOSMaxTitleLines = 3
 
     /// How many lines `text` needs at `maxWidth`, in `font` — real platform
     /// text measurement (`NSString.boundingRect`), not a guess.
@@ -283,6 +306,13 @@ enum WidgetTheme {
     /// short on a long wrap (30 lines × 25.06pt ÷ 26pt = 28.9). A
     /// line-fragment layout's height is a whole number of `lineHeight`s, so
     /// rounding here recovers that whole number exactly.
+    /// How far a title longer than the whole card may shrink to fit it
+    /// (see the 2026-09-24 "cap is gone" addendum above). Half size is still
+    /// legible on a Home Screen card at the text sizes where this bites
+    /// (it only happens at large Dynamic Type), and it is a floor, not a
+    /// target: SwiftUI shrinks only as far as the text actually needs.
+    static let overflowTitleScale: CGFloat = 0.5
+
     static func measuredLineCount(for text: String, maxWidth: CGFloat, font: PlatformFont) -> Int {
         guard maxWidth > 0, !text.isEmpty else { return 1 }
         let bounds = (text as NSString).boundingRect(
@@ -596,8 +626,10 @@ enum WidgetTheme {
     /// page's only row, where there is nothing to back off to.
     ///
     /// A single row taller than `budget` still gets a page of its own
-    /// rather than looping forever; the callers cap a row's lines so that
-    /// never actually happens (see `WidgetTextMetrics.titleLines`).
+    /// rather than looping forever; the callers clamp a row's lines to the
+    /// budget so that never actually happens (see
+    /// `WidgetTextMetrics.titleLines`) — a title longer than the whole card
+    /// gets a full page to itself, ending in "…".
     static func pages(
         heights: [CGFloat], spacing: CGFloat, budget: CGFloat, isDivider: (Int) -> Bool
     ) -> [Range<Int>] {
@@ -620,6 +652,42 @@ enum WidgetTheme {
             start = end
         }
         return pages
+    }
+}
+
+// MARK: - Row title sizing (2026-09-24)
+
+/// How a Reminders/Tasks row title fills its row — the one place both rows'
+/// title-sizing rule lives.
+///
+/// Ordinarily: exactly `lines` lines (its FULL measured wrap — no cap since
+/// 2026-09-24), `fixedSize` vertically so no parent can squeeze it back to
+/// fewer truncated lines, top-leading in a row framed to `height`.
+///
+/// `shrinks` (a title longer than the whole card — see the "cap is gone"
+/// addendum on `WidgetTheme`): no line limit, framed to exactly `height`
+/// (the page's whole row budget), and allowed to scale down to
+/// `WidgetTheme.overflowTitleScale` so every word fits. NOT `fixedSize`
+/// here — the frame is what makes SwiftUI shrink the text into it.
+struct RowTitleFit: ViewModifier {
+    let lines: Int
+    let height: CGFloat
+    let shrinks: Bool
+
+    func body(content: Content) -> some View {
+        if shrinks {
+            content
+                .lineLimit(nil)
+                .minimumScaleFactor(WidgetTheme.overflowTitleScale)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: height, alignment: .topLeading)
+        } else {
+            content
+                .lineLimit(lines)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+        }
     }
 }
 
@@ -722,15 +790,18 @@ struct WidgetTextMetrics {
     }
 
     /// How many lines a row title gets: its real wrapped count at `width`,
-    /// capped at `cap` (iOS's 3-line rule; `nil` on macOS, which never caps
-    /// — but never more lines than `maxHeight` can hold, so no single row
-    /// can outgrow the card the pager pages through).
+    /// uncapped on every platform and family (2026-09-24 — see the addendum
+    /// in `WidgetTheme`) — but never more lines than `maxHeight` (the list's
+    /// whole row budget) can hold, so no single row can outgrow the card the
+    /// pager pages through. When the clamp bites, `shrinks` is true: the row
+    /// is framed to `maxHeight` and draws its title smaller so ALL of it
+    /// fits (`WidgetTheme.overflowTitleScale`) instead of ending in "…".
     func titleLines(
-        _ text: String, width: CGFloat, weight: Font.Weight, cap: Int?, maxHeight: CGFloat
-    ) -> Int {
+        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat
+    ) -> (lines: Int, shrinks: Bool) {
         let real = WidgetTheme.measuredLineCount(for: text, maxWidth: width, font: titleFont(weight: weight))
         let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
-        return min(real, cap ?? real, fitting)
+        return (min(real, fitting), real > fitting)
     }
 
     /// The exact height `lines` title lines take — the number a row is

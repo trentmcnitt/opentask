@@ -142,11 +142,33 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         QuickActionHandler.handle(shortcutItem, completionHandler: completionHandler)
     }
 
-    /// Clear all delivered notifications when the app comes to foreground,
-    /// both locally and across all other devices (web, Watch).
-    /// The user can see their task list, so notification noise everywhere should clear.
+    /// Clear this device's delivered notifications when the app comes to the
+    /// foreground — and, ONLY when there were some, the other devices' too.
+    ///
+    /// Why the cross-device part exists (e4d5a7c, 2026-02): a notification
+    /// burst lands on every device at once (phone, Watch, web). Opening the
+    /// app to deal with it should silence the copies everywhere, not leave
+    /// the Watch chiming through the rest of the burst.
+    ///
+    /// Why it's narrowed (2026-09-24): it used to call `dismiss-all` on EVERY
+    /// activation — every app open, every return from the app switcher,
+    /// Control Center, a system alert — so merely glancing at the phone app
+    /// wiped the Watch's and the web's notifications, including ones the user
+    /// hadn't seen or dealt with. Now it fires only when THIS device had
+    /// delivered notifications at the moment it became active: that is the
+    /// "the user is responding to the burst" signal the feature was built on.
+    /// No delivered notifications here means this device isn't the one the
+    /// user is answering, so there is nothing to tell the others. A repeat
+    /// activation (Control Center pulled down and back) finds the list already
+    /// cleared by the first one and stays local.
+    ///
+    /// The local clear and badge reset stay unconditional. (The macOS app
+    /// never calls `dismiss-all` at all — see `MacAppDelegate`. The web app's
+    /// own visibility-change `dismiss-all` in `AppLayout.tsx` skips itself
+    /// inside either native shell, so this is the ONE place the phone app
+    /// decides.)
     func applicationDidBecomeActive(_ application: UIApplication) {
-        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        let center = UNUserNotificationCenter.current()
         application.applicationIconBadgeNumber = 0
 
         // Refresh the slot-snooze action list on every foreground too, not
@@ -154,13 +176,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // backgrounded for a long time.
         Task { await refreshSlotActions() }
 
-        // Tell the server to dismiss notifications on all other devices (fire-and-forget)
-        guard APIClient.shared.isConfigured else { return }
-        Task {
-            do {
-                try await APIClient.shared.dismissAllNotifications()
-            } catch {
-                print("[OpenTask] Dismiss-all API error: \(error)")
+        center.getDeliveredNotifications { delivered in
+            center.removeAllDeliveredNotifications()
+
+            guard !delivered.isEmpty, APIClient.shared.isConfigured else { return }
+            Task {
+                do {
+                    try await APIClient.shared.dismissAllNotifications()
+                } catch {
+                    print("[OpenTask] Dismiss-all API error: \(error)")
+                }
             }
         }
     }
