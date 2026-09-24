@@ -50,6 +50,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        // Content taller than the granted height clips at the bottom rather
+        // than drawing past the extension's bounds (see `install(hosting:)`).
+        view.clipsToBounds = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -157,7 +160,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         hosting.didMove(toParent: self)
 
         let bottom = hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        bottom.priority = .defaultLow
+        // Just BELOW the hosting view's default vertical content hugging
+        // (250): if iOS grants MORE height than the content needs, the view
+        // keeps its content height pinned to the top instead of stretching
+        // (which would centre the fixed-size checklist with gaps).
+        bottom.priority = UILayoutPriority(UILayoutPriority.defaultLow.rawValue - 1)
         NSLayoutConstraint.activate([
             hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
             hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
