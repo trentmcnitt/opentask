@@ -252,6 +252,12 @@ struct IncrementProgressIntent: AppIntent {
         // same disorientation Trent flagged, now happening on every `+1`.
         WidgetStore.trackSelection = taskId
 
+        // The Quotas widget's "met quotas are put away, never mid-interaction"
+        // rule (§5, `WidgetStore.quotaMutationIsRecent`'s doc): a `+1` that
+        // crosses the target must not make its own chip vanish before this
+        // tap's own repaint is even on screen.
+        WidgetStore.recordQuotaMutation()
+
         // Same optimistic discipline as CompleteTaskIntent: stage, repaint,
         // then let the server catch up. The staged value is a NET count, so
         // three taps in a row draw +3 instead of the single +1 a stamp-only
@@ -541,6 +547,63 @@ struct ShiftTrackItemIntent: AppIntent {
         WidgetStore.trackSelection = steppedId
         WidgetStore.trackPageStart = steppedId
         // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        return .result()
+    }
+}
+
+// MARK: - Quotas paging / show-met (`feat/quotas-widget`)
+
+/// Move the Quotas widget's flowed chip layout one page. Unlike
+/// `ShiftReminderPageIntent`/`ShiftTasksPageIntent`, there is no scope key to
+/// pair this with (§5 has one flat page sequence, not per-slot/per-project) —
+/// see `WidgetStore.quotasPage`'s doc for why the view clamps the upper bound
+/// instead of this intent tracking a scope to reset against. Non-wrapping,
+/// like the other two list pagers — `perform()` only clamps the lower bound,
+/// the header/footer `ListPager` dims and disables at either end.
+struct ShiftQuotasPageIntent: AppIntent {
+    static var title: LocalizedStringResource = "Page Quotas List"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Offset")
+    var offset: Int
+
+    init() {}
+
+    init(offset: Int) {
+        self.offset = offset
+    }
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.quotasPage += offset
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        WidgetStore.markInteraction()
+        await reloadOpenTaskWidget(kind: TrackWidget.kind)
+        return .result()
+    }
+}
+
+/// The Quotas header's eye toggle — off (default) puts a met quota away in
+/// its cluster, on shows every quota regardless of state. Dedicated to
+/// Quotas, not a generic per-kind toggle: Reminders/Tasks' own "show
+/// completed" (`feat/widget-days-show-completed`, built in parallel) reads a
+/// COMPLETION, a different shape of state from a quota's "at or past target,
+/// still open" — sharing one intent across both would only save a few lines
+/// and would couple two features that don't otherwise touch.
+struct ToggleQuotasShowMetIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Met Quotas"
+    static var isDiscoverable: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        WidgetStore.quotasShowMet.toggle()
+        // View-state only: fast path + single-kind reload (see ShiftReminderSlotIntent).
+        // Deliberately does NOT touch `quotasPage` — clamping happens at
+        // render time (see `WidgetStore.quotasPage`'s doc), the same "store
+        // only ever needs to move it, view clamps" idiom every other pager
+        // in this file follows.
         WidgetStore.markInteraction()
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
         return .result()
