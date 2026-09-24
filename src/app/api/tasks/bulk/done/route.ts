@@ -31,6 +31,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       userId: user.id,
       userTimezone: user.timezone,
       taskIds: input.ids,
+      closePeriod: input.close_period === true,
     })
 
     dismissNotificationsForTasks(user.id, input.ids)
@@ -40,6 +41,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       tasks_affected: result.tasksAffected,
       recurring_count: result.recurringCount,
       one_off_count: result.oneOffCount,
+      quota_skipped: result.quotaSkipped,
     })
   } catch (err) {
     if (err instanceof AuthError) {

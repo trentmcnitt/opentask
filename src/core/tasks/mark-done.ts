@@ -17,11 +17,18 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import { computeMarkDone, executeMarkDone } from './helpers'
+import { isTracked } from '@/lib/track'
+import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 
 export interface MarkDoneOptions {
   userId: number
   userTimezone: string
   taskId: number
+  /**
+   * §5: required to complete a quota. Completing one closes its period early
+   * and resets its count to 0 — see the refusal in `markDone`.
+   */
+  closePeriod?: boolean
 }
 
 export interface MarkDoneResult {
@@ -37,7 +44,7 @@ export interface MarkDoneResult {
  * For one-off tasks: sets done=1, archived_at=now
  */
 export function markDone(options: MarkDoneOptions): MarkDoneResult {
-  const { userId, userTimezone, taskId } = options
+  const { userId, userTimezone, taskId, closePeriod = false } = options
 
   // Get current task state
   const task = getTaskById(taskId)
@@ -53,6 +60,15 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   // Cannot mark trashed task done
   if (task.deleted_at) {
     throw new ValidationError('Cannot mark trashed task done')
+  }
+
+  // §5: `done` on a quota closes its period early and resets the count to 0
+  // (`computeMarkDone`'s period reset) — silently losing whatever was logged
+  // this period. Nothing in the app sends a quota here (its surfaces only log
+  // progress; see progress.ts), so an API caller doing it almost certainly
+  // meant +1. Refuse with the way out, unless the caller opts in explicitly.
+  if (isTracked(task) && !closePeriod) {
+    throw new ValidationError(QUOTA_DONE_MESSAGE)
   }
 
   // Cannot mark already done one-off task done again
