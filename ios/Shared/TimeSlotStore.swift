@@ -50,4 +50,35 @@ enum TimeSlotStore {
         guard let data = try? JSONEncoder().encode(slots) else { return }
         defaults?.set(data, forKey: cacheKey)
     }
+
+    /// The next slot to start, as an absolute `Date` — mirrors the server's
+    /// `nextPeriodStart` (`src/lib/time-slot-assign.ts`, used to resolve
+    /// `slot: "next"` for `POST /api/tasks/bulk/snooze-overdue`): for EACH
+    /// cached slot, its own next occurrence (today if it hasn't started yet,
+    /// else tomorrow), earliest across all of them wins. `nil` with no
+    /// cached slots — the Tasks widget's snooze mode (2026-09-23) needs this
+    /// client-side because `POST /api/tasks/bulk/snooze` (the ids-based
+    /// endpoint per-row/bulk-select snoozing uses) has no `slot` mode at
+    /// all, only `until`/`delta_minutes` — unlike `bulk/snooze-overdue`,
+    /// which resolves "next" server-side and is what the "All overdue" bar
+    /// calls instead (see `APIClient.snoozeOverdue(slot:)`). Computed from
+    /// the DEVICE's local timezone/calendar, same as every other on-device
+    /// time computation in this file's siblings (`RemindersTimeline`,
+    /// `DateHelpers`) — there is no per-request timezone to send here.
+    static func nextPeriodStart(now: Date = Date()) -> Date? {
+        let slots = cachedSlots
+        guard !slots.isEmpty else { return nil }
+        let calendar = Calendar.current
+        let starts: [Date] = slots.compactMap { slot in
+            guard let minutes = slot.startMinutes else { return nil }
+            var comps = calendar.dateComponents([.year, .month, .day], from: now)
+            comps.hour = minutes / 60
+            comps.minute = minutes % 60
+            comps.second = 0
+            guard let todayAtSlot = calendar.date(from: comps) else { return nil }
+            if todayAtSlot > now { return todayAtSlot }
+            return calendar.date(byAdding: .day, value: 1, to: todayAtSlot)
+        }
+        return starts.min()
+    }
 }

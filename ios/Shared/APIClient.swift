@@ -206,6 +206,56 @@ final class APIClient {
         return responseData["tasks_affected"] as? Int ?? 0
     }
 
+    /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`
+    /// (2026-09-23, Tasks widget snooze mode / bulk select). The ids-based
+    /// twin of `snoozeOverdue`'s sweep: that endpoint (`bulk/snooze-overdue`)
+    /// queries the overdue set server-side and has no `ids` mode at all;
+    /// this one does the opposite — it never looks at what's overdue, it
+    /// acts on EXACTLY the ids given.
+    ///
+    /// `includeTaskIds`, when passed, bypasses the P3(High)/P4(Urgent) sweep
+    /// -safety filter (`filterForBulkSnooze`, `src/core/tasks/bulk.ts`) for
+    /// those specific ids — mirroring the web's OWN explicit-selection
+    /// convention exactly (`src/lib/save-quick-panel-changes.ts`'s
+    /// `buildDateRequest`: "explicit user selections always pass
+    /// `include_task_ids` so explicit selections bypass the P4/Urgent skip
+    /// filter... the sweep remains the only caller that omits it"). Callers
+    /// in THIS file follow the same split: a per-row snooze-mode tap and a
+    /// bulk-select action are both explicit, deliberate picks (pass
+    /// `includeTaskIds` = `ids`); nothing here ever omits it, because
+    /// nothing here is a sweep — `snoozeOverdue` above is the sweep.
+    ///
+    /// `deltaMinutes`, on THIS endpoint, means "N minutes added to EACH
+    /// task's own `due_at`" — confirmed against `bulkSnooze`'s server
+    /// implementation (`src/core/tasks/bulk.ts`) and matched by the web's
+    /// OWN bulk relative-INCREMENT button (`QuickActionPanel`'s
+    /// `applyIncrement`, which feeds `save-quick-panel-changes.ts`'s
+    /// `changes.delta_minutes`). This is DIFFERENT from
+    /// `snoozeOverdue(deltaMinutes:)` above, whose `delta_minutes` means "N
+    /// minutes from NOW, snapped" — two different endpoints with two
+    /// different established meanings for the same parameter name.
+    ///
+    /// NOT what "+1h" means anywhere in THIS extension, though (2026-09-23
+    /// review correction): Trent's "+1h" is "snooze to the next hour" — one
+    /// hour from now, snapped — the SAME thing `snoozeOverdue(deltaMinutes:)`
+    /// already gives the sweep bar. Every "+1h" tap in snooze mode / bulk
+    /// select (`SnoozeTaskRowIntent`, `SnoozeSelectedTasksIntent`) resolves
+    /// that with `DateHelpers.snapToNextHour()` and sends it as `until`
+    /// instead — this parameter exists here to keep the function a faithful
+    /// mirror of everything the server endpoint accepts, but as of this
+    /// correction nothing in this extension actually calls it.
+    @discardableResult
+    func bulkSnoozeTasks(
+        ids: [Int], until: String? = nil, deltaMinutes: Int? = nil, includeTaskIds: [Int]? = nil
+    ) async throws -> BulkSnoozeResult {
+        var body: [String: Any] = ["ids": ids]
+        if let until { body["until"] = until }
+        if let deltaMinutes { body["delta_minutes"] = deltaMinutes }
+        if let includeTaskIds { body["include_task_ids"] = includeTaskIds }
+        let data = try await post(path: "/api/tasks/bulk/snooze", body: body)
+        return parseBulkSnoozeResult(data)
+    }
+
     /// Pending reminders for one time slot (§6), newest server truth.
     ///
     /// `slotId` is the `slot_id` from the SLOT_REMINDER push; -1 means the

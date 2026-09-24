@@ -171,10 +171,55 @@ private struct TasksListView: View {
     /// EXISTING `pagedTasks` paging math, unmodified.
     private var combinedItems: [TaskListItem] {
         let openItems = entry.tasks.map(TaskListItem.open)
-        guard isLarge, WidgetStore.showCompleted(for: TasksWidget.kind), !entry.doneTasks.isEmpty else {
+        // Snooze/select mode suppress the DONE section entirely (2026-09-23,
+        // Phase 2) — a completed item has no due date to snooze and no
+        // meaningful "select for bulk action" affordance the mockups define,
+        // so showing it interleaved with rows that DO act would only invite
+        // taps that go nowhere.
+        guard isLarge, !WidgetStore.tasksSnoozeMode, !WidgetStore.tasksSelectMode,
+            WidgetStore.showCompleted(for: TasksWidget.kind), !entry.doneTasks.isEmpty
+        else {
             return openItems
         }
         return openItems + [.divider(count: entry.doneTasks.count)] + entry.doneTasks.map(TaskListItem.done)
+    }
+
+    /// Which trailing control/tap-behavior every row in THIS card renders —
+    /// one mode for the whole list, computed once per `card(rows:width:)`
+    /// call rather than re-read per row. `systemMedium` never enters either
+    /// mode (`isLarge`-gated, matching `ShowCompletedToggle`'s identical
+    /// gating — no row/header budget there for a third control cluster).
+    private var rowMode: TaskRowMode {
+        guard isLarge else { return .normal }
+        if WidgetStore.tasksSnoozeMode { return .snooze }
+        if WidgetStore.tasksSelectMode { return .select(isSelected: false) } // per-row overridden below
+        return .normal
+    }
+
+    /// Bulk-select's current picks, scoped to the on-screen scope — see
+    /// `WidgetStore.selectedTaskIds(for:)`'s doc for the scope-pairing.
+    /// The raw stored picks — used only to build `selectedIds` below and by
+    /// row rendering's own `modeForRow` (which already checks membership
+    /// against a real task, so a stale id there is harmless: it just never
+    /// matches any row). Prefer `selectedIds` at every OTHER call site.
+    private var rawSelectedIds: Set<Int> { WidgetStore.selectedTaskIds(for: entry.scope) }
+
+    /// The picks, intersected with what's actually in `entry.tasks` right
+    /// now (2026-09-23, PR review) — a stored id can go stale if the task it
+    /// named was completed/deleted from elsewhere (the web, another device)
+    /// WHILE this select-mode session was open; without this, "N selected"
+    /// and `hasSelection` would count/enable against ids the widget can no
+    /// longer act on honestly. The server would simply ignore an unowned/
+    /// missing id if it were sent, but the COUNT the user sees should match
+    /// what they can see selected on screen.
+    private var selectedIds: Set<Int> {
+        rawSelectedIds.intersection(Set(entry.tasks.map(\.id)))
+    }
+
+    /// The next time slot's start, formatted — `nil` when `TimeSlotStore`
+    /// has no cached slots (see `SnoozeAllOverdueBar.nextPeriodLabel`'s doc).
+    private var nextPeriodTimeLabel: String? {
+        TimeSlotStore.nextPeriodStart(now: entry.date).map { WidgetTheme.shortTime($0) }
     }
 
     private var rowSpacing: CGFloat {
@@ -243,6 +288,8 @@ private struct TasksListView: View {
 
     private func card(rows: Int, width: CGFloat?) -> some View {
         let window = pagedTasks(rows: rows)
+        let mode = rowMode
+        let picks = selectedIds
         return VStack(alignment: .leading, spacing: rowSpacing) {
             header
 
@@ -258,7 +305,14 @@ private struct TasksListView: View {
                                 availableWidth: width, projectColor: entry.projectColor(for: task),
                                 // Project edge: systemLarge, unified pages only —
                                 // see `TaskRow.showsProjectEdge`.
-                                showsProjectEdge: isLarge && entry.isUnifiedScope
+                                showsProjectEdge: isLarge && entry.isUnifiedScope,
+                                // Select mode's per-row selection state
+                                // (2026-09-23, Phase 2) — `rowMode` itself
+                                // carries a placeholder `isSelected: false`
+                                // for the whole card (it's computed once,
+                                // before any one row's id is known), so this
+                                // row substitutes its OWN answer in.
+                                mode: modeForRow(task.id, base: mode, selected: picks)
                             )
                         case .divider(let count):
                             DoneDivider(count: count)
@@ -270,28 +324,27 @@ private struct TasksListView: View {
                         }
                     }
                 }
-                // systemMedium drops this band, as Track's does: at 4×2 it
-                // costs a whole row, and the header's count already states
-                // the total — there is no pager at that size.
-                //
-                // The bottom pager (2026-09-23) replacing "+N more" — see
-                // `RemindersListView.card`'s identical comment; tapping
-                // "+N more" used to open the app, paging in place replaces it.
-                if isLarge, window.totalPages > 1 {
-                    // Pinned to the card's bottom edge (Trent, 2026-09-23: "the
-                    // page switcher should not move"): a short last page used to
-                    // pull it up under its one row. A Spacer's ideal height is its
-                    // minLength, 0, so `ViewThatFits` still measures each candidate
-                    // at its content height and picks the same row count; only the
-                    // chosen card, laid out in the full widget height, stretches.
-                    Spacer(minLength: 0)
-                    ListPager(
-                        page: window.page,
-                        totalPages: window.totalPages,
-                        previous: ShiftTasksPageIntent(offset: -1),
-                        next: ShiftTasksPageIntent(offset: 1)
-                    )
-                }
+            }
+
+            // The bottom area (2026-09-23, Phase 2) is now ALWAYS present on
+            // `isLarge` — not just "when there's more than one page" the way
+            // the plain pager used to be — because "Select" needs a resting-
+            // mode home even at a single page, and the snooze-mode "All
+            // overdue" bar acts on the WHOLE server-side set regardless of
+            // what the on-screen scope/page happens to contain (it can be
+            // relevant even when THIS scope's own list, or even the whole
+            // page, is empty). This costs one row of height on every Tasks
+            // Large card now, intentionally, per the mockup.
+            if isLarge {
+                // Pinned to the card's bottom edge (Trent, 2026-09-23: "the
+                // page switcher should not move") — see `RemindersListView.
+                // card`'s identical comment. A Spacer's ideal height is its
+                // minLength, 0, so `ViewThatFits` still measures each
+                // candidate at its content height and picks the same row
+                // count; only the chosen card, laid out in the full widget
+                // height, stretches.
+                Spacer(minLength: 0)
+                bottomArea(window: window, mode: mode, hasSelection: !picks.isEmpty)
             }
 
             if let staleSince = entry.staleSince {
@@ -300,6 +353,71 @@ private struct TasksListView: View {
                     StalenessNote(fetchedAt: staleSince)
                 }
             }
+        }
+    }
+
+    /// Substitutes a row's own selection state into the card-wide `base`
+    /// mode — see `card(rows:width:)`'s call site comment for why `rowMode`
+    /// itself can't already know this (it has no task id to check against).
+    /// A no-op for `.normal`/`.snooze`.
+    private func modeForRow(_ taskId: Int, base: TaskRowMode, selected: Set<Int>) -> TaskRowMode {
+        if case .select = base {
+            return .select(isSelected: selected.contains(taskId))
+        }
+        return base
+    }
+
+    /// The bottom-of-card control area — the plain pager in resting mode
+    /// (plus "Select", `bulk.png`'s bottom-left placement), the "All
+    /// overdue" sweep bar in snooze mode, or the bulk-select action bar in
+    /// select mode. The pager, when needed, sits ABOVE whichever bar is
+    /// showing (mockup annotation: "pages keep your picks" — paging must
+    /// stay possible even mid-selection) rather than the two competing for
+    /// the same row.
+    @ViewBuilder
+    private func bottomArea(
+        window: (items: [TaskListItem], page: Int, totalPages: Int),
+        mode: TaskRowMode, hasSelection: Bool
+    ) -> some View {
+        if WidgetStore.tasksSnoozeMode {
+            VStack(spacing: 6) {
+                pagerIfNeeded(window)
+                // Hidden entirely at N == 0 — see `SnoozeAllOverdueBar`'s doc.
+                if entry.overdueSweepCount > 0 {
+                    SnoozeAllOverdueBar(count: entry.overdueSweepCount, nextPeriodLabel: nextPeriodTimeLabel)
+                }
+            }
+        } else if WidgetStore.tasksSelectMode {
+            VStack(spacing: 6) {
+                pagerIfNeeded(window)
+                SelectModeActionBar(hasSelection: hasSelection)
+            }
+        } else {
+            // Resting mode: "Select" bottom-LEFT (Trent's pick — see
+            // `SelectEntryButton`'s doc), the pager centred — an OVERLAY,
+            // not a second stacked row, since both are short and narrow
+            // enough to share one row without colliding (unlike the wider,
+            // edge-to-edge snooze/select bars above, which get their own
+            // row instead).
+            ZStack {
+                pagerIfNeeded(window)
+                HStack {
+                    SelectEntryButton()
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pagerIfNeeded(_ window: (items: [TaskListItem], page: Int, totalPages: Int)) -> some View {
+        if window.totalPages > 1 {
+            ListPager(
+                page: window.page,
+                totalPages: window.totalPages,
+                previous: ShiftTasksPageIntent(offset: -1),
+                next: ShiftTasksPageIntent(offset: 1)
+            )
         }
     }
 
@@ -344,6 +462,9 @@ private struct TasksListView: View {
                     }
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
                     // see `RemindersListView.header`'s identical comment.
+                    // Snooze/select mode override this subtitle entirely
+                    // (2026-09-23, Phase 2 — mockup: "Snooze mode" / "N
+                    // selected") — see `subtitleText`'s doc.
                     //
                     // `minimumScaleFactor` dropped to 0.6 (2026-09-23,
                     // review fix) — the toggle-on three-part count ("N due ·
@@ -352,7 +473,7 @@ private struct TasksListView: View {
                     // (the title's own floor, still right for the shorter
                     // strings this shares a scale factor pool with) let it
                     // truncate with an ellipsis instead of shrinking to fit.
-                    Text(entry.actionDescription ?? countLabel)
+                    Text(subtitleText)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -361,12 +482,25 @@ private struct TasksListView: View {
                 .contentShape(Rectangle())
             }
             Spacer(minLength: 0)
-            // "Show completed" (2026-09-23), left of Undo/Redo — systemLarge
-            // only, see `ShowCompletedToggle`'s doc.
-            if isLarge {
+            // "Show completed" (2026-09-23) — systemLarge only, see
+            // `ShowCompletedToggle`'s doc. Hidden during snooze/select mode
+            // (2026-09-23, Phase 2): the DONE section it toggles is already
+            // suppressed there (`combinedItems`'s guard), so a live toggle
+            // that visibly does nothing would only be confusing.
+            if isLarge, !WidgetStore.tasksSnoozeMode, !WidgetStore.tasksSelectMode {
                 ShowCompletedToggle(
                     kind: TasksWidget.kind, isOn: WidgetStore.showCompleted(for: TasksWidget.kind)
                 )
+            }
+            // The snooze-mode clock (2026-09-23, Phase 2) — systemLarge
+            // only, same gating as the eye toggle. Stays visible/tappable
+            // even while select mode is active (and vice versa for the eye
+            // toggle's replacement, "Select" — see `bottomArea`), so
+            // switching directly between the two modes never requires
+            // returning to resting mode first; `ToggleTasksSnoozeModeIntent`
+            // itself clears select mode when it turns snooze mode on.
+            if isLarge {
+                SnoozeModeToggle(isOn: WidgetStore.tasksSnoozeMode)
             }
             // Right-aligned, before the chevrons (2026-09-23) — see
             // `UndoRedoButtons`' doc.
@@ -390,6 +524,23 @@ private struct TasksListView: View {
     private var headerDestination: URL {
         guard !entry.isUnifiedScope else { return WidgetLink.dashboard }
         return WidgetLink.project(entry.scope)
+    }
+
+    /// The header subtitle — snooze/select mode override it entirely
+    /// (mockup: "Snooze mode" / "N selected"), taking priority even over
+    /// `actionDescription`'s "Undid: …"/"Redid: …" indication (2026-09-23,
+    /// Phase 2): a mode's OWN state is more relevant to what's on screen
+    /// right now than a ~60s-old undo/redo notice would be, and it would
+    /// otherwise read as contradicting what the header's own clock/Select-
+    /// bar UI is showing.
+    private var subtitleText: String {
+        guard isLarge else { return entry.actionDescription ?? countLabel }
+        if WidgetStore.tasksSnoozeMode { return "Snooze mode" }
+        if WidgetStore.tasksSelectMode {
+            let count = selectedIds.count
+            return count == 0 ? "Select tasks" : "\(count) selected"
+        }
+        return entry.actionDescription ?? countLabel
     }
 
     /// Ordinarily "N due"/"N overdue"; "N left · M done" once "show
@@ -427,6 +578,17 @@ private struct TasksListView: View {
         if doneCount > 0 { parts.append("\(doneCount) done") }
         return parts.isEmpty ? "all clear" : parts.joined(separator: " · ")
     }
+}
+
+/// Which trailing control (and tap behavior) a `TaskRow` renders — mutually
+/// exclusive per `WidgetStore`'s "Tasks snooze mode / bulk select" doc
+/// (2026-09-23, Phase 2). `.select`'s `isSelected` rides on the case itself
+/// rather than a separate row property, so a row can never be constructed
+/// with a select-mode marker but no selection state to draw it from.
+private enum TaskRowMode {
+    case normal
+    case snooze
+    case select(isSelected: Bool)
 }
 
 /// An ordinary task row: a tappable title (with its due time just before the
@@ -476,6 +638,11 @@ private struct TaskRow: View {
     /// A 3pt bar in the project's color costs 11pt, and the checkbox already
     /// carries the same color.
     var showsProjectEdge = false
+    /// Defaults to `.normal` — every EXISTING call site (DONE rows aside,
+    /// which use a different type entirely) keeps compiling unchanged; only
+    /// `TasksListView.card` passes `.snooze`/`.select` when those modes are
+    /// active.
+    var mode: TaskRowMode = .normal
 
     private var isOverdue: Bool { task.isOverdue(now: now) }
 
@@ -492,9 +659,24 @@ private struct TaskRow: View {
     /// that plain string is the SAME source `WidgetTheme.dueLabelText`
     /// renders from below, so a wide label like "Tomorrow 9:00 AM" reserves
     /// exactly as much room as it actually draws, never less.
+    ///
+    /// The trailing column's own width is MODE-DEPENDENT (2026-09-23, Phase
+    /// 2, PR review fix): snooze mode's ⏭/+1h pair and select mode's smaller
+    /// selection circle are neither of them `WidgetTheme.rowMarkerSize` wide
+    /// — reserving the wrong width here would either clip the real controls
+    /// or under-wrap the title, the exact row-height-truthing bug this
+    /// file's whole measurement apparatus exists to prevent.
+    private var trailingControlWidth: CGFloat {
+        switch mode {
+        case .normal: return WidgetTheme.rowMarkerSize
+        case .snooze: return WidgetTheme.snoozeRowControlsWidth
+        case .select: return WidgetTheme.selectionMarkerSize
+        }
+    }
+
     private var measuredLines: Int {
         guard let availableWidth else { return titleLineLimit }
-        var textWidth = availableWidth - WidgetTheme.rowMarkerSize - 10
+        var textWidth = availableWidth - trailingControlWidth - 10
         if showsProjectEdge {
             textWidth -= 3 + 8
         }
@@ -555,56 +737,92 @@ private struct TaskRow: View {
         #endif
     }
 
-    var body: some View {
-        // .top, not .center: on a two-line row a centred marker floats down
-        // into the gap between the lines, reading as if it belongs to neither.
-        HStack(alignment: .top, spacing: 10) {
-            Link(destination: WidgetLink.task(task.id)) {
-                // .firstTextBaseline keeps the due time on the title's first
-                // line when the title wraps, rather than drifting down beside
-                // the second. The due time sits at the END of this HStack —
-                // "just left of the checkbox" (Trent, 2026-09-23), which falls
-                // out naturally once the checkbox itself moved to the row's
-                // trailing edge below.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if showsProjectEdge {
-                        Capsule()
-                            .fill(projectColor)
-                            .frame(width: 3, height: max(reservedHeight - 2, 10))
-                            // Its bottom sits on the title's first baseline
-                            // otherwise; this lines its top up with the text.
-                            .alignmentGuide(.firstTextBaseline) { $0[.top] + WidgetTheme.rowTitleLineHeight * 0.75 }
-                    }
-                    Text(task.title)
-                        .font(.subheadline)
-                        .fontWeight(WidgetTheme.priorityWeight(task.priority))
-                        .foregroundStyle(.primary)
-                        .lineLimit(lineLimitValue)
-                        .multilineTextAlignment(.leading)
-                        // See `ReminderRow`: fixedSize stops any parent from
-                        // squeezing the wrap back out, minHeight reserves the
-                        // row's lines so `ViewThatFits` counts rows honestly.
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: reservedHeight,
-                            alignment: .topLeading
-                        )
+    /// Whether this row is currently picked, in select mode — `false` for
+    /// every other mode. Drives the row's background tint (mockup: selected
+    /// rows get a subtle indigo fill spanning the whole row).
+    private var isSelected: Bool {
+        if case .select(let selected) = mode { return selected }
+        return false
+    }
 
-                    if task.dueDate != nil {
-                        // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
-                        // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
-                        // AM" (further), "Oct 2" (date-only). Overdue is
-                        // unchanged — plain time, red — see
-                        // `WidgetTheme.dueLabelText`'s doc.
-                        WidgetTheme.dueLabelText(for: task, now: now)
-                            .font(.caption2)
-                            .monospacedDigit()
-                    }
-                }
-                .contentShape(Rectangle())
+    /// The title/due-time content shared by every mode — ONLY the wrapper
+    /// (`Link` to open the task, or `Button` to toggle selection in select
+    /// mode) and the trailing control (below) change per mode; the leading
+    /// content itself, including the due-time label, is identical in all
+    /// three (2026-09-23, Phase 2: the mockup's snooze/select-mode rows
+    /// still show due times exactly like a resting row does).
+    @ViewBuilder
+    private var titleAndDueTime: some View {
+        // .firstTextBaseline keeps the due time on the title's first line
+        // when the title wraps, rather than drifting down beside the
+        // second. The due time sits at the END of this HStack — "just left
+        // of the checkbox" (Trent, 2026-09-23), which falls out naturally
+        // once the checkbox itself moved to the row's trailing edge below.
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if showsProjectEdge {
+                Capsule()
+                    .fill(projectColor)
+                    .frame(width: 3, height: max(reservedHeight - 2, 10))
+                    // Its bottom sits on the title's first baseline
+                    // otherwise; this lines its top up with the text.
+                    .alignmentGuide(.firstTextBaseline) { $0[.top] + WidgetTheme.rowTitleLineHeight * 0.75 }
             }
+            Text(task.title)
+                .font(.subheadline)
+                .fontWeight(WidgetTheme.priorityWeight(task.priority))
+                .foregroundStyle(.primary)
+                .lineLimit(lineLimitValue)
+                .multilineTextAlignment(.leading)
+                // See `ReminderRow`: fixedSize stops any parent from
+                // squeezing the wrap back out, minHeight reserves the
+                // row's lines so `ViewThatFits` counts rows honestly.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: reservedHeight,
+                    alignment: .topLeading
+                )
 
+            if task.dueDate != nil {
+                // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
+                // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
+                // AM" (further), "Oct 2" (date-only). Overdue is
+                // unchanged — plain time, red — see
+                // `WidgetTheme.dueLabelText`'s doc.
+                WidgetTheme.dueLabelText(for: task, now: now)
+                    .font(.caption2)
+                    .monospacedDigit()
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// The leading content's TAP WRAPPER — a `Link` to the task in normal/
+    /// snooze mode (snooze mode's OWN action lives entirely in the trailing
+    /// buttons, so the title stays a navigable link there too), a `Button`
+    /// toggling selection in select mode (mockup: "tapping a row selects
+    /// it" — there is nowhere else for a select-mode tap on the title to
+    /// go, since opening the task's editor mid-selection makes no sense).
+    @ViewBuilder
+    private var titleContent: some View {
+        switch mode {
+        case .normal, .snooze:
+            Link(destination: WidgetLink.task(task.id)) { titleAndDueTime }
+        case .select:
+            Button(intent: ToggleTaskSelectionIntent(taskId: task.id)) { titleAndDueTime }
+                .buttonStyle(.plain)
+        }
+    }
+
+    /// The trailing control — the ordinary check-off square, snooze mode's
+    /// ⏭/+1h pair, or select mode's selection circle. Sized to
+    /// `trailingControlWidth` (mode-aware — see that property's doc) and
+    /// `markerHeight` (unchanged across modes: a 36pt floor is still the
+    /// right finger-target HEIGHT regardless of which control fills it).
+    @ViewBuilder
+    private var trailingControl: some View {
+        switch mode {
+        case .normal:
             Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .strokeBorder(projectColor, lineWidth: 1.5)
@@ -631,7 +849,44 @@ private struct TaskRow: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, -markerBleed)
+        case .snooze:
+            // No `markerBleed` trick here (2026-09-23, Phase 2) — snooze
+            // mode's controls are already comfortably finger-sized on their
+            // own (32pt circle, a full pill), so the extra touch-target
+            // bleed the single small checkbox needs isn't worth the same
+            // complexity for a first cut of this feature.
+            SnoozeRowButtons(taskId: task.id)
+                .frame(width: trailingControlWidth, height: markerHeight, alignment: .top)
+        case .select:
+            SelectionMarker(isSelected: isSelected)
+                .frame(width: trailingControlWidth, height: markerHeight, alignment: .top)
         }
+    }
+
+    var body: some View {
+        // .top, not .center: on a two-line row a centred marker floats down
+        // into the gap between the lines, reading as if it belongs to neither.
+        HStack(alignment: .top, spacing: 10) {
+            titleContent
+            trailingControl
+        }
+        // Selected-row background (2026-09-23, Phase 2, select mode only) —
+        // bled OUTWARD via negative padding on the FILL SHAPE, not on the
+        // row's own content, so the row's reported layout size never
+        // changes between selected/unselected (which would otherwise
+        // silently drift the row-height-truthing measurement this whole
+        // file is built around) — same "paint past the frame without
+        // costing layout space" trick as `ReminderSlotStrip.segmentBleed`.
+        .background(
+            Group {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(WidgetTheme.indigoAccent.opacity(0.16))
+                        .padding(.horizontal, -6)
+                        .padding(.vertical, -4)
+                }
+            }
+        )
     }
 }
 
