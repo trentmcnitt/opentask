@@ -112,13 +112,9 @@ describe('periodDaysLeft', () => {
 })
 
 describe('periodTimeLeftText', () => {
-  test('a day always reads "ends tonight" — never a day count', () => {
-    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-23T05:00:01.000Z'))).toBe(
-      'ends tonight',
-    )
-    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-24T04:59:59.999Z'))).toBe(
-      'ends tonight',
-    )
+  test('a day has no clause — "Today" already says when it ends', () => {
+    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-23T05:00:01.000Z'))).toBeNull()
+    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-24T04:59:59.999Z'))).toBeNull()
   })
 
   test('a week or month reads "N days left", pluralised', () => {
