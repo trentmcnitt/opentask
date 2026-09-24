@@ -7,7 +7,7 @@
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTask, getTaskById, updateTask } from '@/core/tasks'
-import { isTracked } from '@/core/tasks/progress'
+import { isTracked } from '@/lib/track'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { validateTaskCreate, validateTaskUpdate } from '@/core/validation'
 import { PERIOD_RULE_MESSAGE, TRACKED_REMINDER_MESSAGE } from '@/core/validation/task'
