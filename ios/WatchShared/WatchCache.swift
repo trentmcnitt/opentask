@@ -54,3 +54,42 @@ enum WatchCache {
         defaults?.object(forKey: savedAtKey) as? Date
     }
 }
+
+// MARK: - Smart Stack widget write-throughs
+
+extension WatchCache {
+    /// Mirror a successful check-off into the cached reminders (row out,
+    /// `considered + 1`) — the same edit `WatchViewModel.completeReminder`
+    /// makes to its live copy, persisted so the widget's next render agrees
+    /// even when its own fetch fails. No-op when the id isn't cached.
+    static func markReminderConsidered(taskId: Int) {
+        guard let groups = loadReminders(),
+              groups.contains(where: { group in group.reminders.contains { $0.id == taskId } })
+        else { return }
+        saveReminders(groups.map { group in
+            guard let done = group.reminders.first(where: { $0.id == taskId }) else { return group }
+            return ReminderGroupDTO(
+                slot: group.slot,
+                reminders: group.reminders.filter { $0.id != taskId },
+                considered: group.considered + 1,
+                consideredItems: [done] + group.consideredItems
+            )
+        })
+    }
+
+    /// After a successful overdue sweep: drop the overdue tasks the sweep
+    /// moved from the cached list (P0-P2 always; P3 too unless the server
+    /// reported skipping High). Their new due dates aren't known client-side
+    /// (the server resolved "next"), so they're removed rather than guessed
+    /// at — the next successful fetch puts them back with real dates.
+    static func removeSweptOverdueTasks(keepHigh: Bool, now: Date = Date()) {
+        guard let cached = loadTasks() else { return }
+        let kept = cached.tasks.filter { task in
+            guard task.isOverdue(now: now), !task.isReminder, !task.isTracked else { return true }
+            if task.priority >= 4 { return true }
+            if task.priority == 3 { return keepHigh }
+            return false
+        }
+        saveTasks(kept, projects: cached.projects)
+    }
+}
