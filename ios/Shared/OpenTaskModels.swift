@@ -100,6 +100,10 @@ struct TaskDTO: Codable, Identifiable, Hashable {
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
     /// once a custom `init(from:)` is declared).
+    ///
+    /// `shortTitle` last, defaulted: appended for the Quotas widget rebuild
+    /// (`feat/quotas-widget`) without disturbing any positional call site
+    /// this init already had.
     init(
         id: Int,
         projectId: Int = 0,
@@ -113,7 +117,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         progressPeriodStart: String? = nil,
         trackedFlag: Bool = false,
         isReminder: Bool = false,
-        labels: [String] = []
+        labels: [String] = [],
+        shortTitle: String? = nil
     ) {
         self.id = id
         self.projectId = projectId
@@ -128,11 +133,23 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.trackedFlag = trackedFlag
         self.isReminder = isReminder
         self.labels = labels
+        self.shortTitle = shortTitle
     }
 
     var dueDate: Date? {
         guard let dueAt else { return nil }
         return DateHelpers.parseISO(dueAt)
+    }
+
+    /// The Quotas widget chip's title: `shortTitle` when the quota's editor
+    /// set a non-empty one, else the full `title`. The one call site every
+    /// chip/row reads instead of picking between the two fields itself — see
+    /// `shortTitle`'s own doc for why a second call site choosing differently
+    /// would be a bug.
+    var displayTitle: String {
+        guard let shortTitle else { return title }
+        let trimmed = shortTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? title : trimmed
     }
 
     /// Start of the quota's current period, parsed. Nil is meaningful: it means
@@ -320,5 +337,45 @@ struct UndoStatusPage: Decodable {
         case latestId = "latest_id"
         case undoableCount = "undoable_count"
         case redoableCount = "redoable_count"
+    }
+}
+
+// MARK: - Label config (Quotas widget, `feat/quotas-widget`)
+
+/// One entry of `label_config` — the user's display color for a label name,
+/// set in Settings. `src/types/index.ts`'s `LabelConfig`, wire-identical (both
+/// fields are already bare `name`/`color`, no snake_case to map).
+///
+/// `color` is `String?`, not the server's closed `LabelColor` enum: the
+/// widget already owns a String-keyed palette (`WidgetTheme.projectColor(_:)`,
+/// the same eight names), and a future ninth color the client hasn't shipped
+/// yet should read as "unrecognized, draw neutral" rather than fail to decode
+/// this whole array and blank every quota's cluster color.
+struct LabelConfigDTO: Codable, Hashable {
+    let name: String
+    let color: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, color
+    }
+}
+
+/// `GET /api/user/preferences` → `{"data":{..., "label_config":[...], ...}}`
+/// (`src/app/api/user/preferences/route.ts`) — a ~30-field payload this
+/// decodes only ONE key out of. `Decodable` already ignores keys it wasn't
+/// told about, so no custom `init(from:)` is needed to skip the rest; only
+/// `decodeIfPresent` is, so a server that predates `label_config` (or a
+/// malformed one) still yields an empty cluster color set instead of failing
+/// the whole preferences fetch.
+struct UserPreferencesLabelConfigPage: Decodable {
+    let labelConfig: [LabelConfigDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case labelConfig = "label_config"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        labelConfig = try c.decodeIfPresent([LabelConfigDTO].self, forKey: .labelConfig) ?? []
     }
 }
