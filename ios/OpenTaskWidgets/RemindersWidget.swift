@@ -496,11 +496,11 @@ private enum ReminderPreviewData {
     /// page index is paired with (`WidgetStore.remindersPage(for:)`).
     static let earlyMorningKey = 11
 
-    static func entry() -> RemindersEntry {
+    static func entry(slotIndex: Int = 0) -> RemindersEntry {
         RemindersEntry(
             date: now,
             groups: groups,
-            slotIndex: 0,
+            slotIndex: slotIndex,
             staleSince: nil,
             isSignedOut: false,
             canUndo: true,
@@ -512,10 +512,14 @@ private enum ReminderPreviewData {
     /// Pins the page and the toggle — previews share the simulator's App
     /// Group UserDefaults, so whatever a prior preview (or a real widget)
     /// left there would otherwise bleed into this render.
-    static func prepare(page: Int, showCompleted: Bool) {
+    static func prepare(page: Int, showCompleted: Bool, slotKey: Int = earlyMorningKey) {
         WidgetStore.setShowCompleted(showCompleted, for: RemindersWidget.kind)
-        WidgetStore.setRemindersPage(page, for: earlyMorningKey)
+        WidgetStore.setRemindersPage(page, for: slotKey)
     }
+
+    /// Evening — the slot with Trent's other paragraph-length reminder
+    /// ("Surround myself with advanced/business/thinking people…").
+    static let eveningKey = 15
 }
 
 #Preview("Reminders Large — page 1", as: .systemLarge) {
@@ -539,6 +543,41 @@ private enum ReminderPreviewData {
     ReminderPreviewData.entry()
 }
 
+#Preview("Reminders Large — page 4", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 3, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 5", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 4, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — Evening page 1", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+#Preview("Reminders Large — Evening page 2", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+#Preview("Reminders Large — Evening page 3", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
 #Preview("Reminders Large — completed on, last page", as: .systemLarge) {
     RemindersWidget()
 } timeline: {
@@ -553,4 +592,19 @@ private enum ReminderPreviewData {
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
     ReminderPreviewData.entry()
 }
+
+#Preview("Reminders Medium — Evening", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: ReminderPreviewData.eveningKey)
+    ReminderPreviewData.entry(slotIndex: 4)
+}
+
+#Preview("Reminders Small", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
 #endif
