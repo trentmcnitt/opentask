@@ -102,7 +102,7 @@ private struct RingContent: View {
             Text("\(count)")
         }
         .gaugeStyle(.accessoryCircularCapacity)
-        .tint(showsOverdue ? .orange : WatchTheme.accent)
+        .tint(showsOverdue ? WatchTheme.overdue : WatchTheme.accent)
     }
 }
 

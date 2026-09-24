@@ -135,18 +135,39 @@ final class APIClient {
     private func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
-            return BulkSnoozeResult(tasksAffected: 0, skippedUrgent: 0)
+            return BulkSnoozeResult(tasksAffected: 0, skippedOnPriority: 0, skippedHigh: 0, snoozedHigh: 0)
         }
         return BulkSnoozeResult(
             tasksAffected: responseData["tasks_affected"] as? Int ?? 0,
-            skippedUrgent: responseData["skipped_urgent"] as? Int ?? 0
+            skippedOnPriority: responseData["skipped_urgent"] as? Int ?? 0,
+            skippedHigh: responseData["skipped_high"] as? Int ?? 0,
+            snoozedHigh: responseData["snoozed_high"] as? Int ?? 0
         )
     }
 
+    /// `POST /api/tasks/bulk/snooze-overdue`'s response — see
+    /// `src/core/tasks/bulk.ts`'s `filterForBulkSnooze` doc for where these
+    /// numbers come from server-side.
     struct BulkSnoozeResult {
         let tasksAffected: Int
-        /// Number of P4 (Urgent) tasks that were skipped — these remain overdue.
-        let skippedUrgent: Int
+        /// The server's `skipped_urgent` field, kept under its wire name for
+        /// clarity about what it actually is: despite the name, this is the
+        /// COMBINED High + Urgent count skipped on priority, not Urgent alone
+        /// — a legacy name that predates the High/Urgent split (`src/core/
+        /// tasks/bulk.ts`: "`urgentSkipped` is the TOTAL skipped on priority
+        /// ... keeps its name for API compatibility"). Use `skippedUrgent`
+        /// below for the true Urgent-only count.
+        let skippedOnPriority: Int
+        /// The High (P3) subset of `skippedOnPriority`.
+        let skippedHigh: Int
+        /// How many of the moved tasks were High (P3) — nonzero only once a
+        /// batch had nothing lower left (docs/TASK-MODEL.md: P3 is swept only
+        /// when no lower-priority task in the same batch is still eligible).
+        let snoozedHigh: Int
+        /// Urgent (P4) alone — never swept, ever (docs/TASK-MODEL.md). Derived
+        /// rather than read directly: the server has no single field for this,
+        /// only the combined `skippedOnPriority` and the `skippedHigh` subset.
+        var skippedUrgent: Int { skippedOnPriority - skippedHigh }
     }
 
     /// Complete N tasks in ONE request (§6.1 batch checklist).
