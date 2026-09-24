@@ -145,9 +145,4 @@ enum WatchQuotaLogic {
             return cmp == .orderedSame ? a.id < b.id : cmp == .orderedAscending
         }
     }
-
-    /// How many quotas the "Show met" toggle would reveal.
-    static func hiddenMetCount(quotas: [TaskDTO], keepVisible: Set<Int>) -> Int {
-        quotas.filter { $0.isProgressMet && !keepVisible.contains($0.id) }.count
-    }
 }
