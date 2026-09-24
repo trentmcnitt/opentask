@@ -121,14 +121,16 @@ private struct ReminderCardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// "Early morning · 2 of 7" — the slot name is never cut: it scales down
+    /// "Early morning · 2 left" — how many of the slot's reminders are still
+    /// waiting, the shown one included (Trent, 2026-09-24: "4 of 5" read as
+    /// a mystery; "2 left" says what's left to do). The slot name is never cut: it scales down
     /// before it truncates (one line, `minimumScaleFactor`). A fixed 12pt,
     /// not a text style: `.caption2` rendered LARGER than the title's own
     /// smallest rung (`.caption`) in the Smart Stack card, and a header
     /// louder than the reminder cost the title a whole line in the first
     /// render (2026-09-24 RenderPreview).
     private var header: some View {
-        Text("\(card.slotLabel) · \(card.position) of \(card.total)\(card.isLast ? " · last" : "")")
+        Text("\(card.slotLabel) · \(card.remainingIds.count) left")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(WatchTheme.accent)
             .widgetAccentable()
