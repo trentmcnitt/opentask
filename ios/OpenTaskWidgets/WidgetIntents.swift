@@ -803,15 +803,22 @@ struct UncompleteTaskIntent: AppIntent {
             print("[OpenTaskWidgets] Restore \(taskId) failed: \(error)")
             // The restore never happened — un-hide it from DONE so it is
             // honestly still there and tappable for a retry, the same
-            // failure-reversion pattern CompleteTaskIntent uses.
+            // failure-reversion pattern CompleteTaskIntent uses. Also clear
+            // the interaction stamp `markInteraction()` set above (round 1's
+            // fast-path staging) — without this, round 2 below would still
+            // see a live stamp and fast-path from cache instead of
+            // confirming server truth, the one case this file's
+            // "reconciling pass" comments are elsewhere careful to rule out.
             WidgetStore.clearPendingRestore(taskId)
+            WidgetStore.clearInteraction()
         }
         // Round 2, the reconciling pass — same reasoning as
         // CompleteTaskIntent's round 2: on success `clearInteraction()` just
         // ran, so this takes the network path and lands the restored task
-        // into OPEN; on failure the tombstone was cleared, so this also
-        // takes the network path and the item honestly reappears in DONE
-        // (never stuck hidden behind a tombstone the server rejected).
+        // into OPEN; on failure the tombstone was cleared AND the
+        // interaction stamp was too (see the catch block above), so this
+        // also takes the network path and the item honestly reappears in
+        // DONE (never stuck hidden behind a tombstone the server rejected).
         await reloadOpenTaskWidget(kind: kind)
         return .result()
     }
