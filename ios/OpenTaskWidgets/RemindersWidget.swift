@@ -285,8 +285,10 @@ struct RemindersProvider: TimelineProvider {
         // Interaction fast path (§8 optimistic check-off): a tap just happened,
         // so repaint from cache immediately — the tombstone filter is what makes
         // the checked item vanish NOW instead of after a seconds-long fetch.
-        // No staleness note: this data is seconds old by construction.
-        if WidgetStore.hasRecentInteraction(now: now), let cached = WidgetStore.loadReminders() {
+        // No staleness note: this data is seconds old by construction. Also
+        // gated on no intent having declared this cache stale since
+        // (2026-09-24) — see `WidgetStore.canRepaintRemindersFromCache`.
+        if WidgetStore.canRepaintRemindersFromCache(now: now), let cached = WidgetStore.loadReminders() {
             let groups = WidgetStore.filterPending(cached.value.groups, now: now)
             return RemindersEntry(
                 date: now,
@@ -310,7 +312,7 @@ struct RemindersProvider: TimelineProvider {
             async let reminders = APIClient.shared.fetchReminders()
             async let undoStatus: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
             let (payload, status) = try await (reminders, undoStatus)
-            WidgetStore.saveReminders(payload.groups)
+            WidgetStore.saveReminders(payload.groups, fetchStartedAt: now)
             if let status {
                 WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
             }

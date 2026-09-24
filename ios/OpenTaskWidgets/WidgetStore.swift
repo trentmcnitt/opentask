@@ -92,8 +92,13 @@ enum WidgetStore {
         return try? JSONDecoder().decode(Cached<T>.self, from: data)
     }
 
-    static func saveReminders(_ groups: [ReminderGroupDTO]) {
+    /// `fetchStartedAt` — when the fetch that produced `groups` was SENT —
+    /// settles a pending `clearInteraction()` only if the fetch began after
+    /// it (see "Fetch required" below): a response already on the wire when
+    /// the cache was declared stale can't carry the change that made it so.
+    static func saveReminders(_ groups: [ReminderGroupDTO], fetchStartedAt: Date = Date()) {
         save(RemindersCache(groups: groups), forKey: remindersKey)
+        settleFetchRequirement(remindersFetchRequiredKey, fetchStartedAt: fetchStartedAt)
     }
 
     static func loadReminders() -> Cached<RemindersCache>? {
@@ -105,8 +110,13 @@ enum WidgetStore {
     /// silently wiping the DONE list cache to empty. `UndoLastActionIntent`/
     /// `RedoLastActionIntent`'s full refetch is the one place that would
     /// otherwise have compiled clean while quietly blanking it.
-    static func saveTasks(_ tasks: [TaskDTO], projects: [ProjectDTO], completions: [CompletionDTO]) {
+    ///
+    /// `fetchStartedAt`: see `saveReminders(_:fetchStartedAt:)`.
+    static func saveTasks(
+        _ tasks: [TaskDTO], projects: [ProjectDTO], completions: [CompletionDTO], fetchStartedAt: Date = Date()
+    ) {
         save(TasksCache(tasks: tasks, projects: projects, completions: completions), forKey: tasksKey)
+        settleFetchRequirement(tasksFetchRequiredKey, fetchStartedAt: fetchStartedAt)
     }
 
     static func loadTasks() -> Cached<TasksCache>? {
@@ -160,16 +170,72 @@ enum WidgetStore {
         return stamps.contains { $0 >= cutoff }
     }
 
-    /// Record that a non-mutating interaction (a chevron) just happened, so the
-    /// next provider pass takes the cache-only fast path.
-    /// Forget the last interaction, so the next provider pass fetches from
-    /// the server instead of repainting from cache.
-    static func clearInteraction() {
+    /// "The cached payloads no longer match the server — the next provider
+    /// pass MUST fetch." Called by every intent whose server call changed
+    /// something it did not (or could not) write into the cache itself: the
+    /// snooze intents (a due-date change can move a row anywhere),
+    /// `UncompleteTaskIntent` (no honest `TaskDTO` to put back into OPEN),
+    /// Undo/Redo (no task id at all).
+    ///
+    /// It used to ONLY forget the plain interaction stamp, on the theory that
+    /// the next pass would then fetch. It didn't reliably (2026-09-24):
+    /// `hasRecentInteraction()` has three sources, and a completion tombstone
+    /// or a staged `+1` from another tap in the last 10s kept it true, so the
+    /// "reconciling" pass — and the server's widget push ~2s later, inside
+    /// the same window — repainted the pre-change cache (check one task off,
+    /// snooze another within 10s: the snoozed row sat at its old time until
+    /// the 30-minute refresh). The stamps this now ALSO writes are what the
+    /// fast paths consult (`canRepaintTasksFromCache`/
+    /// `canRepaintRemindersFromCache`), and only a fetch that STARTED after
+    /// them settles them — no window, no guess.
+    static func clearInteraction(now: Date = Date()) {
         defaults?.removeObject(forKey: lastInteractionKey)
+        defaults?.set(now.timeIntervalSince1970, forKey: tasksFetchRequiredKey)
+        defaults?.set(now.timeIntervalSince1970, forKey: remindersFetchRequiredKey)
     }
 
+    /// Record that an interaction just happened, so the next provider pass
+    /// takes the cache-only fast path — a chevron/toggle (pure view state),
+    /// or a `+1`/`−1` (whose confirmed result `confirmProgress` writes
+    /// straight into the cache, so the fast path stays truthful).
     static func markInteraction(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: lastInteractionKey)
+    }
+
+    // MARK: Fetch required (2026-09-24, the stale-count fix)
+    //
+    // The fast path's precondition has two halves, and `hasRecentInteraction`
+    // alone only ever checked the first: (1) a tap just happened, so waiting
+    // on the network would make the button read as dead, AND (2) the cache
+    // already says what the server says, give or take the staged optimistic
+    // markers drawn over it. Every mutating intent keeps (2) true one of two
+    // ways — it edits the cache with the confirmed result
+    // (`confirmCompletion`, `confirmProgress`) or it declares the cache stale
+    // (`clearInteraction`). One stamp per payload: a Tasks fetch says nothing
+    // about the Reminders payload, and vice versa.
+
+    private static let tasksFetchRequiredKey = "widget.fetchRequired.tasks"
+    private static let remindersFetchRequiredKey = "widget.fetchRequired.reminders"
+
+    private static func fetchRequired(_ key: String) -> Bool {
+        defaults?.object(forKey: key) != nil
+    }
+
+    private static func settleFetchRequirement(_ key: String, fetchStartedAt: Date) {
+        guard let stamp = defaults?.object(forKey: key) as? Double,
+            fetchStartedAt.timeIntervalSince1970 >= stamp
+        else { return }
+        defaults?.removeObject(forKey: key)
+    }
+
+    /// `TaskFeed.snapshot`'s fast-path test — Tasks AND Quotas, one payload.
+    static func canRepaintTasksFromCache(now: Date = Date()) -> Bool {
+        hasRecentInteraction(now: now) && !fetchRequired(tasksFetchRequiredKey)
+    }
+
+    /// `RemindersProvider`'s fast-path test.
+    static func canRepaintRemindersFromCache(now: Date = Date()) -> Bool {
+        hasRecentInteraction(now: now) && !fetchRequired(remindersFetchRequiredKey)
     }
 
     static func stagePendingCompletion(_ id: Int, now: Date = Date()) {
@@ -260,23 +326,22 @@ enum WidgetStore {
     /// Two taps in flight: the first response must not erase the second tap's
     /// pending `+1`, or the count visibly falls back while a second increment is
     /// still on the wire. Subtracting leaves exactly what is still unreconciled;
-    /// once the net reaches 0 the entry goes and the next provider pass fetches
-    /// server truth.
+    /// once the net reaches 0 the entry goes.
     ///
-    /// Called on BOTH outcomes, and it is the same subtraction either way: on
-    /// success the server now carries the delta, on failure the optimistic draw
-    /// has to honestly revert.
-    ///
-    /// The one visible seam is a `+1` and a `−1` in flight together (net 0,
-    /// drawn C): whichever response lands first subtracts its own delta, so the
-    /// count flickers one step the wrong way for the couple of seconds until the
-    /// second lands, zeroes the net, and the fetch restores C. Self-healing, and
-    /// the alternative — holding reconciliation until every request returns —
-    /// would need in-flight bookkeeping this map deliberately doesn't have.
+    /// The FAILURE path since 2026-09-24: the cache is left alone, so the
+    /// count honestly reverts to what it was before the tap. A SUCCESS goes
+    /// through `confirmProgress` instead, which does this same subtraction
+    /// AND writes the server's count into the cache — subtracting alone on
+    /// success was the stale-count bug (see `confirmProgress`'s doc).
     static func clearPendingProgress(_ id: Int, delta: Int = 1, now: Date = Date()) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
+        subtractPendingProgressLocked(id, delta: delta, now: now)
+    }
 
+    /// `clearPendingProgress`'s body, for callers already holding
+    /// `pendingLock` (an `NSLock` — not recursive).
+    private static func subtractPendingProgressLocked(_ id: Int, delta: Int, now: Date) {
         var map = progressMap()
         let key = String(id)
         // No live entry means nothing to reconcile. Without this guard an
@@ -295,6 +360,44 @@ enum WidgetStore {
             map[key] = [entry[stampIndex], Double(net)]
         }
         defaults?.set(map, forKey: pendingProgressKey)
+    }
+
+    /// The server CONFIRMED a `+1`/`−1`: write the task it returned into the
+    /// cached payload and retire this call's staged delta — the progress twin
+    /// of `confirmCompletion` (2026-09-24, the stale-count fix).
+    ///
+    /// THE BUG (Trent's phone, 2026-09-24 11:53: Weight Lift taken 3/3 → 0/3
+    /// on the server over seven taps while the widget kept drawing the old
+    /// count): success used to only SUBTRACT the staged delta, and nothing
+    /// ever wrote the new count into the cache. That was right only if the
+    /// round-2 reload went to the network — and it didn't whenever
+    /// `hasRecentInteraction()` was still true from ANY other tap in the last
+    /// 10s. Takeback mode's toggle (`markInteraction()`) sat seconds before
+    /// every `−1` by construction (the mode was one-shot then), so round 2
+    /// AND the server's widget push ~2s later both repainted the PRE-tap
+    /// cache with no delta left over it: the count the tap had just moved
+    /// snapped back, and stayed there until the 30-minute refresh.
+    ///
+    /// Now round 1 (cache + staged delta) and round 2 (cache = server, delta
+    /// retired) draw the same number — no flicker — and so does any reload
+    /// after it, fast path or not.
+    ///
+    /// ONE lock hold for both writes: a provider reading between them would
+    /// see the server's new count AND the still-staged delta — the tap
+    /// counted twice for one repaint. A sibling tap on the same chip still in
+    /// flight keeps its own staged delta, drawn over the server's count.
+    /// `fetchedAt` is kept: this is one task's truth, not a fresh payload, so
+    /// it must not hide an "as of" note the rest of the cache has earned.
+    static func confirmProgress(_ task: TaskDTO, delta: Int, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        if let cached = loadTasks() {
+            let tasks = cached.value.tasks.map { $0.id == task.id ? task : $0 }
+            save(
+                TasksCache(tasks: tasks, projects: cached.value.projects, completions: cached.value.completions),
+                forKey: tasksKey, at: cached.fetchedAt)
+        }
+        subtractPendingProgressLocked(task.id, delta: delta, now: now)
     }
 
     /// Live (un-expired) net deltas, `id -> delta`, pruning expired entries as a
@@ -1250,19 +1353,22 @@ enum WidgetStore {
     /// row's "Takeback" button turns it on; while on, every chip with
     /// progress shows a red "−1" and a tap on one logs `−1`, chips at 0 are
     /// dimmed and inert, and met chips show even with the "met" dot off (so
-    /// they can be taken back). It is a ONE-SHOT mode, the same shape as
-    /// Tasks' snooze mode (`tasksSnoozeMode`) but self-exiting:
+    /// they can be taken back). The same shape as Tasks' snooze mode
+    /// (`tasksSnoozeMode`), with one extra way out:
     ///
-    /// - ONE `−1` and it's off — `IncrementProgressIntent` clears it before
-    ///   its optimistic repaint, so a second tap can never decrement again
-    ///   by accident.
+    /// - A `−1` does NOT end it (2026-09-24). It was one-shot for a day —
+    ///   `IncrementProgressIntent` cleared it on every tap — and Trent found
+    ///   auto-exit after one `−1` "weird": taking 3/3 back to 0/3 meant
+    ///   re-arming before every tap. It stays on across `−1`s.
     /// - Tapping the button again exits without doing anything.
     /// - Any timeline build that is NOT this widget's own recent tap (a
     ///   scheduled refresh, a server push after a change elsewhere, the app
     ///   foregrounding, an Undo) clears it — `TrackProvider.currentEntry`,
-    ///   keyed on `hasRecentInteraction()`, the same predicate `TaskFeed`
-    ///   uses to pick its cache-only fast path. A mode armed and walked away
-    ///   from must not still be armed when the data under it has changed.
+    ///   keyed on `hasRecentInteraction()`. Every `−1`/`+1` tap and toggle
+    ///   stamps that (`markInteraction()`), so the tap's own round 2 and the
+    ///   server's widget push that follows it ~2s later keep the mode. A
+    ///   mode armed and walked away from must not still be armed when the
+    ///   data under it has changed.
     ///
     /// `systemLarge` only — the button lives in its bottom row, so the
     /// provider only honors this for a large instance (`context.family`); a

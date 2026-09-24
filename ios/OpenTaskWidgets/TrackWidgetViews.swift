@@ -34,10 +34,11 @@ import WidgetKit
 ///
 /// TAKEBACK (bottom row, right of the "met" dot — 2026-09-24): the ONE way
 /// to take a count back. Trent found Undo alone "too disorienting" for
-/// 2/3 → 1/3. The button arms a one-shot mode: every chip with progress
-/// shows a red "│ −1" and a tap on it logs `−1`, chips at 0 dim and go
-/// inert, met chips show even with the dot off — and the first `−1` turns
-/// the mode off again. See `WidgetStore.quotasTakebackMode` for the whole
+/// 2/3 → 1/3. The button arms a mode: every chip with progress shows a red
+/// "│ −1" and a tap on it logs `−1`, chips at 0 dim and go inert, met chips
+/// show even with the dot off — and it STAYS armed across `−1`s until the
+/// button is tapped again (it used to exit after one; Trent found that
+/// "weird", 2026-09-24). See `WidgetStore.quotasTakebackMode` for the whole
 /// lifecycle (including the auto-clear on an outside data change).
 struct TrackWidgetView: View {
     @Environment(\.widgetFamily) private var family

@@ -275,8 +275,19 @@ final class APIClient {
     /// Signed: `+1` logs, `−1` corrects a mis-log (the server floors the result
     /// at 0). Named `logProgress` rather than `incrementProgress` because a
     /// method that can subtract should not be called an increment.
-    func logProgress(taskId: Int, delta: Int = 1) async throws {
-        try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
+    ///
+    /// Returns the task as the server left it (the route answers with
+    /// `formatTaskResponse(task)` + `met`/`description`, which decoding
+    /// ignores) — the widget writes it straight into its cache
+    /// (`WidgetStore.confirmProgress`, 2026-09-24, the stale-count fix).
+    /// `nil` only when the call SUCCEEDED but the body didn't decode: the
+    /// server has committed the delta either way, so a decode problem must
+    /// never surface as a thrown error the caller would read as "the log
+    /// failed" and revert.
+    @discardableResult
+    func logProgress(taskId: Int, delta: Int = 1) async throws -> TaskDTO? {
+        let data = try await post(path: "/api/tasks/\(taskId)/progress", body: ["delta": delta])
+        return try? JSONDecoder().decode(APIEnvelope<TaskDTO>.self, from: data).data
     }
 
     /// Undo the most recent action for the signed-in user (2026-09-23,
