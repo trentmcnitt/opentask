@@ -151,8 +151,19 @@ private struct QuotasListView: View {
         } else {
             GeometryReader { geo in
                 let width = geo.size.width
+                // The same gap Reminders' `systemLarge` card puts between its
+                // header and `ReminderSlotStrip` (`RemindersListView.card`'s
+                // outer `VStack(spacing: rowSpacing)`) — this view used a bare
+                // `0` here before review, which is what left "N of M met"
+                // sitting directly on the "TODAY" heading with no breathing
+                // room at all.
+                let rowSpacing = isLarge ? WidgetTheme.rowSpacing : WidgetTheme.compactRowSpacing
                 let allLines = QuotaFlow.lines(sections: entry.sections, width: width)
-                let fullHeight = max(geo.size.height - QuotaMetrics.headerHeight(isLarge: isLarge), 0)
+                // One `rowSpacing` reserved for the header→body gap the VStack
+                // below now adds — folded into the same documented
+                // approximation `QuotaMetrics.headerHeight`/`.pagerHeight`
+                // already are (see `QuotasListView`'s own doc).
+                let fullHeight = max(geo.size.height - QuotaMetrics.headerHeight(isLarge: isLarge) - rowSpacing, 0)
                 let fullPages = QuotaFlow.paginate(lines: allLines, pageHeight: fullHeight)
                 let canPage = isLarge && fullPages.count > 1
                 let pages: [[QuotaFlow.Line]] = canPage
@@ -167,7 +178,7 @@ private struct QuotasListView: View {
                 let page = canPage ? min(max(entry.page, 0), totalPages - 1) : 0
                 let currentLines = pages.indices.contains(page) ? pages[page] : []
 
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: rowSpacing) {
                     header(canPage: canPage, page: page, totalPages: totalPages)
 
                     if entry.sections.isEmpty {
@@ -257,9 +268,11 @@ private struct QuotasListView: View {
 /// avoiding a shared-name collision between the two.
 ///
 /// `eye.slash` (met hidden, the default) / `eye` (met shown), tinted with
-/// Track's own single accent (`WidgetTheme.trackTint`) when on rather than a
-/// new hue — the widget's one-accent-hue rule (§ design conventions), and
-/// the glyph swap alone already carries the state.
+/// `Color.indigo` when on — the SAME accent every chip's progress fill and
+/// every section bar use (see `QuotaChip.fillAndStripe`'s doc), which is
+/// also the accent `ReminderSlotStrip.color(for:)` already uses for its
+/// `.behind` state (`RemindersWidgetViews.swift`) — one hue app-wide, not a
+/// new one for this button.
 private struct ShowMetToggleButton: View {
     let showMet: Bool
 
@@ -272,7 +285,7 @@ private struct ShowMetToggleButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(showMet ? WidgetTheme.trackTint : Color.secondary)
+        .foregroundStyle(showMet ? Color.indigo : Color.secondary)
         .accessibilityLabel(Text(showMet ? "Hide met quotas" : "Show met quotas"))
     }
 }
@@ -347,7 +360,7 @@ private struct QuotaHeadingRow: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.25))
                     Capsule()
-                        .fill(section.allMet ? WidgetTheme.trackMetTint : WidgetTheme.trackTint)
+                        .fill(section.allMet ? WidgetTheme.trackMetTint : Color.indigo)
                         .frame(width: max(geo.size.width * section.barFraction, 0))
                     // The notch: how much of the period's clock has already
                     // run. `Color.primary` rather than a hardcoded white —
@@ -500,13 +513,13 @@ private struct QuotaChip: View {
         .foregroundStyle(item.isMet ? WidgetTheme.trackMetTint : Color.secondary)
     }
 
-    /// The chip's base fill, the progress fill (Track's own teal accent —
-    /// see below — green once met, a STRONGER opacity than the section bar's
-    /// own fill: the mockup and the original spec prose both call for a
-    /// bolder progress fill on the chip specifically, stronger than the web
-    /// `TrackChip`'s current, not-yet-updated `bg-foreground/10`), and the
-    /// label's 3pt leading stripe, painted AFTER the fill so a fully-met
-    /// chip's fill never tints the stripe green underneath it.
+    /// The chip's base fill, the progress fill (indigo, green once met — a
+    /// STRONGER opacity than the section bar's own fill: the mockup and the
+    /// original spec prose both call for a bolder progress fill on the chip
+    /// specifically, stronger than the web `TrackChip`'s current,
+    /// not-yet-updated `bg-foreground/10`), and the label's 3pt leading
+    /// stripe, painted AFTER the fill so a fully-met chip's fill never tints
+    /// the stripe green underneath it.
     ///
     /// Base is `.fill.secondary` (an adaptive system fill), not a literal
     /// dark gray: WidgetKit's `.containerBackground` already makes this card
@@ -517,18 +530,21 @@ private struct QuotaChip: View {
     /// tuning `.primary`/`.secondary` around a fixed color that fights the
     /// card's own adaptivity.
     ///
-    /// TEAL, not the mockup's indigo: `WidgetTheme.trackTint` is Track's
-    /// already-established single accent (the old ring/bar mode used it
-    /// everywhere pace-related), and introducing indigo here would add a
-    /// SECOND accent hue to this widget's vocabulary — a direct conflict
-    /// with the one-accent-hue rule this codebase otherwise holds to.
-    /// Flagged in the build report as a deliberate deviation from the
-    /// mockup's literal color for Trent to weigh in on.
+    /// `Color.indigo`, matching the mockup and matching Trent's approval of
+    /// it there — and the SAME literal `ReminderSlotStrip.color(for:)`
+    /// already uses for its `.behind` state (`RemindersWidgetViews.swift`),
+    /// so this is the app's one existing "in progress" accent, not a second
+    /// hue. An earlier pass here reused Track's OLD ring/bar-mode teal
+    /// instead (`WidgetTheme.trackTint`, since removed) on the theory that
+    /// reusing Track's own established color was more "one hue" than
+    /// introducing indigo — reviewed and corrected: indigo is already the
+    /// app-wide in-progress accent (Reminders' slot strip), so teal was
+    /// actually the second, unapproved hue, not indigo.
     private var fillAndStripe: some View {
         ZStack(alignment: .leading) {
             Rectangle().fill(.fill.secondary)
             GeometryReader { geo in
-                (item.isMet ? WidgetTheme.trackMetTint : WidgetTheme.trackTint)
+                (item.isMet ? WidgetTheme.trackMetTint : Color.indigo)
                     .opacity(item.isMet ? 0.30 : 0.45)
                     .frame(width: max(geo.size.width * fraction, 0))
             }
@@ -644,7 +660,7 @@ private struct OverallRing: View {
             Circle()
                 .trim(from: 0, to: fraction)
                 .stroke(
-                    allMet ? WidgetTheme.trackMetTint : WidgetTheme.trackTint,
+                    allMet ? WidgetTheme.trackMetTint : Color.indigo,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
