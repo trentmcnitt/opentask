@@ -84,7 +84,19 @@ struct RemindersPageView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let group {
+        // Gate the empty/loaded states on `hasLoadedOnce` — before the first
+        // fetch completes, `group` is nil (no data yet) exactly like the
+        // genuinely-empty case below, and without this a launch would flash
+        // "All caught up" for the ~1-3s a real network round trip takes
+        // before honestly landing on real content. See `WatchViewModel.
+        // hasLoadedOnce`'s doc.
+        if !model.hasLoadedOnce {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+        } else if let error = model.loadError, model.reminderGroups.isEmpty {
+            LoadErrorView(message: error)
+        } else if let group {
             if group.reminders.isEmpty {
                 AllCaughtUpView()
             } else {
@@ -109,7 +121,11 @@ struct RemindersPageView: View {
                     .buttonStyle(.plain)
                 }
             }
-        } else if !model.isLoading {
+        } else {
+            // Loaded, no error, and still no group at all — a real state
+            // (an account with no time slots and no un-slotted reminders
+            // either), not a loading flicker: `hasLoadedOnce` above already
+            // owns the "still fetching" case.
             Text("No reminders configured yet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -171,6 +187,29 @@ struct AllCaughtUpView: View {
             Text("All caught up")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+}
+
+/// Shared by both pages (Reminders and Tasks) — shown only when a fetch
+/// failed AND there's no cached payload to fall back on (`WatchViewModel.
+/// load()`'s doc: a stale-but-present cache is preferred over this).
+struct LoadErrorView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("Couldn't load")
+                .font(.subheadline)
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

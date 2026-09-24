@@ -18,6 +18,14 @@ final class WatchViewModel: ObservableObject {
     @Published private(set) var projects: [ProjectDTO] = []
     @Published private(set) var isLoading = false
     @Published private(set) var loadError: String?
+    /// Whether `load()` has completed at least once. Both pages gate their
+    /// empty state on this — without it, "All caught up" / "No reminders
+    /// configured yet" flash on screen for the first ~1-3s of every launch,
+    /// before the first fetch has actually landed, which reads as false
+    /// reassurance rather than "no empty chrome" (Trent's rule is about
+    /// chrome with nothing to show, not about lying while data is still in
+    /// flight).
+    @Published private(set) var hasLoadedOnce = false
     @Published private(set) var canUndo = false
     /// Shown in place of the Reminders header subtitle for a few seconds after
     /// an undo, same idea as the phone widgets' "Undid: …" (§ widgets doc) —
@@ -96,11 +104,22 @@ final class WatchViewModel: ObservableObject {
             canUndo = status.undoableCount > 0
         }
 
-        if case .failure(let error) = rem, WatchCache.loadReminders() == nil {
-            loadError = error.localizedDescription
+        // Surface a failure on EITHER fetch, not just reminders — the
+        // Reminders and Tasks pages read the same `loadError`, so a
+        // tasks-only failure (reminders fine, tasks/projects not) used to be
+        // silent on the Tasks page even with nothing to show. Only reported
+        // when there's no cache to fall back on for the failing side, so a
+        // transient blip while a cached payload still renders stays quiet.
+        let remindersFailed = { if case .failure = rem { return true }; return false }()
+        let tasksFailed = { if case .failure = tsk { return true }; return false }()
+        if remindersFailed, WatchCache.loadReminders() == nil {
+            if case .failure(let error) = rem { loadError = error.localizedDescription }
+        } else if tasksFailed, WatchCache.loadTasks() == nil {
+            if case .failure(let error) = tsk { loadError = error.localizedDescription }
         }
 
         isLoading = false
+        hasLoadedOnce = true
     }
 
     // MARK: - Reminders

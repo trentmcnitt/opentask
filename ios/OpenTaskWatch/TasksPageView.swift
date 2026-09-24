@@ -16,43 +16,59 @@ struct TasksPageView: View {
         // See `RemindersPageView`'s doc: `.navigationTitle` anchors to the
         // single `NavigationStack` `WatchRootView` wraps around the TabView.
         List {
-            if overdueCount > 0 {
-                Button {
-                    showingBulkSheet = true
-                } label: {
-                    HStack {
-                        Image(systemName: "clock.badge.exclamationmark")
-                        Text("All overdue (\(overdueCount))")
-                        Spacer()
-                    }
-                    .foregroundStyle(.orange)
+            // Same `hasLoadedOnce` gate as the Reminders page — see
+            // `WatchViewModel.hasLoadedOnce`'s doc. Without it, "All caught
+            // up" flashes for the first ~1-3s of every launch before real
+            // data lands.
+            if !model.hasLoadedOnce {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
                 }
-                .listRowBackground(Color.orange.opacity(0.15))
-            }
-
-            if upNext.isEmpty {
-                AllCaughtUpView()
+                .listRowBackground(Color.clear)
+            } else if let error = model.loadError, model.tasks.isEmpty {
+                LoadErrorView(message: error)
                     .listRowBackground(Color.clear)
             } else {
-                ForEach(upNext) { task in
-                    TaskRow(task: task, project: model.project(for: task))
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.completeTask(task) }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button {
-                                model.snoozeTaskToNextPeriod(task)
-                            } label: {
-                                Label("Next period", systemImage: "arrow.right.to.line")
-                            }
-                            .tint(WatchTheme.accent)
-
-                            Button {
-                                model.snoozeTaskPlusHour(task)
-                            } label: {
-                                Label("+1 hour", systemImage: "clock.badge.plus")
-                            }
-                            .tint(.gray)
+                if overdueCount > 0 {
+                    Button {
+                        showingBulkSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "clock.badge.exclamationmark")
+                            Text("All overdue (\(overdueCount))")
+                            Spacer()
                         }
+                        .foregroundStyle(.orange)
+                    }
+                    .listRowBackground(Color.orange.opacity(0.15))
+                }
+
+                if upNext.isEmpty {
+                    AllCaughtUpView()
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(upNext) { task in
+                        TaskRow(task: task, project: model.project(for: task))
+                            .contentShape(Rectangle())
+                            .onTapGesture { model.completeTask(task) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button {
+                                    model.snoozeTaskToNextPeriod(task)
+                                } label: {
+                                    Label("Next period", systemImage: "arrow.right.to.line")
+                                }
+                                .tint(WatchTheme.accent)
+
+                                Button {
+                                    model.snoozeTaskPlusHour(task)
+                                } label: {
+                                    Label("+1 hour", systemImage: "clock.badge.plus")
+                                }
+                                .tint(.gray)
+                            }
+                    }
                 }
             }
         }
