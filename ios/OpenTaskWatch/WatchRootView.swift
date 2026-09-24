@@ -69,9 +69,15 @@ struct WatchRootView: View {
         // background must not wait for a manual pull-to-refresh. `load()`
         // also reloads the Smart Stack widget's timeline, so opening the app
         // is itself a guaranteed way to bring a stale card up to date.
+        //
+        // `.background` (not `.inactive`, which a lowered wrist triggers
+        // within seconds) disarms Quotas' Takeback mode — see
+        // `WatchViewModel.quotasTakebackMode`.
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 Task { await model.load() }
+            } else if newPhase == .background {
+                model.quotasTakebackMode = false
             }
         }
     }

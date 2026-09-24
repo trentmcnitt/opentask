@@ -84,7 +84,8 @@ struct TasksPageView: View {
         }
         // A chooser, not a confirmation: each button IS the action (Trent's
         // "undo over confirm" rule — both land in the toolbar-Undo log).
-        // Same two snoozes, same model calls, the old swipe actions made.
+        // Both count from the task's own due time while it is upcoming
+        // (`WatchViewModel.snoozeTask` → the phone's shared `TaskSnoozePlan`).
         .confirmationDialog(
             snoozeTarget?.title ?? "Snooze",
             isPresented: Binding(
@@ -94,8 +95,8 @@ struct TasksPageView: View {
             titleVisibility: .visible,
             presenting: snoozeTarget
         ) { task in
-            Button("Next period") { model.snoozeTaskToNextPeriod(task) }
-            Button("+1 hour") { model.snoozeTaskPlusHour(task) }
+            Button("Next period") { model.snoozeTask(task, target: .nextPeriod) }
+            Button("+1 hour") { model.snoozeTask(task, target: .plusOneHour) }
         }
     }
 }
