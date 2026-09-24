@@ -266,7 +266,6 @@ function useBulkActions(
 
   const bulkDelete = async () => {
     const count = selection.selectedIds.size
-    const deletedIds = new Set(selection.selectedIds)
     try {
       const res = await fetch('/api/tasks/bulk/delete', {
         method: 'POST',
@@ -274,7 +273,10 @@ function useBulkActions(
         body: JSON.stringify({ ids: [...selection.selectedIds] }),
       })
       if (!res.ok) throw new Error('Delete failed')
-      setSearchResults((prev) => prev.filter((t) => !deletedIds.has(t.id)))
+      // The search hit set is deliberately NOT trimmed here: the refetch drops
+      // the rows from `tasks`, which drops them from the results, and leaving
+      // the ids in place is what lets Undo bring them back. See
+      // `visibleSearchResults`.
       selection.clear()
       bumpUndoCount()
       fetchTasks()
@@ -520,7 +522,7 @@ function HomeContent({
       try {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('Failed to delete')
-        setSearchResults((prev) => prev.filter((t) => t.id !== taskId))
+        // No trim of the search hit set — see `bulkDelete` and `visibleSearchResults`.
         refreshAll()
         showToast({
           message: 'Task moved to trash',
@@ -652,6 +654,12 @@ function HomeContent({
    * the row data always comes from `tasks`. A hit that is no longer in `tasks`
    * has been completed, deleted or filtered away, and correctly drops out of
    * the results as well.
+   *
+   * NOTHING BUT A NEW SEARCH (OR CLEARING ONE) WRITES `searchResults`. The two
+   * delete handlers used to trim it as well, and that trim is what broke Undo:
+   * the restored task came back into `tasks`, but its id was no longer a hit,
+   * so it stayed missing from the results until the query was re-run. Every
+   * other mutation already relied on the derivation alone; delete now does too.
    */
   const visibleSearchResults = useMemo(() => {
     const byId = new Map(tasks.map((t) => [t.id, t]))
