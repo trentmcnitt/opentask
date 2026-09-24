@@ -476,6 +476,13 @@ private enum TasksPreviewData {
                 id: 915, projectId: 1, title: "Return the signed school forms", priority: 1,
                 dueAt: dateOnly(daysFromNow: 11)
             ),
+            // Overdue AND date-only (2026-09-23 review fix) — exercises
+            // the "Yesterday"/"Sep 22" red-date branch instead of the
+            // literal-looking "12:00 am" the first cut showed.
+            TaskDTO(
+                id: 916, projectId: 2, title: "Approve the contractor invoice", priority: 3,
+                dueAt: dateOnly(daysFromNow: -1)
+            ),
         ]
     }
 
@@ -509,6 +516,7 @@ private enum TasksPreviewData {
     TasksWidget()
 } timeline: {
     let _ = WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
+    let _ = WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
     TasksPreviewData.entry()
 }
 
@@ -516,6 +524,11 @@ private enum TasksPreviewData {
     TasksWidget()
 } timeline: {
     let _ = WidgetStore.setShowCompleted(true, for: TasksWidget.kind)
+    // Reset the stored page — preview renders share the same App Group
+    // UserDefaults as the simulator's real widgets, so a page a PRIOR
+    // preview (or a real device session) left on 1+ would otherwise bleed
+    // into this one.
+    let _ = WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
     TasksPreviewData.entry()
 }
 #endif

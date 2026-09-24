@@ -311,11 +311,15 @@ private struct TasksListView: View {
         guard rows > 0, !items.isEmpty else {
             return (items, 0, 1)
         }
-        let totalPages = max(1, Int(ceil(Double(items.count) / Double(rows))))
+        // `WidgetTheme.pageBoundaries` (2026-09-23) keeps the "DONE · N"
+        // divider off the tail of a page — see its doc.
+        let pages = WidgetTheme.pageBoundaries(for: items, rows: rows) { item in
+            if case .divider = item { return true }
+            return false
+        }
+        let totalPages = pages.count
         let page = min(max(WidgetStore.tasksPage(for: entry.scope), 0), totalPages - 1)
-        let start = page * rows
-        let end = min(start + rows, items.count)
-        return (Array(items[start..<end]), page, totalPages)
+        return (Array(items[pages[page]]), page, totalPages)
     }
 
     /// The header IS the card's tap target now that the whole-card link is
@@ -340,11 +344,19 @@ private struct TasksListView: View {
                     }
                     // "Undid: …" / "Redid: …" for ~60s after an undo/redo —
                     // see `RemindersListView.header`'s identical comment.
+                    //
+                    // `minimumScaleFactor` dropped to 0.6 (2026-09-23,
+                    // review fix) — the toggle-on three-part count ("N due ·
+                    // N overdue · N done") is genuinely longer than anything
+                    // this subtitle showed before "show completed", and 0.8
+                    // (the title's own floor, still right for the shorter
+                    // strings this shares a scale factor pool with) let it
+                    // truncate with an ellipsis instead of shrinking to fit.
                     Text(entry.actionDescription ?? countLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.6)
                 }
                 .contentShape(Rectangle())
             }
@@ -394,9 +406,26 @@ private struct TasksListView: View {
             if overdue == entry.tasks.count { return "\(overdue) overdue" }
             return overdue > 0 ? "\(due) · \(overdue) overdue" : due
         }
+        // With the toggle on, the overdue count stays (Trent's review of the
+        // first cut: it's the headline number on this widget) — "5 due · 1
+        // overdue · 1 done" — rather than being replaced by the Reminders-
+        // style "N left". Each part is dropped when it's 0, same "no
+        // redundant zero" rule `RemindersListView.countLabel`'s "all clear"
+        // fallback already follows; the all-overdue collapse above applies
+        // here too, for the same "pure noise" reason.
+        let overdue = entry.overdueCount(now: entry.date)
         let doneCount = entry.doneTasks.count
-        guard !entry.tasks.isEmpty || doneCount > 0 else { return "all clear" }
-        return "\(entry.tasks.count) left · \(doneCount) done"
+        var parts: [String] = []
+        if !entry.tasks.isEmpty {
+            if overdue == entry.tasks.count {
+                parts.append("\(overdue) overdue")
+            } else {
+                parts.append("\(entry.tasks.count) due")
+                if overdue > 0 { parts.append("\(overdue) overdue") }
+            }
+        }
+        if doneCount > 0 { parts.append("\(doneCount) done") }
+        return parts.isEmpty ? "all clear" : parts.joined(separator: " · ")
     }
 }
 
