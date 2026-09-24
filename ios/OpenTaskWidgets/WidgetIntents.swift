@@ -427,8 +427,8 @@ struct ShiftProjectScopeIntent: AppIntent {
 /// able to page through things that are too long to fit"). Unlike the slot/
 /// project/quota rings, this does NOT wrap: `ListPager` dims and disables
 /// the button at either end (`page == 0` / `page == totalPages - 1`, computed
-/// by the view from whichever `ViewThatFits` candidate actually won — see
-/// `RemindersListView.card`), so `perform()` only ever has to clamp the
+/// by the view's height-based paging — see `RemindersListView.listBody`), so
+/// `perform()` only ever has to clamp the
 /// lower bound; the view's own live clamp handles the upper one, including
 /// when the list shrinks out from under a stale page (a check-off).
 struct ShiftReminderPageIntent: AppIntent {
@@ -584,7 +584,7 @@ struct ShiftQuotasPageIntent: AppIntent {
     }
 }
 
-/// The Quotas header's eye toggle — off (default) puts a met quota away in
+/// The Quotas bottom row's "met" dot (the header eye until 2026-09-24) — off (default) puts a met quota away in
 /// its cluster, on shows every quota regardless of state. Dedicated to
 /// Quotas, not a generic per-kind toggle: Reminders/Tasks' own "show
 /// completed" (`feat/widget-days-show-completed`, built in parallel) reads a
@@ -772,7 +772,7 @@ struct RedoLastActionIntent: AppIntent {
 
 // MARK: - Show completed (2026-09-23)
 
-/// Flip the "show completed" eye toggle — see `WidgetStore`'s "Show
+/// Flip the "show completed" dot (`CompletedDotToggle`, the header eye until 2026-09-24) — see `WidgetStore`'s "Show
 /// completed" section for the storage and why it's keyed by an arbitrary
 /// `kind` string rather than plumbed through the entry.
 struct ToggleShowCompletedIntent: AppIntent {
@@ -792,7 +792,7 @@ struct ToggleShowCompletedIntent: AppIntent {
         WidgetStore.setShowCompleted(!WidgetStore.showCompleted(for: kind), for: kind)
         // View-state only: fast path + single-kind reload (see
         // ShiftReminderSlotIntent). No explicit page reset needed —
-        // `pagedReminders`/`pagedTasks` already recompute `totalPages` from
+        // the lists' `listBody` already recompute `totalPages` from
         // whatever combined open+done list is currently showing and clamp
         // the stored page into range on every render, exactly like they
         // already do when a check-off shrinks the open list out from under

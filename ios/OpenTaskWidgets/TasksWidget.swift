@@ -452,99 +452,92 @@ struct TasksWidget: Widget {
 }
 
 #if DEBUG
-// MARK: - Previews (2026-09-23, day-naming + "show completed" verification)
+// MARK: - Previews (2026-09-24, real-data snapshot)
 //
-// See `RemindersWidget.swift`'s identical preview section header for why
-// this uses realistic named data (not `SampleData.swift`) and two SEPARATE
-// `#Preview` blocks rather than two timeline entries in one.
+// Trent's REAL open tasks, read-only from production on 2026-09-24 when he
+// screenshotted "Up next · 26 due" paging as 13 pages of two rows — every
+// dated, non-reminder, non-quota task, soonest first, titles VERBATIM
+// (including the long immunization-records and Amazon-trial ones), with
+// his real projects and colors. See `RemindersWidget.swift`'s identical
+// preview header for why this is here and not in `SampleData.swift`, and
+// why each store state (page, toggle, mode) gets its own `#Preview` block.
 private enum TasksPreviewData {
+    /// The snapshot's clock: 8:45 AM local today, when the screenshot was
+    /// taken.
+    static var now: Date {
+        Calendar.current.date(bySettingHour: 8, minute: 45, second: 0, of: Date()) ?? Date()
+    }
+
+    /// A snapshot due date moved by however many whole days separate the
+    /// snapshot (2026-09-24) from today — so "today" stays today, "Tomorrow"
+    /// stays tomorrow, and the day-naming buckets render exactly as Trent
+    /// saw them whatever day the preview runs.
+    private static func shifted(_ iso: String) -> String {
+        let calendar = Calendar.current
+        var snapshot = DateComponents()
+        snapshot.year = 2026
+        snapshot.month = 9
+        snapshot.day = 24
+        guard let snapshotDay = calendar.date(from: snapshot) else { return iso }
+        let days = calendar.dateComponents([.day], from: snapshotDay, to: calendar.startOfDay(for: Date())).day ?? 0
+        return DateHelpers.adjustByDays(iso, days: days)
+    }
+
     static var projects: [ProjectDTO] {
         [
-            ProjectDTO(id: 1, name: "Personal", color: "blue"),
-            ProjectDTO(id: 2, name: "Work", color: "red"),
+            ProjectDTO(id: 1, name: "Inbox", color: nil),
+            ProjectDTO(id: 6, name: "Work", color: "red"),
+            ProjectDTO(id: 4434, name: "Personal", color: "blue"),
+            ProjectDTO(id: 4799, name: "Infra", color: "green"),
         ]
-    }
-
-    /// A local time `days` from now, as the UTC ISO string the API would
-    /// return. Relative to `Date()` (not a literal "Oct 1"/"Oct 2", the
-    /// verification brief's own wording) so this preview keeps demonstrating
-    /// the right day-naming BUCKET (today / tomorrow / 2-6 days / 7+ days)
-    /// whenever it's rendered, rather than only on the day it was written.
-    private static func at(daysFromNow days: Int, hour: Int, minute: Int = 0) -> String {
-        let calendar = Calendar.current
-        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
-        var comps = calendar.dateComponents([.year, .month, .day], from: day)
-        comps.hour = hour
-        comps.minute = minute
-        return DateHelpers.formatISO(calendar.date(from: comps) ?? Date())
-    }
-
-    /// Date-only (local midnight) `days` from now — the "Oct 2"-style case:
-    /// a day word with no time at all.
-    private static func dateOnly(daysFromNow days: Int) -> String {
-        let calendar = Calendar.current
-        let day = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
-        return DateHelpers.formatISO(calendar.startOfDay(for: day))
-    }
-
-    /// The next Sunday at least 2 days out, so this reliably lands in the
-    /// "2-6 days away" weekday-name bucket (`WidgetTheme.dueLabelParts`)
-    /// regardless of which day this preview happens to be rendered on — a
-    /// Sunday only 1 day away would correctly show "Tomorrow" instead, which
-    /// is accurate day-naming behavior but wouldn't demonstrate the "Sun"
-    /// case this preview exists to show.
-    private static func nextSunday(hour: Int, minute: Int = 0) -> String {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: Date()) // 1 = Sunday ... 7 = Saturday
-        var offset = (8 - weekday) % 7
-        if offset < 2 { offset += 7 }
-        return at(daysFromNow: offset, hour: hour, minute: minute)
     }
 
     static var tasks: [TaskDTO] {
         [
-            TaskDTO(
-                id: 911, projectId: 1, title: "Kelly chocolate", priority: 2,
-                dueAt: at(daysFromNow: 0, hour: 20, minute: 30)
-            ),
-            TaskDTO(
-                id: 912, projectId: 2, title: "Check if clients are waiting on me", priority: 3,
-                dueAt: at(daysFromNow: 1, hour: 9)
-            ),
-            TaskDTO(
-                id: 913, projectId: 2, title: "Log Upwork hours before the UTC week lock", priority: 2,
-                dueAt: nextSunday(hour: 9)
-            ),
-            TaskDTO(
-                id: 914, projectId: 1, title: "Make sure Mercury is cancelled", priority: 2,
-                dueAt: at(daysFromNow: 10, hour: 9)
-            ),
-            TaskDTO(
-                id: 915, projectId: 1, title: "Return Burleigh immunization records", priority: 1,
-                dueAt: dateOnly(daysFromNow: 11)
-            ),
-            // Overdue AND date-only (2026-09-23 review fix) — exercises
-            // the "Yesterday"/"Sep 22" red-date branch instead of the
-            // literal-looking "12:00 am" the first cut showed.
-            TaskDTO(
-                id: 916, projectId: 2, title: "Approve the contractor invoice", priority: 3,
-                dueAt: dateOnly(daysFromNow: -1)
-            ),
+            TaskDTO(id: 23533, projectId: 6, title: "Check if clients are waiting on me", priority: 3, dueAt: shifted("2026-09-24T14:00:00.000Z")),
+            TaskDTO(id: 22067, projectId: 4434, title: "Email Gayle Nicoll about 4-H Brookfield Blazers before the Oct 1 meeting", priority: 3, dueAt: shifted("2026-09-24T22:00:00.000Z")),
+            TaskDTO(id: 22793, projectId: 4434, title: "Kelly chocolate", priority: 2, dueAt: shifted("2026-09-25T01:30:00.000Z")),
+            TaskDTO(id: 292, projectId: 4434, title: "Josie Allowance ($8)", priority: 2, dueAt: shifted("2026-09-25T21:00:00.000Z")),
+            TaskDTO(id: 308, projectId: 4434, title: "Check out Home Depot Craft", priority: 1, dueAt: shifted("2026-09-26T14:00:00.000Z")),
+            TaskDTO(id: 22586, projectId: 6, title: "Log Upwork hours before the UTC week lock", priority: 3, dueAt: shifted("2026-09-27T14:00:00.000Z")),
+            TaskDTO(id: 249, projectId: 4434, title: "Returns? (including library)", priority: 2, dueAt: shifted("2026-09-27T22:00:00.000Z")),
+            TaskDTO(id: 290, projectId: 4434, title: "Josie Garbage", priority: 3, dueAt: shifted("2026-09-27T22:00:00.000Z")),
+            TaskDTO(id: 11160, projectId: 4434, title: "Take garbage out", priority: 3, dueAt: shifted("2026-09-27T22:30:00.000Z")),
+            TaskDTO(id: 23555, projectId: 4434, title: "Return Burleigh immunization records for Cole and Josie by Oct 2 (school has No Record; form wasn't attached)", priority: 3, dueAt: shifted("2026-09-28T14:00:00.000Z")),
+            TaskDTO(id: 17931, projectId: 4799, title: "Check for Claude Code subagent CLAUDE.md-inheritance off-switch", priority: 1, dueAt: shifted("2026-09-30T14:00:00.000Z")),
+            TaskDTO(id: 302, projectId: 4434, title: "Rent check", priority: 3, dueAt: shifted("2026-10-01T12:00:00.000Z")),
+            TaskDTO(id: 8385, projectId: 4434, title: "Check if insurance is finished", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 8870, projectId: 4434, title: "E sign for new insurance and for canceling the old insurance", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9214, projectId: 4434, title: "Make sure Foremost is set up properly", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9215, projectId: 6, title: "Make sure Mercury is cancelled", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 9312, projectId: 4434, title: "Call Capital One to limit data sharing on privacy preferences for the new 360 Checking account", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 12224, projectId: 4434, title: "Do something that improves credit", priority: 2, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 13256, projectId: 6, title: "Apply for the Mercury IO charge card", priority: 1, dueAt: shifted("2026-10-01T14:00:00.000Z")),
+            TaskDTO(id: 11315, projectId: 4434, title: "Check water softener", priority: 2, dueAt: shifted("2026-10-01T14:30:00.000Z")),
+            TaskDTO(id: 13490, projectId: 4434, title: "Add my name to Capital One", priority: 2, dueAt: shifted("2026-10-01T20:00:00.000Z")),
+            TaskDTO(id: 16551, projectId: 4434, title: "Cancel Amazon Music Unlimited free trial before it auto-renews at $11.99/mo (90-day trial started ~7/24/26, ends ~10/22)", priority: 3, dueAt: shifted("2026-10-04T15:00:00.000Z")),
+            TaskDTO(id: 21853, projectId: 6, title: "Cancel Microsoft 365 Business trial before it renews", priority: 3, dueAt: shifted("2026-10-07T14:00:00.000Z")),
+            TaskDTO(id: 22794, projectId: 4434, title: "Use Raising Cane's kids coupons before October 11", priority: 1, dueAt: shifted("2026-10-10T14:00:00.000Z")),
+            TaskDTO(id: 12343, projectId: 4434, title: "Pull Experian and all credit reports — verify post-filing tradeline updates & dispute any errors", priority: 3, dueAt: shifted("2026-10-12T23:00:00.000Z")),
+            TaskDTO(id: 296, projectId: 4434, title: "Replace house air filter", priority: 1, dueAt: shifted("2026-10-17T16:30:00.000Z")),
         ]
     }
 
+    /// One real recent completion, stamped this morning so the "show
+    /// completed" DONE section has something to render.
     static var doneToday: [CompletionDTO] {
-        [
+        let at = Calendar.current.date(bySettingHour: 8, minute: 15, second: 0, of: Date()) ?? Date()
+        return [
             CompletionDTO(
-                id: -920, taskId: 920, completedAt: at(daysFromNow: 0, hour: 8, minute: 15),
-                taskTitle: "Morning check-in", projectId: 1
+                id: -1286, taskId: 22852, completedAt: DateHelpers.formatISO(at),
+                taskTitle: "Select Happiness Trap audiobook on Audible", projectId: 4434
             )
         ]
     }
 
     static func entry() -> TasksEntry {
         TasksEntry(
-            date: Date(),
+            date: now,
             tasks: TasksTimeline.upNextTasks(from: tasks),
             projects: projects,
             scope: WidgetStore.upNextScope,
@@ -556,50 +549,81 @@ private enum TasksPreviewData {
             colorProjects: projects,
             doneTasks: doneToday,
             // Computed the same way `TasksProvider.makeEntry` does, from the
-            // FULL sample task list — see `TasksEntry.overdueSweepCount`'s
-            // doc for why this must come from the unscoped set.
+            // FULL task list — see `TasksEntry.overdueSweepCount`'s doc.
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks)
+        )
+    }
+
+    /// Trent's "Personal" project page (4434) — his longest project name,
+    /// for checking the header title beside the clock/Undo/Redo/‹ › cluster.
+    /// Filtered the way a project page filters "Today" (`todaysTasks`).
+    static func personalEntry() -> TasksEntry {
+        TasksEntry(
+            date: now,
+            tasks: TasksTimeline.todaysTasks(from: tasks, now: now).filter { $0.projectId == 4434 },
+            projects: projects,
+            scope: 4434,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: projects,
+            doneTasks: [],
             overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks)
         )
     }
 }
 
-/// Resets EVERY piece of `#Preview`-visible App Group state this branch (and
-/// the "show completed" branch before it) introduced, before each preview's
-/// own timeline builds — previews share the same App Group UserDefaults as
-/// the simulator's real widgets AND each other, so anything a PRIOR preview
-/// (or a prior real interaction in this same simulator) left set would
-/// otherwise silently bleed into the next one's render.
-private func resetTasksPreviewState() {
-    WidgetStore.setTasksPage(0, for: WidgetStore.upNextScope)
+/// Resets EVERY piece of `#Preview`-visible App Group state, then pins the
+/// page — previews share the simulator's App Group UserDefaults with each
+/// other and with its real widgets, so anything a prior render left set
+/// would otherwise bleed into the next one.
+private func resetTasksPreviewState(page: Int = 0) {
+    WidgetStore.setTasksPage(page, for: WidgetStore.upNextScope)
     WidgetStore.setTasksSnoozeMode(false)
     WidgetStore.setTasksSelectMode(false)
     WidgetStore.clearTasksSelection()
-    // Seed `TimeSlotStore` with realistic slots (2026-09-23, review addendum)
-    // — the widget extension only ever READS that cache (`TimeSlotStore`'s
-    // own doc: the main app populates it), so an unseeded preview host
-    // renders every "⏭ Next period" button dimmed/disabled, which isn't
-    // what a real device with the main app installed ever shows. Mirrors
-    // `SampleData.swift`'s reminder slot labels/times for consistency.
-    let slots = [
-        TimeSlotDTO(id: 1, label: "Early morning", startTime: "07:00"),
-        TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
-        TimeSlotDTO(id: 3, label: "Evening", startTime: "20:00"),
-    ]
-    TimeSlotStore.save(slots)
+    WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
+    // Seed `TimeSlotStore` with Trent's real slots — the widget extension
+    // only ever READS that cache (the main app populates it), so an
+    // unseeded preview renders every "⏭ Next period" button disabled,
+    // which a real device never shows.
+    TimeSlotStore.save([
+        TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
+        TimeSlotDTO(id: 12, label: "Morning", startTime: "09:00"),
+        TimeSlotDTO(id: 13, label: "Midday", startTime: "12:00"),
+        TimeSlotDTO(id: 14, label: "Afternoon", startTime: "16:00"),
+        TimeSlotDTO(id: 15, label: "Evening", startTime: "20:30"),
+    ])
 }
 
-#Preview("Tasks Large — Completed Off", as: .systemLarge) {
+#Preview("Tasks Large — Up next page 1", as: .systemLarge) {
     TasksWidget()
 } timeline: {
-    let _ = resetTasksPreviewState()
-    let _ = WidgetStore.setShowCompleted(false, for: TasksWidget.kind)
+    let _ = resetTasksPreviewState(page: 0)
     TasksPreviewData.entry()
 }
 
-#Preview("Tasks Large — Completed On", as: .systemLarge) {
+#Preview("Tasks Large — Up next page 2", as: .systemLarge) {
     TasksWidget()
 } timeline: {
-    let _ = resetTasksPreviewState()
+    let _ = resetTasksPreviewState(page: 1)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Up next page 3", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 2)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Completed On, last page", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    // Past the end on purpose — the list clamps to its last page.
+    let _ = resetTasksPreviewState(page: 99)
     let _ = WidgetStore.setShowCompleted(true, for: TasksWidget.kind)
     TasksPreviewData.entry()
 }
@@ -617,8 +641,22 @@ private func resetTasksPreviewState() {
 } timeline: {
     let _ = resetTasksPreviewState()
     let _ = WidgetStore.setTasksSelectMode(true)
-    // Two picks, matching bulk.png's "Select mode (2 picked)" panel.
-    let _ = WidgetStore.setSelectedTaskIds([912, 914], for: WidgetStore.upNextScope)
+    let _ = WidgetStore.setSelectedTaskIds([23533, 22793], for: WidgetStore.upNextScope)
+    TasksPreviewData.entry()
+}
+
+#Preview("Tasks Large — Personal project page", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState()
+    let _ = WidgetStore.setTasksPage(0, for: 4434)
+    TasksPreviewData.personalEntry()
+}
+
+#Preview("Tasks Medium", as: .systemMedium) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState()
     TasksPreviewData.entry()
 }
 
