@@ -52,6 +52,12 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     let trackedFlag: Bool
     let isReminder: Bool
     let labels: [String]
+    /// The Quotas widget chip's preferred label (§5) — an optional, shorter
+    /// stand-in for `title` set on the quota's editor (`short_title` column,
+    /// added for exactly this chip — see `feat/quota-short-name`). Nil or
+    /// empty means "no short name set"; read it through `displayTitle`, never
+    /// directly, so every call site falls back the same way.
+    let shortTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -67,6 +73,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case trackedFlag = "is_tracked"
         case isReminder = "is_reminder"
         case labels
+        case shortTitle = "short_title"
     }
 
     init(from decoder: Decoder) throws {
@@ -84,6 +91,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         trackedFlag = try c.decodeIfPresent(Bool.self, forKey: .trackedFlag) ?? false
         isReminder = try c.decodeIfPresent(Bool.self, forKey: .isReminder) ?? false
         labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
+        // decodeIfPresent, not decode: a cache written by a build that
+        // predates this field (or a server that hasn't picked up the
+        // `short_title` column yet) must still round-trip — see the file
+        // header's "partial decode" note.
+        shortTitle = try c.decodeIfPresent(String.self, forKey: .shortTitle)
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
