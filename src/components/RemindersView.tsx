@@ -935,7 +935,7 @@ function useReminderActions({
     (prompt: QuotaPrompt) => rangeSelect(prompt.prompt_key, orderedIds),
     [rangeSelect, orderedIds],
   )
-  // A prompt's own circle and "did it" square act on that one row, and it
+  // A prompt's own eye and "did it" square act on that one row, and it
   // leaves the selection as it goes — `completeOne`'s rule for a reminder.
   const considerOnePrompt = useCallback(
     (prompt: QuotaPrompt) => {

@@ -20,8 +20,8 @@ import SwiftUI
 ///
 /// QUOTA PROMPTS (quota reminders, 2026-09-24): the slot's waiting quota
 /// prompts are rows too, after its reminders (the web and the widgets put
-/// them there). A prompt row has the reminder row's circle — staging
-/// CONSIDERED — plus a square beside its count ("Daily Walks · 1/2") staging
+/// them there). A prompt row has an eye where the reminder row has its
+/// circle — staging CONSIDERED ("seen") — plus a square beside its count ("Daily Walks · 1/2") staging
 /// DID IT (+1, and considered). The two are one choice per prompt: tapping
 /// the other switches it, tapping the same one again un-stages it. The whole
 /// staged set, reminders and prompts, commits in ONE
@@ -312,8 +312,8 @@ struct ReminderChecklistView: View {
         .buttonStyle(.plain)
     }
 
-    /// A quota prompt: the reminder row's shape and circle (tap the row =
-    /// stage CONSIDERED), plus the quota's label-color stripe on the leading
+    /// A quota prompt: the reminder row's shape, with an EYE where its circle
+    /// is (tap the row = stage CONSIDERED — "seen", not "done"; 2026-09-25), plus the quota's label-color stripe on the leading
     /// edge, the count after the title, and a square on the trailing edge
     /// (stage DID IT). The square is its own button beside the row's, not
     /// nested in it; both only stage (see the file doc).
@@ -327,7 +327,7 @@ struct ReminderChecklistView: View {
                 model.choose(prompt: prompt.promptKey, did: false)
             } label: {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: staged && !did ? "checkmark.circle.fill" : "circle")
+                    Image(systemName: staged && !did ? "eye.fill" : "eye")
                         .font(.body)
                         .foregroundColor(staged && !did ? .green : .secondary)
 

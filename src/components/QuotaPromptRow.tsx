@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check } from 'lucide-react'
+import { Check, Eye } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
 import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
@@ -25,17 +25,22 @@ import type { Task } from '@/types'
  * An unmet quota also shows up in a reminder period each day, so it gets the
  * attention a reminder gets. It is drawn AS a reminder row — the sibling is
  * `ReminderRow` in RemindersView.tsx (and `PanelRow` in the dashboard panel),
- * and everything not listed here is copied from it: the circle, the whole-row
- * tap, the struck-through collapse, the 16px (panel: 13.5px) wrapping title,
- * never truncated.
+ * and everything not listed here is copied from it: the whole-row tap, the
+ * struck-through collapse, the 16px (panel: 13.5px) wrapping title, never
+ * truncated.
  *
  * WHAT DIFFERS, AND WHY
  * - TWO ACTIONS. Ticking a reminder means "considered", not "did it" (Trent's
- *   final decision). So the circle and a tap on the row CONSIDER it — handled
+ *   final decision). So the EYE and a tap on the row CONSIDER it — handled
  *   for today, nothing logged — and a SQUARE checkbox on the right, beside the
  *   count, is "did it": progress, and considered too. Square because it is a
- *   different verb from the circle, and a checkbox is what "I did this" looks
- *   like everywhere else.
+ *   different verb, and a checkbox is what "I did this" looks like everywhere
+ *   else.
+ * - AN EYE WHERE A REMINDER HAS ITS CIRCLE (2026-09-25). Same place, size and
+ *   tap target, same verb. Trent habitually tapped the left circle meaning
+ *   "done", but on a prompt it means "seen" — the eye says so. Outline and
+ *   muted while waiting; filled green (the circle's considered look) as the
+ *   row collapses.
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
@@ -169,7 +174,7 @@ export function QuotaPromptRow({
       className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
-          In the row's gutter (the panel's in the list's), so the circle lines
+          In the row's gutter (the panel's in the list's), so the eye lines
           up with the reminder rows' circles. */}
       <span
         aria-hidden="true"
@@ -194,7 +199,7 @@ export function QuotaPromptRow({
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
         </span>
       )}
-      <PromptCircle
+      <PromptEye
         prompt={prompt}
         panel={panel}
         completing={completing}
@@ -323,10 +328,14 @@ function usePromptRowGestures({
 }
 
 /**
- * The circle — "considered" — exactly the reminder row's, including its
- * selection-mode checkbox (`ReminderRowMarker`).
+ * The eye — "considered" (seen) — in the reminder row's circle's exact box:
+ * same size, same place, same tap target, and the same selection-mode
+ * checkbox (`ReminderRowMarker`). Only the glyph differs (see the docblock).
+ * Waiting: an outline eye in the circle's muted tone. Considered (the
+ * collapse): a filled green eye — the circle's green disc, as an eye — with
+ * its pupil ring knocked out in white, like SF Symbols' `eye.fill`.
  */
-function PromptCircle({
+function PromptEye({
   prompt,
   panel,
   completing,
@@ -341,16 +350,14 @@ function PromptCircle({
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
+  const glyph = panel ? 'size-[19px]' : 'size-6'
   if (completing) {
     return (
       <span
         aria-hidden
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
-          size,
-        )}
+        className={cn('flex shrink-0 items-center justify-center text-green-600', size)}
       >
-        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+        <Eye className={cn(glyph, 'fill-green-600 [&>circle]:stroke-white')} strokeWidth={1.75} />
       </span>
     )
   }
@@ -379,16 +386,11 @@ function PromptCircle({
       title="Considered"
       data-prompt-consider
       className={cn(
-        'border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
+        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-md transition-colors',
         size,
       )}
     >
-      {!panel && (
-        <Check
-          className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
-          strokeWidth={3}
-        />
-      )}
+      <Eye className={glyph} strokeWidth={1.5} />
     </button>
   )
 }

@@ -3,7 +3,7 @@
  *
  * An unmet quota also shows up as a prompt in a reminder period. The
  * behavioral suite (qp-prompts.test.ts) pins which prompts a day has; these
- * tests cover what only a browser shows: the row, its two actions (the circle
+ * tests cover what only a browser shows: the row, its two actions (the eye
  * considers, the square checkbox logs one), the Undo, the quota editor's
  * "Remind me daily" switch, and the Settings switch.
  *
@@ -88,6 +88,8 @@ test.describe('Quota prompts', () => {
     const row = promptRow(page, 'E2E prompt consider')
     await expect(row).toBeVisible()
     await expect(row).toContainText('0/3 this week')
+    // An eye, not the reminder's circle: on a prompt it means "seen", not "done".
+    await expect(row.locator('[data-prompt-consider] svg.lucide-eye')).toBeVisible()
 
     await row.locator('[data-prompt-consider]').click()
     await expect(row).toHaveCount(0)
