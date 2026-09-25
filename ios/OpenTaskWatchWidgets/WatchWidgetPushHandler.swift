@@ -76,9 +76,14 @@ enum WatchWidgetPushRegistration {
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: "group.io.mcnitt.opentask") }
 
+    /// Also forgets any earlier confirmation, so every delivery from
+    /// WidgetKit is sent even when it's a token the server once confirmed —
+    /// the server may have dropped it since (the phone/Mac twin,
+    /// `WidgetPushRegistration.savePending`, has the 2026-09-25 bug).
     static func savePending(token: String, widgetKind: String) {
         defaults?.set(token, forKey: pendingTokenKey)
         defaults?.set(widgetKind, forKey: pendingKindsKey)
+        defaults?.removeObject(forKey: registeredTokenKey)
     }
 
     static func clear() {
