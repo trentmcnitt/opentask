@@ -149,18 +149,23 @@ enum RemindersTimeline {
     /// (`WidgetStore.loadReminders()`); this filters it with
     /// `WidgetStore.filterPending` itself, so the just-tapped item (already
     /// staged as a tombstone by the caller) reads as gone here too.
-    static func autoAdvanceSlot(after taskId: Int, in groups: [ReminderGroupDTO], now: Date = Date()) {
+    ///
+    /// Waiting quota prompts (2026-09-24) count as "something waiting" here,
+    /// exactly like reminders: a slot whose reminders are done but whose
+    /// prompts are not is not finished, and acting on a slot's last prompt
+    /// advances just as checking off its last reminder does.
+    static func autoAdvanceSlot(in groups: [ReminderGroupDTO], now: Date = Date()) {
         let filtered = WidgetStore.filterPending(groups, now: now)
         guard !filtered.isEmpty else { return }
 
         let displayed = displayedSlotIndex(in: filtered, now: now)
-        guard filtered.indices.contains(displayed), filtered[displayed].reminders.isEmpty else {
+        guard filtered.indices.contains(displayed), filtered[displayed].hasNothingWaiting else {
             return // the on-screen slot still has something waiting
         }
 
         let natural = naturalSlotIndex(in: filtered, now: now)
         guard filtered.indices.contains(natural) else { return }
-        guard let target = filtered[0...natural].firstIndex(where: { !$0.reminders.isEmpty }) else {
+        guard let target = filtered[0...natural].firstIndex(where: { !$0.hasNothingWaiting }) else {
             return // nothing from the day's first slot through now is waiting either — stay
         }
 
@@ -431,14 +436,57 @@ private enum ReminderPreviewData {
     }
 
     private static func group(
-        _ id: Int, _ label: String, _ start: String, _ reminders: [TaskDTO], considered: [TaskDTO]
+        _ id: Int, _ label: String, _ start: String, _ reminders: [TaskDTO], considered: [TaskDTO],
+        prompts: [QuotaPromptDTO] = []
     ) -> ReminderGroupDTO {
         ReminderGroupDTO(
             slot: TimeSlotDTO(id: id, label: label, startTime: start),
             reminders: reminders,
             considered: considered.count,
-            consideredItems: considered
+            consideredItems: considered,
+            prompts: prompts
         )
+    }
+
+    /// One quota prompt as the server sends it (quota reminders,
+    /// 2026-09-24). Keyed for the snapshot's day; previews never send it.
+    private static func prompt(
+        _ taskId: Int, _ number: Int?, _ title: String, _ current: Int, _ target: Int,
+        _ period: String?, _ stripe: String?, considered: Bool = false, done: Bool = false
+    ) -> QuotaPromptDTO {
+        QuotaPromptDTO(
+            promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
+            title: title, current: current, target: target, period: period, stripeColor: stripe,
+            considered: considered, done: done
+        )
+    }
+
+    /// Trent's REAL quota prompts (2026-09-24, read-only from the dev
+    /// server, whose data is his prod snapshot, with PR #79's quota prompts
+    /// on): Early morning is the period every unmet quota prompts in by
+    /// default there, so it holds sixteen — the layout stress case, a slot
+    /// that is mostly prompt rows, with his longest titles ("Check for new
+    /// certifications — …", "Kids all blow up balloon (…)"). Daily Walks is
+    /// daily with target 2, so its #1 is here and its #2 is in Morning.
+    static var earlyMorningPrompts: [QuotaPromptDTO] {
+        [
+            prompt(116, nil, "Broccoli Avocado", 1, 3, "WEEKLY", nil),
+            prompt(3307, nil, "Check for new certifications — Anthropic Skilljar, platform certs, business automation credentials, cowork, automation", 0, 1, "WEEKLY", "pink"),
+            prompt(276, nil, "Clean car seat for Owen", 0, 1, "MONTHLY", "purple"),
+            prompt(255, nil, "Cook daily vegetables (incl. black beans)", 0, 5, "WEEKLY", "blue"),
+            prompt(83, 1, "Daily Walks", 0, 2, "DAILY", "blue"),
+            prompt(193, nil, "Eggs", 1, 2, "WEEKLY", nil),
+            prompt(129, nil, "Grinding food (ie bran cereal)", 1, 3, "WEEKLY", nil),
+            prompt(192, nil, "Josie clean dishes (chore)", 0, 5, "WEEKLY", "purple"),
+            prompt(21400, nil, "Kid's Iron Meal (e.g. ground beef, steak)", 0, 2, "WEEKLY", nil),
+            prompt(163, nil, "Kids all blow up balloon (teach josie PRI position + breathing into upper back, seated?)", 0, 4, "WEEKLY", "blue"),
+            prompt(239, nil, "Kids eat hard cereal (ie grape nuts)", 0, 2, "WEEKLY", nil),
+            prompt(258, nil, "Kids Smoothie (+Owen omega-3)", 0, 2, "WEEKLY", "blue"),
+            prompt(132, nil, "Kids supplements ( Vitamin D, Omega-3 )", 1, 3, "WEEKLY", "blue"),
+            prompt(13, nil, "Owen (+Kids) Playground", 1, 4, "WEEKLY", nil),
+            prompt(118, nil, "Owen Swim", 1, 2, "WEEKLY", nil),
+            prompt(160, nil, "Peanut butter bites", 1, 3, "WEEKLY", nil),
+        ]
     }
 
     /// Every slot of the day, as `GET /api/reminders` returned them at 8:44.
@@ -454,7 +502,7 @@ private enum ReminderPreviewData {
                 TaskDTO(id: 23432, title: "Cold Shower (Naval)", priority: 0, isReminder: true),
             ], considered: [
                 TaskDTO(id: 24, title: "Depressed = Past, Anxious = Future, Present = Peace", priority: 0, isReminder: true),
-            ]),
+            ], prompts: earlyMorningPrompts),
             group(12, "Morning", "09:00", [
                 TaskDTO(id: 2226, title: "Check GitHub issues", priority: 2, isReminder: true),
                 TaskDTO(id: 126, title: "Do my PRI", priority: 0, isReminder: true),
@@ -463,7 +511,7 @@ private enum ReminderPreviewData {
                 TaskDTO(id: 215, title: "Stair pushups", priority: 0, isReminder: true),
                 TaskDTO(id: 18050, title: "how has Claudes speech been (pleasant and effective to talk with?)", priority: 0, isReminder: true),
             ], considered: [
-            ]),
+            ], prompts: [prompt(83, 2, "Daily Walks", 0, 2, "DAILY", "blue")]),
             group(13, "Midday", "12:00", [
                 TaskDTO(id: 2247, title: "Check all public visibility places", priority: 2, isReminder: true),
                 TaskDTO(id: 38, title: "Is Kelly using vinegar softener", priority: 0, isReminder: true),
@@ -516,7 +564,37 @@ private enum ReminderPreviewData {
         let g = gs[0]
         gs[0] = ReminderGroupDTO(
             slot: TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
-            reminders: Array(g.reminders.dropFirst()), considered: g.considered, consideredItems: g.consideredItems
+            reminders: Array(g.reminders.dropFirst()), considered: g.considered, consideredItems: g.consideredItems,
+            prompts: g.prompts
+        )
+        return RemindersEntry(
+            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
+    /// Early morning with three prompts handled today — Daily Walks #1 did
+    /// (1/2), Broccoli Avocado considered, Eggs did (2/2) — for the DONE
+    /// section's prompt rows (no put-back marker).
+    static func promptsHandledEntry() -> RemindersEntry {
+        var gs = groups
+        let g = gs[0]
+        let handled: [String: Bool] = ["q:83:1:2026-09-24": true, "q:116:0:2026-09-24": false, "q:193:0:2026-09-24": true]
+        gs[0] = g.replacingPrompts(g.prompts.map { p in handled[p.promptKey].map { p.handled(did: $0) } ?? p })
+        return RemindersEntry(
+            date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
+            canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
+    /// Early morning with every REMINDER considered — only its prompts wait,
+    /// so the 2×2 and Lock Screen lead with a prompt.
+    static func promptsOnlyEntry() -> RemindersEntry {
+        var gs = groups
+        let g = gs[0]
+        gs[0] = ReminderGroupDTO(
+            slot: g.slot, reminders: [], considered: g.considered + g.reminders.count,
+            consideredItems: g.reminders + g.consideredItems, prompts: g.prompts
         )
         return RemindersEntry(
             date: now, groups: gs, slotIndex: 0, staleSince: nil, isSignedOut: false,
