@@ -67,8 +67,10 @@ final class ReminderChecklistModel: ObservableObject {
 
     /// Staged actions, in the order the user staged them.
     ///
-    /// An ARRAY, not a Set: this is the payload of the commit request, and the
-    /// order the user built it in is the order it should be applied and logged.
+    /// An ARRAY, not a Set: it is the commit's payload, and each half of the
+    /// request (`ids`, `prompts`) keeps the order the user staged it in. The
+    /// server applies the batch in one transaction with one undo entry, so
+    /// the interleaving between the two halves carries no meaning.
     @Published private(set) var staged: [StagedAction] = []
 
     let slotLabel: String

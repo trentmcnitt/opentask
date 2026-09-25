@@ -156,8 +156,8 @@ enum WidgetStore {
     /// network fetch and repaint straight from cache, which is what makes the
     /// tap feel instant. Scheduled reloads fall outside the window and fetch.
     ///
-    /// Three sources: completion tombstones, +1 stamps, and the plain
-    /// interaction stamp below. The last exists for CHEVRONS — pure view-state
+    /// Four sources: completion tombstones, +1 stamps, quota prompt action
+    /// tombstones (2026-09-25), and the plain interaction stamp below. The last exists for CHEVRONS — pure view-state
     /// changes that stage no data at all, but still must not pay a network
     /// round trip to flip to a page that is already in the cache.
     static func hasRecentInteraction(within seconds: TimeInterval = 10, now: Date = Date()) -> Bool {
@@ -182,7 +182,7 @@ enum WidgetStore {
     ///
     /// It used to ONLY forget the plain interaction stamp, on the theory that
     /// the next pass would then fetch. It didn't reliably (2026-09-24):
-    /// `hasRecentInteraction()` has three sources, and a completion tombstone
+    /// `hasRecentInteraction()` has several sources, and a completion tombstone
     /// or a staged `+1` from another tap in the last 10s kept it true, so the
     /// "reconciling" pass — and the server's widget push ~2s later, inside
     /// the same window — repainted the pre-change cache (check one task off,
@@ -824,8 +824,9 @@ enum WidgetStore {
     // is LIKELY the same Reminders completion that triggered
     // `RemindersTimeline.autoAdvanceSlot`, so it knows whether to restore
     // the pre-advance slot override (see "Auto-advance's own undo" below).
-    // Only `CompleteTaskIntent` stamps it now — a progress `+1`/`−1` never
-    // triggers auto-advance, so it has nothing here to correlate.
+    // Only `CompleteTaskIntent` and `ActOnPromptIntent` (a quota prompt
+    // emptying its slot auto-advances too, 2026-09-25) stamp it — a progress
+    // `+1`/`−1` never triggers auto-advance, so it has nothing to correlate.
 
     private static let lastMutationAtKey = "widget.lastMutationAt"
 
@@ -1040,6 +1041,47 @@ enum WidgetStore {
     /// (`TrackProvider.currentEntry`). This touches only the Reminders stamp.
     static func requireRemindersFetch(now: Date = Date()) {
         defaults?.set(now.timeIntervalSince1970, forKey: remindersFetchRequiredKey)
+    }
+
+    /// The Tasks/Quotas twin of `requireRemindersFetch` — for a prompt action
+    /// the server acted on but whose answer didn't decode, so no confirmed
+    /// quota could be written into the cache.
+    static func requireTasksFetch(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: tasksFetchRequiredKey)
+    }
+
+    /// The server CONFIRMED a prompt action: write it into the cached
+    /// Reminders payload — the prompt twin of `confirmCompletion`, for the
+    /// same two reasons: the next tap's round 1 repaints from cache instantly,
+    /// and nothing can draw the prompt back once its 90s tombstone expires
+    /// (Trent, 2026-09-23: "the reminders started popping back up").
+    ///
+    /// The acted prompt is marked handled (`handled(did:)`). Then every
+    /// prompt of each returned quota takes the SERVER's count, and a daily
+    /// one is done once that count reaches its number — the server's own rule
+    /// (`getQuotaPromptsBySlot`), which is how a did-it on Daily Walks #1 can
+    /// also finish #2 in another slot without a fetch. Nothing else is
+    /// re-derived: a weekly prompt's "logged today" is only known server-side,
+    /// and the next real fetch replaces this cache wholesale anyway.
+    static func confirmPromptAction(_ key: String, did: Bool, tasks: [TaskDTO]) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let cached = loadReminders() else { return }
+        let counts = Dictionary(tasks.map { ($0.id, $0.progressCurrent) }, uniquingKeysWith: { _, last in last })
+        let groups = cached.value.groups.map { group in
+            group.replacingPrompts(group.prompts.map { prompt in
+                var p = prompt.promptKey == key && prompt.isWaiting ? prompt.handled(did: did) : prompt
+                if let current = counts[p.taskId] {
+                    p = QuotaPromptDTO(
+                        promptKey: p.promptKey, taskId: p.taskId, number: p.number, title: p.title,
+                        current: current, target: p.target, period: p.period, stripeColor: p.stripeColor,
+                        considered: p.considered, done: p.done || (p.number.map { current >= $0 } ?? false)
+                    )
+                }
+                return p
+            })
+        }
+        save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
     }
 
     /// Write tasks the SERVER returned (a prompt action's `tasks`) into the

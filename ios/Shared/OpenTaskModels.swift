@@ -374,9 +374,9 @@ struct ReminderGroupDTO: Codable, Hashable {
 /// today, no progress; the square = DID IT, +1 (idempotent per key) and
 /// considered too.
 ///
-/// Every field is decoded with a default so a cache written by a build (or a
-/// server) with fewer fields still parses; the key is the only field without
-/// a sensible default, and a prompt without one is dropped by the decode.
+/// Every field but the key is decoded with a default, so a cache written by a
+/// build (or a server) with fewer fields still parses. The key is required:
+/// the server always sends it, and a prompt without one can't be acted on.
 struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     let promptKey: String
     let taskId: Int

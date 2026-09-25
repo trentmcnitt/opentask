@@ -468,7 +468,8 @@ final class WatchViewModel: ObservableObject {
                 // Usually nothing changed server-side and `tasks` still holds
                 // the pre-tap count, so retiring the delta is the revert. But
                 // a timeout can fire after the server committed, so fetch the
-                // truth either way.
+                // truth either way — `load()` re-fetches the reminders (and
+                // this quota's prompts) too.
                 settleQuota(task.id, delta: delta, confirmed: nil)
                 WKInterfaceDevice.current().play(.failure)
                 await load()
