@@ -17,6 +17,7 @@ import { listTimeSlots } from '@/core/time-slots'
 import { deleteTimeSlot } from '@/core/time-slots/edit'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
+import type { QuotaPromptConfig } from '@/types'
 import { validateTaskUpdate } from '@/core/validation'
 import {
   applyPromptMoves,
@@ -332,5 +333,102 @@ describe("Quota prompt moves — a quota chip's rows", () => {
   test('QP-075: numbersLabel collapses runs', () => {
     expect(numbersLabel([2], 2)).toBe('2nd of 2')
     expect(numbersLabel([1, 4, 5, 11, 12, 13], 13)).toBe('1st, 4th–5th, 11th–13th of 13')
+  })
+})
+
+/**
+ * The Quotas page's multi-edit (2026-09-25): a bulk `quota_prompt_config` is
+ * merged over each quota's stored config, never written over it, so the
+ * fields a multi-edit did not change survive on every quota.
+ */
+describe('Quota prompt configs — bulk edit merges per quota', () => {
+  function bulkConfig(ids: number[], config: QuotaPromptConfig | null) {
+    return bulkEdit({ ...base, taskIds: ids, changes: { quota_prompt_config: config } })
+  }
+
+  test('QP-080: switching several off keeps each one its own period and numbers', () => {
+    const weekly = quota('Cook vegetables', 'FREQ=WEEKLY', 3)
+    const daily = quota('Water', 'FREQ=DAILY', 3)
+    configure(weekly.id, { slot_id: slotId('Evening') })
+    configure(daily.id, { slot_id: slotId('Morning'), numbers: { '3': slotId('Evening') } })
+
+    bulkConfig([weekly.id, daily.id], { enabled: false })
+
+    expect(getTaskById(weekly.id)!.quota_prompt_config).toEqual({
+      slot_id: slotId('Evening'),
+      enabled: false,
+    })
+    expect(getTaskById(daily.id)!.quota_prompt_config).toEqual({
+      slot_id: slotId('Morning'),
+      numbers: { '3': slotId('Evening') },
+      enabled: false,
+    })
+  })
+
+  test('QP-081: a period for a daily quota sets its base, clears its numbers, keeps its switch', () => {
+    const daily = quota('Water', 'FREQ=DAILY', 3)
+    const weekly = quota('Read', 'FREQ=WEEKLY', 2)
+    configure(daily.id, { enabled: true, numbers: { '1': slotId('Evening') } })
+
+    bulkConfig([daily.id, weekly.id], { slot_id: slotId('Midday'), numbers: {} })
+
+    // The numbers key is gone, not left as an empty map.
+    expect(getTaskById(daily.id)!.quota_prompt_config).toEqual({
+      enabled: true,
+      slot_id: slotId('Midday'),
+    })
+    // Untouched before: it gets only what was sent.
+    expect(getTaskById(weekly.id)!.quota_prompt_config).toEqual({ slot_id: slotId('Midday') })
+    // The numbers spread from the new base exactly as a fresh daily quota's do.
+    const placed = prompts()
+      .filter((p) => p.task_id === daily.id)
+      .map((p) => [p.numbers, p.slot])
+    expect(placed).toEqual([
+      [[1], 'Midday'],
+      [[2], 'Afternoon'],
+      [[3], 'Evening'],
+    ])
+  })
+
+  test('QP-082: a quota the merge leaves unchanged is not written, and null still clears', () => {
+    const a = quota('Walks', 'FREQ=WEEKLY', 3)
+    const b = quota('Stretch', 'FREQ=WEEKLY', 3)
+    configure(a.id, { slot_id: slotId('Evening') })
+
+    expect(bulkConfig([a.id, b.id], { slot_id: slotId('Evening') }).tasksAffected).toBe(1)
+
+    bulkConfig([a.id, b.id], null)
+    expect(getTaskById(a.id)!.quota_prompt_config).toBeNull()
+    expect(getTaskById(b.id)!.quota_prompt_config).toBeNull()
+  })
+
+  test("QP-083: the merged config is still held to the owner's periods", () => {
+    seedTestUser(2, 'kelly@example.com', TEST_TIMEZONE)
+    const a = quota('Walks', 'FREQ=WEEKLY', 3)
+    configure(a.id, { enabled: false })
+    expect(() => bulkConfig([a.id], { slot_id: slotId('Evening', 2) })).toThrow(ValidationError)
+    expect(getTaskById(a.id)!.quota_prompt_config).toEqual({ enabled: false })
+  })
+
+  test('QP-084: one Undo puts every quota back to its own config', () => {
+    const a = quota('Walks', 'FREQ=WEEKLY', 3)
+    const b = quota('Water', 'FREQ=DAILY', 2)
+    const c = quota('Read', 'FREQ=MONTHLY', 2)
+    configure(a.id, { slot_id: slotId('Evening') })
+    configure(b.id, { enabled: false, numbers: { '2': slotId('Evening') } })
+
+    bulkConfig([a.id, b.id, c.id], { enabled: true, slot_id: slotId('Midday'), numbers: {} })
+    expect(getTaskById(b.id)!.quota_prompt_config).toEqual({
+      enabled: true,
+      slot_id: slotId('Midday'),
+    })
+
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(a.id)!.quota_prompt_config).toEqual({ slot_id: slotId('Evening') })
+    expect(getTaskById(b.id)!.quota_prompt_config).toEqual({
+      enabled: false,
+      numbers: { '2': slotId('Evening') },
+    })
+    expect(getTaskById(c.id)!.quota_prompt_config).toBeNull()
   })
 })

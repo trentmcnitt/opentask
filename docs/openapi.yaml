@@ -1017,6 +1017,27 @@ paths:
                         type: string
                     project_id:
                       type: integer
+                    quota_prompt_config:
+                      type: object
+                      nullable: true
+                      description: >-
+                        Unlike a single-task PATCH (which replaces the whole config), a bulk
+                        edit MERGES this over each task's stored config, top level only:
+                        `enabled` and `slot_id` replace that field, `numbers` replaces the
+                        per-number map as a unit and an empty map `{}` clears it. Fields not
+                        sent are kept per task. `null` clears the config on every task. Slot
+                        ids must be the owner's periods (400 otherwise).
+                      properties:
+                        enabled:
+                          type: boolean
+                        slot_id:
+                          type: integer
+                          nullable: true
+                        numbers:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            nullable: true
                 per_task:
                   type: object
                   description: >-
