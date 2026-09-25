@@ -41,6 +41,7 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
+import { rolloverQuotaNow } from './period-rollover'
 // ONE definition of "is this a quota" — the client-safe one in lib/track. This
 // file used to carry its own copy, and two copies of a rule this central are
 // how the reminder/quota guard in updateTask ended up testing only half of it.
@@ -71,42 +72,60 @@ export interface IncrementProgressResult {
 export function incrementProgress(options: IncrementProgressOptions): IncrementProgressResult {
   const { userId, taskId, delta = 1 } = options
 
-  const task = getTaskById(taskId)
-  if (!task) throw new NotFoundError('Task not found')
-  if (!canUserAccessTask(userId, task)) throw new ForbiddenError('Access denied')
-  if (task.deleted_at) throw new ValidationError('Cannot log progress on a trashed task')
-  if (!isTracked(task)) {
+  const found = getTaskById(taskId)
+  if (!found) throw new NotFoundError('Task not found')
+  if (!canUserAccessTask(userId, found)) throw new ForbiddenError('Access denied')
+  if (found.deleted_at) throw new ValidationError('Cannot log progress on a trashed task')
+  if (!isTracked(found)) {
     throw new ValidationError(
       'Task is not tracked. Set a progress_target greater than 1 to track it.',
     )
   }
 
-  // Progress never goes below zero — a correction can undo a mis-log but can't
-  // manufacture negative history.
-  const next = Math.max(0, (task.progress_current ?? 0) + delta)
   const nowStr = nowUtc()
-  const met = next >= task.progress_target
 
-  const updated = withTransaction((tx) => {
+  const { updated, next, task } = withTransaction((tx) => {
+    // Close an expired period FIRST, in this transaction, so a +1 at 00:02
+    // lands in today's period rather than being recorded as yesterday's and
+    // zeroed by the cron three minutes later. See `rolloverQuotaNow`.
+    rolloverQuotaNow(taskId)
+    const task = getTaskById(taskId) ?? found
+
+    // Progress never goes below zero — a correction can undo a mis-log but can't
+    // manufacture negative history.
+    const current = task.progress_current ?? 0
+    const next = Math.max(0, current + delta)
+    // What actually changed. A −1 at zero changes nothing, and progress_events
+    // is a history of what was logged, so it records this rather than the
+    // request — a clamped −1 used to be written as −1 against a count that
+    // never moved.
+    const applied = next - current
+
     tx.prepare('UPDATE tasks SET progress_current = ?, updated_at = ? WHERE id = ?').run(
       next,
       nowStr,
       taskId,
     )
-    tx.prepare(
-      'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
-    ).run(taskId, userId, delta, nowStr)
+    if (applied !== 0) {
+      tx.prepare(
+        'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
+      ).run(taskId, userId, applied, nowStr)
+    }
 
+    // Logged even when nothing moved: a client offers Undo on its toast for
+    // every tap, and an Undo with no entry of its own would undo whatever
+    // came before it.
     const after = { ...task, progress_current: next }
     logAction(
       userId,
       'progress',
-      `Logged ${delta > 0 ? '+' : ''}${delta} on "${task.title}" (${next}/${task.progress_target})`,
+      `Logged ${applied > 0 ? '+' : ''}${applied} on "${task.title}" (${next}/${task.progress_target})`,
       ['progress_current'],
       [createTaskSnapshot(task, after, ['progress_current'])],
     )
-    return after
+    return { updated: after, next, task }
   })
+  const met = next >= task.progress_target
 
   // Other tabs and the widgets learn about the new count the same way they
   // learn about every other mutation.

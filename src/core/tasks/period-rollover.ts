@@ -94,10 +94,7 @@ function unitStart(now: DateTime, unit: Unit): DateTime {
   }
 }
 
-function fetchQuotas(): QuotaRow[] {
-  return getDb()
-    .prepare(
-      `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_current, t.progress_target,
+const QUOTA_ROW_SQL = `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_current, t.progress_target,
               t.progress_period_start, t.completion_count, t.first_completed_at, u.timezone
          FROM tasks t
          INNER JOIN users u ON t.user_id = u.id
@@ -105,9 +102,10 @@ function fetchQuotas(): QuotaRow[] {
           AND t.rrule IS NOT NULL
           AND t.done = 0
           AND t.deleted_at IS NULL
-          AND t.archived_at IS NULL`,
-    )
-    .all() as QuotaRow[]
+          AND t.archived_at IS NULL`
+
+function fetchQuotas(): QuotaRow[] {
+  return getDb().prepare(QUOTA_ROW_SQL).all() as QuotaRow[]
 }
 
 /**
@@ -117,97 +115,134 @@ function fetchQuotas(): QuotaRow[] {
 export function rolloverTrackedPeriods(now: Date = new Date()): RolloverResult {
   const result: RolloverResult = { anchored: 0, rolled: 0 }
   const touchedUsers = new Set<number>()
-  const nowStr = now.toISOString()
 
   for (const q of fetchQuotas()) {
-    const period = periodOf(q.rrule)
-    if (!period) continue
-    const local = DateTime.fromJSDate(now).setZone(q.timezone)
-    if (!local.isValid) continue
-
-    if (!q.progress_period_start) {
-      const start = unitStart(local, period.unit).toUTC().toISO()
-      getDb().prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?').run(start, q.id)
-      result.anchored++
-      continue
-    }
-
-    let start = DateTime.fromISO(q.progress_period_start, { zone: 'utc' }).setZone(q.timezone)
-    if (!start.isValid) continue
-    let logged = q.progress_current
-    let completionCount = q.completion_count
-    let firstCompletedAt = q.first_completed_at
-    let closed = 0
-
-    while (local >= start.plus({ [period.unit]: period.interval })) {
-      const end = start.plus({ [period.unit]: period.interval })
-      const met = logged >= q.progress_target
-      const periodStart = start.toUTC().toISO() as string
-      const periodEnd = end.toUTC().toISO() as string
-      if (met) {
-        completionCount += 1
-        firstCompletedAt = firstCompletedAt ?? periodEnd
-      }
-      const snapshotLogged = logged
-      const nextCount = completionCount
-      const nextFirst = firstCompletedAt
-      withTransaction((tx) => {
-        tx.prepare(
-          `INSERT INTO progress_periods (task_id, user_id, period_start, period_end, logged, target, met, closed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          q.id,
-          q.user_id,
-          periodStart,
-          periodEnd,
-          snapshotLogged,
-          q.progress_target,
-          met ? 1 : 0,
-          nowStr,
-        )
-        if (met) {
-          tx.prepare(
-            `INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
-             VALUES (?, ?, ?, ?, ?)`,
-          ).run(q.id, q.user_id, periodEnd, periodStart, periodEnd)
-        }
-        tx.prepare(
-          `UPDATE tasks
-              SET progress_current = 0, progress_period_start = ?,
-                  completion_count = ?, first_completed_at = ?,
-                  last_completed_at = CASE WHEN ? THEN ? ELSE last_completed_at END,
-                  updated_at = ?
-            WHERE id = ?`,
-        ).run(periodEnd, nextCount, nextFirst, met ? 1 : 0, periodEnd, nowStr, q.id)
-        logActivity({
-          userId: q.user_id,
-          taskId: q.id,
-          action: 'period_rollover',
-          fields: ['progress_current', 'progress_period_start'],
-          before: { id: q.id, title: q.title, progress_current: snapshotLogged },
-          after: { id: q.id, title: q.title, progress_current: 0 },
-          metadata: {
-            period_start: periodStart,
-            period_end: periodEnd,
-            logged: snapshotLogged,
-            target: q.progress_target,
-            met,
-            unit: period.unit,
-          },
-        })
-      })
-      closed++
-      logged = 0
-      start = end
-    }
-
-    if (closed > 0) {
-      result.rolled += closed
+    const outcome = rolloverQuota(q, now)
+    if (outcome.anchored) result.anchored++
+    if (outcome.closed > 0) {
+      result.rolled += outcome.closed
       touchedUsers.add(q.user_id)
-      log.info('cron', `Track: closed ${closed} period(s) for "${q.title}" (#${q.id})`)
     }
   }
 
   for (const userId of touchedUsers) emitSyncEvent(userId)
   return result
+}
+
+/**
+ * Run the rollover for ONE quota, now — before a write that depends on which
+ * period it is in.
+ *
+ * The cron only runs every five minutes. A +1 logged at 00:02 on a daily quota
+ * used to land in YESTERDAY's period (the anchor had not moved yet), and the
+ * cron three minutes later recorded it as yesterday's and zeroed the count —
+ * the tap was lost from today (found by the quota-reminders red team,
+ * 2026-09-24). Closing the expired period first, inside the caller's
+ * transaction, puts the +1 where the user meant it. Idempotent and cheap: a
+ * quota whose period has not ended does nothing.
+ *
+ * Returns how many periods it closed; the caller emits the sync event it was
+ * going to emit anyway.
+ */
+export function rolloverQuotaNow(taskId: number, now: Date = new Date()): number {
+  const row = getDb().prepare(`${QUOTA_ROW_SQL} AND t.id = ?`).get(taskId) as QuotaRow | undefined
+  if (!row) return 0
+  return rolloverQuota(row, now).closed
+}
+
+/** What one quota's pass did: anchored for the first time, and/or closed N periods. */
+interface QuotaRolloverOutcome {
+  anchored: boolean
+  closed: number
+}
+
+/**
+ * Anchor or close ONE quota's periods, up to `now` — the body of the cron job,
+ * factored out so a progress write can run it for its own task first.
+ */
+function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
+  const none = { anchored: false, closed: 0 }
+  const nowStr = now.toISOString()
+  const period = periodOf(q.rrule)
+  if (!period) return none
+  const local = DateTime.fromJSDate(now).setZone(q.timezone)
+  if (!local.isValid) return none
+
+  if (!q.progress_period_start) {
+    const start = unitStart(local, period.unit).toUTC().toISO()
+    getDb().prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?').run(start, q.id)
+    return { anchored: true, closed: 0 }
+  }
+
+  let start = DateTime.fromISO(q.progress_period_start, { zone: 'utc' }).setZone(q.timezone)
+  if (!start.isValid) return none
+  let logged = q.progress_current
+  let completionCount = q.completion_count
+  let firstCompletedAt = q.first_completed_at
+  let closed = 0
+
+  while (local >= start.plus({ [period.unit]: period.interval })) {
+    const end = start.plus({ [period.unit]: period.interval })
+    const met = logged >= q.progress_target
+    const periodStart = start.toUTC().toISO() as string
+    const periodEnd = end.toUTC().toISO() as string
+    if (met) {
+      completionCount += 1
+      firstCompletedAt = firstCompletedAt ?? periodEnd
+    }
+    const snapshotLogged = logged
+    const nextCount = completionCount
+    const nextFirst = firstCompletedAt
+    withTransaction((tx) => {
+      tx.prepare(
+        `INSERT INTO progress_periods (task_id, user_id, period_start, period_end, logged, target, met, closed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        q.id,
+        q.user_id,
+        periodStart,
+        periodEnd,
+        snapshotLogged,
+        q.progress_target,
+        met ? 1 : 0,
+        nowStr,
+      )
+      if (met) {
+        tx.prepare(
+          `INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next)
+             VALUES (?, ?, ?, ?, ?)`,
+        ).run(q.id, q.user_id, periodEnd, periodStart, periodEnd)
+      }
+      tx.prepare(
+        `UPDATE tasks
+              SET progress_current = 0, progress_period_start = ?,
+                  completion_count = ?, first_completed_at = ?,
+                  last_completed_at = CASE WHEN ? THEN ? ELSE last_completed_at END,
+                  updated_at = ?
+            WHERE id = ?`,
+      ).run(periodEnd, nextCount, nextFirst, met ? 1 : 0, periodEnd, nowStr, q.id)
+      logActivity({
+        userId: q.user_id,
+        taskId: q.id,
+        action: 'period_rollover',
+        fields: ['progress_current', 'progress_period_start'],
+        before: { id: q.id, title: q.title, progress_current: snapshotLogged },
+        after: { id: q.id, title: q.title, progress_current: 0 },
+        metadata: {
+          period_start: periodStart,
+          period_end: periodEnd,
+          logged: snapshotLogged,
+          target: q.progress_target,
+          met,
+          unit: period.unit,
+        },
+      })
+    })
+    closed++
+    logged = 0
+    start = end
+  }
+
+  if (closed > 0) log.info('cron', `Track: closed ${closed} period(s) for "${q.title}" (#${q.id})`)
+  return { anchored: false, closed }
 }

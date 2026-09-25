@@ -92,6 +92,52 @@ export function quotaFreqOf(rrule: string | null | undefined): QuotaFreq | null 
 }
 
 /**
+ * The period AND its interval — `FREQ=DAILY;INTERVAL=2` is "every other day".
+ * `quotaFreqOf` alone reads that as daily, which is right for a label and
+ * wrong for anything that counts days: the period rollover advances by
+ * `interval` units, so the count resets every two days, not every day.
+ */
+export function quotaPeriodOf(
+  rrule: string | null | undefined,
+): { freq: QuotaFreq; interval: number } | null {
+  const freq = quotaFreqOf(rrule)
+  if (!freq) return null
+  const raw = /(?:^|;)INTERVAL=(\d+)/i.exec(rrule ?? '')?.[1]
+  const interval = raw ? Math.max(1, Number.parseInt(raw, 10)) : 1
+  return { freq, interval }
+}
+
+const FREQ_UNIT = { DAILY: 'days', WEEKLY: 'weeks', MONTHLY: 'months', YEARLY: 'years' } as const
+
+/**
+ * The count that is TRUE right now: `progress_current`, or 0 once its period
+ * has ended.
+ *
+ * The rollover cron closes a period up to five minutes after the boundary
+ * (`period-rollover.ts`). Until it runs, the row still carries the old
+ * period's count — at 00:03 a daily quota met yesterday reads "2/2" — and
+ * anything deciding what to show or do TODAY from it would be deciding from
+ * yesterday. Every such reader goes through here. Writes don't need to: they
+ * run the rollover inline first (`rolloverQuotaNow`).
+ *
+ * A quota with no anchor yet (never seen by the rollover, or no period at all)
+ * has nothing to expire: its count is its count.
+ */
+export function effectiveProgress(
+  task: Pick<Task, 'rrule' | 'progress_current' | 'progress_period_start'>,
+  timezone: string,
+  now: Date = new Date(),
+): number {
+  const current = Math.max(0, task.progress_current ?? 0)
+  const period = quotaPeriodOf(task.rrule)
+  if (!period || !task.progress_period_start) return current
+  const start = DateTime.fromISO(task.progress_period_start, { zone: 'utc' }).setZone(timezone)
+  if (!start.isValid) return current
+  const end = start.plus({ [FREQ_UNIT[period.freq]]: period.interval })
+  return DateTime.fromJSDate(now) >= end ? 0 : current
+}
+
+/**
  * The period a quota counts within, as the user would say it — read from the
  * rrule's FREQ, which the §9 migration rewrote to the bare period
  * ("FREQ=WEEKLY" for "2x/week"). No rrule means no period: the count simply
