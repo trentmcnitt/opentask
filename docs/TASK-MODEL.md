@@ -139,7 +139,7 @@ logAction(
 ): number
 ```
 
-**Time slot entries (2026-09-24).** Moving a time slot's start or removing a slot moves that slot's reminders (a reminder belongs to a slot only through its time of day). Those two changes log `time_slot_edit` / `time_slot_delete`, whose task snapshots are the moved reminders and whose `slotState` (`undo_log.slot_state`) is the slot row before/after. Undo and redo write the slot row back in the same transaction, so one Undo restores the slot together with its reminders — a deleted slot comes back under its original id. See `src/core/time-slots/edit.ts`.
+**Time slot entries (2026-09-24).** Moving a time slot's start or removing a slot moves that slot's reminders (a reminder belongs to a slot only through its time of day). Those two changes log `time_slot_edit` / `time_slot_delete`, whose task snapshots are the moved reminders (and, for a delete, the quotas whose `quota_prompt_config` was repointed to the nearest slot, 2026-09-25) and whose `slotState` (`undo_log.slot_state`) is the slot row before/after, plus `prompt_default` when a delete repointed the user's default prompt period. Undo and redo write the slot row (and that default) back in the same transaction, so one Undo restores the slot together with its reminders and prompt placements — a deleted slot comes back under its original id. See `src/core/time-slots/edit.ts`.
 
 - `createTaskSnapshot(beforeTask, afterTask, fieldsChanged, completionId?)` — build an `UndoSnapshot`. See [Critical Requirements](../AGENTS.md#every-mutation-must-be-atomic-and-logged-for-undo) for usage details and the `completionId` pattern.
 - `executeUndo(userId)` — restores the task to `before_state` from the most recent undoable action
