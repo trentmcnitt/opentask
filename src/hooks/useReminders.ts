@@ -5,6 +5,7 @@ import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -18,10 +19,65 @@ export interface ReminderGroup {
   slot: TimeSlot | null
   reminders: Task[]
   count: number
-  /** Considered today in this slot (progress, §6). */
+  /** Considered today in this slot (progress, §6). Reminders only — see `groupConsidered`. */
   considered: number
   /** The considered ones, most recent first — shown behind the counter, each with a way back. */
   consideredItems: Task[]
+  /**
+   * Quota prompts assigned to this slot today (2026-09-24) — every one, the
+   * handled ones included with their flags, so the slot's size stays fixed
+   * for the day. A row renders only while `promptWaiting`; handled ones count
+   * as considered (`groupConsidered`) but never join `consideredItems`, whose
+   * put-back is /undone, which a quota refuses. Undo is the way back.
+   */
+  prompts: QuotaPrompt[]
+}
+
+/** What a prompt tap asked for: the circle, or the square checkbox. */
+type PromptIntent = 'consider' | 'did'
+
+/**
+ * A prompt after `intent`, and every sibling prompt of the same quota with the
+ * count that implies — a did-it on "Daily Walks" in the morning moves the
+ * afternoon's row to 1/2 too. The server's own answer replaces this on the
+ * next refresh; this is only what the screen shows until then.
+ *
+ * Skips a prompt the payload already shows as considered: a refresh that
+ * lands after the server committed but before the request returned must not
+ * count the +1 twice.
+ */
+function applyPromptIntents(
+  groups: ReminderGroup[],
+  intents: Map<string, PromptIntent>,
+): ReminderGroup[] {
+  if (intents.size === 0) return groups
+  const all = groups.flatMap((g) => g.prompts)
+  const counts = new Map<number, number>()
+  for (const p of all) {
+    const intent = intents.get(p.prompt_key)
+    if (!intent || p.considered) continue
+    const current = counts.get(p.task_id) ?? p.current
+    if (intent === 'did') {
+      counts.set(p.task_id, p.number !== null ? Math.max(current, p.number) : current + 1)
+    }
+  }
+  return groups.map((g) => {
+    if (!g.prompts.some((p) => intents.has(p.prompt_key) || counts.has(p.task_id))) return g
+    return {
+      ...g,
+      prompts: g.prompts.map((p) => {
+        const intent = intents.get(p.prompt_key)
+        const current = counts.get(p.task_id) ?? p.current
+        const acted = intent !== undefined && !p.considered
+        return {
+          ...p,
+          current,
+          considered: p.considered || acted,
+          done: (acted && intent === 'did') || (p.number !== null ? current >= p.number : p.done),
+        }
+      }),
+    }
+  })
 }
 
 interface UseRemindersOptions {
@@ -51,8 +107,8 @@ export interface UseRemindersReturn {
   hasAny: boolean
   loading: boolean
   error: string | null
-  /** IDs mid-completion — the row is animating out while the request is in flight. */
-  completingIds: Set<number>
+  /** IDs (and prompt_keys) mid-completion — the row is animating out while the request is in flight. */
+  completingIds: Set<number | string>
   /** True once anything has been completed on this surface in this session. */
   consideredAny: boolean
   complete: (task: Task) => Promise<void>
@@ -67,14 +123,14 @@ export interface UseRemindersReturn {
    * considered that one too. Now the row stays where it is, inert, until it
    * has visibly gone.
    */
-  rowLeft: (id: number) => void
+  rowLeft: (id: number | string) => void
   /**
    * A row reporting that it is on screen. Returns its own deregistration, so a
    * row can call it straight out of an effect. Only a mounted row can report
    * its animation finishing, so only a mounted row's completion is allowed to
    * hold anything back — see `completeIds`.
    */
-  registerRow: (id: number) => () => void
+  registerRow: (id: number | string) => () => void
   /**
    * True once a fetch has resolved since this hook mounted. The module cache
    * paints the surface instantly on a revisit, so `loading === false` is not
@@ -86,12 +142,16 @@ export interface UseRemindersReturn {
    * Complete ("consider") a set of reminders at once — a selection made on the
    * surface, or a whole slot. One bulk call, one undo entry.
    */
-  completeMany: (tasks: Task[]) => Promise<void>
+  completeMany: (tasks: Task[], prompts?: QuotaPrompt[]) => Promise<void>
   /**
    * Complete every reminder in one slot with a single tap — the container-level
    * gesture the design record calls "my task is to do my reminders".
    */
   completeGroup: (group: ReminderGroup) => Promise<void>
+  /** A quota prompt's circle: handled for today, no progress (2026-09-24). */
+  considerPrompt: (prompt: QuotaPrompt) => Promise<void>
+  /** A quota prompt's square checkbox: did it — progress, and handled. */
+  didPrompt: (prompt: QuotaPrompt) => Promise<void>
   /** Reverse a consideration: the thought returns to waiting. */
   putBack: (task: Task) => Promise<void>
   /** Move reminders to Trash (soft delete), with Undo. */
@@ -149,6 +209,7 @@ function parseGroups(json: unknown): ReminderGroup[] {
       count: g.count ?? g.reminders?.length ?? 0,
       considered: g.considered ?? 0,
       consideredItems: g.considered_items ?? [],
+      prompts: g.prompts ?? [],
     }
   })
 }
@@ -161,11 +222,15 @@ function parseGroups(json: unknown): ReminderGroup[] {
  */
 function reconcileInFlight(
   incoming: ReminderGroup[],
-  pending: Set<number>,
+  pending: Set<number | string>,
   restoring: Set<number>,
+  pendingPrompts: Map<string, PromptIntent>,
 ): ReminderGroup[] {
-  if (pending.size === 0 && restoring.size === 0) return incoming
-  return incoming.map((g) => {
+  // Prompts in flight: the same promise as for reminders — a refresh landing
+  // mid-request must not bring a handled prompt back.
+  const withPrompts = applyPromptIntents(incoming, pendingPrompts)
+  if (pending.size === 0 && restoring.size === 0) return withPrompts
+  return withPrompts.map((g) => {
     const leaving = g.reminders.filter((r) => pending.has(r.id))
     const returning = g.consideredItems.filter((r) => restoring.has(r.id))
     if (leaving.length === 0 && returning.length === 0) return g
@@ -206,6 +271,7 @@ function insertIntoGroups(
     count: 1,
     considered: 0,
     consideredItems: [],
+    prompts: [],
   }
   const startOf = (g: ReminderGroup) => (g.slot ? parseHHMM(g.slot.start_time) : null)
   const mine = startOf(fresh)
@@ -228,7 +294,7 @@ export function useReminders({
   const [notToday, setNotToday] = useState<Task[]>(remindersCache?.notToday ?? [])
   const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
-  const [completingIds, setCompletingIds] = useState<Set<number>>(new Set())
+  const [completingIds, setCompletingIds] = useState<Set<number | string>>(new Set())
   const [consideredAny, setConsideredAny] = useState(false)
   const consideredAnyRef = useRef(consideredAny)
   consideredAnyRef.current = consideredAny
@@ -251,6 +317,9 @@ export function useReminders({
   // The same in the other direction: a put-back whose request is still out.
   const pendingIdsRef = useRef<Set<number>>(new Set())
   const restoringIdsRef = useRef<Set<number>>(new Set())
+  // Prompt keys whose action is still in flight, and which action — a
+  // refresh re-applies them (`applyPromptIntents`), as it strips pending ids.
+  const pendingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
   /**
    * IDs whose row is still on screen, collapsing. They are still in `groups`,
    * so a server payload — which no longer lists them — cannot be applied
@@ -258,15 +327,20 @@ export function useReminders({
    * holds until the last one has gone and `rowLeft` runs the held one; the
    * wait is the length of one animation.
    */
-  const leavingIdsRef = useRef<Set<number>>(new Set())
+  const leavingIdsRef = useRef<Set<number | string>>(new Set())
   const heldRefreshRef = useRef(false)
   /** IDs with a row actually rendered right now (see `registerRow`). */
-  const mountedIdsRef = useRef<Set<number>>(new Set())
+  const mountedIdsRef = useRef<Set<number | string>>(new Set())
   // The rendered groups, for the snapshot a failed completion restores.
   const groupsRef = useRef<ReminderGroup[]>(groups)
   groupsRef.current = groups
   const stripPending = (incoming: ReminderGroup[]) =>
-    reconcileInFlight(incoming, pendingIdsRef.current, restoringIdsRef.current)
+    reconcileInFlight(
+      incoming,
+      pendingIdsRef.current,
+      restoringIdsRef.current,
+      pendingPromptsRef.current,
+    )
 
   const refresh = useCallback(async () => {
     if (leavingIdsRef.current.size > 0) {
@@ -363,31 +437,68 @@ export function useReminders({
     void refresh()
   }, [refresh])
 
-  const registerRow = useCallback((id: number) => {
+  /**
+   * Apply prompt actions to `groups` — the prompts' `commitConsidered`. A
+   * handled prompt stays in its group (it counts as considered there) but no
+   * longer renders, since only waiting prompts are rows.
+   */
+  const commitPrompts = useCallback((keys: string[], intent: PromptIntent) => {
+    if (keys.length === 0) return
+    const intents = new Map(keys.map((k) => [k, intent] as const))
+    setGroups((prev) => {
+      const next = applyPromptIntents(prev, intents)
+      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      return next
+    })
+  }, [])
+  /** The action each collapsing prompt row commits when it has gone. */
+  const leavingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
+
+  const registerRow = useCallback((id: number | string) => {
     mountedIdsRef.current.add(id)
     return () => {
       mountedIdsRef.current.delete(id)
     }
   }, [])
 
+  /**
+   * Consider reminders, and act on quota prompts, in one request and one undo
+   * entry. Reminders are always "considered" (/done); prompts take `intent` —
+   * the circle and every sweep send 'consider', only the square checkbox sends
+   * 'did'. The request goes to the narrowest endpoint that covers it: a
+   * reminder's /done, bulk/done, a prompt endpoint, or bulk/complete for a
+   * mix (which is what makes a slot's "Considered all" one Undo).
+   */
   const completeIds = useCallback(
-    async (tasks: Task[], message: (considered: number) => string) => {
+    async (
+      tasks: Task[],
+      message: (considered: number) => string,
+      prompts: QuotaPrompt[] = [],
+      intent: PromptIntent = 'consider',
+    ) => {
       // One completion per reminder in flight. Two Enters inside the collapse,
       // or a slot sweep confirmed over a row that is still going, would
       // otherwise send /done twice — and a recurring reminder would advance two
       // occurrences for one intention.
       const fresh = tasks.filter((t) => !pendingIdsRef.current.has(t.id))
       const ids = fresh.map((t) => t.id)
-      if (ids.length === 0) return
+      // The same for prompts, keyed by prompt_key (numbered prompts share a
+      // task id).
+      const keys = prompts.map((p) => p.prompt_key).filter((k) => !pendingPromptsRef.current.has(k))
+      if (ids.length === 0 && keys.length === 0) return
       // Only a row that is ON SCREEN can report its animation finishing, so
       // only those are allowed to hold their place — and with it the refresh.
       // Anything swept out of a folded slot, or from under a "Show all N" cap,
       // has no row to reflow under anyone's pointer, so it leaves at once, the
       // way everything used to.
-      const onScreen = ids.filter((id) => mountedIdsRef.current.has(id))
-      const offScreen = ids.filter((id) => !mountedIdsRef.current.has(id))
+      const all: (number | string)[] = [...ids, ...keys]
+      const onScreen = all.filter((id) => mountedIdsRef.current.has(id))
+      const offScreen = all.filter((id) => !mountedIdsRef.current.has(id))
       for (const id of ids) pendingIdsRef.current.add(id)
+      for (const key of keys) pendingPromptsRef.current.set(key, intent)
       for (const id of onScreen) leavingIdsRef.current.add(id)
+      for (const id of onScreen)
+        if (typeof id === 'string') leavingPromptsRef.current.set(id, intent)
       // The on-screen rows do not leave `groups` here. They are marked as
       // leaving, which is what draws them struck through and inert while they
       // collapse; each one calls `rowLeft` when its animation ends, and THAT is
@@ -396,18 +507,15 @@ export function useReminders({
       const snapshot = groupsRef.current
       const hadConsidered = consideredAnyRef.current
       if (onScreen.length > 0) setCompletingIds((prev) => new Set([...prev, ...onScreen]))
-      commitConsidered(offScreen)
+      commitConsidered(offScreen.filter((id): id is number => typeof id === 'number'))
+      commitPrompts(
+        offScreen.filter((id): id is string => typeof id === 'string'),
+        intent,
+      )
       setConsideredAny(true)
 
       const request = (async () => {
-        const res =
-          ids.length === 1
-            ? await fetch(`/api/tasks/${ids[0]}/done`, { method: 'POST' })
-            : await fetch('/api/tasks/bulk/done', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids }),
-              })
+        const res = await fetch(...completionRequest(ids, keys, intent))
         if (!res.ok) throw new Error('Failed to complete reminders')
         callbacksRef.current.onCompleted?.()
       })()
@@ -415,7 +523,7 @@ export function useReminders({
       // Undo waits for the completion to be recorded, then undoes exactly it.
       let settledOk = false
       showToast({
-        message: message(ids.length),
+        message: message(ids.length + keys.length),
         type: 'success',
         action: {
           label: 'Undo',
@@ -433,10 +541,11 @@ export function useReminders({
         // this puts it back in place rather than re-inserting it: drop the
         // leaving marks, restore whatever a row that already finished had
         // committed, and take back the session flag if this was the first one.
-        for (const id of ids) leavingIdsRef.current.delete(id)
+        for (const id of all) leavingIdsRef.current.delete(id)
+        for (const key of keys) leavingPromptsRef.current.delete(key)
         setCompletingIds((prev) => {
           const next = new Set(prev)
-          for (const id of ids) next.delete(id)
+          for (const id of all) next.delete(id)
           return next
         })
         if (remindersCache) setRemindersCache({ ...remindersCache, groups: snapshot })
@@ -448,13 +557,18 @@ export function useReminders({
         releaseHeldRefresh()
       } finally {
         for (const id of ids) pendingIdsRef.current.delete(id)
+        for (const key of keys) pendingPromptsRef.current.delete(key)
         // A refresh after a confirmed completion converges the cache with the
         // server (the recurring case: a considered reminder is gone until its next
-        // occurrence, which only the server knows).
-        if (settledOk) void refresh()
+        // occurrence, which only the server knows). After a FAILURE too when
+        // prompts were involved: the likeliest cause is a page left open over
+        // midnight, whose prompt keys are yesterday's and are refused — without
+        // a refresh every tap would fail the same way until something else
+        // reloaded the list.
+        if (settledOk || keys.length > 0) void refresh()
       }
     },
-    [refresh, commitConsidered, releaseHeldRefresh],
+    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh],
   )
 
   /**
@@ -473,7 +587,7 @@ export function useReminders({
    * `refresh` shut.
    */
   const rowLeft = useCallback(
-    (id: number) => {
+    (id: number | string) => {
       if (!leavingIdsRef.current.has(id)) return
       leavingIdsRef.current.delete(id)
       setCompletingIds((prev) => {
@@ -483,17 +597,45 @@ export function useReminders({
         return next
       })
       // It moves behind the slot's counter as it goes, so the progress bar and
-      // the "put back" list agree with the row that just left.
-      commitConsidered([id])
+      // the "put back" list agree with the row that just left. A prompt row
+      // (keyed by its prompt_key) commits the action it was leaving for.
+      if (typeof id === 'string') {
+        commitPrompts([id], leavingPromptsRef.current.get(id) ?? 'consider')
+        leavingPromptsRef.current.delete(id)
+      } else {
+        commitConsidered([id])
+      }
       // Any refresh that arrived during the collapse was held rather than
       // applied over a row that was still on screen. Run it now.
       releaseHeldRefresh()
     },
-    [commitConsidered, releaseHeldRefresh],
+    [commitConsidered, commitPrompts, releaseHeldRefresh],
   )
 
   const completeMany = useCallback(
-    (tasks: Task[]) => completeIds(tasks, (n) => `Considered ${n}`),
+    (tasks: Task[], prompts: QuotaPrompt[] = []) =>
+      completeIds(tasks, (n) => `Considered ${n}`, prompts),
+    [completeIds],
+  )
+
+  /** The circle on a quota prompt: considered for today, no progress. */
+  const considerPrompt = useCallback(
+    (prompt: QuotaPrompt) =>
+      completeIds([], () => `Considered “${prompt.title}”`, [prompt], 'consider'),
+    [completeIds],
+  )
+  /** The square checkbox on a quota prompt: did it — progress, and considered. */
+  const didPrompt = useCallback(
+    (prompt: QuotaPrompt) => {
+      const next =
+        prompt.number !== null ? Math.max(prompt.current, prompt.number) : prompt.current + 1
+      return completeIds(
+        [],
+        () => `Logged “${prompt.title}” · ${next}/${prompt.target}`,
+        [prompt],
+        'did',
+      )
+    },
     [completeIds],
   )
 
@@ -548,12 +690,14 @@ export function useReminders({
     [refresh],
   )
 
+  // A slot's "Considered all" sweeps its waiting prompts too — as considered,
+  // never as done (Trent's rule: consider-all is never +1).
   const completeGroup = useCallback(
-    (group: ReminderGroup) => completeMany(group.reminders),
+    (group: ReminderGroup) => completeMany(group.reminders, group.prompts.filter(promptWaiting)),
     [completeMany],
   )
 
-  const total = groups.reduce((sum, group) => sum + group.reminders.length, 0)
+  const total = groups.reduce((sum, group) => sum + groupWaiting(group), 0)
 
   return {
     groups,
@@ -566,6 +710,8 @@ export function useReminders({
     complete,
     completeMany,
     completeGroup,
+    considerPrompt,
+    didPrompt,
     rowLeft,
     registerRow,
     hydrated,
@@ -575,6 +721,35 @@ export function useReminders({
     notToday,
     create,
   }
+}
+
+/**
+ * The narrowest request that commits a consideration. Reminders alone go
+ * where they always went (/done, bulk/done); prompts alone to their own
+ * endpoint; a mix to bulk/complete, so a slot's sweep is ONE undo entry.
+ */
+function completionRequest(
+  ids: number[],
+  keys: string[],
+  intent: PromptIntent,
+): [string, RequestInit] {
+  const post = (body: unknown): RequestInit => ({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (keys.length === 0) {
+    return ids.length === 1
+      ? [`/api/tasks/${ids[0]}/done`, { method: 'POST' }]
+      : ['/api/tasks/bulk/done', post({ ids })]
+  }
+  if (ids.length === 0) {
+    return [`/api/quota-prompts/${intent === 'did' ? 'did' : 'consider'}`, post({ keys })]
+  }
+  return [
+    '/api/tasks/bulk/complete',
+    post({ ids, prompts: keys.map((key) => ({ key, did: intent === 'did' })) }),
+  ]
 }
 
 /**

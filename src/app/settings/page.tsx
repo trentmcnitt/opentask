@@ -8,6 +8,7 @@ import { useTheme } from 'next-themes'
 import { X, Trash2, Info, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
 import { TimeSlotSettings } from '@/components/TimeSlotSettings'
+import { QuotaPromptSettings } from '@/components/QuotaPromptSettings'
 import { useProjects } from '@/components/ProjectsProvider'
 import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
 import { Input } from '@/components/ui/input'
@@ -1116,6 +1117,7 @@ export default function SettingsPage() {
             one starts. Moving or removing a period takes its reminders with it.
           </p>
           <TimeSlotSettings />
+          <QuotaPromptSettings />
         </section>
 
         {/* Labels */}

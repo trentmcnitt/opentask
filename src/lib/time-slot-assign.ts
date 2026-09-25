@@ -10,6 +10,7 @@
  */
 
 import { DateTime } from 'luxon'
+import { groupWaiting, type CountableGroup } from '@/lib/quota-prompts'
 
 export interface TimeSlot {
   id: number
@@ -293,12 +294,12 @@ export function nextPeriodStart(
  * anyway); a finished current slot stays, and says it is done.
  */
 export function slotAfterFinishing(
-  groups: { reminders: unknown[] }[],
+  groups: CountableGroup[],
   finished: number,
   natural: number,
 ): number | null {
   for (let i = 0; i <= natural && i < groups.length; i++) {
-    if (i !== finished && groups[i].reminders.length > 0) return i
+    if (i !== finished && groupWaiting(groups[i]) > 0) return i
   }
   return finished < natural ? natural : null
 }
