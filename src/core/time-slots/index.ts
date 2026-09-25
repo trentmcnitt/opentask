@@ -19,7 +19,19 @@
  * HOW EVERYTHING DEPENDS ON SLOTS (investigated 2026-09-24, before slots
  * became editable — read this before changing a slot's shape):
  *
- * - NOTHING STORES A SLOT ID. A reminder (or any item) belongs to a slot only
+ * - QUOTA PROMPTS ARE THE ONE EXCEPTION: THEY STORE SLOT IDS (2026-09-24).
+ *   A quota's prompt period (`tasks.quota_prompt_config.slot_id`, and per
+ *   number for a daily quota) and the user's default
+ *   (`users.quota_prompt_slot_id`) are ids, because a quota has no time of day
+ *   to derive a slot from. They are resolved at READ time by
+ *   `resolvePromptSlot` (`src/core/tasks/quota-prompts.ts`) with ONE fallback
+ *   rule: the chosen slot if it still exists, else the user's default if it
+ *   still exists, else the first period of the day. So editing a slot's start
+ *   moves its prompts with it (retime-proof), deleting a slot drops them to
+ *   the default rather than stranding them, and nothing here has to rewrite
+ *   the stored ids — undoing a delete restores the slot under its original
+ *   id, which the prompts still name.
+ * - EVERYTHING ELSE STORES NO SLOT ID. A reminder (or any item) belongs to a slot only
  *   through its time of day: `assignSlot` picks the slot with the latest
  *   `start_time` <= the item's minutes, where the minutes come from
  *   `anchor_time` (local HH:MM, derived from the rrule's BYHOUR/BYMINUTE), else
