@@ -87,7 +87,10 @@ func reloadOpenTaskWidget(kind: String) {
 /// entry is paused" until `perform()` returns, then replaces it). Once a
 /// kind's budget is spent, its budgeted reloads are not run — and the only
 /// way Quotas learns about a Reminders did-it is exactly such a reload (this
-/// intent's cross-kind request, or the push). The simulator doesn't enforce
+/// intent's cross-kind request, or the push). Trent's phone, read with
+/// `idevicesyslog -p chronod` the same morning: Track's DAS budget -0.357
+/// (Reminders 22.3), a queued Track reload left unrun, the widget-push
+/// budget at -17. The simulator doesn't enforce
 /// budgets, which is why it could never reproduce this, nor PR #82's "Quotas
 /// stuck at 1/2 after Undo" (the same shape: the tapped Reminders repainted,
 /// the cross-kind Quotas never did).
