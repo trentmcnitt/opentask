@@ -190,7 +190,7 @@ export function usePromptSetup(): { slots: TimeSlot[]; userDefault: number | nul
 /** More than this many numbered prompts is a counter, not a set of reminders. */
 const MAX_NUMBER_PICKERS = 20
 
-function ordinal(n: number): string {
+export function ordinal(n: number): string {
   const tens = n % 100
   if (tens >= 11 && tens <= 13) return `${n}th`
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`

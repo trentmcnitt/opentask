@@ -17,6 +17,8 @@ interface Prompt {
   prompt_key: string
   task_id: number
   number: number | null
+  numbers: number[] | null
+  slot_id: number | null
   title: string
   current: number
   target: number
@@ -172,6 +174,49 @@ describe('GET /api/reminders — prompts', () => {
       body: { quota_prompt_config: { enabled: 'yes' } },
     })
     expect(bad.status).toBe(400)
+  })
+
+  test('moving a prompt: a PATCH of its config, owner periods only, undone by /api/undo', async () => {
+    const slots = (await (await apiFetch('/api/time-slots')).json()).data.time_slots as {
+      id: number
+      label: string
+    }[]
+    const id = (label: string) => slots.find((s) => s.label === label)!.id
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { quota_prompt_slot_id: id('Morning') },
+    })
+    const quota = await makeQuota('Daily Walks', 'FREQ=DAILY', 2)
+    const before = await allPrompts()
+    expect(before.map((p) => [p.slot, p.slot_id, p.numbers])).toEqual([
+      ['Morning', id('Morning'), [1]],
+      ['Midday', id('Midday'), [2]],
+    ])
+
+    // Another user's period: refused, nothing written.
+    const theirs = (await (await apiFetchB('/api/time-slots')).json()).data.time_slots[0]
+    const refused = await apiFetch(`/api/tasks/${quota.id}`, {
+      method: 'PATCH',
+      body: { quota_prompt_config: { numbers: { '2': theirs.id } } },
+    })
+    expect(refused.status).toBe(400)
+
+    // The web chips' move of the Midday row: only #2 moves.
+    const moved = await apiFetch(`/api/tasks/${quota.id}`, {
+      method: 'PATCH',
+      body: { quota_prompt_config: { numbers: { '2': id('Evening') } } },
+    })
+    expect(moved.status).toBe(200)
+    expect((await allPrompts()).map((p) => [p.slot, p.numbers])).toEqual([
+      ['Morning', [1]],
+      ['Evening', [2]],
+    ])
+
+    expect((await apiFetch('/api/undo', { method: 'POST', body: {} })).status).toBe(200)
+    expect((await allPrompts()).map((p) => [p.slot, p.numbers])).toEqual([
+      ['Morning', [1]],
+      ['Midday', [2]],
+    ])
   })
 })
 

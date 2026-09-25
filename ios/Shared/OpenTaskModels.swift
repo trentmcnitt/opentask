@@ -384,6 +384,14 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// row is done once today's count reaches it. `nil` for every other
     /// quota, which prompts once a day.
     let number: Int?
+    /// Daily quotas: EVERY number this row stands for, ascending (`number`
+    /// is the last) — what moving the row to another period moves (the
+    /// watch's hold list, 2026-09-25). `nil` for every other quota, and from
+    /// a server that predates the field.
+    let numbers: [Int]?
+    /// The period (time slot id) this row sits in; `nil` = un-slotted, or a
+    /// server that predates the field.
+    let slotId: Int?
     let title: String
     /// Today's count — 0 once the period has ended.
     let current: Int
@@ -405,7 +413,8 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case promptKey = "prompt_key"
         case taskId = "task_id"
-        case number, title, current, target, period
+        case number, numbers, title, current, target, period
+        case slotId = "slot_id"
         case stripeColor = "stripe_color"
         case considered, done
     }
@@ -415,6 +424,8 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         promptKey = try c.decode(String.self, forKey: .promptKey)
         taskId = try c.decodeIfPresent(Int.self, forKey: .taskId) ?? 0
         number = try c.decodeIfPresent(Int.self, forKey: .number)
+        numbers = try c.decodeIfPresent([Int].self, forKey: .numbers)
+        slotId = try c.decodeIfPresent(Int.self, forKey: .slotId)
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         current = try c.decodeIfPresent(Int.self, forKey: .current) ?? 0
         target = try c.decodeIfPresent(Int.self, forKey: .target) ?? 1
@@ -425,12 +436,15 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     }
 
     init(
-        promptKey: String, taskId: Int, number: Int? = nil, title: String, current: Int, target: Int,
+        promptKey: String, taskId: Int, number: Int? = nil, numbers: [Int]? = nil, slotId: Int? = nil,
+        title: String, current: Int, target: Int,
         period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false
     ) {
         self.promptKey = promptKey
         self.taskId = taskId
         self.number = number
+        self.numbers = numbers
+        self.slotId = slotId
         self.title = title
         self.current = current
         self.target = target
@@ -464,8 +478,8 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
             newCurrent = current
         }
         return QuotaPromptDTO(
-            promptKey: promptKey, taskId: taskId, number: number, title: title,
-            current: newCurrent, target: target, period: period, stripeColor: stripeColor,
+            promptKey: promptKey, taskId: taskId, number: number, numbers: numbers, slotId: slotId,
+            title: title, current: newCurrent, target: target, period: period, stripeColor: stripeColor,
             considered: true, done: done || did
         )
     }

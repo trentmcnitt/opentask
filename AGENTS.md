@@ -468,7 +468,7 @@ Native iOS companion app (SwiftUI, iOS 17+) wrapping the PWA in a WKWebView with
 - `POST /api/push/apns/widget-token`, `DELETE /api/push/apns/widget-token` — WidgetKit push token registration (iOS 26 / macOS 26 / watchOS 26 — `platform` `ios`/`macos`/`watchos` — from the widget extension, see docs/NOTIFICATIONS.md)
 - `POST /api/tasks/{id}/progress` — quota +1/−1 from the phone Quotas widget and the watch Quotas page
 - `POST /api/notifications/actions` — done/snooze from notification actions
-- `PATCH /api/tasks/{id}` — snooze to specific time (content extension)
+- `PATCH /api/tasks/{id}` — snooze to specific time (content extension); and `quota_prompt_config` from the watch Reminders page's press-and-hold "move to period" list (2026-09-25), after a `GET /api/tasks/{id}` for the stored config it merges over. Uses `groups[].prompts[].numbers` (a daily row's own numbers) and `slot_id` from `GET /api/reminders`
 - `POST /api/tasks/bulk/snooze-overdue` — bulk snooze from notification action (+ `slot` body field: a slot's `start_time`, or `"next"` for the next slot to start — bulk-snooze-to-slot notification actions)
 - `GET /api/user/preferences` — connection validation during setup
 - `GET /api/time-slots` — cached in the App Group (`TimeSlotStore`) to build the slot-snooze notification actions offline; refreshed by the apps on launch/foreground and, since slots became editable in Settings (2026-09-24, `PATCH`/`DELETE /api/time-slots/{id}`), by the phone Tasks widget and watch Smart Stack widget on every timeline reload (a slot edit emits a sync event → widget push)
