@@ -1,9 +1,51 @@
-import { test, expect, waitForPreferenceSave } from './fixtures'
+import { test, expect, waitForPreferenceSave, waitForPrefsLoaded } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
-/** The seeded test user's timezone — slot assignment is done in local time. */
-const TEST_TZ = 'America/Chicago'
+/**
+ * The seeded test user's timezone — slot assignment is done in local time.
+ * Must track `globalSetup.ts`'s `E2E_TZ` override (default America/Chicago):
+ * "today" is the app's today in the user's zone, so a time built in any other
+ * zone lands on the wrong side of midnight whenever the two disagree.
+ */
+const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
+
+const filtersToggle = (page: Page) => page.getByRole('button', { name: /^Filters/ })
+
+/**
+ * Load the dashboard with the filter section open, and prove the page has
+ * APPLIED the server's preferences before anything is clicked.
+ *
+ * `filters_expanded` is a server preference, and `PreferencesProvider` writes
+ * the loaded value over its local state on mount. A click that beat that load
+ * was undone by it — the chips closed again, while the click's PATCH had
+ * already saved the opposite value for the next test to inherit (the filter
+ * badge and chip pill tests, flaky until 2026-09-25).
+ *
+ * Open is the NON-default value (local state starts `false`), so the toggle
+ * reading `aria-expanded="true"` can only be the load's doing: that assertion
+ * is the proof, not a timing guess. A test that needs the section closed
+ * closes it by hand afterwards, with no load left in flight to undo it.
+ */
+async function loadWithFiltersOpen(page: Page): Promise<void> {
+  const written = await page.request.patch('/api/user/preferences', {
+    data: { filters_expanded: true },
+  })
+  expect(written.ok()).toBeTruthy()
+  await waitForPrefsLoaded(page, () => page.reload(), filtersToggle(page))
+  await expect(filtersToggle(page)).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('#dashboard-filter-chips')).toBeVisible()
+}
+
+/**
+ * Click the filter toggle and wait for the PATCH that saves it, so no test
+ * ends with a keepalive save still in flight for the next one to race.
+ */
+async function clickFiltersToggle(page: Page): Promise<void> {
+  const saved = waitForPreferenceSave(page, 'filters_expanded')
+  await filtersToggle(page).click()
+  await saved
+}
 
 test.describe('Dashboard', () => {
   test('tasks are displayed on the dashboard', async ({ authenticatedPage: page }) => {
@@ -99,8 +141,7 @@ test.describe('Undated pile', () => {
  * documented in src/hooks/useFilterSection.ts.
  */
 test.describe('Dashboard filter section', () => {
-  const toggle = (page: import('@playwright/test').Page) =>
-    page.getByRole('button', { name: /^Filters/ })
+  const toggle = filtersToggle
 
   test('filter chips are collapsed by default and open in one click', async ({
     authenticatedPage: page,
@@ -110,33 +151,39 @@ test.describe('Dashboard filter section', () => {
     // "collapsed by default" is only true here if nothing earlier in the run
     // pinned it open — which made this test a hostage to file ordering, and it
     // duly broke the first time a new spec sorted ahead of it.
-    const written = await page.request.patch('/api/user/preferences', {
-      data: { filters_expanded: false },
-    })
-    expect(written.ok()).toBeTruthy()
-    await page.reload()
-
-    await expect(toggle(page)).toBeVisible({ timeout: 5000 })
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
-    await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
-
-    await toggle(page).click()
-
+    //
+    // Every click below lands after a load the page has provably applied (see
+    // `loadWithFiltersOpen`): starting from "open" is what makes the load
+    // observable, since closed is also the pre-load default.
+    await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
+
+    // Closed by hand: client and server now both hold `false`.
+    await clickFiltersToggle(page)
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
+    await expect(chips).toHaveCount(0)
+
+    // One click opens it.
+    await clickFiltersToggle(page)
     await expect(chips).toBeVisible()
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true')
     // The chips the section hides are really there once opened
     await expect(chips.getByText('Overdue', { exact: false }).first()).toBeVisible()
 
     // ...and close again
-    await toggle(page).click()
-    await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
+    await clickFiltersToggle(page)
+    await expect(chips).toHaveCount(0)
+
+    // Collapsed by default: a fresh load with the preference off stays shut.
+    await waitForPrefsLoaded(page, () => page.reload(), toggle(page))
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
+    await expect(chips).toHaveCount(0)
   })
 
   test('applying a filter shows a count badge on the collapsed control', async ({
     authenticatedPage: page,
   }) => {
-    await toggle(page).click()
+    await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
     await chips.getByText('Overdue', { exact: false }).first().click()
 
@@ -145,7 +192,7 @@ test.describe('Dashboard filter section', () => {
     await expect(toggle(page)).toContainText('1')
 
     // Collapsing by hand keeps the active filter legible via the badge
-    await toggle(page).click()
+    await clickFiltersToggle(page)
     await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
     await expect(toggle(page)).toContainText('1')
   })
@@ -153,7 +200,7 @@ test.describe('Dashboard filter section', () => {
   test('clearing every filter drops the badge and lets the section stay closed', async ({
     authenticatedPage: page,
   }) => {
-    await toggle(page).click()
+    await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
     await chips.getByText('Overdue', { exact: false }).first().click()
     await expect(toggle(page)).toContainText('1')
@@ -163,7 +210,7 @@ test.describe('Dashboard filter section', () => {
     await expect(page.getByText(/Showing \d+ of \d+ tasks/)).toHaveCount(0)
     await expect(toggle(page)).toHaveText('Filters')
     // Auto-expand released, so the toggle is free to close again
-    await toggle(page).click()
+    await clickFiltersToggle(page)
     await expect(page.locator('#dashboard-filter-chips')).toHaveCount(0)
   })
 })
@@ -317,8 +364,6 @@ test.describe('?task=<id> deep link', () => {
  * logic; this reproduces the same scenario end-to-end.
  */
 test.describe('Dashboard filter facets', () => {
-  const toggle = (page: Page) => page.getByRole('button', { name: /^Filters/ })
-
   async function createTask(page: Page, body: Record<string, unknown>): Promise<number> {
     const res = await page.request.post('/api/tasks', { data: body })
     expect(res.ok()).toBeTruthy()
@@ -341,7 +386,7 @@ test.describe('Dashboard filter facets', () => {
         .toUTC()
         .toISO()!
 
-    await toggle(page).click()
+    await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
     const todayChip = chips.locator('[data-date-chip="today"]')
     const workChip = chips.locator('[data-project-chip="3"]')
@@ -404,14 +449,7 @@ test.describe('Dashboard filter facets', () => {
         }),
       )
 
-      // `filters_expanded` is a server preference the earlier click already
-      // flipped on, so a reload comes back already expanded — clicking again
-      // would toggle it back closed.
-      await page.reload()
-      await expect(toggle(page)).toBeVisible({ timeout: 5000 })
-      if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
-        await toggle(page).click()
-      }
+      await loadWithFiltersOpen(page)
 
       // Unfiltered: baseline plus all 3 newly created "today" tasks.
       await expect.poll(() => countOf(todayChip)).toBe(baselineToday + 3)
@@ -442,13 +480,25 @@ test.describe('Dashboard filter facets', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     const ids: number[] = []
 
-    // `filters_expanded` is a server preference shared by every spec in this
-    // run (see the previous test's own note) — a blind click can CLOSE an
-    // already-open panel left that way by whichever test ran before this one.
-    await expect(toggle(page)).toBeVisible({ timeout: 5000 })
-    if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
-      await toggle(page).click()
-    }
+    // Both tasks must still be "today" when the chips are read, in the user's
+    // own zone: one due between now and midnight, one overdue since midnight.
+    // A fixed ±10 minutes broke at both ends of the day — "later today" was
+    // tomorrow after 23:50, and "overdue today" was yesterday before 00:10.
+    // Each is pinned inside today instead: halfway to midnight (at most 10
+    // minutes out), and no earlier than midnight. In the last two minutes of
+    // the day there is no "later today" left that outlasts the test itself,
+    // so it skips rather than assert on a day that ends mid-run.
+    const now = DateTime.now().setZone(TEST_TZ)
+    const tomorrowStart = now.startOf('day').plus({ days: 1 })
+    const leftToday = tomorrowStart.diff(now)
+    test.skip(leftToday.as('minutes') < 2, 'under two minutes of today left')
+    const dueLaterToday = DateTime.min(
+      now.plus({ minutes: 10 }),
+      now.plus({ milliseconds: leftToday.as('milliseconds') / 2 }),
+    )
+    const overdueToday = DateTime.max(now.startOf('day'), now.minus({ minutes: 10 }))
+
+    await loadWithFiltersOpen(page)
     const chips = page.locator('#dashboard-filter-chips')
     const workChip = chips.locator('[data-project-chip="3"]')
     const todayChip = chips.locator('[data-date-chip="today"]')
@@ -472,22 +522,18 @@ test.describe('Dashboard filter facets', () => {
         await createTask(page, {
           title: 'Chip badge test — Work due later today',
           project_id: 3,
-          due_at: DateTime.now().setZone(TEST_TZ).plus({ minutes: 10 }).toUTC().toISO(),
+          due_at: dueLaterToday.toUTC().toISO(),
         }),
       )
       ids.push(
         await createTask(page, {
           title: 'Chip badge test — Work overdue today',
           project_id: 3,
-          due_at: DateTime.now().setZone(TEST_TZ).minus({ minutes: 10 }).toUTC().toISO(),
+          due_at: overdueToday.toUTC().toISO(),
         }),
       )
 
-      await page.reload()
-      await expect(toggle(page)).toBeVisible({ timeout: 5000 })
-      if ((await toggle(page).getAttribute('aria-expanded')) === 'false') {
-        await toggle(page).click()
-      }
+      await loadWithFiltersOpen(page)
 
       await expect(workChip).toBeVisible()
       await expect
