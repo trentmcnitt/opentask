@@ -207,6 +207,26 @@ describe('createPreferenceSaver', () => {
     expect(bodies).toEqual([{ filters_expanded: true }, { filters_expanded: false }])
   })
 
+  test('after a failed save, toggling back to the failed value still sends it', async () => {
+    const bodies: Record<string, unknown>[] = []
+    let rejectFirst: () => void = () => {}
+    const saver = createPreferenceSaver((body) => {
+      bodies.push(body)
+      if (bodies.length === 1) {
+        return new Promise((_resolve, reject) => {
+          rejectFirst = () => reject(new Error('500'))
+        })
+      }
+      return Promise.resolve()
+    })
+    saver.save('track_expanded', { track_expanded: true }) // fails
+    saver.save('track_expanded', { track_expanded: false })
+    saver.save('track_expanded', { track_expanded: true }) // the last click
+    rejectFirst()
+    await tick()
+    expect(bodies).toEqual([{ track_expanded: true }, { track_expanded: true }])
+  })
+
   test('different fields do not wait on each other', () => {
     const { send, calls } = fakeSend()
     const saver = createPreferenceSaver(send)

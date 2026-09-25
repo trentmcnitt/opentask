@@ -312,6 +312,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         keepalive: true,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`PATCH /api/user/preferences ${res.status}`)
       }),
     ),
   )

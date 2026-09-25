@@ -254,12 +254,12 @@ export interface PreferenceSaver {
  *
  * Per field: one save in flight, at most one waiting. When the in-flight save
  * settles (success or failure), the waiting value goes out, unless it equals
- * what was just sent (toggled away and back). No timers: the next send is
+ * what was just saved successfully (toggled away and back). No timers: the next send is
  * triggered by the previous one settling. Different fields don't wait on
  * each other.
  *
- * `send` must never reject into the caller's lap; a rejection is swallowed
- * like the fire-and-forget fetch it replaces.
+ * `send` resolves on a save the server accepted and rejects otherwise. A
+ * rejection is swallowed, like the fire-and-forget fetch it replaces.
  */
 export function createPreferenceSaver(
   send: (body: Record<string, unknown>) => Promise<unknown>,
@@ -270,14 +270,21 @@ export function createPreferenceSaver(
   function start(field: string, body: Record<string, unknown>): void {
     const serialized = JSON.stringify(body)
     inFlight.set(field, serialized)
+    let saved = false
     send(body)
+      .then(() => {
+        saved = true
+      })
       .catch(() => {})
       .finally(() => {
         inFlight.delete(field)
         const next = waiting.get(field)
         if (next === undefined) return
         waiting.delete(field)
-        if (JSON.stringify(next) !== serialized) start(field, next)
+        // Skip a value the server already holds — but only if that save
+        // succeeded; after a failure the newest click still has to go out.
+        if (saved && JSON.stringify(next) === serialized) return
+        start(field, next)
       })
   }
 
