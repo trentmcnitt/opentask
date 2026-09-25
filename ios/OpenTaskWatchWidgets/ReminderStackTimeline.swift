@@ -28,16 +28,29 @@ struct WatchWidgetEntry: TimelineEntry {
         case snoozed(WatchWidgetState.SnoozeResult)
     }
 
+    /// One waiting item — a reminder, or (quota reminders, 2026-09-24) a
+    /// quota PROMPT, which the card shows exactly like a reminder: in turn,
+    /// after the slot's reminders, counted in "N left".
     struct ReminderCard: Equatable {
+        /// The item's card key — `WatchWidgetState.itemKey(reminderId:)` for
+        /// a reminder, the `prompt_key` for a prompt. What ⏭ skips by.
+        let itemKey: String
         let taskId: Int
+        /// Non-nil for a quota prompt: ✓ considers it (and ☐, if drawn,
+        /// does it) by this key — never `markDone`, which refuses quotas.
+        let promptKey: String?
+        /// For a prompt: its whole label, count included ("Daily Walks · 1/2").
         let title: String
+        /// A prompt's label-color stripe (nil = neutral, or not a prompt).
+        let stripeColor: String?
         let slotLabel: String
         /// `ReminderGroupDTO.slotKey` — scopes the ⏭ skip list.
         let slotKey: Int
-        /// Every still-pending id in card order, for `SkipReminderIntent`'s
-        /// wrap decision — and the header's "N left" count (2026-09-24,
-        /// replacing a "4 of 5" position that read as a mystery).
-        let remainingIds: [Int]
+        /// Every still-waiting item key in card order, for
+        /// `SkipReminderIntent`'s wrap decision — and the header's "N left"
+        /// count (2026-09-24, replacing a "4 of 5" position that read as a
+        /// mystery). Reminders and waiting prompts both.
+        let remainingKeys: [String]
         /// Overdue Urgent (P4) tasks — never bulk-snoozable, so they don't
         /// take the card over (see `ReminderStackTimeline.content`), but they
         /// must not vanish either: a small red line under the header.
@@ -115,13 +128,14 @@ enum ReminderStackTimeline {
     static func entry(
         groups: [ReminderGroupDTO],
         tasks: [TaskDTO],
-        skipped: (Int) -> Set<Int>,
+        skipped: (Int) -> Set<String>,
         pendingDone: Set<Int>,
+        pendingPrompts: [String: Bool] = [:],
         snoozeResult: WatchWidgetState.SnoozeResult?,
         slots: [TimeSlotDTO],
         at date: Date
     ) -> WatchWidgetEntry {
-        let groups = applyingPendingDone(pendingDone, to: groups)
+        let groups = applyingPendingPrompts(pendingPrompts, to: applyingPendingDone(pendingDone, to: groups))
         let overdue = WatchSlotLogic.overdueTasks(from: tasks, now: date)
         let urgent = overdue.filter { $0.priority >= 4 }.count
         let snoozable = overdue.count - urgent
@@ -150,18 +164,12 @@ enum ReminderStackTimeline {
 
         if let group = active {
             let skips = skipped(group.slotKey)
-            let remaining = group.reminders
-            // First reminder not skipped. `WatchWidgetState.skip` never lets
-            // the skip list cover every remaining id, but a stale list (an
-            // item finished elsewhere) could — fall back to the first then.
-            let index = remaining.firstIndex { !skips.contains($0.id) } ?? 0
-            let shown = remaining[index]
-            let card = WatchWidgetEntry.ReminderCard(
-                taskId: shown.id, title: shown.title,
-                slotLabel: group.label, slotKey: group.slotKey,
-                remainingIds: remaining.map(\.id),
-                urgentOverdue: urgent
-            )
+            let remaining = cardItems(in: group, slotUrgent: urgent)
+            // First item not skipped. `WatchWidgetState.skip` never lets the
+            // skip list cover every remaining key, but a stale list (an item
+            // finished elsewhere) could — fall back to the first then.
+            let index = remaining.firstIndex { !skips.contains($0.itemKey) } ?? 0
+            let card = remaining[index]
             return WatchWidgetEntry(
                 date: date, content: .reminder(card), ring: ring,
                 relevance: TimelineEntryRelevance(score: slotJustStarted(group, now: date) ? 90 : 50)
@@ -171,7 +179,7 @@ enum ReminderStackTimeline {
         let next = nextWaitingSlot(in: groups, now: date)
         let card = WatchWidgetEntry.CaughtUpCard(
             nextSlotLabel: next?.label, nextSlotStart: next.flatMap { startDate(of: $0, on: date) },
-            nextSlotCount: next?.reminders.count ?? 0, urgentOverdue: urgent
+            nextSlotCount: next?.waitingCount ?? 0, urgentOverdue: urgent
         )
         return WatchWidgetEntry(
             date: date, content: .caughtUp(card), ring: ring,
@@ -191,14 +199,41 @@ enum ReminderStackTimeline {
     static func activeGroupIndex(in groups: [ReminderGroupDTO], now: Date) -> Int? {
         guard !groups.isEmpty else { return nil }
         let natural = WatchSlotLogic.naturalSlotIndex(in: groups, now: now)
-        if !groups[natural].reminders.isEmpty { return natural }
+        if !groups[natural].hasNothingWaiting { return natural }
         return groups.firstIndex { WatchSlotLogic.state(for: $0, now: now) == .waiting }
     }
 
-    /// The next slot later today that has reminders waiting — the caught-up
+    /// The next slot later today that has something waiting — the caught-up
     /// card's "Next: Midday at 12:00 PM".
     static func nextWaitingSlot(in groups: [ReminderGroupDTO], now: Date) -> ReminderGroupDTO? {
-        groups.first { WatchSlotLogic.state(for: $0, now: now) == .notStarted && !$0.reminders.isEmpty }
+        groups.first { WatchSlotLogic.state(for: $0, now: now) == .notStarted && !$0.hasNothingWaiting }
+    }
+
+    /// A slot's waiting items in card order — its reminders, then its
+    /// waiting quota prompts (2026-09-24; the web and the phone widget put
+    /// prompts under the reminders too). Only called for a slot with
+    /// something waiting, so it is never empty.
+    static func cardItems(in group: ReminderGroupDTO, slotUrgent urgent: Int) -> [WatchWidgetEntry.ReminderCard] {
+        let reminderKeys = group.reminders.map { WatchWidgetState.itemKey(reminderId: $0.id) }
+        let promptKeys = group.waitingPrompts.map(\.promptKey)
+        let keys = reminderKeys + promptKeys
+        let reminders = group.reminders.map { reminder in
+            WatchWidgetEntry.ReminderCard(
+                itemKey: WatchWidgetState.itemKey(reminderId: reminder.id), taskId: reminder.id,
+                promptKey: nil, title: reminder.title, stripeColor: nil,
+                slotLabel: group.label, slotKey: group.slotKey,
+                remainingKeys: keys, urgentOverdue: urgent
+            )
+        }
+        let prompts = group.waitingPrompts.map { prompt in
+            WatchWidgetEntry.ReminderCard(
+                itemKey: prompt.promptKey, taskId: prompt.taskId,
+                promptKey: prompt.promptKey, title: prompt.labelText, stripeColor: prompt.stripeColor,
+                slotLabel: group.label, slotKey: group.slotKey,
+                remainingKeys: keys, urgentOverdue: urgent
+            )
+        }
+        return reminders + prompts
     }
 
     /// Within the first 30 min of the slot's start — the Smart Stack should
@@ -245,8 +280,23 @@ enum ReminderStackTimeline {
                 slot: group.slot,
                 reminders: group.reminders.filter { !ids.contains($0.id) },
                 considered: group.considered + hidden.count,
-                consideredItems: hidden + group.consideredItems
+                consideredItems: hidden + group.consideredItems,
+                prompts: group.prompts
             )
+        }
+    }
+
+    /// Draw ✓'d/☐'d-but-unconfirmed quota prompts
+    /// (`WatchWidgetState.pendingPrompts`) as handled — not removed: the
+    /// server returns handled prompts too, and the slot's day total must not
+    /// shrink (`WidgetStore.filterPending`'s rule on the phone).
+    static func applyingPendingPrompts(_ actions: [String: Bool], to groups: [ReminderGroupDTO]) -> [ReminderGroupDTO] {
+        guard !actions.isEmpty else { return groups }
+        return groups.map { group in
+            group.replacingPrompts(group.prompts.map { prompt in
+                guard let did = actions[prompt.promptKey], prompt.isWaiting else { return prompt }
+                return prompt.handled(did: did)
+            })
         }
     }
 
@@ -261,9 +311,10 @@ enum ReminderStackTimeline {
         guard let active else {
             return .init(count: 0, fraction: groups.isEmpty ? 0 : 1, isOverdue: false, label: "Caught up")
         }
-        let total = active.reminders.count + active.considered
-        let fraction = total > 0 ? Double(active.considered) / Double(total) : 0
-        return .init(count: active.reminders.count, fraction: fraction, isOverdue: false, label: active.label)
+        // Quota prompts count like reminders (2026-09-24).
+        let total = active.waitingCount + active.consideredCount
+        let fraction = total > 0 ? Double(active.consideredCount) / Double(total) : 0
+        return .init(count: active.waitingCount, fraction: fraction, isOverdue: false, label: active.label)
     }
 
     // MARK: Timeline dates
@@ -337,7 +388,7 @@ enum ReminderStackTimeline {
         groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date
     ) -> [DateInterval] {
         var intervals: [DateInterval] = []
-        let slotted = groups.filter { $0.slot != nil && ($0.considered + $0.reminders.count) > 0 }
+        let slotted = groups.filter { $0.slot != nil && ($0.consideredCount + $0.waitingCount) > 0 }
         let starts = groups.compactMap { $0.slot?.startMinutes }.sorted()
 
         for dayOffset in 0...1 {
@@ -345,7 +396,7 @@ enum ReminderStackTimeline {
             for group in slotted {
                 // Today: only slots still waiting (a finished slot isn't worth
                 // surfacing). Tomorrow: every slot that had reminders today.
-                if dayOffset == 0 && group.reminders.isEmpty { continue }
+                if dayOffset == 0 && group.hasNothingWaiting { continue }
                 guard let minutes = group.slot?.startMinutes,
                       let start = date(minutes: minutes, on: day) else { continue }
                 let nextMinutes = starts.first { $0 > minutes }

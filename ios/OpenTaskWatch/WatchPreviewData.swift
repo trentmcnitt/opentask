@@ -11,6 +11,61 @@ import Foundation
 /// Same approach as the Smart Stack widget's `ReminderStackPreviewData`
 /// (which lives in the widget extension and so can't be reached from here).
 enum WatchPreviewData {
+    // MARK: Reminders page — quota prompts (2026-09-24)
+
+    private static func prompt(
+        _ taskId: Int, _ number: Int?, _ title: String, _ current: Int, _ target: Int,
+        _ period: String?, _ stripe: String?
+    ) -> QuotaPromptDTO {
+        QuotaPromptDTO(
+            promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
+            title: title, current: current, target: target, period: period, stripeColor: stripe
+        )
+    }
+
+    /// His REAL quota prompts (read-only from the dev server, his prod
+    /// snapshot with PR #79's prompts on), where they all prompt in Early
+    /// morning.
+    static let earlyMorningPrompts: [QuotaPromptDTO] = [
+        prompt(116, nil, "Broccoli Avocado", 1, 3, "WEEKLY", nil),
+        prompt(3307, nil, "Check for new certifications — Anthropic Skilljar, platform certs, business automation credentials, cowork, automation", 0, 1, "WEEKLY", "pink"),
+        prompt(276, nil, "Clean car seat for Owen", 0, 1, "MONTHLY", "purple"),
+        prompt(255, nil, "Cook daily vegetables (incl. black beans)", 0, 5, "WEEKLY", "blue"),
+        prompt(83, 1, "Daily Walks", 0, 2, "DAILY", "blue"),
+        prompt(193, nil, "Eggs", 1, 2, "WEEKLY", nil),
+        prompt(129, nil, "Grinding food (ie bran cereal)", 1, 3, "WEEKLY", nil),
+        prompt(192, nil, "Josie clean dishes (chore)", 0, 5, "WEEKLY", "purple"),
+        prompt(21400, nil, "Kid's Iron Meal (e.g. ground beef, steak)", 0, 2, "WEEKLY", nil),
+        prompt(163, nil, "Kids all blow up balloon (teach josie PRI position + breathing into upper back, seated?)", 0, 4, "WEEKLY", "blue"),
+        prompt(239, nil, "Kids eat hard cereal (ie grape nuts)", 0, 2, "WEEKLY", nil),
+        prompt(258, nil, "Kids Smoothie (+Owen omega-3)", 0, 2, "WEEKLY", "blue"),
+        prompt(132, nil, "Kids supplements ( Vitamin D, Omega-3 )", 1, 3, "WEEKLY", "blue"),
+        prompt(13, nil, "Owen (+Kids) Playground", 1, 4, "WEEKLY", nil),
+        prompt(118, nil, "Owen Swim", 1, 2, "WEEKLY", nil),
+        prompt(160, nil, "Peanut butter bites", 1, 3, "WEEKLY", nil),
+    ]
+
+    /// Early morning as the page shows it: his two last real reminders of
+    /// the slot, then the sixteen prompts. Three prompts `handled` to show
+    /// they leave the list: Daily Walks did (1/2), two considered.
+    static func reminderGroups(handled: [String: Bool] = [:]) -> [ReminderGroupDTO] {
+        let early = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 11, label: "Early morning", startTime: "07:00"),
+            reminders: [
+                TaskDTO(id: 223, title: "Walk and move in a way that pumps blood to the pelvis", isReminder: true),
+                TaskDTO(id: 23432, title: "Cold Shower (Naval)", isReminder: true),
+            ],
+            considered: 6,
+            prompts: earlyMorningPrompts.map { p in handled[p.promptKey].map { p.handled(did: $0) } ?? p }
+        )
+        let morning = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 12, label: "Morning", startTime: "09:00"),
+            reminders: [TaskDTO(id: 2226, title: "Check GitHub issues", priority: 2, isReminder: true)],
+            prompts: [prompt(83, 2, "Daily Walks", 0, 2, "DAILY", "blue")]
+        )
+        return [early, morning]
+    }
+
     static let labelConfig: [LabelConfigDTO] = [
         LabelConfigDTO(name: "health", color: "blue"),
         LabelConfigDTO(name: "house", color: "orange"),
