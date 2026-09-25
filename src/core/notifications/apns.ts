@@ -246,7 +246,11 @@ export async function sendApnsSummaryNotification(
  * fields the extension filters on):
  * - `slot_id` — time_slots.id, or -1 for the un-slotted group
  * - `slot_label` — display label, used as the checklist header
- * - `reminder_count` — pending count at send time (header fallback only)
+ * - `reminder_count` — pending ITEMS at send time: reminders plus waiting quota
+ *   prompts (header fallback only — "N waiting" while the checklist loads, and
+ *   the checklist lists both kinds, so the total is the number it will show).
+ *   The name predates quota prompts and is kept so shipped builds read it.
+ * - `prompt_count` — how many of those are quota prompts (informational)
  *
  * `collapseId` is per-slot, so a later push for the same slot REPLACES the
  * earlier one rather than stacking: the slot's banner always shows the current
@@ -255,9 +259,17 @@ export async function sendApnsSummaryNotification(
 export interface ApnsSlotReminderPayload {
   slotId: number
   slotLabel: string
+  /** Reminders waiting in the slot. */
   count: number
   /**
-   * Alert body override. Defaults to the plain "N reminders waiting".
+   * Quota prompts waiting in the slot (quota reminders, 2026-09-24). A prompt
+   * counts exactly like a reminder: it is in the checklist, and it keeps the
+   * slot unfinished until it is considered or done. 0 when the user or the
+   * server has prompts switched off. Defaults to 0.
+   */
+  promptCount?: number
+  /**
+   * Alert body override. Defaults to `slotWaitingBody(count, promptCount)`.
    *
    * The hourly nag (`slot-nags.ts`) sends through this same function so it
    * inherits the category, the checklist and the action buttons, but its body
@@ -266,13 +278,29 @@ export interface ApnsSlotReminderPayload {
   body?: string
 }
 
+/**
+ * What a slot says is waiting: "3 reminders waiting", "2 quotas waiting", or
+ * both, "3 reminders · 2 quotas waiting". One phrase for the slot-open push
+ * and the hourly nag (`slotNagBody` builds on it), so the two never word the
+ * same slot differently. A zero side is left out rather than said — "0 quotas"
+ * is chrome for something that isn't there. The prompt side says "quotas":
+ * a period shows at most one prompt per quota, so the two counts agree.
+ */
+export function slotWaitingBody(reminders: number, prompts = 0): string {
+  const parts: string[] = []
+  if (reminders > 0 || prompts <= 0) {
+    parts.push(reminders === 1 ? '1 reminder' : `${reminders} reminders`)
+  }
+  if (prompts > 0) parts.push(prompts === 1 ? '1 quota' : `${prompts} quotas`)
+  return `${parts.join(' · ')} waiting`
+}
+
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
 ): Promise<void> {
-  const body =
-    payload.body ??
-    (payload.count === 1 ? '1 reminder waiting' : `${payload.count} reminders waiting`)
+  const prompts = payload.promptCount ?? 0
+  const body = payload.body ?? slotWaitingBody(payload.count, prompts)
 
   await sendToAllDevices(
     userId,
@@ -287,7 +315,8 @@ export async function sendApnsSlotReminder(
         data: {
           slot_id: payload.slotId,
           slot_label: payload.slotLabel,
-          reminder_count: payload.count,
+          reminder_count: payload.count + prompts,
+          prompt_count: prompts,
         },
         aps: {
           // Reminders carry no debt (§6) — they must never interrupt like an
@@ -299,7 +328,7 @@ export async function sendApnsSlotReminder(
     (devices) => {
       log.info(
         'apns',
-        `Sending slot reminder "${payload.slotLabel}" (${payload.count}) to ${devices.length} device(s)`,
+        `Sending slot reminder "${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
       )
     },
   )
