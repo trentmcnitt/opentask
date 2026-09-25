@@ -6,11 +6,12 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { trackState, quotaFreqOf, quotaLabelOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
+import { QuotaPromptSection, usePromptDraft } from '@/components/QuotaPromptField'
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import { useDomainLabels } from '@/hooks/useDomainLabels'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
-import type { Task } from '@/types'
+import type { QuotaPromptConfig, Task } from '@/types'
 
 /**
  * The editor for a quota (REDESIGN-V03 §5) — "eat beef four times a week".
@@ -64,6 +65,8 @@ export interface QuotaChanges {
   labels?: string[]
   /** §7.2's opt-in: register a name the registry has never seen, in this write. */
   create_label?: true
+  /** Quota reminders (2026-09-24): the "Remind me daily" section. Sent only when touched. */
+  quota_prompt_config?: QuotaPromptConfig | null
 }
 
 export interface QuotaDetailProps {
@@ -98,6 +101,8 @@ export function QuotaDetail({
 }: QuotaDetailProps) {
   const creating = tasks.length === 0 && !!create
   const single = tasks.length === 1 ? tasks[0] : null
+  // One quota on screen (editing it, or a new one): the per-quota fields show.
+  const oneQuota = creating || single !== null
 
   /** What the selection agrees on; '' / null where it does not. */
   const base = useMemo(
@@ -110,6 +115,9 @@ export function QuotaDetail({
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
   const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
   const [notes, setNotes] = useState(base.notes)
+  // Quota reminders: one quota (or a new one) at a time — a selection's
+  // configs are per-quota by nature and are left alone.
+  const prompt = usePromptDraft(single)
 
   // The registry is the option list. `reload` runs after a save that registered
   // a new name, so the next quota edited in the same session is offered it.
@@ -125,22 +133,9 @@ export function QuotaDetail({
     dirty,
     targetOk,
     canSave,
-  } = describeDraft({ creating, base, title, target, period, label, notes })
+  } = describeDraft({ creating, base, title, target, period, label, notes, prompt })
 
-  // Report dirtiness, and report clean on the way out: the modal unmounts this
-  // when it closes, and without the unmount clear the host stayed "dirty" until
-  // the next mount's effect ran — one frame of blue stripe and a disabled drag
-  // every time it reopened. ReminderDetail does the same through a ref.
-  const onDirtyChangeRef = useRef(onDirtyChange)
-  useEffect(() => {
-    onDirtyChangeRef.current = onDirtyChange
-  }, [onDirtyChange])
-  useEffect(() => {
-    onDirtyChange?.(dirty)
-  }, [dirty, onDirtyChange])
-  useEffect(() => {
-    return () => onDirtyChangeRef.current?.(false)
-  }, [])
+  useReportDirty(dirty, onDirtyChange)
 
   const buildChanges = useCallback((): QuotaChanges => {
     const changes: QuotaChanges = {}
@@ -178,8 +173,14 @@ export function QuotaDetail({
       // a separate round-trip to the registry endpoint.
       if (label && !registeredLabels.includes(label)) changes.create_label = true
     }
+    // Only a touched section is sent: an untouched quota keeps a NULL config
+    // ("follow the defaults"), so a later change of the default period in
+    // Settings still moves it.
+    if (prompt.touched) changes.quota_prompt_config = prompt.config
     return changes
   }, [
+    prompt.touched,
+    prompt.config,
     creating,
     titleTouched,
     notesTouched,
@@ -238,6 +239,7 @@ export function QuotaDetail({
     setPeriod(base.period)
     setLabel(base.label)
     setNotes(base.notes)
+    prompt.reset()
   }
 
   return (
@@ -248,9 +250,7 @@ export function QuotaDetail({
         </p>
       )}
 
-      {(creating || single) && (
-        <TitleField value={title} onChange={setTitle} autoFocus={creating} />
-      )}
+      {oneQuota && <TitleField value={title} onChange={setTitle} autoFocus={creating} />}
 
       {!creating && !single && (
         <p className="text-muted-foreground text-sm">
@@ -268,7 +268,18 @@ export function QuotaDetail({
 
       <LabelField value={label} onChange={setLabel} registered={registeredLabels} />
 
-      {(creating || single) && <NotesField value={notes} onChange={setNotes} />}
+      {oneQuota && (
+        <QuotaPromptSection
+          value={prompt.config}
+          onChange={prompt.setConfig}
+          period={period}
+          periodTouched={periodTouched}
+          task={single}
+          target={targetNumber}
+        />
+      )}
+
+      {oneQuota && <NotesField value={notes} onChange={setNotes} />}
 
       {single && <QuotaStats task={single} />}
 
@@ -285,6 +296,27 @@ export function QuotaDetail({
       />
     </div>
   )
+}
+
+/**
+ * Report dirtiness, and report clean on the way out: the modal unmounts the
+ * editor when it closes, and without the unmount clear the host stayed "dirty"
+ * until the next mount's effect ran — one frame of blue stripe and a disabled
+ * drag every time it reopened. ReminderDetail does the same through a ref.
+ * (A hook of its own only to keep `QuotaDetail` inside the function-length
+ * limit once the "Remind me daily" section arrived.)
+ */
+function useReportDirty(dirty: boolean, onDirtyChange?: (dirty: boolean) => void) {
+  const onDirtyChangeRef = useRef(onDirtyChange)
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange
+  }, [onDirtyChange])
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+  useEffect(() => {
+    return () => onDirtyChangeRef.current?.(false)
+  }, [])
 }
 
 /** "N times · every week", shared by every mode of the editor. */
@@ -640,6 +672,7 @@ function describeDraft({
   period,
   label,
   notes,
+  prompt,
 }: {
   creating: boolean
   base: {
@@ -655,6 +688,8 @@ function describeDraft({
   period: QuotaPeriod | null
   label: QuotaLabelChoice
   notes: string
+  /** The "Remind me daily" section changed (compared by the component). */
+  prompt?: { touched: boolean }
 }) {
   const targetNumber = Number.parseInt(target, 10)
   const targetTouched = target !== base.target
@@ -662,7 +697,13 @@ function describeDraft({
   const titleTouched = title !== base.title
   const notesTouched = notes !== base.notes
   const labelTouched = label !== base.label
-  const dirty = titleTouched || notesTouched || targetTouched || periodTouched || labelTouched
+  const dirty =
+    titleTouched ||
+    notesTouched ||
+    targetTouched ||
+    periodTouched ||
+    labelTouched ||
+    !!prompt?.touched
   const targetOk = target.length > 0 && targetNumber >= 1 && targetNumber <= 1000
   // Creating needs a title, a valid target and a period. Editing needs only
   // what is being changed to be valid — a period-less quota, and a selection
