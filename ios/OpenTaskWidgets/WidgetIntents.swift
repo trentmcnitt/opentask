@@ -61,19 +61,13 @@ func reloadOpenTaskWidget(kind: String) {
 
 /// Reload all three widget kinds, unordered. NOT used by any ROUTINE mutating
 /// intent's normal path as of 2026-09-22 — see `reloadOpenTaskWidget(kind:)`.
-/// Two callers remain, both deliberate exceptions to "reload only the acting
-/// kind":
-///
-/// - `CompleteTaskIntent`'s fallback for a button archived before it carried
-///   a `kind` parameter: without a known kind there is nothing to target, so
-///   it falls back to the old, safe-but-unoptimized "reload everything"
-///   rather than guessing.
-/// - `UndoLastActionIntent` (2026-09-23), unconditionally: `/api/undo`'s
-///   response carries no task id or kind (see its own doc), so which kind
-///   the undone action belongs to is never knowable, and undo is rare enough
-///   that the chronod queue-contention cost this function exists to avoid
-///   for routine taps (see the measurements below) is not the relevant
-///   tradeoff for an action a user fires a few times a day at most.
+/// One caller remains, a deliberate exception to "reload only the acting
+/// kind": `CompleteTaskIntent`'s fallback for a button archived before it
+/// carried a `kind` parameter — without a known kind there is nothing to
+/// target, so it falls back to the old, safe-but-unoptimized "reload
+/// everything" rather than guessing. (Undo/Redo also reload all three kinds,
+/// since `/api/undo` names no task or kind, but through
+/// `reloadAfterUndoRedo`, which orders them — see its doc.)
 ///
 /// Otherwise this function has no other callers, which is itself evidence for
 /// the fix: on macOS, `chronod` (WidgetKit's reload daemon) runs every timeline
@@ -780,11 +774,26 @@ struct ToggleQuotasTakebackModeIntent: AppIntent {
 /// header's row was for" — only "whatever changed last" — exactly like the
 /// web toast, and exactly why `WidgetStore.clearAllPendingState()` below
 /// clears every optimistic marker rather than one.
+///
+/// ONE reload per kind, AFTER the refetch (2026-09-25, "Quotas stuck at 1/2
+/// after Undo") — see `reloadAfterUndoRedo`'s doc for the bug and why.
 struct UndoLastActionIntent: AppIntent {
     static var title: LocalizedStringResource = "Undo"
     static var isDiscoverable: Bool { false }
 
+    /// The widget kind whose header held the tapped button — the one kind
+    /// WidgetKit reloads by itself when `perform()` returns, so
+    /// `reloadAfterUndoRedo` asks for the OTHER kinds first. Defaulted like
+    /// `CompleteTaskIntent.kind`: a button archived before this parameter
+    /// existed decodes "" and gets the plain all-three order.
+    @Parameter(title: "Widget Kind", default: "")
+    var kind: String
+
     init() {}
+
+    init(kind: String) {
+        self.kind = kind
+    }
 
     func perform() async throws -> some IntentResult {
         // Atomic claim (see WidgetStore.tryClaimUndoRedo's doc): a
@@ -794,15 +803,11 @@ struct UndoLastActionIntent: AppIntent {
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
 
-        // Round 1: ALL THREE kinds, unlike a routine check-off/+1 — see
-        // reloadOpenTaskWidgets()'s doc for why undo is the deliberate
-        // exception. This is what makes both buttons' state and the "Undid:
-        // …" indication update everywhere right away rather than only
-        // wherever this tap happened to land, and it runs before the
-        // network call for the same "don't make a dead-looking button"
-        // reason CompleteTaskIntent stages first.
-        await reloadOpenTaskWidgets()
-
+        // No reload before the server call (2026-09-25): nothing a widget
+        // draws has changed yet — the undo hasn't happened and "Undid: …"
+        // isn't recorded — so a pass here could only repaint the old state,
+        // and it cost the one reload per kind that mattered (see
+        // `reloadAfterUndoRedo`).
         do {
             let result = try await APIClient.shared.undoLastAction()
             // No task id to target — see this type's doc — so every
@@ -826,20 +831,7 @@ struct UndoLastActionIntent: AppIntent {
             // 2026-09-23: "I pressed undo and nothing actually undid it" —
             // the server had undone it).
             WidgetStore.clearInteraction()
-            if let payload = try? await APIClient.shared.fetchReminders() {
-                WidgetStore.saveReminders(payload.groups)
-            }
-            if let tasks = try? await APIClient.shared.fetchOpenTasks(),
-               let projects = try? await APIClient.shared.fetchProjects() {
-                // Completions too (2026-09-23, "show completed") — this is a
-                // full refetch outside `TaskFeed`, so without an explicit
-                // fetch here `saveTasks` (no default on `completions` since
-                // this file's fix — see `WidgetStore.saveTasks`'s doc) would
-                // force this call site to pass SOMETHING, and passing `[]`
-                // would wipe the DONE list cache on every undo/redo.
-                let completions = (try? await APIClient.shared.fetchTodaysCompletions()) ?? []
-                WidgetStore.saveTasks(tasks, projects: projects, completions: completions)
-            }
+            await refetchAllPayloads()
             // If the action just reversed was a Reminders completion that
             // triggered `autoAdvanceSlot`, put the display back where it was
             // before that side effect — the completed item reappears in its
@@ -863,15 +855,13 @@ struct UndoLastActionIntent: AppIntent {
             // as they were — there is no window to restore any more, so a
             // retry is simply a second tap on the same still-enabled button.
         }
-        // Round 2, the reconciling pass. On success the caches were just
+        // The one reconciling pass. On success the caches were just
         // refetched above (which also settled `clearInteraction()`'s
         // fetch-required stamps — `WidgetStore.saveTasks`), so a fast path
         // here draws server truth; a payload whose refetch failed keeps its
         // stamp and this pass fetches it. On failure nothing changed
         // server-side, so whatever path this takes is already current.
-        // (Before 2026-09-24 a chevron tapped under 10s earlier could
-        // fast-path this pass from a cache the refetch had not replaced.)
-        await reloadOpenTaskWidgets()
+        await reloadAfterUndoRedo(tappedKind: kind)
         return .result()
     }
 }
@@ -890,36 +880,108 @@ struct RedoLastActionIntent: AppIntent {
     static var title: LocalizedStringResource = "Redo"
     static var isDiscoverable: Bool { false }
 
+    /// See `UndoLastActionIntent.kind`.
+    @Parameter(title: "Widget Kind", default: "")
+    var kind: String
+
     init() {}
+
+    init(kind: String) {
+        self.kind = kind
+    }
 
     func perform() async throws -> some IntentResult {
         // Shared claim with Undo — see UndoLastActionIntent's doc.
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
 
-        await reloadOpenTaskWidgets()
-
+        // No reload before the server call — see UndoLastActionIntent.
         do {
             let result = try await APIClient.shared.redoLastAction()
             WidgetStore.clearAllPendingState()
             WidgetStore.setUndoRedoCounts(undoable: result.undoableCount, redoable: result.redoableCount)
             WidgetStore.recordLastAction(description: "Redid: \(result.description)")
             WidgetStore.clearInteraction()
-            if let payload = try? await APIClient.shared.fetchReminders() {
-                WidgetStore.saveReminders(payload.groups)
-            }
-            if let tasks = try? await APIClient.shared.fetchOpenTasks(),
-               let projects = try? await APIClient.shared.fetchProjects() {
-                // Completions too — see UndoLastActionIntent's identical
-                // block for why.
-                let completions = (try? await APIClient.shared.fetchTodaysCompletions()) ?? []
-                WidgetStore.saveTasks(tasks, projects: projects, completions: completions)
-            }
+            await refetchAllPayloads()
         } catch {
             print("[OpenTaskWidgets] Redo failed: \(error)")
         }
-        await reloadOpenTaskWidgets()
+        await reloadAfterUndoRedo(tappedKind: kind)
         return .result()
+    }
+}
+
+/// Undo/Redo's full refetch of both cached payloads (they can't know what
+/// they reversed, so both may be stale), the reminders and the tasks sides
+/// CONCURRENTLY — they are independent, and every second `perform()` spends
+/// before its reload is a second the widgets show the pre-undo state.
+///
+/// Completions too (2026-09-23, "show completed") — this is a full refetch
+/// outside `TaskFeed`, so without an explicit fetch here `saveTasks` (no
+/// default on `completions` — see `WidgetStore.saveTasks`'s doc) would force
+/// this call site to pass SOMETHING, and passing `[]` would wipe the DONE
+/// list cache on every undo/redo.
+///
+/// Each side saves only if its fetch succeeded; one that failed keeps the
+/// fetch-required stamp `clearInteraction()` just set, so the reload that
+/// follows fetches it instead of repainting the stale cache.
+private func refetchAllPayloads() async {
+    async let reminders: Void = refetchReminders()
+    async let tasks: Void = refetchTasks()
+    _ = await (reminders, tasks)
+}
+
+private func refetchReminders() async {
+    if let payload = try? await APIClient.shared.fetchReminders() {
+        WidgetStore.saveReminders(payload.groups)
+    }
+}
+
+private func refetchTasks() async {
+    async let open = APIClient.shared.fetchOpenTasks()
+    async let projects = APIClient.shared.fetchProjects()
+    async let completions: [CompletionDTO]? = try? APIClient.shared.fetchTodaysCompletions()
+    guard let open = try? await open, let projects = try? await projects else {
+        _ = await completions
+        return
+    }
+    WidgetStore.saveTasks(open, projects: projects, completions: await completions ?? [])
+}
+
+/// Undo/Redo's reload: every kind ONCE, after the refetch, the kinds OTHER
+/// than the tapped one first (2026-09-25, "Quotas stuck at 1/2 after Undo").
+///
+/// The bug: did-it on the Reminders widget's "Daily Walks · 0/2" prompt
+/// (Quotas → 1/2), then Undo on the Reminders widget. The server undid it,
+/// Reminders put the prompt back, and Quotas stayed at 1/2. Prod's request
+/// log for Trent's tap (09:07:11) shows the whole story: the refetch below
+/// ran (`/api/reminders`, `/api/tasks`, `/api/projects`, `/api/completions`
+/// — so the shared tasks cache held 0/2 from 09:07:13), then exactly ONE
+/// provider build fetched — Reminders' (`/api/reminders` + `/api/undo/status`)
+/// — and no Tasks or Quotas build ran at all until the app was opened a
+/// minute later (a Quotas build always fetches `/api/tasks`,
+/// `/api/user/preferences` and `/api/time-slots` once it's > 10s after a
+/// tap, which it was). The code path itself is right — the same sequence
+/// driven against dev in a harness, and on the simulator by real widget
+/// taps, rebuilds Quotas at 0/2 every time; on the phone, WidgetKit simply
+/// never ran the Quotas reload this intent asked for.
+///
+/// What this intent did differently from the did-it tap whose cross-kind
+/// Quotas reload DID land a few seconds earlier: it had already reloaded all
+/// three kinds once, BEFORE the server call — a pass that could only repaint
+/// the old state — and then asked again ~1.3s later. The only reload WidgetKit
+/// is guaranteed to run is its own reload of the widget that holds the
+/// tapped button, after `perform()` returns; a second request for another
+/// kind in the same `perform()` is not. So: no reload before the server call
+/// (there is nothing new to draw), then one request per kind with the kinds
+/// the system will NOT reload by itself first — on the phone the first build
+/// in line (Reminders, at XXX Large) was the only one that happened.
+@MainActor
+private func reloadAfterUndoRedo(tappedKind: String) async {
+    let all = [RemindersWidget.kind, TasksWidget.kind, TrackWidget.kind]
+    let ordered = all.filter { $0 != tappedKind } + all.filter { $0 == tappedKind }
+    for kind in ordered {
+        reloadOpenTaskWidget(kind: kind)
     }
 }
 

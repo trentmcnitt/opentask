@@ -539,7 +539,7 @@ private struct RemindersListView: View {
             Spacer(minLength: 0)
             // Right-aligned (2026-09-23) — see `UndoRedoButtons`' doc:
             // always present, dimmed when there is nothing to undo/redo.
-            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: RemindersWidget.kind)
             if !isLarge {
                 ChevronPager(
                     previous: ShiftReminderSlotIntent(offset: -1),
