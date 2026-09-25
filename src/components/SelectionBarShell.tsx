@@ -4,6 +4,9 @@ import { X } from 'lucide-react'
 import { type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 
+/** The hint line's id, for the `aria-describedby` of the verb it explains. */
+export const SELECTION_BAR_HINT_ID = 'selection-bar-hint'
+
 /**
  * The floating bar that appears while rows are selected, on every surface that
  * has a selection.
@@ -26,6 +29,7 @@ export function SelectionBarShell({
   onClear,
   onDoubleClickIntent,
   testAttr,
+  hint,
   children,
 }: {
   count: number
@@ -41,6 +45,13 @@ export function SelectionBarShell({
   onDoubleClickIntent?: () => void
   /** Marks a specific surface's bar for tests, e.g. `data-quota-selection-bar`. */
   testAttr?: string
+  /**
+   * One short line under the verbs, saying why one of them is unavailable for
+   * this selection (e.g. Reminders' "Details: pick only reminders or only
+   * quotas"). Muted, inside the pill, so the bar stays one object. A verb it
+   * explains points at it with `aria-describedby={SELECTION_BAR_HINT_ID}`.
+   */
+  hint?: string
   /** The surface's verbs. Clear is supplied here and always sits last. */
   children: ReactNode
 }) {
@@ -61,24 +72,35 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground flex items-center gap-2 rounded-xl px-4 py-3 shadow-xl"
+        className="bg-primary text-primary-foreground rounded-xl px-4 py-3 shadow-xl"
         aria-live="polite"
       >
-        {count > 1 && (
-          <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
+        <div className="flex items-center gap-2">
+          {count > 1 && (
+            <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
+          )}
+
+          {children}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClear}
+            aria-label="Clear selection"
+            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-1"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        {hint && (
+          <p
+            id={SELECTION_BAR_HINT_ID}
+            data-selection-hint
+            className="text-primary-foreground/60 mt-1.5 text-xs"
+          >
+            {hint}
+          </p>
         )}
-
-        {children}
-
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClear}
-          aria-label="Clear selection"
-          className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-1"
-        >
-          <X className="size-4" />
-        </Button>
       </div>
     </div>
   )

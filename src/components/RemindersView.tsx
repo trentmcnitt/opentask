@@ -182,7 +182,8 @@ export function RemindersView({
     create,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const router = useRouter()
-  const selection = useSelectionMode()
+  // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
+  const selection = useSelectionMode<number | string>()
   const { selectedIds, clear } = selection
 
   // Searching narrows what is rendered; it deliberately does NOT touch which
@@ -436,35 +437,30 @@ export function RemindersView({
     )
   }, [hydrated, error, visibleGroups, goToSlot])
 
-  // Rows actually rendered, in DOM order — the universe for range selection.
-  const renderedRows = useMemo(() => {
-    // While searching every match is on screen, so range selection spans all
-    // of them rather than the usual open-and-expanded subset.
-    if (searching) return searchGroups.flatMap((group) => group.reminders)
-    return visibleGroups.flatMap((group) => {
-      const key = groupKey(group)
-      if (!isOpen(key)) return []
-      // Must mirror ReminderSlotGroup's own slice, or a shift-click range would
-      // span rows that are not on screen.
-      return slotShowsEverything(summary.started.includes(group), expandedKeys.has(key))
-        ? group.reminders
-        : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
-    })
-  }, [searching, searchGroups, visibleGroups, isOpen, expandedKeys, summary.started])
-  const orderedIds = useMemo(() => renderedRows.map((r) => r.id), [renderedRows])
-  const selectedTasks = useMemo(
-    () => renderedRows.filter((r) => selectedIds.has(r.id)),
-    [renderedRows, selectedIds],
-  )
+  const { orderedIds, selectedTasks, selectedPrompts } = useRenderedSelection({
+    searching,
+    // In the order the slot cards are DRAWN (started, then later — which puts
+    // Anytime among the started), not the payload's, or a Shift-click range
+    // would span a different run of rows than the one on screen.
+    searchGroups: [...searchSummary.started, ...searchSummary.later],
+    visibleGroups: [...summary.started, ...summary.later],
+    started: summary.started,
+    isOpen,
+    expandedKeys,
+    selectedIds,
+  })
 
   const actions = useReminderActions({
     selection,
     orderedIds,
     selectedTasks,
+    selectedPrompts,
     startedGroups: summary.started,
     complete,
     completeMany,
     completeGroup,
+    considerPrompt,
+    didPrompt,
     remove,
   })
   // Quota prompts: their rows (a hold opens the quota's own bubble and
@@ -472,8 +468,11 @@ export function RemindersView({
   const prompts = usePromptRows({
     completingIds,
     isSelectionMode: actions.isSelectionMode,
-    considerPrompt,
-    didPrompt,
+    selectedIds,
+    onSelect: actions.selectPrompt,
+    onRangeSelect: actions.rangeSelectPrompt,
+    considerPrompt: actions.considerPrompt,
+    didPrompt: actions.didPrompt,
     movePrompt,
     rowLeft,
     registerRow,
@@ -770,10 +769,19 @@ export function RemindersView({
       )}
 
       <ReminderSelectionBar
-        selectedCount={selectedIds.size}
+        // Counted from the rows on screen, like the two counts below it: a key
+        // whose row has gone (handled on another device, a merged daily row)
+        // must neither inflate "N selected" nor, as a prompt, hide Trash wrongly.
+        selectedCount={selectedTasks.length + selectedPrompts.length}
+        reminderCount={selectedTasks.length}
+        promptCount={selectedPrompts.length}
         onConsidered={actions.considerSelection}
         onDelete={actions.deleteSelection}
-        onDetails={selectedTasks.length > 0 ? () => setDetailTasks(selectedTasks) : undefined}
+        onDetails={() =>
+          selectedPrompts.length > 0
+            ? void prompts.openQuotas(selectedPrompts)
+            : setDetailTasks(selectedTasks)
+        }
         onClear={clear}
       />
       <ConsiderAllDialog
@@ -800,6 +808,67 @@ export function RemindersView({
 }
 
 /**
+ * The rows actually rendered, in DOM order — the universe for range
+ * selection — and which of them are selected. Per slot that is the reminders
+ * on screen, then the slot's waiting quota prompts (`SlotPromptList`, which
+ * draws every one: prompts are never capped), so a Shift-click range runs
+ * across the seam exactly as the eye reads it.
+ */
+function useRenderedSelection({
+  searching,
+  searchGroups,
+  visibleGroups,
+  started,
+  isOpen,
+  expandedKeys,
+  selectedIds,
+}: {
+  searching: boolean
+  searchGroups: ReminderGroup[]
+  visibleGroups: ReminderGroup[]
+  started: ReminderGroup[]
+  isOpen: (key: string) => boolean
+  expandedKeys: Set<string>
+  selectedIds: Set<number | string>
+}) {
+  const rendered = useMemo(() => {
+    // While searching every match is on screen, so range selection spans all
+    // of them rather than the usual open-and-expanded subset (and a search
+    // group's prompts are already only the waiting ones).
+    if (searching) {
+      return searchGroups.map((group) => ({ reminders: group.reminders, prompts: group.prompts }))
+    }
+    return visibleGroups
+      .filter((group) => isOpen(groupKey(group)))
+      .map((group) => ({
+        // Must mirror ReminderSlotGroup's own slice, or a shift-click range
+        // would span rows that are not on screen.
+        reminders: slotShowsEverything(started.includes(group), expandedKeys.has(groupKey(group)))
+          ? group.reminders
+          : group.reminders.slice(0, SLOT_PREVIEW_COUNT),
+        prompts: group.prompts.filter(promptWaiting),
+      }))
+  }, [searching, searchGroups, visibleGroups, isOpen, expandedKeys, started])
+  const orderedIds = useMemo(
+    () =>
+      rendered.flatMap((g) => [
+        ...g.reminders.map((r) => r.id),
+        ...g.prompts.map((p) => p.prompt_key),
+      ]),
+    [rendered],
+  )
+  const selectedTasks = useMemo(
+    () => rendered.flatMap((g) => g.reminders).filter((r) => selectedIds.has(r.id)),
+    [rendered, selectedIds],
+  )
+  const selectedPrompts = useMemo(
+    () => rendered.flatMap((g) => g.prompts).filter((p) => selectedIds.has(p.prompt_key)),
+    [rendered, selectedIds],
+  )
+  return { orderedIds, selectedTasks, selectedPrompts }
+}
+
+/**
  * The surface's verbs, wired to the selection so a row that leaves the screen
  * leaves the selection too, whichever path took it. Escape clears a selection,
  * as it does on the dashboard.
@@ -808,19 +877,25 @@ function useReminderActions({
   selection,
   orderedIds,
   selectedTasks,
+  selectedPrompts,
   startedGroups,
   complete,
   completeMany,
   completeGroup,
+  considerPrompt,
+  didPrompt,
   remove,
 }: {
-  selection: ReturnType<typeof useSelectionMode>
-  orderedIds: number[]
+  selection: ReturnType<typeof useSelectionMode<number | string>>
+  orderedIds: (number | string)[]
   selectedTasks: Task[]
+  selectedPrompts: QuotaPrompt[]
   startedGroups: ReminderGroup[]
   complete: (task: Task) => Promise<void>
   completeMany: (tasks: Task[], prompts?: QuotaPrompt[]) => Promise<void>
   completeGroup: (group: ReminderGroup) => Promise<void>
+  considerPrompt: (prompt: QuotaPrompt) => Promise<void>
+  didPrompt: (prompt: QuotaPrompt) => Promise<void>
   remove: (tasks: Task[]) => Promise<void>
 }) {
   const { isSelectionMode, toggle, rangeSelect, removeAll, clear } = selection
@@ -853,18 +928,45 @@ function useReminderActions({
     },
     [removeAll, complete],
   )
+  // A prompt is selected by its `prompt_key`, never its task id: a daily
+  // quota's numbers are separate rows sharing one task.
+  const selectPrompt = useCallback((prompt: QuotaPrompt) => toggle(prompt.prompt_key), [toggle])
+  const rangeSelectPrompt = useCallback(
+    (prompt: QuotaPrompt) => rangeSelect(prompt.prompt_key, orderedIds),
+    [rangeSelect, orderedIds],
+  )
+  // A prompt's own circle and "did it" square act on that one row, and it
+  // leaves the selection as it goes — `completeOne`'s rule for a reminder.
+  const considerOnePrompt = useCallback(
+    (prompt: QuotaPrompt) => {
+      removeAll([prompt.prompt_key])
+      void considerPrompt(prompt)
+    },
+    [removeAll, considerPrompt],
+  )
+  const didOnePrompt = useCallback(
+    (prompt: QuotaPrompt) => {
+      removeAll([prompt.prompt_key])
+      void didPrompt(prompt)
+    },
+    [removeAll, didPrompt],
+  )
   const completeSlot = useCallback(
     (group: ReminderGroup) => {
-      removeAll(group.reminders.map((r) => r.id))
+      removeAll([...group.reminders.map((r) => r.id), ...group.prompts.map((p) => p.prompt_key)])
       void completeGroup(group)
     },
     [removeAll, completeGroup],
   )
+  // Reminders and prompts together: ONE request (bulk/complete when it is a
+  // mix), one Undo. Prompts are considered, never +1 — the bar's green
+  // button means what every sweep means.
   const considerSelection = useCallback(() => {
     const tasks = selectedTasks
+    const prompts = selectedPrompts
     clear()
-    void completeMany(tasks)
-  }, [selectedTasks, clear, completeMany])
+    void completeMany(tasks, prompts)
+  }, [selectedTasks, selectedPrompts, clear, completeMany])
   const considerSoFar = useCallback(() => {
     const tasks = startedGroups.flatMap((g) => g.reminders)
     // Waiting quota prompts are part of "so far" — considered, never +1.
@@ -872,11 +974,14 @@ function useReminderActions({
     clear()
     void completeMany(tasks, prompts)
   }, [startedGroups, clear, completeMany])
+  // Reminders only. The bar offers no Trash while a prompt is selected (a
+  // prompt row must never delete its quota); refused here as well.
   const deleteSelection = useCallback(() => {
+    if (selectedPrompts.length > 0) return
     const tasks = selectedTasks
     clear()
     void remove(tasks)
-  }, [selectedTasks, clear, remove])
+  }, [selectedTasks, selectedPrompts, clear, remove])
   // The details editor's verbs: the reminder(s) it holds, whether or not
   // they are the selection.
   const considerMany = useCallback(
@@ -898,6 +1003,10 @@ function useReminderActions({
     isSelectionMode,
     selectRow,
     rangeSelectRow,
+    selectPrompt,
+    rangeSelectPrompt,
+    considerPrompt: considerOnePrompt,
+    didPrompt: didOnePrompt,
     complete: completeOne,
     completeGroup: completeSlot,
     considerSelection,
@@ -1218,7 +1327,7 @@ function ReminderSlotGroup({
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number | string>
-  selectedIds: Set<number>
+  selectedIds: Set<number | string>
   isSelectionMode: boolean
   highlightId: number | null
   rowHandlers: ReminderRowHandlers
@@ -1352,8 +1461,8 @@ function ReminderSlotGroup({
 
 /**
  * A slot's waiting quota prompts (2026-09-24). Under the slot's reminders,
- * never capped (a slot holds a few), and outside the reminders' listbox:
- * a prompt is not selectable (see `QuotaPromptRow`).
+ * never capped (a slot holds a few). Its own multi-select listbox: a prompt
+ * joins a selection beside the reminders (2026-09-25, see `QuotaPromptRow`).
  */
 function SlotPromptList({
   prompts,
@@ -1372,6 +1481,8 @@ function SlotPromptList({
   return (
     <ul
       className={cn('space-y-0.5 px-1', spaced && 'mt-0.5')}
+      role="listbox"
+      aria-multiselectable="true"
       aria-label={`${label} quotas`}
       data-slot-prompts
     >
@@ -2030,7 +2141,7 @@ function SearchResults({
   groups: ReminderGroup[]
   notToday: Task[]
   completingIds: Set<number | string>
-  selectedIds: Set<number>
+  selectedIds: Set<number | string>
   isSelectionMode: boolean
   rowHandlers: ReminderRowHandlers
   onPutBack: (task: Task) => void

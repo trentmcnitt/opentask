@@ -12,9 +12,11 @@ import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
+import { Checkbox } from '@/components/ui/checkbox'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
+import { showToast } from '@/lib/toast'
 import type { Task } from '@/types'
 
 /**
@@ -42,12 +44,22 @@ import type { Task } from '@/types'
  *   say whether that was today's one or this month's. The words are the Quotas
  *   panel's own section headings (`freqLabel`), so the two never disagree; a
  *   period-less quota shows the count alone.
- * - NOT SELECTABLE. A prompt is not a task: Trash would delete the quota and
- *   Details would open a reminder editor on it. A hold (or Cmd/Ctrl+Enter)
- *   opens the quota's own bubble — `TrackChipPopover`, the quota long-press
- *   everywhere else — whose Open reaches `QuotaDetailModal`. While a
- *   selection is active a plain tap does nothing here, since a tap there
- *   means "select" and this row cannot be.
+ * - SELECTABLE BESIDE REMINDERS, keyed by `prompt_key` (2026-09-25; before
+ *   that, not selectable at all). A daily quota can wait in several periods
+ *   at once, one row per number, so the task id would not say WHICH row. The
+ *   click gestures are the reminder row's: in selection mode a tap toggles,
+ *   Cmd/Ctrl-click toggles, Shift-click extends the range across reminders and
+ *   prompts alike, and the circle turns into the same checkbox. The selection
+ *   bar keeps a quota safe: Considered covers prompts (as considered, never
+ *   +1), Details opens the QUOTA editor only when every selected row is a
+ *   prompt, and Trash is not offered while any prompt is selected — a prompt
+ *   row must never be the way a quota gets deleted.
+ * - THE HOLD IS NOT "SELECT". On a reminder row a hold turns selection on; on
+ *   a prompt it opens the quota's own bubble — `TrackChipPopover`, the quota
+ *   long-press everywhere else — whose Open reaches `QuotaDetailModal`, and
+ *   whose period chips are the only way to move one prompt. Cmd/Ctrl+Enter
+ *   opens it from the keyboard. So on a phone a selection starts on a
+ *   reminder, and prompts join it with a tap.
  * - The bubble also carries the user's periods as chips (2026-09-25): one tap
  *   moves the prompt there for good — the editor's own PATCH, with Undo. The
  *   hold is the way in on desktop too; right-click stays unbound here, since
@@ -63,8 +75,14 @@ export interface QuotaPromptRowProps {
   variant?: 'surface' | 'panel'
   /** Mid-collapse after an action: struck through and inert. */
   completing?: boolean
-  /** A reminder selection is active — a plain tap does nothing (see above). */
+  /** A selection is active — a tap toggles this row's place in it (see above). */
   isSelectionMode?: boolean
+  /** This row is in the selection. */
+  selected?: boolean
+  /** Add or remove this row (by `prompt_key`). Absent: the row is not selectable. */
+  onSelect?: (prompt: QuotaPrompt) => void
+  /** Shift-click: extend the selection from its anchor to this row. */
+  onRangeSelect?: (prompt: QuotaPrompt) => void
   /** Past the dashboard panel's narrow cap: in the DOM, shown from `xl` up. */
   hiddenWhenNarrow?: boolean
   onConsider: (prompt: QuotaPrompt) => void
@@ -94,9 +112,12 @@ export function QuotaPromptRow({
   variant = 'surface',
   completing = false,
   isSelectionMode = false,
+  selected = false,
   hiddenWhenNarrow = false,
   onConsider,
   onDid,
+  onSelect,
+  onRangeSelect,
   onPeek,
   onLeft,
   onRegister,
@@ -104,7 +125,17 @@ export function QuotaPromptRow({
 }: QuotaPromptRowProps) {
   const panel = variant === 'panel'
   const key = prompt.prompt_key
-  const press = useLongPress({ onLongPress: () => onPeek(prompt) })
+  // Selection mode on a surface where this row can join it.
+  const selecting = isSelectionMode && onSelect !== undefined
+  const { press, onClick, onKeyDown } = usePromptRowGestures({
+    prompt,
+    completing,
+    isSelectionMode,
+    onConsider,
+    onSelect,
+    onRangeSelect,
+    onPeek,
+  })
 
   // Same two effects as `ReminderRow`: a row that unmounts mid-collapse still
   // reports leaving (or it would hold the surface's refresh shut), and only a
@@ -115,35 +146,15 @@ export function QuotaPromptRow({
   }, [completing, onLeft, key])
   useEffect(() => onRegister?.(key), [onRegister, key])
 
-  const onClick = (e: React.MouseEvent) => {
-    if (press.didFire()) {
-      e.preventDefault()
-      return
-    }
-    if (fromRowControl(e) || completing || isSelectionMode) return
-    // A held modifier is the mouse's way into a selection on this surface, and
-    // a prompt has none — so it does nothing rather than consider by surprise.
-    if (e.shiftKey || e.metaKey || e.ctrlKey) return
-    onConsider(prompt)
-  }
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.target !== e.currentTarget || completing) return
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      onPeek(prompt)
-      return
-    }
-    if (e.key !== 'Enter' && e.key !== ' ') return
-    e.preventDefault()
-    if (!isSelectionMode) onConsider(prompt)
-  }
-
   const row = (
     <li
       data-prompt-key={key}
       data-prompt-task={prompt.task_id}
+      role={onSelect ? 'option' : undefined}
+      aria-selected={onSelect ? selected : undefined}
       data-reminder-leaving={completing ? '' : undefined}
       ref={completing ? measureLeavingRow : undefined}
+      aria-disabled={completing || undefined}
       tabIndex={completing ? -1 : 0}
       onClick={onClick}
       onKeyDown={onKeyDown}
@@ -155,15 +166,7 @@ export function QuotaPromptRow({
       onAnimationEnd={(e) => {
         if (e.target === e.currentTarget && e.animationName === 'reminder-leaving') onLeft?.(key)
       }}
-      className={cn(
-        'group relative cursor-pointer items-start rounded-xl border border-transparent select-none',
-        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-        panel
-          ? 'hover:bg-foreground/5 gap-2.5 px-1 py-1.5 transition-colors'
-          : 'hover:bg-foreground/[0.04] gap-3 px-2 py-2.5',
-        hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-        completing && 'animate-reminder-leaving pointer-events-none',
-      )}
+      className={promptRowClasses({ panel, selected, hiddenWhenNarrow, completing })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
           In the row's gutter (the panel's in the list's), so the circle lines
@@ -191,7 +194,13 @@ export function QuotaPromptRow({
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
         </span>
       )}
-      <PromptCircle prompt={prompt} panel={panel} completing={completing} onConsider={onConsider} />
+      <PromptCircle
+        prompt={prompt}
+        panel={panel}
+        completing={completing}
+        selection={selecting ? { selected, onToggle: () => onSelect(prompt) } : null}
+        onConsider={onConsider}
+      />
       <p
         className={cn(
           'min-w-0 flex-1 text-pretty',
@@ -208,45 +217,127 @@ export function QuotaPromptRow({
             cadence mark. The bubble a hold opens is where they are read. */}
         {prompt.has_notes && <NotesMarker />}
       </p>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!completing) onDid(prompt)
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        tabIndex={-1}
-        aria-label={`Did "${prompt.title}" (${countText(prompt)})`}
-        title="Did it — log one"
-        data-prompt-did
-        className={cn(
-          'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
-          panel ? 'size-[19px]' : 'mt-[3px] size-6',
-        )}
-      >
-        <Check
-          className={cn(
-            'group-hover/did:text-foreground/50 text-transparent transition-colors',
-            panel ? 'size-3' : 'size-3.5',
-          )}
-          strokeWidth={3}
-        />
-      </button>
+      <PromptDidButton
+        prompt={prompt}
+        panel={panel}
+        completing={completing}
+        selecting={selecting}
+        onDid={onDid}
+      />
     </li>
   )
   return row
 }
 
-/** The circle — "considered" — exactly the reminder row's. */
+/** The square — "did it": logs one, and considers the prompt too. */
+function PromptDidButton({
+  prompt,
+  panel,
+  completing,
+  selecting,
+  onDid,
+}: {
+  prompt: QuotaPrompt
+  panel: boolean
+  completing: boolean
+  selecting: boolean
+  onDid: (prompt: QuotaPrompt) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!completing) onDid(prompt)
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      tabIndex={-1}
+      aria-label={`Did "${prompt.title}" (${countText(prompt)})`}
+      title="Did it — log one"
+      data-prompt-did
+      // While selecting, the row offers only its checkbox, as a reminder
+      // row does — kept in the layout (invisible) so nothing shifts.
+      disabled={selecting}
+      className={cn(
+        selecting && 'invisible',
+        'group/did border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
+        panel ? 'size-[19px]' : 'mt-[3px] size-6',
+      )}
+    >
+      <Check
+        className={cn(
+          'group-hover/did:text-foreground/50 text-transparent transition-colors',
+          panel ? 'size-3' : 'size-3.5',
+        )}
+        strokeWidth={3}
+      />
+    </button>
+  )
+}
+
+/**
+ * What a pointer and a key mean on a prompt row — `useReminderRowGestures`'
+ * rules (RemindersView), except the hold, which opens the quota's bubble
+ * (see the component's docblock). Its own hook for the same reason as the
+ * reminder row's: the row is near ESLint's function-length limit.
+ */
+function usePromptRowGestures({
+  prompt,
+  completing,
+  isSelectionMode,
+  onConsider,
+  onSelect,
+  onRangeSelect,
+  onPeek,
+}: Pick<QuotaPromptRowProps, 'prompt' | 'onConsider' | 'onSelect' | 'onRangeSelect' | 'onPeek'> & {
+  completing: boolean
+  isSelectionMode: boolean
+}) {
+  const press = useLongPress({ onLongPress: () => onPeek(prompt) })
+  const onClick = (e: React.MouseEvent) => {
+    if (press.didFire()) {
+      e.preventDefault()
+      return
+    }
+    if (fromRowControl(e) || completing) return
+    // The reminder row's rule: a held modifier never considers — it is the
+    // mouse's way into a selection. Where there is no selection to join (the
+    // dashboard card), a modifier-click and a selection-mode tap do nothing.
+    if (e.shiftKey) onRangeSelect?.(prompt)
+    else if (e.metaKey || e.ctrlKey || isSelectionMode) onSelect?.(prompt)
+    else onConsider(prompt)
+  }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget || completing) return
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      onPeek(prompt)
+      return
+    }
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    if (isSelectionMode) onSelect?.(prompt)
+    else onConsider(prompt)
+  }
+  return { press, onClick, onKeyDown }
+}
+
+/**
+ * The circle — "considered" — exactly the reminder row's, including its
+ * selection-mode checkbox (`ReminderRowMarker`).
+ */
 function PromptCircle({
   prompt,
   panel,
   completing,
+  selection,
   onConsider,
 }: {
   prompt: QuotaPrompt
   panel: boolean
   completing: boolean
+  /** In selection mode: the checkbox's state and toggle. */
+  selection: { selected: boolean; onToggle: () => void } | null
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
@@ -261,6 +352,18 @@ function PromptCircle({
       >
         <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
       </span>
+    )
+  }
+  if (selection) {
+    return (
+      <Checkbox
+        checked={selection.selected}
+        onCheckedChange={selection.onToggle}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label={`Select "${prompt.title}"`}
+        className={cn('shrink-0', size)}
+      />
     )
   }
   return (
@@ -287,6 +390,29 @@ function PromptCircle({
         />
       )}
     </button>
+  )
+}
+
+/** The row's classes — the reminder row's (`reminderRowClasses`), in both sizes. */
+function promptRowClasses({
+  panel,
+  selected,
+  hiddenWhenNarrow,
+  completing,
+}: {
+  panel: boolean
+  selected: boolean
+  hiddenWhenNarrow: boolean
+  completing: boolean
+}): string {
+  const hover = panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'
+  return cn(
+    'group relative cursor-pointer items-start rounded-xl border border-transparent select-none',
+    'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+    panel ? 'gap-2.5 px-1 py-1.5 transition-colors' : 'gap-3 px-2 py-2.5',
+    selected ? 'ring-ring bg-accent ring-2' : hover,
+    hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
+    completing && 'animate-reminder-leaving pointer-events-none',
   )
 }
 
@@ -328,6 +454,9 @@ export function usePromptRows({
   variant = 'surface',
   completingIds,
   isSelectionMode = false,
+  selectedIds,
+  onSelect,
+  onRangeSelect,
   considerPrompt,
   didPrompt,
   movePrompt,
@@ -340,6 +469,10 @@ export function usePromptRows({
   variant?: 'surface' | 'panel'
   completingIds?: Set<number | string>
   isSelectionMode?: boolean
+  /** The surface's selection (reminder ids and prompt keys). Absent: not selectable. */
+  selectedIds?: Set<number | string>
+  onSelect?: (prompt: QuotaPrompt) => void
+  onRangeSelect?: (prompt: QuotaPrompt) => void
   considerPrompt: (prompt: QuotaPrompt) => void
   didPrompt: (prompt: QuotaPrompt) => void
   /** `useReminders().movePrompt` — the period chips' optimistic move. */
@@ -364,6 +497,9 @@ export function usePromptRows({
       variant={variant}
       completing={completingIds?.has(prompt.prompt_key) ?? false}
       isSelectionMode={isSelectionMode}
+      selected={selectedIds?.has(prompt.prompt_key) ?? false}
+      onSelect={onSelect}
+      onRangeSelect={onRangeSelect}
       hiddenWhenNarrow={extra.hiddenWhenNarrow}
       onConsider={considerPrompt}
       onDid={didPrompt}
@@ -372,7 +508,7 @@ export function usePromptRows({
       onRegister={registerRow}
     />
   )
-  return { renderPrompt, modal: detail.modal }
+  return { renderPrompt, openQuotas: detail.openQuotas, modal: detail.modal }
 }
 
 /**
@@ -425,6 +561,31 @@ export function useQuotaPromptDetail({
     }
   }, [])
   const closePeek = useCallback(() => setPeekKey(null), [])
+
+  /**
+   * The selection bar's Details, when every selected row is a prompt: the
+   * quotas behind them in the quota editor — several at once is its
+   * multi-edit, with the "Remind me daily" switch and period pickers. A daily
+   * quota's prompts share one task, so they are deduped to one quota each.
+   * Fetched fresh, like the hold's, so the editor never starts from a copy
+   * older than the last edit.
+   */
+  const openQuotas = useCallback(async (prompts: QuotaPrompt[]) => {
+    const ids = [...new Set(prompts.map((p) => p.task_id))]
+    try {
+      const tasks = await Promise.all(
+        ids.map(async (id) => {
+          const res = await fetch(`/api/tasks/${id}`)
+          if (!res.ok) throw new Error(`task ${res.status}`)
+          return (await res.json()).data as Task
+        }),
+      )
+      setEditing(tasks)
+    } catch (err) {
+      log.error('ui', 'Loading quotas for their prompts failed:', err)
+      showToast({ message: 'Could not open the quotas', type: 'error' })
+    }
+  }, [])
   const { slots } = usePromptSetup()
 
   /**
@@ -503,5 +664,5 @@ export function useQuotaPromptDetail({
     />
   )
 
-  return { peek, wrap, modal }
+  return { peek, wrap, openQuotas, modal }
 }
