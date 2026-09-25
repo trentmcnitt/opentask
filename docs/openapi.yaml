@@ -1959,6 +1959,8 @@ components:
             Optional short label for the quota widget chip (§5). Only
             meaningful on a quota (progress_target > 1 or is_tracked), but not
             rejected on an ordinary task.
+            Kept for API compatibility; the web editor no longer sets it, and
+            clients fall back to `title` when it is null.
         done:
           type: boolean
         done_at:
@@ -2082,6 +2084,8 @@ components:
           description: >
             Optional short label for the quota widget chip (§5). Trimmed;
             empty string is stored as null.
+            Kept for API compatibility; the web editor no longer sets it, and
+            clients fall back to `title` when it is null.
         due_at:
           type: string
           format: date-time
@@ -2212,6 +2216,8 @@ components:
           description: >
             Optional short label for the quota widget chip (§5). Trimmed;
             empty string is stored as null.
+            Kept for API compatibility; the web editor no longer sets it, and
+            clients fall back to `title` when it is null.
         due_at:
           type: string
           format: date-time

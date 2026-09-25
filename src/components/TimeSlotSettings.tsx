@@ -37,9 +37,27 @@ import { showToast } from '@/lib/toast'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { formatMinutes } from '@/lib/reminder-rule'
 
-/** Same styling as the Snooze section's wake/sleep time inputs. */
+/**
+ * Same look as the Snooze section's wake/sleep time inputs, but sized: those
+ * sit alone on their rows, so their intrinsic width is fine, while here they
+ * stack in a column. A native time input's intrinsic width follows its value
+ * ("12:00 PM" is wider than "07:00 AM", and the empty add-row input narrower
+ * still), which left each row's time field a few pixels off the one above.
+ * `w-full` fills the fixed grid column below; `h-8` matches the name field,
+ * and `px-2` (not px-3) buys the name field room at phone width.
+ */
 const TIME_INPUT_CLASS =
-  'rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
+  'h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900'
+
+/**
+ * Every row — each period AND the add row — shares one grid template, so the
+ * name, time and trailing control line up in exact columns. The trailing
+ * column is as wide as the add row's "Add" button; each row's X is centred in
+ * it. 7.75rem fits "12:00 PM" plus Chrome's picker icon. Both fixed columns
+ * are kept tight, and the gap narrows on phones, so a name like "Early
+ * morning" still shows in full at 375px.
+ */
+const ROW_GRID_CLASS = 'grid grid-cols-[minmax(0,1fr)_7.75rem_2.5rem] items-center gap-1.5 sm:gap-2'
 
 interface SlotChange {
   slot: TimeSlot
@@ -271,7 +289,7 @@ function SlotRow({
   }
 
   return (
-    <div className="flex items-center gap-2" data-slot-row={slot.id}>
+    <div className={ROW_GRID_CLASS} data-slot-row={slot.id}>
       <Input
         type="text"
         value={label}
@@ -280,7 +298,7 @@ function SlotRow({
         onKeyDown={(e) => onKeyDown(e, () => setLabel(slot.label))}
         maxLength={100}
         aria-label={`Name of ${slot.label}`}
-        className="h-8 min-w-0 flex-1 text-sm"
+        className="h-8 min-w-0 text-sm"
       />
       <input
         type="time"
@@ -300,13 +318,13 @@ function SlotRow({
           // with the row.
           onMouseDown={(e) => e.preventDefault()}
           onClick={onRemove}
-          className="text-zinc-400 transition-colors hover:text-red-500"
+          className="justify-self-center text-zinc-400 transition-colors hover:text-red-500"
           aria-label={`Remove ${slot.label}`}
         >
           <X className="size-4" />
         </button>
       ) : (
-        <span className="w-4" aria-hidden />
+        <span aria-hidden />
       )}
     </div>
   )
@@ -330,7 +348,7 @@ function AddSlotRow({ onAdd }: { onAdd: (label: string, startTime: string) => Pr
   }
 
   return (
-    <div className="flex items-center gap-2 pt-1">
+    <div className={`${ROW_GRID_CLASS} pt-1`}>
       <Input
         type="text"
         value={label}
@@ -341,7 +359,7 @@ function AddSlotRow({ onAdd }: { onAdd: (label: string, startTime: string) => Pr
         placeholder="New period"
         maxLength={100}
         aria-label="New period name"
-        className="h-8 min-w-0 flex-1 text-sm"
+        className="h-8 min-w-0 text-sm"
       />
       <input
         type="time"
@@ -358,7 +376,7 @@ function AddSlotRow({ onAdd }: { onAdd: (label: string, startTime: string) => Pr
         variant="outline"
         onClick={() => void submit()}
         disabled={!ready}
-        className="h-8"
+        className="h-8 w-full px-0"
       >
         Add
       </Button>
