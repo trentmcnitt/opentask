@@ -2,7 +2,9 @@
  * Time slots API (REDESIGN-V03 §6.0)
  *
  * GET  /api/time-slots - List the user's slots, earliest first
- * POST /api/time-slots - Create a slot
+ * POST /api/time-slots - Create a slot (start_time must be unique per user)
+ *
+ * PATCH/DELETE live in ./[id]/route.ts.
  *
  * The dashboard (§7.3) and the Reminders surface (§6) both group by these, so
  * there is one definition of "morning" rather than two that drift.
@@ -15,6 +17,7 @@ import { listTimeSlots, createTimeSlot } from '@/core/time-slots'
 import { validateTimeSlotCreate } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { emitSyncEvent } from '@/lib/sync-events'
 import { ZodError } from 'zod'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
@@ -34,6 +37,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     const user = await requireAuth(request)
     const input = validateTimeSlotCreate(await request.json())
     const slot = createTimeSlot(user.id, input.label, input.start_time, input.sort_order)
+    // Open tabs and widgets regroup by the new slot (SSE + widget push).
+    emitSyncEvent(user.id)
     return success(slot)
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

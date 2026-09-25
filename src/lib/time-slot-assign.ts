@@ -99,6 +99,33 @@ export function assignSlot(
 }
 
 /**
+ * The slot whose start time is closest to `minutes`, earlier or later. On a
+ * tie the slot listed first wins, so callers pass slots earliest-first to make
+ * a tie go to the earlier slot.
+ *
+ * Two users: the reminder enrichment guard (a stated 7pm snaps to an 8:30pm
+ * Evening rather than rounding down into Afternoon) and deleting a slot, whose
+ * reminders go to the nearest remaining one (`src/core/time-slots/edit.ts`).
+ */
+export function nearestSlot<T extends Pick<TimeSlot, 'start_time'>>(
+  minutes: number,
+  slots: T[],
+): T | null {
+  let best: T | null = null
+  let bestDistance = Infinity
+  for (const slot of slots) {
+    const start = parseHHMM(slot.start_time)
+    if (start === null) continue
+    const distance = Math.abs(start - minutes)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = slot
+    }
+  }
+  return best
+}
+
+/**
  * Group items into slots, in slot order, with the un-slotted items last.
  *
  * Empty slots are retained: a slot the user defined is part of how they read

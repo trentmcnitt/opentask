@@ -147,7 +147,7 @@ export function RemindersView({
   const timezone = useTimezone()
   // Held for the details editor's slot chips (so opening one never waits on a
   // fetch) and for placing a new reminder in its slot at once.
-  const { timeSlots } = useTimeSlots()
+  const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots()
   const {
     groups,
     total,
@@ -228,7 +228,11 @@ export function RemindersView({
   const awaitingEnrichment = useRef<Map<number, string>>(new Map())
 
   useSyncStream({
-    onSync: () => void refresh(),
+    // Slots too: a Settings edit to a reminder period emits a sync event.
+    onSync: () => {
+      void refresh()
+      void refreshTimeSlots()
+    },
     onEnrichmentComplete: (data) => {
       void refresh()
       const typed = awaitingEnrichment.current.get(data.taskId)

@@ -9,9 +9,10 @@ import Database from 'better-sqlite3'
 import { reinsertCompletion } from './completion-row'
 import { getDb, withTransaction } from '@/core/db'
 import { emitSyncEvent } from '@/lib/sync-events'
-import type { UndoSnapshot, UndoResult } from '@/types'
+import type { UndoSnapshot, UndoResult, SlotUndoState } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
+import { applySlotRow, parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
 /** Parsed undo_log entry ready for undoEntry() */
@@ -21,6 +22,8 @@ export interface ParsedUndoEntry {
   description: string | null
   fieldsChanged: string[]
   snapshots: UndoSnapshot[]
+  /** Set only on time_slot_edit / time_slot_delete entries. */
+  slotState?: SlotUndoState | null
 }
 
 /**
@@ -28,6 +31,10 @@ export interface ParsedUndoEntry {
  * Used by both executeUndo (single) and executeBatchUndo (batch).
  */
 export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
+  // A slot edit/delete: put the slot row back as it was, alongside the
+  // reminders it moved (restored by the ordinary snapshot loop below).
+  if (entry.slotState) applySlotRow(tx, entry.slotState.after, entry.slotState.before)
+
   // Handle special case: undoing a 'create' means soft-deleting the task
   if (entry.action === 'create') {
     const now = nowUtc()
@@ -71,7 +78,7 @@ export function executeUndo(userId: number): UndoResult | null {
   const entry = db
     .prepare(
       `
-    SELECT id, user_id, action, description, fields_changed, snapshot, undone
+    SELECT id, user_id, action, description, fields_changed, snapshot, slot_state, undone
     FROM undo_log
     WHERE user_id = ? AND undone = 0
     ORDER BY id DESC
@@ -86,6 +93,7 @@ export function executeUndo(userId: number): UndoResult | null {
         description: string | null
         fields_changed: string
         snapshot: string
+        slot_state: string | null
         undone: number
       }
     | undefined
@@ -100,6 +108,7 @@ export function executeUndo(userId: number): UndoResult | null {
     description: entry.description,
     fieldsChanged: JSON.parse(entry.fields_changed),
     snapshots: JSON.parse(entry.snapshot),
+    slotState: parseSlotState(entry.slot_state),
   }
 
   const result = withTransaction((tx) => {

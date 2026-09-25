@@ -14,7 +14,6 @@ import {
   listTimeSlots,
   seedDefaultTimeSlots,
   createTimeSlot,
-  deleteTimeSlot,
   assignSlot,
   groupBySlot,
   itemTimeOfDayMinutes,
@@ -25,6 +24,7 @@ import {
 import { ValidationError } from '@/core/errors'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 import { getDb } from '@/core/db'
+import { deleteTimeSlot } from '@/core/time-slots/edit'
 
 /** Mirrors the startup backfill: install defaults for any user lacking slots. */
 function backfillTimeSlotsForTest() {
@@ -190,7 +190,7 @@ describe('Time Slots', () => {
 
   test('TS-013: deleting a slot removes it', () => {
     const slot = createTimeSlot(TEST_USER_ID, 'Temp', '22:00')
-    expect(deleteTimeSlot(TEST_USER_ID, slot.id)).toBe(true)
+    deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: slot.id })
     expect(listTimeSlots(TEST_USER_ID).find((s) => s.id === slot.id)).toBeUndefined()
   })
 

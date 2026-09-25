@@ -75,8 +75,21 @@ enum TaskFeed {
             // completions in it, rendering an empty DONE section for the
             // first repaint.
             async let completions: [CompletionDTO]? = try? APIClient.shared.fetchTodaysCompletions(now: now)
-            let (fetchedTasks, fetchedProjects, status, fetchedCompletions) =
-                try await (tasks, projects, undoStatus, completions)
+            // Time slots (2026-09-24), best-effort like the two above. Slots
+            // are editable in Settings → Reminder periods, and this extension
+            // is the one that reads `TimeSlotStore` for "Next period" — which
+            // until now only the APP refreshed (launch/foreground). A slot
+            // edit emits a sync event → widget push → this reload, so writing
+            // the cache here makes the widget's "⏭" land on the new time
+            // without opening the app. Same write the watch Smart Stack
+            // widget does (`ReminderStackWidget.fetchInputs`). An empty list
+            // is never written over a good cache.
+            async let slots: [TimeSlotDTO]? = try? APIClient.shared.fetchTimeSlots()
+            let (fetchedTasks, fetchedProjects, status, fetchedCompletions, fetchedSlots) =
+                try await (tasks, projects, undoStatus, completions, slots)
+            if let fetchedSlots, !fetchedSlots.isEmpty {
+                TimeSlotStore.save(fetchedSlots)
+            }
             let completionsOrEmpty = fetchedCompletions ?? []
             // `now` is when these requests went out — only a fetch sent after
             // a `clearInteraction()` may settle it.
