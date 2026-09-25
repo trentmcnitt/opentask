@@ -83,12 +83,24 @@ export function TimeSlotSettings() {
   const slots = byStart(timeSlots)
   const load = refresh
 
-  // Undo exactly this change: `through_id` pins the entry, so it can never
-  // undo an unrelated action instead. The server restores the period with
-  // its reminders; re-read the list to show it.
+  // Undo exactly this change and nothing else. `through_id` alone would also
+  // undo anything done AFTER it (a reminder checked off on the phone in the
+  // meantime), so first confirm this entry is still the newest undoable one;
+  // if it isn't, say so rather than undoing someone else's work. The server
+  // then restores the period with its reminders; re-read the list to show it.
   const undo = useCallback(
     async (undoId: number) => {
       try {
+        const { history } = await call<{ history: { id: number; undone: boolean }[] }>(
+          '/api/undo/history?limit=20',
+        )
+        if (history.find((e) => !e.undone)?.id !== undoId) {
+          showToast({
+            message: 'Something else changed since — undo it from History instead',
+            type: 'error',
+          })
+          return
+        }
         await call('/api/undo/batch', jsonInit('POST', { through_id: undoId }))
         await load()
         showToast({ message: 'Undone', type: 'success' })
@@ -176,10 +188,11 @@ export function TimeSlotSettings() {
   return (
     <div className="space-y-2" data-testid="reminder-periods">
       {slots.map((slot) => (
-        // Keyed by the SAVED values too, so a save, an undo, or a server
-        // re-read resets the row's drafts to what is stored.
+        // Keyed by id only: remounting on a save would drop focus from the
+        // field the user just tabbed into. The row resets its own drafts when
+        // the saved values change (see SlotRow).
         <SlotRow
-          key={`${slot.id}:${slot.label}:${slot.start_time}`}
+          key={slot.id}
           slot={slot}
           canRemove={slots.length > 1}
           onUpdate={(changes) => update(slot, changes)}
@@ -204,6 +217,20 @@ function SlotRow({
 }) {
   const [label, setLabel] = useState(slot.label)
   const [time, setTime] = useState(slot.start_time)
+  // When the SAVED value changes (a save, an undo, a re-read), the draft
+  // follows it — adjusted during render, React's pattern for state derived
+  // from a prop, so a field the user is typing in is only reset when what is
+  // stored actually moved.
+  const [savedLabel, setSavedLabel] = useState(slot.label)
+  const [savedTime, setSavedTime] = useState(slot.start_time)
+  if (savedLabel !== slot.label) {
+    setSavedLabel(slot.label)
+    setLabel(slot.label)
+  }
+  if (savedTime !== slot.start_time) {
+    setSavedTime(slot.start_time)
+    setTime(slot.start_time)
+  }
   // Escape resets the draft and blurs; the blur handler still sees the old
   // draft in its closure, so this tells it not to commit.
   const cancelled = useRef(false)
@@ -267,6 +294,11 @@ function SlotRow({
       {canRemove ? (
         <button
           type="button"
+          // Keep focus where it is: a press that blurred a half-edited field
+          // would send its PATCH racing this DELETE (a 404 toast, or a move
+          // and then a removal as two undo entries). The draft is discarded
+          // with the row.
+          onMouseDown={(e) => e.preventDefault()}
           onClick={onRemove}
           className="text-zinc-400 transition-colors hover:text-red-500"
           aria-label={`Remove ${slot.label}`}
