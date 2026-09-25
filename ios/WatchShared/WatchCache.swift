@@ -72,8 +72,24 @@ extension WatchCache {
                 slot: group.slot,
                 reminders: group.reminders.filter { $0.id != taskId },
                 considered: group.considered + 1,
-                consideredItems: [done] + group.consideredItems
+                consideredItems: [done] + group.consideredItems,
+                prompts: group.prompts
             )
+        })
+    }
+
+    /// Mirror a successful quota-prompt action from the Smart Stack card
+    /// (quota reminders, 2026-09-24) into the cached reminders: the prompt
+    /// drawn handled (`QuotaPromptDTO.handled(did:)`), so a reload whose own
+    /// fetch fails still shows the card advanced. No-op when not cached.
+    static func markPromptHandled(key: String, did: Bool) {
+        guard let groups = loadReminders(),
+              groups.contains(where: { group in group.prompts.contains { $0.promptKey == key } })
+        else { return }
+        saveReminders(groups.map { group in
+            group.replacingPrompts(group.prompts.map { prompt in
+                prompt.promptKey == key && prompt.isWaiting ? prompt.handled(did: did) : prompt
+            })
         })
     }
 

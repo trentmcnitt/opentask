@@ -50,9 +50,10 @@ enum WatchSlotLogic {
     enum SlotState {
         /// Hasn't started yet today — drawn as a faint placeholder.
         case notStarted
-        /// Started and still has pending reminders — the accent fill.
+        /// Started and still has pending reminders or quota prompts — the
+        /// accent fill.
         case waiting
-        /// Started and everything in it has been considered — the done fill.
+        /// Started and everything in it has been handled — the done fill.
         case finished
     }
 
@@ -60,7 +61,8 @@ enum WatchSlotLogic {
         if let start = group.slot?.startMinutes, start > minutesSinceMidnight(now) {
             return .notStarted
         }
-        return group.reminders.isEmpty ? .finished : .waiting
+        // Waiting quota prompts count like reminders (2026-09-24).
+        return group.hasNothingWaiting ? .finished : .waiting
     }
 
     // MARK: - Tasks: "Up next"

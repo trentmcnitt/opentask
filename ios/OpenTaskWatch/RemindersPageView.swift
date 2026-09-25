@@ -72,7 +72,8 @@ struct RemindersPageView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.label)
                     .font(.headline)
-                Text(group.reminders.isEmpty ? "Done" : "\(group.reminders.count) left")
+                // Reminders plus waiting quota prompts (2026-09-24).
+                Text(group.hasNothingWaiting ? "Done" : "\(group.waitingCount) left")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -97,7 +98,7 @@ struct RemindersPageView: View {
         } else if let error = model.loadError, model.reminderGroups.isEmpty {
             LoadErrorView(message: error)
         } else if let group {
-            if group.reminders.isEmpty {
+            if group.hasNothingWaiting {
                 AllCaughtUpView()
             } else {
                 // No `lineLimit` here — Trent's rule (memory:
@@ -119,6 +120,16 @@ struct RemindersPageView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                }
+                // Quota prompts after the reminders, as on the web
+                // (`SlotPromptList`) and the phone widget. Keyed by
+                // `prompt_key` — a daily quota's rows share one task id.
+                ForEach(group.waitingPrompts) { prompt in
+                    PromptRowView(
+                        prompt: prompt,
+                        consider: { model.actOnPrompt(prompt, did: false) },
+                        didIt: { model.actOnPrompt(prompt, did: true) }
+                    )
                 }
             }
         } else {
@@ -175,6 +186,68 @@ private struct SlotProgressStrip: View {
     }
 }
 
+/// One waiting quota PROMPT (quota reminders, 2026-09-24) — drawn as a
+/// reminder row (the circle, the full wrap, tap to consider), plus the three
+/// things a prompt adds everywhere: a thin leading stripe in the quota's
+/// label color, the count after the title ("Daily Walks · 1/2"), and a
+/// SQUARE on the right for "did it".
+///
+/// WHY A SQUARE BUTTON, NOT PRESS-AND-HOLD (the judgment call): "did it" is
+/// the prompt's success action — the one Trent is meant to reach for when he
+/// has done the thing — and a hold is invisible; the Tasks page keeps hold
+/// for its RARE action (snooze). The square is its own button beside the
+/// row's, not nested in it: a 34pt column spanning the row's full height
+/// (most prompts wrap to 2+ lines on a watch), so its target is as tall as
+/// the row. What it costs is title width, and the watch list scrolls, so a
+/// long title just takes another line — never truncated. A mis-tap logs +1,
+/// which the toolbar Undo takes back.
+struct PromptRowView: View {
+    let prompt: QuotaPromptDTO
+    let consider: () -> Void
+    let didIt: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 4) {
+            Button(action: consider) {
+                HStack(alignment: .top, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(WatchTheme.labelColor(prompt.stripeColor))
+                        .frame(width: 3)
+                    Image(systemName: "circle")
+                        .foregroundStyle(WatchTheme.accent)
+                        .font(.caption)
+                        .padding(.top, 3)
+                    (Text(prompt.title)
+                        + Text("\u{00A0}·\u{00A0}\(prompt.countText)").foregroundStyle(.secondary))
+                        .font(.body)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+
+            Button(action: didIt) {
+                Image(systemName: "square")
+                    .font(.body)
+                    .foregroundStyle(WatchTheme.accent)
+                    .frame(width: PromptRowView.didColumn, alignment: .top)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 1)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Did it: \(prompt.title)"))
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The did-it column's width — a finger target on the narrowest watch.
+    static let didColumn: CGFloat = 34
+}
+
 /// Shared empty state — used by the Reminders page (a slot with nothing
 /// left) via the specific "Done" header above, and here for the truly empty
 /// "nothing anywhere today" case.
@@ -215,3 +288,29 @@ struct LoadErrorView: View {
         .padding(.vertical, 12)
     }
 }
+
+#if DEBUG
+// Quota prompts (2026-09-24) on Trent's real data: two reminders, then the
+// sixteen prompts — stripe, count, the circle (tap = considered) and the
+// square (did it). The second preview has three handled, so they're gone.
+#Preview("Reminders — prompts") {
+    NavigationStack {
+        RemindersPageView(model: .previewReminders())
+    }
+}
+
+#Preview("Reminders — prompts, three handled") {
+    NavigationStack {
+        RemindersPageView(model: .previewReminders(handled: [
+            "q:83:1:2026-09-24": true, "q:116:0:2026-09-24": false, "q:3307:0:2026-09-24": false,
+        ]))
+    }
+}
+
+#Preview("Reminders — prompts, XXX Large") {
+    NavigationStack {
+        RemindersPageView(model: .previewReminders())
+    }
+    .dynamicTypeSize(.xxxLarge)
+}
+#endif

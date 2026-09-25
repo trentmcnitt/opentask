@@ -164,10 +164,10 @@ final class WatchViewModel: ObservableObject {
         )
 
         if case let .success(payload) = rem {
-            reminderGroups = payload.groups
+            reminderGroups = overlayingPendingPrompts(payload.groups)
             WatchCache.saveReminders(payload.groups)
         } else if let cached = WatchCache.loadReminders() {
-            reminderGroups = cached
+            reminderGroups = overlayingPendingPrompts(cached)
         }
 
         if case let .success(fetched) = tsk, case let .success(proj) = proj {
@@ -253,11 +253,16 @@ final class WatchViewModel: ObservableObject {
         // — the type is immutable by design, mirrored into the widget's App
         // Group cache verbatim), so the removal rebuilds the group via its
         // memberwise init rather than mutating in place.
+        // Carries `consideredItems` (the done reminder joins them) and
+        // `prompts` through — this rebuild used to drop `consideredItems`
+        // until the next fetch (pre-existing; fixed with quota prompts).
         let group = reminderGroups[idx]
         reminderGroups[idx] = ReminderGroupDTO(
             slot: group.slot,
             reminders: group.reminders.filter { $0.id != task.id },
-            considered: group.considered + 1
+            considered: group.considered + 1,
+            consideredItems: [task] + group.consideredItems,
+            prompts: group.prompts
         )
         WKInterfaceDevice.current().play(.click)
 
@@ -271,6 +276,76 @@ final class WatchViewModel: ObservableObject {
             }
             await load()
         }
+    }
+
+    // MARK: - Quota prompts (quota reminders, 2026-09-24)
+
+    /// Prompt actions whose server round trip is still in flight,
+    /// `prompt_key -> did`. Drawn over every reminders payload
+    /// (`overlayingPendingPrompts`) — including one `load()` fetched while
+    /// the action was on the wire — so tapping through several prompts
+    /// quickly never flashes an already-tapped one back. Each key leaves the
+    /// map when its own response lands, success or failure, BEFORE the
+    /// reconciling `load()`.
+    private var pendingPromptActions: [String: Bool] = [:]
+
+    private func overlayingPendingPrompts(_ groups: [ReminderGroupDTO]) -> [ReminderGroupDTO] {
+        guard !pendingPromptActions.isEmpty else { return groups }
+        return groups.map { group in
+            group.replacingPrompts(group.prompts.map { prompt in
+                guard let did = pendingPromptActions[prompt.promptKey], prompt.isWaiting else { return prompt }
+                return prompt.handled(did: did)
+            })
+        }
+    }
+
+    /// A quota PROMPT on the Reminders page: tap = CONSIDERED (the circle —
+    /// handled for today, nothing logged), the square = DID IT (+1 and
+    /// considered). Keyed by `prompt_key`: a daily quota's prompts in
+    /// different slots share one task id.
+    ///
+    /// Optimistic like `completeReminder` (the prompt is drawn handled at
+    /// once, so it leaves the list), then SERVER-TRUE like `logQuota`: the
+    /// quotas the endpoint returns are written into `tasks`/`WatchCache`
+    /// through the same `settleConfirmedQuotas` step `settleQuota` uses, so
+    /// the Quotas page shows the server's count, and `load()`'s
+    /// fetch-started-before-the-tap rule keeps a racing fetch from putting
+    /// the old count back. Then `load()` re-fetches the reminders — a prompt's
+    /// state is the server's to compute (a did-it on Daily Walks #1 can finish
+    /// #2 in another slot).
+    func actOnPrompt(_ prompt: QuotaPromptDTO, did: Bool) {
+        guard prompt.isWaiting, pendingPromptActions[prompt.promptKey] == nil else { return }
+        pendingPromptActions[prompt.promptKey] = did
+        reminderGroups = overlayingPendingPrompts(reminderGroups)
+        WKInterfaceDevice.current().play(.click)
+
+        Task {
+            do {
+                let result = did
+                    ? try await api.didPrompts(keys: [prompt.promptKey])
+                    : try await api.considerPrompts(keys: [prompt.promptKey])
+                settleConfirmedQuotas(result.tasks)
+                WKInterfaceDevice.current().play(.success)
+                canUndo = true
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                // Most likely a key from before midnight (the server refuses
+                // another day's key) — the reload below fetches today's.
+                WKInterfaceDevice.current().play(.failure)
+            }
+            pendingPromptActions.removeValue(forKey: prompt.promptKey)
+            await load()
+        }
+    }
+
+    /// Re-fetch ONLY the reminders payload — after a Quotas-page `+1`/`−1`,
+    /// whose quota's prompts (count, and whether still waiting today) live
+    /// in it. Not a full `load()`: that refetches `/api/tasks` too, which
+    /// the Quotas page deliberately avoids after each tap (see `logQuota`).
+    private func refreshReminders() async {
+        guard let payload = try? await api.fetchReminders() else { return }
+        reminderGroups = overlayingPendingPrompts(payload.groups)
+        WatchCache.saveReminders(payload.groups)
     }
 
     // MARK: - Tasks
@@ -381,7 +456,14 @@ final class WatchViewModel: ObservableObject {
                 WidgetCenter.shared.reloadAllTimelines()
                 // Logged, but the body didn't decode: nothing trustworthy to
                 // draw, so fetch the truth.
-                if confirmed == nil { await load() }
+                if confirmed == nil {
+                    await load()
+                } else {
+                    // This quota's prompts on the Reminders page carry its
+                    // count and whether it still waits today (quota
+                    // reminders, 2026-09-24) — server-computed, so fetch.
+                    await refreshReminders()
+                }
             } catch {
                 // Usually nothing changed server-side and `tasks` still holds
                 // the pre-tap count, so retiring the delta is the revert. But
@@ -406,12 +488,7 @@ final class WatchViewModel: ObservableObject {
     /// overlapping taps gets one `load()` once its last tap settles, which
     /// replaces the count with a fetch sent after every one of them landed.
     private func settleQuota(_ id: Int, delta: Int, confirmed: TaskDTO?) {
-        if let confirmed, let idx = tasks.firstIndex(where: { $0.id == id }) {
-            tasks[idx] = confirmed
-            WatchCache.saveTasks(tasks, projects: projects)
-            settleCounter += 1
-            settledAt[id] = settleCounter
-        }
+        if let confirmed { settleConfirmedQuotas([confirmed]) }
         let remaining = (pendingQuotaDeltas[id] ?? 0) - delta
         if remaining == 0 {
             pendingQuotaDeltas.removeValue(forKey: id)
@@ -421,6 +498,24 @@ final class WatchViewModel: ObservableObject {
         } else {
             pendingQuotaDeltas[id] = remaining
         }
+    }
+
+    /// Write quotas AS THE SERVER RETURNED THEM into `tasks` and
+    /// `WatchCache`, and note when (`settledAt`) so a `load()` that started
+    /// earlier keeps these counts rather than its own older ones. The one
+    /// write path for a `+1`/`−1` response (`settleQuota`) and a prompt
+    /// action's `tasks` (`actOnPrompt`) — so both stay server-true the same
+    /// way. A quota not in `tasks` is left for the next fetch.
+    private func settleConfirmedQuotas(_ confirmed: [TaskDTO]) {
+        var wrote = false
+        for task in confirmed {
+            guard let idx = tasks.firstIndex(where: { $0.id == task.id }) else { continue }
+            tasks[idx] = task
+            settleCounter += 1
+            settledAt[task.id] = settleCounter
+            wrote = true
+        }
+        if wrote { WatchCache.saveTasks(tasks, projects: projects) }
     }
 
     // MARK: - Bulk overdue
@@ -511,6 +606,18 @@ extension WatchViewModel {
         model.canUndo = true
         model.showMetQuotas = showMet
         model.quotasTakebackMode = takeback
+        return model
+    }
+
+    /// The Reminders page with his real Early morning prompts, the slot
+    /// pinned to Early morning (`slotOverride`) so the preview doesn't
+    /// depend on the clock.
+    static func previewReminders(handled: [String: Bool] = [:]) -> WatchViewModel {
+        let model = WatchViewModel()
+        model.reminderGroups = WatchPreviewData.reminderGroups(handled: handled)
+        model.slotOverride = 0
+        model.hasLoadedOnce = true
+        model.canUndo = true
         return model
     }
 }

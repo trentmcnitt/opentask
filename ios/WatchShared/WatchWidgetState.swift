@@ -22,8 +22,9 @@ enum WatchWidgetState {
     private static let appGroup = "group.io.mcnitt.opentask"
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
-    private static let skipKey = "watch.widget.skip.v1"
+    private static let skipKey = "watch.widget.skip.v2"
     private static let pendingDoneKey = "watch.widget.pendingDone.v1"
+    private static let pendingPromptKey = "watch.widget.pendingPrompts.v1"
     private static let snoozeResultKey = "watch.widget.snoozeResult.v1"
     private static let claimKey = "watch.widget.claim.v1"
 
@@ -31,24 +32,34 @@ enum WatchWidgetState {
 
     /// "Show me the next one without checking this one off." Stored as the
     /// set of reminder ids skipped within ONE slot on ONE local day — the
-    /// pairing is what makes it self-resetting: `skippedIds(slotKey:now:)`
+    /// pairing is what makes it self-resetting: `skippedKeys(slotKey:now:)`
     /// returns empty the moment either differs, so the clock crossing into a
     /// new slot (or midnight) clears skips without anyone having to remember
     /// a reset call. Same shape as the phone widget's `tasksPage(for:)`
     /// paging-within-a-scope trick, re-derived here (that file is off limits
     /// to watch targets).
+    ///
+    /// Items are identified by STRING key since quota prompts joined the card
+    /// (2026-09-24): `itemKey(reminderId:)` for a reminder, the `prompt_key`
+    /// for a prompt (a daily quota's prompts share one task id, so an Int id
+    /// can't name them). The key changed from `v1` (Int ids) so an old list
+    /// simply reads as empty — skips reset daily anyway.
     private struct SkipState: Codable {
         let slotKey: Int
         let day: String
-        var ids: [Int]
+        var ids: [String]
     }
+
+    /// A reminder's card key — prefixed so it can never collide with a
+    /// prompt key (`q:…`).
+    static func itemKey(reminderId: Int) -> String { "r:\(reminderId)" }
 
     private static func dayStamp(_ date: Date) -> String {
         let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
     }
 
-    static func skippedIds(slotKey: Int, now: Date = Date()) -> Set<Int> {
+    static func skippedKeys(slotKey: Int, now: Date = Date()) -> Set<String> {
         guard let data = defaults?.data(forKey: skipKey),
               let state = try? JSONDecoder().decode(SkipState.self, from: data),
               state.slotKey == slotKey, state.day == dayStamp(now)
@@ -56,19 +67,61 @@ enum WatchWidgetState {
         return Set(state.ids)
     }
 
-    /// Adds `taskId` to the slot's skip list — or, when that would leave
-    /// nothing unskipped (`remainingIds` all skipped), clears the list so
-    /// the card wraps back to the first reminder instead of going blank.
+    /// Adds `itemKey` to the slot's skip list — or, when that would leave
+    /// nothing unskipped (`remainingKeys` all skipped), clears the list so
+    /// the card wraps back to the first item instead of going blank.
     /// Skipping is "not now", never "gone": a slot can't be emptied by ⏭.
-    static func skip(taskId: Int, slotKey: Int, remainingIds: [Int], now: Date = Date()) {
-        var ids = skippedIds(slotKey: slotKey, now: now)
-        ids.insert(taskId)
-        if remainingIds.allSatisfy({ ids.contains($0) }) {
-            ids = []
+    static func skip(itemKey: String, slotKey: Int, remainingKeys: [String], now: Date = Date()) {
+        var keys = skippedKeys(slotKey: slotKey, now: now)
+        keys.insert(itemKey)
+        if remainingKeys.allSatisfy({ keys.contains($0) }) {
+            keys = []
         }
-        let state = SkipState(slotKey: slotKey, day: dayStamp(now), ids: Array(ids))
+        let state = SkipState(slotKey: slotKey, day: dayStamp(now), ids: Array(keys))
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults?.set(data, forKey: skipKey)
+    }
+
+    // MARK: - Pending prompt actions (optimistic ✓ / ☐ on a quota prompt)
+
+    /// The prompt twin of `pendingDone` (quota reminders, 2026-09-24):
+    /// `prompt_key -> (at, did)`, same TTL. A prompt with a live entry is
+    /// drawn handled (`QuotaPromptDTO.handled(did:)`), so the card advances
+    /// before the round trip.
+    private struct PendingPromptAction: Codable {
+        let at: Date
+        let did: Bool
+    }
+
+    private static func loadPendingPrompts() -> [String: PendingPromptAction] {
+        guard let data = defaults?.data(forKey: pendingPromptKey),
+              let map = try? JSONDecoder().decode([String: PendingPromptAction].self, from: data)
+        else { return [:] }
+        return map
+    }
+
+    private static func savePendingPrompts(_ map: [String: PendingPromptAction]) {
+        guard let data = try? JSONEncoder().encode(map) else { return }
+        defaults?.set(data, forKey: pendingPromptKey)
+    }
+
+    static func stagePendingPrompt(key: String, did: Bool, now: Date = Date()) {
+        var map = loadPendingPrompts().filter { now.timeIntervalSince($0.value.at) < pendingDoneTTL }
+        map[key] = PendingPromptAction(at: now, did: did)
+        savePendingPrompts(map)
+    }
+
+    static func clearPendingPrompt(key: String) {
+        var map = loadPendingPrompts()
+        map.removeValue(forKey: key)
+        savePendingPrompts(map)
+    }
+
+    /// Live entries, `prompt_key -> did`.
+    static func pendingPrompts(now: Date = Date()) -> [String: Bool] {
+        loadPendingPrompts()
+            .filter { now.timeIntervalSince($0.value.at) < pendingDoneTTL }
+            .mapValues(\.did)
     }
 
     // MARK: - Pending check-offs (optimistic ✓)
