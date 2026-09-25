@@ -187,65 +187,75 @@ private struct SlotProgressStrip: View {
 }
 
 /// One waiting quota PROMPT (quota reminders, 2026-09-24) — drawn as a
-/// reminder row (the circle, the full wrap, tap to consider), plus the three
-/// things a prompt adds everywhere: a thin leading stripe in the quota's
-/// label color, the count after the title ("Daily Walks · 1/2"), and a
-/// SQUARE on the right for "did it".
+/// reminder row (the circle, the full-width wrapped title, tap to consider),
+/// plus the three things a prompt adds everywhere: a thin leading stripe in
+/// the quota's label color, the count ("1/2"), and a SQUARE for "did it".
 ///
 /// WHY A SQUARE BUTTON, NOT PRESS-AND-HOLD (the judgment call): "did it" is
 /// the prompt's success action — the one Trent is meant to reach for when he
 /// has done the thing — and a hold is invisible; the Tasks page keeps hold
-/// for its RARE action (snooze). The square is its own button beside the
-/// row's, not nested in it: a 34pt column spanning the row's full height
-/// (most prompts wrap to 2+ lines on a watch), so its target is as tall as
-/// the row. What it costs is title width, and the watch list scrolls, so a
-/// long title just takes another line — never truncated. A mis-tap logs +1,
-/// which the toolbar Undo takes back.
+/// for its RARE action (snooze). A mis-tap logs +1, which the toolbar Undo
+/// takes back.
+///
+/// WHY THE COUNT AND SQUARE SIT ON THEIR OWN LINE: the first build put the
+/// square in a column beside the title, and on the 44mm SE simulator that
+/// left his real titles one or two words per line ("certifica-tions"
+/// hyphenated) with the count wrapping away from its "·". Under the title,
+/// right-aligned, the title keeps a reminder's full width, and the square is
+/// literally "next to the count": `1/3 ☐`. It costs one short line per
+/// prompt; the page scrolls. The square is its own button (a 40×28 target),
+/// a sibling of the row's consider button, never nested in it.
 struct PromptRowView: View {
     let prompt: QuotaPromptDTO
     let consider: () -> Void
     let didIt: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            Button(action: consider) {
-                HStack(alignment: .top, spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(WatchTheme.labelColor(prompt.stripeColor))
-                        .frame(width: 3)
-                    Image(systemName: "circle")
-                        .foregroundStyle(WatchTheme.accent)
-                        .font(.caption)
-                        .padding(.top, 3)
-                    (Text(prompt.title)
-                        + Text("\u{00A0}·\u{00A0}\(prompt.countText)").foregroundStyle(.secondary))
-                        .font(.body)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+        HStack(alignment: .top, spacing: 6) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(WatchTheme.labelColor(prompt.stripeColor))
+                .frame(width: 3)
 
-            Button(action: didIt) {
-                Image(systemName: "square")
-                    .font(.body)
-                    .foregroundStyle(WatchTheme.accent)
-                    .frame(width: PromptRowView.didColumn, alignment: .top)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: consider) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "circle")
+                            .foregroundStyle(WatchTheme.accent)
+                            .font(.caption)
+                            .padding(.top, 3)
+                        Text(prompt.title)
+                            .font(.body)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Text(prompt.countText)
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Button(action: didIt) {
+                        Image(systemName: "square")
+                            .font(.body)
+                            .foregroundStyle(WatchTheme.accent)
+                            .frame(width: PromptRowView.didTarget.width, height: PromptRowView.didTarget.height)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Did it: \(prompt.title), \(prompt.countText)"))
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Did it: \(prompt.title)"))
         }
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// The did-it column's width — a finger target on the narrowest watch.
-    static let didColumn: CGFloat = 34
+    /// The did-it square's tap target — a finger target on the narrowest watch.
+    static let didTarget = CGSize(width: 40, height: 28)
 }
 
 /// Shared empty state — used by the Reminders page (a slot with nothing
@@ -312,5 +322,29 @@ struct LoadErrorView: View {
         RemindersPageView(model: .previewReminders())
     }
     .dynamicTypeSize(.xxxLarge)
+}
+
+// A preview can't scroll, so the page previews above only show the first
+// rows. These draw every one of his sixteen real prompt rows, five or six at
+// a time, as the page lists them.
+private struct PromptRowsPreview: View {
+    let range: Range<Int>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(WatchPreviewData.earlyMorningPrompts[range]) { prompt in
+                PromptRowView(prompt: prompt, consider: {}, didIt: {})
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
+#Preview("Prompt rows 1-5") { PromptRowsPreview(range: 0..<5) }
+#Preview("Prompt rows 6-10") { PromptRowsPreview(range: 5..<10) }
+#Preview("Prompt rows 11-16") { PromptRowsPreview(range: 10..<16) }
+#Preview("Prompt rows 1-4, XXX Large") {
+    PromptRowsPreview(range: 0..<4).dynamicTypeSize(.xxxLarge)
 }
 #endif

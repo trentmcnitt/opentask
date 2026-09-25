@@ -650,6 +650,71 @@ private enum ReminderPreviewData {
     ReminderPreviewData.entry()
 }
 
+// Pages 6-10: with his sixteen real quota prompts after the reminders
+// (2026-09-24), Early morning runs to ten pages at XXX Large text.
+#Preview("Reminders Large — page 6", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 5, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 7", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 6, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 8", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 7, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 9", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 8, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — page 10", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 9, showCompleted: false)
+    ReminderPreviewData.entry()
+}
+
+#Preview("Reminders Large — prompts handled, completed on, last page", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 99, showCompleted: true)
+    ReminderPreviewData.promptsHandledEntry()
+}
+
+#Preview("Reminders Large — prompts only, page 1", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.promptsOnlyEntry()
+}
+
+#Preview("Reminders Medium — prompts only", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.promptsOnlyEntry()
+}
+
+#Preview("Reminders Small — prompts only", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false)
+    ReminderPreviewData.promptsOnlyEntry()
+}
+
 #Preview("Reminders Large — Evening page 1", as: .systemLarge) {
     RemindersWidget()
 } timeline: {

@@ -957,6 +957,8 @@ private struct PromptRow: View {
                     (Text(prompt.title).foregroundStyle(.primary)
                         + Text("\u{00A0}·\u{00A0}\(prompt.countText)").foregroundStyle(.secondary))
                         .font(.subheadline)
+                        // A P0 reminder title's weight and opacity.
+                        .opacity(WidgetTheme.priorityOpacity(0))
                         .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                         .contentShape(Rectangle())
                 }
@@ -982,7 +984,8 @@ private struct PromptRow: View {
         Button(intent: intent) {
             Image(systemName: symbol)
                 .font(.system(size: 19, weight: .light))
-                .foregroundStyle(Color.secondary)
+                // A P0 reminder circle's color — a prompt has no priority.
+                .foregroundStyle(WidgetTheme.priorityColor(0))
                 .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
                 .padding(.top, markerBleed)
                 .frame(width: WidgetTheme.rowMarkerSize, height: height + 2 * markerBleed, alignment: .top)
