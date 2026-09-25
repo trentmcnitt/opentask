@@ -674,12 +674,19 @@ export function useReminders({
       groupsRef.current = next
       setGroups(next)
       if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      // Only this move's own entry is cleared: a second move of the same row
+      // made while this one was out owns the key now.
+      const settle = () => {
+        if (pendingMovesRef.current.get(prompt.prompt_key) === toSlotId) {
+          pendingMovesRef.current.delete(prompt.prompt_key)
+        }
+      }
       try {
         await save()
-        pendingMovesRef.current.delete(prompt.prompt_key)
+        settle()
       } catch {
         // `save` has already said so (its error toast); put the row back.
-        pendingMovesRef.current.delete(prompt.prompt_key)
+        settle()
         await refresh()
       }
     },

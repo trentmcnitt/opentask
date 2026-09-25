@@ -147,6 +147,15 @@ describe('Quota prompt moves — the owner-slot check', () => {
   })
 })
 
+describe('Quota prompt moves — number keys', () => {
+  test('QP-071: number keys run to 1000, the largest target a quota can have', () => {
+    const numbers = (k: string) => ({ quota_prompt_config: { numbers: { [k]: 1 } } })
+    expect(() => validateTaskUpdate(numbers('1000'))).not.toThrow()
+    expect(() => validateTaskUpdate(numbers('1001'))).toThrow()
+    expect(() => validateTaskUpdate(numbers('0'))).toThrow()
+  })
+})
+
 describe('Quota prompt moves — the payload and the move', () => {
   test('QP-064: every prompt carries its slot_id; a daily row lists the numbers it stands for', () => {
     quota('Water', 'FREQ=DAILY', 7)
