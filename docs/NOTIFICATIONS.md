@@ -160,8 +160,8 @@ Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push 
 - userInfo: `reminder_count` is the total of reminders plus waiting prompts, which is what the checklist header shows while it loads. `prompt_count` is how many of those are prompts.
 - Off switches: with the user's `quota_prompts_enabled` off, or `OPENTASK_QUOTA_PROMPTS=off` on the server, prompts are gone from the pushes, the nags and their counts too. They live inside `getQuotaPromptsBySlot`.
 - Never in the badge: `countCurrentlyDue` excludes quotas (`is_tracked` / `progress_target > 1`) and reminders.
-- Cost: prompts are computed only for a user whose slot opens this minute, or who is due a nag at the top of the hour. That is one quota query per call, never one per minute per user.
-- The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones, and considers prompts without logging progress.
+- Cost: prompts are computed only for a user whose slot opens this minute, or who is awake at the top of the hour with nags left to spend today. That is one quota query per call, never one per minute for every user.
+- The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones. It considers waiting prompts without logging progress, except prompts staged as "did it", which keep their +1.
 
 ## iOS platform constraints
 
