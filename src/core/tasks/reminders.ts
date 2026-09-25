@@ -174,7 +174,11 @@ export function getRemindersNotToday(
   return all.filter((t) => !today.has(t.id) && !considered.has(t.id)).sort((a, b) => a.id - b.id)
 }
 
-/** How many reminders are pending in each slot — used by the slot notifications (§4.2). */
+/**
+ * How many reminders are pending in each slot. Reminders only — the slot
+ * notifications count quota prompts too, through `waitingBySlot` in
+ * `src/core/notifications/slot-reminders.ts`, not through this.
+ */
 export function countRemindersBySlot(
   userId: number,
   timezone: string,

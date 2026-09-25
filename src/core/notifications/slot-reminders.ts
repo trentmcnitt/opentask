@@ -15,6 +15,16 @@
  * There is deliberately no roll-forward and no catch-up: a missed slot is a
  * missed thought, and the next occurrence arrives on its own (§6).
  *
+ * QUOTA PROMPTS COUNT LIKE REMINDERS (quota reminders phase 3, 2026-09-24).
+ * An unmet quota's prompt sits in a slot beside its reminders (see
+ * `src/core/tasks/quota-prompts.ts`), and Trent's rule is that prompts behave
+ * EXACTLY like reminders: a slot with only prompts still notifies, the body
+ * counts both ("3 reminders · 2 quotas waiting"), and the slot stays
+ * unfinished for the nags until every prompt is considered or done. Both off
+ * switches (`users.quota_prompts_enabled`, `OPENTASK_QUOTA_PROMPTS=off`) live
+ * inside `getQuotaPromptsBySlot`, so with either one off this module is back
+ * to reminders only. Prompts never reach the badge or the overdue count.
+ *
  * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces an unfinished
  * slot on the hour, at most three times a day, at Trent's request (2026-09-21).
  * It still writes nothing, still never marks anything overdue or badged, and
@@ -26,6 +36,7 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { DateTime } from 'luxon'
 import { sendApnsSlotReminder, isApnsConfigured } from '@/core/notifications/apns'
+import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
 import { getRemindersBySlot } from '@/core/tasks/reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
@@ -44,11 +55,58 @@ export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): Tim
   return slots.filter((slot) => parseHHMM(slot.start_time) === minuteOfDay)
 }
 
+/** What is still waiting in one slot: reminders, and quota prompts. */
+export interface SlotWaiting {
+  reminders: number
+  prompts: number
+}
+
+/**
+ * What is waiting in each of a user's slots right now, keyed by slot id
+ * (`null` = the un-slotted group). The one place the notification cron counts
+ * a slot, so the slot-open push and the nags cannot disagree about whether a
+ * slot is finished.
+ *
+ * A prompt is waiting while it is neither considered nor done (`promptWaiting`,
+ * the same test every client uses). Prompts come from the phase-1 computation
+ * as-is — one quota query per call, and only ever called for a user whose slot
+ * is opening this minute or who is due a nag this hour, never per minute per
+ * user.
+ */
+export function waitingBySlot(
+  userId: number,
+  timezone: string,
+  now: Date,
+): Map<number | null, SlotWaiting> {
+  const prompts = getQuotaPromptsBySlot(userId, timezone, now)
+  const waiting = new Map<number | null, SlotWaiting>()
+
+  for (const group of getRemindersBySlot(userId, timezone, now)) {
+    const id = group.slot?.id ?? null
+    waiting.set(id, {
+      reminders: group.reminders.length,
+      prompts: (prompts.get(id) ?? []).filter(promptWaiting).length,
+    })
+  }
+  // `getRemindersBySlot` returns every slot plus the un-slotted group, so a
+  // prompt's slot is always already there; this only guards a slot deleted
+  // between the two reads.
+  for (const [id, list] of prompts) {
+    if (!waiting.has(id)) {
+      waiting.set(id, { reminders: 0, prompts: list.filter(promptWaiting).length })
+    }
+  }
+  return waiting
+}
+
 export interface PendingSlotNotification {
   userId: number
   slotId: number
   slotLabel: string
+  /** Reminders waiting in the slot. */
   count: number
+  /** Quota prompts waiting in the slot. */
+  promptCount: number
 }
 
 /**
@@ -69,19 +127,21 @@ export function pendingSlotNotifications(now: Date = new Date()): PendingSlotNot
     const due = slotsDueNow(listTimeSlots(user.id), user.timezone, now)
     if (due.length === 0) continue
 
-    const groups = getRemindersBySlot(user.id, user.timezone, now)
+    const waiting = waitingBySlot(user.id, user.timezone, now)
 
     for (const slot of due) {
-      const group = groups.find((g) => g.slot?.id === slot.id)
+      const inSlot = waiting.get(slot.id)
       // Silence when the slot is empty: an empty checklist is a notification
-      // that costs attention and returns nothing.
-      if (!group || group.reminders.length === 0) continue
+      // that costs attention and returns nothing. A slot with only quota
+      // prompts is NOT empty — it notifies like any other.
+      if (!inSlot || inSlot.reminders + inSlot.prompts === 0) continue
 
       pending.push({
         userId: user.id,
         slotId: slot.id,
         slotLabel: slot.label,
-        count: group.reminders.length,
+        count: inSlot.reminders,
+        promptCount: inSlot.prompts,
       })
     }
   }
@@ -99,6 +159,7 @@ export async function checkSlotReminders(nowOverride?: Date): Promise<void> {
         slotId: item.slotId,
         slotLabel: item.slotLabel,
         count: item.count,
+        promptCount: item.promptCount,
       })
     }
   } catch (err) {

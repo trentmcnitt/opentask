@@ -65,6 +65,8 @@ Per-task `auto_snooze_minutes` overrides the user default.
 | `src/core/notifications/web-push.ts`         | Web Push send utility (`sendPushNotification`, `isWebPushConfigured`)                         |
 | `src/core/notifications/apns.ts`             | APNs send utility (`sendApnsNotification`, `sendApnsSummaryNotification`, `isApnsConfigured`) |
 | `src/core/notifications/dismiss.ts`          | Shared dismiss helper (`dismissNotificationsForTasks`)                                        |
+| `src/core/notifications/slot-reminders.ts`   | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)  |
+| `src/core/notifications/slot-nags.ts`        | Hourly nag for unfinished slots (`pendingSlotNags`, `slotNagBody`)                            |
 | `src/hooks/usePushSubscription.ts`           | Client-side push subscription management hook                                                 |
 | `src/app/api/push/subscribe/route.ts`        | Push subscription storage endpoint                                                            |
 | `src/app/api/push/test/route.ts`             | Quick push test (sends to current user)                                                       |
@@ -138,6 +140,28 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 | `APNS_TEAM_ID`   | Team ID from Apple Developer portal                           |
 | `APNS_KEY_PATH`  | Path to .p8 key file (e.g., `/path/to/AuthKey_XXXXXXXXXX.p8`) |
 | `APNS_BUNDLE_ID` | App bundle ID (e.g., `io.mcnitt.opentask`)                    |
+
+### Time-slot notifications (reminders and quota prompts)
+
+Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and an hourly nag re-surfaces unfinished slots, at most three a day (`slot-nags.ts`). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. The long-press checklist fetches the slot's live group from `GET /api/reminders`.
+
+**Quota prompts count exactly like reminders** (2026-09-24, phase 3 of quota reminders). A slot's waiting items are its reminders plus its quota prompts that are neither considered nor done (`waitingBySlot`, reading `getQuotaPromptsBySlot`). So:
+
+- A slot with only prompts still gets its slot-open push.
+- A slot stays unfinished for the nags until every reminder and every prompt is considered or done.
+- The body counts both. A zero side is left out:
+
+| Waiting        | Slot-open body                   | Nag body (other unfinished slots appended)         |
+| -------------- | -------------------------------- | -------------------------------------------------- |
+| Reminders only | `3 reminders waiting`            | `3 reminders waiting, and 1 earlier slot`          |
+| Prompts only   | `2 quotas waiting`               | `2 quotas waiting, and 2 earlier slots`            |
+| Both           | `3 reminders · 2 quotas waiting` | `1 reminder · 1 quota waiting, and 1 earlier slot` |
+
+- userInfo: `reminder_count` is the total of reminders plus waiting prompts, which is what the checklist header shows while it loads. `prompt_count` is how many of those are prompts.
+- Off switches: with the user's `quota_prompts_enabled` off, or `OPENTASK_QUOTA_PROMPTS=off` on the server, prompts are gone from the pushes, the nags and their counts too. They live inside `getQuotaPromptsBySlot`.
+- Never in the badge: `countCurrentlyDue` excludes quotas (`is_tracked` / `progress_target > 1`) and reminders.
+- Cost: prompts are computed only for a user whose slot opens this minute, or who is due a nag at the top of the hour. That is one quota query per call, never one per minute per user.
+- The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones, and considers prompts without logging progress.
 
 ## iOS platform constraints
 
