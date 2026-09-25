@@ -42,8 +42,10 @@
  * HOW A REMINDER MOVES: a repeating one gets its own rule rewritten with the
  * new BYHOUR/BYMINUTE (`buildSchedule`, so Tue/Thu stays Tue/Thu) — the same
  * write the Reminders editor makes when you pick a slot chip, which re-derives
- * `anchor_time` and recomputes `due_at` (for a `from_completion` reminder too,
- * whose next due time lands at the new time). A one-time reminder (no rule)
+ * `anchor_time` — and its current `due_at` keeps its DATE at the new time
+ * (see `moveInput` for why not "first occurrence from now"). Rule parts the
+ * cadence reader does not model may be normalised, exactly as the editor's
+ * chip does; undo restores the exact old rule. A one-time reminder (no rule)
  * keeps its date and gets the new time on it, sent as a reschedule
  * (`reset_original_due_at`), never a snooze — reminders cannot be snoozed.
  */
@@ -133,19 +135,29 @@ export function planSlotDelete(
 
 /** The field changes that put a reminder at `minutes`, or null if it has no time to move. */
 function moveInput(task: Task, minutes: number, timezone: string): FieldChangesInput | null {
+  const movedDue = sameDayAt(task.due_at, minutes, timezone)
   if (task.rrule) {
-    return { rrule: buildSchedule({ ...parseCadence(task.rrule), time: minutes }) }
+    const rrule = buildSchedule({ ...parseCadence(task.rrule), time: minutes })
+    // The current occurrence's DATE rides along: a rule change alone
+    // recomputes due_at as the first occurrence from NOW, which would skip
+    // today's still-waiting 09:00 reminder when Morning moves to 09:30 at
+    // 11:00, and resurrect an already-considered 20:30 one when Evening moves
+    // to 21:00 at 20:45. Same day, new time keeps "today's" exactly today's.
+    return movedDue ? { rrule, due_at: movedDue } : { rrule }
   }
-  if (!task.due_at) return null
-  const local = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
+  if (!movedDue) return null
+  return { due_at: movedDue, reset_original_due_at: true }
+}
+
+/** `dueAt`'s local date at `minutes` past midnight, as UTC ISO; null without a usable date. */
+function sameDayAt(dueAt: string | null, minutes: number, timezone: string): string | null {
+  if (!dueAt) return null
+  const local = DateTime.fromISO(dueAt, { zone: 'utc' }).setZone(timezone)
   if (!local.isValid) return null
-  const moved = local.set({
-    hour: Math.floor(minutes / 60),
-    minute: minutes % 60,
-    second: 0,
-    millisecond: 0,
-  })
-  return { due_at: moved.toUTC().toISO()!, reset_original_due_at: true }
+  return local
+    .set({ hour: Math.floor(minutes / 60), minute: minutes % 60, second: 0, millisecond: 0 })
+    .toUTC()
+    .toISO()
 }
 
 function loadSlot(userId: number, slotId: number): TimeSlot {
@@ -162,7 +174,8 @@ function loadReminders(userId: number): Task[] {
   const rows = getDb()
     .prepare(
       `SELECT id FROM tasks
-        WHERE user_id = ? AND is_reminder = 1 AND done = 0 AND deleted_at IS NULL`,
+        WHERE user_id = ? AND is_reminder = 1 AND done = 0
+          AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .all(userId) as { id: number }[]
   return rows.flatMap((r) => {
@@ -246,7 +259,11 @@ function notifyMoved(userId: number, outcome: MoveOutcome): void {
     if (fresh) {
       dispatchWebhookEvent(userId, 'task.updated', {
         task: formatTaskResponse(fresh),
-        fields_changed: outcome.fields,
+        // This task's own fields — its snapshot holds exactly those (plus
+        // title, which createSnapshot always includes for display).
+        fields_changed: Object.keys(snapshot.after_state).filter(
+          (f) => f !== 'id' && (f !== 'title' || outcome.fields.includes('title')),
+        ),
       })
     }
   }
@@ -288,7 +305,6 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     throw new ValidationError(`Invalid start_time "${startTime}" — expected HH:MM`)
   }
   const retimed = startTime !== before.start_time
-  if (retimed) assertStartTimeFree(userId, startTime, slotId)
 
   const after: TimeSlot = { ...before, label, start_time: startTime }
   if (!retimed && label === before.label) {
@@ -297,6 +313,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
   const undoId = withTransaction((tx) => {
+    if (retimed) assertStartTimeFree(userId, startTime, slotId)
     const oldSlots = listTimeSlots(userId)
     tx.prepare('UPDATE time_slots SET label = ?, start_time = ? WHERE id = ? AND user_id = ?').run(
       label,

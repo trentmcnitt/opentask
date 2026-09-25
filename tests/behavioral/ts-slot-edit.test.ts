@@ -352,3 +352,30 @@ describe('Removing a slot, and the rules around it', () => {
     ])
   })
 })
+
+describe('Today’s occurrence and undo collisions', () => {
+  test('TSE-017: a still-waiting reminder stays today’s when its slot moves later', () => {
+    // 10:00 now; a daily 09:00 reminder due today and not yet considered.
+    const r = reminder('Supplements', 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', '2026-01-15T09:00')
+    expect(localTimeOf(getTaskById(r.id)!.due_at)).toBe('2026-01-15 09:00')
+    updateTimeSlot({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      slotId: slotByLabel('Morning').id,
+      input: { start_time: '09:30' },
+    })
+    expect(localTimeOf(getTaskById(r.id)!.due_at)).toBe('2026-01-15 09:30')
+    expect(groupOf(r.id)).toBe('Morning')
+  })
+
+  test('TSE-018: undo refuses (and rolls back) when another slot now has that start', () => {
+    const r = reminder('Lunch walk', 'FREQ=DAILY;BYHOUR=12;BYMINUTE=0')
+    const midday = slotByLabel('Midday')
+    deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: midday.id })
+    createTimeSlot(TEST_USER_ID, 'Lunch', '12:00')
+    expect(() => executeUndo(TEST_USER_ID)).toThrow(ValidationError)
+    // Nothing half-applied: no duplicate slot, the reminder stays where it went.
+    expect(listTimeSlots(TEST_USER_ID).filter((s) => s.start_time === '12:00')).toHaveLength(1)
+    expect(getTaskById(r.id)!.anchor_time).toBe('09:00')
+  })
+})

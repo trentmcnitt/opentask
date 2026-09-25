@@ -17,6 +17,7 @@
 
 import Database from 'better-sqlite3'
 import type { SlotRow, SlotUndoState } from '@/types'
+import { ValidationError } from '@/core/errors'
 
 export function parseSlotState(raw: string | null | undefined): SlotUndoState | null {
   if (!raw) return null
@@ -26,7 +27,8 @@ export function parseSlotState(raw: string | null | undefined): SlotUndoState | 
 /**
  * Move one time_slots row from state `from` to state `to`.
  * `to: null` deletes it; otherwise it is inserted (under its own id) or
- * overwritten.
+ * overwritten — the whole row, so undoing a move also reverts a rename made
+ * after it (the same stack semantics every task field has).
  */
 export function applySlotRow(
   tx: Database.Database,
@@ -37,6 +39,19 @@ export function applySlotRow(
     if (from)
       tx.prepare('DELETE FROM time_slots WHERE id = ? AND user_id = ?').run(from.id, from.user_id)
     return
+  }
+  // Start times are unique per user. Between a change and its undo/redo the
+  // user may have added (or moved) another slot onto this start — adding and
+  // renaming are not undo entries, so they don't clear the redo stack. Refuse
+  // rather than create two slots on one boundary; the throw rolls back the
+  // whole undo, so nothing is half-applied and the entry stays available.
+  const clash = tx
+    .prepare('SELECT label FROM time_slots WHERE user_id = ? AND start_time = ? AND id != ?')
+    .get(to.user_id, to.start_time, to.id) as { label: string } | undefined
+  if (clash) {
+    throw new ValidationError(
+      `Can't restore "${to.label}": "${clash.label}" already starts at ${to.start_time}`,
+    )
   }
   tx.prepare(
     `INSERT INTO time_slots (id, user_id, label, start_time, sort_order, created_at)
