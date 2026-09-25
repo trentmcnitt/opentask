@@ -269,11 +269,12 @@ private struct CaughtUpCardView: View {
 
     private var nextLine: String {
         guard let label = card.nextSlotLabel else { return "Nothing left today" }
-        let noun = card.nextSlotCount == 1 ? "reminder" : "reminders"
+        // "waiting", not "reminders": the count includes quota prompts
+        // (2026-09-25), the same "N left" the reminder card's header uses.
         if let start = card.nextSlotStart {
-            return "Next: \(label) at \(DateHelpers.formatShortTime(start)) · \(card.nextSlotCount) \(noun)"
+            return "Next: \(label) at \(DateHelpers.formatShortTime(start)) · \(card.nextSlotCount) waiting"
         }
-        return "Next: \(label) · \(card.nextSlotCount) \(noun)"
+        return "Next: \(label) · \(card.nextSlotCount) waiting"
     }
 }
 

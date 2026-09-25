@@ -31,7 +31,7 @@ enum WatchWidgetState {
     // MARK: - Skip (⏭)
 
     /// "Show me the next one without checking this one off." Stored as the
-    /// set of reminder ids skipped within ONE slot on ONE local day — the
+    /// set of item keys (reminders and quota prompts) skipped within ONE slot on ONE local day — the
     /// pairing is what makes it self-resetting: `skippedKeys(slotKey:now:)`
     /// returns empty the moment either differs, so the clock crossing into a
     /// new slot (or midnight) clears skips without anyone having to remember
@@ -80,6 +80,8 @@ enum WatchWidgetState {
         let state = SkipState(slotKey: slotKey, day: dayStamp(now), ids: Array(keys))
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults?.set(data, forKey: skipKey)
+        // The pre-prompts list (Int ids) under the old key, never read again.
+        defaults?.removeObject(forKey: "watch.widget.skip.v1")
     }
 
     // MARK: - Pending prompt actions (optimistic ✓ / ☐ on a quota prompt)

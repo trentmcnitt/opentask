@@ -352,17 +352,18 @@ struct IncrementProgressIntent: AppIntent {
 /// 1. Stage a tombstone by key and repaint Reminders from cache — the row
 ///    leaves the list at once (`WidgetStore.filterPending` draws it handled).
 /// 2. Call the server.
-/// 3. Success: write the quotas the server returned into the Tasks/Quotas
-///    cache (`confirmTasks`) — the Quotas widget's count stays server-true
-///    when it repaints from cache — and mark the Reminders payload stale
-///    (`requireRemindersFetch`), so round 2 FETCHES it: a prompt's state is
-///    the server's to compute (a did-it on Daily Walks #1 can finish #2 in
-///    another slot), and re-deriving `getQuotaPromptsBySlot` here would
-///    drift. The tombstone stays live (90s TTL) so a fetch that raced ahead
-///    of the commit can't draw the row back.
-/// 4. Failure: clear the tombstone AND mark Reminders stale — the likeliest
-///    failure is a key from before midnight (400: the server refuses another
-///    day's key), where the cache itself is what's wrong.
+/// 3. Success: write the server's answer into BOTH caches — the returned
+///    quotas into Tasks/Quotas (`confirmTasks`), and into Reminders the
+///    prompt marked handled plus every prompt of the same quota re-counted
+///    from the returned count (`confirmPromptAction`: a did-it on Daily
+///    Walks #1 can finish #2 in another slot). The next tap's round 1 then
+///    repaints from cache at once, as a reminder check-off does, and the
+///    row can't reappear when the 90s tombstone expires. A body that didn't
+///    decode marks both payloads fetch-required instead.
+/// 4. Failure: clear the tombstone, restore the auto-advance, and mark
+///    Reminders stale — the likeliest failure is a key from before midnight
+///    (400: the server refuses another day's key), where the cache itself is
+///    what's wrong.
 /// 5. Round 2 reloads Reminders AND Track (see `reloadOpenTaskWidget`'s
 ///    amendment).
 struct ActOnPromptIntent: AppIntent {
@@ -384,13 +385,18 @@ struct ActOnPromptIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        WidgetStore.stagePendingPromptAction(promptKey, did: did)
+        // One instant for the auto-advance snapshot and `recordMutation`, as
+        // in `CompleteTaskIntent` (WidgetStore's "Auto-advance's own undo").
+        let mutationInstant = Date()
+        WidgetStore.stagePendingPromptAction(promptKey, did: did, now: mutationInstant)
         // Auto-advance, exactly as a reminder check-off does: acting on the
         // slot's last waiting item moves the widget to the earliest started
         // slot that still has something. `autoAdvanceSlot` filters through
         // the tombstone just staged, so it sees this prompt as handled.
+        // Snapshotted first so a failure, or a later Undo, puts it back.
         if let cached = WidgetStore.loadReminders()?.value.groups {
-            RemindersTimeline.autoAdvanceSlot(in: cached)
+            WidgetStore.snapshotSlotOverrideBeforeAutoAdvance(at: mutationInstant)
+            RemindersTimeline.autoAdvanceSlot(in: cached, now: mutationInstant)
         }
         await reloadOpenTaskWidget(kind: RemindersWidget.kind)
 
@@ -398,15 +404,29 @@ struct ActOnPromptIntent: AppIntent {
             let result = did
                 ? try await APIClient.shared.didPrompts(keys: [promptKey])
                 : try await APIClient.shared.considerPrompts(keys: [promptKey])
+            // The server's truth into BOTH caches, so the next tap's round 1
+            // repaints from cache at once (a reminder check-off's speed): the
+            // quotas into Tasks/Quotas, and the prompt handled plus every
+            // sibling prompt's count into Reminders (`confirmPromptAction`).
             WidgetStore.confirmTasks(result.tasks)
+            WidgetStore.confirmPromptAction(promptKey, did: did, tasks: result.tasks)
+            if !result.decoded {
+                // Acted, but no tasks to write: both payloads must fetch.
+                WidgetStore.requireRemindersFetch()
+                WidgetStore.requireTasksFetch()
+            }
+            WidgetStore.recordMutation(now: mutationInstant)
             WidgetStore.recordLocalMutationForUndoCount()
         } catch {
             print("[OpenTaskWidgets] Prompt \(promptKey) \(did ? "did" : "consider") failed: \(error)")
             WidgetStore.clearPendingPromptAction(promptKey)
+            WidgetStore.restoreSlotOverrideBeforeAutoAdvance(ifMatches: mutationInstant)
+            // Likeliest: a key from before midnight — the cache itself is
+            // what's wrong, so round 2 fetches today's prompts.
+            WidgetStore.requireRemindersFetch()
         }
-        WidgetStore.requireRemindersFetch()
-        // Track first: its repaint is a cache read (the confirmed quotas are
-        // already in), while Reminders' is a network fetch.
+        // Both repaint from the confirmed caches on success; on a failure
+        // Reminders fetches.
         await reloadOpenTaskWidget(kind: TrackWidget.kind)
         await reloadOpenTaskWidget(kind: RemindersWidget.kind)
         return .result()

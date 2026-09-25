@@ -257,18 +257,24 @@ final class APIClient {
         let considered: Int
         let did: Int
         let tasks: [TaskDTO]
+        /// False when the call SUCCEEDED but its body didn't decode — the
+        /// server acted, but there are no confirmed quotas to write, so a
+        /// caller must mark its caches stale rather than trust them.
+        let decoded: Bool
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             considered = try c.decodeIfPresent(Int.self, forKey: .considered) ?? 0
             did = try c.decodeIfPresent(Int.self, forKey: .did) ?? 0
             tasks = try c.decodeIfPresent([TaskDTO].self, forKey: .tasks) ?? []
+            decoded = true
         }
 
-        init(considered: Int, did: Int, tasks: [TaskDTO]) {
+        init(considered: Int, did: Int, tasks: [TaskDTO], decoded: Bool = true) {
             self.considered = considered
             self.did = did
             self.tasks = tasks
+            self.decoded = decoded
         }
 
         enum CodingKeys: String, CodingKey { case considered, did, tasks }
@@ -296,7 +302,7 @@ final class APIClient {
         // A body that doesn't decode after a 2xx still means the server
         // acted: report success with no tasks, and let the caller re-fetch.
         return (try? JSONDecoder().decode(APIEnvelope<PromptActionResult>.self, from: data).data)
-            ?? PromptActionResult(considered: 0, did: 0, tasks: [])
+            ?? PromptActionResult(considered: 0, did: 0, tasks: [], decoded: false)
     }
 
     /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`
@@ -368,12 +374,20 @@ final class APIClient {
     /// — in one request. Returns everything the server acted on, so a slot
     /// holding only prompts still reads as handled. Fetched fresh right
     /// before the commit, so the prompt keys are today's.
+    ///
+    /// `didKeys`: prompts the user explicitly staged as DID IT in the
+    /// expanded checklist before pressing Complete all — those keep their
+    /// +1 (dropping a staged did-it silently would be a lie); every other
+    /// waiting prompt is considered. Empty from the lock-screen action paths,
+    /// which have no staging.
     @discardableResult
-    func completeSlotReminders(slotId: Int) async throws -> Int {
+    func completeSlotReminders(slotId: Int, didKeys: Set<String> = []) async throws -> Int {
         guard let group = try await fetchSlotGroup(slotId: slotId) else { return 0 }
         return try await completeTasks(
             ids: group.reminders.map(\.id),
-            prompts: group.waitingPrompts.map { PromptCommit(key: $0.promptKey, did: false) }
+            prompts: group.waitingPrompts.map {
+                PromptCommit(key: $0.promptKey, did: didKeys.contains($0.promptKey))
+            }
         ).total
     }
 
