@@ -6,11 +6,13 @@ import { Check, CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { naturalSlotIndex, slotAfterFinishing, type TimeSlot } from '@/lib/time-slot-assign'
-import { useReminders, type ReminderGroup } from '@/hooks/useReminders'
+import { useReminders, type ReminderGroup, type UseRemindersReturn } from '@/hooks/useReminders'
 import { useLongPress } from '@/hooks/useLongPress'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
+import { usePromptRows } from '@/components/QuotaPromptRow'
+import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
@@ -98,17 +100,14 @@ function useRowEditor({
   timeSlots,
   onUndo,
   onCompleted,
-  refresh,
-  completeMany,
-  remove,
+  reminders,
 }: {
   timeSlots: TimeSlot[]
   onUndo: () => void
   onCompleted: () => void
-  refresh: () => Promise<void>
-  completeMany: (tasks: Task[]) => Promise<void>
-  remove: (tasks: Task[]) => Promise<void>
+  reminders: Pick<UseRemindersReturn, 'refresh' | 'completeMany' | 'remove'>
 }) {
+  const { refresh, completeMany, remove } = reminders
   const router = useRouter()
   const [editing, setEditing] = useState<Task[]>([])
   const open = useCallback((task: Task) => setEditing([task]), [])
@@ -180,13 +179,13 @@ function afterFinishing(
   natural: number,
 ): { seen: { key: string; waiting: number }; to: string | null } | null {
   const key = groupKey(groups[index])
-  const waiting = groups[index].reminders.length
+  const waiting = groupWaiting(groups[index])
   if (seen?.key === key && seen.waiting === waiting) return null
   const finished = seen?.key === key && seen.waiting > 0 && waiting === 0
   const target = finished ? slotAfterFinishing(groups, index, natural) : null
   const landing = groups[target ?? index]
   return {
-    seen: { key: groupKey(landing), waiting: landing.reminders.length },
+    seen: { key: groupKey(landing), waiting: groupWaiting(landing) },
     to: target === null ? null : groupKey(landing),
   }
 }
@@ -210,13 +209,20 @@ export function DashboardRemindersPanel({
   timeSlots,
   timezone,
 }: DashboardRemindersPanelProps) {
-  const { groups, complete, completeMany, completeGroup, putBack, remove, refresh } = useReminders({
+  const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
+  const { groups, complete, completeGroup, putBack, remove, refresh } = reminders
+  const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
+  // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
+  // No leaving animation here, like the reminder rows (see the docblock).
+  const { considerPrompt, didPrompt } = reminders
+  const prompts = usePromptRows({
+    considerPrompt,
+    didPrompt,
+    refresh,
     onUndo,
     onCompleted,
-    timeSlots,
-    timezone,
+    variant: 'panel',
   })
-  const editor = useRowEditor({ timeSlots, onUndo, onCompleted, refresh, completeMany, remove })
   // Which row's read-only bubble is open, if any. One id rather than a flag
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
   // a single `detailId` for its chips.
@@ -245,7 +251,7 @@ export function DashboardRemindersPanel({
 
   // Nothing anywhere today (no reminders waiting, none considered) — nothing
   // to show, the same way `TrackPanel` returns null with no quotas.
-  const hasAnything = groups.some((g) => g.reminders.length > 0 || g.considered > 0)
+  const hasAnything = groups.some((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0)
   if (!hasAnything) return null
 
   // `new Date()` at the call site, not hoisted to a variable: this keeps the
@@ -260,7 +266,9 @@ export function DashboardRemindersPanel({
   const group = groups[index]
   const key = groupKey(group)
   const expanded = expandedKeys.has(key)
-  const count = group.reminders.length
+  const rows = slotRows(group)
+  const count = rows.length
+  const considered = groupConsidered(group)
 
   // FINISHING A SLOT MOVES THE PAGER TO THE EARLIEST UNDONE ONE (Trent,
   // 2026-09-22, refined 2026-09-23 — see `slotAfterFinishing` for the rule). Only a slot that went from something
@@ -293,7 +301,7 @@ export function DashboardRemindersPanel({
 
   const label = group.slot?.label ?? 'Anytime'
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
-  const total = group.reminders.length + group.considered
+  const total = count + considered
   // WHICH ROWS ARE ON SCREEN IS DECIDED IN CSS, NOT HERE.
   //
   // The cap is per-width, and reading the width in JS is the one thing this
@@ -308,7 +316,7 @@ export function DashboardRemindersPanel({
   // `mainClass` in DashboardClient.tsx): it is exactly the width at which this
   // panel stops sharing vertical space with the day and gets a column of its
   // own, which is the whole reason the narrow cap is tighter.
-  const visible = expanded ? group.reminders : group.reminders.slice(0, WIDE_CAP)
+  const visible = expanded ? rows : rows.slice(0, WIDE_CAP)
   const hiddenWhenNarrow = count - NARROW_CAP
   const hiddenWhenWide = count - WIDE_CAP
 
@@ -322,7 +330,7 @@ export function DashboardRemindersPanel({
       <SlotPagerHeader
         label={label}
         time={time}
-        considered={group.considered}
+        considered={considered}
         total={total}
         expanded={expanded}
         canGoPrev={index > 0}
@@ -353,35 +361,22 @@ export function DashboardRemindersPanel({
         }}
       />
 
-      {group.reminders.length === 0 ? (
+      {count === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (
-        <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
-          {visible.map((reminder, i) => (
-            <PanelRow
-              key={reminder.id}
-              reminder={reminder}
-              // Rendered, but not on screen until there is a column to spare.
-              hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
-              onComplete={() => void complete(reminder)}
-              onPeek={() => setPeekId(reminder.id)}
-              peekOpen={peekId === reminder.id}
-              onPeekChange={(next) => setPeekId(next ? reminder.id : null)}
-              onDelete={(task) => {
-                setPeekId(null)
-                void remove([task])
-              }}
-              onOpenEditor={(task) => {
-                // The bubble is done the moment the editor takes over —
-                // leaving it open would stack a popover behind a dialog.
-                setPeekId(null)
-                editor.open(task)
-              }}
-              timeSlots={timeSlots}
-              timezone={timezone}
-            />
-          ))}
-        </ul>
+        <PanelRowList
+          rows={visible}
+          expanded={expanded}
+          label={label}
+          peekId={peekId}
+          setPeekId={setPeekId}
+          onComplete={(reminder) => void complete(reminder)}
+          onRemove={(task) => void remove([task])}
+          onOpenEditor={editor.open}
+          renderPrompt={prompts.renderPrompt}
+          timeSlots={timeSlots}
+          timezone={timezone}
+        />
       )}
 
       {showConsidered && group.consideredItems.length > 0 && (
@@ -402,7 +397,83 @@ export function DashboardRemindersPanel({
       )}
 
       {editor.modal}
+      {prompts.modal}
     </section>
+  )
+}
+
+/** One row of the slot on screen: a reminder, or a waiting quota prompt. */
+type PanelSlotRow = { kind: 'reminder'; reminder: Task } | { kind: 'prompt'; prompt: QuotaPrompt }
+
+/**
+ * The slot's rows, reminders first, then its waiting quota prompts
+ * (2026-09-24). The cap counts ITEMS across both — a prompt is a row like any
+ * other — so the one `hiddenWhenNarrow` rule covers them all.
+ */
+function slotRows(group: ReminderGroup): PanelSlotRow[] {
+  return [
+    ...group.reminders.map((reminder) => ({ kind: 'reminder' as const, reminder })),
+    ...group.prompts.filter(promptWaiting).map((prompt) => ({ kind: 'prompt' as const, prompt })),
+  ]
+}
+
+function PanelRowList({
+  rows,
+  expanded,
+  label,
+  peekId,
+  setPeekId,
+  onComplete,
+  onRemove,
+  onOpenEditor,
+  renderPrompt,
+  timeSlots,
+  timezone,
+}: {
+  rows: PanelSlotRow[]
+  expanded: boolean
+  label: string
+  peekId: number | null
+  setPeekId: (id: number | null) => void
+  onComplete: (reminder: Task) => void
+  onRemove: (reminder: Task) => void
+  onOpenEditor: (reminder: Task) => void
+  renderPrompt: (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean }) => React.ReactNode
+  timeSlots: TimeSlot[]
+  timezone: string
+}) {
+  return (
+    <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
+      {rows.map((row, i) => {
+        // Rendered, but not on screen until there is a column to spare.
+        const hiddenWhenNarrow = !expanded && i >= NARROW_CAP
+        if (row.kind === 'prompt') return renderPrompt(row.prompt, { hiddenWhenNarrow })
+        const reminder = row.reminder
+        return (
+          <PanelRow
+            key={reminder.id}
+            reminder={reminder}
+            hiddenWhenNarrow={hiddenWhenNarrow}
+            onComplete={() => onComplete(reminder)}
+            onPeek={() => setPeekId(reminder.id)}
+            peekOpen={peekId === reminder.id}
+            onPeekChange={(next) => setPeekId(next ? reminder.id : null)}
+            onDelete={(task) => {
+              setPeekId(null)
+              onRemove(task)
+            }}
+            onOpenEditor={(task) => {
+              // The bubble is done the moment the editor takes over —
+              // leaving it open would stack a popover behind a dialog.
+              setPeekId(null)
+              onOpenEditor(task)
+            }}
+            timeSlots={timeSlots}
+            timezone={timezone}
+          />
+        )
+      })}
+    </ul>
   )
 }
 
