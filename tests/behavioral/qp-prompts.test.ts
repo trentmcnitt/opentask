@@ -165,7 +165,15 @@ describe('Quota prompts — placement', () => {
     configure(q.id, { numbers: { '1': slotId('Evening'), '2': slotId('Evening') } })
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([['Evening', 2]])
 
-    configure(q.id, { numbers: { '2': 999999 } })
+    // #2 alone in Afternoon, and then Afternoon is deleted (a write naming a
+    // slot the user does not have is refused — QP-060 — so a stale override
+    // only ever arises this way).
+    configure(q.id, { numbers: { '2': slotId('Afternoon') } })
+    deleteTimeSlot({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      slotId: slotId('Afternoon'),
+    })
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([
       ['Early morning', 1],
       ['Morning', 2],

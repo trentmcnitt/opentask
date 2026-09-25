@@ -5,7 +5,12 @@ import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
-import { groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
+import {
+  applyPromptMoves,
+  groupWaiting,
+  promptWaiting,
+  type QuotaPrompt,
+} from '@/lib/quota-prompts'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -152,6 +157,11 @@ export interface UseRemindersReturn {
   considerPrompt: (prompt: QuotaPrompt) => Promise<void>
   /** A quota prompt's square checkbox: did it — progress, and handled. */
   didPrompt: (prompt: QuotaPrompt) => Promise<void>
+  /**
+   * Show a prompt in another period at once while `save` (the quota's PATCH)
+   * runs; the refresh after it reconciles. A failed save puts it back.
+   */
+  movePrompt: (prompt: QuotaPrompt, toSlotId: number, save: () => Promise<void>) => Promise<void>
   /** Reverse a consideration: the thought returns to waiting. */
   putBack: (task: Task) => Promise<void>
   /** Move reminders to Trash (soft delete), with Undo. */
@@ -225,10 +235,12 @@ function reconcileInFlight(
   pending: Set<number | string>,
   restoring: Set<number>,
   pendingPrompts: Map<string, PromptIntent>,
+  pendingMoves: Map<string, number>,
 ): ReminderGroup[] {
   // Prompts in flight: the same promise as for reminders — a refresh landing
-  // mid-request must not bring a handled prompt back.
-  const withPrompts = applyPromptIntents(incoming, pendingPrompts)
+  // mid-request must not bring a handled prompt back, nor a moved one back to
+  // the period it just left.
+  const withPrompts = applyPromptIntents(applyPromptMoves(incoming, pendingMoves), pendingPrompts)
   if (pending.size === 0 && restoring.size === 0) return withPrompts
   return withPrompts.map((g) => {
     const leaving = g.reminders.filter((r) => pending.has(r.id))
@@ -320,6 +332,8 @@ export function useReminders({
   // Prompt keys whose action is still in flight, and which action — a
   // refresh re-applies them (`applyPromptIntents`), as it strips pending ids.
   const pendingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
+  // Prompt moves whose PATCH is still out (prompt_key → target slot id).
+  const pendingMovesRef = useRef<Map<string, number>>(new Map())
   /**
    * IDs whose row is still on screen, collapsing. They are still in `groups`,
    * so a server payload — which no longer lists them — cannot be applied
@@ -340,6 +354,7 @@ export function useReminders({
       pendingIdsRef.current,
       restoringIdsRef.current,
       pendingPromptsRef.current,
+      pendingMovesRef.current,
     )
 
   const refresh = useCallback(async () => {
@@ -639,6 +654,38 @@ export function useReminders({
     [completeIds],
   )
 
+  /**
+   * Move a prompt to another period (the period chips in its bubble). The
+   * row jumps at once; `save` is the quota editor's own write (a PATCH of
+   * `quota_prompt_config`, one undo entry, its toast and refresh). The move
+   * stays applied to any payload that lands while the PATCH is out, and a
+   * failed save refreshes it back to where the server still has it.
+   */
+  const movePrompt = useCallback(
+    async (prompt: QuotaPrompt, toSlotId: number, save: () => Promise<void>) => {
+      if (prompt.slot_id === toSlotId) return
+      const moves = new Map([[prompt.prompt_key, toSlotId]])
+      pendingMovesRef.current.set(prompt.prompt_key, toSlotId)
+      // Computed here, not in a `setGroups` updater: the cache write notifies
+      // other components (the nav badge), and an updater runs during this
+      // component's render — React refuses a setState of another component
+      // from there ("Cannot update a component while rendering…").
+      const next = applyPromptMoves(groupsRef.current, moves)
+      groupsRef.current = next
+      setGroups(next)
+      if (remindersCache) setRemindersCache({ ...remindersCache, groups: next })
+      try {
+        await save()
+        pendingMovesRef.current.delete(prompt.prompt_key)
+      } catch {
+        // `save` has already said so (its error toast); put the row back.
+        pendingMovesRef.current.delete(prompt.prompt_key)
+        await refresh()
+      }
+    },
+    [refresh],
+  )
+
   const putBack = usePutBack({ setGroups, refresh, restoringIdsRef, callbacksRef })
   const remove = useRemove({ setGroups, refresh, pendingIdsRef, callbacksRef })
 
@@ -712,6 +759,7 @@ export function useReminders({
     completeGroup,
     considerPrompt,
     didPrompt,
+    movePrompt,
     rowLeft,
     registerRow,
     hydrated,

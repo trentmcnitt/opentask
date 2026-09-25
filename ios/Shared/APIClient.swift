@@ -412,6 +412,30 @@ final class APIClient {
         return try? JSONDecoder().decode(APIEnvelope<TaskDTO>.self, from: data).data
     }
 
+    /// A quota's stored `quota_prompt_config` as raw JSON (`nil` = the
+    /// defaults) — `GET /api/tasks/{id}`. Raw rather than a model: the move
+    /// below must hand back every key it did not touch (`enabled`, the other
+    /// numbers' overrides) exactly as stored, since a PATCH replaces the
+    /// whole object.
+    func fetchQuotaPromptConfig(taskId: Int) async throws -> [String: Any]? {
+        let data = try await request(method: "GET", path: "/api/tasks/\(taskId)", body: nil)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let task = json?["data"] as? [String: Any]
+        return task?["quota_prompt_config"] as? [String: Any]
+    }
+
+    /// Write a quota's `quota_prompt_config` — `PATCH /api/tasks/{id}`, the
+    /// web quota editor's own write (one undo entry; the server refuses a
+    /// slot id that isn't one of the owner's periods). The watch's
+    /// press-and-hold "move to period" list (2026-09-25).
+    @discardableResult
+    func setQuotaPromptConfig(taskId: Int, config: [String: Any]) async throws -> TaskDTO? {
+        let data = try await request(
+            method: "PATCH", path: "/api/tasks/\(taskId)", body: ["quota_prompt_config": config]
+        )
+        return try? JSONDecoder().decode(APIEnvelope<TaskDTO>.self, from: data).data
+    }
+
     /// Undo the most recent action for the signed-in user (2026-09-23,
     /// widgets' Undo/Redo affordance) — the same endpoint the web app's
     /// toast Undo button calls (`useTaskActions.handleUndo`,
@@ -615,7 +639,7 @@ final class APIClient {
     }
 
     @discardableResult
-    private func request(method: String, path: String, body: [String: Any]) async throws -> Data {
+    private func request(method: String, path: String, body: [String: Any]?) async throws -> Data {
         guard let urlString = serverURL,
               let url = URL(string: "\(urlString)\(path)"),
               let token = bearerToken
@@ -628,7 +652,9 @@ final class APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

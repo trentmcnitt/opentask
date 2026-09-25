@@ -142,9 +142,10 @@ export function getQuotaPromptsBySlot(
     (t) => isTracked(t) && t.user_id === userId && promptEnabled(t),
   )
 
-  const push = (slotIndex: number, prompt: QuotaPrompt) => {
-    const slotId = slotIndex < 0 ? null : slots[slotIndex].id
-    bySlot.set(slotId, [...(bySlot.get(slotId) ?? []), prompt])
+  const slotIdAt = (slotIndex: number) => (slotIndex < 0 ? null : slots[slotIndex].id)
+  const push = (slotIndex: number, prompt: Omit<QuotaPrompt, 'slot_id'>) => {
+    const slotId = slotIdAt(slotIndex)
+    bySlot.set(slotId, [...(bySlot.get(slotId) ?? []), { ...prompt, slot_id: slotId }])
   }
 
   for (const task of quotas) {
@@ -161,17 +162,20 @@ export function getQuotaPromptsBySlot(
     }
 
     if (isDailyQuota(task)) {
-      // One row per period, standing for the highest number assigned there.
-      const highest = new Map<number, number>()
+      // One row per period, standing for every number assigned there; it is
+      // keyed and judged by the highest of them.
+      const numbersIn = new Map<number, number[]>()
       assignDailyNumbers(target, slots, task.quota_prompt_config, settings.defaultSlotId).forEach(
-        (slotIndex, i) => highest.set(slotIndex, Math.max(highest.get(slotIndex) ?? 0, i + 1)),
+        (slotIndex, i) => numbersIn.set(slotIndex, [...(numbersIn.get(slotIndex) ?? []), i + 1]),
       )
-      for (const [slotIndex, k] of highest) {
+      for (const [slotIndex, numbers] of numbersIn) {
+        const k = numbers[numbers.length - 1]
         const key = promptKey(task.id, k, date)
         push(slotIndex, {
           ...base,
           prompt_key: key,
           number: k,
+          numbers,
           considered: day.considered.includes(key),
           done: current >= k,
         })
@@ -191,6 +195,7 @@ export function getQuotaPromptsBySlot(
       ...base,
       prompt_key: key,
       number: null,
+      numbers: null,
       considered,
       done: did || loggedToday,
     })
