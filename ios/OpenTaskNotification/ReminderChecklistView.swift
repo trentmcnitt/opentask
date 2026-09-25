@@ -9,7 +9,7 @@ import SwiftUI
 /// TWO THINGS ARE DELIBERATE AND EASY TO BREAK:
 ///
 /// 1. **Buttons here stage, they never commit.** Tapping a row only mutates
-///    `checkedIds`. The commit happens in the notification ACTION button
+///    `staged`. The commit happens in the notification ACTION button
 ///    (`didReceive(_:completionHandler:)`), which is the only surface iOS
 ///    guarantees will run — the same discipline the snooze grid uses.
 /// 2. **The list must not need to scroll.** A notification content extension
@@ -17,21 +17,61 @@ import SwiftUI
 ///    so a long list is simply clipped and the rows past the cut are invisible
 ///    AND untappable. Hence the hard `maxVisibleRows` cap and the "+N more"
 ///    footer, which tells the truth about what is off-screen.
+///
+/// QUOTA PROMPTS (quota reminders, 2026-09-24): the slot's waiting quota
+/// prompts are rows too, after its reminders (the web and the widgets put
+/// them there). A prompt row has the reminder row's circle — staging
+/// CONSIDERED — plus a square beside its count ("Daily Walks · 1/2") staging
+/// DID IT (+1, and considered). The two are one choice per prompt: tapping
+/// the other switches it, tapping the same one again un-stages it. The whole
+/// staged set, reminders and prompts, commits in ONE
+/// `POST /api/tasks/bulk/complete` (`ids` + `prompts`): one transaction, one
+/// undo entry. Rows are identified by `prompt_key`, never task id — a daily
+/// quota's prompts share one.
 enum ReminderChecklistState {
     case loading
-    case loaded([TaskDTO])
+    case loaded([ChecklistItem])
     case failed(String)
+}
+
+/// One checklist row: a reminder, or a quota prompt.
+enum ChecklistItem: Identifiable {
+    case reminder(TaskDTO)
+    case prompt(QuotaPromptDTO)
+
+    var id: String {
+        switch self {
+        case .reminder(let task): return "r:\(task.id)"
+        case .prompt(let prompt): return prompt.promptKey
+        }
+    }
+}
+
+/// What one tap staged — the commit payload, item by item.
+enum StagedAction: Equatable {
+    case reminder(Int)
+    case prompt(key: String, did: Bool)
+
+    /// The row this belongs to (`ChecklistItem.id`).
+    var itemId: String {
+        switch self {
+        case .reminder(let id): return "r:\(id)"
+        case .prompt(let key, _): return key
+        }
+    }
 }
 
 @MainActor
 final class ReminderChecklistModel: ObservableObject {
     @Published var state: ReminderChecklistState = .loading
 
-    /// Staged check-marks, in the order the user checked them.
+    /// Staged actions, in the order the user staged them.
     ///
-    /// An ARRAY, not a Set: this is the payload of the commit request, and the
-    /// order the user built it in is the order it should be applied and logged.
-    @Published private(set) var checkedIds: [Int] = []
+    /// An ARRAY, not a Set: it is the commit's payload, and each half of the
+    /// request (`ids`, `prompts`) keeps the order the user staged it in. The
+    /// server applies the batch in one transaction with one undo entry, so
+    /// the interleaving between the two halves carries no meaning.
+    @Published private(set) var staged: [StagedAction] = []
 
     let slotLabel: String
 
@@ -39,42 +79,80 @@ final class ReminderChecklistModel: ObservableObject {
     /// deliberately not trusted afterwards (see `SlotReminderKey`).
     let expectedCount: Int
 
-    /// Fired whenever the staged set changes, so the view controller can
-    /// relabel its action buttons ("Complete 3 checked").
-    var onStagedChange: (([Int]) -> Void)?
+    /// Fired whenever the staged set changes, with its new size, so the view
+    /// controller can relabel its action buttons ("Complete 3 checked").
+    var onStagedChange: ((Int) -> Void)?
 
     init(slotLabel: String, expectedCount: Int) {
         self.slotLabel = slotLabel
         self.expectedCount = expectedCount
     }
 
-    /// Every reminder currently loaded, including rows past the visible cap.
-    var loadedIds: [Int] {
-        if case .loaded(let items) = state { return items.map(\.id) }
+    /// Every row currently loaded, including rows past the visible cap.
+    var loadedItemIds: Set<String> {
+        if case .loaded(let items) = state { return Set(items.map(\.id)) }
         return []
     }
 
-    func isChecked(_ id: Int) -> Bool {
-        checkedIds.contains(id)
+    /// The staged reminder ids — the commit's `ids`.
+    var stagedReminderIds: [Int] {
+        staged.compactMap { if case .reminder(let id) = $0 { return id } else { return nil } }
     }
 
-    func toggle(_ id: Int) {
-        if let index = checkedIds.firstIndex(of: id) {
-            checkedIds.remove(at: index)
-        } else {
-            checkedIds.append(id)
+    /// The staged prompt actions — the commit's `prompts`.
+    var stagedPrompts: [APIClient.PromptCommit] {
+        staged.compactMap {
+            if case .prompt(let key, let did) = $0 { return APIClient.PromptCommit(key: key, did: did) }
+            return nil
         }
-        onStagedChange?(checkedIds)
     }
 
-    /// Drop staged ids that are no longer in the loaded list (a reload can
-    /// remove a row the user checked — committing it would be a lie).
-    func pruneStagedIds() {
-        let live = Set(loadedIds)
-        let pruned = checkedIds.filter { live.contains($0) }
-        if pruned != checkedIds {
-            checkedIds = pruned
-            onStagedChange?(checkedIds)
+    func isChecked(reminder id: Int) -> Bool {
+        staged.contains(.reminder(id))
+    }
+
+    /// `nil` = not staged; `false` = considered; `true` = did it.
+    func promptChoice(_ key: String) -> Bool? {
+        for action in staged {
+            if case .prompt(let k, let did) = action, k == key { return did }
+        }
+        return nil
+    }
+
+    func toggle(reminder id: Int) {
+        if let index = staged.firstIndex(of: .reminder(id)) {
+            staged.remove(at: index)
+        } else {
+            staged.append(.reminder(id))
+        }
+        onStagedChange?(staged.count)
+    }
+
+    /// Stage a prompt's circle (`did: false`) or square (`did: true`). One
+    /// choice per prompt: the same control again un-stages it, the other
+    /// switches it in place (keeping its position in the order).
+    func choose(prompt key: String, did: Bool) {
+        if let index = staged.firstIndex(where: { $0.itemId == key }) {
+            if staged[index] == .prompt(key: key, did: did) {
+                staged.remove(at: index)
+            } else {
+                staged[index] = .prompt(key: key, did: did)
+            }
+        } else {
+            staged.append(.prompt(key: key, did: did))
+        }
+        onStagedChange?(staged.count)
+    }
+
+    /// Drop staged actions whose rows are no longer in the loaded list (a
+    /// reload can remove a row the user checked — committing it would be a
+    /// lie).
+    func pruneStaged() {
+        let live = loadedItemIds
+        let pruned = staged.filter { live.contains($0.itemId) }
+        if pruned != staged {
+            staged = pruned
+            onStagedChange?(staged.count)
         }
     }
 }
@@ -131,9 +209,9 @@ struct ReminderChecklistView: View {
     private var countLabel: String {
         switch model.state {
         case .loaded(let items):
-            return model.checkedIds.isEmpty
+            return model.staged.isEmpty
                 ? "\(items.count) waiting"
-                : "\(model.checkedIds.count) of \(items.count) checked"
+                : "\(model.staged.count) of \(items.count) checked"
         case .loading:
             return model.expectedCount > 0 ? "\(model.expectedCount) waiting" : ""
         case .failed:
@@ -174,13 +252,18 @@ struct ReminderChecklistView: View {
 
     // MARK: - Checklist
 
-    private func checklist(_ items: [TaskDTO]) -> some View {
+    private func checklist(_ items: [ChecklistItem]) -> some View {
         let visible = Array(items.prefix(maxVisibleRows))
         let hidden = items.count - visible.count
 
         return VStack(spacing: 4) {
             ForEach(visible) { item in
-                row(item)
+                switch item {
+                case .reminder(let task):
+                    row(task)
+                case .prompt(let prompt):
+                    promptRow(prompt)
+                }
             }
 
             if hidden > 0 {
@@ -196,10 +279,10 @@ struct ReminderChecklistView: View {
     }
 
     private func row(_ item: TaskDTO) -> some View {
-        let checked = model.isChecked(item.id)
+        let checked = model.isChecked(reminder: item.id)
 
         return Button {
-            model.toggle(item.id)
+            model.toggle(reminder: item.id)
         } label: {
             // .top: on a wrapped title the circle stays beside line one.
             HStack(alignment: .top, spacing: 8) {
@@ -228,5 +311,90 @@ struct ReminderChecklistView: View {
         }
         .buttonStyle(.plain)
     }
+
+    /// A quota prompt: the reminder row's shape and circle (tap the row =
+    /// stage CONSIDERED), plus the quota's label-color stripe on the leading
+    /// edge, the count after the title, and a square on the trailing edge
+    /// (stage DID IT). The square is its own button beside the row's, not
+    /// nested in it; both only stage (see the file doc).
+    private func promptRow(_ prompt: QuotaPromptDTO) -> some View {
+        let choice = model.promptChoice(prompt.promptKey)
+        let staged = choice != nil
+        let did = choice == true
+
+        return HStack(alignment: .top, spacing: 0) {
+            Button {
+                model.choose(prompt: prompt.promptKey, did: false)
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: staged && !did ? "checkmark.circle.fill" : "circle")
+                        .font(.body)
+                        .foregroundColor(staged && !did ? .green : .secondary)
+
+                    // A staged did-it previews the count it will log (the
+                    // server's rule: a daily #k rises to k, else +1).
+                    (Text(prompt.title)
+                        + Text("\u{00A0}·\u{00A0}\((did ? prompt.handled(did: true) : prompt).countText)")
+                            .foregroundColor(.secondary))
+                        .font(.caption)
+                        .foregroundColor(staged ? .secondary : .primary)
+                        .strikethrough(staged, color: .secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 6)
+                .padding(.leading, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+
+            Button {
+                model.choose(prompt: prompt.promptKey, did: true)
+            } label: {
+                Image(systemName: did ? "checkmark.square.fill" : "square")
+                    .font(.body)
+                    .foregroundColor(did ? .green : .secondary)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Did it: \(prompt.title)"))
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background((staged ? Color.green : Color.gray).opacity(0.12))
+        .overlay(alignment: .leading) {
+            // The quota's label color, the stripe every prompt row wears.
+            // Drawn over the row's leading edge, inside its rounded corner.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(PromptStripe.color(prompt.stripeColor))
+                .frame(width: 3)
+                .padding(.vertical, 5)
+                .padding(.leading, 2)
+        }
+        .cornerRadius(6)
+    }
 }
 
+/// The prompt stripe's color: the quota's label color (the eight-name
+/// palette the server resolves, never green) or a faint neutral. Same rule as
+/// the widget's `PromptRowMetrics.stripeColor` and the watch's
+/// `WatchTheme.labelColor` — this target compiles neither.
+enum PromptStripe {
+    static func color(_ name: String?) -> Color {
+        switch name {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        case "gray": return .gray
+        default: return Color.secondary.opacity(0.35)
+        }
+    }
+}
