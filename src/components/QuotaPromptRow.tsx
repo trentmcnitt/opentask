@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { trackState, trackStripeClass } from '@/lib/track'
-import { movedPromptConfig, type QuotaPrompt } from '@/lib/quota-prompts'
+import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import { ordinal, usePromptSetup } from '@/components/QuotaPromptField'
+import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
@@ -461,9 +461,15 @@ export function useQuotaPromptDetail({
           mine
             ? {
                 slots,
-                currentId: prompt.slot_id,
                 label: periodsLabel(prompt),
-                onPick: (slot) => moveTo(prompt, mine, slot),
+                rows: [
+                  {
+                    key: prompt.prompt_key,
+                    label: periodsLabel(prompt),
+                    currentId: prompt.slot_id,
+                    onPick: (slot) => moveTo(prompt, mine, slot),
+                  },
+                ],
               }
             : undefined
         }

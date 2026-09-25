@@ -34,11 +34,15 @@ import {
   type FoldClasses,
   type FoldState,
 } from '@/hooks/useResponsiveFold'
-import { TrackChipPopover } from '@/components/TrackChipPopover'
+import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
+import { usePromptSetup } from '@/components/QuotaPromptField'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { GuardedLink } from '@/components/GuardedLink'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { useLabelConfig, useTrackPanelPreference } from '@/components/PreferencesProvider'
+import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
+import type { TimeSlot } from '@/lib/time-slot-assign'
+import { log as logger } from '@/lib/logger'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -296,6 +300,51 @@ function useTrackChipDetail({
     [deleteQuotas],
   )
 
+  // Read once here, not per chip: `useQuotaPromptPrefs` fetches on every mount.
+  const setup = usePromptSetup()
+
+  /**
+   * The bubble's period chips (2026-09-25) — where this quota's daily
+   * reminder sits, the same chips a prompt row's bubble carries, one tap to
+   * move it for good. The save is #83's exactly: `movedPromptConfig` merged
+   * over the stored config, written by `saveQuotas` (the editor's PATCH, with
+   * its Undo toast). No optimistic move: nothing on this panel shows the
+   * period, and the dashboard's Reminders card follows because this panel's
+   * `onRefresh` is the dashboard's `refreshAll`, which refetches it too.
+   *
+   * Hidden (undefined) with Settings' quota reminders off, the quota's own
+   * "Remind me daily" off, or no periods — `quotaPeriodRows` returns none.
+   */
+  const periodsFor = (task: Task): PromptPeriods | undefined => {
+    if (!setup.enabled) return undefined
+    const rows = quotaPeriodRows(task, setup.slots, setup.userDefault)
+    if (rows.length === 0) return undefined
+    const several = rows.length > 1
+    const move = (numbers: number[] | null, slot: TimeSlot) => {
+      setOpenId(null)
+      const which =
+        several && numbers ? ` (${numbersLabel(numbers, task.progress_target ?? 1)})` : ''
+      void saveQuotas(
+        [task.id],
+        { quota_prompt_config: movedPromptConfig(task.quota_prompt_config, { numbers }, slot.id) },
+        { message: `Moved “${task.title}”${which} to ${slot.label}` },
+      ).catch((err) => {
+        // A refused save has already said so, in `saveQuotas`' error toast.
+        logger.error('ui', 'Moving a quota reminder failed:', err)
+      })
+    }
+    return {
+      slots: setup.slots,
+      label: 'Reminds me in',
+      rows: rows.map((row) => ({
+        key: row.numbers ? row.numbers.join(',') : 'quota',
+        label: row.numbers ? numbersLabel(row.numbers, task.progress_target ?? 1) : '',
+        currentId: row.slotId,
+        onPick: (slot) => move(row.numbers, slot),
+      })),
+    }
+  }
+
   const modal = (
     <QuotaDetailModal
       tasks={editing}
@@ -311,7 +360,7 @@ function useTrackChipDetail({
     />
   )
 
-  return { openId, openPopover, closePopover, openEditor, deleteFromPopover, modal }
+  return { openId, openPopover, closePopover, openEditor, deleteFromPopover, periodsFor, modal }
 }
 
 interface TrackPanelProps {
@@ -644,6 +693,9 @@ function TrackSectionsList({
                         onCloseDetail={detail.closePopover}
                         onEdit={detail.openEditor}
                         onDeleteQuota={detail.deleteFromPopover}
+                        periods={
+                          detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined
+                        }
                       />
                     ),
                   )}
@@ -1043,6 +1095,7 @@ function TrackChip({
   onCloseDetail,
   onEdit,
   onDeleteQuota,
+  periods,
 }: {
   task: Task
   /** The cluster's colour; null paints the neutral stripe. */
@@ -1056,6 +1109,8 @@ function TrackChip({
   onEdit: (task: Task) => void
   /** The bubble's trash can. Soft delete, with an Undo toast. */
   onDeleteQuota: (task: Task) => void
+  /** Where its daily reminder sits, while its bubble is open — see `periodsFor`. */
+  periods?: PromptPeriods
 }) {
   const { state, period, log } = useTrackProgress(task)
   const press = useLongPress({ onLongPress: () => onOpenDetail(task) })
@@ -1072,6 +1127,7 @@ function TrackChip({
         }}
         onOpen={onEdit}
         onDelete={onDeleteQuota}
+        periods={periods}
       >
         <button
           type="button"
