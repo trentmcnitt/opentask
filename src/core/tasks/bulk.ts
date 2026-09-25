@@ -6,7 +6,7 @@
 
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
-import type { Task, UndoSnapshot } from '@/types'
+import type { QuotaPromptConfig, Task, UndoSnapshot } from '@/types'
 import { nowUtc, isRecurring } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivityBatch } from '@/core/activity'
@@ -622,9 +622,44 @@ function registerBulkEditLabels(userId: number, changes: BulkEditChanges): void 
 }
 
 /**
+ * A bulk `quota_prompt_config` is a PATCH of each quota's config, not a
+ * replacement (2026-09-25, the Quotas page's multi-edit "Remind me daily").
+ *
+ * The selected quotas each carry their own config — one is switched off,
+ * another has its 2nd number in the Evening — and the editor applies only what
+ * the user changed. Replacing the whole object would wipe every field the
+ * request did not name, on every quota at once. So the fields sent are laid
+ * over each row's STORED config, top level only:
+ *
+ * - `enabled` / `slot_id` replace that field.
+ * - `numbers` replaces the per-number map as a unit; an EMPTY map clears it
+ *   (the key is dropped, so a cleared config reads exactly like one that never
+ *   had overrides). That is how "Reminds me in Morning" on several daily
+ *   quotas lands: `slot_id` set, overrides cleared, the numbers spreading from
+ *   that base as they do by default.
+ * - `null` (the whole config) still clears it — handled by the caller, which
+ *   only merges an object. A merge that leaves nothing is stored as NULL too.
+ *
+ * Merged here against the row as it is NOW, not by the client against the
+ * snapshot its modal opened with: a prompt moved from another tab in between
+ * keeps its move. The single-task PATCH keeps replace semantics — its callers
+ * (the editor, `movedPromptConfig`) already send the merged whole.
+ */
+function mergePromptConfig(
+  stored: QuotaPromptConfig | null,
+  patch: QuotaPromptConfig,
+): QuotaPromptConfig | null {
+  const merged: QuotaPromptConfig = { ...(stored ?? {}), ...patch }
+  if (merged.numbers && Object.keys(merged.numbers).length === 0) delete merged.numbers
+  // Nothing left is "follow the defaults" — NULL, as an untouched quota has.
+  return Object.keys(merged).length > 0 ? merged : null
+}
+
+/**
  * Bulk edit
  *
- * Applies the same changes to all specified tasks.
+ * Applies the same changes to all specified tasks. `quota_prompt_config` is
+ * the exception that merges per task — see `mergePromptConfig`.
  */
 export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const { userId, userTimezone, taskIds, changes, perTask } = options
@@ -634,10 +669,16 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   }
 
   let tasks = validateBulkTasks(taskIds, userId)
-  const inputFor = (task: Task): BulkEditChanges => ({
-    ...changes,
-    ...(perTask?.[String(task.id)] ?? {}),
-  })
+  const inputFor = (task: Task): BulkEditChanges => {
+    const input = { ...changes, ...(perTask?.[String(task.id)] ?? {}) }
+    if (input.quota_prompt_config) {
+      input.quota_prompt_config = mergePromptConfig(
+        task.quota_prompt_config,
+        input.quota_prompt_config,
+      )
+    }
+    return input
+  }
 
   registerBulkEditLabels(userId, changes)
 
