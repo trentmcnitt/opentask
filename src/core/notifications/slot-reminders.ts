@@ -69,9 +69,9 @@ export interface SlotWaiting {
  *
  * A prompt is waiting while it is neither considered nor done (`promptWaiting`,
  * the same test every client uses). Prompts come from the phase-1 computation
- * as-is — one quota query per call, and only ever called for a user whose slot
- * is opening this minute or who is due a nag this hour, never per minute per
- * user.
+ * as-is — one quota query per call. Called only for a user whose slot opens
+ * this minute, or who is awake at the top of the hour with nags left to spend
+ * today; never once a minute for every user.
  */
 export function waitingBySlot(
   userId: number,

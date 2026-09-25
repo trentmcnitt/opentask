@@ -142,13 +142,16 @@ describe('Quota prompts — slot-open push', () => {
     vi.setSystemTime(at(7, 0, 16))
     expect(pendingSlotNotifications(at(7, 0, 16))[0]).toMatchObject({ promptCount: 1 })
   })
+})
 
+describe('Quota prompts — local day', () => {
   test('QN-008: 23:30 local is still the same day, even though UTC has rolled over', () => {
     const q = weeklyQuota()
     getDb()
       .prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?')
       .run(slotId('Evening'), TEST_USER_ID)
-    // 20:30 Chicago on the 15th is 02:30 UTC on the 16th.
+    // 23:30 Chicago on the 15th is 05:30 UTC on the 16th: still the 15th locally,
+    // so the consider made at 20:00 still holds.
     consider(q.id, at(20, 0))
     expect(waitingBySlot(TEST_USER_ID, TEST_TIMEZONE, at(23, 30)).get(slotId('Evening'))).toEqual({
       reminders: 0,
@@ -228,7 +231,13 @@ describe('Quota prompts — never the badge', () => {
         is_tracked: true,
       },
     })
+    // An ordinary overdue task, so the count is shown to be live — the quota
+    // is what is left out, not everything.
+    createTask({
+      ...base,
+      input: { title: 'Call the bank', due_at: DateTime.fromJSDate(at(6)).toUTC().toISO()! },
+    })
     expect(pendingSlotNotifications(at(7))[0]).toMatchObject({ promptCount: 1 })
-    expect(countCurrentlyDue(TEST_USER_ID, at(7))).toBe(0)
+    expect(countCurrentlyDue(TEST_USER_ID, at(7))).toBe(1)
   })
 })
