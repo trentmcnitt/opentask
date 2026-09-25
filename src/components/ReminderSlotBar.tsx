@@ -71,8 +71,9 @@ import { DateTime } from 'luxon'
  * tiny slot stays hittable and only the surplus is distributed.
  */
 
-/** Small enough to stay roughly proportional, wide enough to hit. */
-const MIN_SEGMENT_PX = 28
+/** Small enough to stay roughly proportional, wide enough to hit. Shared with
+ *  the Reminders page's day bar, whose segments are tap targets too. */
+export const MIN_SEGMENT_PX = 28
 
 /** What a segment is saying. */
 type SlotState = 'done' | 'behind' | 'upcoming'

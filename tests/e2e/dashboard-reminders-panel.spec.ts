@@ -162,6 +162,30 @@ test.describe('Dashboard Reminders panel — wide', () => {
     }
   })
 
+  test('a reminder with notes wears the Reminders page’s notes mark', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const start = parseHHMM(natural.start_time) + 1
+    const due = todayAt(Math.floor(start / 60), start % 60)
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, { title: 'Panel noted thought', notes: 'Why', due_at: due }),
+      )
+      ids.push(await createReminder(page, { title: 'Panel bare thought', due_at: due }))
+      await page.goto('/')
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+      const row = (title: string) => panel(page).locator('li[data-reminder-id]', { hasText: title })
+      await expect(row('Panel noted thought').getByLabel('Has notes')).toBeVisible()
+      await expect(row('Panel bare thought')).toBeVisible()
+      await expect(row('Panel bare thought').locator('[data-has-notes]')).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('pages between slots and disables the chevrons at both ends, without wrapping', async ({
     authenticatedPage: page,
   }) => {

@@ -11,6 +11,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
+import { NotesMarker } from '@/components/NotesMarker'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
@@ -202,6 +203,10 @@ export function QuotaPromptRow({
         <span className="text-muted-foreground ml-1.5 text-[0.85em] whitespace-nowrap tabular-nums">
           &middot; {countText(prompt)}
         </span>
+        {/* The quota's notes, marked exactly as a reminder row marks its own
+            (2026-09-25) — after the count, as a reminder's comes after its
+            cadence mark. The bubble a hold opens is where they are read. */}
+        {prompt.has_notes && <NotesMarker />}
       </p>
       <button
         type="button"

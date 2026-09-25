@@ -24,6 +24,7 @@ interface Prompt {
   target: number
   period: string | null
   stripe_color: string | null
+  has_notes: boolean
   considered: boolean
   done: boolean
 }
@@ -101,6 +102,7 @@ describe('GET /api/reminders — prompts', () => {
       target: 5,
       period: 'WEEKLY',
       stripe_color: null,
+      has_notes: false,
       considered: false,
       done: false,
     })
