@@ -374,6 +374,13 @@ describe('quietHoursEnd', () => {
     )
   })
 
+  test('on a spring-forward night the hold still ends at 07:00 local, not 08:00', () => {
+    // 2027-03-14: Chicago jumps 02:00 CST → 03:00 CDT. 01:00 CST = 07:00Z; 07:00 CDT = 12:00Z.
+    expect(quietHoursEnd(at('2027-03-14T07:00:00Z'), tz, '07:00', '22:00')).toBe(
+      at('2027-03-14T12:00:00Z').getTime(),
+    )
+  })
+
   test('wake == sleep means no quiet hours', () => {
     expect(quietHoursEnd(at('2026-09-26T08:00:00Z'), tz, '07:00', '07:00')).toBeNull()
   })

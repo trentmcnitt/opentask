@@ -187,8 +187,11 @@ export function quietHoursEnd(
   const minuteOfDay = local.hour * 60 + local.minute
   if (isAwake(minuteOfDay, wakeTime, sleepTime)) return null
 
-  let wakeAt = local.startOf('day').plus({ minutes: wake })
-  if (wakeAt <= local) wakeAt = wakeAt.plus({ days: 1 })
+  // Wall-clock set, not startOf('day') + minutes: on a DST-change day the
+  // duration add would land an hour off wake_time.
+  const wakeClock = { hour: Math.floor(wake / 60), minute: wake % 60, second: 0, millisecond: 0 }
+  let wakeAt = local.set(wakeClock)
+  if (wakeAt <= local) wakeAt = local.plus({ days: 1 }).set(wakeClock)
   return wakeAt.toMillis()
 }
 
