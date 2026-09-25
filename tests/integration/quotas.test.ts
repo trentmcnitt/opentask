@@ -333,3 +333,24 @@ describe('Bulk edit registers a new label', () => {
     expect(res.status).toBe(200)
   })
 })
+
+describe('POST /api/tasks/:id/undone on a quota', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  test('is refused — a quota completion is a closed period, not a tap to put back', async () => {
+    const quota = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Undone probe', progress_target: 2, rrule: 'FREQ=WEEKLY' },
+        })
+      ).json()
+    ).data
+    const res = await apiFetch(`/api/tasks/${quota.id}/undone`, { method: 'POST' })
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/quota/i)
+  })
+})
