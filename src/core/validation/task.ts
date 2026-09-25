@@ -200,7 +200,9 @@ const quotaPromptConfig = z
     slot_id: z.number().int().positive().nullable().optional(),
     numbers: z
       .record(
-        z.string().regex(/^[1-9]\d{0,2}$/, 'Prompt numbers are 1 to 999'),
+        // 1..1000: a quota's target tops out at 1000 (`progressTarget`), and
+        // moving a prompt row writes every number the row stands for.
+        z.string().regex(/^(?:[1-9]\d{0,2}|1000)$/, 'Prompt numbers are 1 to 1000'),
         z.number().int().positive().nullable(),
       )
       .optional(),
