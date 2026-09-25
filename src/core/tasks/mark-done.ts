@@ -155,6 +155,20 @@ export function markUndone(options: MarkDoneOptions): Task {
     throw new ForbiddenError('Access denied')
   }
 
+  // §5: a quota's completions are written by the period rollover, not by a
+  // done tap — a met period IS the completion (`period-rollover.ts`). Putting
+  // one "back" deleted that rollover row and decremented `completion_count`
+  // without touching the period it recorded, so history lost a met week while
+  // the count, anchor and `progress_periods` all still said it happened. It was
+  // reachable from the widgets' "show completed" DONE list, which lists quota
+  // completions and offers /undone on every row. Nothing can reopen a closed
+  // period, so refuse: progress is corrected with a −1, not by un-completing.
+  if (isTracked(task)) {
+    throw new ValidationError(
+      'This is a quota — its completions record closed periods and cannot be put back. Correct the count with POST /api/tasks/{id}/progress (delta: -1)',
+    )
+  }
+
   if (isRecurring(task.rrule)) {
     return putBackLatestOccurrence(task, userId)
   }

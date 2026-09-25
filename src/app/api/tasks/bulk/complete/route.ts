@@ -18,7 +18,7 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkDone } from '@/core/tasks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
-import { validateBulkDone } from '@/core/validation'
+import { validateBulkComplete } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { ZodError } from 'zod'
@@ -26,23 +26,30 @@ import { ZodError } from 'zod'
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
-    const input = validateBulkDone(await request.json())
+    const input = validateBulkComplete(await request.json())
 
+    // Quota reminders (2026-09-24): `prompts` rides the same transaction and
+    // undo entry — `{ key, did }` per prompt (a bare key string = consider).
+    // `ids` may be empty when `prompts` is not. Bare quota ids are still
+    // skipped, and refused when nothing else is in the batch.
     const result = bulkDone({
       userId: user.id,
       userTimezone: user.timezone,
       taskIds: input.ids,
       closePeriod: input.close_period === true,
+      prompts: input.prompts,
     })
 
     // The items are handled, so their banners should go too.
-    dismissNotificationsForTasks(user.id, input.ids)
+    if (input.ids.length > 0) dismissNotificationsForTasks(user.id, input.ids)
 
     return success({
       tasks_affected: result.tasksAffected,
       recurring_count: result.recurringCount,
       one_off_count: result.oneOffCount,
       quota_skipped: result.quotaSkipped,
+      prompts_considered: result.promptsConsidered,
+      prompts_did: result.promptsDid,
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

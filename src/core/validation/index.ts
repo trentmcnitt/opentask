@@ -66,3 +66,12 @@ export {
 } from './time-slot'
 
 export type { TimeSlotCreateInput, TimeSlotUpdateInput } from './time-slot'
+
+export {
+  promptKeysSchema,
+  bulkCompleteSchema,
+  validatePromptKeys,
+  validateBulkComplete,
+} from './quota-prompt'
+
+export type { PromptKeysInput, BulkCompleteInput } from './quota-prompt'

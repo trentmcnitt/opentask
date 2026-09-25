@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import type { RemindersSummary } from '@/lib/reminders-summary'
+import { groupWaiting } from '@/lib/quota-prompts'
 
 /** What a "Considered all" tap is about to do, held until the user confirms. */
 export type ConsiderAllRequest =
@@ -39,7 +40,7 @@ export function ConsiderAllDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
-  const count = request?.kind === 'slot' ? request.group.reminders.length : (request?.count ?? 0)
+  const count = request?.kind === 'slot' ? groupWaiting(request.group) : (request?.count ?? 0)
   const title =
     request?.kind === 'slot'
       ? `Consider all ${count} in ${request.label}?`
@@ -82,7 +83,7 @@ export function useConsiderAll(
         kind: 'so-far',
         count: summary.waitingSoFar,
         labels: summary.started
-          .filter((g) => g.reminders.length > 0)
+          .filter((g) => groupWaiting(g) > 0)
           .map((g) => g.slot?.label ?? unslottedLabel),
       }),
     [unslottedLabel],

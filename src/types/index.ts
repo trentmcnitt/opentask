@@ -27,6 +27,33 @@ export interface Project {
   created_at: string
 }
 
+/**
+ * A quota's prompt settings (quota reminders, 2026-09-24). Every field is
+ * optional: an absent one takes the default, so NULL/{} is "the defaults".
+ * Slot ids are `time_slots.id`s resolved at read time — a deleted slot falls
+ * back rather than stranding the prompt.
+ */
+export interface QuotaPromptConfig {
+  /** Default: on for daily/weekly/monthly quotas, off for yearly and period-less. */
+  enabled?: boolean
+  /** The period this quota prompts in; default the user's `quota_prompt_slot_id`. */
+  slot_id?: number | null
+  /** Daily quotas only: the period for prompt #k, keyed "1".."N". */
+  numbers?: Record<string, number | null>
+}
+
+/** One local day of a quota's prompt activity (server-owned). */
+export interface QuotaDayState {
+  /** The owner's local date, YYYY-MM-DD. */
+  date: string
+  /** Net progress logged today from anywhere (never below 0). */
+  logged: number
+  /** prompt_keys "did it" today — the idempotency record. */
+  did: string[]
+  /** prompt_keys considered today (the circle, or "did it", which implies it). */
+  considered: string[]
+}
+
 export interface Task {
   id: number
   user_id: number
@@ -83,6 +110,18 @@ export interface Task {
    * iOS Track widget's pace tick) must read this, not a date.
    */
   progress_period_start: string | null
+
+  /**
+   * Quota reminders (2026-09-24): where and whether this quota prompts on the
+   * Reminders surface. NULL = the defaults for its period. See
+   * `src/core/tasks/quota-prompts.ts`.
+   */
+  quota_prompt_config: QuotaPromptConfig | null
+  /**
+   * What happened to this quota's prompts on the owner's local `date` —
+   * server-owned, restored by undo. A stale date reads as an empty day.
+   */
+  quota_day_state: QuotaDayState | null
 
   /**
    * §6: this item lives on the Reminders surface — a prompted thought rather
@@ -168,6 +207,9 @@ export type UndoAction =
   // the slot row (`undo_log.slot_state`) so undo restores both together.
   | 'time_slot_edit'
   | 'time_slot_delete'
+  // Quota reminders (2026-09-24): prompts considered and/or "did it". A batch
+  // mixed with reminder completions logs as 'bulk_done' instead.
+  | 'quota_prompt'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,

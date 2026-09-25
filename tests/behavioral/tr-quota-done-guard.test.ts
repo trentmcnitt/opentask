@@ -9,7 +9,15 @@
  * nothing else is left. `closePeriod` is the deliberate opt-in.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createTask, getTaskById, markDone, bulkDone } from '@/core/tasks'
+import {
+  createTask,
+  getTaskById,
+  markDone,
+  markUndone,
+  bulkDone,
+  rolloverTrackedPeriods,
+} from '@/core/tasks'
+import { getDb } from '@/core/db'
 import { incrementProgress } from '@/core/tasks/progress'
 import { QUOTA_DONE_MESSAGE } from '@/core/validation'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -90,5 +98,30 @@ describe('Quota done guard', () => {
     const plain = createTask({ ...base, input: { title: 'Plain' } })
     const result = markDone({ ...base, taskId: plain.id })
     expect(result.task.done).toBe(true)
+  })
+
+  test('TR-037: markUndone refuses a quota and leaves its rollover completion alone', () => {
+    // A met week closes into a completions row via the rollover — the row the
+    // widgets' DONE list offers to "put back". Putting it back deleted it.
+    const q = createTask({
+      ...base,
+      input: { title: 'Eggs', rrule: 'FREQ=WEEKLY', progress_target: 2 },
+    })
+    rolloverTrackedPeriods(new Date('2026-01-15T16:00:00Z')) // anchor the week
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    rolloverTrackedPeriods(new Date('2026-01-19T12:00:00Z')) // next Monday: the met week closes
+    expect(getTaskById(q.id)!.completion_count).toBe(1)
+    const rows = () =>
+      (
+        getDb().prepare('SELECT COUNT(*) AS n FROM completions WHERE task_id = ?').get(q.id) as {
+          n: number
+        }
+      ).n
+    expect(rows()).toBe(1)
+
+    expect(() => markUndone({ ...base, taskId: q.id })).toThrow(/quota/i)
+    expect(rows()).toBe(1)
+    expect(getTaskById(q.id)!.completion_count).toBe(1)
   })
 })
