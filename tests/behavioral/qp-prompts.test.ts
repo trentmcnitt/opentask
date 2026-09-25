@@ -72,7 +72,8 @@ function configure(taskId: number, config: object | null) {
   })
 }
 
-describe('Quota prompts — computation', () => {
+/** Every block: a fresh database, the clock frozen, the kill switch unset. */
+function freshDay() {
   beforeEach(() => {
     vi.setSystemTime(THU)
     setupTestDb()
@@ -83,6 +84,12 @@ describe('Quota prompts — computation', () => {
     delete process.env.OPENTASK_QUOTA_PROMPTS
     teardownTestDb()
   })
+}
+
+const act = (key: string, did: boolean) => actOnPrompts({ ...base, actions: [{ key, did }] })
+
+describe('Quota prompts — placement', () => {
+  freshDay()
 
   test('QP-010: a weekly quota prompts once, in the first period by default', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
@@ -189,6 +196,10 @@ describe('Quota prompts — computation', () => {
     vi.setSystemTime(fri)
     expect(prompts(fri)).toHaveLength(0)
   })
+})
+
+describe('Quota prompts — which quotas prompt', () => {
+  freshDay()
 
   test('QP-017: yearly and period-less quotas are off by default; the switch overrides', () => {
     const yearly = quota('Physical', 'FREQ=YEARLY', 1)
@@ -263,16 +274,7 @@ describe('Quota prompts — computation', () => {
 })
 
 describe('Quota prompts — actions', () => {
-  beforeEach(() => {
-    vi.setSystemTime(THU)
-    setupTestDb()
-  })
-  afterEach(() => {
-    vi.useRealTimers()
-    teardownTestDb()
-  })
-
-  const act = (key: string, did: boolean) => actOnPrompts({ ...base, actions: [{ key, did }] })
+  freshDay()
 
   test('QP-030: consider hides the prompt for today without logging progress; undo restores it', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
@@ -320,6 +322,10 @@ describe('Quota prompts — actions', () => {
     expect(getTaskById(q.id)!.progress_current).toBe(0)
     expect(prompts()[0]).toMatchObject({ considered: false, done: false, current: 0 })
   })
+})
+
+describe('Quota prompts — batches and refusals', () => {
+  freshDay()
 
   test('QP-034: stale, foreign and malformed keys refuse the whole batch', () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
@@ -389,6 +395,44 @@ describe('Quota prompts — actions', () => {
     })
     expect(result).toMatchObject({ tasksAffected: 0, promptsConsidered: 1 })
     expect(() => bulkDone({ ...base, taskIds: [weekly.id] })).toThrow(/quota/i)
+  })
+
+  test('QP-038: a did-it taken back with a −1 brings the weekly prompt back, and can be done again', () => {
+    const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const key = promptKey(q.id, 0, TODAY)
+    act(key, true)
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 })
+    expect(prompts()[0]).toMatchObject({ done: false, current: 0 })
+    act(key, true)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+  })
+
+  test('QP-039: daily did-it adds only what is missing up to k', () => {
+    setUserDefault(slotId('Morning'))
+    const q = quota('Daily Walks', 'FREQ=DAILY', 3)
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    act(promptKey(q.id, 3, TODAY), true)
+    expect(getTaskById(q.id)!.progress_current).toBe(3)
+    const deltas = getDb()
+      .prepare('SELECT delta FROM progress_events WHERE task_id = ? ORDER BY id')
+      .all(q.id) as { delta: number }[]
+    expect(deltas.map((d) => d.delta)).toEqual([1, 2])
+  })
+
+  test('QP-040: a stale prompt key refuses a mixed bulk commit, reminders included', () => {
+    const reminder = createTask({
+      ...base,
+      input: { title: 'Breathe', is_reminder: true, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
+    })
+    const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    expect(() =>
+      bulkDone({
+        ...base,
+        taskIds: [reminder.id],
+        prompts: [{ key: promptKey(q.id, 0, '2026-01-14'), did: false }],
+      }),
+    ).toThrow(/stale/)
+    expect(getTaskById(reminder.id)!.completion_count).toBe(0)
   })
 
   test("QP-037: undo of a did-it after the period rolled over leaves today's count alone", () => {

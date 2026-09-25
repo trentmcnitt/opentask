@@ -61,11 +61,12 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       considered_total: groups.reduce((sum, g) => sum + g.considered, 0),
       prompts_total: promptsTotal,
       prompts_considered_total: promptsConsideredTotal,
-      // Whether the user has anything for this surface at all. Nothing renders
-      // it directly — it only picks which empty state shows when today is
-      // clear: someone whose only items are quota prompts, all handled, has
-      // finished today rather than never having started.
-      has_any: hasAnyReminders(user.id) || promptsBySlot.size > 0,
+      // Whether the user has any reminders at all. Nothing renders it directly —
+      // it only picks which empty state the surface shows when today is clear.
+      // Reminder-only, as native builds read it; a day with prompts is never
+      // "clear" on the web surface (handled prompts still count), so it needs
+      // no prompt term.
+      has_any: hasAnyReminders(user.id),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

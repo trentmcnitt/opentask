@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
@@ -364,15 +364,22 @@ export function useQuotaPromptDetail({
     onCompleted,
   })
 
+  // Fetched fresh on every hold (never a copy from before an edit), and only
+  // the latest hold's answer is kept — a slow response for an earlier hold
+  // must not replace the one on screen.
+  const latestPeek = useRef<string | null>(null)
   const peek = useCallback(async (prompt: QuotaPrompt) => {
+    latestPeek.current = prompt.prompt_key
+    setTask(null)
     setPeekKey(prompt.prompt_key)
     try {
       const res = await fetch(`/api/tasks/${prompt.task_id}`)
       if (!res.ok) throw new Error(`task ${res.status}`)
-      setTask((await res.json()).data as Task)
+      const data = (await res.json()).data as Task
+      if (latestPeek.current === prompt.prompt_key) setTask(data)
     } catch (err) {
       log.error('ui', 'Loading a quota for its prompt failed:', err)
-      setPeekKey(null)
+      if (latestPeek.current === prompt.prompt_key) setPeekKey(null)
     }
   }, [])
   const closePeek = useCallback(() => setPeekKey(null), [])

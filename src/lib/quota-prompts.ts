@@ -135,7 +135,13 @@ export function withLogged(
   applied: number,
 ): QuotaDayState {
   const today = dayStateFor(state, date)
-  return { ...today, logged: Math.max(0, today.logged + applied) }
+  const logged = Math.max(0, today.logged + applied)
+  // Back to nothing logged today: a non-daily "did it" (key number 0) was
+  // taken back too, so it must not keep the prompt done — nor block the next
+  // "did it" as a duplicate. A daily prompt's done-ness is its count, so its
+  // keys stay.
+  const did = logged === 0 ? today.did.filter((k) => !/^q:\d+:0:/.test(k)) : today.did
+  return { ...today, logged, did }
 }
 /**
  * The one fallback rule (header of src/core/tasks/quota-prompts.ts): the chosen slot if it exists, else

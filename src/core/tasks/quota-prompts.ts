@@ -134,7 +134,7 @@ export function getQuotaPromptsBySlot(
 
   const slots = listTimeSlots(userId)
   const date = localDate(timezone, now)
-  const quotas = getTasks({ userId, done: false, limit: 1000 }).filter(
+  const quotas = getTasks({ userId, done: false, kind: 'quota', limit: 1000 }).filter(
     (t) => isTracked(t) && t.user_id === userId && promptEnabled(t),
   )
 

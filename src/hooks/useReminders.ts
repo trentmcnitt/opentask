@@ -560,8 +560,12 @@ export function useReminders({
         for (const key of keys) pendingPromptsRef.current.delete(key)
         // A refresh after a confirmed completion converges the cache with the
         // server (the recurring case: a considered reminder is gone until its next
-        // occurrence, which only the server knows).
-        if (settledOk) void refresh()
+        // occurrence, which only the server knows). After a FAILURE too when
+        // prompts were involved: the likeliest cause is a page left open over
+        // midnight, whose prompt keys are yesterday's and are refused — without
+        // a refresh every tap would fail the same way until something else
+        // reloaded the list.
+        if (settledOk || keys.length > 0) void refresh()
       }
     },
     [refresh, commitConsidered, commitPrompts, releaseHeldRefresh],
