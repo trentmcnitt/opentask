@@ -419,8 +419,8 @@ export async function dismissAllApnsNotifications(userId: number): Promise<void>
  * extension's timelines on that device, same effect as `reloadAllTimelines()`
  * but triggered from the server the moment data changes elsewhere. See
  * https://developer.apple.com/documentation/widgetkit/updating-widgets-with-widgetkit-push-notifications
- * and docs/NOTIFICATIONS.md. The debounce that calls `sendApnsWidgetReload`
- * lives in `@/core/notifications/widget-push`.
+ * and docs/NOTIFICATIONS.md. The coalescer that decides WHEN to call
+ * `sendApnsWidgetReload` lives in `@/core/notifications/widget-push`.
  *
  * apns2@12.2.0's `PushType` union predates this iOS 26/macOS 26 push type, so
  * the header value needs a cast below — the request itself is exactly what
@@ -438,57 +438,55 @@ class WidgetPushNotification extends Notification {
 
 interface WidgetPushTokenRow {
   id: number
+  user_id: number
   push_token: string
   bundle_id: string
+  platform: string
   environment: string
 }
 
 /**
- * Send a WidgetKit "reload your timelines" push to every registered widget
- * push token for a user. Never called for the demo user — see the is_demo
- * guard in `@/core/notifications/widget-push`, which is the only caller.
+ * Send a WidgetKit "reload your timelines" push to ONE registered widget push
+ * token. Per token, not per user, because each device's widget extension has
+ * its own push budget and `@/core/notifications/widget-push` (the only caller)
+ * paces each token separately. That module also owns the demo-user guard.
+ *
+ * The row is re-read here, at send time, rather than handed in by the caller:
+ * a coalesced push can fire minutes after it was scheduled, and the token may
+ * have been rotated or unregistered in between. A missing row is a no-op.
+ *
+ * Each call logs one "Sending widget reload push" line naming the token and
+ * its platform, so `grep 'widget reload push' | grep -c '(ios)'` counts what
+ * the iPhone's budget was charged.
  */
-export async function sendApnsWidgetReload(userId: number): Promise<void> {
+export async function sendApnsWidgetReload(tokenId: number): Promise<void> {
   if (!isApnsConfigured()) return
 
   const db = getDb()
-  const tokens = db
+  const row = db
     .prepare(
-      'SELECT id, push_token, bundle_id, environment FROM widget_push_tokens WHERE user_id = ?',
+      'SELECT id, user_id, push_token, bundle_id, platform, environment FROM widget_push_tokens WHERE id = ?',
     )
-    .all(userId) as WidgetPushTokenRow[]
+    .get(tokenId) as WidgetPushTokenRow | undefined
 
-  if (tokens.length === 0) return
+  if (!row) return
 
   log.info(
     'apns',
-    `Sending widget reload push to ${tokens.length} widget token(s) for user ${userId}`,
+    `Sending widget reload push to token ${row.id} (${row.platform}) for user ${row.user_id}`,
   )
 
-  const results = await Promise.allSettled(
-    tokens.map(async (row) => {
-      const topic = `${row.bundle_id}.push-type.widgets`
-      const notification = new WidgetPushNotification(row.push_token, topic)
-      try {
-        const apns = getClient(row.environment)
-        await apns.send(notification)
-      } catch (err: unknown) {
-        if (isStaleTokenError(err)) {
-          db.prepare('DELETE FROM widget_push_tokens WHERE id = ?').run(row.id)
-          log.info('apns', `Removed stale widget push token ${row.id}`)
-        } else {
-          throw err
-        }
-      }
-    }),
-  )
-
-  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (failures.length > 0) {
-    const reasons = failures.map((f) => (f.reason as ApnsError)?.reason ?? f.reason).join(', ')
-    log.error(
-      'apns',
-      `Failed to send ${failures.length}/${tokens.length} widget reload pushes: ${reasons}`,
-    )
+  const topic = `${row.bundle_id}.push-type.widgets`
+  const notification = new WidgetPushNotification(row.push_token, topic)
+  try {
+    await getClient(row.environment).send(notification)
+  } catch (err: unknown) {
+    if (isStaleTokenError(err)) {
+      db.prepare('DELETE FROM widget_push_tokens WHERE id = ?').run(row.id)
+      log.info('apns', `Removed stale widget push token ${row.id}`)
+      return
+    }
+    const reason = (err as ApnsError)?.reason ?? err
+    log.error('apns', `Failed to send widget reload push to token ${row.id}: ${reason}`)
   }
 }

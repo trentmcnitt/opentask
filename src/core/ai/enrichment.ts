@@ -276,10 +276,12 @@ export async function processEnrichmentQueue(): Promise<void> {
       }
 
       processingTasks.add(row.id)
+      let succeeded = false
       try {
         const enrichedFields = await enrichTask(row)
         retryCount.delete(row.id)
         processed++
+        succeeded = true
         // The queue normally only refreshes tabs silently — the toast belongs to
         // the on-demand path. A reminder is the exception: it is enriched from a
         // quick add that already promised the user a slot ("Added to Evening"),
@@ -299,8 +301,9 @@ export async function processEnrichmentQueue(): Promise<void> {
         processingTasks.delete(row.id)
       }
 
-      // Notify connected tabs so the AI glow stops and enriched data appears
-      emitSyncEvent(row.user_id)
+      // Notify connected tabs so the AI glow stops and enriched data appears.
+      // A failure only moves `ai-*` labels, which no widget reads.
+      emitSyncEvent(row.user_id, { widgets: succeeded })
     }
 
     log.info(
@@ -400,8 +403,9 @@ export async function enrichSingleTask(taskId: number, userId: number): Promise<
     processingTasks.delete(taskId)
   }
 
-  // Notify all connected tabs so the AI glow stops and enriched data appears
-  emitSyncEvent(userId)
+  // Notify all connected tabs so the AI glow stops and enriched data appears.
+  // A failure only moves `ai-*` labels, which no widget reads.
+  emitSyncEvent(userId, { widgets: enrichmentSucceeded })
 
   // Tell open tabs what the AI did, so the change can be explained rather than
   // just appearing.

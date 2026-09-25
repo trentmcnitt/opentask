@@ -39,6 +39,34 @@ export interface UpdateTaskResult {
   description: string
 }
 
+/** Task fields no widget (iOS, macOS, watchOS) decodes or draws. */
+const WIDGET_INVISIBLE_FIELDS = new Set(['notes'])
+
+/** The labels a widget reads: it skips reserved `ai-` labels (case-sensitive, as in TrackWidget.swift). */
+function widgetLabels(labels: string[]): string {
+  return JSON.stringify(labels.filter((l) => !l.startsWith('ai-')))
+}
+
+/**
+ * Could this edit change anything a widget shows? False only when every
+ * changed field is one widgets never read — `notes`, or a `labels` change
+ * that touches nothing but `ai-*` labels (the Track widget files a quota
+ * under its first non-`ai-` label, so order matters and is compared too).
+ * Drives `emitSyncEvent`'s `widgets` flag, which spares the budgeted WidgetKit
+ * push (see `SyncEventInfo` in `@/lib/sync-events`); open tabs refresh anyway.
+ */
+export function isWidgetVisibleEdit(
+  fieldsChanged: string[],
+  labelsBefore: string[],
+  labelsAfter: string[],
+): boolean {
+  return fieldsChanged.some((field) => {
+    if (WIDGET_INVISIBLE_FIELDS.has(field)) return false
+    if (field === 'labels') return widgetLabels(labelsBefore) !== widgetLabels(labelsAfter)
+    return true
+  })
+}
+
 /**
  * Update a task using PATCH semantics
  *
@@ -181,7 +209,9 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     result.task.labels = cleanedLabels
   }
 
-  emitSyncEvent(userId)
+  emitSyncEvent(userId, {
+    widgets: isWidgetVisibleEdit(result.fieldsChanged, task.labels, result.task.labels),
+  })
 
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
   if (!skipWebhookDispatch) {
