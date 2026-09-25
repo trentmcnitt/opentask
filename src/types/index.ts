@@ -207,6 +207,9 @@ export type UndoAction =
   // the slot row (`undo_log.slot_state`) so undo restores both together.
   | 'time_slot_edit'
   | 'time_slot_delete'
+  // Quota reminders (2026-09-24): prompts considered and/or "did it". A batch
+  // mixed with reminder completions logs as 'bulk_done' instead.
+  | 'quota_prompt'
 
 /**
  * The one time_slots row a time_slot_edit / time_slot_delete entry changed,

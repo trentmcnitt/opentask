@@ -29,6 +29,13 @@ import {
   type FieldChangesInput,
 } from './helpers'
 import { HIGH_PRIORITY_THRESHOLD } from '@/lib/priority'
+import {
+  describePromptActions,
+  dispatchProgressed,
+  executePromptActions,
+  planPromptActions,
+  type PromptAction,
+} from './quota-prompt-actions'
 
 interface ValidateBulkTasksOptions {
   /** Skip tasks that are done AND non-recurring (used by bulkDone) */
@@ -88,6 +95,12 @@ export interface BulkDoneOptions {
    * early and resetting its count to 0. Off by default; see `bulkDone`.
    */
   closePeriod?: boolean
+  /**
+   * Quota reminders (2026-09-24): prompt actions committed in the SAME
+   * transaction and undo entry as the completions — a checklist's mixed
+   * commit, a slot's "Considered all". See `quota-prompt-actions.ts`.
+   */
+  prompts?: PromptAction[]
 }
 
 export interface BulkDoneResult {
@@ -96,6 +109,10 @@ export interface BulkDoneResult {
   oneOffCount: number
   /** Quotas left alone because `closePeriod` was not set. */
   quotaSkipped: number
+  /** Prompts considered (without progress) in this batch. */
+  promptsConsidered: number
+  /** Prompts "did it" in this batch. */
+  promptsDid: number
 }
 
 /**
@@ -108,17 +125,27 @@ export interface BulkDoneResult {
  * BO-005: Mixed types handled correctly
  */
 export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
-  const { userId, userTimezone, taskIds, closePeriod = false } = options
+  const { userId, userTimezone, taskIds, closePeriod = false, prompts = [] } = options
 
-  if (taskIds.length === 0) {
-    return { tasksAffected: 0, recurringCount: 0, oneOffCount: 0, quotaSkipped: 0 }
+  if (taskIds.length === 0 && prompts.length === 0) {
+    return {
+      tasksAffected: 0,
+      recurringCount: 0,
+      oneOffCount: 0,
+      quotaSkipped: 0,
+      promptsConsidered: 0,
+      promptsDid: 0,
+    }
   }
 
   const completedAt = new Date()
   const nowStr = nowUtc()
 
   // Validate all tasks exist and user has access before starting transaction (BO-002: atomic)
-  const validated = validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true })
+  const validated =
+    taskIds.length > 0 ? validateBulkTasks(taskIds, userId, { excludeDoneNonRecurring: true }) : []
+  // Prompt keys too: a stale or foreign key refuses the whole batch.
+  const plannedPrompts = planPromptActions(userId, userTimezone, prompts, completedAt)
 
   // §5: `done` on a quota closes its period early and silently zeroes the
   // count (`computeMarkDone`'s period reset). Nothing in the app sends a quota
@@ -130,7 +157,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   // is the deliberate opt-in.
   const tasks = closePeriod ? validated : validated.filter((t) => !isTracked(t))
   const quotaSkipped = validated.length - tasks.length
-  if (tasks.length === 0 && quotaSkipped > 0) {
+  if (tasks.length === 0 && plannedPrompts.length === 0 && quotaSkipped > 0) {
     throw new ValidationError(QUOTA_DONE_MESSAGE)
   }
 
@@ -182,21 +209,48 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
           ? ['due_at', 'original_due_at', ...baseStatsFields]
           : ['done', 'done_at', 'archived_at', ...baseStatsFields]
 
-    logAction(userId, 'bulk_done', `Marked ${tasks.length} tasks done`, fieldsChanged, snapshots)
-    logActivityBatch(activityEntries)
+    // Prompt actions ride the same entry. `fieldsChanged` is one list for the
+    // whole entry, so it becomes the union — safe because `applyFieldsToTask`
+    // skips any field a snapshot does not carry, and each snapshot carries
+    // only its own fields.
+    const prompted = executePromptActions(tx, userId, userTimezone, plannedPrompts, completedAt)
+    if (tasks.length > 0) {
+      logAction(
+        userId,
+        'bulk_done',
+        prompted.snapshots.length > 0
+          ? `Marked ${tasks.length} done; ${describePromptActions(prompted.considered, prompted.did)}`
+          : `Marked ${tasks.length} tasks done`,
+        [...new Set([...fieldsChanged, ...prompted.fieldsChanged])],
+        [...snapshots, ...prompted.snapshots],
+      )
+    } else {
+      logAction(
+        userId,
+        'quota_prompt',
+        describePromptActions(prompted.considered, prompted.did),
+        prompted.fieldsChanged,
+        prompted.snapshots,
+      )
+    }
+    if (activityEntries.length > 0) logActivityBatch(activityEntries)
 
-    // Increment daily stats for all completed tasks
-    incrementDailyStat(userId, 'completions', userTimezone, tasks.length)
+    // Increment daily stats for all completed tasks (prompts are not completions)
+    if (tasks.length > 0) incrementDailyStat(userId, 'completions', userTimezone, tasks.length)
 
     return {
       tasksAffected: tasks.length,
       recurringCount,
       oneOffCount,
       quotaSkipped,
+      promptsConsidered: prompted.considered,
+      promptsDid: prompted.did,
+      progressed: prompted.progressed,
     }
   })
 
   emitSyncEvent(userId)
+  dispatchProgressed(userId, result.progressed)
 
   for (const task of tasks) {
     const fresh = getTaskById(task.id)
@@ -205,7 +259,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     }
   }
 
-  return result
+  const { progressed: _progressed, ...summary } = result
+  return summary
 }
 
 interface BulkSnoozeFilterResult {
