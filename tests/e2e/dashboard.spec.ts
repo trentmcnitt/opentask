@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures'
+import { test, expect, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -60,7 +60,7 @@ test.describe('Undated pile', () => {
       return null
     }
     const switchTo = async (v: (typeof views)[number]) => {
-      const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+      const saved = waitForPreferenceSave(page, 'default_grouping')
       await page.getByRole('button', { name: v, exact: true }).click()
       await saved
     }
