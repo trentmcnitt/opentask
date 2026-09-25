@@ -219,6 +219,13 @@ export type UndoAction =
 export interface SlotUndoState {
   before: SlotRow | null
   after: SlotRow | null
+  /**
+   * A time_slot_delete that repointed the user's default quota prompt period
+   * (`users.quota_prompt_slot_id`) from the removed slot to the nearest one
+   * (2026-09-25). Absent when the default did not name the removed slot, and
+   * on every entry logged before this existed.
+   */
+  prompt_default?: { before: number | null; after: number | null }
 }
 
 /** A time_slots row as stored — mirrors `TimeSlot` in `@/lib/time-slot-assign`. */

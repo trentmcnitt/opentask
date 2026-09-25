@@ -109,28 +109,49 @@ describe('Quota prompts — placement', () => {
     ])
   })
 
-  test("QP-011: fallbacks — the quota's slot, else the user default, else the first period", () => {
+  test("QP-011: the quota's slot, else the user default; a deleted slot's prompts go to the NEAREST slot, and undo puts them back", () => {
     const q = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const follower = quota('Read', 'FREQ=WEEKLY', 3) // no slot of its own: follows the default
     setUserDefault(slotId('Morning'))
-    expect(prompts()[0].slot).toBe('Morning')
+    const slotOf = (id: number) => prompts().find((p) => p.task_id === id)!.slot
+    expect(slotOf(q.id)).toBe('Morning')
 
-    configure(q.id, { slot_id: slotId('Afternoon') })
-    expect(prompts()[0].slot).toBe('Afternoon')
+    const afternoon = slotId('Afternoon')
+    configure(q.id, { slot_id: afternoon })
+    expect(slotOf(q.id)).toBe('Afternoon')
 
-    // The quota's own slot is deleted: back to the user's default...
-    deleteTimeSlot({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      slotId: slotId('Afternoon'),
-    })
-    expect(prompts()[0].slot).toBe('Morning')
-    // ...and with that gone too, the first period of the day.
-    deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: slotId('Morning') })
-    expect(prompts()[0].slot).toBe('Early morning')
+    // Trent, 2026-09-25: prompts move the way reminders do. Afternoon (16:00)
+    // is nearest Midday (12:00, 4h) rather than Evening (20:30, 4½h) — NOT the
+    // user's default, which the old read-time fallback picked.
+    const removed = deleteTimeSlot({ ...base, slotId: afternoon })
+    expect(removed.quotas_moved).toBe(1)
+    expect(slotOf(q.id)).toBe('Midday')
+    expect(getTaskById(q.id)!.quota_prompt_config).toEqual({ slot_id: slotId('Midday') })
 
-    // Undoing the delete brings the slot back under its old id, and the prompt with it.
+    // The user's default is a stored id too: Morning (09:00) → Early morning
+    // (07:00, 2h) rather than Midday (3h), and the quota following it goes along.
+    const morning = slotId('Morning')
+    deleteTimeSlot({ ...base, slotId: morning })
+    expect(slotOf(follower.id)).toBe('Early morning')
+    const readDefault = () =>
+      (
+        getDb()
+          .prepare('SELECT quota_prompt_slot_id AS id FROM users WHERE id = ?')
+          .get(TEST_USER_ID) as { id: number | null }
+      ).id
+    expect(readDefault()).toBe(slotId('Early morning'))
+
+    // Each undo brings its slot back under its old id, and the placement with it.
     executeUndo(TEST_USER_ID)
-    expect(prompts()[0].slot).toBe('Morning')
+    expect(readDefault()).toBe(morning)
+    expect(slotOf(follower.id)).toBe('Morning')
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(q.id)!.quota_prompt_config).toEqual({ slot_id: afternoon })
+    expect(slotOf(q.id)).toBe('Afternoon')
+
+    // Redo repeats the move.
+    executeRedo(TEST_USER_ID)
+    expect(slotOf(q.id)).toBe('Midday')
   })
 
   test('QP-012: a daily quota spreads its numbers, one row per period, showing progress', () => {
@@ -160,14 +181,14 @@ describe('Quota prompts — placement', () => {
     ])
   })
 
-  test('QP-014: per-number overrides win; an override to a deleted slot falls back', () => {
+  test('QP-014: per-number overrides win; an override to a deleted slot moves to the nearest slot', () => {
     const q = quota('Daily Walks', 'FREQ=DAILY', 2)
     configure(q.id, { numbers: { '1': slotId('Evening'), '2': slotId('Evening') } })
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([['Evening', 2]])
 
-    // #2 alone in Afternoon, and then Afternoon is deleted (a write naming a
-    // slot the user does not have is refused — QP-060 — so a stale override
-    // only ever arises this way).
+    // #2 alone in Afternoon, and then Afternoon is deleted: the override is
+    // repointed to Midday (nearest 16:00), as a boundary reminder would be.
+    // #1 was never placed by hand, so it stays derived (the first period).
     configure(q.id, { numbers: { '2': slotId('Afternoon') } })
     deleteTimeSlot({
       userId: TEST_USER_ID,
@@ -176,8 +197,11 @@ describe('Quota prompts — placement', () => {
     })
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([
       ['Early morning', 1],
-      ['Morning', 2],
+      ['Midday', 2],
     ])
+    expect(getTaskById(q.id)!.quota_prompt_config).toEqual({
+      numbers: { '2': slotId('Midday') },
+    })
   })
 
   test('QP-015: a weekly prompt is done for today once progress is logged from anywhere', () => {
@@ -211,7 +235,10 @@ describe('Quota prompts — which quotas prompt', () => {
 
   test('QP-017: yearly and period-less quotas are off by default; the switch overrides', () => {
     const yearly = quota('Physical', 'FREQ=YEARLY', 1)
-    quota('Loose count', null, 3)
+    // Period-less quotas can no longer be created (QUOTA_PERIOD_MESSAGE); a
+    // legacy row is still read harmlessly, so one is made the way it arose.
+    const loose = quota('Loose count', 'FREQ=WEEKLY', 3)
+    getDb().prepare('UPDATE tasks SET rrule = NULL WHERE id = ?').run(loose.id)
     const weekly = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
     expect(prompts().map((p) => p.task_id)).toEqual([weekly.id])
 

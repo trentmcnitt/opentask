@@ -13,8 +13,8 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
-import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
-import { isTracked } from '@/lib/track'
+import { QUOTA_DUE_DATE_MESSAGE, QUOTA_PERIOD_MESSAGE } from '@/core/validation'
+import { isTracked, quotaPeriodOf } from '@/lib/track'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { getCurrentlyDueTaskIds } from './currently-due'
 import { isAIEnabled } from '@/core/ai'
@@ -24,6 +24,15 @@ export interface CreateTaskOptions {
   userId: number
   userTimezone: string
   input: TaskCreateInput
+}
+
+/**
+ * A new quota's two refusals (§5): it has no due date (QUOTA_DUE_DATE_MESSAGE),
+ * and it always has a period (QUOTA_PERIOD_MESSAGE, 2026-09-25).
+ */
+function assertQuotaShape(input: TaskCreateInput): void {
+  if (input.due_at) throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
+  if (quotaPeriodOf(input.rrule) === null) throw new ValidationError(QUOTA_PERIOD_MESSAGE)
 }
 
 /**
@@ -65,9 +74,7 @@ export function createTask(options: CreateTaskOptions): Task {
     is_tracked: input.is_tracked ?? false,
     progress_target: input.progress_target ?? 1,
   })
-  if (tracked && input.due_at) {
-    throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
-  }
+  if (tracked) assertQuotaShape(input)
 
   // Compute due_at if rrule provided but no due_at.
   //

@@ -713,10 +713,14 @@ paths:
       description: |
         Removes the slot and moves each of its reminders to the start of the
         remaining slot nearest the reminder's own time of day (a tie goes to the
-        earlier slot), so none drop out of every slot. The last remaining slot
-        cannot be removed (400). Always an undo entry (`time_slot_delete`,
-        `undo_id`): undo restores the slot under its original id together with
-        its reminders.
+        earlier slot), so none drop out of every slot. Quota prompts placed in
+        the slot move the same way (2026-09-25): every stored prompt period
+        naming it — a quota's `quota_prompt_config.slot_id` and per-number
+        overrides, and the user's default prompt period — is repointed to the
+        remaining slot nearest the removed slot's start (`quotas_moved`). The
+        last remaining slot cannot be removed (400). Always an undo entry
+        (`time_slot_delete`, `undo_id`): undo restores the slot under its
+        original id together with its reminders and prompt placements.
       responses:
         '200':
           description: The removed slot, as it was
@@ -1058,6 +1062,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BulkResult'
+        '400':
+          description: >
+            Validation error. Includes a batch that would leave any quota without
+            a period (e.g. `rrule: null` over a selection holding a quota) — the
+            whole batch is refused and nothing is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2293,9 +2306,12 @@ components:
           description: >
             Quota reminders (2026-09-24): whether and where this quota prompts
             on the Reminders surface. Null = the defaults (on for daily, weekly
-            and monthly quotas; off for yearly and period-less; in the user's
-            default period). Writable on create and PATCH; `null` resets it.
-            Slot ids are resolved when read — a deleted period falls back to the
+            and monthly quotas; off for yearly; in the user's default period).
+            Writable on create and PATCH; `null` resets it. Deleting a period
+            (DELETE /api/time-slots/{id}) repoints every stored id naming it —
+            here and the user's default — to the remaining period nearest it,
+            where its reminders go, in the same undo entry. An id that still
+            names a missing period (from before 2026-09-25) falls back to the
             user's default, then the first period of the day. A write that names
             a slot id the stored config does not already name must name one of
             the quota owner's own periods (400 otherwise).
@@ -2416,8 +2432,10 @@ components:
           maximum: 1000
           default: 1
           description: >
-            Set above 1 to track this task as a quota (§5). That is the entire
-            opt-in gesture; there is no separate flag.
+            Set above 1 to track this task as a quota (§5); `is_tracked: true`
+            makes a quota with a target of 1. A quota must name its period in
+            the same request — `rrule` FREQ=DAILY, WEEKLY, MONTHLY or YEARLY —
+            or the create is a 400 (2026-09-25).
         create_label:
           type: boolean
           description: >
@@ -2495,6 +2513,12 @@ components:
         reminders_moved:
           type: integer
           description: Reminders rewritten to stay in (or find) a slot.
+        quotas_moved:
+          type: integer
+          description: >
+            Quotas whose stored prompt period named a deleted slot and now name
+            the nearest remaining one (DELETE only; always 0 for PATCH — a
+            retime keeps the slot's id, so its prompts follow it).
         undo_id:
           type: integer
           nullable: true
@@ -2563,6 +2587,11 @@ components:
           type: integer
           minimum: 1
           maximum: 1000
+          description: >
+            A quota always has a period (2026-09-25): a PATCH whose result is a
+            quota without a period rule — `rrule: null` on a quota, or a target
+            above 1 / `is_tracked: true` on a task with no FREQ=DAILY, WEEKLY,
+            MONTHLY or YEARLY rule — is a 400.
         progress_current:
           type: integer
           minimum: 0

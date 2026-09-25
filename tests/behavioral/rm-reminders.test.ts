@@ -290,7 +290,7 @@ describe('Reminders surface', () => {
     const tracked = createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
-      input: { title: 'Eggs', progress_target: 3 },
+      input: { title: 'Eggs', rrule: 'FREQ=WEEKLY', progress_target: 3 },
     })
 
     expect(() =>

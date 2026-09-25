@@ -24,13 +24,17 @@
  *   number for a daily quota) and the user's default
  *   (`users.quota_prompt_slot_id`) are ids, because a quota has no time of day
  *   to derive a slot from. They are resolved at READ time by
- *   `resolvePromptSlot` (`src/core/tasks/quota-prompts.ts`) with ONE fallback
- *   rule: the chosen slot if it still exists, else the user's default if it
- *   still exists, else the first period of the day. So editing a slot's start
- *   moves its prompts with it (retime-proof), deleting a slot drops them to
- *   the default rather than stranding them, and nothing here has to rewrite
- *   the stored ids — undoing a delete restores the slot under its original
- *   id, which the prompts still name.
+ *   `resolvePromptSlot` (`src/lib/quota-prompts.ts`): the chosen slot, else
+ *   the user's default, else the first period of the day. Editing a slot's
+ *   start moves its prompts with it (retime-proof: the id is unchanged).
+ *   DELETING a slot moves its prompts the way it moves its reminders — to the
+ *   remaining slot nearest the removed one's start (Trent, 2026-09-25) — by
+ *   rewriting the stored ids (the quotas' configs and the user's default) in
+ *   the delete's transaction and undo entry (`deleteTimeSlot` in `./edit.ts`).
+ *   Read time cannot do it: once the row is gone, nothing knows where the
+ *   removed slot was. Undoing the delete restores the slot under its original
+ *   id and the stored ids with it; the read-time fallback past a missing id
+ *   remains only for ids left stale by deletes made before this rule.
  * - EVERYTHING ELSE STORES NO SLOT ID. A reminder (or any item) belongs to a slot only
  *   through its time of day: `assignSlot` picks the slot with the latest
  *   `start_time` <= the item's minutes, where the minutes come from

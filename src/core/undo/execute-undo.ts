@@ -13,7 +13,7 @@ import type { UndoSnapshot, UndoResult, SlotUndoState } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
-import { applySlotRow, parseSlotState } from './slot-row'
+import { applyPromptDefault, applySlotRow, parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
 /** Parsed undo_log entry ready for undoEntry() */
@@ -33,8 +33,12 @@ export interface ParsedUndoEntry {
  */
 export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   // A slot edit/delete: put the slot row back as it was, alongside the
-  // reminders it moved (restored by the ordinary snapshot loop below).
-  if (entry.slotState) applySlotRow(tx, entry.slotState.after, entry.slotState.before)
+  // reminders and quota prompt periods it moved (the ordinary snapshot loop
+  // below), and the default prompt period if the delete repointed it.
+  if (entry.slotState) {
+    applySlotRow(tx, entry.slotState.after, entry.slotState.before)
+    applyPromptDefault(tx, entry.slotState, 'before')
+  }
 
   // Handle special case: undoing a 'create' means soft-deleting the task
   if (entry.action === 'create') {

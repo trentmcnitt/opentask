@@ -12,7 +12,7 @@ import type { UndoSnapshot, RedoResult, SlotUndoState } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
-import { applySlotRow, parseSlotState } from './slot-row'
+import { applyPromptDefault, applySlotRow, parseSlotState } from './slot-row'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
 
 /** Parsed undo_log entry ready for redoEntry() */
@@ -31,8 +31,12 @@ export interface ParsedRedoEntry {
  * Used by both executeRedo (single) and executeBatchRedo (batch).
  */
 export function redoEntry(tx: Database.Database, entry: ParsedRedoEntry): void {
-  // A slot edit/delete: re-apply the slot change alongside its reminders.
-  if (entry.slotState) applySlotRow(tx, entry.slotState.before, entry.slotState.after)
+  // A slot edit/delete: re-apply the slot change alongside its reminders and
+  // quota prompt periods.
+  if (entry.slotState) {
+    applySlotRow(tx, entry.slotState.before, entry.slotState.after)
+    applyPromptDefault(tx, entry.slotState, 'after')
+  }
 
   // Handle special case: redoing a 'create' means restoring the task from trash
   if (entry.action === 'create') {

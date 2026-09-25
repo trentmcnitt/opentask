@@ -162,6 +162,10 @@ export function withLogged(
  * the user's default if it exists, else the first period of the day. Returns
  * an index into `slots` (sorted by start), or -1 when the user has no slots at
  * all — then every prompt sits in the un-slotted "Anytime" group.
+ *
+ * Deleting a slot no longer leans on this: `deleteTimeSlot` repoints stored
+ * ids to the nearest remaining slot (2026-09-25). A missing id here means a
+ * stale one from before that rule — the fallback keeps it from stranding.
  */
 export function resolvePromptSlot(
   slots: Pick<TimeSlot, 'id'>[],
