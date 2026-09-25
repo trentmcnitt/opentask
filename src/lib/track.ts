@@ -144,8 +144,16 @@ export function effectiveProgress(
  * accumulates until the task is completed.
  */
 export function periodLabel(rrule: string | null | undefined): string | null {
-  const freq = quotaFreqOf(rrule)
-  return freq ? (QUOTA_PERIODS.find((p) => p.freq === freq)?.label ?? null) : null
+  return freqLabel(quotaFreqOf(rrule))
+}
+
+/**
+ * A FREQ's period as the user would say it — "today", "this week" — the words
+ * the Track panel's section headings use (`trackSections`). For callers that
+ * already hold the FREQ rather than an rrule (a quota prompt's `period`).
+ */
+export function freqLabel(freq: string | null | undefined): string | null {
+  return QUOTA_PERIODS.find((p) => p.freq === freq)?.label ?? null
 }
 
 /** "this week" → "week", for the period tag on a Quotas page row. */

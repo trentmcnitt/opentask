@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { assignDailyNumbers, resolvePromptSlot } from '@/lib/quota-prompts'
+import { assignDailyNumbers, ordinal, resolvePromptSlot } from '@/lib/quota-prompts'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useQuotaPromptPrefs } from '@/hooks/useQuotaPromptPrefs'
@@ -178,23 +178,22 @@ export function QuotaPromptSection({
  * start) and their default prompt period. Both cached hooks, so opening an
  * editor costs no extra wait once either surface has loaded them.
  */
-export function usePromptSetup(): { slots: TimeSlot[]; userDefault: number | null } {
+export function usePromptSetup(): {
+  slots: TimeSlot[]
+  userDefault: number | null
+  /** Settings' quota reminders switch; false until it has loaded. */
+  enabled: boolean
+} {
   const { timeSlots } = useTimeSlots()
   const { prefs } = useQuotaPromptPrefs()
   const slots = [...timeSlots].sort(
     (a, b) => (parseHHMM(a.start_time) ?? 0) - (parseHHMM(b.start_time) ?? 0),
   )
-  return { slots, userDefault: prefs?.slotId ?? null }
+  return { slots, userDefault: prefs?.slotId ?? null, enabled: prefs?.enabled ?? false }
 }
 
 /** More than this many numbered prompts is a counter, not a set of reminders. */
 const MAX_NUMBER_PICKERS = 20
-
-export function ordinal(n: number): string {
-  const tens = n % 100
-  if (tens >= 11 && tens <= 13) return `${n}th`
-  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
-}
 
 function NumberPickers({
   value,

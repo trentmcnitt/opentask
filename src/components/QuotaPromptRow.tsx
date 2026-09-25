@@ -4,15 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
-import { trackState, trackStripeClass } from '@/lib/track'
-import { movedPromptConfig, type QuotaPrompt } from '@/lib/quota-prompts'
+import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
+import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
-import { ordinal, usePromptSetup } from '@/components/QuotaPromptField'
+import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
@@ -36,7 +36,11 @@ import type { Task } from '@/types'
  * - A thin left stripe in the quota's label colour — the same stripe a quota
  *   chip wears (`trackStripeClass`: green is never spent, since green means
  *   "met"). The colour is resolved by the server (`stripe_color`).
- * - The label carries progress, "Daily Walks · 1/2" — never "#1".
+ * - The label carries progress and the period it covers, "Daily Walks · 1/2
+ *   today" — never "#1". Trent, 2026-09-25: "Clean bedroom fans · 0/1" did not
+ *   say whether that was today's one or this month's. The words are the Quotas
+ *   panel's own section headings (`freqLabel`), so the two never disagree; a
+ *   period-less quota shows the count alone.
  * - NOT SELECTABLE. A prompt is not a task: Trash would delete the quota and
  *   Details would open a reminder editor on it. A hold (or Cmd/Ctrl+Enter)
  *   opens the quota's own bubble — `TrackChipPopover`, the quota long-press
@@ -78,9 +82,10 @@ export interface QuotaPromptRowProps {
   bubble?: (row: React.ReactElement) => React.ReactNode
 }
 
-/** "3/5" — the prompt's own count, as the label shows it. */
+/** "3/5 this week" — the prompt's own count and its period, as the label shows it. */
 function countText(prompt: QuotaPrompt): string {
-  return `${prompt.current}/${prompt.target}`
+  const period = freqLabel(prompt.period)
+  return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
 }
 
 export function QuotaPromptRow({
@@ -461,9 +466,15 @@ export function useQuotaPromptDetail({
           mine
             ? {
                 slots,
-                currentId: prompt.slot_id,
                 label: periodsLabel(prompt),
-                onPick: (slot) => moveTo(prompt, mine, slot),
+                rows: [
+                  {
+                    key: prompt.prompt_key,
+                    label: periodsLabel(prompt),
+                    currentId: prompt.slot_id,
+                    onPick: (slot) => moveTo(prompt, mine, slot),
+                  },
+                ],
               }
             : undefined
         }

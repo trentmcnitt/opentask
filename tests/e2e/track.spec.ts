@@ -809,6 +809,274 @@ test.describe('Track', () => {
   })
 })
 
+/** The PATCH of one quota. */
+const isPatchOf = (id: number) => (r: Response) =>
+  r.request().method() === 'PATCH' && r.url().endsWith(`/api/tasks/${id}`)
+
+/** A quota's chip on the dashboard, in the chips view. */
+async function chipOf(page: Page, id: number) {
+  await page.goto('/')
+  const panel = page.getByRole('region', { name: 'Quotas' })
+  await expect(panel.getByRole('button', { name: 'Show as rows' })).toBeVisible()
+  const chip = panel.locator(`[data-track-chip="${id}"]`)
+  await expect(chip).toBeVisible()
+  return chip
+}
+
+/** Press and hold — the only way into the bubble; the trailing click is not a +1. */
+async function holdChipOpen(page: Page, chip: ReturnType<Page['locator']>) {
+  await chip.click({ delay: 500 })
+  const pop = page.locator('[data-track-popover]')
+  await expect(pop).toBeVisible()
+  return pop
+}
+
+/**
+ * The bubble is on a 375×812 screen, clear of the top bar and the tab bar,
+ * and no chip pokes past its right edge.
+ */
+async function expectBubbleOnScreen(page: Page, pop: ReturnType<Page['locator']>) {
+  const box = (await pop.boundingBox())!
+  const header = (await page.locator('header').first().boundingBox())!
+  const tabs = (await page.locator('nav.fixed').last().boundingBox())!
+  expect(box.x + box.width).toBeLessThanOrEqual(375)
+  expect(box.y).toBeGreaterThanOrEqual(header.y + header.height)
+  expect(box.y + box.height).toBeLessThanOrEqual(tabs.y)
+  for (const c of await pop.locator('[data-prompt-period]').all()) {
+    const b = (await c.boundingBox())!
+    expect(b.x + b.width).toBeLessThanOrEqual(box.x + box.width)
+  }
+}
+
+/** 1st, 2nd, 3rd, 4th — the default five periods never reach 11th. */
+function ordinalOf(n: number): string {
+  return `${n}${['th', 'st', 'nd', 'rd'][n] ?? 'th'}`
+}
+
+/**
+ * Pin the user's default prompt period to their first period (and quota
+ * reminders on) for each test in the calling describe, and put both back
+ * after. Returns the user's periods by start, filled in before each test.
+ */
+function pinPromptPeriod(): { slots: { id: number; label: string }[] } {
+  const pinned = { slots: [] as { id: number; label: string }[] }
+  let savedPrefs: { quota_prompt_slot_id: number | null; quota_prompts_enabled: boolean }
+  test.beforeEach(async ({ authenticatedPage: page }) => {
+    savedPrefs = (await (await page.request.get('/api/user/preferences')).json()).data
+    const res = await page.request.get('/api/time-slots')
+    const all = (await res.json()).data.time_slots as {
+      id: number
+      label: string
+      start_time: string
+    }[]
+    pinned.slots = [...all].sort((a, b) => a.start_time.localeCompare(b.start_time))
+    await page.request.patch('/api/user/preferences', {
+      data: { quota_prompt_slot_id: pinned.slots[0].id, quota_prompts_enabled: true },
+    })
+  })
+  test.afterEach(async ({ authenticatedPage: page }) => {
+    await page.request.patch('/api/user/preferences', {
+      data: {
+        quota_prompt_slot_id: savedPrefs.quota_prompt_slot_id ?? null,
+        quota_prompts_enabled: savedPrefs.quota_prompts_enabled !== false,
+      },
+    })
+  })
+  return pinned
+}
+
+/**
+ * A quota chip's bubble carries its daily reminder's period chips (2026-09-25)
+ * — the same chips, and the same save, as a prompt row's bubble on Reminders
+ * (quota-prompts.spec.ts): one tap PATCHes `quota_prompt_config`, the toast's
+ * Undo takes it back. A chip stands for the whole quota, so a daily one shows
+ * a row per number. The user's default prompt period is pinned to the first
+ * period for each test (and put back after), so "where it is now" is known.
+ */
+test.describe('Track — moving a quota reminder from its chip', () => {
+  const pinned = pinPromptPeriod()
+
+  test('a period chip moves the quota for good; the toast Undo puts it back', async ({
+    authenticatedPage: page,
+  }) => {
+    const title = `Probe chip move ${Date.now()}`
+    const id = await createTask(page, {
+      title,
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 3,
+      is_tracked: true,
+    })
+    const [first] = pinned.slots
+    const { slots } = pinned
+    const last = slots[slots.length - 1]
+    const chip = await chipOf(page, id)
+    const count = chip.locator('[data-track-count]')
+
+    let pop = await holdChipOpen(page, chip)
+    const periods = pop.locator('[data-prompt-periods]')
+    await expect(periods).toContainText('Reminds me in')
+    await expect(periods.locator('[data-prompt-period]')).toHaveText(slots.map((s) => s.label))
+    await expect(periods.locator('[aria-pressed="true"]')).toHaveText(first.label)
+    // One row for a weekly quota: no per-number grid.
+    await expect(periods.locator('[data-prompt-row]')).toHaveCount(0)
+
+    const saved = page.waitForResponse(isPatchOf(id))
+    await periods.locator(`[data-prompt-period="${last.id}"]`).click()
+    await expect(pop).toHaveCount(0)
+    expect((await (await saved).json()).data.quota_prompt_config).toEqual({ slot_id: last.id })
+    // The hold neither logged nor lost a count.
+    await expect(count).toHaveText('0/3')
+
+    const toast = page.locator('[data-sonner-toast]', {
+      hasText: `Moved “${title}” to ${last.label}`,
+    })
+    await expect(toast).toBeVisible()
+    pop = await holdChipOpen(page, chip)
+    await expect(pop.locator('[data-prompt-periods] [aria-pressed="true"]')).toHaveText(last.label)
+    await page.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await toast.getByRole('button', { name: 'Undo' }).click()
+    await undone
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(`/api/tasks/${id}`)).json()).data.quota_prompt_config,
+      )
+      .toBeNull()
+    pop = await holdChipOpen(page, chip)
+    await expect(pop.locator('[data-prompt-periods] [aria-pressed="true"]')).toHaveText(first.label)
+    await page.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+
+    // The chip's own gestures are untouched: tap +1, right-click −1.
+    await chip.click()
+    await expect(count).toHaveText('1/3')
+    await chip.click({ button: 'right' })
+    await expect(count).toHaveText('0/3')
+  })
+
+  test('no period chips when the quota, or Settings, has quota reminders off', async ({
+    authenticatedPage: page,
+  }) => {
+    const off = await createTask(page, {
+      title: `Probe chip off ${Date.now()}`,
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 2,
+      is_tracked: true,
+      quota_prompt_config: { enabled: false },
+    })
+    const on = await createTask(page, {
+      title: `Probe chip on ${Date.now()}`,
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 2,
+      is_tracked: true,
+    })
+
+    // The neighbour has them — which also says Settings has loaded, so the
+    // quota whose own switch is off is judged on that switch alone.
+    const panel = page.getByRole('region', { name: 'Quotas' })
+    let pop = await holdChipOpen(page, await chipOf(page, on))
+    await expect(pop.locator('[data-prompt-periods]')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+    pop = await holdChipOpen(page, panel.locator(`[data-track-chip="${off}"]`))
+    await expect(pop).toContainText('Periods met')
+    await expect(pop.locator('[data-prompt-periods]')).toHaveCount(0)
+
+    // Settings off: none anywhere.
+    await page.request.patch('/api/user/preferences', { data: { quota_prompts_enabled: false } })
+    pop = await holdChipOpen(page, await chipOf(page, on))
+    await expect(pop).toContainText('Periods met')
+    await expect(pop.locator('[data-prompt-periods]')).toHaveCount(0)
+  })
+})
+
+/** A daily quota's numbers, each its own row — or grouped, past a few. */
+test.describe('Track — moving a daily quota reminder, number by number', () => {
+  const pinned = pinPromptPeriod()
+
+  test('a daily quota shows a row per number and moves only that number — at phone width', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const [first, second] = pinned.slots
+    const { slots } = pinned
+    const last = slots[slots.length - 1]
+    const id = await createTask(page, {
+      title: `Probe chip daily ${Date.now()}`,
+      rrule: 'FREQ=DAILY',
+      progress_target: 2,
+      is_tracked: true,
+    })
+    const chip = await chipOf(page, id)
+
+    const pop = await holdChipOpen(page, chip)
+    const rows = pop.locator('[data-prompt-row]')
+    await expect(rows).toHaveCount(2)
+    const row1 = pop.locator('[data-prompt-row="1"]')
+    const row2 = pop.locator('[data-prompt-row="2"]')
+    await expect(row1).toContainText('1st of 2')
+    await expect(row2).toContainText('2nd of 2')
+    // Where the editor's per-number pickers would show them.
+    await expect(row1.locator('[aria-pressed="true"]')).toHaveText(first.label)
+    await expect(row2.locator('[aria-pressed="true"]')).toHaveText(second.label)
+
+    await expectBubbleOnScreen(page, pop)
+
+    const saved = page.waitForResponse(isPatchOf(id))
+    await row2.locator(`[data-prompt-period="${last.id}"]`).click()
+    expect((await (await saved).json()).data.quota_prompt_config).toEqual({
+      numbers: { '2': last.id },
+    })
+    await expect(
+      page.locator('[data-sonner-toast]', { hasText: `(2nd of 2) to ${last.label}` }),
+    ).toBeVisible()
+
+    const again = await holdChipOpen(page, chip)
+    await expect(again.locator('[data-prompt-row="1"] [aria-pressed="true"]')).toHaveText(
+      first.label,
+    )
+    await expect(again.locator('[data-prompt-row="2"] [aria-pressed="true"]')).toHaveText(
+      last.label,
+    )
+  })
+
+  test('a large daily target groups its numbers by period — the bubble scrolls, never clips', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const { slots } = pinned
+    const last = slots[slots.length - 1]
+    const id = await createTask(page, {
+      title: `Probe chip daily eight ${Date.now()}`,
+      rrule: 'FREQ=DAILY',
+      progress_target: 8,
+      is_tracked: true,
+    })
+    const pop = await holdChipOpen(page, await chipOf(page, id))
+    // One row per period the numbers sit in, the spill-over sharing the last.
+    const labels = slots.map((_, i) =>
+      i < slots.length - 1 ? `${ordinalOf(i + 1)} of 8` : `${ordinalOf(i + 1)}–8th of 8`,
+    )
+    await expect(pop.locator('[data-prompt-row]')).toHaveCount(slots.length)
+    for (const [i, label] of labels.entries()) {
+      await expect(pop.locator('[data-prompt-row]').nth(i)).toContainText(label)
+    }
+    await expectBubbleOnScreen(page, pop)
+    // Everything is reachable inside it, the footer included.
+    await pop.getByRole('button', { name: 'Open' }).scrollIntoViewIfNeeded()
+    await expect(pop.getByRole('button', { name: 'Open' })).toBeInViewport()
+
+    const saved = page.waitForResponse(isPatchOf(id))
+    await pop.locator(`[data-prompt-row="1"] [data-prompt-period="${last.id}"]`).click()
+    expect((await (await saved).json()).data.quota_prompt_config).toEqual({
+      numbers: { '1': last.id },
+    })
+  })
+})
+
 /**
  * The Quotas page (§5) — where quotas are made, managed and retired, as
  * opposed to the dashboard's Track panel, which is where they are tapped.

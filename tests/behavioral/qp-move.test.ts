@@ -18,7 +18,13 @@ import { deleteTimeSlot } from '@/core/time-slots/edit'
 import { executeUndo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { validateTaskUpdate } from '@/core/validation'
-import { applyPromptMoves, movedPromptConfig, promptKey } from '@/lib/quota-prompts'
+import {
+  applyPromptMoves,
+  movedPromptConfig,
+  numbersLabel,
+  promptKey,
+  quotaPeriodRows,
+} from '@/lib/quota-prompts'
 import {
   setupTestDb,
   teardownTestDb,
@@ -272,5 +278,58 @@ describe('Quota prompt moves — the optimistic helper', () => {
     expect(
       movedPromptConfig({ enabled: true, slot_id: 2, numbers: { '1': 3 } }, { numbers: [2, 3] }, 5),
     ).toEqual({ enabled: true, slot_id: 2, numbers: { '1': 3, '2': 5, '3': 5 } })
+  })
+})
+
+/**
+ * A Track chip's bubble (2026-09-25): the chip stands for the whole quota, so
+ * its rows are computed from the quota itself, by the same placement rule the
+ * server's prompt rows use.
+ */
+describe("Quota prompt moves — a quota chip's rows", () => {
+  const rowsOf = (id: number) =>
+    quotaPeriodRows(getTaskById(id)!, listTimeSlots(TEST_USER_ID), slotId('Morning'))
+
+  test('QP-072: a non-daily quota is one row, in its period; switched off, none', () => {
+    const task = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    expect(rowsOf(task.id)).toEqual([{ numbers: null, slotId: slotId('Morning') }])
+    configure(task.id, { slot_id: slotId('Evening') })
+    expect(rowsOf(task.id)).toEqual([{ numbers: null, slotId: slotId('Evening') }])
+    configure(task.id, { enabled: false })
+    expect(rowsOf(task.id)).toEqual([])
+    // Yearly prompts nothing by default.
+    const yearly = quota('Physical', 'FREQ=YEARLY', 1)
+    expect(rowsOf(yearly.id)).toEqual([])
+    // No periods, nothing to move between.
+    expect(quotaPeriodRows(task, [], null)).toEqual([])
+  })
+
+  test('QP-073: a small daily target is one row per number, where the editor shows it', () => {
+    const task = quota('Floss', 'FREQ=DAILY', 2)
+    expect(rowsOf(task.id)).toEqual([
+      { numbers: [1], slotId: slotId('Morning') },
+      { numbers: [2], slotId: slotId('Midday') },
+    ])
+  })
+
+  test("QP-074: a large daily target groups by period — exactly the server's prompt rows", () => {
+    const task = quota('Water', 'FREQ=DAILY', 7)
+    const rows = rowsOf(task.id)
+    expect(rows).toEqual(
+      prompts()
+        .filter((p) => p.task_id === task.id)
+        .map((p) => ({ numbers: p.numbers, slotId: p.slot_id })),
+    )
+    expect(rows.map((r) => numbersLabel(r.numbers!, 7))).toEqual([
+      '1st of 7',
+      '2nd of 7',
+      '3rd of 7',
+      '4th–7th of 7',
+    ])
+  })
+
+  test('QP-075: numbersLabel collapses runs', () => {
+    expect(numbersLabel([2], 2)).toBe('2nd of 2')
+    expect(numbersLabel([1, 4, 5, 11, 12, 13], 13)).toBe('1st, 4th–5th, 11th–13th of 13')
   })
 })
