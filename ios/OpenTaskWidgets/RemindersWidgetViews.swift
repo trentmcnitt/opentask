@@ -508,30 +508,42 @@ private struct RemindersListView: View {
     /// THE TITLE NEVER TRUNCATES (2026-09-24 — "Early m…" on Trent's phone,
     /// at XXX Large text). It is `fixedSize` horizontally and its block has
     /// the row's layout priority, and the header was thinned so that costs
-    /// nothing: the eye moved to the bottom row as the completed dot, and
-    /// systemLarge's slot chevrons are gone — the slot strip's segments
-    /// under the header are each a tap target (`JumpToReminderSlotIntent`)
-    /// that already does what they did. systemMedium has no strip, so it
-    /// keeps the chevrons as its only way between slots.
+    /// nothing: the eye moved to the bottom row as the completed dot.
+    ///
+    /// PERIOD CHEVRONS ON EVERY SIZE (2026-09-25, Trent: "‹ › in the header
+    /// to move between periods, laid out like the Tasks widget's header").
+    /// systemLarge had dropped them on 2026-09-24 in favour of the slot
+    /// strip's tappable segments; they are back, in the Tasks header's exact
+    /// arrangement — undo/redo, then the `ChevronPager` at the right edge.
+    /// Two `‹ ›` controls on one card is only confusing if they look alike
+    /// or do the same thing (Quotas' header pair paged the same pages as its
+    /// bottom pager, and went). Here they don't: the header pair changes the
+    /// PERIOD — the title it sits beside is what changes, and the page
+    /// resets to 1 (`WidgetStore.remindersPage(for:)` is paired with the
+    /// slot) — while the bottom `‹ n/N ›` pages WITHIN the period, small,
+    /// with its page count between the glyphs. The Tasks widget has had this
+    /// same header-vs-bottom split since 2026-09-23.
     private var header: some View {
+        // Tasks' arrangement when it fits; else undo/redo drop to the
+        // subtitle line — see `compactHeaderRow`.
+        ViewThatFits(in: .horizontal) {
+            headerRow
+            compactHeaderRow
+        }
+        // systemMedium gets none: its card is 128pt tall and a header plus two
+        // rows spends 122 of that, so 6pt of air there costs the second row —
+        // and a row of content beats a comfortable title every time. The 4×2's
+        // breathing room is WidgetKit's own content margin.
+        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+    }
+
+    /// Title block, undo/redo, period chevrons — the Tasks header's layout.
+    private var headerRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: WidgetTheme.headerSpacing) {
             Link(destination: headerDestination) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.group?.label ?? "Reminders")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                    // "Undid: …" / "Redid: …" for ~60s after an undo/redo
-                    // (2026-09-23) — see `WidgetStore`'s "Last-action
-                    // indication" doc. Replaces the ordinary count subtitle
-                    // rather than sitting beside it: the header has no
-                    // spare height for a third line on systemMedium.
-                    Text(entry.actionDescription ?? countLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                    headerTitle
+                    headerSubtitle
                 }
                 .contentShape(Rectangle())
             }
@@ -539,21 +551,73 @@ private struct RemindersListView: View {
             Spacer(minLength: 0)
             // Right-aligned (2026-09-23) — see `UndoRedoButtons`' doc:
             // always present, dimmed when there is nothing to undo/redo.
-            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: RemindersWidget.kind)
-            if !isLarge {
-                ChevronPager(
-                    previous: ShiftReminderSlotIntent(offset: -1),
-                    next: ShiftReminderSlotIntent(offset: 1),
-                    hasPrevious: canPage,
-                    hasNext: canPage
-                )
-            }
+            undoRedo
+            periodChevrons
         }
-        // systemMedium gets none: its card is 128pt tall and a header plus two
-        // rows spends 122 of that, so 6pt of air there costs the second row —
-        // and a row of content beats a comfortable title every time. The 4×2's
-        // breathing room is WidgetKit's own content margin.
-        .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
+    }
+
+    /// The fallback when the title, undo/redo and chevrons don't fit on one
+    /// line (2026-09-25): "Early morning" at XXX Large on Trent's 402pt-wide
+    /// iPhone 16 Pro ran a few points past the card's edge, and a
+    /// `fixedSize` title that can't truncate pushes the whole card sideways
+    /// instead. The chevrons keep their place at the title line's right
+    /// edge; undo/redo move to the right end of the subtitle line, which
+    /// "N left" leaves mostly empty. They cancel their own vertical padding
+    /// there so the subtitle line doesn't grow — the header's height, which
+    /// the list's paging budget is measured from, stays the one-row header's.
+    private var compactHeaderRow: some View {
+        HStack(alignment: .top, spacing: WidgetTheme.headerSpacing) {
+            VStack(alignment: .leading, spacing: 1) {
+                Link(destination: headerDestination) {
+                    headerTitle.contentShape(Rectangle())
+                }
+                HStack(alignment: .center, spacing: WidgetTheme.headerSpacing) {
+                    Link(destination: headerDestination) {
+                        headerSubtitle.contentShape(Rectangle())
+                    }
+                    Spacer(minLength: 0)
+                    undoRedo.padding(.vertical, -UndoRedoButtons.verticalPadding)
+                }
+            }
+            .layoutPriority(1)
+            periodChevrons
+        }
+    }
+
+    /// Never truncates — see `header`'s doc.
+    private var headerTitle: some View {
+        Text(entry.group?.label ?? "Reminders")
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// "Undid: …" / "Redid: …" for ~60s after an undo/redo (2026-09-23) —
+    /// see `WidgetStore`'s "Last-action indication" doc. Replaces the
+    /// ordinary count subtitle rather than sitting beside it: the header has
+    /// no spare height for a third line on systemMedium.
+    private var headerSubtitle: some View {
+        Text(entry.actionDescription ?? countLabel)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+
+    private var undoRedo: some View {
+        UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: RemindersWidget.kind)
+    }
+
+    private var periodChevrons: some View {
+        ChevronPager(
+            previous: ShiftReminderSlotIntent(offset: -1),
+            next: ShiftReminderSlotIntent(offset: 1),
+            hasPrevious: canPage,
+            hasNext: canPage,
+            previousLabel: "Previous period",
+            nextLabel: "Next period"
+        )
     }
 
     /// The header title `Link`'s destination (2026-09-23) — Trent: "it
