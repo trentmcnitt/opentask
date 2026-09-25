@@ -344,7 +344,7 @@ function HomeContent({
   const searchParams = useSearchParams()
   const selection = useSelection()
   const timezone = useTimezone()
-  const { timeSlots } = useTimeSlots(initialTimeSlots)
+  const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots(initialTimeSlots)
   const data = useFetchData(router, initialTasks)
   const { tasks, setTasks, loading, error, setError, setLoading, fetchTasks } = data
   const { projects, refreshProjects } = useProjects()
@@ -377,7 +377,11 @@ function HomeContent({
   const quickTakeAbortRef = useRef<AbortController | null>(null)
 
   useSyncStream({
-    onSync: refreshAll,
+    // Slots too: a Settings edit to a reminder period emits a sync event.
+    onSync: () => {
+      void refreshAll()
+      void refreshTimeSlots()
+    },
     onTaskCreated: (data) => {
       // Sonner deduplicates by toast ID — if this device just created the task,
       // the local toast already has this ID, so Sonner updates it in place
