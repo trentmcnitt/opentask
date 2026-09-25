@@ -7,6 +7,7 @@ import { DateTime } from 'luxon'
 import { cn, fromRowControl } from '@/lib/utils'
 import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import { cadenceMark, slotAtMinutes } from '@/lib/reminder-rule'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
@@ -19,6 +20,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
+import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { QuickAdd } from '@/components/QuickAdd'
 import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
@@ -131,6 +133,12 @@ interface ReminderRowHandlers {
   onHighlightDone: () => void
   /** Report that a row is on screen; returns its own deregistration. */
   onRegister: (id: number) => () => void
+  /**
+   * Draw one waiting quota prompt (2026-09-24). Threaded with the row
+   * handlers because it goes everywhere they go — every slot group, the
+   * search view — and is not spread onto `ReminderRow`.
+   */
+  renderPrompt: (prompt: QuotaPrompt) => React.ReactNode
 }
 
 /** Stable identity for a group across refetches — slot id, or the un-slotted bucket. */
@@ -159,6 +167,8 @@ export function RemindersView({
     complete,
     completeMany,
     completeGroup,
+    considerPrompt,
+    didPrompt,
     rowLeft,
     registerRow,
     hydrated,
@@ -195,9 +205,19 @@ export function RemindersView({
         ...group,
         reminders: group.reminders.filter(matchesQuery),
         consideredItems: group.consideredItems.filter(matchesQuery),
+        // A prompt matches on its title; only waiting ones are results (a
+        // handled one has no row to show).
+        prompts: group.prompts.filter(
+          (p) => promptWaiting(p) && p.title.toLowerCase().includes(query),
+        ),
       }))
-      .filter((group) => group.reminders.length > 0 || group.consideredItems.length > 0)
-  }, [groups, searching, matchesQuery])
+      .filter(
+        (group) =>
+          group.reminders.length > 0 ||
+          group.consideredItems.length > 0 ||
+          group.prompts.length > 0,
+      )
+  }, [groups, searching, matchesQuery, query])
   const searchNotToday = useMemo(
     () => (searching ? notToday.filter(matchesQuery) : []),
     [notToday, searching, matchesQuery],
@@ -207,8 +227,10 @@ export function RemindersView({
     [searchGroups, timezone],
   )
   const resultCount =
-    searchGroups.reduce((n, g) => n + g.reminders.length + g.consideredItems.length, 0) +
-    searchNotToday.length
+    searchGroups.reduce(
+      (n, g) => n + g.reminders.length + g.consideredItems.length + g.prompts.length,
+      0,
+    ) + searchNotToday.length
 
   // A selection made before the query no longer corresponds to what is on
   // screen, exactly as on the Tasks page.
@@ -270,7 +292,7 @@ export function RemindersView({
   // A slot shows while it has something waiting OR something considered today
   // (a full bar is worth seeing); a slot with neither is noise.
   const visibleGroups = useMemo(
-    () => groups.filter((g) => g.reminders.length > 0 || g.considered > 0),
+    () => groups.filter((g) => groupWaiting(g) > 0 || groupConsidered(g) > 0),
     [groups],
   )
   const summary = useMemo(
@@ -423,6 +445,19 @@ export function RemindersView({
     completeMany,
     completeGroup,
     remove,
+  })
+  // Quota prompts: their rows (a hold opens the quota's own bubble and
+  // editor), drawn by the slot groups through `rowHandlers.renderPrompt`.
+  const prompts = usePromptRows({
+    completingIds,
+    isSelectionMode: actions.isSelectionMode,
+    considerPrompt,
+    didPrompt,
+    rowLeft,
+    registerRow,
+    onUndo,
+    onCompleted,
+    refresh,
   })
   // Both sweep buttons confirm first (Trent, 2026-09-05); single and selected
   // considerations do not.
@@ -603,6 +638,7 @@ export function RemindersView({
       onLeft: rowLeft,
       onHighlightDone: clearHighlight,
       onRegister: registerRow,
+      renderPrompt: prompts.renderPrompt,
     }),
     [
       actions.selectRow,
@@ -613,6 +649,7 @@ export function RemindersView({
       rowLeft,
       clearHighlight,
       registerRow,
+      prompts.renderPrompt,
     ],
   )
 
@@ -674,8 +711,7 @@ export function RemindersView({
                     group={group}
                     started={summary.started.includes(group)}
                     open={
-                      isOpen(key) &&
-                      (group.reminders.length > 0 || group.consideredItems.length > 0)
+                      isOpen(key) && (groupWaiting(group) > 0 || group.consideredItems.length > 0)
                     }
                     expanded={expandedKeys.has(key)}
                     onToggle={() => toggleOpen(key)}
@@ -734,6 +770,7 @@ export function RemindersView({
         onDelete={actions.deleteMany}
         onOpenPage={(id) => router.push(`/tasks/${id}`)}
       />
+      {prompts.modal}
     </section>
   )
 }
@@ -758,7 +795,7 @@ function useReminderActions({
   selectedTasks: Task[]
   startedGroups: ReminderGroup[]
   complete: (task: Task) => Promise<void>
-  completeMany: (tasks: Task[]) => Promise<void>
+  completeMany: (tasks: Task[], prompts?: QuotaPrompt[]) => Promise<void>
   completeGroup: (group: ReminderGroup) => Promise<void>
   remove: (tasks: Task[]) => Promise<void>
 }) {
@@ -806,8 +843,10 @@ function useReminderActions({
   }, [selectedTasks, clear, completeMany])
   const considerSoFar = useCallback(() => {
     const tasks = startedGroups.flatMap((g) => g.reminders)
+    // Waiting quota prompts are part of "so far" — considered, never +1.
+    const prompts = startedGroups.flatMap((g) => g.prompts.filter(promptWaiting))
     clear()
-    void completeMany(tasks)
+    void completeMany(tasks, prompts)
   }, [startedGroups, clear, completeMany])
   const deleteSelection = useCallback(() => {
     const tasks = selectedTasks
@@ -920,15 +959,16 @@ function RemindersHeadline({
           aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
         >
           {segments.map((g) => {
-            const slotTotal = g.reminders.length + g.considered
-            const done = slotTotal > 0 && g.considered >= slotTotal
+            const considered = groupConsidered(g)
+            const slotTotal = groupWaiting(g) + considered
+            const done = slotTotal > 0 && considered >= slotTotal
             const label = g.slot?.label ?? UNSLOTTED_LABEL
             const started = summary.started.includes(g)
             return (
               <div
                 key={groupKey(g)}
                 aria-hidden="true"
-                title={`${label} · ${g.considered} of ${slotTotal} considered`}
+                title={`${label} · ${considered} of ${slotTotal} considered`}
                 style={{ flexGrow: slotTotal }}
                 className={cn(
                   'relative min-w-[6px] overflow-hidden rounded-full',
@@ -943,7 +983,7 @@ function RemindersHeadline({
                     // so a slot reads the same way on both surfaces.
                     done ? 'bg-green-600' : 'bg-indigo-600',
                   )}
-                  style={{ width: `${slotTotal > 0 ? (g.considered / slotTotal) * 100 : 0}%` }}
+                  style={{ width: `${slotTotal > 0 ? (considered / slotTotal) * 100 : 0}%` }}
                 />
               </div>
             )
@@ -1106,7 +1146,7 @@ function ReminderSlotGroup({
   scrollIntoView?: boolean
   onToggle: () => void
   onExpand: (expanded: boolean) => void
-  completingIds: Set<number>
+  completingIds: Set<number | string>
   selectedIds: Set<number>
   isSelectionMode: boolean
   highlightId: number | null
@@ -1118,21 +1158,24 @@ function ReminderSlotGroup({
 }) {
   const label = group.slot?.label ?? UNSLOTTED_LABEL
   const time = group.slot ? formatSlotTime(group.slot.start_time) : null
-  const count = group.reminders.length
-  const slotTotal = count + group.considered
+  // Waiting and considered count quota prompts exactly as reminders.
+  const count = groupWaiting(group)
+  const considered = groupConsidered(group)
+  const slotTotal = count + considered
   // A slot with nothing waiting can still open: its considered items live
   // behind the counter, and one of them may need putting back.
   const canOpen = !locked && (count > 0 || group.consideredItems.length > 0)
   const showsEverything = slotShowsEverything(started, expanded)
   const visible = showsEverything ? group.reminders : group.reminders.slice(0, SLOT_PREVIEW_COUNT)
-  const hiddenCount = count - visible.length
+  const hiddenCount = group.reminders.length - visible.length
+  const { renderPrompt, ...reminderHandlers } = rowHandlers
 
   const headerRow = (
     <SlotHeaderRow
       label={label}
       time={time}
       count={count}
-      considered={group.considered}
+      considered={considered}
       open={open}
       started={started}
     />
@@ -1181,7 +1224,7 @@ function ReminderSlotGroup({
         )}
       </div>
 
-      <SlotHairline label={label} considered={group.considered} total={slotTotal} />
+      <SlotHairline label={label} considered={considered} total={slotTotal} />
 
       {open && (
         <>
@@ -1200,16 +1243,24 @@ function ReminderSlotGroup({
                   selected={selectedIds.has(reminder.id)}
                   isSelectionMode={isSelectionMode}
                   highlighted={highlightId === reminder.id}
-                  {...rowHandlers}
+                  {...reminderHandlers}
                 />
               ))}
             </ul>
           )}
+          <SlotPromptList
+            prompts={group.prompts}
+            label={label}
+            spaced={visible.length > 0}
+            renderPrompt={renderPrompt}
+          />
           {!locked && (
             <SlotRowCountToggle
-              count={count}
+              count={group.reminders.length}
               hiddenCount={hiddenCount}
-              canShowLess={showsEverything && !started && count > SLOT_PREVIEW_COUNT}
+              canShowLess={
+                showsEverything && !started && group.reminders.length > SLOT_PREVIEW_COUNT
+              }
               onExpand={onExpand}
             />
           )}
@@ -1224,6 +1275,36 @@ function ReminderSlotGroup({
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * A slot's waiting quota prompts (2026-09-24). Under the slot's reminders,
+ * never capped (a slot holds a few), and outside the reminders' listbox:
+ * a prompt is not selectable (see `QuotaPromptRow`).
+ */
+function SlotPromptList({
+  prompts,
+  label,
+  spaced,
+  renderPrompt,
+}: {
+  prompts: QuotaPrompt[]
+  label: string
+  /** Reminder rows sit above: keep the rows' own rhythm across the seam. */
+  spaced: boolean
+  renderPrompt: (prompt: QuotaPrompt) => React.ReactNode
+}) {
+  const waiting = prompts.filter(promptWaiting)
+  if (waiting.length === 0) return null
+  return (
+    <ul
+      className={cn('space-y-0.5 px-1', spaced && 'mt-0.5')}
+      aria-label={`${label} quotas`}
+      data-slot-prompts
+    >
+      {waiting.map((prompt) => renderPrompt(prompt))}
+    </ul>
   )
 }
 
@@ -1882,7 +1963,7 @@ function SearchResults({
   query: string
   groups: ReminderGroup[]
   notToday: Task[]
-  completingIds: Set<number>
+  completingIds: Set<number | string>
   selectedIds: Set<number>
   isSelectionMode: boolean
   rowHandlers: ReminderRowHandlers

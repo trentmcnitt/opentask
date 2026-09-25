@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS users (
   ai_insights_timeout_ms INTEGER,
   notifications_enabled INTEGER NOT NULL DEFAULT 1,
   critical_alert_volume REAL NOT NULL DEFAULT 1.0,
+  -- Quota reminders (2026-09-24). The period unmet quotas prompt in by
+  -- default (a time_slots id; NULL or a deleted slot = the first period of
+  -- the day), and the user's own off switch for the whole feature.
+  quota_prompt_slot_id INTEGER DEFAULT NULL,
+  quota_prompts_enabled INTEGER NOT NULL DEFAULT 1,
   is_demo       INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -135,6 +140,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- start). NULL until the rollover job first sees the task. The rollover
   -- advances it by the rrule's period and resets progress_current.
   progress_period_start TEXT,
+  -- Quota reminders (2026-09-24): an unmet quota also appears as a "prompt"
+  -- in a reminder period each day (src/core/tasks/quota-prompts.ts).
+  -- quota_prompt_config: JSON {enabled?, slot_id?, numbers?: {"1": slotId}},
+  -- NULL = the defaults for the quota's period (on, the user's default slot).
+  -- Slot ids are resolved at read time, with fallbacks, so a deleted slot
+  -- never strands a prompt.
+  quota_prompt_config TEXT DEFAULT NULL,
+  -- quota_day_state: JSON {date, logged, did: [key], considered: [key]} for the
+  -- owner's LOCAL date. Server-owned; written in the same transaction as the
+  -- progress or prompt action and restored by undo like any other field. A
+  -- date other than today reads as empty.
+  quota_day_state TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

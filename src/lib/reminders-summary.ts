@@ -10,11 +10,18 @@
  */
 import { DateTime } from 'luxon'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { groupConsidered, groupWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 
 export interface SummaryGroup {
   slot: TimeSlot | null
   reminders: { id: number }[]
   considered: number
+  /**
+   * Quota prompts (2026-09-24). They count exactly like reminders — waiting
+   * until handled, then considered — through `groupWaiting` /
+   * `groupConsidered`, so the headline, the badge and every bar agree.
+   */
+  prompts?: Pick<QuotaPrompt, 'considered' | 'done'>[]
 }
 
 export interface RemindersSummary<G extends SummaryGroup = SummaryGroup> {
@@ -52,11 +59,11 @@ export function summarizeReminders<G extends SummaryGroup>(
   const later: G[] = []
   for (const g of groups) (slotHasStarted(g.slot, timezone, now) ? started : later).push(g)
 
-  const count = (gs: G[]) => gs.reduce((n, g) => n + g.reminders.length, 0)
-  const consideredTotal = groups.reduce((n, g) => n + g.considered, 0)
+  const count = (gs: G[]) => gs.reduce((n, g) => n + groupWaiting(g), 0)
+  const consideredTotal = groups.reduce((n, g) => n + groupConsidered(g), 0)
   const waitingSoFar = count(started)
   const waitingLater = count(later)
-  const next = later.find((g) => g.slot && g.reminders.length > 0)
+  const next = later.find((g) => g.slot && groupWaiting(g) > 0)
 
   return {
     waitingSoFar,
@@ -65,6 +72,6 @@ export function summarizeReminders<G extends SummaryGroup>(
     dayTotal: waitingSoFar + waitingLater + consideredTotal,
     started,
     later,
-    nextUp: next && next.slot ? { slot: next.slot, waiting: next.reminders.length } : null,
+    nextUp: next && next.slot ? { slot: next.slot, waiting: groupWaiting(next) } : null,
   }
 }

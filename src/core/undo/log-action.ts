@@ -4,6 +4,7 @@
  * Every mutating action writes to undo_log before applying changes.
  */
 
+import type Database from 'better-sqlite3'
 import { getDb } from '@/core/db'
 import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
 
@@ -81,6 +82,57 @@ export function createSnapshot(
   }
 
   return snapshot
+}
+
+/**
+ * The key a quota snapshot carries its period in. Not a column and never in
+ * `fieldsChanged`, so `applyFieldsToTask` never writes it — it is a witness
+ * that undo/redo read, like `_completion`. See `periodMoved`.
+ */
+export const PERIOD_WITNESS_KEY = '_period_start'
+
+/**
+ * A snapshot of a quota's count, stamped with the period it was counted in.
+ *
+ * A quota's count only means something inside its period. Undoing a +1 after
+ * the period rolled over restored the OLD period's count into the new one — a
+ * 2/2 from last week reappearing on Monday. Undo and redo skip a snapshot
+ * whose period has moved on since (`periodMoved`), rather than refusing: a
+ * throw inside `undoEntry` rolls back the `undone = 1` write too, and the
+ * entry would wedge the top of the stack forever (the `is_tracked` lesson in
+ * apply-fields.ts). The period that count belonged to is already closed and
+ * recorded; there is nothing left in the task to put back.
+ */
+export function createQuotaSnapshot(
+  beforeTask: Partial<Task> & { id: number; progress_period_start: string | null },
+  afterTask: Partial<Task> & { id: number },
+  fieldsChanged: string[],
+): UndoSnapshot {
+  const snapshot = createTaskSnapshot(beforeTask, afterTask, fieldsChanged)
+  const witness = { [PERIOD_WITNESS_KEY]: beforeTask.progress_period_start }
+  return {
+    ...snapshot,
+    before_state: { ...snapshot.before_state, ...witness },
+    after_state: { ...snapshot.after_state, ...witness },
+  }
+}
+
+/**
+ * Has the quota this snapshot counted moved into a new period since? Only a
+ * snapshot made by `createQuotaSnapshot` can say yes; every other snapshot
+ * carries no witness and is applied as always.
+ */
+export function periodMoved(tx: Database.Database, snapshot: UndoSnapshot): boolean {
+  const state = snapshot.before_state as Record<string, unknown>
+  if (!(PERIOD_WITNESS_KEY in state)) return false
+  const row = tx
+    .prepare('SELECT progress_period_start FROM tasks WHERE id = ?')
+    .get(snapshot.task_id) as { progress_period_start: string | null } | undefined
+  if (!row) return false
+  // An unanchored quota being anchored by the cron is not a new period — the
+  // count it had is still the count of the period it is now anchored to.
+  const witness = state[PERIOD_WITNESS_KEY] as string | null
+  return witness !== null && row.progress_period_start !== witness
 }
 
 /**

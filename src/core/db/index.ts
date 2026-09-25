@@ -35,6 +35,28 @@ export function getDb(): Database.Database {
   return db
 }
 
+/**
+ * Quota reminders (2026-09-24) — see src/core/tasks/quota-prompts.ts. Its own
+ * function only to keep `runMigrations` from growing further.
+ *
+ * NULL config means "the defaults for this quota's period", which is ON for
+ * every existing daily/weekly/monthly quota — the same default for all users.
+ */
+function migrateQuotaPrompts(database: Database.Database): void {
+  if (!hasColumn(database, 'tasks', 'quota_prompt_config')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN quota_prompt_config TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'quota_day_state')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN quota_day_state TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'users', 'quota_prompt_slot_id')) {
+    database.exec('ALTER TABLE users ADD COLUMN quota_prompt_slot_id INTEGER DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'users', 'quota_prompts_enabled')) {
+    database.exec('ALTER TABLE users ADD COLUMN quota_prompts_enabled INTEGER NOT NULL DEFAULT 1')
+  }
+}
+
 function hasColumn(database: Database.Database, table: string, column: string): boolean {
   const cols = database.pragma(`table_info(${table})`) as { name: string }[]
   return cols.some((c) => c.name === column)
@@ -225,6 +247,7 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'progress_period_start')) {
     database.exec('ALTER TABLE tasks ADD COLUMN progress_period_start TEXT')
   }
+  migrateQuotaPrompts(database)
 
   // Collapsible dashboard filter chips (§7.3) — default collapsed for everyone,
   // including existing users: the whole point is that the front door stops

@@ -318,6 +318,10 @@ function formatActivityDescription(entry: UndoEntry, timezone: string): string {
     case 'done':
     case 'bulk_done':
       if (isBulk) {
+        // A batch that also acted on quota prompts (a "Considered all" over a
+        // slot holding both) carries prompt snapshots too, so the snapshot
+        // count is not a task count — its own description says it right.
+        if (entry.description?.includes('Quota reminders')) return entry.description
         return `Completed ${taskCount} tasks`
       }
       return `Completed '${truncatedTitle}'`

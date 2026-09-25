@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils'
 import { parseHHMM } from '@/lib/time-slot-assign'
+import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import { DateTime } from 'luxon'
 
@@ -77,8 +78,8 @@ const MIN_SEGMENT_PX = 28
 type SlotState = 'done' | 'behind' | 'upcoming'
 
 function slotState(group: ReminderGroup, startedAlready: boolean): SlotState {
-  const waiting = group.reminders.length
-  if (startedAlready && waiting === 0 && group.considered > 0) return 'done'
+  const waiting = groupWaiting(group)
+  if (startedAlready && waiting === 0 && groupConsidered(group) > 0) return 'done'
   if (startedAlready && waiting > 0) return 'behind'
   return 'upcoming'
 }
@@ -122,7 +123,12 @@ export function ReminderSlotBar({
   // worth paging to. The original index rides along so a tap still lands on
   // the right slot after the empty ones are dropped.
   const shown = groups
-    .map((group, index) => ({ group, index, total: group.reminders.length + group.considered }))
+    .map((group, index) => ({
+      group,
+      index,
+      considered: groupConsidered(group),
+      total: groupWaiting(group) + groupConsidered(group),
+    }))
     .filter((s) => s.total > 0)
 
   // One segment is not a bar — it would say only "everything is here", which
@@ -135,15 +141,15 @@ export function ReminderSlotBar({
       role="group"
       aria-label="Today's reminder slots"
     >
-      {shown.map(({ group, index: i, total }) => {
+      {shown.map(({ group, index: i, considered, total }) => {
         const started = hasStarted(group, timezone, now)
         const state = slotState(group, started)
-        const fraction = group.considered / total
+        const fraction = considered / total
         // Gated on the numbers, not on `state`: `state` only calls a slot
         // 'done' once it has STARTED, but a slot can be fully considered
         // ahead of its own start time (still 'upcoming') and the fill must
         // not call that "still filling" — see the header comment.
-        const complete = group.considered >= total
+        const complete = considered >= total
         const label = group.slot?.label ?? 'Anytime'
         const current = i === currentIndex
 
@@ -158,10 +164,10 @@ export function ReminderSlotBar({
             // The name carries what the colour cannot: which slot, and how far
             // through it is. A bar of five unlabelled segments is meaningless
             // to a screen reader otherwise.
-            aria-label={`${label}, ${group.considered} of ${total} considered${
+            aria-label={`${label}, ${considered} of ${total} considered${
               state === 'upcoming' ? ', not started yet' : ''
             }`}
-            title={`${label} — ${group.considered}/${total}`}
+            title={`${label} — ${considered}/${total}`}
             className="group flex items-center py-1"
             style={{
               // Weight by size, but never below a thumb. `flexBasis: 0` makes
