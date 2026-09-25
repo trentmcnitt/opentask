@@ -933,6 +933,9 @@ private struct DoneTaskRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Belt and braces: `TasksTimeline.doneTasks` already keeps quota
+            // completions out of this list, and /undone refuses a quota.
+            .disabled(completion.isQuota)
         }
     }
 }

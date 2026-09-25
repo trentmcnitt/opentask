@@ -40,6 +40,14 @@ enum SampleData {
                 consideredItems: [
                     TaskDTO(id: 111, title: "Make the bed", isReminder: true),
                     TaskDTO(id: 112, title: "Drink a glass of water", isReminder: true),
+                ],
+                // A generic quota prompt (2026-09-24) so the gallery shows
+                // the stripe, the count, and the square beside the circle.
+                prompts: [
+                    QuotaPromptDTO(
+                        promptKey: "q:201:1:sample", taskId: 201, number: 1, title: "Walk",
+                        current: 0, target: 2, period: "DAILY", stripeColor: "blue"
+                    ),
                 ]
             ),
             ReminderGroupDTO(
@@ -48,13 +56,15 @@ enum SampleData {
                     TaskDTO(id: 103, title: "Step away from the desk", priority: 2, anchorTime: "12:30", isReminder: true),
                     TaskDTO(id: 104, title: "Present is peace", priority: 3, anchorTime: "12:45", isReminder: true),
                     TaskDTO(id: 105, title: "Drink water", priority: 0, anchorTime: "13:00", isReminder: true),
-                ]
+                ],
+                prompts: []
             ),
             ReminderGroupDTO(
                 slot: TimeSlotDTO(id: 3, label: "Evening", startTime: "20:30"),
                 reminders: [
                     TaskDTO(id: 106, title: "Set out tomorrow's first task", priority: 2, anchorTime: "20:30", isReminder: true),
-                ]
+                ],
+                prompts: []
             ),
         ]
     }

@@ -165,8 +165,11 @@ enum WidgetStore {
         if let stamp = defaults?.object(forKey: lastInteractionKey) as? Double, stamp >= cutoff {
             return true
         }
+        // Quota prompt actions (2026-09-24) count too — a prompt tap must
+        // repaint from cache like a check-off does.
         let stamps = Array(pendingMap(pendingCompletionsKey).values)
             + progressMap().values.map { $0[stampIndex] }
+            + (latestPromptActionStamp().map { [$0] } ?? [])
         return stamps.contains { $0 >= cutoff }
     }
 
@@ -494,7 +497,8 @@ enum WidgetStore {
                     slot: group.slot,
                     reminders: remaining,
                     considered: group.considered + completed.count,
-                    consideredItems: completed + group.consideredItems
+                    consideredItems: completed + group.consideredItems,
+                    prompts: group.prompts
                 )
             }
             save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
@@ -649,7 +653,8 @@ enum WidgetStore {
                     slot: group.slot,
                     reminders: group.reminders,
                     considered: max(0, group.considered - removed),
-                    consideredItems: remainingConsidered
+                    consideredItems: remainingConsidered,
+                    prompts: group.prompts
                 )
             }
             save(RemindersCache(groups: groups), forKey: remindersKey, at: cached.fetchedAt)
@@ -875,6 +880,9 @@ enum WidgetStore {
         // choice rather than guessing which one belongs to the reversed
         // action.
         defaults?.removeObject(forKey: pendingRestoresKey)
+        // Quota prompt actions (2026-09-24): an undone did-it must bring its
+        // prompt back, not stay hidden behind a tombstone.
+        defaults?.removeObject(forKey: pendingPromptActionsKey)
     }
 
     /// Draw staged progress: while an entry is live the item reads
@@ -922,20 +930,134 @@ enum WidgetStore {
     /// just-tapped restore needs to disappear from the DONE list
     /// immediately, mirroring how `pendingCompletions` already hides a
     /// just-tapped completion from `reminders` in the same pass.
+    ///
+    /// Quota prompts (2026-09-24): a prompt with a live action tombstone
+    /// (`pendingPromptActions`) is drawn HANDLED — `QuotaPromptDTO.handled(did:)`
+    /// — not removed. The server returns handled prompts too (flagged), so a
+    /// slot's day total never shrinks; removing one here would shift both
+    /// halves of the count at once. `considered` is NOT credited: it stays
+    /// reminder-only, and a handled prompt already counts through
+    /// `ReminderGroupDTO.consideredCount`.
     static func filterPending(_ groups: [ReminderGroupDTO], now: Date = Date()) -> [ReminderGroupDTO] {
         let restoring = pendingRestores(now: now)
+        let promptActions = pendingPromptActions(now: now)
         return groups.map { group in
             let remaining = filterPending(group.reminders, now: now)
             let consideredItems = restoring.isEmpty
                 ? group.consideredItems
                 : group.consideredItems.filter { !restoring.contains($0.id) }
+            let prompts = promptActions.isEmpty
+                ? group.prompts
+                : group.prompts.map { prompt in
+                    guard let did = promptActions[prompt.promptKey], prompt.isWaiting else { return prompt }
+                    return prompt.handled(did: did)
+                }
             return ReminderGroupDTO(
                 slot: group.slot,
                 reminders: remaining,
                 considered: group.considered + (group.reminders.count - remaining.count),
-                consideredItems: consideredItems
+                consideredItems: consideredItems,
+                prompts: prompts
             )
         }
+    }
+
+    // MARK: - Quota prompt actions (quota reminders, 2026-09-24)
+    //
+    // The prompt twin of the completion tombstone: `ActOnPromptIntent`
+    // stages the action here and repaints BEFORE its server call, so the row
+    // leaves the list the instant it is tapped. Keyed by `prompt_key` (a
+    // STRING — a daily quota's prompts share one task id, so the task id
+    // cannot identify a row), valued `[stamp, did ? 1 : 0]` so the optimistic
+    // render can also draw a did-it's count. Same 90s TTL as the other
+    // tombstones; a failed call clears its entry, and the prompt honestly
+    // comes back.
+
+    private static let pendingPromptActionsKey = "widget.pendingPromptActions"
+
+    private static func promptActionMap() -> [String: [Double]] {
+        guard let raw = defaults?.dictionary(forKey: pendingPromptActionsKey) else { return [:] }
+        var map: [String: [Double]] = [:]
+        for (key, value) in raw {
+            guard let pair = value as? [Double], pair.count == 2 else { continue }
+            map[key] = pair
+        }
+        return map
+    }
+
+    static func stagePendingPromptAction(_ key: String, did: Bool, now: Date = Date()) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = promptActionMap()
+        map[key] = [now.timeIntervalSince1970, did ? 1 : 0]
+        defaults?.set(map, forKey: pendingPromptActionsKey)
+    }
+
+    static func clearPendingPromptAction(_ key: String) {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = promptActionMap()
+        map.removeValue(forKey: key)
+        defaults?.set(map, forKey: pendingPromptActionsKey)
+    }
+
+    /// Live (un-expired) prompt actions, `prompt_key -> did`, pruning expired
+    /// ones as a side effect.
+    static func pendingPromptActions(now: Date = Date()) -> [String: Bool] {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        var map = promptActionMap()
+        let cutoff = now.timeIntervalSince1970 - pendingTTL
+        var live: [String: Bool] = [:]
+        for (key, entry) in map {
+            if entry[0] >= cutoff {
+                live[key] = entry[1] != 0
+            } else {
+                map.removeValue(forKey: key)
+            }
+        }
+        defaults?.set(map, forKey: pendingPromptActionsKey)
+        return live
+    }
+
+    /// The most recent prompt-action stamp, for `hasRecentInteraction`.
+    private static func latestPromptActionStamp() -> Double? {
+        promptActionMap().values.map { $0[0] }.max()
+    }
+
+    /// "The Reminders payload no longer matches the server — its next pass
+    /// MUST fetch" — WITHOUT `clearInteraction`'s other effect of forgetting
+    /// the plain interaction stamp.
+    ///
+    /// Quota prompts made the Reminders payload depend on quota state
+    /// (2026-09-24): a `+1` on the Quotas widget, or a prompt action, changes
+    /// prompts that only the server computes (a did-it on Daily Walks #1 can
+    /// finish #2 in another slot). So those paths mark Reminders stale and
+    /// let its reload fetch, rather than re-deriving the server's prompt
+    /// rules here. `clearInteraction(kind: Reminders)` would also drop the
+    /// interaction stamp — and on a Quotas `+1` that is the stamp keeping
+    /// Takeback mode armed through the tap's own round 2
+    /// (`TrackProvider.currentEntry`). This touches only the Reminders stamp.
+    static func requireRemindersFetch(now: Date = Date()) {
+        defaults?.set(now.timeIntervalSince1970, forKey: remindersFetchRequiredKey)
+    }
+
+    /// Write tasks the SERVER returned (a prompt action's `tasks`) into the
+    /// cached Tasks/Quotas payload, replacing each by id — `confirmProgress`
+    /// without a staged delta to retire, since a prompt action stages none on
+    /// the Quotas side. Keeps the Quotas widget server-true when it repaints
+    /// from cache (the stale-count lesson, `ios/CLAUDE.md`). A task the cache
+    /// doesn't hold is left out: the next real fetch brings it.
+    static func confirmTasks(_ confirmed: [TaskDTO]) {
+        guard !confirmed.isEmpty else { return }
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        guard let cached = loadTasks() else { return }
+        let byId = Dictionary(confirmed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let tasks = cached.value.tasks.map { byId[$0.id] ?? $0 }
+        save(
+            TasksCache(tasks: tasks, projects: cached.value.projects, completions: cached.value.completions),
+            forKey: tasksKey, at: cached.fetchedAt)
     }
 
     // MARK: - Reminders slot override
