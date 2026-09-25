@@ -61,7 +61,22 @@ struct RemindersWidgetView: View {
 private struct RemindersSmallView: View {
     let entry: RemindersEntry
 
-    private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
+    /// Reminders AND waiting quota prompts (2026-09-24) — a prompt counts
+    /// exactly like a reminder.
+    private var waitingCount: Int { entry.group?.waitingCount ?? 0 }
+
+    /// The first waiting item's text and weight: the first reminder, else
+    /// the first waiting prompt ("Daily Walks · 0/2") — prompts come after
+    /// reminders in a slot, as on the web.
+    private var firstItem: (text: String, weight: Font.Weight)? {
+        if let reminder = entry.group?.reminders.first {
+            return (reminder.title, WidgetTheme.priorityWeight(reminder.priority))
+        }
+        if let prompt = entry.group?.waitingPrompts.first {
+            return (prompt.labelText, .regular)
+        }
+        return nil
+    }
 
     var body: some View {
         if entry.isSignedOut {
@@ -74,17 +89,9 @@ private struct RemindersSmallView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
-                if reminders.isEmpty {
-                    Spacer(minLength: 0)
-                    WidgetEmptyView(
-                        symbol: "checkmark.circle",
-                        message: entry.groups.isEmpty ? "No reminders today" : "Nothing left here",
-                        compact: true
-                    )
-                    Spacer(minLength: 0)
-                } else {
+                if let firstItem {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(reminders.count)")
+                        Text("\(waitingCount)")
                             .font(.system(size: 40, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .minimumScaleFactor(0.6)
@@ -98,12 +105,20 @@ private struct RemindersSmallView: View {
                     // the 2×2 has a fixed card, so a long title SHRINKS into
                     // what's left under the count instead of ending in "…"
                     // ("Supplements ( Vitamin C, Zin…" at XXX Large).
-                    Text(reminders[0].title)
+                    Text(firstItem.text)
                         .font(.caption2)
-                        .fontWeight(WidgetTheme.priorityWeight(reminders[0].priority))
+                        .fontWeight(firstItem.weight)
                         .foregroundStyle(.primary)
                         .minimumScaleFactor(WidgetTheme.overflowTitleScale)
 
+                    Spacer(minLength: 0)
+                } else {
+                    Spacer(minLength: 0)
+                    WidgetEmptyView(
+                        symbol: "checkmark.circle",
+                        message: entry.groups.isEmpty ? "No reminders today" : "Nothing left here",
+                        compact: true
+                    )
                     Spacer(minLength: 0)
                 }
             }
@@ -119,16 +134,26 @@ private struct RemindersSmallView: View {
 /// completed") — see `combinedItems`' doc. `Identifiable` by a prefixed
 /// string rather than an `Int` id so `.divider` (which has no natural id of
 /// its own) fits the same `ForEach` as the other two cases.
+///
+/// Quota prompts (2026-09-24) are rows too: `.prompt` for a waiting one (after
+/// the slot's open reminders — the web's `SlotPromptList` sits under the
+/// reminders the same way), `.donePrompt` for one handled today (after the
+/// considered reminders in DONE). Keyed by `prompt_key`, NEVER the task id: a
+/// daily quota's prompts share one task id.
 private enum ReminderListItem: Identifiable {
     case open(TaskDTO)
+    case prompt(QuotaPromptDTO)
     case divider(count: Int)
     case done(TaskDTO)
+    case donePrompt(QuotaPromptDTO)
 
     var id: String {
         switch self {
         case .open(let reminder): return "open-\(reminder.id)"
+        case .prompt(let prompt): return "prompt-\(prompt.promptKey)"
         case .divider: return "divider"
         case .done(let reminder): return "done-\(reminder.id)"
+        case .donePrompt(let prompt): return "done-prompt-\(prompt.promptKey)"
         }
     }
 }
@@ -182,13 +207,20 @@ private struct RemindersListView: View {
     /// handoff). Paging THIS array is what makes "recount on toggle flip,
     /// break only on whole rows" fall out for free: the toggle changes the
     /// array, and `WidgetTheme.pages` only ever cuts between two items.
+    ///
+    /// Quota prompts (2026-09-24): waiting ones follow the open reminders;
+    /// handled ones follow the considered reminders in DONE and count in its
+    /// "DONE · N" (a prompt counts exactly like a reminder). A handled
+    /// prompt's DONE row offers no put-back — see `DonePromptRow`.
     private var combinedItems: [ReminderListItem] {
         let openItems = reminders.map(ReminderListItem.open)
-        guard showCompleted, let group = entry.group, !group.consideredItems.isEmpty else {
-            return openItems
-        }
-        return openItems + [.divider(count: group.consideredItems.count)]
+            + (entry.group?.waitingPrompts ?? []).map(ReminderListItem.prompt)
+        guard showCompleted, let group = entry.group else { return openItems }
+        let doneCount = group.consideredItems.count + group.handledPrompts.count
+        guard doneCount > 0 else { return openItems }
+        return openItems + [.divider(count: doneCount)]
             + group.consideredItems.map(ReminderListItem.done)
+            + group.handledPrompts.map(ReminderListItem.donePrompt)
     }
 
     /// The slot ring wraps (`ShiftReminderSlotIntent`), so both chevrons stay
@@ -368,6 +400,27 @@ private struct RemindersListView: View {
             )
             if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
             return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
+        case .prompt(let prompt):
+            // The label is ONE string, title and count together
+            // (`QuotaPromptDTO.labelText`), measured at the column the row
+            // really gives it: the card minus the stripe, and minus BOTH
+            // trailing controls — the did-it square and the consider circle
+            // (`PromptRowMetrics.titleWidth`). Same floor as a reminder row.
+            let fit = metrics.titleLines(
+                prompt.labelText, width: PromptRowMetrics.titleWidth(in: width), weight: .regular, maxHeight: budget
+            )
+            if fit.shrinks {
+                return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true)
+            }
+            return ReminderRowLayout(lines: fit.lines, height: max(metrics.titleHeight(lines: fit.lines), rowFloor))
+        case .donePrompt(let prompt):
+            // DONE rows have one trailing marker, like `DoneReminderRow`.
+            let fit = metrics.titleLines(
+                prompt.labelText, width: PromptRowMetrics.doneTitleWidth(in: width), weight: .regular,
+                maxHeight: budget
+            )
+            if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+            return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
         }
     }
 
@@ -384,6 +437,16 @@ private struct RemindersListView: View {
         case .done(let reminder):
             DoneReminderRow(
                 reminder: reminder, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
+                firstLineHeight: metrics.titleHeight(lines: 1)
+            )
+        case .prompt(let prompt):
+            PromptRow(
+                prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
+                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed
+            )
+        case .donePrompt(let prompt):
+            DonePromptRow(
+                prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1)
             )
         }
@@ -410,27 +473,28 @@ private struct RemindersListView: View {
     private var emptySlotView: some View {
         if allCaughtUp {
             WidgetEmptyView(symbol: "checkmark.seal.fill", message: "All caught up")
-        } else if let group = entry.group, group.considered > 0 {
+        } else if let group = entry.group, group.consideredCount > 0 {
             WidgetEmptyView(symbol: "checkmark.circle.fill", message: "\(group.label) done")
         } else {
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
         }
     }
 
-    /// How many reminders have been considered (checked off) anywhere today —
-    /// gates `allCaughtUp` below so a day with nothing ever configured (every
-    /// group's `considered` and `reminders` both empty) reads as the ORIGINAL
-    /// "Nothing left here", not a celebratory "All caught up" for work that
-    /// was never there to do.
-    private var consideredTotal: Int { entry.groups.reduce(0) { $0 + $1.considered } }
+    /// How many items have been handled anywhere today — considered
+    /// reminders plus handled quota prompts (2026-09-24) — gates
+    /// `allCaughtUp` below so a day with nothing ever configured reads as the
+    /// ORIGINAL "Nothing left here", not a celebratory "All caught up" for
+    /// work that was never there to do.
+    private var consideredTotal: Int { entry.groups.reduce(0) { $0 + $1.consideredCount } }
 
     /// Every STARTED slot is finished — no slot whose time has come still has
-    /// something waiting. An upcoming slot (time not yet arrived) never
-    /// counts against this: its items aren't behind, they're just later.
+    /// something waiting (a reminder or a quota prompt). An upcoming slot
+    /// (time not yet arrived) never counts against this: its items aren't
+    /// behind, they're just later.
     private var allCaughtUp: Bool {
         consideredTotal > 0
             && !entry.groups.contains { group in
-                RemindersTimeline.hasStarted(group, now: entry.date) && !group.reminders.isEmpty
+                RemindersTimeline.hasStarted(group, now: entry.date) && !group.hasNothingWaiting
             }
     }
 
@@ -503,13 +567,17 @@ private struct RemindersListView: View {
 
     /// "N left" ordinarily; "N left · M done" once "show completed" is on
     /// (2026-09-23) — systemLarge only, like the toggle itself.
+    ///
+    /// Both numbers include quota prompts (2026-09-24): "left" is reminders
+    /// plus waiting prompts, "done" is exactly what the DONE section lists.
     private var countLabel: String {
+        let waiting = entry.group?.waitingCount ?? 0
         guard showCompleted else {
-            return reminders.isEmpty ? "all clear" : "\(reminders.count) left"
+            return waiting == 0 ? "all clear" : "\(waiting) left"
         }
-        let doneCount = entry.group?.consideredItems.count ?? 0
-        guard !reminders.isEmpty || doneCount > 0 else { return "all clear" }
-        return "\(reminders.count) left · \(doneCount) done"
+        let doneCount = (entry.group?.consideredItems.count ?? 0) + (entry.group?.handledPrompts.count ?? 0)
+        guard waiting > 0 || doneCount > 0 else { return "all clear" }
+        return "\(waiting) left · \(doneCount) done"
     }
 }
 
@@ -578,9 +646,12 @@ private struct ReminderSlotStrip: View {
     }
 
     private var segments: [Segment] {
+        // Quota prompts count exactly like reminders (2026-09-24): waiting
+        // and handled both, so a slot's segment is sized by its day total.
         groups.enumerated().compactMap { index, group -> Segment? in
-            let waiting = group.reminders.count
-            guard waiting + group.considered > 0 else { return nil }
+            let waiting = group.waitingCount
+            let considered = group.consideredCount
+            guard waiting + considered > 0 else { return nil }
             let started = RemindersTimeline.hasStarted(group, now: now)
             let state: SlotState
             if started, waiting == 0 { state = .done } else if started { state = .behind } else {
@@ -588,7 +659,7 @@ private struct ReminderSlotStrip: View {
             }
             return Segment(
                 id: index, slotKey: group.slotKey, state: state, isCurrent: index == currentIndex,
-                fraction: Double(group.considered) / Double(waiting + group.considered)
+                fraction: Double(considered) / Double(waiting + considered)
             )
         }
     }
@@ -809,6 +880,164 @@ private struct DoneReminderRow: View {
     }
 }
 
+// MARK: - Quota prompts (quota reminders, 2026-09-24)
+
+/// The widths a prompt row spends on things that are not its label — the
+/// ONE place both the pager's measurement (`RemindersListView.layout(for:)`)
+/// and the row's drawing (`PromptRow`) read them from, so the label is
+/// measured at exactly the column it is drawn in.
+enum PromptRowMetrics {
+    /// The quota's label-color stripe — the width a quota chip's stripe is
+    /// (`QuotaMetrics.chipStripeWidth`, 3pt) — and the gap after it.
+    static let stripeWidth: CGFloat = 3
+    static let stripeGap: CGFloat = 6
+    /// Row `HStack` spacing between the label and the controls — the same
+    /// 10pt `ReminderRow` uses.
+    static let controlGap: CGFloat = 10
+
+    /// An open prompt's label column: the card minus the stripe and its gap,
+    /// the gap before the controls, and TWO trailing controls — the did-it
+    /// square and the consider circle, each on the reminder row's 36pt
+    /// finger column (`WidgetTheme.rowMarkerSize`), side by side.
+    static func titleWidth(in width: CGFloat) -> CGFloat {
+        width - stripeWidth - stripeGap - controlGap - 2 * WidgetTheme.rowMarkerSize
+    }
+
+    /// A handled prompt in DONE: one (inert) trailing marker, like
+    /// `DoneReminderRow`.
+    static func doneTitleWidth(in width: CGFloat) -> CGFloat {
+        width - stripeWidth - stripeGap - controlGap - WidgetTheme.rowMarkerSize
+    }
+
+    /// The stripe's color: the quota's label color, resolved by the server
+    /// (never green), or a faint neutral for no label/no color — the watch
+    /// Quotas page's `WatchTheme.labelColor` rule, and the web's
+    /// `trackStripeClass`.
+    static func stripeColor(_ name: String?) -> Color {
+        guard name != nil else { return Color.secondary.opacity(0.35) }
+        return WidgetTheme.projectColor(name)
+    }
+}
+
+/// One waiting quota PROMPT — drawn AS a reminder row (`ReminderRow` is the
+/// sibling, and everything not listed here is copied from it: the title
+/// `Link`, the full wrap, the trailing circle with its bleed).
+///
+/// WHAT DIFFERS (Trent's final decisions, 2026-09-24):
+/// - A thin LEADING stripe in the quota's label color — the quota chip's own
+///   stripe.
+/// - The label carries the count, "Daily Walks · 1/2" — one `Text` built from
+///   `QuotaPromptDTO.labelText`, the exact string the pager measured.
+/// - TWO controls at the trailing edge. The circle is where every reminder's
+///   circle is (the outermost column, thumb reach) and means the same thing:
+///   CONSIDERED for today, nothing logged. The SQUARE, just inside it and
+///   beside the count, is DID IT: +1 and considered. Square because it is a
+///   different verb from the circle, and a checkbox is what "I did this"
+///   looks like everywhere else. Both are `ActOnPromptIntent`, keyed by
+///   `prompt_key`.
+/// - The title links to the quota on the Quotas surface
+///   (`opentask://quota/<id>`), not a reminder editor: a prompt is not a
+///   task.
+private struct PromptRow: View {
+    let prompt: QuotaPromptDTO
+    let lines: Int
+    let height: CGFloat
+    var shrinks = false
+    let firstLineHeight: CGFloat
+    let markerBleed: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
+            HStack(alignment: .top, spacing: PromptRowMetrics.stripeGap) {
+                Capsule()
+                    .fill(PromptRowMetrics.stripeColor(prompt.stripeColor))
+                    .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
+                    .padding(.top, 2)
+                Link(destination: WidgetLink.quota(prompt.taskId)) {
+                    (Text(prompt.title).foregroundStyle(.primary)
+                        + Text("\u{00A0}·\u{00A0}\(prompt.countText)").foregroundStyle(.secondary))
+                        .font(.subheadline)
+                        // A P0 reminder title's weight and opacity.
+                        .opacity(WidgetTheme.priorityOpacity(0))
+                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                        .contentShape(Rectangle())
+                }
+            }
+
+            HStack(alignment: .top, spacing: 0) {
+                control(
+                    intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: true),
+                    symbol: "square", label: "Did it: \(prompt.title)"
+                )
+                control(
+                    intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
+                    symbol: "circle", label: "Considered: \(prompt.title)"
+                )
+            }
+        }
+    }
+
+    /// One trailing control — `ReminderRow`'s circle, framing and bleed
+    /// verbatim (see its doc for why two frames): the glyph centres on the
+    /// label's FIRST line, the tap area reaches `markerBleed` into the gaps.
+    private func control(intent: ActOnPromptIntent, symbol: String, label: String) -> some View {
+        Button(intent: intent) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .light))
+                // A P0 reminder circle's color — a prompt has no priority.
+                .foregroundStyle(WidgetTheme.priorityColor(0))
+                .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+                .padding(.top, markerBleed)
+                .frame(width: WidgetTheme.rowMarkerSize, height: height + 2 * markerBleed, alignment: .top)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -markerBleed)
+        .accessibilityLabel(Text(label))
+    }
+}
+
+/// A quota prompt handled today, in the DONE section — `DoneReminderRow`'s
+/// look (struck through, muted), with ONE difference: NO PUT-BACK. A
+/// reminder's DONE marker restores it (`POST /api/tasks/:id/undone`); a
+/// prompt has no such endpoint (it is not a task, and /undone refuses
+/// quotas), so its marker is a plain, inert glyph — a filled square for a
+/// did-it, a filled circle for a consider — and Undo is the way back, as on
+/// the web ("the toast's Undo is the way back", `QuotaPromptRow`).
+private struct DonePromptRow: View {
+    let prompt: QuotaPromptDTO
+    let lines: Int
+    let height: CGFloat
+    let shrinks: Bool
+    let firstLineHeight: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
+            HStack(alignment: .top, spacing: PromptRowMetrics.stripeGap) {
+                Capsule()
+                    .fill(PromptRowMetrics.stripeColor(prompt.stripeColor).opacity(0.5))
+                    .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
+                    .padding(.top, 2)
+                Link(destination: WidgetLink.quota(prompt.taskId)) {
+                    Text(prompt.labelText)
+                        .font(.subheadline)
+                        .strikethrough()
+                        .foregroundStyle(.secondary)
+                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                        .contentShape(Rectangle())
+                }
+            }
+
+            Image(systemName: prompt.done ? "checkmark.square.fill" : "checkmark.circle.fill")
+                .font(.system(size: 19, weight: .light))
+                .foregroundStyle(.secondary)
+                .frame(width: WidgetTheme.rowMarkerSize, height: firstLineHeight)
+                .frame(width: WidgetTheme.rowMarkerSize, height: height, alignment: .top)
+                .accessibilityLabel(Text(prompt.done ? "Done today" : "Considered today"))
+        }
+    }
+}
+
 // MARK: - Lock Screen
 //
 // Lock Screen accessory families don't exist on macOS (see the #if os(iOS)
@@ -826,7 +1055,11 @@ private struct DoneReminderRow: View {
 private struct RemindersRectangularView: View {
     let entry: RemindersEntry
 
-    private var reminders: [TaskDTO] { entry.group?.reminders ?? [] }
+    /// The first waiting item — a reminder, else a quota prompt's label
+    /// (2026-09-24) — and the count of everything waiting.
+    private var firstTitle: String? {
+        entry.group?.reminders.first?.title ?? entry.group?.waitingPrompts.first?.labelText
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -843,13 +1076,13 @@ private struct RemindersRectangularView: View {
                         .widgetAccentable()
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    Text("\(reminders.count)")
+                    Text("\(entry.group?.waitingCount ?? 0)")
                         .font(.headline)
                         .widgetAccentable()
                 }
                 // Shrinks rather than truncating (2026-09-24) — see
                 // `RemindersSmallView`'s title.
-                Text(reminders.first?.title ?? "All clear")
+                Text(firstTitle ?? "All clear")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .minimumScaleFactor(WidgetTheme.overflowTitleScale)
@@ -870,7 +1103,7 @@ private struct RemindersCircularView: View {
             VStack(spacing: -1) {
                 Image(systemName: "bell")
                     .font(.system(size: 10, weight: .medium))
-                Text("\(entry.group?.reminders.count ?? 0)")
+                Text("\(entry.group?.waitingCount ?? 0)")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .minimumScaleFactor(0.7)
             }

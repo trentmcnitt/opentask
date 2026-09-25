@@ -197,8 +197,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let expected = userInfo[SlotReminderKey.reminderCount] as? Int ?? 0
 
         let model = ReminderChecklistModel(slotLabel: label, expectedCount: expected)
-        model.onStagedChange = { [weak self] ids in
-            self?.setSlotActions(stagedCount: ids.count)
+        model.onStagedChange = { [weak self] count in
+            self?.setSlotActions(stagedCount: count)
             self?.updatePreferredContentSize()
         }
         checklistModel = model
@@ -206,18 +206,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         install(hosting: UIHostingController(rootView: ReminderChecklistView(model: model)))
         setSlotActions(stagedCount: 0)
 
-        Task {
-            do {
-                let items = try await APIClient.shared.fetchSlotReminders(slotId: slotId)
-                model.state = .loaded(items)
-                model.pruneStagedIds()
-            } catch {
-                print("[OpenTask] Slot checklist load error: \(error)")
-                model.state = .failed("Couldn\u{2019}t load this slot")
-            }
-            setSlotActions(stagedCount: model.checkedIds.count)
-            updatePreferredContentSize()
+        Task { await reloadSlotChecklist(model) }
+    }
+
+    /// Fetch the slot's live group into the checklist: its reminders, then
+    /// its waiting quota prompts (2026-09-25 — the web's and the widgets'
+    /// order), dropping staged rows that are gone. Also the recovery after a
+    /// refused commit (a stale prompt key after midnight).
+    private func reloadSlotChecklist(_ model: ReminderChecklistModel) async {
+        do {
+            let group = try await APIClient.shared.fetchSlotGroup(slotId: slotId)
+            let items = (group?.reminders ?? []).map(ChecklistItem.reminder)
+                + (group?.waitingPrompts ?? []).map(ChecklistItem.prompt)
+            model.state = .loaded(items)
+            model.pruneStaged()
+        } catch {
+            print("[OpenTask] Slot checklist load error: \(error)")
+            model.state = .failed("Couldn\u{2019}t load this slot")
         }
+        setSlotActions(stagedCount: model.staged.count)
+        updatePreferredContentSize()
     }
 
     /// Action buttons for the checklist.
@@ -365,15 +373,23 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                 switch response.actionIdentifier {
                 case NotificationAction.completeChecked:
-                    let ids = checklistModel?.checkedIds ?? []
-                    guard !ids.isEmpty else {
+                    // Reminders AND quota prompts (2026-09-24), in ONE
+                    // request — one transaction, one undo entry. `affected`
+                    // counts both, so a prompts-only commit still dismisses.
+                    let ids = checklistModel?.stagedReminderIds ?? []
+                    let prompts = checklistModel?.stagedPrompts ?? []
+                    guard !ids.isEmpty || !prompts.isEmpty else {
                         completion(.doNotDismiss)
                         return
                     }
-                    affected = try await APIClient.shared.completeTasks(ids: ids)
+                    affected = try await APIClient.shared.completeTasks(ids: ids, prompts: prompts).total
 
                 case NotificationAction.completeAll:
-                    affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
+                    // Reminders completed + waiting prompts CONSIDERED —
+                    // except any the user staged as DID IT here first, which
+                    // keep their +1 (`completeSlotReminders`' doc).
+                    let didKeys = Set((checklistModel?.stagedPrompts ?? []).filter(\.did).map(\.key))
+                    affected = try await APIClient.shared.completeSlotReminders(slotId: slotId, didKeys: didKeys)
 
                 case UNNotificationDefaultActionIdentifier:
                     // Body tap: nothing was committed here, so hand off to the
@@ -393,6 +409,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 }
             } catch {
                 print("[OpenTask] Slot checklist commit error: \(error)")
+                // A refused batch (4xx) is almost always a prompt key from
+                // before midnight — the server refuses another day's key, and
+                // the WHOLE batch with it. Retrying the same staging would
+                // fail forever, so reload today's slot and drop staged rows
+                // that no longer exist (quota reminders, 2026-09-25); the user
+                // re-checks and commits again.
+                if case APIError.serverError(let code) = error, (400..<500).contains(code),
+                   let model = checklistModel {
+                    await reloadSlotChecklist(model)
+                }
                 completion(.doNotDismiss)
                 return
             }

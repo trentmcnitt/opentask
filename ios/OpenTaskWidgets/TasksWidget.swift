@@ -227,7 +227,11 @@ enum TasksTimeline {
     /// section reads top-down like the OPEN list above it, so the item just
     /// checked off appears at its top, not buried under older completions.
     static func doneTasks(from completions: [CompletionDTO], scope: Int) -> [CompletionDTO] {
-        let eligible = completions.filter { !$0.isReminder && !$0.isTracked }
+        // `isQuota`, not the bare `isTracked` flag (2026-09-24): most quotas
+        // predate the flag and are quotas by target alone, and a quota's
+        // completion (its period rollover) must never be offered for put-back
+        // — `POST /api/tasks/:id/undone` refuses quotas.
+        let eligible = completions.filter { !$0.isReminder && !$0.isQuota }
         let scoped: [CompletionDTO]
         if scope == WidgetStore.allProjects || scope == WidgetStore.upNextScope {
             scoped = eligible

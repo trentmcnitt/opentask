@@ -63,38 +63,94 @@ struct ConsiderReminderIntent: AppIntent {
     }
 }
 
-/// ⏭ — show the slot's next reminder WITHOUT checking this one off. Pure
-/// local state (`WatchWidgetState.skip`), no server call; resets on its own
-/// when the slot or the day changes.
+/// ✓ (and ☐) on a quota PROMPT card (quota reminders, 2026-09-24). ✓ is
+/// CONSIDERED — handled for today, no progress, the same verb ✓ is on a
+/// reminder — and ☐ is DID IT (+1 and considered). Never `markDone`: the
+/// server refuses a done on a quota. Keyed by `prompt_key`. Same optimistic
+/// discipline as `ConsiderReminderIntent`: tombstone, repaint, server call,
+/// write-through, clear on failure.
+struct ActOnPromptCardIntent: AppIntent {
+    static var title: LocalizedStringResource = "Quota Reminder"
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Prompt Key")
+    var promptKey: String
+
+    @Parameter(title: "Did It", default: false)
+    var did: Bool
+
+    init() {}
+
+    init(promptKey: String, did: Bool) {
+        self.promptKey = promptKey
+        self.did = did
+    }
+
+    func perform() async throws -> some IntentResult {
+        let claim = "prompt-\(promptKey)"
+        guard WatchWidgetState.tryClaim(claim) else { return .result() }
+        defer { WatchWidgetState.releaseClaim(claim) }
+
+        WatchWidgetState.stagePendingPrompt(key: promptKey, did: did)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+
+        do {
+            let result = did
+                ? try await APIClient.shared.didPrompts(keys: [promptKey])
+                : try await APIClient.shared.considerPrompts(keys: [promptKey])
+            WatchCache.markPromptHandled(key: promptKey, did: did)
+            // The quotas the server returned, into the cached task list the
+            // watch app's Quotas page falls back to — server-true counts.
+            if !result.tasks.isEmpty, let cached = WatchCache.loadTasks() {
+                let byId = Dictionary(result.tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+                WatchCache.saveTasks(cached.tasks.map { byId[$0.id] ?? $0 }, projects: cached.projects)
+            }
+        } catch {
+            // Likeliest: a key from before midnight. The tombstone goes, and
+            // the post-perform reload fetches today's prompts.
+            WatchWidgetState.clearPendingPrompt(key: promptKey)
+        }
+        if #available(watchOS 11.0, *) {
+            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
+        }
+        return .result()
+    }
+}
+
+/// ⏭ — show the slot's next item (reminder or quota prompt) WITHOUT acting
+/// on this one. Pure local state (`WatchWidgetState.skip`), no server call;
+/// resets on its own when the slot or the day changes.
 struct SkipReminderIntent: AppIntent {
     static var title: LocalizedStringResource = "Skip Reminder"
     static var isDiscoverable: Bool { false }
 
-    @Parameter(title: "Reminder ID")
-    var taskId: Int
+    /// The card item's key — `WatchWidgetState.itemKey(reminderId:)` for a
+    /// reminder, the `prompt_key` for a quota prompt.
+    @Parameter(title: "Item")
+    var itemKey: String
 
     /// The on-screen slot's id (-1 for "Anytime") — the skip list is scoped
     /// to it.
     @Parameter(title: "Slot")
     var slotKey: Int
 
-    /// Every still-pending reminder id in that slot, in card order, so a
-    /// skip that would leave nothing unskipped can wrap instead (see
+    /// Every still-waiting item key in that slot, in card order, so a skip
+    /// that would leave nothing unskipped can wrap instead (see
     /// `WatchWidgetState.skip`). Passed in rather than re-read from cache so
     /// the decision is made against exactly what the user was looking at.
     @Parameter(title: "Remaining")
-    var remainingIds: [Int]
+    var remainingKeys: [String]
 
     init() {}
 
-    init(taskId: Int, slotKey: Int, remainingIds: [Int]) {
-        self.taskId = taskId
+    init(itemKey: String, slotKey: Int, remainingKeys: [String]) {
+        self.itemKey = itemKey
         self.slotKey = slotKey
-        self.remainingIds = remainingIds
+        self.remainingKeys = remainingKeys
     }
 
     func perform() async throws -> some IntentResult {
-        WatchWidgetState.skip(taskId: taskId, slotKey: slotKey, remainingIds: remainingIds)
+        WatchWidgetState.skip(itemKey: itemKey, slotKey: slotKey, remainingKeys: remainingKeys)
         return .result()
     }
 }
