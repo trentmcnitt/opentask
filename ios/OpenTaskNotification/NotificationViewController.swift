@@ -197,8 +197,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let expected = userInfo[SlotReminderKey.reminderCount] as? Int ?? 0
 
         let model = ReminderChecklistModel(slotLabel: label, expectedCount: expected)
-        model.onStagedChange = { [weak self] ids in
-            self?.setSlotActions(stagedCount: ids.count)
+        model.onStagedChange = { [weak self] count in
+            self?.setSlotActions(stagedCount: count)
             self?.updatePreferredContentSize()
         }
         checklistModel = model
@@ -208,14 +208,18 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         Task {
             do {
-                let items = try await APIClient.shared.fetchSlotReminders(slotId: slotId)
+                // The slot's reminders, then its waiting quota prompts
+                // (2026-09-24) — the web's and the widgets' order.
+                let group = try await APIClient.shared.fetchSlotGroup(slotId: slotId)
+                let items = (group?.reminders ?? []).map(ChecklistItem.reminder)
+                    + (group?.waitingPrompts ?? []).map(ChecklistItem.prompt)
                 model.state = .loaded(items)
-                model.pruneStagedIds()
+                model.pruneStaged()
             } catch {
                 print("[OpenTask] Slot checklist load error: \(error)")
                 model.state = .failed("Couldn\u{2019}t load this slot")
             }
-            setSlotActions(stagedCount: model.checkedIds.count)
+            setSlotActions(stagedCount: model.staged.count)
             updatePreferredContentSize()
         }
     }
@@ -365,14 +369,20 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
                 switch response.actionIdentifier {
                 case NotificationAction.completeChecked:
-                    let ids = checklistModel?.checkedIds ?? []
-                    guard !ids.isEmpty else {
+                    // Reminders AND quota prompts (2026-09-24), in ONE
+                    // request — one transaction, one undo entry. `affected`
+                    // counts both, so a prompts-only commit still dismisses.
+                    let ids = checklistModel?.stagedReminderIds ?? []
+                    let prompts = checklistModel?.stagedPrompts ?? []
+                    guard !ids.isEmpty || !prompts.isEmpty else {
                         completion(.doNotDismiss)
                         return
                     }
-                    affected = try await APIClient.shared.completeTasks(ids: ids)
+                    affected = try await APIClient.shared.completeTasks(ids: ids, prompts: prompts).total
 
                 case NotificationAction.completeAll:
+                    // Reminders completed + waiting prompts CONSIDERED (never
+                    // "did it") — `completeSlotReminders`' doc.
                     affected = try await APIClient.shared.completeSlotReminders(slotId: slotId)
 
                 case UNNotificationDefaultActionIdentifier:
