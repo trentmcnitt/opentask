@@ -275,17 +275,34 @@ struct ReminderGroupDTO: Codable, Hashable {
     /// is — an older cached payload written before this field existed must
     /// still parse.
     let consideredItems: [TaskDTO]
+    /// Quota prompts assigned to this slot today (quota reminders, 2026-09-24
+    /// — `groups[].prompts`, see `QuotaPromptDTO`). EVERY prompt assigned
+    /// today, handled ones included and flagged, so a slot's day total never
+    /// shrinks as things are handled. Decoded with a default (`[]`): a server
+    /// that predates prompts, or a cache written by an older build, still
+    /// parses — and simply has none.
+    ///
+    /// NO DEFAULT in the memberwise init, on purpose: every place that
+    /// rebuilds a group (tombstone filters, cache write-throughs, the watch's
+    /// optimistic edits) must say what happens to the prompts. A defaulted
+    /// parameter is exactly how `considered` once silently read 0 everywhere
+    /// (`WidgetStore.filterPending`'s doc).
+    let prompts: [QuotaPromptDTO]
 
     enum CodingKeys: String, CodingKey {
-        case slot, reminders, considered
+        case slot, reminders, considered, prompts
         case consideredItems = "considered_items"
     }
 
-    init(slot: TimeSlotDTO?, reminders: [TaskDTO], considered: Int = 0, consideredItems: [TaskDTO] = []) {
+    init(
+        slot: TimeSlotDTO?, reminders: [TaskDTO], considered: Int = 0, consideredItems: [TaskDTO] = [],
+        prompts: [QuotaPromptDTO]
+    ) {
         self.slot = slot
         self.reminders = reminders
         self.considered = considered
         self.consideredItems = consideredItems
+        self.prompts = prompts
     }
 
     init(from decoder: Decoder) throws {
@@ -294,6 +311,7 @@ struct ReminderGroupDTO: Codable, Hashable {
         reminders = try c.decodeIfPresent([TaskDTO].self, forKey: .reminders) ?? []
         considered = try c.decodeIfPresent(Int.self, forKey: .considered) ?? 0
         consideredItems = try c.decodeIfPresent([TaskDTO].self, forKey: .consideredItems) ?? []
+        prompts = try c.decodeIfPresent([QuotaPromptDTO].self, forKey: .prompts) ?? []
     }
 
     /// Stable identity for the App Group override key. -1 stands in for the
@@ -301,6 +319,156 @@ struct ReminderGroupDTO: Codable, Hashable {
     var slotKey: Int { slot?.id ?? -1 }
 
     var label: String { slot?.label ?? "Anytime" }
+
+    // MARK: Counts WITH prompts (quota reminders, 2026-09-24)
+    //
+    // Prompts behave exactly like reminders in every count a surface shows —
+    // "N left", the slot strip, "All caught up", the Smart Stack's position —
+    // so every such count reads these, never `reminders.count`/`considered`
+    // alone. The web's `groupWaiting`/`groupConsidered`
+    // (`src/lib/quota-prompts.ts`). Computed here from the prompts themselves
+    // rather than trusting the payload's `prompts_waiting`: the optimistic
+    // paths edit prompts in place, and a stored count would not follow.
+    // `considered` itself stays reminder-only, as the server means it.
+
+    /// Prompts still waiting for today, in the server's order.
+    var waitingPrompts: [QuotaPromptDTO] { prompts.filter(\.isWaiting) }
+
+    /// Prompts handled today (considered, or done).
+    var handledPrompts: [QuotaPromptDTO] { prompts.filter { !$0.isWaiting } }
+
+    /// Everything still waiting: reminders plus waiting prompts.
+    var waitingCount: Int { reminders.count + waitingPrompts.count }
+
+    /// Everything handled today: considered reminders plus handled prompts.
+    var consideredCount: Int { considered + handledPrompts.count }
+
+    /// Nothing waiting — no reminders AND no waiting prompts.
+    var hasNothingWaiting: Bool { waitingCount == 0 }
+
+    /// A copy with the prompts replaced — for the write-throughs and
+    /// optimistic filters that only ever touch prompts.
+    func replacingPrompts(_ prompts: [QuotaPromptDTO]) -> ReminderGroupDTO {
+        ReminderGroupDTO(
+            slot: slot, reminders: reminders, considered: considered,
+            consideredItems: consideredItems, prompts: prompts
+        )
+    }
+}
+
+// MARK: - Quota prompts (quota reminders, 2026-09-24)
+
+/// One quota PROMPT from `GET /api/reminders`' `groups[].prompts`
+/// (`src/lib/quota-prompts.ts`'s `QuotaPrompt`, wire-identical).
+///
+/// An unmet quota also shows up as a reminder-like row in a reminder period
+/// each day, so it gets the attention a reminder gets. It is NOT a task:
+/// nothing is stored per prompt server-side, and a daily quota with target N
+/// has one row per period it is spread over, all sharing ONE `taskId`. So a
+/// row is keyed by `promptKey` (`q:<taskId>:<k>:<YYYY-MM-DD>`), never by
+/// `taskId`, and actions go through the prompt endpoints
+/// (`APIClient.considerPrompts`/`didPrompts`, or `completeTasks(ids:prompts:)`
+/// for a mixed batch) — never a done endpoint, which refuses quotas.
+///
+/// Two actions (Trent's final decision): the round circle = CONSIDERED for
+/// today, no progress; the square = DID IT, +1 (idempotent per key) and
+/// considered too.
+///
+/// Every field is decoded with a default so a cache written by a build (or a
+/// server) with fewer fields still parses; the key is the only field without
+/// a sensible default, and a prompt without one is dropped by the decode.
+struct QuotaPromptDTO: Codable, Hashable, Identifiable {
+    let promptKey: String
+    let taskId: Int
+    /// Daily quotas: the highest prompt number assigned to this period; the
+    /// row is done once today's count reaches it. `nil` for every other
+    /// quota, which prompts once a day.
+    let number: Int?
+    let title: String
+    /// Today's count — 0 once the period has ended.
+    let current: Int
+    let target: Int
+    /// `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or nil.
+    let period: String?
+    /// The quota's label color, resolved server-side: a `LabelColor` name
+    /// (`WidgetTheme.projectColor`'s palette) or nil. Never "green" — green
+    /// means "met" on quota chips, so the stripe never spends it.
+    let stripeColor: String?
+    /// Considered today (the circle, or "did it", which implies it).
+    let considered: Bool
+    /// Done for today: daily — count reached `number`; others — progress
+    /// logged today from anywhere.
+    let done: Bool
+
+    var id: String { promptKey }
+
+    enum CodingKeys: String, CodingKey {
+        case promptKey = "prompt_key"
+        case taskId = "task_id"
+        case number, title, current, target, period
+        case stripeColor = "stripe_color"
+        case considered, done
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        promptKey = try c.decode(String.self, forKey: .promptKey)
+        taskId = try c.decodeIfPresent(Int.self, forKey: .taskId) ?? 0
+        number = try c.decodeIfPresent(Int.self, forKey: .number)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        current = try c.decodeIfPresent(Int.self, forKey: .current) ?? 0
+        target = try c.decodeIfPresent(Int.self, forKey: .target) ?? 1
+        period = try c.decodeIfPresent(String.self, forKey: .period)
+        stripeColor = try c.decodeIfPresent(String.self, forKey: .stripeColor)
+        considered = try c.decodeIfPresent(Bool.self, forKey: .considered) ?? false
+        done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
+    }
+
+    init(
+        promptKey: String, taskId: Int, number: Int? = nil, title: String, current: Int, target: Int,
+        period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false
+    ) {
+        self.promptKey = promptKey
+        self.taskId = taskId
+        self.number = number
+        self.title = title
+        self.current = current
+        self.target = target
+        self.period = period
+        self.stripeColor = stripeColor
+        self.considered = considered
+        self.done = done
+    }
+
+    /// Still waiting for today — the server's `promptWaiting`.
+    var isWaiting: Bool { !considered && !done }
+
+    /// "1/2" — the count the row shows beside the title ("Daily Walks · 1/2").
+    var countText: String { "\(current)/\(target)" }
+
+    /// The row's whole label as ONE string: title, then the count glued to it
+    /// with non-breaking spaces so the count never wraps away from its "·".
+    /// The one string both the rendered `Text` and the row-height measurement
+    /// build from (see `WidgetTheme.dueLabelParts`' "one function" rule).
+    var labelText: String { "\(title)\u{00A0}·\u{00A0}\(countText)" }
+
+    /// A copy marked handled for today — the optimistic render of an action
+    /// whose server round trip is still in flight. `did` also marks it done
+    /// and draws the count it will have: a daily prompt's count rises to its
+    /// number, anything else +1 (the server's own `applyToQuota` rule).
+    func handled(did: Bool) -> QuotaPromptDTO {
+        let newCurrent: Int
+        if did {
+            newCurrent = number.map { max(current, $0) } ?? current + 1
+        } else {
+            newCurrent = current
+        }
+        return QuotaPromptDTO(
+            promptKey: promptKey, taskId: taskId, number: number, title: title,
+            current: newCurrent, target: target, period: period, stripeColor: stripeColor,
+            considered: true, done: done || did
+        )
+    }
 }
 
 struct RemindersPayload: Codable {
@@ -387,6 +555,14 @@ struct CompletionDTO: Codable, Identifiable, Hashable {
     var completedDate: Date? {
         DateHelpers.parseISO(completedAt)
     }
+
+    /// A quota's completion — the server's `isTracked()`: the flag OR a
+    /// target above 1 (`TaskDTO.isTracked`'s doc — most quotas predate the
+    /// flag, so the flag alone misses them). A quota's completions are
+    /// written by its period rollover and can never be put back —
+    /// `POST /api/tasks/:id/undone` refuses quotas (2026-09-24) — so no DONE
+    /// list may offer a put-back on one.
+    var isQuota: Bool { isTracked || progressTarget > 1 }
 }
 
 /// `GET /api/completions` → `{"data":{"completions":[...],"count":...}}` —
