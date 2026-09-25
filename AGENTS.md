@@ -16,15 +16,17 @@ Additional docs: `docs/SPEC.md` (product requirements), `docs/ROADMAP.md` (plann
 
 The public docs site lives in a separate repo (`opentask-docs`, typically at `~/working_dir/opentask-docs`) (VitePress, deployed to `opentask.mcnitt.io/docs/`). When you change features, API behavior, or configuration in this repo, the docs site may need a corresponding update. Key sync points:
 
-| Change in this repo                          | Update in opentask-docs                           |
-| -------------------------------------------- | ------------------------------------------------- |
-| API routes or response format                | `openapi.json` (convert from `docs/openapi.yaml`) |
-| AI features or provider options              | `setup/ai.md`, `setup/configuration.md`           |
-| Environment variables                        | `setup/configuration.md`                          |
-| Core behavior (snooze, priority, recurrence) | `concepts/` pages                                 |
-| New feature or major change                  | `overview.md`                                     |
+| Change in this repo                          | Update in opentask-docs                             |
+| -------------------------------------------- | --------------------------------------------------- |
+| API routes or response format                | `openapi.json` (generated from `docs/openapi.yaml`) |
+| AI features or provider options              | `setup/ai.md`, `setup/configuration.md`             |
+| Environment variables                        | `setup/configuration.md`                            |
+| Core behavior (snooze, priority, recurrence) | `concepts/` pages                                   |
+| Reminders, quotas, time slots                | `concepts/reminders.md`, `concepts/quotas.md`       |
+| iOS app, widgets, Watch, Mac                 | `ios/` pages                                        |
+| New feature or major change                  | `overview.md`                                       |
 
-See `~/working_dir/opentask-docs/CLAUDE.md` for build/deploy instructions and full sync details.
+**To sync:** in `opentask-docs`, run `npm run sync` (or `/sync-docs` in Claude Code). It regenerates `openapi.json` from this repo's `main` and lists the commits since the last recorded sync, grouped by docs page. Keep `docs/openapi.yaml` accurate: the docs site's API reference comes straight from it. See `~/working_dir/opentask-docs/AGENTS.md` for the full workflow, build and deploy.
 
 ### Source layout
 
