@@ -29,6 +29,8 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     is_reminder: false,
     is_tracked: false,
     progress_period_start: null,
+    quota_prompt_config: null,
+    quota_day_state: null,
     progress_current: 0,
     skip_count: 0,
     priority: 0,

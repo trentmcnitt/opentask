@@ -187,6 +187,28 @@ const shortTitle = z
   .optional()
 
 /**
+ * Quota reminders (2026-09-24): a quota's prompt settings. Every key optional —
+ * an absent one takes its default — and `null` resets the whole thing to the
+ * defaults. Slot ids are not checked against the user's slots here: they are
+ * resolved at read time with fallbacks (`resolvePromptSlot`), which is also
+ * what keeps a prompt alive when its slot is later deleted, so a write-time
+ * check would protect nothing that read time does not already handle.
+ */
+const quotaPromptConfig = z
+  .object({
+    enabled: z.boolean().optional(),
+    slot_id: z.number().int().positive().nullable().optional(),
+    numbers: z
+      .record(
+        z.string().regex(/^[1-9]\d{0,2}$/, 'Prompt numbers are 1 to 999'),
+        z.number().int().positive().nullable(),
+      )
+      .optional(),
+  })
+  .strict()
+  .nullable()
+
+/**
  * Bulk operation ID array — bounded to prevent DoS via excessive DB queries.
  */
 const bulkIds = z
@@ -215,6 +237,7 @@ export const taskCreateSchema = z
     progress_target: progressTarget.optional(),
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
+    quota_prompt_config: quotaPromptConfig.optional(),
     // Ask for AI enrichment even though the caller supplied structured fields.
     // The Reminders quick add sets it: it always sends a sensible default
     // schedule so the row lands in a slot immediately, which would otherwise
@@ -248,6 +271,7 @@ export const taskUpdateSchema = z
     progress_current: progressCurrent.optional(),
     is_reminder: isReminderFlag.optional(),
     is_tracked: z.boolean().optional(),
+    quota_prompt_config: quotaPromptConfig.optional(),
   })
   // A PATCH carrying a bare period rule must say the task is tracked in the
   // same request (is_tracked or progress_target); the schema has no task to ask.
