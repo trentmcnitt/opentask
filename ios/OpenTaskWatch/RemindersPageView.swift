@@ -409,6 +409,9 @@ private struct PromptRowsPreview: View {
             }
         }
         .padding(.horizontal, 4)
+        // The 44mm SE's 184pt screen, the narrowest watch he wears — the
+        // preview canvas renders on whichever simulator Xcode picks.
+        .frame(width: 184)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
@@ -418,5 +421,9 @@ private struct PromptRowsPreview: View {
 #Preview("Prompt rows 11-16") { PromptRowsPreview(range: 10..<16) }
 #Preview("Prompt rows 1-4, XXX Large") {
     PromptRowsPreview(range: 0..<4).dynamicTypeSize(.xxxLarge)
+}
+#Preview("Prompt rows 3-5, XXX Large") {
+    // The longest count: "0/1 this month" (Clean car seat) and "0/2 today".
+    PromptRowsPreview(range: 2..<5).dynamicTypeSize(.xxxLarge)
 }
 #endif
