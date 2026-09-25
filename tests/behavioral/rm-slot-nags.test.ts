@@ -301,10 +301,10 @@ describe('Unfinished-slot nag — what it sends', () => {
 
   /** RN-010: the body names the target and its count; the others are a count only. */
   test('RN-010: the body counts the other slots without enumerating them', () => {
-    expect(slotNagBody(1, 0)).toBe('1 reminder waiting')
-    expect(slotNagBody(3, 0)).toBe('3 reminders waiting')
-    expect(slotNagBody(3, 1)).toBe('3 reminders waiting, and 1 earlier slot')
-    expect(slotNagBody(3, 2)).toBe('3 reminders waiting, and 2 earlier slots')
+    expect(slotNagBody(1, 0, 0)).toBe('1 reminder waiting')
+    expect(slotNagBody(3, 0, 0)).toBe('3 reminders waiting')
+    expect(slotNagBody(3, 0, 1)).toBe('3 reminders waiting, and 1 earlier slot')
+    expect(slotNagBody(3, 0, 2)).toBe('3 reminders waiting, and 2 earlier slots')
   })
 
   /** RN-011: nothing waiting, nothing said. */

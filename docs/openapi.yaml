@@ -1272,6 +1272,8 @@ paths:
         `/did`, or `prompts` in `POST /api/tasks/bulk/complete`. The user's
         `quota_prompts_enabled` preference and the server's
         `OPENTASK_QUOTA_PROMPTS=off` each make every `prompts` array empty.
+        The slot notification and its nags count waiting prompts too, so a
+        client's slot checklist should list them after the reminders.
       responses:
         '200':
           description: Reminder groups in slot order

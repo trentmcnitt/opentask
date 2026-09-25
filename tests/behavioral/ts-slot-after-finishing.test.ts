@@ -30,6 +30,18 @@ describe('slotAfterFinishing', () => {
     expect(slotAfterFinishing(day(0, 0, 0), 2, 2)).toBeNull()
   })
 
+  test('a waiting quota prompt keeps a slot undone, like a reminder', () => {
+    const prompt = (considered: boolean, done: boolean) => ({ considered, done })
+    const groups = [
+      { reminders: [], prompts: [prompt(false, false)] }, // early morning: a prompt waits
+      { reminders: [], prompts: [] }, // morning: just finished
+    ]
+    expect(slotAfterFinishing(groups, 1, 1)).toBe(0)
+    // Considered or done, it no longer holds the slot open.
+    groups[0].prompts = [prompt(true, false), prompt(false, true)]
+    expect(slotAfterFinishing(groups, 1, 1)).toBeNull()
+  })
+
   test('never a slot that has not started', () => {
     expect(slotAfterFinishing(day(0, 0, 0, 5), 1, 2)).toBe(2)
     expect(slotAfterFinishing(day(0, 0, 0, 5), 2, 2)).toBeNull()

@@ -6,7 +6,12 @@
  */
 
 export { checkOverdueTasks } from './overdue-checker'
-export { checkSlotReminders, pendingSlotNotifications, slotsDueNow } from './slot-reminders'
+export {
+  checkSlotReminders,
+  pendingSlotNotifications,
+  slotsDueNow,
+  waitingBySlot,
+} from './slot-reminders'
 export {
   checkSlotNags,
   pendingSlotNags,
