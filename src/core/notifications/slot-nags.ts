@@ -2,10 +2,10 @@
  * Hourly nag for unfinished reminder slots
  *
  * WHAT THIS IS: on the hour, while the user is awake, if any time slot that has
- * already opened today still has reminders waiting, send ONE notification. Not
- * one per slot — one, total, naming the most recent unfinished slot and
- * counting the rest. At most MAX_NAGS_PER_DAY a day, spaced out across the
- * user's waking window (`minNagGapHours`), with the last one held back until
+ * already opened today still has reminders (or quota prompts) waiting, send
+ * ONE notification. Not one per slot — one, total, naming the most recent
+ * unfinished slot and counting the rest. At most MAX_NAGS_PER_DAY a day,
+ * spaced out across the user's waking window (`minNagGapHours`), with the last one held back until
  * the day's final slot has opened (`allowanceSoFar`). Those two rules exist
  * because firing as early as possible spent the whole day on the morning.
  *
@@ -46,9 +46,8 @@
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { isApnsConfigured, sendApnsSlotReminder } from '@/core/notifications/apns'
-import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
-import { getRemindersBySlot } from '@/core/tasks/reminders'
+import { isApnsConfigured, sendApnsSlotReminder, slotWaitingBody } from '@/core/notifications/apns'
+import { pendingSlotNotifications, waitingBySlot } from '@/core/notifications/slot-reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 
@@ -138,12 +137,15 @@ export function minNagGapHours(wakeTime: string, sleepTime: string): number {
 interface UnfinishedSlot {
   slot: TimeSlot
   count: number
+  promptCount: number
   start: number
 }
 
 /**
- * The slots that have already opened today and still have reminders waiting,
- * latest-opening first.
+ * The slots that have already opened today and still have reminders — or
+ * quota prompts — waiting, latest-opening first. A prompt keeps its slot
+ * unfinished exactly as a reminder does, until it is considered or done
+ * (quota reminders, 2026-09-24; see `waitingBySlot`).
  *
  * The un-slotted ("Anytime today") group is deliberately excluded: it has no
  * `start_time`, so it never "opens", and there is no moment it could be said to
@@ -158,17 +160,17 @@ function unfinishedOpenedSlots(
 ): UnfinishedSlot[] {
   if (slots.length === 0) return []
 
-  const groups = getRemindersBySlot(user.id, user.timezone, now)
+  const waiting = waitingBySlot(user.id, user.timezone, now)
   const unfinished: UnfinishedSlot[] = []
 
   for (const slot of slots) {
     const start = parseHHMM(slot.start_time)
     if (start === null || start > minuteOfDay) continue
 
-    const group = groups.find((g) => g.slot?.id === slot.id)
-    if (!group || group.reminders.length === 0) continue
+    const inSlot = waiting.get(slot.id)
+    if (!inSlot || inSlot.reminders + inSlot.prompts === 0) continue
 
-    unfinished.push({ slot, count: group.reminders.length, start })
+    unfinished.push({ slot, count: inSlot.reminders, promptCount: inSlot.prompts, start })
   }
 
   return unfinished.sort((a, b) => b.start - a.start)
@@ -242,6 +244,8 @@ export interface PendingSlotNag {
   slotLabel: string
   /** Reminders waiting in that slot. */
   count: number
+  /** Quota prompts waiting in that slot. */
+  promptCount: number
   /** How many OTHER opened slots are also unfinished. Never enumerated. */
   otherSlots: number
   /** The user's local date, so the sender claims against the same day it decided on. */
@@ -282,13 +286,13 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     if (alreadyNotified.has(user.id)) continue
 
     const slots = listTimeSlots(user.id)
-    const unfinished = unfinishedOpenedSlots(user, slots, now, minuteOfDay)
-    if (unfinished.length === 0) continue
 
     // Three independent gates, ALL of which must pass. The cap bounds how many
     // nags a day holds; the gap bounds how fast they are spent; the reserve
     // bounds how many may be spent before the evening exists. Each one alone
-    // was insufficient — see `minNagGapHours` and `allowanceSoFar`.
+    // was insufficient — see `minNagGapHours` and `allowanceSoFar`. Checked
+    // BEFORE the slots' contents: they need only the clock and the nag row,
+    // and a user whose day is spent should not cost a reminders-and-quotas read.
     const sentToday = todaysNagRow(user.id, local.toISODate()!)
     if (sentToday && sentToday.sent_count >= allowanceSoFar(user, slots, minuteOfDay)) continue
     if (
@@ -298,12 +302,16 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
       continue
     }
 
+    const unfinished = unfinishedOpenedSlots(user, slots, now, minuteOfDay)
+    if (unfinished.length === 0) continue
+
     const [target] = unfinished
     pending.push({
       userId: user.id,
       slotId: target.slot.id,
       slotLabel: target.slot.label,
       count: target.count,
+      promptCount: target.promptCount,
       otherSlots: unfinished.length - 1,
       localDate: local.toISODate()!,
       localHour: local.hour,
@@ -320,8 +328,8 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
  * user asked for one nag, not a digest — enumerating four slots in a banner is
  * a digest wearing a notification's clothes.
  */
-export function slotNagBody(count: number, otherSlots: number): string {
-  const waiting = count === 1 ? '1 reminder waiting' : `${count} reminders waiting`
+export function slotNagBody(count: number, promptCount: number, otherSlots: number): string {
+  const waiting = slotWaitingBody(count, promptCount)
   if (otherSlots <= 0) return waiting
   const others = otherSlots === 1 ? '1 earlier slot' : `${otherSlots} earlier slots`
   return `${waiting}, and ${others}`
@@ -396,7 +404,8 @@ export async function checkSlotNags(nowOverride?: Date): Promise<void> {
         slotId: nag.slotId,
         slotLabel: nag.slotLabel,
         count: nag.count,
-        body: slotNagBody(nag.count, nag.otherSlots),
+        promptCount: nag.promptCount,
+        body: slotNagBody(nag.count, nag.promptCount, nag.otherSlots),
       })
     }
   } catch (err) {

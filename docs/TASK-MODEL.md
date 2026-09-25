@@ -90,12 +90,13 @@ A quota's completions are the period rollover's (`period-rollover.ts`): a met pe
 
 ## Quota reminders (prompts)
 
-Every unmet quota also appears as a **prompt** in a reminder period (time slot) each day, so quotas get the attention reminders get (2026-09-24; `src/core/tasks/quota-prompts.ts`). Prompts are computed at read time — nothing is stored per prompt — and arrive in `GET /api/reminders` `groups[].prompts`, a separate array from `reminders` (which, with its counts and the slot notifications, is unchanged). Identity: `prompt_key` = `q:<taskId>:<k>:<date>`.
+Every unmet quota also appears as a **prompt** in a reminder period (time slot) each day, so quotas get the attention reminders get (2026-09-24; `src/core/tasks/quota-prompts.ts`). Prompts are computed at read time — nothing is stored per prompt — and arrive in `GET /api/reminders` `groups[].prompts`, a separate array from `reminders` (which, with its counts, is unchanged). Identity: `prompt_key` = `q:<taskId>:<k>:<date>`.
 
 - **Daily** quota (FREQ=DAILY, no INTERVAL), target N: numbers 1..N spread one per period from the quota's period, clamping at the last period; each number's period can be set in the editor. One row per quota per period, standing for the highest number there (`k`); done once today's count reaches `k`. The label shows progress ("Daily Walks · 1/2").
 - **Every other** quota (weekly, monthly, yearly when enabled, daily with INTERVAL > 1): one prompt a day. Done for today once any progress is logged today from anywhere; gone until the period resets once met.
 - Defaults: on for daily/weekly/monthly, off for yearly and period-less; `quota_prompt_config.enabled` overrides. Only the user's own quotas (never another user's shared-project quota).
-- Off switches: the user's `quota_prompts_enabled` preference, and `OPENTASK_QUOTA_PROMPTS=off` on the server. Either empties every `prompts` array.
+- Off switches: the user's `quota_prompts_enabled` preference, and `OPENTASK_QUOTA_PROMPTS=off` on the server. Either empties every `prompts` array and takes prompts out of the notifications.
+- **Notifications**: a waiting prompt (not considered, not done) counts exactly like a reminder in its slot's push and in the hourly nags. A slot with only prompts still notifies, and a slot stays unfinished until its prompts are handled. The body counts both, e.g. "3 reminders · 2 quotas waiting". Prompts are never in the app-icon badge. See `docs/NOTIFICATIONS.md` § Time-slot notifications.
 - **Where**: slot ids are stored (the quota's `quota_prompt_config.slot_id` / `numbers`, the user's `quota_prompt_slot_id`) and resolved at read time with one fallback rule: the quota's slot if it exists, else the user's default if it exists, else the first period of the day (`resolvePromptSlot`).
 
 Two actions, because ticking a reminder means "considered", not "did it":

@@ -37,10 +37,14 @@
  *   `OPENTASK_QUOTA_PROMPTS=off`. Either one makes every group's prompts empty.
  *
  * WHERE THEY GO: a NEW `groups[].prompts` field on GET /api/reminders.
- * `groups[].reminders` and the slot notifications stay reminder-only (phase 1),
- * which is what keeps current native builds — which ignore unknown fields —
- * safe. That is also why this is a sibling of `getRemindersBySlot` rather than
- * part of it: `countRemindersBySlot` feeds the notification cron.
+ * `groups[].reminders` stays reminder-only, which is what keeps native builds
+ * that predate prompts — they ignore unknown fields — safe. That is also why
+ * this is a sibling of `getRemindersBySlot` rather than part of it.
+ * The slot notifications and hourly nags count prompts too (phase 3, once the
+ * native checklist could show them): `waitingBySlot` in
+ * `src/core/notifications/slot-reminders.ts` reads this function, so both
+ * off switches silence prompts there as well. The app-icon badge never
+ * counts them.
  *
  * SLOT RESOLUTION: a prompt stores slot IDS (in its config, and the user's
  * default in `users.quota_prompt_slot_id`) and resolves them here, at read
