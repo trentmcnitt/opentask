@@ -488,44 +488,6 @@ test.describe('Track', () => {
   })
 
   /**
-   * §5, Trent 2026-09-23: the widget shows every quota as a small tappable
-   * chip, and a quota's title is often a full sentence — too long for a chip.
-   * The optional "Short name" field is per-quota (single-task editor only,
-   * same as Title and Notes), trimmed, and capped at 24 characters.
-   */
-  test("a quota's short name is edited in its own editor, and persists across reload", async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await createTask(page, {
-      title: 'Balloon breathing practice (slow exhale)',
-      progress_target: 4,
-      is_tracked: true,
-      rrule: 'FREQ=WEEKLY',
-    })
-
-    await page.goto(`/tasks/${id}`)
-    const editor = page.locator(`[data-quota-detail="${id}"]`)
-    await expect(editor).toBeVisible()
-
-    const shortName = editor.getByRole('textbox', { name: 'Short name' })
-    await expect(shortName).toBeVisible()
-    await expect(shortName).toHaveValue('')
-
-    // Leading/trailing whitespace is trimmed by the server, not the widget.
-    await shortName.fill('  Balloon  ')
-    const saved = page.waitForResponse(
-      (r) => r.url().includes(`/api/tasks/${id}`) && r.request().method() === 'PATCH',
-    )
-    await editor.getByRole('button', { name: 'Save' }).click()
-    const patchBody = (await saved).request().postDataJSON()
-    expect(patchBody.short_title).toBe('Balloon')
-
-    await page.reload()
-    const after = page.locator(`[data-quota-detail="${id}"]`)
-    await expect(after.getByRole('textbox', { name: 'Short name' })).toHaveValue('Balloon')
-  })
-
-  /**
    * §5, Trent 2026-09-09, choosing variation G of the `track-by-label` mockup:
    * a cluster's heading is a PEER of its chips rather than a box around them
    * — asserted as DOM shape (same flex parent, one wrapping list).

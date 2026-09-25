@@ -56,8 +56,6 @@ export interface QuotaCreateDraft {
 /** What a save carries. `ids` is empty when creating. */
 export interface QuotaChanges {
   title?: string
-  /** §5: the widget chip's short label. Per-quota, so never sent for a multi-select edit. */
-  short_title?: string | null
   notes?: string | null
   progress_target?: number
   is_tracked?: true
@@ -108,7 +106,6 @@ export function QuotaDetail({
   )
 
   const [title, setTitle] = useState(base.title)
-  const [shortTitle, setShortTitle] = useState(base.shortTitle)
   const [target, setTarget] = useState(base.target)
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
   const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
@@ -121,7 +118,6 @@ export function QuotaDetail({
   const {
     targetNumber,
     titleTouched,
-    shortTitleTouched,
     notesTouched,
     targetTouched,
     periodTouched,
@@ -129,7 +125,7 @@ export function QuotaDetail({
     dirty,
     targetOk,
     canSave,
-  } = describeDraft({ creating, base, title, shortTitle, target, period, label, notes })
+  } = describeDraft({ creating, base, title, target, period, label, notes })
 
   // Report dirtiness, and report clean on the way out: the modal unmounts this
   // when it closes, and without the unmount clear the host stayed "dirty" until
@@ -149,9 +145,6 @@ export function QuotaDetail({
   const buildChanges = useCallback((): QuotaChanges => {
     const changes: QuotaChanges = {}
     if (creating || titleTouched) changes.title = title.trim()
-    // Per-quota only: `(creating || single)` is what renders the field, so
-    // there is never a mixed-selection value to accidentally overwrite here.
-    if (creating || shortTitleTouched) changes.short_title = shortTitle.trim() || null
     if (creating || notesTouched) changes.notes = notes.trim() || null
     if (creating || targetTouched) {
       changes.progress_target = targetNumber
@@ -189,13 +182,11 @@ export function QuotaDetail({
   }, [
     creating,
     titleTouched,
-    shortTitleTouched,
     notesTouched,
     targetTouched,
     periodTouched,
     labelTouched,
     title,
-    shortTitle,
     notes,
     targetNumber,
     period,
@@ -222,7 +213,6 @@ export function QuotaDetail({
       // forever: a fully saved quota kept its blue stripe and kept raising the
       // unsaved-changes guard.
       setTitle((t) => t.trim())
-      setShortTitle((s) => s.trim())
       setNotes((n) => n.trim())
     } catch {
       // The host has already reported it. Swallowing here is what lets the
@@ -244,7 +234,6 @@ export function QuotaDetail({
 
   function handleReset() {
     setTitle(base.title)
-    setShortTitle(base.shortTitle)
     setTarget(base.target)
     setPeriod(base.period)
     setLabel(base.label)
@@ -262,10 +251,6 @@ export function QuotaDetail({
       {(creating || single) && (
         <TitleField value={title} onChange={setTitle} autoFocus={creating} />
       )}
-
-      {/* Per-quota only, same as Title and Notes — never offered on a
-          multi-quota selection (a chip is one quota's label, not several's). */}
-      {(creating || single) && <ShortTitleField value={shortTitle} onChange={setShortTitle} />}
 
       {!creating && !single && (
         <p className="text-muted-foreground text-sm">
@@ -612,7 +597,6 @@ function describeBase({
   if (creating)
     return {
       title: create?.title ?? '',
-      shortTitle: '',
       target: '3',
       period: 'WEEKLY' as QuotaPeriod | null,
       // A new quota starts unlabelled — `null`, not `undefined`: nothing is in
@@ -626,7 +610,6 @@ function describeBase({
   const labels = new Set(tasks.map(quotaLabelOf))
   return {
     title: single?.title ?? '',
-    shortTitle: single?.short_title ?? '',
     target: targets.size === 1 ? [...targets][0] : '',
     period: periods.size === 1 ? [...periods][0] : null,
     // One agreed label (or one agreed "none"); `undefined` when they differ, so
@@ -653,7 +636,6 @@ function describeDraft({
   creating,
   base,
   title,
-  shortTitle,
   target,
   period,
   label,
@@ -662,7 +644,6 @@ function describeDraft({
   creating: boolean
   base: {
     title: string
-    shortTitle: string
     target: string
     period: QuotaPeriod | null
     label: QuotaLabelChoice
@@ -670,7 +651,6 @@ function describeDraft({
     allPeriodless: boolean
   }
   title: string
-  shortTitle: string
   target: string
   period: QuotaPeriod | null
   label: QuotaLabelChoice
@@ -680,16 +660,9 @@ function describeDraft({
   const targetTouched = target !== base.target
   const periodTouched = period !== base.period
   const titleTouched = title !== base.title
-  const shortTitleTouched = shortTitle !== base.shortTitle
   const notesTouched = notes !== base.notes
   const labelTouched = label !== base.label
-  const dirty =
-    titleTouched ||
-    shortTitleTouched ||
-    notesTouched ||
-    targetTouched ||
-    periodTouched ||
-    labelTouched
+  const dirty = titleTouched || notesTouched || targetTouched || periodTouched || labelTouched
   const targetOk = target.length > 0 && targetNumber >= 1 && targetNumber <= 1000
   // Creating needs a title, a valid target and a period. Editing needs only
   // what is being changed to be valid — a period-less quota, and a selection
@@ -701,7 +674,6 @@ function describeDraft({
   return {
     targetNumber,
     titleTouched,
-    shortTitleTouched,
     notesTouched,
     targetTouched,
     periodTouched,
@@ -734,36 +706,6 @@ function TitleField({
         placeholder="What are you counting?"
         className="text-[16px]"
       />
-    </div>
-  )
-}
-
-const SHORT_TITLE_MAX = 24
-
-/**
- * Optional short label for the quota widget chip (§5): quota titles are often
- * long sentences ("Balloon breathing practice (teach Mia...)"), and the
- * widget shows every quota as a small tappable chip that needs something
- * that fits. `maxLength` on the input is a convenience — the server is the
- * real limit (trims and caps at 24, and treats "" as "no short name").
- */
-function ShortTitleField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor="quota-short-title" className="text-sm font-medium">
-        Short name
-      </label>
-      <Input
-        id="quota-short-title"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        maxLength={SHORT_TITLE_MAX}
-        placeholder="For widgets, e.g. Balloon"
-        className="text-[16px]"
-      />
-      <p className="text-muted-foreground text-xs">
-        {value.length}/{SHORT_TITLE_MAX} — shown on the widget chip instead of the full title
-      </p>
     </div>
   )
 }
