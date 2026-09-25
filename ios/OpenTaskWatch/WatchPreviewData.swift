@@ -19,7 +19,8 @@ enum WatchPreviewData {
     ) -> QuotaPromptDTO {
         QuotaPromptDTO(
             promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
-            title: title, current: current, target: target, period: period, stripeColor: stripe
+            title: title, current: current, target: target, period: period, stripeColor: stripe,
+            hasNotes: false
         )
     }
 

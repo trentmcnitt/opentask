@@ -324,6 +324,82 @@ enum WidgetTheme {
         return max(1, Int((bounds.height / lineHeight(of: font)).rounded()))
     }
 
+    // MARK: Notes glyph (2026-09-25)
+    //
+    // A row whose item has notes draws a small muted `NotesGlyph` after the
+    // last word of its title — INSIDE the title's `Text` (`titleText(_:
+    // notesGlyphSize:)`), joined by a no-break space, so it wraps with that
+    // word instead of taking a column of its own or being stranded alone on
+    // a line. It can push a title whose last line is nearly full onto one
+    // more line, so the pager must measure it: `measuredLineCount(for:
+    // notesGlyphSize:…)` measures the title, the same no-break space, and an
+    // inline box exactly as wide as the glyph SwiftUI draws. Same string,
+    // same glyph size, or the page math drifts (see `measuredLineCount`).
+
+    /// The glyph's size relative to the title's drawn point size. The web
+    /// draws lucide's sticky note in a 0.875em box, whose visible outline is
+    /// ~0.73em tall; SF's `doc` at point size P is ~0.95P tall, so 0.75
+    /// lands on the same visual size — "a bit smaller than the title".
+    /// Derived from the title's own size, so it scales with Dynamic Type.
+    static let notesGlyphScale: CGFloat = 0.75
+
+    /// `title` with the notes glyph appended when `notesGlyphSize` is set —
+    /// the ONE way a row draws the mark, so every row matches what
+    /// `measuredLineCount(for:notesGlyphSize:…)` measured. The glyph pins
+    /// its own size and weight (a P3 title's `.fontWeight(.semibold)` must
+    /// not thicken it, or it would stop matching the measurement) and its
+    /// own muted style — never a priority color.
+    static func titleText(_ title: Text, notesGlyphSize: CGFloat?) -> Text {
+        guard let notesGlyphSize else { return title }
+        let glyph = Text(Image(systemName: NotesGlyph.symbol))
+            .font(.system(size: notesGlyphSize))
+            .fontWeight(.regular)
+            .foregroundStyle(.tertiary)
+        return title + Text("\u{00A0}") + glyph
+    }
+
+    /// `measuredLineCount(for:maxWidth:font:)` for a title that ends in the
+    /// notes glyph (`notesGlyphSize` set), or exactly that function when it
+    /// doesn't.
+    ///
+    /// The glyph is measured as an inline attachment as WIDE as the symbol
+    /// at that size and 1pt tall: only its width can move a line break, and
+    /// a full-height image box could make the measured last line a point or
+    /// two taller than SwiftUI's (which sets the symbol inside the line like
+    /// any glyph).
+    static func measuredLineCount(
+        for text: String, notesGlyphSize: CGFloat?, maxWidth: CGFloat, font: PlatformFont
+    ) -> Int {
+        guard let notesGlyphSize else { return measuredLineCount(for: text, maxWidth: maxWidth, font: font) }
+        guard maxWidth > 0 else { return 1 }
+        let string = NSMutableAttributedString(string: text + "\u{00A0}", attributes: [.font: font])
+        let attachment = NSTextAttachment()
+        attachment.bounds = CGRect(x: 0, y: 0, width: notesGlyphWidth(pointSize: notesGlyphSize), height: 1)
+        string.append(NSAttributedString(attachment: attachment))
+        string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        let bounds = string.boundingRect(
+            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
+        return max(1, Int((bounds.height / lineHeight(of: font)).rounded()))
+    }
+
+    /// The notes glyph's drawn width at `pointSize` (regular weight) — the
+    /// SF Symbol's own image width in that font, which is its advance when
+    /// set inline in a `Text`.
+    static func notesGlyphWidth(pointSize: CGFloat) -> CGFloat {
+        #if os(iOS)
+        let config = UIImage.SymbolConfiguration(font: UIFont.systemFont(ofSize: pointSize, weight: .regular))
+        return ceil(UIImage(systemName: NotesGlyph.symbol, withConfiguration: config)?.size.width ?? pointSize)
+        #else
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        let image = NSImage(systemSymbolName: NotesGlyph.symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        return ceil(image?.size.width ?? pointSize)
+        #endif
+    }
+
     /// One line of `font`, as the platform's text system lays it out.
     /// `NSFont` has no `.lineHeight` the way `UIFont` does —
     /// `NSLayoutManager().defaultLineHeight(for:)` is AppKit's equivalent
@@ -789,6 +865,15 @@ struct WidgetTextMetrics {
         #endif
     }
 
+    /// The notes glyph's point size after a row title (`WidgetTheme.
+    /// titleText(_:notesGlyphSize:)`), or nil when the item has no notes —
+    /// the one value both the row's drawing and `titleLines`' measurement
+    /// take. A fraction of the title's DRAWN size, so it follows the
+    /// widget's Dynamic Type size exactly as the title does.
+    func notesGlyphSize(hasNotes: Bool) -> CGFloat? {
+        hasNotes ? titlePointSize * WidgetTheme.notesGlyphScale : nil
+    }
+
     /// How many lines a row title gets: its real wrapped count at `width`,
     /// uncapped on every platform and family (2026-09-24 — see the addendum
     /// in `WidgetTheme`) — but never more lines than `maxHeight` (the list's
@@ -796,10 +881,16 @@ struct WidgetTextMetrics {
     /// pager pages through. When the clamp bites, `shrinks` is true: the row
     /// is framed to `maxHeight` and draws its title smaller so ALL of it
     /// fits (`WidgetTheme.overflowTitleScale`) instead of ending in "…".
+    ///
+    /// `hasNotes` measures the title WITH the notes glyph after it — pass
+    /// the same flag the row draws with (`notesGlyphSize(hasNotes:)`).
     func titleLines(
-        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat
+        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat, hasNotes: Bool = false
     ) -> (lines: Int, shrinks: Bool) {
-        let real = WidgetTheme.measuredLineCount(for: text, maxWidth: width, font: titleFont(weight: weight))
+        let real = WidgetTheme.measuredLineCount(
+            for: text, notesGlyphSize: notesGlyphSize(hasNotes: hasNotes), maxWidth: width,
+            font: titleFont(weight: weight)
+        )
         let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
         return (min(real, fitting), real > fitting)
     }

@@ -63,4 +63,20 @@ enum WatchTheme {
     static func priorityWeight(_ priority: Int) -> Font.Weight {
         priority >= 3 ? .semibold : .regular
     }
+
+    /// `title` followed by the small notes glyph when `hasNotes` (2026-09-25)
+    /// — the phone widget's `WidgetTheme.titleText(_:notesGlyphSize:)`,
+    /// minus its measurement: the watch page scrolls, so nothing pages by
+    /// row height here. Inline after the last word, joined by a no-break
+    /// space so it wraps with it; `.footnote` keeps it a step smaller than
+    /// the `.body` title while following Dynamic Type; muted, never a
+    /// priority color. See `NotesGlyph`.
+    static func titleText(_ title: Text, hasNotes: Bool) -> Text {
+        guard hasNotes else { return title }
+        let glyph = Text(Image(systemName: NotesGlyph.symbol))
+            .font(.footnote)
+            .fontWeight(.regular)
+            .foregroundStyle(.secondary)
+        return title + Text("\u{00A0}") + glyph
+    }
 }

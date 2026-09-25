@@ -169,12 +169,13 @@ struct RemindersPageView: View {
                                 .foregroundStyle(WatchTheme.accent)
                                 .font(.caption)
                                 .padding(.top, 3)
-                            Text(task.title)
+                            WatchTheme.titleText(Text(task.title), hasNotes: task.hasNotes)
                                 .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
                                 .multilineTextAlignment(.leading)
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
                 }
                 // Quota prompts after the reminders, as on the web
                 // (`SlotPromptList`) and the phone widget. Keyed by
@@ -278,6 +279,11 @@ struct PromptRowView: View {
     /// Touch and hold: the period list. `nil` = no periods to offer.
     var hold: (() -> Void)?
 
+    /// "Daily Walks, 1/2 today" (+ ", has notes") — both buttons' label.
+    private var spokenLabel: String {
+        NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             RoundedRectangle(cornerRadius: 2)
@@ -290,7 +296,10 @@ struct PromptRowView: View {
                         .foregroundStyle(WatchTheme.accent)
                         .font(.caption)
                         .padding(.top, 3)
-                    Text(prompt.title)
+                    // The notes glyph goes after the TITLE here, not after
+                    // the count as on the phone and web: this row's count
+                    // sits on its own line below, beside the did-it square.
+                    WatchTheme.titleText(Text(prompt.title), hasNotes: prompt.hasNotes)
                         .font(.body)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -303,7 +312,7 @@ struct PromptRowView: View {
                 .onLongPressGesture(minimumDuration: 0.4) { hold?() }
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
-                .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.countText)"))
+                .accessibilityLabel(Text("Considered: \(spokenLabel)"))
                 .accessibilityAction(named: Text("Move to another period")) { hold?() }
 
                 HStack(spacing: 0) {
@@ -319,7 +328,7 @@ struct PromptRowView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Did it: \(prompt.title), \(prompt.countText)"))
+                    .accessibilityLabel(Text("Did it: \(spokenLabel)"))
                 }
             }
         }

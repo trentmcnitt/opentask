@@ -46,7 +46,7 @@ enum SampleData {
                 prompts: [
                     QuotaPromptDTO(
                         promptKey: "q:201:1:sample", taskId: 201, number: 1, title: "Walk",
-                        current: 0, target: 2, period: "DAILY", stripeColor: "blue"
+                        current: 0, target: 2, period: "DAILY", stripeColor: "blue", hasNotes: false
                     ),
                 ]
             ),
