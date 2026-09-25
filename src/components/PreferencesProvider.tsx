@@ -202,6 +202,15 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiFeatureInfo: () => {},
 })
 
+/**
+ * The view preferences below (grouping, sort, filters fold, Track chips/rows)
+ * are saved FIRE-AND-FORGET: state flips at once and the PATCH goes out behind
+ * it. Every one of those PATCHes is `keepalive: true`, because a plain fetch is
+ * cancelled when the page unloads — toggle a view and reload (or navigate)
+ * before the PATCH lands and the browser aborts it, the server may never apply
+ * it, and the page comes back showing the old choice. `keepalive` lets the
+ * request outlive the page; the bodies are a few bytes, far under its 64 KB cap.
+ */
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
   const [aiAvailable, setAiAvailableState] = useState(false)
@@ -482,6 +491,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setDefaultGroupingState(grouping)
           fetch('/api/user/preferences', {
             method: 'PATCH',
+            keepalive: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ default_grouping: grouping }),
           }).catch(() => {})
@@ -494,6 +504,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setDefaultSortReversedState(reversed)
           fetch('/api/user/preferences', {
             method: 'PATCH',
+            keepalive: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ default_sort: sort, default_sort_reversed: reversed }),
           }).catch(() => {})
@@ -504,6 +515,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setFiltersExpandedState(expanded)
           fetch('/api/user/preferences', {
             method: 'PATCH',
+            keepalive: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filters_expanded: expanded }),
           }).catch(() => {})
@@ -514,6 +526,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           setTrackExpandedState(expanded)
           fetch('/api/user/preferences', {
             method: 'PATCH',
+            keepalive: true,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ track_expanded: expanded }),
           }).catch(() => {})

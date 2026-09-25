@@ -13,7 +13,7 @@
  * is put back, so other specs' counts are untouched.
  */
 
-import { test, expect } from './fixtures'
+import { test, expect, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const created: number[] = []
@@ -206,7 +206,7 @@ test.describe('Quota prompts', () => {
     const toggle = page.locator('[data-quota-prompts-switch]')
     await expect(toggle).toBeVisible()
     await expect(page.locator('[data-quota-prompt-slot]')).toBeVisible()
-    const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+    const saved = waitForPreferenceSave(page, 'quota_prompts_enabled')
     await toggle.click()
     await saved
     await expect(page.locator('[data-quota-prompt-slot]')).toHaveCount(0)
