@@ -297,3 +297,94 @@ export function applyPromptMoves<G extends PromptGroup>(
   }
   return out
 }
+
+/**
+ * A daily quota up to this target gets one chip row PER NUMBER in a Track
+ * chip's bubble; above it, one row per period its numbers currently sit in.
+ *
+ * Why a cap at all: per-number rows are what the quota editor shows, and for
+ * "floss twice a day" they are the clearest answer. For "8 glasses of water"
+ * they are eight near-identical rows of chips — a wall to read in a bubble
+ * meant to be glanced at. Grouped, it is never more rows than the user has
+ * periods (and fewer once numbers share one), and each group is exactly a
+ * Reminders prompt row (the server's own grouping), so a tap moves what that
+ * row's own chips would. 4 is where the two kinds of row stop being about the
+ * same size: five default periods group a target of 5+ into at most 5 rows.
+ *
+ * Fitting is not this cap's job: with five periods a compact row wraps to two
+ * lines, and even four of them can outgrow a phone's room above or below a
+ * chip — the bubble scrolls within the space it has (`TrackChipPopover`).
+ */
+export const MAX_PER_NUMBER_ROWS = 4
+
+/** One chip row: the numbers it moves (a daily quota) and where they are now. */
+export interface QuotaPeriodRow {
+  /** Daily: the numbers this row stands for, ascending. `null` = the whole quota. */
+  numbers: number[] | null
+  /** The period they sit in now (`time_slots.id`). */
+  slotId: number
+}
+
+/**
+ * The period chip rows for a quota's own bubble (a Track chip, 2026-09-25),
+ * by the server's placement rule — the same `resolvePromptSlot` /
+ * `assignDailyNumbers` the editor's pickers show. Empty when the quota has no
+ * daily reminder (its switch is off, or it is yearly/period-less by default)
+ * or the user has no periods to move it between.
+ *
+ * - Not daily: one row, the quota's period (moves `slot_id`).
+ * - Daily, target ≤ `MAX_PER_NUMBER_ROWS`: one row per number.
+ * - Daily, above it: one row per period, holding the numbers now there.
+ */
+export function quotaPeriodRows(
+  task: Pick<Task, 'rrule' | 'progress_target' | 'quota_prompt_config'>,
+  slots: Pick<TimeSlot, 'id'>[],
+  userDefault: number | null,
+): QuotaPeriodRow[] {
+  if (slots.length === 0 || !promptEnabled(task)) return []
+  const config = task.quota_prompt_config ?? null
+  if (!isDailyQuota(task)) {
+    return [
+      { numbers: null, slotId: slots[resolvePromptSlot(slots, config?.slot_id, userDefault)].id },
+    ]
+  }
+  const target = Math.max(1, task.progress_target ?? 1)
+  const placed = assignDailyNumbers(target, slots, config, userDefault)
+  if (target <= MAX_PER_NUMBER_ROWS) {
+    return placed.map((index, i) => ({ numbers: [i + 1], slotId: slots[index].id }))
+  }
+  const rows: QuotaPeriodRow[] = []
+  placed.forEach((index, i) => {
+    const row = rows.find((r) => r.slotId === slots[index].id)
+    if (row) row.numbers!.push(i + 1)
+    else rows.push({ numbers: [i + 1], slotId: slots[index].id })
+  })
+  return rows.sort(
+    (a, b) => slots.findIndex((s) => s.id === a.slotId) - slots.findIndex((s) => s.id === b.slotId),
+  )
+}
+
+/**
+ * A row's numbers, short: "2nd of 2", "1st–3rd of 8", "1st, 4th–5th of 6".
+ * Runs of consecutive numbers collapse, so a grouped row of a large target
+ * stays one short line.
+ */
+export function numbersLabel(numbers: number[], target: number): string {
+  const runs: [number, number][] = []
+  for (const n of numbers) {
+    const last = runs[runs.length - 1]
+    if (last && n === last[1] + 1) last[1] = n
+    else runs.push([n, n])
+  }
+  const text = runs
+    .map(([a, b]) => (a === b ? ordinal(a) : `${ordinal(a)}–${ordinal(b)}`))
+    .join(', ')
+  return `${text} of ${target}`
+}
+
+/** 1st, 2nd, 3rd, 11th — a daily quota's numbers, wherever they are named. */
+export function ordinal(n: number): string {
+  const tens = n % 100
+  if (tens >= 11 && tens <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+}

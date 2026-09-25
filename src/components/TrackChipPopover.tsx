@@ -9,16 +9,26 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
 /**
- * A quota PROMPT's period chips (2026-09-25). Only a prompt's bubble passes
- * this — a Track chip has no one period to show.
+ * The period chips a bubble can carry (2026-09-25): where the quota's daily
+ * reminder sits, and one tap to move it there for good. A prompt's bubble
+ * passes one row; a Track chip's bubble passes one row per number of a daily
+ * quota (see `quotaPeriodRows`), since a chip stands for the whole quota.
  */
 export interface PromptPeriods {
   /** The user's periods, by start time. */
   slots: TimeSlot[]
-  /** The period the prompt is in now. */
-  currentId: number | null
   /** What the chips place: "Reminds me in", or a daily row's own numbers. */
   label: string
+  /** One row is the plain chip row; several are a compact per-number grid. */
+  rows: PeriodRow[]
+}
+
+export interface PeriodRow {
+  key: string
+  /** Several rows only: which numbers this row is ("2nd of 2"). */
+  label: string
+  /** The period the row is in now. */
+  currentId: number | null
   onPick: (slot: TimeSlot) => void
 }
 
@@ -44,12 +54,13 @@ export interface PromptPeriods {
  * means, which is also the answer to "how do I even edit the Track items" —
  * a quota is an ordinary task, edited the same way any other one is.
  *
- * ONE EXCEPTION, for a quota PROMPT (2026-09-25): its bubble also carries the
- * period chips (`periods`). Trent wanted a faster way to move a prompt for
- * good than Open → the editor's period picker, and the bubble is where a
- * prompt's hold already lands. One tap is the editor's own write (a PATCH of
- * `quota_prompt_config`) with an Undo toast, so it earns its place here
- * without making this an editor: nothing is typed, nothing is staged.
+ * ONE EXCEPTION, the period chips (`periods`, 2026-09-25): where the quota's
+ * daily reminder sits. Trent wanted a faster way to move it for good than
+ * Open → the editor's period picker, and the bubble is where a hold already
+ * lands — a prompt row's in the Reminders lists, and a quota chip's in Track.
+ * One tap is the editor's own write (a PATCH of `quota_prompt_config`) with an
+ * Undo toast, so it earns its place here without making this an editor:
+ * nothing is typed, nothing is staged.
  */
 export function TrackChipPopover({
   task,
@@ -73,7 +84,7 @@ export function TrackChipPopover({
   /** Move it to Trash. Soft, undoable, and asks nothing first — see
    *  `PopoverFooter`. */
   onDelete: (task: Task) => void
-  /** A prompt's bubble only: its period chips. */
+  /** Where its daily reminder sits — absent when it has none. */
   periods?: PromptPeriods
   /** The chip this bubble points at. */
   children: React.ReactNode
@@ -86,7 +97,16 @@ export function TrackChipPopover({
           align="start"
           sideOffset={8}
           // Never wider than the phone it is on, and never wider than it needs.
-          className="w-[min(20rem,calc(100vw-2rem))] p-0"
+          // Never taller than the room it has, either: the period chips can
+          // stack five rows (a daily quota's numbers), which on a phone is
+          // more than fits above or below a chip — so the bubble scrolls
+          // inside the space Radix measured rather than running under the
+          // screen's edge. The collision padding keeps that space clear of
+          // the fixed top bar (≈60px) and the phone's tab bar (≈57px + its
+          // safe area); without it Radix flipped a tall bubble up UNDER the
+          // top bar, title and all.
+          collisionPadding={{ top: 64, bottom: 72 }}
+          className="max-h-(--radix-popover-content-available-height) w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-0"
           data-track-popover={task.id}
           // The chip owns the pointer that opened this. Without these, the
           // long-press's own pointerup lands on the popover's outside-press
@@ -157,7 +177,9 @@ function QuotaSummary({
         </div>
       </dl>
 
-      {periods && periods.slots.length > 0 && <PeriodChips periods={periods} />}
+      {periods && periods.slots.length > 0 && periods.rows.length > 0 && (
+        <PeriodChips periods={periods} />
+      )}
 
       <PopoverFooter
         onOpen={onOpen}
@@ -169,39 +191,74 @@ function QuotaSummary({
 }
 
 /**
- * The period chips: the quota editor's own (`QuotaPromptField`), one row of
- * the user's periods in start order with the current one pressed, in a
- * section of its own like the bubble's others. A tap on the pressed chip does
- * nothing — the prompt is already there.
+ * The period chips: the quota editor's own (`QuotaPromptField`), the user's
+ * periods in start order with the current one pressed, in a section of its
+ * own like the bubble's others. A tap on the pressed chip does nothing — the
+ * reminder is already there.
+ *
+ * ONE ROW is the plain chip row. SEVERAL (a daily quota's numbers, from a
+ * Track chip) are a grid like the editor's per-number pickers — the number on
+ * the left, its chips on the right — at a smaller size, so a few numbers still
+ * fit a phone's bubble without scrolling it.
  */
 function PeriodChips({ periods }: { periods: PromptPeriods }) {
+  const [only] = periods.rows
   return (
     <div className="space-y-1.5 border-t pt-2.5" data-prompt-periods>
       <p className="text-muted-foreground text-xs">{periods.label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {periods.slots.map((slot) => {
-          const pressed = slot.id === periods.currentId
-          return (
-            <button
-              key={slot.id}
-              type="button"
-              onClick={() => !pressed && periods.onPick(slot)}
-              aria-pressed={pressed}
-              data-prompt-period={slot.id}
-              className={cn(
-                'rounded-full border px-3 py-1 text-sm transition-colors',
-                pressed
-                  ? 'border-foreground bg-foreground text-background'
-                  : 'hover:border-foreground/40',
-              )}
-            >
-              {slot.label}
-            </button>
-          )
-        })}
-      </div>
+      {periods.rows.length === 1 ? (
+        <div className="flex flex-wrap gap-1.5">
+          <PeriodChipRow slots={periods.slots} row={only} compact={false} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-2">
+          {periods.rows.map((row) => (
+            <div key={row.key} className="contents" data-prompt-row={row.key}>
+              <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+                {row.label}
+              </span>
+              <div className="flex flex-wrap gap-1">
+                <PeriodChipRow slots={periods.slots} row={row} compact />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
+}
+
+function PeriodChipRow({
+  slots,
+  row,
+  compact,
+}: {
+  slots: TimeSlot[]
+  row: PeriodRow
+  compact: boolean
+}) {
+  return slots.map((slot) => {
+    const pressed = slot.id === row.currentId
+    return (
+      <button
+        key={slot.id}
+        type="button"
+        onClick={() => !pressed && row.onPick(slot)}
+        aria-pressed={pressed}
+        aria-label={compact ? `${row.label}: ${slot.label}` : undefined}
+        data-prompt-period={slot.id}
+        className={cn(
+          'rounded-full border transition-colors',
+          compact ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm',
+          pressed
+            ? 'border-foreground bg-foreground text-background'
+            : 'hover:border-foreground/40',
+        )}
+      >
+        {slot.label}
+      </button>
+    )
+  })
 }
 
 /** "March 2026" — the month is the useful grain for a quota's history. */

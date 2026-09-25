@@ -87,7 +87,7 @@ test.describe('Quota prompts', () => {
     await page.goto('/reminders')
     const row = promptRow(page, 'E2E prompt consider')
     await expect(row).toBeVisible()
-    await expect(row).toContainText('0/3')
+    await expect(row).toContainText('0/3 this week')
 
     await row.locator('[data-prompt-consider]').click()
     await expect(row).toHaveCount(0)
@@ -117,7 +117,7 @@ test.describe('Quota prompts', () => {
     await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
     await undone
     await expect(promptRow(page, 'E2E prompt did')).toBeVisible()
-    await expect(promptRow(page, 'E2E prompt did')).toContainText('0/3')
+    await expect(promptRow(page, 'E2E prompt did')).toContainText('0/3 this week')
     expect(await progressOf(page, id)).toBe(0)
   })
 
@@ -148,6 +148,54 @@ test.describe('Quota prompts', () => {
     const body = await (await saved).json()
     expect(body.data.quota_prompt_config).toEqual({ enabled: false })
     await expect(promptRow(page, 'E2E prompt editor')).toHaveCount(0)
+  })
+
+  test("the count names its period, in the Quotas panel's words — on the dashboard card too", async ({
+    authenticatedPage: page,
+  }) => {
+    const monthly = `E2E prompt monthly ${Date.now()}`
+    const bare = `E2E prompt no period ${Date.now()}`
+    const ids: number[] = []
+    for (const [title, rrule] of [
+      [monthly, 'FREQ=MONTHLY'],
+      [bare, null],
+    ] as const) {
+      const res = await page.request.post('/api/tasks', {
+        data: {
+          title,
+          rrule,
+          progress_target: 2,
+          is_tracked: true,
+          // A period-less quota prompts only when asked to.
+          quota_prompt_config: rrule ? null : { enabled: true },
+        },
+      })
+      expect(res.ok()).toBeTruthy()
+      ids.push((await res.json()).data.id)
+    }
+    created.push(...ids)
+    // The card shows one period at a time (it has something to show now):
+    // move both prompts into whichever one that is.
+    await page.goto('/')
+    const panel = page.locator('section[data-reminders-panel]')
+    await expect(panel).toBeVisible()
+    const slotId = Number(await panel.getAttribute('data-reminders-slot'))
+    expect(Number.isInteger(slotId)).toBeTruthy()
+    for (const [i, id] of ids.entries()) {
+      const res = await page.request.patch(`/api/tasks/${id}`, {
+        data: {
+          quota_prompt_config: i === 0 ? { slot_id: slotId } : { enabled: true, slot_id: slotId },
+        },
+      })
+      expect(res.ok()).toBeTruthy()
+    }
+    await page.reload()
+    const more = panel.getByRole('button', { name: /show more/i })
+    if (await more.isVisible()) await more.click()
+    const row = (title: string) => panel.locator('li[data-prompt-key]', { hasText: title })
+    await expect(row(monthly)).toContainText('0/2 this month')
+    // No period, no words: the count alone.
+    await expect(row(bare).locator('p')).toHaveText(/· 0\/2$/)
   })
 
   test('Settings: the quota reminders switch hides every prompt', async ({
@@ -236,6 +284,8 @@ test.describe('Quota prompts — moving', () => {
       await expect(promptIn(page, first.label, 'E2E prompt daily')).toBeVisible()
       const row = promptIn(page, second.label, 'E2E prompt daily')
       await expect(row).toBeVisible()
+      // The count says which period it is counting: a daily quota's is today.
+      await expect(row).toContainText('0/2 today')
 
       const bubble = await holdOpen(page, row)
       await expect(bubble.locator('[data-prompt-periods]')).toContainText(
