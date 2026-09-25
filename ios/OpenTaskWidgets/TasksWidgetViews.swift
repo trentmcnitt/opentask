@@ -600,7 +600,7 @@ private struct TasksListView: View {
                     SnoozeModeToggle(isOn: WidgetStore.tasksSnoozeMode)
                 }
                 // See `UndoRedoButtons`' doc.
-                UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
+                UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: TasksWidget.kind)
                 ChevronPager(
                     previous: ShiftProjectScopeIntent(offset: -1),
                     next: ShiftProjectScopeIntent(offset: 1),
