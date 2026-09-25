@@ -278,6 +278,8 @@ function makeFakeTask(overrides: Partial<FormattedTask>): FormattedTask {
     is_reminder: false,
     is_tracked: false,
     progress_period_start: null,
+    quota_prompt_config: null,
+    quota_day_state: null,
     progress_current: 0,
     skip_count: 0,
     done: false,

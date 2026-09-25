@@ -61,7 +61,15 @@ const VALID_TASK_COLUMNS = new Set([
   'is_tracked',
   // §6
   'is_reminder',
+  // Quota reminders (2026-09-24). Both are JSON objects, written below with
+  // their own branch — see the throw-wedges-the-stack note on `is_tracked`
+  // for why missing them here is never "undo does nothing".
+  'quota_prompt_config',
+  'quota_day_state',
 ])
+
+/** Task columns holding a JSON object; undo writes them back serialized. */
+const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state'])
 
 /**
  * Apply a partial state to a task, updating only the specified fields.
@@ -113,6 +121,12 @@ export function applyFieldsToTask(
         // so without this branch better-sqlite3 refuses the raw JS boolean.
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as { is_tracked?: boolean }).is_tracked ? 1 : 0)
+      } else if (JSON_OBJECT_COLUMNS.has(dbColumn)) {
+        // The snapshot holds the parsed object (rowToTask's shape);
+        // better-sqlite3 cannot bind a plain object.
+        const value = (state as Record<string, unknown>)[stateKey]
+        setClauses.push(`${dbColumn} = ?`)
+        values.push(value === null || value === undefined ? null : JSON.stringify(value))
       } else {
         setClauses.push(`${dbColumn} = ?`)
         values.push((state as Record<string, unknown>)[stateKey])

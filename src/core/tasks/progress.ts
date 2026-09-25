@@ -42,6 +42,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
 import { rolloverQuotaNow } from './period-rollover'
+import { localDate, withLogged } from '@/lib/quota-prompts'
 // ONE definition of "is this a quota" — the client-safe one in lib/track. This
 // file used to carry its own copy, and two copies of a rule this central are
 // how the reminder/quota guard in updateTask ended up testing only half of it.
@@ -101,11 +102,19 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     // never moved.
     const applied = next - current
 
-    tx.prepare('UPDATE tasks SET progress_current = ?, updated_at = ? WHERE id = ?').run(
-      next,
-      nowStr,
-      taskId,
+    // Quota reminders: progress logged today from ANYWHERE clears a weekly or
+    // monthly quota's prompt for the day. It is recorded here, in the same
+    // write, so undoing the +1 brings the prompt back. The owner's day, since
+    // prompts are the owner's (a shared quota is never prompted to others).
+    const dayState = withLogged(
+      task.quota_day_state,
+      localDate(ownerTimezone(task.user_id)),
+      applied,
     )
+
+    tx.prepare(
+      'UPDATE tasks SET progress_current = ?, quota_day_state = ?, updated_at = ? WHERE id = ?',
+    ).run(next, JSON.stringify(dayState), nowStr, taskId)
     if (applied !== 0) {
       tx.prepare(
         'INSERT INTO progress_events (task_id, user_id, delta, logged_at) VALUES (?, ?, ?, ?)',
@@ -115,13 +124,14 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     // Logged even when nothing moved: a client offers Undo on its toast for
     // every tap, and an Undo with no entry of its own would undo whatever
     // came before it.
-    const after = { ...task, progress_current: next }
+    const after = { ...task, progress_current: next, quota_day_state: dayState }
+    const fields = ['progress_current', 'quota_day_state']
     logAction(
       userId,
       'progress',
       `Logged ${applied > 0 ? '+' : ''}${applied} on "${task.title}" (${next}/${task.progress_target})`,
-      ['progress_current'],
-      [createQuotaSnapshot(task, after, ['progress_current'])],
+      fields,
+      [createQuotaSnapshot(task, after, fields)],
     )
     return { updated: after, next, task }
   })
@@ -145,6 +155,14 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     met,
     description: `${next}/${task.progress_target}`,
   }
+}
+
+/** A user's timezone — a quota's day is its owner's day. */
+export function ownerTimezone(userId: number): string {
+  const row = getDb().prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
+    | { timezone: string }
+    | undefined
+  return row?.timezone ?? 'UTC'
 }
 
 export type PaceState = 'on-pace' | 'behind' | 'met'
