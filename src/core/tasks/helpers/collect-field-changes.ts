@@ -125,6 +125,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
 
   // Track basic field changes
   collectBasicFields(data, task, input, userId, skipProjectValidation)
+  collectQuotaPromptFields(data, task, input)
 
   // Track rrule changes with anchor derivation
   const rruleChanged = collectRruleChanges(data, task, input, userTimezone, now, willBeTracked)
@@ -325,6 +326,31 @@ function collectBasicFields(
       input.is_reminder,
       'is_reminder = ?',
       input.is_reminder ? 1 : 0,
+    )
+  }
+}
+
+function collectQuotaPromptFields(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+): void {
+  // Quota reminders (2026-09-24): the quota editor's "Remind me daily" switch
+  // and period pickers. A JSON object — the snapshot keeps the parsed value
+  // (what `rowToTask` gives every reader, and what undo re-serializes), the
+  // column gets the string. Compared by content: the editor re-sends an equal
+  // object on every save that touches it.
+  if (
+    input.quota_prompt_config !== undefined &&
+    JSON.stringify(input.quota_prompt_config) !== JSON.stringify(task.quota_prompt_config)
+  ) {
+    trackField(
+      data,
+      'quota_prompt_config',
+      task.quota_prompt_config,
+      input.quota_prompt_config,
+      'quota_prompt_config = ?',
+      input.quota_prompt_config === null ? null : JSON.stringify(input.quota_prompt_config),
     )
   }
 }

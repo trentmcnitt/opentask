@@ -3,7 +3,7 @@
  */
 
 import { getDb, withTransaction } from '@/core/db'
-import type { Task, TaskCreateInput } from '@/types'
+import type { QuotaDayState, QuotaPromptConfig, Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
 import { computeFirstOccurrence, deriveAnchorFields } from '@/core/recurrence'
 import { logAction, createTaskSnapshot } from '@/core/undo'
@@ -133,8 +133,9 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
+        quota_prompt_config, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -158,6 +159,10 @@ export function createTask(options: CreateTaskOptions): Task {
         input.progress_target ?? 1,
         input.is_reminder ? 1 : 0,
         input.is_tracked ? 1 : 0,
+        // NULL unless the caller chose: "the defaults for its period" must stay
+        // representable, so a YEARLY quota is off and a weekly one on without
+        // anything being baked in at creation.
+        input.quota_prompt_config ? JSON.stringify(input.quota_prompt_config) : null,
         now,
         now,
       )
@@ -217,6 +222,7 @@ export function getTaskById(taskId: number): Task | null {
            original_due_at, last_notified_at, last_critical_alert_at, auto_snooze_minutes,
            deleted_at, archived_at, labels,
            progress_target, progress_current, progress_period_start, is_reminder, is_tracked,
+           quota_prompt_config, quota_day_state,
            completion_count, snooze_count, skip_count, first_completed_at, last_completed_at,
            notes, created_at, updated_at
     FROM tasks WHERE id = ?
@@ -366,6 +372,7 @@ export function getTasks(options: GetTasksOptions): Task[] {
            tasks.deleted_at, tasks.archived_at,
            tasks.labels, tasks.progress_target, tasks.progress_current,
            tasks.progress_period_start, tasks.is_reminder, tasks.is_tracked,
+           tasks.quota_prompt_config, tasks.quota_day_state,
            tasks.completion_count, tasks.snooze_count, tasks.skip_count,
            tasks.first_completed_at, tasks.last_completed_at,
            tasks.notes, tasks.created_at, tasks.updated_at
@@ -409,6 +416,8 @@ interface TaskRow {
   progress_period_start: string | null
   is_reminder: number
   is_tracked: number
+  quota_prompt_config: string | null
+  quota_day_state: string | null
   completion_count: number
   snooze_count: number
   skip_count: number
@@ -417,6 +426,21 @@ interface TaskRow {
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+/**
+ * A server-owned JSON column. A malformed value reads as NULL — "the
+ * defaults" / "an empty day" — rather than throwing: one bad row must not
+ * take down every list that loads it.
+ */
+function parseJsonColumn<T>(raw: string | null | undefined): T | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as unknown
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as T) : null
+  } catch {
+    return null
+  }
 }
 
 function rowToTask(row: TaskRow): Task {
@@ -451,6 +475,8 @@ function rowToTask(row: TaskRow): Task {
     progress_period_start: row.progress_period_start ?? null,
     is_reminder: (row.is_reminder ?? 0) === 1,
     is_tracked: (row.is_tracked ?? 0) === 1,
+    quota_prompt_config: parseJsonColumn<QuotaPromptConfig>(row.quota_prompt_config),
+    quota_day_state: parseJsonColumn<QuotaDayState>(row.quota_day_state),
     completion_count: row.completion_count,
     snooze_count: row.snooze_count,
     skip_count: row.skip_count ?? 0,
