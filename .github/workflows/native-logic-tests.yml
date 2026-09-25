@@ -1,0 +1,46 @@
+name: Native logic tests
+
+# The Swift unit tests for the native clients' pure logic (OpenTaskLogicTests,
+# see ios/CLAUDE.md § Tests), including the decode tests over the server
+# contract fixtures. Only runs when native code or those fixtures change.
+#
+# NOT a required status check (deliberately left out of branch protection): a
+# macOS runner is slow and costly, and the tests are also run locally before
+# native PRs. Unsigned (CODE_SIGNING_ALLOWED=NO) — a hostless test bundle
+# needs no team or provisioning.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'macos/**'
+      - 'tests/fixtures/contract/**'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'macos/**'
+      - 'tests/fixtures/contract/**'
+
+permissions:
+  contents: read
+
+jobs:
+  logic-tests:
+    name: Swift logic tests
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Generate the Mac project
+        working-directory: macos
+        run: xcodegen generate
+      - name: Test
+        working-directory: macos
+        run: |
+          xcodebuild test \
+            -scheme OpenTaskLogicTests \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO

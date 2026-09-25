@@ -1,0 +1,47 @@
+{
+  "data": {
+    "time_slots": [
+      {
+        "id": 11,
+        "user_id": 2,
+        "label": "Early morning",
+        "start_time": "07:00",
+        "sort_order": 0,
+        "created_at": "2026-01-15T16:00:00.000Z"
+      },
+      {
+        "id": 12,
+        "user_id": 2,
+        "label": "Morning",
+        "start_time": "09:00",
+        "sort_order": 1,
+        "created_at": "2026-01-15T16:00:00.000Z"
+      },
+      {
+        "id": 13,
+        "user_id": 2,
+        "label": "Midday",
+        "start_time": "12:00",
+        "sort_order": 2,
+        "created_at": "2026-01-15T16:00:00.000Z"
+      },
+      {
+        "id": 14,
+        "user_id": 2,
+        "label": "Afternoon",
+        "start_time": "16:00",
+        "sort_order": 3,
+        "created_at": "2026-01-15T16:00:00.000Z"
+      },
+      {
+        "id": 15,
+        "user_id": 2,
+        "label": "Evening",
+        "start_time": "20:30",
+        "sort_order": 4,
+        "created_at": "2026-01-15T16:00:00.000Z"
+      }
+    ],
+    "count": 5
+  }
+}
