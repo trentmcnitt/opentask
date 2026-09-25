@@ -90,7 +90,9 @@ private struct ReminderCardView: View {
                         RoundedRectangle(cornerRadius: 1.5)
                             .fill(WatchTheme.labelColor(card.stripeColor))
                             .frame(width: 3)
-                        FittingTitle(title: card.title)
+                        FittingTitle(title: ReminderStackMetrics.promptCardShowsDidIt
+                            ? card.title
+                            : "\(card.title)\u{00A0}·\u{00A0}\(card.countText ?? "")")
                     }
                 } else {
                     FittingTitle(title: card.title)
@@ -102,6 +104,15 @@ private struct ReminderCardView: View {
                 // ☐ DID IT, its own column beside ✓'s, bottom-aligned with
                 // it — see `ReminderStackMetrics.promptCardShowsDidIt`.
                 VStack(spacing: 0) {
+                    // The count, level with ⏭ and right above ☐ — its own
+                    // line so it is never cut off with a long title (the
+                    // title's last rung truncates; the count must not).
+                    Text(card.countText ?? "")
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(width: ReminderStackMetrics.didColumn, height: 24)
                     Spacer(minLength: 0)
                     Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: true)) {
                         Image(systemName: "square")
@@ -366,9 +377,15 @@ enum ReminderStackMetrics {
     static let buttonColumn: CGFloat = 36
     /// A quota prompt card's ☐ (did-it) column, beside ✓'s.
     static let didColumn: CGFloat = 30
-    /// Whether a quota prompt card draws ☐ DID IT beside ✓ CONSIDERED
-    /// (quota reminders, 2026-09-24). See the report of the render review
-    /// this was decided on, in `ReminderStackPreviewData`'s prompt previews.
+    /// Whether a quota prompt card draws ☐ DID IT (with the count above it)
+    /// beside ✓ CONSIDERED — quota reminders, 2026-09-24, decided on
+    /// RenderPreview of his real prompts (`ReminderStackPreviewData`'s
+    /// "Prompt —" previews). It fits: the column costs the title ~36pt, and
+    /// the only title that doesn't fit with it ("Check for new certifications
+    /// — …", 120 characters) doesn't fit without it either — the card's last
+    /// rung truncates it either way, as it does his paragraph reminders. The
+    /// count sits in the column's top slot, level with ⏭, so it is never
+    /// cut off with the title. Off = consider only (count back in the title).
     static let promptCardShowsDidIt = true
 }
 

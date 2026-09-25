@@ -39,8 +39,11 @@ struct WatchWidgetEntry: TimelineEntry {
         /// Non-nil for a quota prompt: ✓ considers it (and ☐, if drawn,
         /// does it) by this key — never `markDone`, which refuses quotas.
         let promptKey: String?
-        /// For a prompt: its whole label, count included ("Daily Walks · 1/2").
+        /// For a prompt: the quota's title; its count is `countText`, drawn on
+        /// its own so a truncated title never takes the count with it.
         let title: String
+        /// A prompt's count ("1/2"); nil for a reminder.
+        var countText: String? = nil
         /// A prompt's label-color stripe (nil = neutral, or not a prompt).
         let stripeColor: String?
         let slotLabel: String
@@ -228,7 +231,8 @@ enum ReminderStackTimeline {
         let prompts = group.waitingPrompts.map { prompt in
             WatchWidgetEntry.ReminderCard(
                 itemKey: prompt.promptKey, taskId: prompt.taskId,
-                promptKey: prompt.promptKey, title: prompt.labelText, stripeColor: prompt.stripeColor,
+                promptKey: prompt.promptKey, title: prompt.title, countText: prompt.countText,
+                stripeColor: prompt.stripeColor,
                 slotLabel: group.label, slotKey: group.slotKey,
                 remainingKeys: keys, urgentOverdue: urgent
             )
