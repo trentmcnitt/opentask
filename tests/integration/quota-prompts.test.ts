@@ -220,6 +220,39 @@ describe('GET /api/reminders — prompts', () => {
       ['Midday', [2]],
     ])
   })
+
+  test('bulk edit merges a config into each quota; owner periods only; one undo', async () => {
+    // The Quotas page's multi-edit (2026-09-25) sends only what changed.
+    const slots = (await (await apiFetch('/api/time-slots')).json()).data.time_slots as {
+      id: number
+      label: string
+    }[]
+    const id = (label: string) => slots.find((s) => s.label === label)!.id
+    const weekly = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 3)
+    const daily = await makeQuota('Daily Walks', 'FREQ=DAILY', 2)
+    const patch = (taskId: number, config: object) =>
+      apiFetch(`/api/tasks/${taskId}`, { method: 'PATCH', body: { quota_prompt_config: config } })
+    await patch(weekly.id, { enabled: false })
+    await patch(daily.id, { numbers: { '2': id('Evening') } })
+    const config = async (taskId: number) =>
+      (await (await apiFetch(`/api/tasks/${taskId}`)).json()).data.quota_prompt_config
+    const bulk = (changes: object) =>
+      post('/api/tasks/bulk/edit', { ids: [weekly.id, daily.id], changes })
+
+    const theirs = (await (await apiFetchB('/api/time-slots')).json()).data.time_slots[0]
+    expect((await bulk({ quota_prompt_config: { slot_id: theirs.id } })).status).toBe(400)
+
+    const res = await bulk({ quota_prompt_config: { slot_id: id('Midday'), numbers: {} } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.tasks_affected).toBe(2)
+    // The weekly one keeps its switch; the daily one loses its override.
+    expect(await config(weekly.id)).toEqual({ enabled: false, slot_id: id('Midday') })
+    expect(await config(daily.id)).toEqual({ slot_id: id('Midday') })
+
+    expect((await apiFetch('/api/undo', { method: 'POST', body: {} })).status).toBe(200)
+    expect(await config(weekly.id)).toEqual({ enabled: false })
+    expect(await config(daily.id)).toEqual({ numbers: { '2': id('Evening') } })
+  })
 })
 
 describe('POST /api/quota-prompts/consider and /did', () => {

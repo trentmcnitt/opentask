@@ -7,6 +7,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { trackState, quotaFreqOf, quotaLabelOf, QUOTA_PERIODS, type QuotaFreq } from '@/lib/track'
 import { QuotaPromptSection, usePromptDraft } from '@/components/QuotaPromptField'
+import {
+  QuotaPromptBulkField,
+  useBulkPromptDraft,
+  type BulkPromptDraft,
+} from '@/components/QuotaPromptBulkField'
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import { useDomainLabels } from '@/hooks/useDomainLabels'
 import { useLabelConfig } from '@/components/PreferencesProvider'
@@ -115,9 +120,7 @@ export function QuotaDetail({
   const [period, setPeriod] = useState<QuotaPeriod | null>(base.period)
   const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
   const [notes, setNotes] = useState(base.notes)
-  // Quota reminders: one quota (or a new one) at a time — a selection's
-  // configs are per-quota by nature and are left alone.
-  const prompt = usePromptDraft(single)
+  const { prompt, section } = useEditorPrompt(single, tasks, oneQuota, period, base.period)
 
   // The registry is the option list. `reload` runs after a save that registered
   // a new name, so the next quota edited in the same session is offered it.
@@ -268,16 +271,7 @@ export function QuotaDetail({
 
       <LabelField value={label} onChange={setLabel} registered={registeredLabels} />
 
-      {oneQuota && (
-        <QuotaPromptSection
-          value={prompt.config}
-          onChange={prompt.setConfig}
-          period={period}
-          periodTouched={periodTouched}
-          task={single}
-          target={targetNumber}
-        />
-      )}
+      <EditorPromptSection {...section} target={targetNumber} />
 
       {oneQuota && <NotesField value={notes} onChange={setNotes} />}
 
@@ -295,6 +289,59 @@ export function QuotaDetail({
         onDelete={onDelete}
       />
     </div>
+  )
+}
+
+/**
+ * Quota reminders' staged state. One quota (or a new one) stages its whole
+ * config; a selection stages only the fields changed, which the server merges
+ * into each quota's own config (`QuotaPromptBulkField`). Both hooks always run
+ * — hooks cannot be conditional — and `prompt` is whichever this editor shows.
+ */
+function useEditorPrompt(
+  single: Task | null,
+  tasks: Task[],
+  oneQuota: boolean,
+  period: QuotaPeriod | null,
+  basePeriod: QuotaPeriod | null,
+) {
+  const periodTouched = period !== basePeriod
+  const singlePrompt = usePromptDraft(single)
+  const bulkPrompt = useBulkPromptDraft(oneQuota ? [] : tasks, period, periodTouched)
+  return {
+    prompt: oneQuota ? singlePrompt : bulkPrompt,
+    section: { oneQuota, singlePrompt, bulkPrompt, period, periodTouched, single },
+  }
+}
+
+/** The "Remind me daily" section: one quota's full editor, or the multi-edit's. */
+function EditorPromptSection({
+  oneQuota,
+  singlePrompt,
+  bulkPrompt,
+  period,
+  periodTouched,
+  single,
+  target,
+}: {
+  oneQuota: boolean
+  singlePrompt: ReturnType<typeof usePromptDraft>
+  bulkPrompt: BulkPromptDraft
+  period: QuotaPeriod | null
+  periodTouched: boolean
+  single: Task | null
+  target: number
+}) {
+  if (!oneQuota) return <QuotaPromptBulkField draft={bulkPrompt} />
+  return (
+    <QuotaPromptSection
+      value={singlePrompt.config}
+      onChange={singlePrompt.setConfig}
+      period={period}
+      periodTouched={periodTouched}
+      task={single}
+      target={target}
+    />
   )
 }
 
