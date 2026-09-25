@@ -73,6 +73,39 @@ enum ReminderStackPreviewData {
         reminder(3093, "Ask myself: “How did I perform today?”"),
     ]
 
+    private static func prompt(
+        _ taskId: Int, _ number: Int?, _ title: String, _ current: Int, _ target: Int,
+        _ period: String?, _ stripe: String?
+    ) -> QuotaPromptDTO {
+        QuotaPromptDTO(
+            promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
+            title: title, current: current, target: target, period: period, stripeColor: stripe
+        )
+    }
+
+    /// His REAL quota prompts (quota reminders, 2026-09-24 — read-only from
+    /// the dev server, his prod snapshot with PR #79 on): every unmet quota
+    /// prompts in Early morning there; Daily Walks (daily, target 2) has its
+    /// #1 here and its #2 in Morning.
+    static let earlyMorningPrompts: [QuotaPromptDTO] = [
+        prompt(116, nil, "Broccoli Avocado", 1, 3, "WEEKLY", nil),
+        prompt(3307, nil, "Check for new certifications — Anthropic Skilljar, platform certs, business automation credentials, cowork, automation", 0, 1, "WEEKLY", "pink"),
+        prompt(276, nil, "Clean car seat for Owen", 0, 1, "MONTHLY", "purple"),
+        prompt(255, nil, "Cook daily vegetables (incl. black beans)", 0, 5, "WEEKLY", "blue"),
+        prompt(83, 1, "Daily Walks", 0, 2, "DAILY", "blue"),
+        prompt(193, nil, "Eggs", 1, 2, "WEEKLY", nil),
+        prompt(129, nil, "Grinding food (ie bran cereal)", 1, 3, "WEEKLY", nil),
+        prompt(192, nil, "Josie clean dishes (chore)", 0, 5, "WEEKLY", "purple"),
+        prompt(21400, nil, "Kid's Iron Meal (e.g. ground beef, steak)", 0, 2, "WEEKLY", nil),
+        prompt(163, nil, "Kids all blow up balloon (teach josie PRI position + breathing into upper back, seated?)", 0, 4, "WEEKLY", "blue"),
+        prompt(239, nil, "Kids eat hard cereal (ie grape nuts)", 0, 2, "WEEKLY", nil),
+        prompt(258, nil, "Kids Smoothie (+Owen omega-3)", 0, 2, "WEEKLY", "blue"),
+        prompt(132, nil, "Kids supplements ( Vitamin D, Omega-3 )", 1, 3, "WEEKLY", "blue"),
+        prompt(13, nil, "Owen (+Kids) Playground", 1, 4, "WEEKLY", nil),
+        prompt(118, nil, "Owen Swim", 1, 2, "WEEKLY", nil),
+        prompt(160, nil, "Peanut butter bites", 1, 3, "WEEKLY", nil),
+    ]
+
     /// His soonest-due open tasks (not reminders, not quotas).
     static let tasks: [TaskDTO] = [
         TaskDTO(id: 23533, title: "Check if clients are waiting on me", priority: 3, dueAt: "2026-09-24T14:00:00.000Z"),
@@ -83,18 +116,26 @@ enum ReminderStackPreviewData {
 
     /// Today's groups with the first `considered[slotId]` reminders of each
     /// slot already checked off — how the day looks at a given moment.
-    static func groups(considered: [Int: Int] = [:]) -> [ReminderGroupDTO] {
+    ///
+    /// `promptsHandled`: every quota prompt already considered — for the
+    /// states whose story predates prompts (caught up, overdue).
+    static func groups(considered: [Int: Int] = [:], promptsHandled: Bool = false) -> [ReminderGroupDTO] {
         let bySlot: [(TimeSlotDTO, [TaskDTO])] = [
             (slots[0], earlyMorning), (slots[1], morning), (slots[2], midday),
             (slots[3], afternoon), (slots[4], evening),
+        ]
+        let prompts: [Int: [QuotaPromptDTO]] = [
+            11: earlyMorningPrompts,
+            12: [prompt(83, 2, "Daily Walks", 0, 2, "DAILY", "blue")],
         ]
         return bySlot.map { slot, all in
             let done = min(considered[slot.id] ?? 0, all.count)
             return ReminderGroupDTO(
                 slot: slot, reminders: Array(all.dropFirst(done)),
-                considered: done, consideredItems: Array(all.prefix(done))
+                considered: done, consideredItems: Array(all.prefix(done)),
+                prompts: (prompts[slot.id] ?? []).map { promptsHandled ? $0.handled(did: false) : $0 }
             )
-        } + [ReminderGroupDTO(slot: nil, reminders: [])]
+        } + [ReminderGroupDTO(slot: nil, reminders: [], prompts: [])]
     }
 
     /// 2026-09-24 at `hour:minute`, device-local (the previews assume the
@@ -106,7 +147,7 @@ enum ReminderStackPreviewData {
 
     static func entry(
         _ groups: [ReminderGroupDTO], tasks: [TaskDTO] = [], at date: Date,
-        skipped: Set<Int> = [], snooze: WatchWidgetState.SnoozeResult? = nil
+        skipped: Set<String> = [], snooze: WatchWidgetState.SnoozeResult? = nil
     ) -> WatchWidgetEntry {
         ReminderStackTimeline.entry(
             groups: groups, tasks: tasks, skipped: { _ in skipped }, pendingDone: [],
@@ -127,16 +168,30 @@ enum ReminderStackPreviewData {
     static let longLast = entry(
         [ReminderGroupDTO(
             slot: slots[0], reminders: [earlyMorning[2]], considered: 7,
-            consideredItems: earlyMorning.enumerated().filter { $0.offset != 2 }.map(\.element)
+            consideredItems: earlyMorning.enumerated().filter { $0.offset != 2 }.map(\.element),
+            prompts: []
         )] + groups(considered: [11: 8]).dropFirst(),
         at: at(8, 58)
+    )
+    /// Quota prompts (2026-09-24). Every Early morning reminder considered,
+    /// so the slot's prompts take the card in turn: the first, a short one.
+    static let promptShort = entry(groups(considered: [11: 8]), at: at(8, 52))
+    /// Skipped along to his longest quota title ("Check for new
+    /// certifications — …"), the text-fit stress case with the ☐ column.
+    static let promptLong = entry(
+        groups(considered: [11: 8]), at: at(8, 52), skipped: ["q:116:0:2026-09-24"]
+    )
+    /// Skipped to "Cook daily vegetables (incl. black beans) · 0/5".
+    static let promptVegetables = entry(
+        groups(considered: [11: 8]), at: at(8, 52),
+        skipped: ["q:116:0:2026-09-24", "q:3307:0:2026-09-24", "q:276:0:2026-09-24"]
     )
     /// A short one: Morning just opened.
     static let shortReminder = entry(groups(considered: [11: 8]), at: at(9, 2))
     /// Last item in a slot: Midday with three of four considered.
     static let lastInSlot = entry(groups(considered: [11: 8, 12: 5, 13: 3]), at: at(12, 40))
     /// Everything started is done; Afternoon is next.
-    static let caughtUp = entry(groups(considered: [11: 8, 12: 5, 13: 4]), at: at(13, 15))
+    static let caughtUp = entry(groups(considered: [11: 8, 12: 5, 13: 4], promptsHandled: true), at: at(13, 15))
     /// 5:30 PM: both of today's High tasks are overdue — the card takes over.
     static let overdue = entry(groups(considered: [11: 8, 12: 5, 13: 4, 14: 1]), tasks: tasks, at: at(17, 30))
     /// Right after "Snooze all → Evening": the server's real counts for that
@@ -164,6 +219,24 @@ enum ReminderStackPreviewData {
     ReminderStackWidget()
 } timeline: {
     ReminderStackPreviewData.longLast
+}
+
+#Preview("Prompt — short", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.promptShort
+}
+
+#Preview("Prompt — longest title", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.promptLong
+}
+
+#Preview("Prompt — vegetables", as: .accessoryRectangular) {
+    ReminderStackWidget()
+} timeline: {
+    ReminderStackPreviewData.promptVegetables
 }
 
 #Preview("Short reminder", as: .accessoryRectangular) {

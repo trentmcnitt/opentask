@@ -107,7 +107,7 @@ struct ReminderStackProvider: TimelineProvider {
 
     /// The entry for now plus one per `changeDates` instant. Skip state and
     /// ✓ tombstones are read per entry date (a future entry past a slot
-    /// change must not inherit the old slot's skips — `skippedIds` pairs them
+    /// change must not inherit the old slot's skips — `skippedKeys` pairs them
     /// with the slot key, which handles it).
     private func buildEntries(groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date) -> [WatchWidgetEntry] {
         let slots = slotList(groups: groups)
@@ -119,8 +119,9 @@ struct ReminderStackProvider: TimelineProvider {
             ReminderStackTimeline.entry(
                 groups: groups,
                 tasks: tasks,
-                skipped: { WatchWidgetState.skippedIds(slotKey: $0, now: date) },
+                skipped: { WatchWidgetState.skippedKeys(slotKey: $0, now: date) },
                 pendingDone: WatchWidgetState.pendingDoneIds(now: date),
+                pendingPrompts: WatchWidgetState.pendingPrompts(now: date),
                 snoozeResult: WatchWidgetState.snoozeResult(now: date),
                 slots: slots,
                 at: date
@@ -143,8 +144,9 @@ enum ReminderStackPlaceholder {
     static let entry = WatchWidgetEntry(
         date: Date(),
         content: .reminder(.init(
-            taskId: 0, title: "Step away from the desk", slotLabel: "Midday", slotKey: 0,
-            remainingIds: [0, 1], urgentOverdue: 0
+            itemKey: "r:0", taskId: 0, promptKey: nil, title: "Step away from the desk",
+            stripeColor: nil, slotLabel: "Midday", slotKey: 0,
+            remainingKeys: ["r:0", "r:1"], urgentOverdue: 0
         )),
         ring: .init(count: 2, fraction: 1.0 / 3.0, isOverdue: false, label: "Midday"),
         relevance: nil
