@@ -39,3 +39,28 @@ export const test = base.extend<{ authenticatedPage: Page }>({
 /* eslint-enable react-hooks/rules-of-hooks */
 
 export { expect } from '@playwright/test'
+
+/**
+ * Resolves on the PATCH that saves `field` to `/api/user/preferences` — and on
+ * nothing else. Arm it BEFORE the click that saves.
+ *
+ * Matching the URL alone is not enough: the page GETs the same URL on its own
+ * schedule (`PreferencesProvider` on load, `useQuotaPromptPrefs` on every mount
+ * of the quota editor and the Track panel's prompt setup). A GET still in
+ * flight when the click lands satisfied a URL-only wait, the test then
+ * reloaded, and the reload aborted the real PATCH — so the reloaded page read
+ * the old value back. That made `track.spec.ts`'s "Show as chips after a
+ * reload" fail about one run in five (2026-09-25).
+ */
+export function waitForPreferenceSave(page: Page, field: string) {
+  return page.waitForResponse((r) => {
+    if (!r.url().includes('/api/user/preferences')) return false
+    const req = r.request()
+    if (req.method() !== 'PATCH') return false
+    try {
+      return Object.hasOwn(JSON.parse(req.postData() ?? '{}') as object, field)
+    } catch {
+      return false
+    }
+  })
+}
