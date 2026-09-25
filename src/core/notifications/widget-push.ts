@@ -44,6 +44,17 @@
  *    notes-only edit, an `ai-*` label shuffle — see `SyncEventInfo`) pushes
  *    nothing.
  *
+ * 5. A failed send doesn't use up the window. If APNs rejects a push for a
+ *    reason that could pass on a later try (network, 5xx — `sendApnsWidgetReload`
+ *    resolves `false`), the token's pacing is rolled back to before that
+ *    attempt, so the NEXT change goes out after the normal settle rather than
+ *    a full window later. Nothing retries on its own: no push is spent until
+ *    something actually changes again. A change that arrived while the failed
+ *    send was in flight had already been queued for the window's end; that one
+ *    pending push is moved up to where it would have been without the failed
+ *    attempt (still one timer per token). Apple doesn't charge the budget for
+ *    a push it never accepted, so the window protects nothing here.
+ *
  * macOS is exempt from 2 and 3: chronod logs a Mac widget push as "free"
  * (`push … free`, ios/CLAUDE.md § Widgets "Budget"), so a Mac token keeps the
  * settle-only behavior and stays instantly in sync. iOS and watchOS are
@@ -62,7 +73,7 @@
 import { DateTime, IANAZone } from 'luxon'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { onSyncEvent, type SyncEventInfo } from '@/lib/sync-events'
+import { onSyncEvent, offSyncEvent, type SyncEventInfo, type SyncListener } from '@/lib/sync-events'
 import { parseHHMM } from '@/lib/time-slot-assign'
 import { isAwake } from './slot-nags'
 import { sendApnsWidgetReload } from './apns'
@@ -108,7 +119,12 @@ export interface WidgetPushCoalescerOptions<Key> {
    * flush until; otherwise null. Asked at flush time, not schedule time.
    */
   deferUntil?: (key: Key, now: number) => number | null
-  flush: (key: Key) => void
+  /**
+   * Send the push. May return a promise: resolving `false` (or rejecting)
+   * means the send failed and must not count against the minimum interval —
+   * see point 5 of the module doc.
+   */
+  flush: (key: Key) => void | Promise<boolean | void>
 }
 
 /**
@@ -121,6 +137,12 @@ export interface WidgetPushCoalescerOptions<Key> {
  * this change (the widget fetches fresh data when it reloads). With no timer
  * pending, the flush is set for whichever is later: `now + settleMs`, or the
  * last flush + the key's minimum interval.
+ *
+ * A flush that reports failure (see `flush`) is un-counted: `lastFlushAt`
+ * goes back to what it was before the attempt, and a flush queued meanwhile
+ * is re-timed against that. `lastFlushAt` is still set BEFORE the send, so a
+ * change arriving mid-send queues behind it instead of starting a second
+ * concurrent send.
  */
 export function createWidgetPushCoalescer<Key>(options: WidgetPushCoalescerOptions<Key>) {
   const { settleMs, minIntervalMs, deferUntil, flush } = options
@@ -135,6 +157,27 @@ export function createWidgetPushCoalescer<Key>(options: WidgetPushCoalescerOptio
     timers.set(key, timer)
   }
 
+  function schedule(key: Key): void {
+    if (timers.has(key)) return
+    const now = Date.now()
+    const last = lastFlushAt.get(key)
+    const windowEnd = last === undefined ? now : last + minIntervalMs(key)
+    arm(key, Math.max(now + settleMs, windowEnd) - now)
+  }
+
+  /** Roll back a failed flush's claim on the window (module doc, point 5). */
+  function uncount(key: Key, attemptAt: number, previous: number | undefined): void {
+    // A later flush has already happened; its timestamp is the one that counts.
+    if (lastFlushAt.get(key) !== attemptAt) return
+    if (previous === undefined) lastFlushAt.delete(key)
+    else lastFlushAt.set(key, previous)
+    const pending = timers.get(key)
+    if (pending === undefined) return
+    clearTimeout(pending)
+    timers.delete(key)
+    schedule(key)
+  }
+
   function fire(key: Key): void {
     timers.delete(key)
     const now = Date.now()
@@ -143,18 +186,21 @@ export function createWidgetPushCoalescer<Key>(options: WidgetPushCoalescerOptio
       arm(key, holdUntil - now)
       return
     }
+    const previous = lastFlushAt.get(key)
     lastFlushAt.set(key, now)
-    flush(key)
+    const result = flush(key)
+    if (result instanceof Promise) {
+      result.then(
+        (ok) => {
+          if (ok === false) uncount(key, now, previous)
+        },
+        () => uncount(key, now, previous),
+      )
+    }
   }
 
   return {
-    schedule(key: Key): void {
-      if (timers.has(key)) return
-      const now = Date.now()
-      const last = lastFlushAt.get(key)
-      const windowEnd = last === undefined ? now : last + minIntervalMs(key)
-      arm(key, Math.max(now + settleMs, windowEnd) - now)
-    },
+    schedule,
     /** Number of keys with a pending, not-yet-flushed timer. Test-only introspection. */
     pendingCount(): number {
       return timers.size
@@ -226,9 +272,6 @@ const MIN_INTERVAL_MS =
   parseMinIntervalSeconds(process.env.OPENTASK_WIDGET_PUSH_MIN_INTERVAL_SECONDS) * 1000
 const QUIET_HOURS_ENABLED = parseQuietHoursEnabled(process.env.OPENTASK_WIDGET_PUSH_QUIET_HOURS)
 
-/** Token id → what the pacing needs to know about it (refreshed on every schedule). */
-const targets = new Map<number, WidgetPushTarget>()
-
 function userQuietHoursEnd(userId: number, now: number): number | null {
   const user = getDb()
     .prepare('SELECT timezone, wake_time, sleep_time FROM users WHERE id = ?')
@@ -237,31 +280,57 @@ function userQuietHoursEnd(userId: number, now: number): number | null {
   return quietHoursEnd(new Date(now), user.timezone, user.wake_time, user.sleep_time)
 }
 
-const coalescer = createWidgetPushCoalescer<number>({
-  settleMs: WIDGET_PUSH_SETTLE_MS,
-  minIntervalMs: (tokenId) => {
-    const target = targets.get(tokenId)
-    return target && isBudgetedPlatform(target.platform) ? MIN_INTERVAL_MS : 0
-  },
-  deferUntil: (tokenId, now) => {
-    const target = targets.get(tokenId)
-    if (!QUIET_HOURS_ENABLED || !target || !isBudgetedPlatform(target.platform)) return null
-    return userQuietHoursEnd(target.user_id, now)
-  },
-  flush: (tokenId) => {
-    sendApnsWidgetReload(tokenId).catch((err) => {
-      log.error('apns', `Widget push send failed for token ${tokenId}:`, err)
-    })
-  },
-})
+export interface WidgetPushSyncOptions {
+  /**
+   * Sends one token's push; resolves `false` for a failed send (module doc,
+   * point 5). Defaults to the real APNs sender. Tests inject a fake here —
+   * the seam that lets the event → token → send wiring run without Apple
+   * credentials (tests/behavioral/widget-push-wiring.test.ts).
+   */
+  send?: (tokenId: number) => Promise<boolean>
+  /** Minimum interval for budgeted tokens. Defaults to the env setting. */
+  minIntervalMs?: number
+  /** Hold budgeted pushes through quiet hours. Defaults to the env setting. */
+  quietHours?: boolean
+}
 
 /**
  * Register the sync-event listener that drives widget push sends. Called
  * once at server startup (see src/instrumentation.ts) — NOT per-request, or
  * every request would add another `onSyncEvent` listener.
+ *
+ * Returns a function that unregisters the listener (tests use it; the server
+ * never does). Each call builds its own coalescer, so a test gets fresh pacing.
  */
-export function initWidgetPushSync(): void {
-  onSyncEvent((userId, info) => {
+export function initWidgetPushSync(options: WidgetPushSyncOptions = {}): () => void {
+  const {
+    send = sendApnsWidgetReload,
+    minIntervalMs = MIN_INTERVAL_MS,
+    quietHours = QUIET_HOURS_ENABLED,
+  } = options
+
+  /** Token id → what the pacing needs to know about it (refreshed on every schedule). */
+  const targets = new Map<number, WidgetPushTarget>()
+
+  const coalescer = createWidgetPushCoalescer<number>({
+    settleMs: WIDGET_PUSH_SETTLE_MS,
+    minIntervalMs: (tokenId) => {
+      const target = targets.get(tokenId)
+      return target && isBudgetedPlatform(target.platform) ? minIntervalMs : 0
+    },
+    deferUntil: (tokenId, now) => {
+      const target = targets.get(tokenId)
+      if (!quietHours || !target || !isBudgetedPlatform(target.platform)) return null
+      return userQuietHoursEnd(target.user_id, now)
+    },
+    flush: (tokenId) =>
+      send(tokenId).catch((err: unknown) => {
+        log.error('apns', `Widget push send failed for token ${tokenId}:`, err)
+        return false
+      }),
+  })
+
+  const listener: SyncListener = (userId, info) => {
     // Runs synchronously inside the mutation's emitSyncEvent call: a DB hiccup
     // here must not fail the user's edit, only skip this push.
     try {
@@ -272,11 +341,13 @@ export function initWidgetPushSync(): void {
     } catch (err) {
       log.error('apns', `Widget push scheduling failed for user ${userId}:`, err)
     }
-  })
+  }
+  onSyncEvent(listener)
   log.info(
     'apns',
     `Widget push sync listener registered (${WIDGET_PUSH_SETTLE_MS}ms settle, ` +
-      `${MIN_INTERVAL_MS / 1000}s min interval for iOS/watchOS, ` +
-      `quiet hours ${QUIET_HOURS_ENABLED ? 'on' : 'off'})`,
+      `${minIntervalMs / 1000}s min interval for iOS/watchOS, ` +
+      `quiet hours ${quietHours ? 'on' : 'off'})`,
   )
+  return () => offSyncEvent(listener)
 }

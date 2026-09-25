@@ -458,9 +458,15 @@ interface WidgetPushTokenRow {
  * Each call logs one "Sending widget reload push" line naming the token and
  * its platform, so `grep 'widget reload push' | grep -c '(ios)'` counts what
  * the iPhone's budget was charged.
+ *
+ * Resolves `false` only for a send that failed and could succeed on a later
+ * try (network, APNs 5xx, a rejected auth key). The pacing in widget-push.ts
+ * then doesn't count it against the token's minimum interval. Everything else
+ * resolves `true`, meaning "nothing more to do": sent, APNs not configured,
+ * the token row gone, or a stale token just removed.
  */
-export async function sendApnsWidgetReload(tokenId: number): Promise<void> {
-  if (!isApnsConfigured()) return
+export async function sendApnsWidgetReload(tokenId: number): Promise<boolean> {
+  if (!isApnsConfigured()) return true
 
   const db = getDb()
   const row = db
@@ -469,7 +475,7 @@ export async function sendApnsWidgetReload(tokenId: number): Promise<void> {
     )
     .get(tokenId) as WidgetPushTokenRow | undefined
 
-  if (!row) return
+  if (!row) return true
 
   log.info(
     'apns',
@@ -480,13 +486,15 @@ export async function sendApnsWidgetReload(tokenId: number): Promise<void> {
   const notification = new WidgetPushNotification(row.push_token, topic)
   try {
     await getClient(row.environment).send(notification)
+    return true
   } catch (err: unknown) {
     if (isStaleTokenError(err)) {
       db.prepare('DELETE FROM widget_push_tokens WHERE id = ?').run(row.id)
       log.info('apns', `Removed stale widget push token ${row.id}`)
-      return
+      return true
     }
     const reason = (err as ApnsError)?.reason ?? err
     log.error('apns', `Failed to send widget reload push to token ${row.id}: ${reason}`)
+    return false
   }
 }

@@ -7,26 +7,20 @@ import type { GroupingMode } from '@/components/TaskList'
 import type { SortOption } from '@/hooks/useGroupSort'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
-import type { FeatureInfo, AIFeature } from '@/core/ai/models'
+import type { FeatureInfo } from '@/core/ai/models'
+import {
+  DEFAULT_PREFS,
+  DEFAULT_PRIORITY_DISPLAY,
+  createDirtyTracker,
+  createPreferenceSaver,
+  mergeLoadedPrefs,
+  parseServerPrefs,
+  type BulkSnoozeDefault,
+  type FeatureInfoMap,
+  type Prefs,
+} from '@/lib/preferences-state'
 
-export type { FeatureMode, FeatureInfo }
-export type FeatureInfoMap = Record<AIFeature, FeatureInfo>
-
-const DEFAULT_PRIORITY_DISPLAY: PriorityDisplayConfig = {
-  trailingDot: true,
-  badgeStyle: 'words',
-  colorTitle: false,
-  rightBorder: false,
-  colorCheckbox: true,
-}
-
-/**
- * What a plain press of the bulk-snooze clock does (Trent, 2026-09-22).
- * `next_period`, the default: snooze to the next time slot to start.
- * `default_option`: the user's default snooze option (+1h unless changed) —
- * the old behaviour, kept as a setting so he can flip between them.
- */
-export type BulkSnoozeDefault = 'next_period' | 'default_option'
+export type { FeatureMode, FeatureInfo, FeatureInfoMap, BulkSnoozeDefault }
 
 interface PreferencesContextValue {
   aiAvailable: boolean
@@ -109,29 +103,6 @@ interface PreferencesContextValue {
   setAiFeatureInfo: (info: FeatureInfoMap) => void
 }
 
-/** The dashboard's three chips plus 'unified', which the AI-sort toggle drives. */
-const VALID_GROUPINGS: GroupingMode[] = ['time', 'project', 'unified', 'slot']
-
-/**
- * Coerce a stored `default_grouping` to a grouping the dashboard can actually render.
- *
- * The Reminders surface used to persist through this same preference (it rode in
- * the view toggle as a chip-that-looked-like-a-tab). It is now its own route, so
- * accounts that were left on 'reminders' hold a value no view corresponds to.
- * Rather than migrate the column, those users land on 'slot' — the §7.3 front door
- * — and the stored value is corrected the next time they pick a view.
- */
-function coerceGrouping(stored: unknown): GroupingMode {
-  return VALID_GROUPINGS.includes(stored as GroupingMode) ? (stored as GroupingMode) : 'slot'
-}
-
-/** Apply a feature mode value from the API response to a state setter, with validation. */
-function applyFeatureMode(value: unknown, setter: (mode: FeatureMode) => void) {
-  if (value !== undefined && (value === 'off' || value === 'sdk' || value === 'api')) {
-    setter(value)
-  }
-}
-
 const PreferencesContext = createContext<PreferencesContextValue>({
   aiAvailable: false,
   labelConfig: [],
@@ -202,233 +173,181 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   setAiFeatureInfo: () => {},
 })
 
+// Register the iOS APNs device token with the server using session cookie auth.
+// Called after preferences load and on late token arrival (CustomEvent).
+function registerDeviceToken() {
+  const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
+    | { token: string; bundleId: string; environment: string }
+    | undefined
+  if (!info?.token) return
+
+  fetch('/api/push/apns/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device_token: info.token,
+      bundle_id: info.bundleId,
+      environment: info.environment,
+    }),
+  }).catch(() => {})
+}
+
+// Auto-provision a Bearer token for iOS notification actions (Done, Snooze).
+// The native app and notification extensions can't use session cookies, so they
+// need a Bearer token stored in the Keychain. This provisions one automatically
+// via session cookie auth, eliminating manual token setup.
+function provisionBearerToken() {
+  // Only run inside the iOS native wrapper (device info is injected by AppDelegate)
+  const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
+    | { token: string }
+    | undefined
+  if (!info?.token) return
+
+  const hasLocalToken = (window as unknown as Record<string, unknown>).__OPENTASK_HAS_TOKEN === true
+
+  // Last 8 chars of the keychain token (matches api_tokens.token_preview). Lets the
+  // server detect a token belonging to a *different* user — e.g. after an account switch
+  // in the webview — instead of assuming any local token is this user's. Older app builds
+  // don't inject it, so the field is omitted when unavailable.
+  const localTokenPreview = (window as unknown as Record<string, unknown>).__OPENTASK_TOKEN_PREVIEW
+
+  const payload: { has_local_token: boolean; local_token_preview?: string } = {
+    has_local_token: hasLocalToken,
+  }
+  if (typeof localTokenPreview === 'string' && localTokenPreview.length > 0) {
+    payload.local_token_preview = localTokenPreview
+  }
+
+  fetch('/api/tokens/provision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (data?.data?.token) {
+        // New token provisioned — send to native via JS bridge
+        const w = window as unknown as {
+          webkit?: {
+            messageHandlers?: { opentask?: { postMessage: (msg: unknown) => void } }
+          }
+        }
+        w.webkit?.messageHandlers?.opentask?.postMessage({
+          action: 'provisionToken',
+          token: data.data.token,
+        })
+      }
+    })
+    .catch(() => {})
+}
+
+type FieldSet = <K extends keyof Prefs>(key: K, value: Prefs[K]) => void
+
+/** The context's plain setters: each changes one field (and marks it dirty) via `set`. */
+function makeFieldSetters(set: FieldSet) {
+  const field =
+    <K extends keyof Prefs>(key: K) =>
+    (value: Prefs[K]) =>
+      set(key, value)
+  return {
+    setField: set,
+    setLabelConfig: field('labelConfig'),
+    setPriorityDisplay: field('priorityDisplay'),
+    setAutoSnoozeDefault: field('autoSnoozeDefault'),
+    setAutoSnoozeUrgent: field('autoSnoozeUrgent'),
+    setAutoSnoozeHigh: field('autoSnoozeHigh'),
+    setAutoSnoozeLow: field('autoSnoozeLow'),
+    setAutoSnoozeMedium: field('autoSnoozeMedium'),
+    setDefaultSnoozeOption: field('defaultSnoozeOption'),
+    setBulkSnoozeDefault: field('bulkSnoozeDefault'),
+    setMorningTime: field('morningTime'),
+    setWakeTime: field('wakeTime'),
+    setSleepTime: field('sleepTime'),
+    setNotificationsEnabled: field('notificationsEnabled'),
+    setCriticalAlertVolume: field('criticalAlertVolume'),
+    setAiContext: field('aiContext'),
+    setAiMode: field('aiMode'),
+    setAiShowScores: field('aiShowScores'),
+    setAiShowSignals: field('aiShowSignals'),
+    setAiEnrichmentMode: field('aiEnrichmentMode'),
+    setAiQuickTakeMode: field('aiQuickTakeMode'),
+    setAiWhatsNextMode: field('aiWhatsNextMode'),
+    setAiInsightsMode: field('aiInsightsMode'),
+    setAiWnCommentaryUnfiltered: field('aiWnCommentaryUnfiltered'),
+    setAiWnHighlight: field('aiWnHighlight'),
+    setAiInsightsSignalChips: field('aiInsightsSignalChips'),
+    setAiInsightsScoreChips: field('aiInsightsScoreChips'),
+    setAiFeatureInfo: field('aiFeatureInfo'),
+  }
+}
+
 /**
- * The view preferences below (grouping, sort, filters fold, Track chips/rows)
- * are saved FIRE-AND-FORGET: state flips at once and the PATCH goes out behind
+ * The view preferences below (grouping, sort, filters fold, Track panel) are
+ * saved FIRE-AND-FORGET: state flips at once and the PATCH goes out behind
  * it. Every one of those PATCHes is `keepalive: true`, because a plain fetch is
  * cancelled when the page unloads — toggle a view and reload (or navigate)
  * before the PATCH lands and the browser aborts it, the server may never apply
  * it, and the page comes back showing the old choice. `keepalive` lets the
  * request outlive the page; the bodies are a few bytes, far under its 64 KB cap.
+ *
+ * Two races around that, both handled in `@/lib/preferences-state` (see its
+ * module doc):
+ * - Every setter marks its field DIRTY. When the mount fetch lands it merges
+ *   with `mergeLoadedPrefs`, which leaves dirty fields alone, so a click made
+ *   before the load isn't undone by it. The dirty set is cleared once merged.
+ * - The PATCHes go through one `createPreferenceSaver`, so a field has at most
+ *   one save in flight and the newest click is sent after it, never raced
+ *   against it. A save still waiting behind another when the page is hidden
+ *   is sent right away on `pagehide` (keepalive carries it past the unload).
  */
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession()
-  const [aiAvailable, setAiAvailableState] = useState(false)
-  const [labelConfig, setLabelConfigState] = useState<LabelConfig[]>([])
-  const [priorityDisplay, setPriorityDisplayState] =
-    useState<PriorityDisplayConfig>(DEFAULT_PRIORITY_DISPLAY)
-  const [autoSnoozeDefault, setAutoSnoozeDefaultState] = useState(30)
-  const [autoSnoozeUrgent, setAutoSnoozeUrgentState] = useState(5)
-  const [autoSnoozeHigh, setAutoSnoozeHighState] = useState(15)
-  const [autoSnoozeLow, setAutoSnoozeLowState] = useState(240)
-  const [autoSnoozeMedium, setAutoSnoozeMediumState] = useState(60)
-  const [defaultSnoozeOption, setDefaultSnoozeOptionState] = useState('60')
-  const [bulkSnoozeDefault, setBulkSnoozeDefaultState] = useState<BulkSnoozeDefault>('next_period')
-  const [morningTime, setMorningTimeState] = useState('09:00')
-  const [wakeTime, setWakeTimeState] = useState('07:00')
-  const [sleepTime, setSleepTimeState] = useState('22:00')
-  const [defaultGrouping, setDefaultGroupingState] = useState<GroupingMode>('project')
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
-  const [defaultSort, setDefaultSortState] = useState<SortOption>('due_date')
-  const [defaultSortReversed, setDefaultSortReversedState] = useState(false)
-  const [filtersExpanded, setFiltersExpandedState] = useState(false)
-  const [trackExpanded, setTrackExpandedState] = useState(false)
-  const [notificationsEnabled, setNotificationsEnabledState] = useState(true)
-  const [criticalAlertVolume, setCriticalAlertVolumeState] = useState(1.0)
-  const [aiContext, setAiContextState] = useState<string | null>(null)
-  const [aiMode, setAiModeState] = useState<AiMode>('on')
-  const [aiShowScores, setAiShowScoresState] = useState(true)
-  const [aiShowSignals, setAiShowSignalsState] = useState(true)
-  const [aiEnrichmentMode, setAiEnrichmentModeState] = useState<FeatureMode>('api')
-  const [aiQuickTakeMode, setAiQuickTakeModeState] = useState<FeatureMode>('api')
-  const [aiWhatsNextMode, setAiWhatsNextModeState] = useState<FeatureMode>('api')
-  const [aiInsightsMode, setAiInsightsModeState] = useState<FeatureMode>('api')
-  const [aiWnCommentaryUnfiltered, setAiWnCommentaryUnfilteredState] = useState(false)
-  const [aiWnHighlight, setAiWnHighlightState] = useState(true)
-  const [aiInsightsSignalChips, setAiInsightsSignalChipsState] = useState(true)
-  const [aiInsightsScoreChips, setAiInsightsScoreChipsState] = useState(true)
-  const [aiSdkAvailable, setAiSdkAvailable] = useState(false)
-  const [aiApiAvailable, setAiApiAvailable] = useState(false)
-  const [aiFeatureInfo, setAiFeatureInfoState] = useState<FeatureInfoMap | null>(null)
-
-  // Register the iOS APNs device token with the server using session cookie auth.
-  // Called after preferences load and on late token arrival (CustomEvent).
-  function registerDeviceToken() {
-    const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
-      | { token: string; bundleId: string; environment: string }
-      | undefined
-    if (!info?.token) return
-
-    fetch('/api/push/apns/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_token: info.token,
-        bundle_id: info.bundleId,
-        environment: info.environment,
+  const [dirty] = useState(createDirtyTracker)
+  const [saver] = useState(() =>
+    createPreferenceSaver((body) =>
+      fetch('/api/user/preferences', {
+        method: 'PATCH',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`PATCH /api/user/preferences ${res.status}`)
       }),
-    }).catch(() => {})
-  }
+    ),
+  )
 
-  // Auto-provision a Bearer token for iOS notification actions (Done, Snooze).
-  // The native app and notification extensions can't use session cookies, so they
-  // need a Bearer token stored in the Keychain. This provisions one automatically
-  // via session cookie auth, eliminating manual token setup.
-  function provisionBearerToken() {
-    // Only run inside the iOS native wrapper (device info is injected by AppDelegate)
-    const info = (window as unknown as Record<string, unknown>).__OPENTASK_DEVICE_INFO as
-      | { token: string }
-      | undefined
-    if (!info?.token) return
+  // Created once, so every plain setter keeps one identity for the provider's
+  // lifetime, as the useState setters they replace did (consumers list them
+  // in effect and callback deps).
+  const [setters] = useState(() =>
+    makeFieldSetters((key, value) => {
+      // Mark it so the mount load won't overwrite it (see the doc above).
+      dirty.mark(key)
+      setPrefs((prev) => ({ ...prev, [key]: value }))
+    }),
+  )
+  const { setField, ...plainSetters } = setters
 
-    const hasLocalToken =
-      (window as unknown as Record<string, unknown>).__OPENTASK_HAS_TOKEN === true
-
-    // Last 8 chars of the keychain token (matches api_tokens.token_preview). Lets the
-    // server detect a token belonging to a *different* user — e.g. after an account switch
-    // in the webview — instead of assuming any local token is this user's. Older app builds
-    // don't inject it, so the field is omitted when unavailable.
-    const localTokenPreview = (window as unknown as Record<string, unknown>)
-      .__OPENTASK_TOKEN_PREVIEW
-
-    const payload: { has_local_token: boolean; local_token_preview?: string } = {
-      has_local_token: hasLocalToken,
+  useEffect(() => {
+    function onPageHide() {
+      saver.flushPending()
     }
-    if (typeof localTokenPreview === 'string' && localTokenPreview.length > 0) {
-      payload.local_token_preview = localTokenPreview
-    }
-
-    fetch('/api/tokens/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.data?.token) {
-          // New token provisioned — send to native via JS bridge
-          const w = window as unknown as {
-            webkit?: {
-              messageHandlers?: { opentask?: { postMessage: (msg: unknown) => void } }
-            }
-          }
-          w.webkit?.messageHandlers?.opentask?.postMessage({
-            action: 'provisionToken',
-            token: data.data.token,
-          })
-        }
-      })
-      .catch(() => {})
-  }
+    window.addEventListener('pagehide', onPageHide)
+    return () => window.removeEventListener('pagehide', onPageHide)
+  }, [saver])
 
   useEffect(() => {
     if (status !== 'authenticated') return
     fetch('/api/user/preferences')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.data?.ai_available !== undefined) {
-          setAiAvailableState(data.data.ai_available)
-        }
-        if (data?.data?.label_config) {
-          setLabelConfigState(data.data.label_config)
-        }
-        if (data?.data?.priority_display) {
-          setPriorityDisplayState({ ...DEFAULT_PRIORITY_DISPLAY, ...data.data.priority_display })
-        }
-        if (data?.data?.auto_snooze_minutes) {
-          setAutoSnoozeDefaultState(data.data.auto_snooze_minutes)
-        }
-        if (data?.data?.auto_snooze_urgent_minutes) {
-          setAutoSnoozeUrgentState(data.data.auto_snooze_urgent_minutes)
-        }
-        if (data?.data?.auto_snooze_low_minutes) {
-          setAutoSnoozeLowState(data.data.auto_snooze_low_minutes)
-        }
-        if (data?.data?.auto_snooze_medium_minutes) {
-          setAutoSnoozeMediumState(data.data.auto_snooze_medium_minutes)
-        }
-        if (data?.data?.auto_snooze_high_minutes) {
-          setAutoSnoozeHighState(data.data.auto_snooze_high_minutes)
-        }
-        if (data?.data?.default_snooze_option) {
-          setDefaultSnoozeOptionState(data.data.default_snooze_option)
-        }
-        if (data?.data?.bulk_snooze_default === 'default_option') {
-          setBulkSnoozeDefaultState('default_option')
-        }
-        if (data?.data?.morning_time) {
-          setMorningTimeState(data.data.morning_time)
-        }
-        if (data?.data?.wake_time) {
-          setWakeTimeState(data.data.wake_time)
-        }
-        if (data?.data?.sleep_time) {
-          setSleepTimeState(data.data.sleep_time)
-        }
-        if (data?.data?.default_grouping) {
-          setDefaultGroupingState(coerceGrouping(data.data.default_grouping))
-        }
-        if (data?.data?.default_sort) {
-          setDefaultSortState(data.data.default_sort)
-        }
-        if (data?.data?.default_sort_reversed !== undefined) {
-          setDefaultSortReversedState(data.data.default_sort_reversed)
-        }
-        if (data?.data?.filters_expanded !== undefined) {
-          setFiltersExpandedState(data.data.filters_expanded)
-        }
-        if (data?.data?.track_expanded !== undefined) {
-          setTrackExpandedState(data.data.track_expanded)
-        }
-        if (data?.data?.notifications_enabled !== undefined) {
-          setNotificationsEnabledState(data.data.notifications_enabled)
-        }
-        if (data?.data?.critical_alert_volume !== undefined) {
-          setCriticalAlertVolumeState(data.data.critical_alert_volume)
-        }
-        if (data?.data?.ai_context !== undefined) {
-          setAiContextState(data.data.ai_context)
-        }
-        if (data?.data?.ai_mode) {
-          // Defensive mapping: accept valid modes, default to 'on'
-          const mode = data.data.ai_mode
-          if (mode === 'off' || mode === 'on') {
-            setAiModeState(mode)
-          } else {
-            setAiModeState('on')
-          }
-        }
-        if (data?.data?.ai_show_scores !== undefined) {
-          setAiShowScoresState(data.data.ai_show_scores)
-        }
-        if (data?.data?.ai_show_signals !== undefined) {
-          setAiShowSignalsState(data.data.ai_show_signals)
-        }
-        applyFeatureMode(data?.data?.ai_enrichment_mode, setAiEnrichmentModeState)
-        applyFeatureMode(data?.data?.ai_quicktake_mode, setAiQuickTakeModeState)
-        applyFeatureMode(data?.data?.ai_whats_next_mode, setAiWhatsNextModeState)
-        applyFeatureMode(data?.data?.ai_insights_mode, setAiInsightsModeState)
-        if (data?.data?.ai_wn_commentary_unfiltered !== undefined) {
-          setAiWnCommentaryUnfilteredState(data.data.ai_wn_commentary_unfiltered)
-        }
-        if (data?.data?.ai_wn_highlight !== undefined) {
-          setAiWnHighlightState(data.data.ai_wn_highlight)
-        }
-        if (data?.data?.ai_insights_signal_chips !== undefined) {
-          setAiInsightsSignalChipsState(data.data.ai_insights_signal_chips)
-        }
-        if (data?.data?.ai_insights_score_chips !== undefined) {
-          setAiInsightsScoreChipsState(data.data.ai_insights_score_chips)
-        }
-        if (data?.data?.ai_sdk_available !== undefined) {
-          setAiSdkAvailable(data.data.ai_sdk_available)
-        }
-        if (data?.data?.ai_api_available !== undefined) {
-          setAiApiAvailable(data.data.ai_api_available)
-        }
-        if (data?.data?.ai_feature_info) {
-          setAiFeatureInfoState(data.data.ai_feature_info)
-        }
+        const server = parseServerPrefs(data?.data)
+        // Take (and reset) the dirty set now: a change made after this point
+        // is applied by its own state update, which React queues after this merge.
+        const changed = dirty.take()
+        setPrefs((local) => mergeLoadedPrefs(local, changed, server))
 
         // Register iOS device token and provision Bearer token using session cookie auth.
         // This ensures push notifications follow the web-logged-in user,
@@ -442,7 +361,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       .finally(() => {
         setPreferencesLoaded(true)
       })
-  }, [status])
+  }, [status, dirty])
 
   // Handle late APNs token arrival — iOS dispatches this CustomEvent when
   // the device token arrives after the WebView has already loaded.
@@ -461,108 +380,28 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   return (
     <PreferencesContext.Provider
       value={{
-        aiAvailable,
-        labelConfig,
-        setLabelConfig: setLabelConfigState,
-        priorityDisplay,
-        setPriorityDisplay: setPriorityDisplayState,
-        autoSnoozeDefault,
-        setAutoSnoozeDefault: setAutoSnoozeDefaultState,
-        autoSnoozeUrgent,
-        setAutoSnoozeUrgent: setAutoSnoozeUrgentState,
-        autoSnoozeHigh,
-        setAutoSnoozeHigh: setAutoSnoozeHighState,
-        autoSnoozeLow,
-        setAutoSnoozeLow: setAutoSnoozeLowState,
-        autoSnoozeMedium,
-        setAutoSnoozeMedium: setAutoSnoozeMediumState,
-        defaultSnoozeOption,
-        setDefaultSnoozeOption: setDefaultSnoozeOptionState,
-        bulkSnoozeDefault,
-        setBulkSnoozeDefault: setBulkSnoozeDefaultState,
-        morningTime,
-        setMorningTime: setMorningTimeState,
-        wakeTime,
-        setWakeTime: setWakeTimeState,
-        sleepTime,
-        setSleepTime: setSleepTimeState,
-        defaultGrouping,
+        ...prefs,
+        ...plainSetters,
         setDefaultGrouping: (grouping: GroupingMode) => {
-          setDefaultGroupingState(grouping)
-          fetch('/api/user/preferences', {
-            method: 'PATCH',
-            keepalive: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ default_grouping: grouping }),
-          }).catch(() => {})
+          setField('defaultGrouping', grouping)
+          saver.save('default_grouping', { default_grouping: grouping })
         },
         preferencesLoaded,
-        defaultSort,
-        defaultSortReversed,
         setSortPreference: (sort: SortOption, reversed: boolean) => {
-          setDefaultSortState(sort)
-          setDefaultSortReversedState(reversed)
-          fetch('/api/user/preferences', {
-            method: 'PATCH',
-            keepalive: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ default_sort: sort, default_sort_reversed: reversed }),
-          }).catch(() => {})
+          setField('defaultSort', sort)
+          setField('defaultSortReversed', reversed)
+          saver.save('default_sort', { default_sort: sort, default_sort_reversed: reversed })
         },
-        filtersExpanded,
         setFiltersExpanded: (expanded: boolean) => {
-          if (expanded === filtersExpanded) return
-          setFiltersExpandedState(expanded)
-          fetch('/api/user/preferences', {
-            method: 'PATCH',
-            keepalive: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filters_expanded: expanded }),
-          }).catch(() => {})
+          if (expanded === prefs.filtersExpanded) return
+          setField('filtersExpanded', expanded)
+          saver.save('filters_expanded', { filters_expanded: expanded })
         },
-        trackExpanded,
         setTrackExpanded: (expanded: boolean) => {
-          if (expanded === trackExpanded) return
-          setTrackExpandedState(expanded)
-          fetch('/api/user/preferences', {
-            method: 'PATCH',
-            keepalive: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ track_expanded: expanded }),
-          }).catch(() => {})
+          if (expanded === prefs.trackExpanded) return
+          setField('trackExpanded', expanded)
+          saver.save('track_expanded', { track_expanded: expanded })
         },
-        notificationsEnabled,
-        setNotificationsEnabled: setNotificationsEnabledState,
-        criticalAlertVolume,
-        setCriticalAlertVolume: setCriticalAlertVolumeState,
-        aiContext,
-        setAiContext: setAiContextState,
-        aiMode,
-        setAiMode: setAiModeState,
-        aiShowScores,
-        setAiShowScores: setAiShowScoresState,
-        aiShowSignals,
-        setAiShowSignals: setAiShowSignalsState,
-        aiEnrichmentMode,
-        setAiEnrichmentMode: setAiEnrichmentModeState,
-        aiQuickTakeMode,
-        setAiQuickTakeMode: setAiQuickTakeModeState,
-        aiWhatsNextMode,
-        setAiWhatsNextMode: setAiWhatsNextModeState,
-        aiInsightsMode,
-        setAiInsightsMode: setAiInsightsModeState,
-        aiWnCommentaryUnfiltered,
-        setAiWnCommentaryUnfiltered: setAiWnCommentaryUnfilteredState,
-        aiWnHighlight,
-        setAiWnHighlight: setAiWnHighlightState,
-        aiInsightsSignalChips,
-        setAiInsightsSignalChips: setAiInsightsSignalChipsState,
-        aiInsightsScoreChips,
-        setAiInsightsScoreChips: setAiInsightsScoreChipsState,
-        aiSdkAvailable,
-        aiApiAvailable,
-        aiFeatureInfo,
-        setAiFeatureInfo: setAiFeatureInfoState,
       }}
     >
       {children}
