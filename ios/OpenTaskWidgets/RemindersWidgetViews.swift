@@ -1019,7 +1019,7 @@ private struct PromptRow: View {
                     .padding(.top, 2)
                 Link(destination: WidgetLink.quota(prompt.taskId)) {
                     (Text(prompt.title).foregroundStyle(.primary)
-                        + Text("\u{00A0}·\u{00A0}\(prompt.countText)").foregroundStyle(.secondary))
+                        + Text("\(QuotaPromptDTO.countSeparator)\(prompt.countText)").foregroundStyle(.secondary))
                         .font(.subheadline)
                         // A P0 reminder title's weight and opacity.
                         .opacity(WidgetTheme.priorityOpacity(0))

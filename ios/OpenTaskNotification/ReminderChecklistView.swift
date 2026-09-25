@@ -334,7 +334,7 @@ struct ReminderChecklistView: View {
                     // A staged did-it previews the count it will log (the
                     // server's rule: a daily #k rises to k, else +1).
                     (Text(prompt.title)
-                        + Text("\u{00A0}·\u{00A0}\((did ? prompt.handled(did: true) : prompt).countText)")
+                        + Text("\(QuotaPromptDTO.countSeparator)\((did ? prompt.handled(did: true) : prompt).countText)")
                             .foregroundColor(.secondary))
                         .font(.caption)
                         .foregroundColor(staged ? .secondary : .primary)

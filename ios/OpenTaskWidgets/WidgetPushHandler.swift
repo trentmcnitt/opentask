@@ -47,21 +47,23 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         let token = pushInfo.token.map { String(format: "%02.2hhx", $0) }.joined()
         pushLog.notice("pushTokenDidChange: \(widgets.count, privacy: .public) widget(s), token \(String(token.prefix(8)), privacy: .public)")
 
-        // Empty `widgets` means the person removed the last OpenTask widget
-        // of whichever kind this handler instance backs — Apple's docs: the
-        // system also calls this "when [a person's] configured widgets
-        // change; for example, when they add or remove a widget." Nothing is
-        // reading this token anymore, so unregister it rather than leaving a
-        // dead row the server would keep spending its push budget on.
+        // An EMPTY `widgets` list is NOT taken as "the last widget was
+        // removed" any more (2026-09-25, "the Mac has no widget push token").
+        // Apple's docs say the call also comes "when [a person's] configured
+        // widgets change", and this used to unregister the token then. But
+        // the Mac's chronod sends an empty list whenever it starts: after a
+        // reboot (2026-09-23 19:02:52 it ran `initial` reloads for all three
+        // placed OpenTask widgets, then at 19:03:04 logged "Sending 0
+        // WidgetInfo instance(s) to 1 PushHandler instances") and after the
+        // reinstall's `killall chronod` (22:09:01, the same). Each one
+        // deleted the server's row while the widgets were on the desktop, and
+        // the list with the real widgets came back only when chronod next
+        // re-evaluated push — 14 hours later that night. A token with no
+        // widget behind it costs one ignored push; APNs reports a truly dead
+        // one as Unregistered and the server deletes it then
+        // (`sendApnsWidgetReload`). So an empty list is just logged.
         guard !widgets.isEmpty else {
-            WidgetPushRegistration.clear()
-            Task {
-                do {
-                    try await WidgetPushRegistrar.unregister(token: token)
-                } catch {
-                    pushLog.error("unregister failed: \(String(describing: error), privacy: .public)")
-                }
-            }
+            pushLog.notice("pushTokenDidChange with no widgets; keeping the registration")
             return
         }
 
@@ -79,6 +81,20 @@ struct OpenTaskWidgetPushHandler: WidgetPushHandler {
         // logged an outcome — the extension was suspended mid-request). The
         // saved token is retried from every timeline reload until the server
         // confirms it — see `WidgetPushRegistration.retryIfNeeded()`.
+        //
+        // `savePending` also forgets any earlier confirmation, so this
+        // delivery is always SENT, even when it's the same token the server
+        // once confirmed (2026-09-25). The server can drop a row without the
+        // extension ever hearing about it — APNs answering Unregistered or
+        // BadDeviceToken while the app was deleted mid-reinstall makes
+        // `sendApnsWidgetReload` delete it — and the reinstalled app gets the
+        // SAME token back (chronod: "Public token has not changed"; the App
+        // Group, and with it the old "registered" mark, survives deleting the
+        // app on macOS). The Mac sat exactly there: App Group said
+        // `8038d39b…` was registered, prod had no row for it, and
+        // `retryIfNeeded()` skipped it on every reload. A delivery from
+        // WidgetKit is the one moment it's known the token is live, so it is
+        // always worth one POST (the server upserts).
         WidgetPushRegistration.savePending(token: token, widgetKind: kinds)
         Task { await WidgetPushRegistration.retryIfNeeded() }
     }
@@ -100,15 +116,12 @@ enum WidgetPushRegistration {
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
 
+    /// A token WidgetKit just delivered: saved, and marked unconfirmed so the
+    /// next `retryIfNeeded()` sends it even if an earlier delivery of the same
+    /// token was confirmed — see the call site in `pushTokenDidChange`.
     static func savePending(token: String, widgetKind: String) {
         defaults?.set(token, forKey: pendingTokenKey)
         defaults?.set(widgetKind, forKey: pendingKindsKey)
-    }
-
-    /// Forget everything — the last widget was removed and its token unregistered.
-    static func clear() {
-        defaults?.removeObject(forKey: pendingTokenKey)
-        defaults?.removeObject(forKey: pendingKindsKey)
         defaults?.removeObject(forKey: registeredTokenKey)
     }
 
@@ -133,7 +146,8 @@ enum WidgetPushRegistration {
 }
 
 /// The server side of the widget push token lifecycle:
-/// `POST`/`DELETE /api/push/apns/widget-token` (mirrors
+/// `POST /api/push/apns/widget-token` (the extension no longer sends the
+/// route's `DELETE` — see the empty-`widgets` guard above; mirrors
 /// `APIClient.registerDevice`/`unregisterDevice` for the app's own APNs
 /// token, but for the WIDGET EXTENSION's push token — see the doc comment on
 /// `OpenTaskWidgetPushHandler` above for why this isn't just added to
@@ -173,10 +187,6 @@ private enum WidgetPushRegistrar {
             "environment": environment,
             "widget_kind": widgetKind,
         ])
-    }
-
-    static func unregister(token: String) async throws {
-        try await send(method: "DELETE", body: ["push_token": token])
     }
 
     private static func send(method: String, body: [String: Any]) async throws {

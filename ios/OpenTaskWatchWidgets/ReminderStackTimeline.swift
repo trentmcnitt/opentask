@@ -42,8 +42,13 @@ struct WatchWidgetEntry: TimelineEntry {
         /// For a prompt: the quota's title; its count is `countText`, drawn on
         /// its own so a truncated title never takes the count with it.
         let title: String
-        /// A prompt's count ("1/2"); nil for a reminder.
+        /// A prompt's count with its period ("1/2 today", `QuotaPromptDTO.countText`);
+        /// nil for a reminder. What the title carries when ☐ isn't drawn.
         var countText: String? = nil
+        /// The ☐ column's two-line count: "1/2" over "today"/"wk"/"mo"/"yr"
+        /// (`QuotaPromptDTO.compactPeriodWord`, no second line without a
+        /// period). The full words don't fit that 30pt column.
+        var columnCountText: String? = nil
         /// A prompt's label-color stripe (nil = neutral, or not a prompt).
         let stripeColor: String?
         let slotLabel: String
@@ -232,6 +237,8 @@ enum ReminderStackTimeline {
             WatchWidgetEntry.ReminderCard(
                 itemKey: prompt.promptKey, taskId: prompt.taskId,
                 promptKey: prompt.promptKey, title: prompt.title, countText: prompt.countText,
+                columnCountText: [prompt.countOnlyText, prompt.compactPeriodWord].compactMap { $0 }
+                    .joined(separator: "\n"),
                 stripeColor: prompt.stripeColor,
                 slotLabel: group.label, slotKey: group.slotKey,
                 remainingKeys: keys, urgentOverdue: urgent

@@ -457,14 +457,63 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// Still waiting for today — the server's `promptWaiting`.
     var isWaiting: Bool { !considered && !done }
 
-    /// "1/2" — the count the row shows beside the title ("Daily Walks · 1/2").
-    var countText: String { "\(current)/\(target)" }
+    /// "1/2 today" — the count every prompt surface shows beside the title
+    /// ("Daily Walks · 1/2 today"): the count, then the period it covers
+    /// (2026-09-25, Trent: "0/1" alone doesn't say whether it's today's, the
+    /// week's or the month's). The web uses the same words. Joined with
+    /// non-breaking spaces, "this week" included, so the count and its period
+    /// wrap as ONE unit and never split across lines. No period, count only.
+    var countText: String {
+        let count = "\(current)/\(target)"
+        guard let words = periodWords else { return count }
+        return "\(count)\u{00A0}\(words.replacingOccurrences(of: " ", with: "\u{00A0}"))"
+    }
 
-    /// The row's whole label as ONE string: title, then the count glued to it
-    /// with non-breaking spaces so the count never wraps away from its "·".
+    /// The period `countText` names: "today", "this week", "this month",
+    /// "this year" — nil when the quota has none (or an unknown one).
+    var periodWords: String? {
+        switch period {
+        case "DAILY": return "today"
+        case "WEEKLY": return "this week"
+        case "MONTHLY": return "this month"
+        case "YEARLY": return "this year"
+        default: return nil
+        }
+    }
+
+    /// The count alone, "1/2" — for a surface that sets the period beside it
+    /// itself (the Smart Stack card, `compactPeriodWord`).
+    var countOnlyText: String { "\(current)/\(target)" }
+
+    /// The Smart Stack card's short period word: "today", "wk", "mo", "yr".
+    /// That card's count sits in the 30pt column above ☐, where even "0/2
+    /// today" truncated on one line (RenderPreview, 2026-09-25), so it draws
+    /// count and word on two lines of one `Text`, with these. Everywhere else
+    /// uses the full `periodWords`.
+    var compactPeriodWord: String? {
+        switch period {
+        case "DAILY": return "today"
+        case "WEEKLY": return "wk"
+        case "MONTHLY": return "mo"
+        case "YEARLY": return "yr"
+        default: return nil
+        }
+    }
+
+    /// The row's whole label as ONE string: title, `countSeparator`, count.
     /// The one string both the rendered `Text` and the row-height measurement
     /// build from (see `WidgetTheme.dueLabelParts`' "one function" rule).
-    var labelText: String { "\(title)\u{00A0}·\u{00A0}\(countText)" }
+    var labelText: String { "\(title)\(Self.countSeparator)\(countText)" }
+
+    /// " · " between a title and its count: a plain space BEFORE the dot, a
+    /// non-breaking one after it. So "· 1/2 today" is one unit that wraps
+    /// whole — the dot never ends a line away from its count — but it is not
+    /// glued to the title's last word. It used to be (NBSP on both sides),
+    /// and once the period words made the count longer, "omega-3) · 0/2
+    /// this week" was one unbreakable run wider than the widget's column, so
+    /// the text system broke it mid-run ("0/2 this" / "week") at XXX Large
+    /// (RenderPreview, 2026-09-25).
+    static let countSeparator = " ·\u{00A0}"
 
     /// A copy marked handled for today — the optimistic render of an action
     /// whose server round trip is still in flight. `did` also marks it done
