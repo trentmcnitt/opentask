@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { X, Trash2, Info, Loader2, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import TokenManager from '@/components/TokenManager'
+import { TimeSlotSettings } from '@/components/TimeSlotSettings'
 import { useProjects } from '@/components/ProjectsProvider'
 import { SortableProjectList, DragHandle } from '@/components/SortableProjectList'
 import { Input } from '@/components/ui/input'
@@ -1103,6 +1104,18 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+        </section>
+
+        {/* Reminder periods — the user's time slots (src/components/TimeSlotSettings.tsx) */}
+        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="mb-3 text-sm font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+            Reminder periods
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            The parts of your day. Reminders are grouped into these and arrive together when each
+            one starts. Moving or removing a period takes its reminders with it.
+          </p>
+          <TimeSlotSettings />
         </section>
 
         {/* Labels */}

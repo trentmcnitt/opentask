@@ -42,7 +42,7 @@ import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
 import { buildEnrichmentUserPrompt, buildReminderEnrichmentUserPrompt } from './prompts'
 import { listTimeSlots } from '@/core/time-slots'
-import { currentSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { currentSlot, nearestSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
@@ -652,22 +652,6 @@ async function enrichTask(row: PendingTaskRow): Promise<string[]> {
  * that already reads `FREQ=DAILY;BYHOUR=9;BYMINUTE=0` produces no change, no
  * undo entry, and no toast for an edit that never happened.
  */
-/** The slot whose start time is closest to `minutes`, earlier or later. */
-function nearestSlot(minutes: number, slots: TimeSlot[]): TimeSlot | null {
-  let best: TimeSlot | null = null
-  let bestDistance = Infinity
-  for (const slot of slots) {
-    const start = parseHHMM(slot.start_time)
-    if (start === null) continue
-    const distance = Math.abs(start - minutes)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      best = slot
-    }
-  }
-  return best
-}
-
 export function sanitizeReminderEnrichment(
   enrichment: EnrichmentResult,
   slots: TimeSlot[],

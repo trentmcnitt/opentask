@@ -163,6 +163,31 @@ export type UndoAction =
   // §7.5: declining an occurrence without recording a completion.
   | 'skip'
   | 'bulk_skip'
+  // Editable time slots: a slot's start moved / a slot removed, with the
+  // reminders that moved to stay in (or find) a slot. The entry also carries
+  // the slot row (`undo_log.slot_state`) so undo restores both together.
+  | 'time_slot_edit'
+  | 'time_slot_delete'
+
+/**
+ * The one time_slots row a time_slot_edit / time_slot_delete entry changed,
+ * before and after. `after: null` is a deletion. Stored in
+ * `undo_log.slot_state`; undo writes `before` back, redo writes `after`.
+ */
+export interface SlotUndoState {
+  before: SlotRow | null
+  after: SlotRow | null
+}
+
+/** A time_slots row as stored — mirrors `TimeSlot` in `@/lib/time-slot-assign`. */
+export interface SlotRow {
+  id: number
+  user_id: number
+  label: string
+  start_time: string
+  sort_order: number
+  created_at: string
+}
 
 export interface UndoSnapshot {
   task_id: number

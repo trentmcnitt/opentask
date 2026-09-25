@@ -251,6 +251,12 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'short_title')) {
     database.exec('ALTER TABLE tasks ADD COLUMN short_title TEXT DEFAULT NULL')
   }
+  // Editable time slots (2026-09-24): an undo entry for a slot edit/delete
+  // carries the slot row itself, so undo restores the slot WITH the reminders
+  // it moved (see src/core/time-slots/edit.ts).
+  if (!hasColumn(database, 'undo_log', 'slot_state')) {
+    database.exec('ALTER TABLE undo_log ADD COLUMN slot_state TEXT DEFAULT NULL')
+  }
 
   backfillLabelRegistry(database)
   backfillTimeSlots(database)

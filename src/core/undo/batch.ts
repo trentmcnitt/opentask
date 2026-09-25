@@ -14,6 +14,7 @@ import type { UndoSnapshot } from '@/types'
 import { undoEntry, type ParsedUndoEntry } from './execute-undo'
 import { redoEntry, type ParsedRedoEntry } from './execute-redo'
 import { dispatchUndoRedoWebhooks } from './dispatch-webhooks'
+import { parseSlotState } from './slot-row'
 import { countUndoable, countRedoable } from './index'
 
 interface RawEntry {
@@ -22,6 +23,7 @@ interface RawEntry {
   description: string | null
   fields_changed: string
   snapshot: string
+  slot_state: string | null
 }
 
 export interface BatchUndoOptions {
@@ -53,7 +55,7 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
 
   // Build the query to find entries to undo
   let sql = `
-    SELECT id, action, description, fields_changed, snapshot
+    SELECT id, action, description, fields_changed, snapshot, slot_state
     FROM undo_log
     WHERE user_id = ? AND undone = 0
   `
@@ -92,6 +94,7 @@ export function executeBatchUndo(userId: number, options: BatchUndoOptions): Bat
     description: e.description,
     fieldsChanged: JSON.parse(e.fields_changed),
     snapshots: JSON.parse(e.snapshot) as UndoSnapshot[],
+    slotState: parseSlotState(e.slot_state),
   }))
 
   withTransaction((tx) => {
@@ -124,7 +127,7 @@ export function executeBatchRedo(userId: number, options: BatchRedoOptions): Bat
   const db = getDb()
 
   let sql = `
-    SELECT id, action, description, fields_changed, snapshot
+    SELECT id, action, description, fields_changed, snapshot, slot_state
     FROM undo_log
     WHERE user_id = ? AND undone = 1
   `
@@ -159,6 +162,7 @@ export function executeBatchRedo(userId: number, options: BatchRedoOptions): Bat
     description: e.description,
     fieldsChanged: JSON.parse(e.fields_changed),
     snapshots: JSON.parse(e.snapshot) as UndoSnapshot[],
+    slotState: parseSlotState(e.slot_state),
   }))
 
   withTransaction((tx) => {
