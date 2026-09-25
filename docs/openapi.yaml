@@ -2134,6 +2134,11 @@ components:
             The quota's label colour for its stripe, resolved server-side. Null
             is neutral (no label or colour); green is never sent — it means
             "met" on quota chips.
+        has_notes:
+          type: boolean
+          description: >
+            The quota has non-blank notes. A flag only, for the rows' notes
+            mark; the notes themselves are on the quota task.
         considered:
           type: boolean
         done:

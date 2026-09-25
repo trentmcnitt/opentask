@@ -270,6 +270,14 @@ describe('Quota prompts — which quotas prompt', () => {
     expect(colors).toEqual({ 'Read to kids': 'blue', Run: null, Plain: null })
   })
 
+  test('QP-076: has_notes marks a quota with notes; blank notes are no notes', () => {
+    quota('Cook', 'FREQ=WEEKLY', 3, { notes: 'The good pan' })
+    quota('Stretch', 'FREQ=WEEKLY', 3, { notes: '  \n ' })
+    quota('Read', 'FREQ=WEEKLY', 3)
+    const flags = Object.fromEntries(prompts().map((p) => [p.title, p.has_notes]))
+    expect(flags).toEqual({ Cook: true, Stretch: false, Read: false })
+  })
+
   test("QP-022: at 00:02, before the cron, yesterday's met daily reads 0 and is not done", () => {
     const q = quota('Daily Walks', 'FREQ=DAILY', 1)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // anchors + met Thursday

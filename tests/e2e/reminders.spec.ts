@@ -770,6 +770,125 @@ test.describe('Reminders surface', () => {
     await expect(toggle.getByRole('button')).toHaveText(['Today', 'Projects', 'All'])
   })
 
+  test('a reminder with notes wears the notes mark after its title', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      ids.push(
+        await createReminder(page, {
+          title: 'Noted thought',
+          notes: 'The detail behind it',
+          due_at: inStartedSlot(),
+        }),
+      )
+      ids.push(
+        await createReminder(page, {
+          title: 'Blank-noted thought',
+          notes: '  ',
+          due_at: inStartedSlot(),
+        }),
+      )
+      ids.push(await createReminder(page, { title: 'Bare thought', due_at: inStartedSlot() }))
+      await openReminders(page)
+      await openAllSlots(page)
+      // By the row's text, which starts with its title (the circle holds none).
+      const row = (title: string) =>
+        page.locator('li[data-reminder-id]').filter({ hasText: new RegExp(`^${title}`) })
+      await expect(row('Noted thought').locator('[data-has-notes]')).toHaveCount(1)
+      await expect(row('Noted thought').getByLabel('Has notes')).toBeVisible()
+      await expect(row('Blank-noted thought')).toBeVisible()
+      await expect(row('Blank-noted thought').locator('[data-has-notes]')).toHaveCount(0)
+      await expect(row('Bare thought').locator('[data-has-notes]')).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
+  test('a day bar segment goes to its period: opens it if folded, header under the top bar', async ({
+    authenticatedPage: page,
+  }) => {
+    // Short enough that the last period starts well below the fold.
+    await page.setViewportSize({ width: 1280, height: 600 })
+    const slotsRes = await page.request.get('/api/time-slots')
+    const slots = (
+      (await slotsRes.json()).data.time_slots as { id: number; label: string; start_time: string }[]
+    ).sort((a, b) => a.start_time.localeCompare(b.start_time))
+    expect(slots.length).toBeGreaterThan(1)
+    const last = slots[slots.length - 1]
+
+    const ids: number[] = []
+    try {
+      // Several per period, so every section has height and the last one is
+      // off screen at first.
+      for (const slot of slots) {
+        const [hour, minute] = slot.start_time.split(':').map(Number)
+        // The last period gets enough rows that its header can reach the top
+        // of the page at all — a short last section stops at the page's end.
+        const count = slot === last ? 12 : 4
+        for (let i = 0; i < count; i++) {
+          ids.push(
+            await createReminder(page, {
+              title: `Segment test ${i + 1} — ${slot.label}`,
+              due_at: todayAt(hour, minute),
+            }),
+          )
+        }
+      }
+      await openReminders(page)
+      const bar = page.getByRole('group', { name: 'Go to a period' })
+      const lastSection = page.locator(`[data-slot-key="${last.id}"]`)
+      await expect(lastSection).not.toBeInViewport()
+
+      // Fold the last period first: the segment must open it again.
+      await lastSection.getByRole('button', { expanded: true }).click()
+      await expect(lastSection.getByRole('button', { expanded: false })).toBeVisible()
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await expect(lastSection).not.toBeInViewport()
+
+      // Keyboard first: from the top of the page the bar is on screen, so
+      // focusing a segment scrolls nothing and the move is all Enter's.
+      const segment = bar.getByRole('button', { name: new RegExp(`^Go to ${last.label}, `) })
+      await expect(segment).toHaveCount(1)
+      await segment.focus()
+      await page.keyboard.press('Enter')
+      await expect(lastSection.getByRole('button', { expanded: true })).toBeVisible()
+      await expect(lastSection.getByText(`Segment test 1 — ${last.label}`)).toBeVisible()
+      await expect(lastSection).toBeInViewport()
+      // The header lands at the section's own scroll margin: clear of the
+      // sticky top bar, not under it. Polled, since the scroll is smooth.
+      const margin = await lastSection.evaluate((el) =>
+        parseFloat(getComputedStyle(el).scrollMarginTop),
+      )
+      const header = page.getByRole('banner')
+      await expect(async () => {
+        const top = (await lastSection.boundingBox())!.y
+        const barBox = (await header.boundingBox())!
+        expect(top).toBeGreaterThanOrEqual(barBox.y + barBox.height)
+        expect(Math.round(top)).toBe(Math.round(margin))
+      }).toPass()
+
+      // A click, on the same segment again after scrolling away, goes again.
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await expect(lastSection).not.toBeInViewport()
+      await segment.click()
+      await expect(lastSection).toBeInViewport()
+
+      // And the move is one-shot: the slot list remounting (a search typed
+      // and cleared) must not replay it.
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+      const search = page.getByRole('textbox', { name: 'Search reminders' })
+      await search.fill('Segment test')
+      await expect(page.locator('[data-reminders-headline]')).toHaveCount(0)
+      await search.fill('')
+      await expect(page.locator('[data-reminders-headline]')).toBeVisible()
+      await expect(lastSection).not.toBeInViewport()
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+
   test('?slot=<slotId> brings that slot’s section into view', async ({
     authenticatedPage: page,
   }) => {
