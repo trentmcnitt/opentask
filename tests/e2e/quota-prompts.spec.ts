@@ -37,14 +37,48 @@ function promptRow(page: Page, title: string) {
   return page.locator('li[data-prompt-key]', { hasText: title })
 }
 
+/** A prompt row inside one period's card. */
+function promptIn(page: Page, slotLabel: string, title: string) {
+  return page.locator(`[data-slot-group="${slotLabel}"] li[data-prompt-key]`, { hasText: title })
+}
+
+/**
+ * Press and hold a prompt row until its bubble opens — the only way in, on
+ * desktop too (right-click is left alone: on a quota chip it means −1).
+ */
+async function holdOpen(page: Page, row: ReturnType<typeof promptRow>) {
+  const box = (await row.boundingBox())!
+  await page.mouse.move(box.x + Math.min(120, box.width / 2), box.y + box.height / 2)
+  await page.mouse.down()
+  await page.waitForSelector('[data-track-popover]')
+  await page.mouse.up()
+  return page.locator('[data-track-popover]')
+}
+
+async function userSlots(page: Page): Promise<{ id: number; label: string }[]> {
+  const res = await page.request.get('/api/time-slots')
+  const slots = (await res.json()).data.time_slots as {
+    id: number
+    label: string
+    start_time: string
+  }[]
+  return [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time))
+}
+
+function isQuotaPatch(r: { request(): { method(): string }; url(): string }) {
+  return r.request().method() === 'PATCH' && /\/api\/tasks\/\d+$/.test(r.url())
+}
+
+async function cleanUp(page: Page) {
+  if (created.length > 0) {
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [...created] } })
+    created.length = 0
+  }
+  await page.request.patch('/api/user/preferences', { data: { quota_prompts_enabled: true } })
+}
+
 test.describe('Quota prompts', () => {
-  test.afterEach(async ({ authenticatedPage: page }) => {
-    if (created.length > 0) {
-      await page.request.post('/api/tasks/bulk/delete', { data: { ids: [...created] } })
-      created.length = 0
-    }
-    await page.request.patch('/api/user/preferences', { data: { quota_prompts_enabled: true } })
-  })
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
 
   test('the circle considers a prompt without logging, and the header Undo brings it back', async ({
     authenticatedPage: page,
@@ -134,5 +168,99 @@ test.describe('Quota prompts', () => {
       page.locator('[data-reminders-headline], section[aria-label="Reminders"]').first(),
     ).toBeVisible()
     await expect(promptRow(page, 'E2E prompt settings')).toHaveCount(0)
+  })
+})
+
+/**
+ * Moving a prompt to another period for good (2026-09-25): the period chips
+ * in its hold bubble — the quota editor's own PATCH, with the toast's Undo.
+ */
+test.describe('Quota prompts — moving', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('a period chip in the bubble moves a prompt for good; the toast Undo puts it back', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await makeQuota(page, 'E2E prompt move')
+    const slots = await userSlots(page)
+    const last = slots[slots.length - 1]
+    await page.goto('/reminders')
+    const row = promptRow(page, 'E2E prompt move')
+    await expect(row).toBeVisible()
+    const from = await row.evaluate(
+      (el) => el.closest('[data-slot-group]')!.getAttribute('data-slot-group')!,
+    )
+    expect(from).not.toBe(last.label)
+
+    // The chips: every period, in start order, the current one pressed.
+    const bubble = await holdOpen(page, row)
+    const chips = bubble.locator('[data-prompt-period]')
+    await expect(chips).toHaveText(slots.map((s) => s.label))
+    await expect(bubble.locator('[data-prompt-period][aria-pressed="true"]')).toHaveText(from)
+
+    const saved = page.waitForResponse(isQuotaPatch)
+    await bubble.locator(`[data-prompt-period="${last.id}"]`).click()
+    await expect(page.locator('[data-track-popover]')).toHaveCount(0)
+    const body = await (await saved).json()
+    expect(body.data.quota_prompt_config).toEqual({ slot_id: last.id })
+    await expect(promptIn(page, last.label, 'E2E prompt move')).toBeVisible()
+    await expect(promptIn(page, from, 'E2E prompt move')).toHaveCount(0)
+
+    const toast = page.locator('[data-sonner-toast]', {
+      hasText: `Moved “E2E prompt move” to ${last.label}`,
+    })
+    await expect(toast).toBeVisible()
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await toast.getByRole('button', { name: 'Undo' }).click()
+    await undone
+    await expect(promptIn(page, from, 'E2E prompt move')).toBeVisible()
+    await expect(promptIn(page, last.label, 'E2E prompt move')).toHaveCount(0)
+    const after = await page.request.get(`/api/tasks/${id}`)
+    expect((await after.json()).data.quota_prompt_config).toBeNull()
+  })
+
+  test('a daily row moves only its own numbers — at phone width', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
+    const slots = await userSlots(page)
+    const [first, second] = slots
+    const last = slots[slots.length - 1]
+    await page.request.patch('/api/user/preferences', {
+      data: { quota_prompt_slot_id: first.id },
+    })
+    try {
+      await makeQuota(page, 'E2E prompt daily', 'FREQ=DAILY', 2)
+      await page.goto('/reminders')
+      await expect(promptIn(page, first.label, 'E2E prompt daily')).toBeVisible()
+      const row = promptIn(page, second.label, 'E2E prompt daily')
+      await expect(row).toBeVisible()
+
+      const bubble = await holdOpen(page, row)
+      await expect(bubble.locator('[data-prompt-periods]')).toContainText(
+        'The 2nd of 2 reminds me in',
+      )
+      // The bubble fits the phone: no chip is pushed past its right edge.
+      const pop = (await bubble.boundingBox())!
+      expect(pop.x + pop.width).toBeLessThanOrEqual(375)
+      for (const chip of await bubble.locator('[data-prompt-period]').all()) {
+        const b = (await chip.boundingBox())!
+        expect(b.x + b.width).toBeLessThanOrEqual(pop.x + pop.width)
+      }
+
+      const saved = page.waitForResponse(isQuotaPatch)
+      await bubble.locator(`[data-prompt-period="${last.id}"]`).click()
+      const body = await (await saved).json()
+      expect(body.data.quota_prompt_config).toEqual({ numbers: { '2': last.id } })
+      await expect(promptIn(page, last.label, 'E2E prompt daily')).toBeVisible()
+      await expect(promptIn(page, second.label, 'E2E prompt daily')).toHaveCount(0)
+      // The 1st stays where it was.
+      await expect(promptIn(page, first.label, 'E2E prompt daily')).toBeVisible()
+    } finally {
+      await page.request.patch('/api/user/preferences', {
+        data: { quota_prompt_slot_id: prefs.quota_prompt_slot_id ?? null },
+      })
+    }
   })
 })

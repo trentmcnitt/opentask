@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { trackState, trackStripeClass } from '@/lib/track'
-import type { QuotaPrompt } from '@/lib/quota-prompts'
+import { movedPromptConfig, type QuotaPrompt } from '@/lib/quota-prompts'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaMutations } from '@/hooks/useQuotaMutations'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { QuotaDetailModal } from '@/components/QuotaDetailModal'
+import { ordinal, usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 
@@ -41,6 +43,10 @@ import type { Task } from '@/types'
  *   everywhere else — whose Open reaches `QuotaDetailModal`. While a
  *   selection is active a plain tap does nothing here, since a tap there
  *   means "select" and this row cannot be.
+ * - The bubble also carries the user's periods as chips (2026-09-25): one tap
+ *   moves the prompt there for good — the editor's own PATCH, with Undo. The
+ *   hold is the way in on desktop too; right-click stays unbound here, since
+ *   on a quota chip it means −1 and Trent keeps that meaning.
  * - NO PUT-BACK. A handled prompt counts toward the slot but never joins its
  *   considered list, whose put-back is /undone (which a quota refuses). The
  *   toast's Undo is the way back.
@@ -279,6 +285,26 @@ const measureLeavingRow = (el: HTMLElement | null) => {
   if (el) el.style.setProperty('--reminder-row-h', `${el.offsetHeight}px`)
 }
 
+/** `useReminders().movePrompt`'s shape. */
+type MovePrompt = (
+  prompt: QuotaPrompt,
+  toSlotId: number,
+  save: () => Promise<void>,
+) => Promise<void>
+
+/**
+ * What the period chips place. A daily row that stands for only some of the
+ * quota's numbers says which — a tap moves those, not the whole quota.
+ */
+function periodsLabel(prompt: QuotaPrompt): string {
+  const numbers = prompt.numbers ?? []
+  if (numbers.length === 0 || numbers.length >= prompt.target) return 'Reminds me in'
+  const names = numbers.map(ordinal)
+  const list =
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+  return `The ${list} of ${prompt.target} ${names.length === 1 ? 'reminds' : 'remind'} me in`
+}
+
 /** `useQuotaMutations`' `clear` — there is no quota selection here to clear. */
 const noop = () => {}
 
@@ -294,6 +320,7 @@ export function usePromptRows({
   isSelectionMode = false,
   considerPrompt,
   didPrompt,
+  movePrompt,
   rowLeft,
   registerRow,
   onUndo,
@@ -305,6 +332,8 @@ export function usePromptRows({
   isSelectionMode?: boolean
   considerPrompt: (prompt: QuotaPrompt) => void
   didPrompt: (prompt: QuotaPrompt) => void
+  /** `useReminders().movePrompt` — the period chips' optimistic move. */
+  movePrompt: MovePrompt
   rowLeft?: (id: string) => void
   registerRow?: (id: string) => () => void
   onUndo: () => void
@@ -315,6 +344,7 @@ export function usePromptRows({
     onUndo,
     onCompleted: onCompleted ?? noop,
     onRefresh: refresh,
+    movePrompt,
   })
   const renderPrompt = (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean } = {}) => (
     <QuotaPromptRow
@@ -347,10 +377,12 @@ export function useQuotaPromptDetail({
   onUndo,
   onCompleted,
   onRefresh,
+  movePrompt,
 }: {
   onUndo: () => void
   onCompleted: () => void
   onRefresh: () => Promise<void>
+  movePrompt: MovePrompt
 }) {
   const router = useRouter()
   const { requestNavigation } = useNavigationGuard()
@@ -383,6 +415,26 @@ export function useQuotaPromptDetail({
     }
   }, [])
   const closePeek = useCallback(() => setPeekKey(null), [])
+  const { slots } = usePromptSetup()
+
+  /**
+   * A period chip: move the prompt there for good. The editor's exact write —
+   * `saveQuotas`, a PATCH of the quota's whole `quota_prompt_config`, merged
+   * over the one the hold just fetched (`movedPromptConfig`) — so it is
+   * validated, undo-logged and toasted the way the editor's save is. The
+   * bubble closes first: its row is about to re-render in another period.
+   */
+  const moveTo = (prompt: QuotaPrompt, quota: Task, slot: TimeSlot) => {
+    setPeekKey(null)
+    const config = movedPromptConfig(quota.quota_prompt_config, prompt, slot.id)
+    void movePrompt(prompt, slot.id, () =>
+      saveQuotas(
+        [quota.id],
+        { quota_prompt_config: config },
+        { message: `Moved “${prompt.title}” to ${slot.label}` },
+      ),
+    )
+  }
 
   /** Wrap a prompt row in its bubble. */
   const wrap = (prompt: QuotaPrompt, row: React.ReactNode) => {
@@ -405,6 +457,16 @@ export function useQuotaPromptDetail({
           setPeekKey(null)
           void deleteQuotas([t])
         }}
+        periods={
+          mine
+            ? {
+                slots,
+                currentId: prompt.slot_id,
+                label: periodsLabel(prompt),
+                onPick: (slot) => moveTo(prompt, mine, slot),
+              }
+            : undefined
+        }
       >
         {row}
       </TrackChipPopover>

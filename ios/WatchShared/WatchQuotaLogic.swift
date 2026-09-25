@@ -142,3 +142,27 @@ enum WatchQuotaLogic {
         }
     }
 }
+
+/// Moving a quota PROMPT to another period for good (2026-09-25, the watch
+/// Reminders page's press-and-hold list) — the watch's copy of
+/// `movedPromptConfig` in `src/lib/quota-prompts.ts`; keep the two in step:
+///
+/// - a daily row moves only the numbers it stands for (`prompt.numbers`),
+///   as per-number overrides — the quota's other numbers keep their places;
+/// - every other quota moves as a whole: `slot_id`;
+/// - always merged over the STORED config: the PATCH replaces the whole
+///   object, so dropping `enabled` or another number's override would
+///   silently undo a choice made in the web editor.
+enum WatchPromptMove {
+    static func movedConfig(stored: [String: Any]?, numbers: [Int]?, toSlotId: Int) -> [String: Any] {
+        var config = stored ?? [:]
+        if let numbers, !numbers.isEmpty {
+            var overrides = config["numbers"] as? [String: Any] ?? [:]
+            for k in numbers { overrides[String(k)] = toSlotId }
+            config["numbers"] = overrides
+        } else {
+            config["slot_id"] = toSlotId
+        }
+        return config
+    }
+}

@@ -15,6 +15,7 @@ import { incrementDailyStat } from '@/core/stats'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { QUOTA_DUE_DATE_MESSAGE } from '@/core/validation'
 import { isTracked } from '@/lib/track'
+import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { getCurrentlyDueTaskIds } from './currently-due'
 import { isAIEnabled } from '@/core/ai'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
@@ -104,6 +105,8 @@ export function createTask(options: CreateTaskOptions): Task {
   // provenance flags are ours, not the caller's, and holding them to the
   // "did you mean to create this?" rule would be nonsense.
   validateLabelsExist(userId, taskLabels, [], input.create_label === true)
+  // The owner is the creator; nothing is stored yet, so every id is new.
+  assertPromptSlotsOwned(userId, input.quota_prompt_config, null)
 
   // Provenance flags spare automated callers from typing behavior-bearing
   // labels as free text (§7.2).

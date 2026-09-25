@@ -2101,6 +2101,20 @@ components:
           description: >
             Daily quotas: the row is done once today's count reaches this.
             Null for every other quota (one prompt a day).
+        numbers:
+          type: array
+          nullable: true
+          items:
+            type: integer
+          description: >
+            Daily quotas: every prompt number this row stands for, ascending
+            (`number` is the last). Moving the row to another period means
+            setting `quota_prompt_config.numbers[k]` for exactly these. Null for
+            every other quota — move those with `quota_prompt_config.slot_id`.
+        slot_id:
+          type: integer
+          nullable: true
+          description: The period (time slot id) this row sits in; null in the un-slotted group.
         title:
           type: string
         current:
@@ -2256,7 +2270,9 @@ components:
             and monthly quotas; off for yearly and period-less; in the user's
             default period). Writable on create and PATCH; `null` resets it.
             Slot ids are resolved when read — a deleted period falls back to the
-            user's default, then the first period of the day.
+            user's default, then the first period of the day. A write that names
+            a slot id the stored config does not already name must name one of
+            the quota owner's own periods (400 otherwise).
           properties:
             enabled:
               type: boolean

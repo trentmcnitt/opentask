@@ -189,10 +189,10 @@ const shortTitle = z
 /**
  * Quota reminders (2026-09-24): a quota's prompt settings. Every key optional —
  * an absent one takes its default — and `null` resets the whole thing to the
- * defaults. Slot ids are not checked against the user's slots here: they are
- * resolved at read time with fallbacks (`resolvePromptSlot`), which is also
- * what keeps a prompt alive when its slot is later deleted, so a write-time
- * check would protect nothing that read time does not already handle.
+ * defaults. Slot ids are only shape-checked here — the schema has no user to
+ * ask. Ownership is checked in core, against the quota's owner, for ids new
+ * to the write (`assertPromptSlotsOwned`); a stored id whose slot was deleted
+ * since still resolves at read time with fallbacks (`resolvePromptSlot`).
  */
 const quotaPromptConfig = z
   .object({
@@ -200,7 +200,9 @@ const quotaPromptConfig = z
     slot_id: z.number().int().positive().nullable().optional(),
     numbers: z
       .record(
-        z.string().regex(/^[1-9]\d{0,2}$/, 'Prompt numbers are 1 to 999'),
+        // 1..1000: a quota's target tops out at 1000 (`progressTarget`), and
+        // moving a prompt row writes every number the row stands for.
+        z.string().regex(/^(?:[1-9]\d{0,2}|1000)$/, 'Prompt numbers are 1 to 1000'),
         z.number().int().positive().nullable(),
       )
       .optional(),
