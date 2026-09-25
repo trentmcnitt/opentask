@@ -197,13 +197,106 @@ final class APIClient {
     /// Returns how many tasks the server actually completed.
     @discardableResult
     func completeTasks(ids: [Int]) async throws -> Int {
-        guard !ids.isEmpty else { return 0 }
-        let data = try await post(path: "/api/tasks/bulk/complete", body: ["ids": ids])
+        try await completeTasks(ids: ids, prompts: []).total
+    }
+
+    /// One quota-prompt action inside a `bulk/complete` batch (quota
+    /// reminders, 2026-09-24): consider (the circle) or "did it" (the square).
+    struct PromptCommit: Hashable {
+        let key: String
+        let did: Bool
+    }
+
+    /// `POST /api/tasks/bulk/complete`'s answer, reminders and prompts both.
+    struct BulkCompleteResult {
+        let tasksAffected: Int
+        let promptsConsidered: Int
+        let promptsDid: Int
+        /// Everything the server acted on — what "did the commit do
+        /// anything" guards read, so a prompts-only batch counts.
+        var total: Int { tasksAffected + promptsConsidered + promptsDid }
+    }
+
+    /// Complete reminders AND act on quota prompts in ONE request — one
+    /// transaction, one undo entry (the notification checklist's mixed
+    /// commit, and every "Complete all"). `prompts` is sent only when there
+    /// are any: a consider is a bare key, a did-it `{key, did: true}` — the
+    /// server's two accepted shapes. `ids` may be empty when `prompts` is
+    /// not. A key from another day refuses the whole batch (400), so a
+    /// caller holding a payload from before midnight must re-fetch.
+    @discardableResult
+    func completeTasks(ids: [Int], prompts: [PromptCommit]) async throws -> BulkCompleteResult {
+        guard !ids.isEmpty || !prompts.isEmpty else {
+            return BulkCompleteResult(tasksAffected: 0, promptsConsidered: 0, promptsDid: 0)
+        }
+        var body: [String: Any] = ["ids": ids]
+        if !prompts.isEmpty {
+            body["prompts"] = prompts.map { commit -> Any in
+                commit.did ? ["key": commit.key, "did": true] as [String: Any] : commit.key
+            }
+        }
+        let data = try await post(path: "/api/tasks/bulk/complete", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
-            return 0
+            return BulkCompleteResult(tasksAffected: 0, promptsConsidered: 0, promptsDid: 0)
         }
-        return responseData["tasks_affected"] as? Int ?? 0
+        return BulkCompleteResult(
+            tasksAffected: responseData["tasks_affected"] as? Int ?? 0,
+            promptsConsidered: responseData["prompts_considered"] as? Int ?? 0,
+            promptsDid: responseData["prompts_did"] as? Int ?? 0
+        )
+    }
+
+    // MARK: - Quota prompts (quota reminders, 2026-09-24)
+
+    /// What `POST /api/quota-prompts/consider` and `/did` answer: how many
+    /// were acted on, and every quota touched AS THE SERVER LEFT IT — which
+    /// callers write straight into their caches, so counts stay server-true
+    /// (the confirmProgress lesson, `ios/CLAUDE.md`).
+    struct PromptActionResult: Decodable {
+        let considered: Int
+        let did: Int
+        let tasks: [TaskDTO]
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            considered = try c.decodeIfPresent(Int.self, forKey: .considered) ?? 0
+            did = try c.decodeIfPresent(Int.self, forKey: .did) ?? 0
+            tasks = try c.decodeIfPresent([TaskDTO].self, forKey: .tasks) ?? []
+        }
+
+        init(considered: Int, did: Int, tasks: [TaskDTO]) {
+            self.considered = considered
+            self.did = did
+            self.tasks = tasks
+        }
+
+        enum CodingKeys: String, CodingKey { case considered, did, tasks }
+    }
+
+    /// The round circle on a quota prompt: handled for today, NO progress.
+    /// Idempotent; one transaction and one undo entry for every key.
+    @discardableResult
+    func considerPrompts(keys: [String]) async throws -> PromptActionResult {
+        try await promptAction(path: "/api/quota-prompts/consider", keys: keys)
+    }
+
+    /// The square on a quota prompt: "did it" — progress AND considered.
+    /// Idempotent per key (a daily #k raises the count to at least k; any
+    /// other quota +1 unless that key was already done today), so a retried
+    /// request logs once.
+    @discardableResult
+    func didPrompts(keys: [String]) async throws -> PromptActionResult {
+        try await promptAction(path: "/api/quota-prompts/did", keys: keys)
+    }
+
+    private func promptAction(path: String, keys: [String]) async throws -> PromptActionResult {
+        guard !keys.isEmpty else { return PromptActionResult(considered: 0, did: 0, tasks: []) }
+        let data = try await post(path: path, body: ["keys": keys])
+        // A body that doesn't decode after a 2xx still means the server
+        // acted: report success with no tasks, and let the caller re-fetch.
+        return (try? JSONDecoder().decode(APIEnvelope<PromptActionResult>.self, from: data).data)
+            ?? PromptActionResult(considered: 0, did: 0, tasks: [])
     }
 
     /// Snooze SPECIFIC tasks by id — `POST /api/tasks/bulk/snooze`
@@ -258,15 +351,30 @@ final class APIClient {
     /// `slotId` is the `slot_id` from the SLOT_REMINDER push; -1 means the
     /// un-slotted "Anytime" group, matching `ReminderGroupDTO.slotKey`.
     func fetchSlotReminders(slotId: Int) async throws -> [TaskDTO] {
-        let payload = try await fetchReminders()
-        return payload.groups.first(where: { $0.slotKey == slotId })?.reminders ?? []
+        try await fetchSlotGroup(slotId: slotId)?.reminders ?? []
     }
 
-    /// Complete every pending reminder in a slot. Used by the "Complete all"
-    /// action, which is available even without the expanded checklist.
+    /// One slot's whole group — reminders AND quota prompts (2026-09-24) —
+    /// newest server truth. `nil` when the slot has no group today.
+    func fetchSlotGroup(slotId: Int) async throws -> ReminderGroupDTO? {
+        let payload = try await fetchReminders()
+        return payload.groups.first(where: { $0.slotKey == slotId })
+    }
+
+    /// "Complete all" for a slot, available even without the expanded
+    /// checklist (iOS, watch and Mac notification actions). Completes every
+    /// pending reminder AND considers every waiting quota prompt — CONSIDERED
+    /// only, never "did it" (Trent's rule: consider-all never logs progress)
+    /// — in one request. Returns everything the server acted on, so a slot
+    /// holding only prompts still reads as handled. Fetched fresh right
+    /// before the commit, so the prompt keys are today's.
     @discardableResult
     func completeSlotReminders(slotId: Int) async throws -> Int {
-        try await completeTasks(ids: fetchSlotReminders(slotId: slotId).map(\.id))
+        guard let group = try await fetchSlotGroup(slotId: slotId) else { return 0 }
+        return try await completeTasks(
+            ids: group.reminders.map(\.id),
+            prompts: group.waitingPrompts.map { PromptCommit(key: $0.promptKey, did: false) }
+        ).total
     }
 
     /// Log progress on a tracked task (§5). Deliberately NOT a completion —
