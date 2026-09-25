@@ -436,7 +436,9 @@ private struct TasksListView: View {
         _ task: TaskDTO, column: CGFloat, labelHeight: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> (lines: Int, height: CGFloat, shrinks: Bool) {
         let weight = WidgetTheme.priorityWeight(task.priority)
-        let fit = metrics.titleLines(task.title, width: column, weight: weight, maxHeight: budget)
+        let fit = metrics.titleLines(
+            task.title, width: column, weight: weight, maxHeight: budget, hasNotes: task.hasNotes
+        )
         // Longer than the whole card: a page of its own, title shrunk to fit.
         if fit.shrinks { return (fit.lines, budget, true) }
         return (fit.lines, max(metrics.titleHeight(lines: fit.lines), labelHeight), false)
@@ -457,6 +459,7 @@ private struct TasksListView: View {
             TaskRow(
                 task: task, now: entry.date, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
                 firstLineHeight: metrics.titleHeight(lines: 1),
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes),
                 dueStacked: layout.dueStacked,
                 markerBleed: mode.isNormal ? markerBleed : 0,
                 projectColor: entry.projectColor(for: task),
@@ -703,6 +706,10 @@ private struct TaskRow: View {
     var shrinks = false
     /// One title line's height — the checkbox centres on the FIRST line.
     let firstLineHeight: CGFloat
+    /// The notes glyph's size after the title, nil when the task has no
+    /// notes — the value `TasksListView.titleLayout` measured with. See
+    /// `WidgetTheme.titleText(_:notesGlyphSize:)`.
+    let notesGlyphSize: CGFloat?
     /// The due label on two lines, day word over time ("Tomorrow" / "4:00
     /// pm"), right-aligned — true for EVERY two-part label, on every family
     /// (`TasksListView.layout(for:)`, 2026-09-24). It first stacked only
@@ -771,11 +778,12 @@ private struct TaskRow: View {
                     // otherwise; this lines its top up with the text.
                     .alignmentGuide(.firstTextBaseline) { $0[.top] + firstLineHeight * 0.75 }
             }
-            Text(task.title)
+            WidgetTheme.titleText(Text(task.title), notesGlyphSize: notesGlyphSize)
                 .font(.subheadline)
                 .fontWeight(WidgetTheme.priorityWeight(task.priority))
                 .foregroundStyle(.primary)
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
 
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow

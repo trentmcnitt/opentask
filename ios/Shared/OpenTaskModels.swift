@@ -58,6 +58,19 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// empty means "no short name set"; read it through `displayTitle`, never
     /// directly, so every call site falls back the same way.
     let shortTitle: String?
+    /// The item has notes — the web's `!!notes?.trim()`, which is what puts
+    /// its `NotesMarker` after a title. Drives the small note glyph after a
+    /// widget row's title (`NotesGlyph`, 2026-09-25) and the watch
+    /// Reminders page's.
+    ///
+    /// A FLAG, not the notes themselves: the server sends the full `notes`
+    /// text, but nothing native ever shows it, and every cached payload
+    /// (App Group `UserDefaults`, `WatchCache`) would otherwise carry every
+    /// paragraph of every open task. So `init(from:)` reads the server's
+    /// `notes` and keeps only whether it is non-blank, and a cache stores
+    /// that answer under `has_notes` (the key `QuotaPromptDTO` already uses
+    /// for the same fact) — see `NotesKey`.
+    let hasNotes: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -74,6 +87,14 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case isReminder = "is_reminder"
         case labels
         case shortTitle = "short_title"
+        case hasNotes = "has_notes"
+    }
+
+    /// Decode-only: the server's raw `notes`. Deliberately NOT in
+    /// `CodingKeys`, so the synthesized `encode(to:)` never writes the text
+    /// back out to a cache (see `hasNotes`).
+    private enum NotesKey: String, CodingKey {
+        case notes
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +117,16 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         // `short_title` column yet) must still round-trip — see the file
         // header's "partial decode" note.
         shortTitle = try c.decodeIfPresent(String.self, forKey: .shortTitle)
+        // A cache written by this build carries `has_notes`; the server (and
+        // a cache from an older build) carries `notes`, or nothing. Absent
+        // everywhere reads as "no notes" — a missing glyph, never a decode
+        // failure.
+        if let cached = try c.decodeIfPresent(Bool.self, forKey: .hasNotes) {
+            hasNotes = cached
+        } else {
+            let raw = try decoder.container(keyedBy: NotesKey.self).decodeIfPresent(String.self, forKey: .notes)
+            hasNotes = !(raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -118,7 +149,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         trackedFlag: Bool = false,
         isReminder: Bool = false,
         labels: [String] = [],
-        shortTitle: String? = nil
+        shortTitle: String? = nil,
+        hasNotes: Bool = false
     ) {
         self.id = id
         self.projectId = projectId
@@ -134,6 +166,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         self.isReminder = isReminder
         self.labels = labels
         self.shortTitle = shortTitle
+        self.hasNotes = hasNotes
     }
 
     var dueDate: Date? {
@@ -190,6 +223,32 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     func isOverdue(now: Date = Date()) -> Bool {
         guard let dueDate else { return false }
         return dueDate < now
+    }
+}
+
+// MARK: - Notes mark (2026-09-25)
+
+/// The small "this has notes" glyph after a title — the native counterpart
+/// of the web's `NotesMarker` (`src/components/NotesMarker.tsx`, a muted
+/// lucide `StickyNote`). Named here, where every native target can see it,
+/// so the phone/Mac widgets and the watch draw the same symbol and say the
+/// same thing to VoiceOver.
+///
+/// `doc`: a plain page with a folded corner and no text lines — the nearest
+/// SF Symbol to lucide's sticky note (`note` and `note.text` draw a window
+/// with a title bar; `doc.text` adds lines the web glyph doesn't have).
+///
+/// Always muted (`.tertiary`/`.secondary`), never a priority color — the
+/// yellow circle means Medium priority, and the glyph must not be read as
+/// one more priority mark. Callers draw it only when `hasNotes` is true.
+enum NotesGlyph {
+    static let symbol = "doc"
+
+    /// The row's spoken label: `text` plus ", has notes" when it has notes.
+    /// The glyph lives inside the title's `Text`, where it can't carry an
+    /// accessibility label of its own.
+    static func accessibilityLabel(_ text: String, hasNotes: Bool) -> String {
+        hasNotes ? "\(text), has notes" : text
     }
 }
 
@@ -407,6 +466,11 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// Done for today: daily — count reached `number`; others — progress
     /// logged today from anywhere.
     let done: Bool
+    /// The quota has notes (`has_notes`, 2026-09-25) — the web's
+    /// `QuotaPromptRow` marks it with `NotesMarker` after the count, and the
+    /// widget row draws the same small glyph there (`NotesGlyph`). False
+    /// from a server that predates the field.
+    let hasNotes: Bool
 
     var id: String { promptKey }
 
@@ -417,6 +481,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         case slotId = "slot_id"
         case stripeColor = "stripe_color"
         case considered, done
+        case hasNotes = "has_notes"
     }
 
     init(from decoder: Decoder) throws {
@@ -433,12 +498,19 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         stripeColor = try c.decodeIfPresent(String.self, forKey: .stripeColor)
         considered = try c.decodeIfPresent(Bool.self, forKey: .considered) ?? false
         done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
+        hasNotes = try c.decodeIfPresent(Bool.self, forKey: .hasNotes) ?? false
     }
 
+    /// `hasNotes` has NO default here, on purpose — `ReminderGroupDTO.
+    /// prompts`' rule: every rebuild of a prompt (the optimistic
+    /// `handled(did:)`, `WidgetStore.confirmPromptAction`'s write-through)
+    /// must carry it over, and a defaulted parameter is how a tapped prompt
+    /// would silently lose its glyph.
     init(
         promptKey: String, taskId: Int, number: Int? = nil, numbers: [Int]? = nil, slotId: Int? = nil,
         title: String, current: Int, target: Int,
-        period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false
+        period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false,
+        hasNotes: Bool
     ) {
         self.promptKey = promptKey
         self.taskId = taskId
@@ -452,6 +524,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         self.stripeColor = stripeColor
         self.considered = considered
         self.done = done
+        self.hasNotes = hasNotes
     }
 
     /// Still waiting for today — the server's `promptWaiting`.
@@ -529,7 +602,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         return QuotaPromptDTO(
             promptKey: promptKey, taskId: taskId, number: number, numbers: numbers, slotId: slotId,
             title: title, current: newCurrent, target: target, period: period, stripeColor: stripeColor,
-            considered: true, done: done || did
+            considered: true, done: done || did, hasNotes: hasNotes
         )
     }
 }

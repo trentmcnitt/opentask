@@ -1076,7 +1076,8 @@ enum WidgetStore {
                         promptKey: p.promptKey, taskId: p.taskId, number: p.number, numbers: p.numbers,
                         slotId: p.slotId, title: p.title,
                         current: current, target: p.target, period: p.period, stripeColor: p.stripeColor,
-                        considered: p.considered, done: p.done || (p.number.map { current >= $0 } ?? false)
+                        considered: p.considered, done: p.done || (p.number.map { current >= $0 } ?? false),
+                        hasNotes: p.hasNotes
                     )
                 }
                 return p

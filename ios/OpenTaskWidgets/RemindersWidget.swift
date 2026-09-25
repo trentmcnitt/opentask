@@ -457,7 +457,7 @@ private enum ReminderPreviewData {
         QuotaPromptDTO(
             promptKey: "q:\(taskId):\(number ?? 0):2026-09-24", taskId: taskId, number: number,
             title: title, current: current, target: target, period: period, stripeColor: stripe,
-            considered: considered, done: done
+            considered: considered, done: done, hasNotes: false
         )
     }
 

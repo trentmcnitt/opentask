@@ -383,7 +383,8 @@ private struct RemindersListView: View {
         case .open(let reminder):
             let fit = metrics.titleLines(
                 reminder.title, width: width - WidgetTheme.rowMarkerSize - 10,
-                weight: WidgetTheme.priorityWeight(reminder.priority), maxHeight: budget
+                weight: WidgetTheme.priorityWeight(reminder.priority), maxHeight: budget,
+                hasNotes: reminder.hasNotes
             )
             if fit.shrinks {
                 return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true)
@@ -396,7 +397,8 @@ private struct RemindersListView: View {
             // a reminder, and "Yesterday = Lesson, Tomorrow…" struck through
             // says nothing.
             let fit = metrics.titleLines(
-                reminder.title, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular, maxHeight: budget
+                reminder.title, width: width - WidgetTheme.rowMarkerSize - 10, weight: .regular, maxHeight: budget,
+                hasNotes: reminder.hasNotes
             )
             if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
             return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
@@ -407,7 +409,8 @@ private struct RemindersListView: View {
             // trailing controls — the did-it square and the consider circle
             // (`PromptRowMetrics.titleWidth`). Same floor as a reminder row.
             let fit = metrics.titleLines(
-                prompt.labelText, width: PromptRowMetrics.titleWidth(in: width), weight: .regular, maxHeight: budget
+                prompt.labelText, width: PromptRowMetrics.titleWidth(in: width), weight: .regular, maxHeight: budget,
+                hasNotes: prompt.hasNotes
             )
             if fit.shrinks {
                 return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true)
@@ -417,7 +420,7 @@ private struct RemindersListView: View {
             // DONE rows have one trailing marker, like `DoneReminderRow`.
             let fit = metrics.titleLines(
                 prompt.labelText, width: PromptRowMetrics.doneTitleWidth(in: width), weight: .regular,
-                maxHeight: budget
+                maxHeight: budget, hasNotes: prompt.hasNotes
             )
             if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
             return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
@@ -430,24 +433,28 @@ private struct RemindersListView: View {
         case .open(let reminder):
             ReminderRow(
                 reminder: reminder, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
-                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed
+                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: reminder.hasNotes)
             )
         case .divider(let count):
             DoneDivider(count: count)
         case .done(let reminder):
             DoneReminderRow(
                 reminder: reminder, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
-                firstLineHeight: metrics.titleHeight(lines: 1)
+                firstLineHeight: metrics.titleHeight(lines: 1),
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: reminder.hasNotes)
             )
         case .prompt(let prompt):
             PromptRow(
                 prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
-                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed
+                firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: prompt.hasNotes)
             )
         case .donePrompt(let prompt):
             DonePromptRow(
                 prompt: prompt, lines: layout.lines, height: layout.height, shrinks: layout.shrinks,
-                firstLineHeight: metrics.titleHeight(lines: 1)
+                firstLineHeight: metrics.titleHeight(lines: 1),
+                notesGlyphSize: metrics.notesGlyphSize(hasNotes: prompt.hasNotes)
             )
         }
     }
@@ -857,19 +864,26 @@ private struct ReminderRow: View {
     /// markerBleed`). Applied as negative vertical padding on the Button, so
     /// adjacent targets meet but never overlap.
     let markerBleed: CGFloat
+    /// The notes glyph's size after the title, nil when the reminder has no
+    /// notes — the value the pager measured with (`WidgetTheme.
+    /// titleText(_:notesGlyphSize:)`).
+    let notesGlyphSize: CGFloat?
 
     var body: some View {
         // .top, not .center: on a two-line row a centred circle floats down
         // into the gap between the lines, reading as if it belongs to neither.
         HStack(alignment: .top, spacing: 10) {
             Link(destination: WidgetLink.reminder(reminder.id)) {
-                Text(reminder.title)
+                WidgetTheme.titleText(Text(reminder.title), notesGlyphSize: notesGlyphSize)
                     .font(.subheadline)
                     .fontWeight(WidgetTheme.priorityWeight(reminder.priority))
                     .foregroundStyle(.primary)
                     .opacity(WidgetTheme.priorityOpacity(reminder.priority))
                     .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                     .contentShape(Rectangle())
+                    .accessibilityLabel(
+                        Text(NotesGlyph.accessibilityLabel(reminder.title, hasNotes: reminder.hasNotes))
+                    )
             }
 
             Button(intent: CompleteTaskIntent(taskId: reminder.id, kind: RemindersWidget.kind)) {
@@ -919,16 +933,22 @@ private struct DoneReminderRow: View {
     let shrinks: Bool
     /// The marker centres on the FIRST line, like `ReminderRow`'s.
     let firstLineHeight: CGFloat
+    /// See `ReminderRow.notesGlyphSize`.
+    let notesGlyphSize: CGFloat?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Link(destination: WidgetLink.reminder(reminder.id)) {
-                Text(reminder.title)
+                // Struck through, the glyph isn't: `.strikethrough()` on the
+                // title alone, before the glyph is appended.
+                WidgetTheme.titleText(Text(reminder.title).strikethrough(), notesGlyphSize: notesGlyphSize)
                     .font(.subheadline)
-                    .strikethrough()
                     .foregroundStyle(.secondary)
                     .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                     .contentShape(Rectangle())
+                    .accessibilityLabel(
+                        Text(NotesGlyph.accessibilityLabel(reminder.title, hasNotes: reminder.hasNotes))
+                    )
             }
 
             Button(intent: UncompleteTaskIntent(taskId: reminder.id, kind: RemindersWidget.kind)) {
@@ -1009,6 +1029,16 @@ private struct PromptRow: View {
     var shrinks = false
     let firstLineHeight: CGFloat
     let markerBleed: CGFloat
+    /// The notes glyph's size, drawn after the COUNT (the web's
+    /// `QuotaPromptRow` order: title · count, then the mark); nil when the
+    /// quota has no notes. See `ReminderRow.notesGlyphSize`.
+    let notesGlyphSize: CGFloat?
+
+    /// "Daily Walks, 1/2 today" (+ ", has notes") — what VoiceOver reads for
+    /// the label and names each control by.
+    private var spokenLabel: String {
+        NotesGlyph.accessibilityLabel("\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
@@ -1018,24 +1048,28 @@ private struct PromptRow: View {
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
                 Link(destination: WidgetLink.quota(prompt.taskId)) {
-                    (Text(prompt.title).foregroundStyle(.primary)
-                        + Text("\(QuotaPromptDTO.countSeparator)\(prompt.countText)").foregroundStyle(.secondary))
+                    WidgetTheme.titleText(
+                        Text(prompt.title).foregroundStyle(.primary)
+                            + Text("\(QuotaPromptDTO.countSeparator)\(prompt.countText)").foregroundStyle(.secondary),
+                        notesGlyphSize: notesGlyphSize
+                    )
                         .font(.subheadline)
                         // A P0 reminder title's weight and opacity.
                         .opacity(WidgetTheme.priorityOpacity(0))
                         .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                         .contentShape(Rectangle())
+                        .accessibilityLabel(Text(spokenLabel))
                 }
             }
 
             HStack(alignment: .top, spacing: 0) {
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: true),
-                    symbol: "square", label: "Did it: \(prompt.title)"
+                    symbol: "square", label: "Did it: \(spokenLabel)"
                 )
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
-                    symbol: "circle", label: "Considered: \(prompt.title)"
+                    symbol: "circle", label: "Considered: \(spokenLabel)"
                 )
             }
         }
@@ -1074,6 +1108,8 @@ private struct DonePromptRow: View {
     let height: CGFloat
     let shrinks: Bool
     let firstLineHeight: CGFloat
+    /// See `PromptRow.notesGlyphSize`.
+    let notesGlyphSize: CGFloat?
 
     var body: some View {
         HStack(alignment: .top, spacing: PromptRowMetrics.controlGap) {
@@ -1083,12 +1119,16 @@ private struct DonePromptRow: View {
                     .frame(width: PromptRowMetrics.stripeWidth, height: max(height - 4, 0))
                     .padding(.top, 2)
                 Link(destination: WidgetLink.quota(prompt.taskId)) {
-                    Text(prompt.labelText)
+                    WidgetTheme.titleText(Text(prompt.labelText).strikethrough(), notesGlyphSize: notesGlyphSize)
                         .font(.subheadline)
-                        .strikethrough()
                         .foregroundStyle(.secondary)
                         .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                         .contentShape(Rectangle())
+                        .accessibilityLabel(
+                            Text(NotesGlyph.accessibilityLabel(
+                                "\(prompt.title), \(prompt.countText)", hasNotes: prompt.hasNotes
+                            ))
+                        )
                 }
             }
 
