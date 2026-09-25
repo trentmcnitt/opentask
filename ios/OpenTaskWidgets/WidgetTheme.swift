@@ -1070,11 +1070,13 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
 struct UndoRedoButtons: View {
     let canUndo: Bool
     let canRedo: Bool
+    /// The kind whose header this is — see `UndoLastActionIntent.kind`.
+    let kind: String
 
     var body: some View {
         HStack(spacing: 2) {
-            iconButton(intent: UndoLastActionIntent(), symbol: "arrow.uturn.backward", enabled: canUndo, label: "Undo")
-            iconButton(intent: RedoLastActionIntent(), symbol: "arrow.uturn.forward", enabled: canRedo, label: "Redo")
+            iconButton(intent: UndoLastActionIntent(kind: kind), symbol: "arrow.uturn.backward", enabled: canUndo, label: "Undo")
+            iconButton(intent: RedoLastActionIntent(kind: kind), symbol: "arrow.uturn.forward", enabled: canRedo, label: "Redo")
         }
     }
 

@@ -269,7 +269,7 @@ private struct QuotasListView: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 0)
-            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo)
+            UndoRedoButtons(canUndo: entry.canUndo, canRedo: entry.canRedo, kind: TrackWidget.kind)
         }
         .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
     }
