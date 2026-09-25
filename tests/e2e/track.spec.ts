@@ -3,7 +3,7 @@
  * count, bar, +1 and −1 — and reaching the target reads as "met" without
  * closing the task.
  */
-import { test, expect } from './fixtures'
+import { test, expect, waitForPreferenceSave } from './fixtures'
 import { request as apiRequest, type Page, type Response } from '@playwright/test'
 
 /**
@@ -114,7 +114,7 @@ async function pressedView(page: Page): Promise<View | null> {
   return null
 }
 async function switchView(page: Page, v: View) {
-  const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+  const saved = waitForPreferenceSave(page, 'default_grouping')
   await page.getByRole('button', { name: v, exact: true }).click()
   await saved
 }
@@ -130,7 +130,7 @@ async function openTrack(page: Page) {
   const fold = panel.getByRole('button', { name: 'Show as rows' })
   if (await fold.isVisible()) {
     // The choice is saved fire-and-forget; wait for it so a reload can't race it.
-    const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+    const saved = waitForPreferenceSave(page, 'track_expanded')
     await fold.click()
     await saved
   }
@@ -139,7 +139,7 @@ async function openTrack(page: Page) {
 async function closeTrack(page: Page) {
   const fold = page.getByRole('button', { name: 'Show as chips' })
   if (await fold.isVisible()) {
-    const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+    const saved = waitForPreferenceSave(page, 'track_expanded')
     await fold.click()
     await saved
   }
@@ -400,7 +400,7 @@ test.describe('Track', () => {
       // The switch does, and says the way back.
       const switchControl = panel.locator('[data-track-view-switch]')
       await expect(switchControl).toHaveText('Show as rows')
-      const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+      const saved = waitForPreferenceSave(page, 'track_expanded')
       await switchControl.click()
       await saved
       await expect(row).toBeVisible()

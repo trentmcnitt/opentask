@@ -4,7 +4,7 @@
  * too hard to scroll through the projects when it's not in unified mode").
  * Today's time slots keep their own cap of 5.
  */
-import { test, expect } from './fixtures'
+import { test, expect, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -16,7 +16,7 @@ async function pressedView(page: Page): Promise<string | null> {
   return null
 }
 async function switchView(page: Page, v: string) {
-  const saved = page.waitForResponse((r) => r.url().includes('/api/user/preferences'))
+  const saved = waitForPreferenceSave(page, 'default_grouping')
   await page.getByRole('button', { name: v, exact: true }).click()
   await saved
 }
