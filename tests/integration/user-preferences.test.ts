@@ -1,5 +1,7 @@
 /**
- * Integration tests for user preference fields: wake_time, sleep_time, per-feature AI modes
+ * Integration tests for user preference fields: wake_time, sleep_time, per-feature AI modes,
+ * default_grouping, and a round trip for every other preference (the dashboard folds, the
+ * snooze preferences, the quota-reminder pair)
  *
  * Tests GET/PATCH /api/user/preferences for the new preference fields,
  * including default values, valid updates, and validation rejections.
@@ -383,6 +385,123 @@ describe('default_grouping preference', () => {
     await apiFetch('/api/user/preferences', {
       method: 'PATCH',
       body: { default_grouping: 'project' },
+    })
+  })
+})
+
+/**
+ * Round trips for the preferences the rest of this file doesn't cover: the
+ * dashboard's two folds (saved fire-and-forget by PreferencesProvider), the
+ * snooze preferences, and the quota-reminder pair. Each one: the default, a
+ * PATCH that echoes the new value, a GET that reads it back, a bad value
+ * refused with 400 and nothing changed, then a reset to the default so later
+ * tests start clean.
+ */
+describe('round trip: every remaining preference', () => {
+  const cases: {
+    field: string
+    initial: unknown
+    next: unknown
+    invalid: unknown
+  }[] = [
+    { field: 'filters_expanded', initial: false, next: true, invalid: 'yes' },
+    { field: 'track_expanded', initial: false, next: true, invalid: 1 },
+    {
+      field: 'bulk_snooze_default',
+      initial: 'next_period',
+      next: 'default_option',
+      invalid: 'later',
+    },
+    { field: 'morning_time', initial: '09:00', next: '07:45', invalid: '24:00' },
+    { field: 'default_snooze_option', initial: '60', next: 'tomorrow', invalid: '0' },
+    { field: 'quota_prompts_enabled', initial: true, next: false, invalid: 'off' },
+  ]
+
+  async function readPref(field: string): Promise<unknown> {
+    const res = await apiFetch('/api/user/preferences')
+    expect(res.status).toBe(200)
+    return (await res.json()).data[field]
+  }
+
+  test.each(cases)('$field saves, reads back, and rejects a bad value', async (c) => {
+    expect(await readPref(c.field)).toBe(c.initial)
+
+    const patched = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { [c.field]: c.next },
+    })
+    expect(patched.status).toBe(200)
+    expect((await patched.json()).data[c.field]).toBe(c.next)
+    expect(await readPref(c.field)).toBe(c.next)
+
+    const refused = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { [c.field]: c.invalid },
+    })
+    expect(refused.status).toBe(400)
+    expect((await refused.json()).error).toContain(c.field)
+    expect(await readPref(c.field)).toBe(c.next)
+
+    const reset = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { [c.field]: c.initial },
+    })
+    expect(reset.status).toBe(200)
+    expect(await readPref(c.field)).toBe(c.initial)
+  })
+
+  test('default_snooze_option also takes a minute count', async () => {
+    const res = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: '90' },
+    })
+    expect(res.status).toBe(200)
+    expect(await readPref('default_snooze_option')).toBe('90')
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { default_snooze_option: '60' },
+    })
+  })
+
+  test('quota_prompt_slot_id saves one of the user’s periods, reads back, and clears to null', async () => {
+    expect(await readPref('quota_prompt_slot_id')).toBeNull()
+    const slots = (await (await apiFetch('/api/time-slots')).json()).data.time_slots as {
+      id: number
+    }[]
+    const slotId = slots[slots.length - 1].id
+
+    const patched = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { quota_prompt_slot_id: slotId },
+    })
+    expect(patched.status).toBe(200)
+    expect((await patched.json()).data.quota_prompt_slot_id).toBe(slotId)
+    expect(await readPref('quota_prompt_slot_id')).toBe(slotId)
+
+    const refused = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { quota_prompt_slot_id: 'evening' },
+    })
+    expect(refused.status).toBe(400)
+    expect(await readPref('quota_prompt_slot_id')).toBe(slotId)
+
+    const cleared = await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { quota_prompt_slot_id: null },
+    })
+    expect(cleared.status).toBe(200)
+    expect(await readPref('quota_prompt_slot_id')).toBeNull()
+  })
+
+  test('the dashboard folds save independently: one PATCH never touches the other', async () => {
+    await apiFetch('/api/user/preferences', { method: 'PATCH', body: { track_expanded: true } })
+    await apiFetch('/api/user/preferences', { method: 'PATCH', body: { filters_expanded: true } })
+    expect(await readPref('track_expanded')).toBe(true)
+    expect(await readPref('filters_expanded')).toBe(true)
+
+    await apiFetch('/api/user/preferences', {
+      method: 'PATCH',
+      body: { track_expanded: false, filters_expanded: false },
     })
   })
 })
