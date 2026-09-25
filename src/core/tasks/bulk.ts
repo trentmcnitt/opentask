@@ -224,7 +224,9 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
         [...new Set([...fieldsChanged, ...prompted.fieldsChanged])],
         [...snapshots, ...prompted.snapshots],
       )
-    } else {
+    } else if (prompted.snapshots.length > 0) {
+      // Nothing to log when the batch turned out empty (every id already
+      // done): an entry with no snapshots would be an Undo that does nothing.
       logAction(
         userId,
         'quota_prompt',

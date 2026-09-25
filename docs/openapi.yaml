@@ -1303,9 +1303,9 @@ paths:
                         type: boolean
                         description: |
                           Whether the user has any reminders at all, today or
-                          otherwise, or any quota prompt today. Lets a client
-                          tell "finished for today" apart from "has never made a
-                          reminder" when `groups` is empty.
+                          otherwise (reminders only — quota prompts do not set
+                          it). Lets a client tell "finished for today" apart from
+                          "has never made a reminder" when `groups` is empty.
                       groups:
                         type: array
                         items:
