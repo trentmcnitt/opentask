@@ -28,8 +28,23 @@ enum WidgetStore {
     #endif
 
     private static var defaults: UserDefaults? {
-        UserDefaults(suiteName: appGroup)
+        #if DEBUG
+        if let suiteOverride { return suiteOverride }
+        #endif
+        return UserDefaults(suiteName: appGroup)
     }
+
+    #if DEBUG
+    /// Test seam (`OpenTaskLogicTests`, `ios/Tests/Logic/`): when set, every
+    /// read and write goes here instead of the App Group suite. On macOS the
+    /// App Group is the REAL `GEL3VGTUJX.group.io.mcnitt.opentask` — the
+    /// installed Mac app's widget cache — so a test that used it would
+    /// overwrite what the desktop widgets draw. Tests set a throwaway
+    /// `UserDefaults(suiteName: "test.<UUID>")` in `setUp` and remove its
+    /// persistent domain in `tearDown`. DEBUG-only: a Release build has no
+    /// way to point the store anywhere else.
+    static var suiteOverride: UserDefaults?
+    #endif
 
     // MARK: - Cached payloads
 

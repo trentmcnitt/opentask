@@ -226,6 +226,50 @@ targets:
         INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
+  # Unit tests for the native clients' pure logic (testing pass WP5,
+  # 2026-09-25) — a hostless macOS test bundle, so it runs without a
+  # simulator or a signed-in device:
+  #
+  #   cd macos && xcodegen generate && \
+  #     xcodebuild test -scheme OpenTaskLogicTests -destination 'platform=macOS'
+  #
+  # It compiles the SAME source files the phone/watch/Mac targets do (by
+  # path, never copies): ios/Shared, the widget extension's WidgetStore, and
+  # the watch's two pure-logic files. All Foundation-only. Left out:
+  #   - NotificationConstants.swift — UserNotifications registration, no
+  #     logic worth testing, and it would pull the framework into the bundle.
+  #   - everything else in OpenTaskWidgets/WatchShared (SwiftUI/WidgetKit).
+  # KeychainHelper stays in: APIClient calls it and TaskSnoozePlan calls
+  # APIClient, and nothing touches either at load. No test calls the network
+  # or the Keychain.
+  #
+  # WidgetStore's only non-Foundation references are two widget kind
+  # strings; ios/Tests/Logic/Support/WidgetKindShims.swift stands in for
+  # them. And WidgetStore.suiteOverride (DEBUG-only) keeps every test off the
+  # real App Group suite, which on this Mac is the installed app's widget
+  # cache.
+  #
+  # Resources: the server contract fixtures (tests/fixtures/contract/*.json),
+  # written by tests/integration/contract-fixtures.test.ts.
+  OpenTaskLogicTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../ios/Shared
+        excludes:
+          - NotificationConstants.swift
+      - path: ../ios/OpenTaskWidgets/WidgetStore.swift
+      - path: ../ios/WatchShared/WatchQuotaLogic.swift
+      - path: ../ios/WatchShared/WatchSlotLogic.swift
+      - path: ../ios/Tests/Logic
+      - path: ../tests/fixtures/contract
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.logictests
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: '5.9'
+
 # Shared schemes, generated rather than left to Xcode's autocreation.
 #
 # Without these, XcodeGen emits no scheme at all and Xcode silently
@@ -256,3 +300,14 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # The static WidgetStore.suiteOverride is one process-wide seam, so test
+  # classes must not run in parallel against it.
+  OpenTaskLogicTests:
+    build:
+      targets:
+        OpenTaskLogicTests: [test]
+    test:
+      config: Debug
+      targets:
+        - name: OpenTaskLogicTests
+          parallelizable: false
