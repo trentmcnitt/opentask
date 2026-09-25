@@ -314,3 +314,63 @@ test.describe('Quota prompts — moving', () => {
     }
   })
 })
+
+test.describe('Quota prompts — notes mark', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  test('a quota with notes wears the notes mark on its prompt — on both surfaces', async ({
+    authenticatedPage: page,
+  }) => {
+    // The same `NotesMarker` a reminder row wears (2026-09-25), from the
+    // server's `has_notes`. Blank notes are no notes.
+    const stamp = Date.now()
+    const noted = `E2E prompt noted ${stamp}`
+    const blank = `E2E prompt blank notes ${stamp}`
+    const plain = `E2E prompt plain ${stamp}`
+    const ids: number[] = []
+    for (const [title, notes] of [
+      [noted, 'Remember the good pan'],
+      [blank, '   '],
+      [plain, null],
+    ] as const) {
+      const res = await page.request.post('/api/tasks', {
+        data: { title, rrule: 'FREQ=WEEKLY', progress_target: 2, is_tracked: true, notes },
+      })
+      expect(res.ok()).toBeTruthy()
+      ids.push((await res.json()).data.id)
+    }
+    created.push(...ids)
+
+    await page.goto('/reminders')
+    await expect(promptRow(page, noted).locator('[data-has-notes]')).toHaveCount(1)
+    await expect(promptRow(page, noted).getByLabel('Has notes')).toBeVisible()
+    await expect(promptRow(page, blank)).toBeVisible()
+    await expect(promptRow(page, blank).locator('[data-has-notes]')).toHaveCount(0)
+    await expect(promptRow(page, plain).locator('[data-has-notes]')).toHaveCount(0)
+
+    // The dashboard card shows one period at a time: move them all into it.
+    await page.goto('/')
+    const panel = page.locator('section[data-reminders-panel]')
+    await expect(panel).toBeVisible()
+    // A real period, not the un-slotted "Anytime" group the card may be on.
+    await expect(panel).toHaveAttribute('data-reminders-slot', /^\d+$/)
+    const slotId = Number(await panel.getAttribute('data-reminders-slot'))
+    for (const id of ids) {
+      const res = await page.request.patch(`/api/tasks/${id}`, {
+        data: { quota_prompt_config: { slot_id: slotId } },
+      })
+      expect(res.ok()).toBeTruthy()
+    }
+    await page.reload()
+    // Rows first (the card renders its toggle with them),
+    // then ask whether a "Show more" is needed.
+    const row = (title: string) => panel.locator('li[data-prompt-key]', { hasText: title })
+    await expect(panel.locator('li').first()).toBeAttached()
+    const more = panel.getByRole('button', { name: /show more/i })
+    if (await more.isVisible()) await more.click()
+    await expect(row(noted).getByLabel('Has notes')).toBeVisible()
+    await expect(row(blank)).toBeVisible()
+    await expect(row(blank).locator('[data-has-notes]')).toHaveCount(0)
+    await expect(row(plain).locator('[data-has-notes]')).toHaveCount(0)
+  })
+})

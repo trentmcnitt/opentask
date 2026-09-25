@@ -24,3 +24,17 @@
 export function scrollRowIntoView(el: HTMLElement | null): void {
   el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
+
+/**
+ * Bring a whole SECTION on screen, header first — the Reminders surface's
+ * `goToSlot` (its `?slot=<slotId>` deep link, and a tap on the headline's day
+ * bar).
+ *
+ * `block: 'start'`, not the row's `'center'`: a started slot draws every row,
+ * so a section can be taller than the screen, and centring it would put the
+ * very header the user asked for above the top. The section's own
+ * `scroll-margin-top` keeps it clear of the sticky top bar.
+ */
+export function scrollSectionIntoView(el: HTMLElement | null): void {
+  el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}

@@ -46,6 +46,12 @@ export interface QuotaPrompt {
    * chips, so a stripe never spends it (`trackStripeClass`).
    */
   stripe_color: LabelColor | null
+  /**
+   * The quota has notes (2026-09-25) — a prompt row wears the reminder rows'
+   * `NotesMarker` for it. A flag, not the text: the rows only mark that a note
+   * exists, and the quota's bubble and editor are where it is read.
+   */
+  has_notes: boolean
   /** Considered today (the circle, or "did it", which implies it). */
   considered: boolean
   /** Done for today: daily — count reached `number`; others — progress logged today. */
