@@ -991,6 +991,9 @@ struct ChevronButton<I: AppIntent>: View {
     /// telegraph their edges", so a dead chevron dims and stops responding
     /// rather than looking live and doing nothing.
     var enabled = true
+    /// VoiceOver's name for it — "Previous period" rather than a bare
+    /// "Back", where the caller knows what the ring pages through.
+    var label: String?
 
     var body: some View {
         Button(intent: intent) {
@@ -1008,6 +1011,7 @@ struct ChevronButton<I: AppIntent>: View {
         .foregroundStyle(.secondary)
         .opacity(enabled ? 1 : 0.3)
         .disabled(!enabled)
+        .accessibilityLabel(Text(label ?? (direction == .previous ? "Previous" : "Next")))
     }
 }
 
@@ -1033,12 +1037,14 @@ struct ChevronPager<Previous: AppIntent, Next: AppIntent>: View {
     let next: Next
     var hasPrevious = true
     var hasNext = true
+    var previousLabel: String?
+    var nextLabel: String?
 
     var body: some View {
         // Zero spacing: the two 40pt hit targets already separate the glyphs.
         HStack(spacing: 0) {
-            ChevronButton(intent: previous, direction: .previous, enabled: hasPrevious)
-            ChevronButton(intent: next, direction: .next, enabled: hasNext)
+            ChevronButton(intent: previous, direction: .previous, enabled: hasPrevious, label: previousLabel)
+            ChevronButton(intent: next, direction: .next, enabled: hasNext, label: nextLabel)
         }
     }
 }
@@ -1073,6 +1079,10 @@ struct UndoRedoButtons: View {
     /// The kind whose header this is — see `UndoLastActionIntent.kind`.
     let kind: String
 
+    /// Each icon's vertical padding — exposed so a header that seats these
+    /// on its subtitle line can cancel it rather than grow that line.
+    static let verticalPadding: CGFloat = 4
+
     var body: some View {
         HStack(spacing: 2) {
             iconButton(intent: UndoLastActionIntent(kind: kind), symbol: "arrow.uturn.backward", enabled: canUndo, label: "Undo")
@@ -1087,7 +1097,7 @@ struct UndoRedoButtons: View {
             Image(systemName: symbol)
                 .font(.caption2.weight(.semibold))
                 .padding(.horizontal, 5)
-                .padding(.vertical, 4)
+                .padding(.vertical, Self.verticalPadding)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
