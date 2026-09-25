@@ -137,13 +137,10 @@ function describeBulkBase(
     )
     const index = resolvePromptSlot(slots, cfg?.slot_id, userDefault)
     const daily = draftPeriod === undefined ? isDailyQuota(task) : draftPeriod === 'DAILY'
-    periods.add(
-      index < 0
-        ? 'none'
-        : daily && placedByHand(task, slots, userDefault)
-          ? task.id
-          : slots[index].id,
-    )
+    // A hand-placed quota's marker is a string, never a number: task ids and
+    // slot ids share a number space, and a bare id could read as agreement.
+    const handPlaced = daily && placedByHand(task, slots, userDefault)
+    periods.add(index < 0 ? 'none' : handPlaced ? `hand:${task.id}` : slots[index].id)
   }
   const [onlyPeriod] = periods
   return {
@@ -191,10 +188,7 @@ export function QuotaPromptBulkField({ draft }: { draft: BulkPromptDraft }) {
       </p>
       {enabled !== false && slots.length > 0 && (
         <div className="space-y-1.5 pt-1" data-quota-prompt-periods>
-          <p className="text-muted-foreground text-xs">
-            Reminds me in
-            {draft.anySpread && ' — a quota counted several times a day starts here and spreads'}
-          </p>
+          <p className="text-muted-foreground text-xs">Reminds me in</p>
           <div className="flex flex-wrap items-center gap-1.5">
             {slotId === undefined && (
               <span className="text-muted-foreground text-sm" data-quota-prompt-mixed="slot">
@@ -222,6 +216,11 @@ export function QuotaPromptBulkField({ draft }: { draft: BulkPromptDraft }) {
               )
             })}
           </div>
+          {draft.anySpread && (
+            <p className="text-muted-foreground text-xs">
+              A quota counted several times a day starts here and spreads through the day.
+            </p>
+          )}
         </div>
       )}
     </fieldset>
